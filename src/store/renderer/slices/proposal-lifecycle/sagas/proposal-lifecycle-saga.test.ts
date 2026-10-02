@@ -476,7 +476,7 @@ describe('workspace transfer proposals', () => {
     applyProposalRequested({ proposalId: 'transfer-p', kind: 'workspace-transfer', detail });
   async function harness(initialLifecycle: ProposalLifecycleState = {}) {
     const { createCollection } =
-      await import('@augmentcode/themis/utils/collections/collection-utils');
+      await import('@themislib/themis/utils/collections/collection-utils');
     const { proposalLifecycleReducer } = await import('../proposal-lifecycle-slice');
     let lifecycle = initialLifecycle;
     const state = () => ({

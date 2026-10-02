@@ -29,6 +29,13 @@ export type ScriptOutputBuffer = {
   dropped: number;
 };
 
+/** A viewer-owned formatted poll result, never part of the raw PTY stream. */
+type ScriptRetainedOutput = {
+  scriptId: string;
+  status: 'loading' | 'available' | 'unavailable';
+  text?: string;
+};
+
 export type ScriptQuickAction = 'start' | 'stop' | 'restart';
 
 export type ScriptOperationState = {
@@ -45,12 +52,16 @@ export type ScriptsWorkspaceState = {
   scripts: Record<string, ScriptWithState>;
   /** Raw-chunk output ring buffers keyed by script ID */
   outputBuffers: Record<string, ScriptOutputBuffer>;
+  retainedOutputs?: Record<string, ScriptRetainedOutput>;
   /** Transient Shell controls state keyed by script ID. */
   operations: Record<string, ScriptOperationState>;
   /** Whether the workspace scripts have been initialized */
   initialized: boolean;
   /** Whether scripts are currently loading */
   loading: boolean;
+  lifecycleSupported?: boolean;
+  activeScriptIds?: string[];
+  loadError?: string;
 };
 
 /**

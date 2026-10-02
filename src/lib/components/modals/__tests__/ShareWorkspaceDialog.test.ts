@@ -3,7 +3,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type {
   HostPrincipal,
   WorkspaceInvite,
@@ -89,6 +89,62 @@ function renderDialog(props: Record<string, unknown> = {}) {
   return render(ShareWorkspaceDialog, { props: { ...baseProps, ...props } });
 }
 
+it('offers explicit recipient pins on a capable host without repository authentication (#6392)', async () => {
+  const onCreateInvite = vi.fn();
+  const onSearchUsers = vi.fn();
+  renderDialog({
+    githubConnected: false,
+    gitlabConnected: false,
+    identitySeamSupported: true,
+    hostMembershipSupported: true,
+    onCreateInvite,
+    onSearchUsers,
+  });
+  const field = await screen.findByRole('combobox', { name: /restrict to a github/i });
+  await fireEvent.input(field, { target: { value: 'sam' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+  expect(onCreateInvite).toHaveBeenCalledWith('sam', { provider: 'github' });
+  expect(onSearchUsers.mock.calls.filter(([query]) => query !== '')).toEqual([]);
+});
+
+it('lets a capable workspace manager pin a different canonical GitLab instance (#6392)', async () => {
+  const onCreateInvite = vi.fn();
+  renderDialog({
+    githubConnected: false,
+    gitlabConnected: false,
+    gitlabEnabled: true,
+    gitlabHost: 'repository.example',
+    gitlabStatusReady: false,
+    canAdministerHost: false,
+    identityProvider: 'gitlab',
+    identitySeamSupported: true,
+    hostMembershipSupported: true,
+    onCreateInvite,
+  });
+  await fireEvent.input(screen.getByLabelText('GitLab instance'), {
+    target: { value: 'Forge.Example:8443' },
+  });
+  await fireEvent.input(screen.getByLabelText(/Restrict to a GitLab user/), {
+    target: { value: 'sam' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+  expect(onCreateInvite).toHaveBeenCalledWith('sam', {
+    provider: 'gitlab',
+    host: 'forge.example:8443',
+  });
+});
+
+it('keeps inherited host members non-removable and uses daemon guest seats (#6390)', () => {
+  renderDialog({
+    members: [owner, { ...collaborator, hostRole: 'member' }],
+    guestCount: 0,
+    guestLimit: 5,
+  });
+  expect(screen.queryByRole('button', { name: /remove.*bob/i })).toBeNull();
+  expect(screen.getByText('Host member')).toBeTruthy();
+  expect(screen.getByText('Guests 0 / 5')).toBeTruthy();
+});
+
 beforeEach(() => {
   toastMocks.success.mockReset();
   toastMocks.error.mockReset();
@@ -158,7 +214,37 @@ describe('ShareWorkspaceDialog — owner gate', () => {
 });
 
 describe('ShareWorkspaceDialog — forge gate', () => {
-  it('shows the connect-first state instead of the sharing controls when no forge is connected', async () => {
+  it('leaves an unpinned invite available while canonical GitLab status is pending', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabEnabled: true,
+      identitySeamSupported: true,
+      gitlabHost: '',
+      gitlabStatusReady: false,
+      onCreateInvite,
+    });
+    const input = screen.getByLabelText(/Restrict to a GitLab user/);
+    await fireEvent.input(input, { target: { value: 'mara' } });
+    expect(screen.getByRole('button', { name: /Create invite/ }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    await fireEvent.submit(input.closest('form')!);
+    expect(onCreateInvite).not.toHaveBeenCalled();
+    await fireEvent.input(input, { target: { value: '' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+  it('offers account-free sharing without an owner Connect action to a member', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({ githubConnected: false, canAdministerHost: false, onCreateInvite });
+    expect(screen.queryByRole('button', { name: 'Connect GitHub' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite/ }));
+    expect(onCreateInvite).toHaveBeenCalledExactlyOnceWith('');
+  });
+
+  it('offers an optional owner connection alongside account-free sharing', async () => {
     const onConnectGitHub = vi.fn();
     const onOpenConnections = vi.fn();
     renderDialog({
@@ -170,7 +256,7 @@ describe('ShareWorkspaceDialog — forge gate', () => {
 
     expect(screen.getByTestId('share-github-required')).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: /Restrict to a/ })).toBeNull();
-    expect(screen.queryByTestId('share-member-row')).toBeNull();
+    expect(screen.getAllByTestId('share-member-row')).toHaveLength(2);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Connect GitHub' }));
     expect(onConnectGitHub).toHaveBeenCalledTimes(1);
@@ -191,7 +277,7 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     expect(screen.queryByLabelText(/Restrict to a/)).toBeNull();
   });
 
-  it('lets a GitLab-only host share: free-text GitLab pin, no typeahead, bare login on submit', async () => {
+  it('binds the GitLab-only pin to the canonical host without typeahead', async () => {
     const onCreateInvite = vi.fn();
     const onSearchUsers = vi.fn();
     renderDialog({
@@ -212,8 +298,11 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     expect(pin.getAttribute('aria-expanded')).toBe('false');
 
     await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
-    // One identity forge: the daemon resolves the pin on its own, so no `pin` rides along.
-    expect(onCreateInvite).toHaveBeenCalledWith('dave');
+    // A seam-capable daemon receives the status-confirmed instance even with one forge.
+    expect(onCreateInvite).toHaveBeenCalledWith('dave', {
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+    });
   });
 });
 

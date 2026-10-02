@@ -1,4 +1,5 @@
 import type { Task } from 'redux-saga';
+import { createChannelFromSelector } from '@themislib/themis/saga';
 import {
   all,
   call,
@@ -30,8 +31,13 @@ import {
   setSubscriptionSnapshot,
   subscriptionSnapshotFetchFailed,
 } from '../agent-subscription-ui-slice';
-import { selectTrackedAgentIds, selectWaitingState } from '../agent-subscription-ui-selectors';
+import {
+  selectTrackedAgentIds,
+  selectWaitingState,
+  selectSubscriptionSnapshotStatus,
+} from '../agent-subscription-ui-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { selectDaemonEventsSubscriptionGeneration } from '../../workspace-events/workspace-events-selectors';
 import { initializeChatRequested } from '../../chat-state/chat-state-slice';
 import { markAgentAsViewed } from '../../unread-tracking/unread-tracking-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
@@ -54,6 +60,7 @@ interface WireResult {
 }
 
 interface ReadCoordinator {
+  contexts: Map<string, { wsId: string; agentId: string }>;
   reads: Map<string, Task>;
   completedCleanups: Map<string, Task>;
   pendingSnapshots: Set<string>;
@@ -105,17 +112,21 @@ function* confirmCompletedSnapshotSaga(wsId: string, agentId: string) {
       agentId,
     });
     const mapped = mapResult(fresh);
-    if (mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0) {
-      yield* put(
-        setSubscriptionSnapshot(wsId, agentId, {
-          ...mapped,
-          waitingState: 'waiting',
-        }),
-      );
-      return;
-    }
+    const hasData = mapped.subscriptions.length > 0 || mapped.delegationGroups.length > 0;
+    // A view arriving during this read joins it, including an authoritative empty response.
+    yield* put(
+      setSubscriptionSnapshot(wsId, agentId, {
+        ...mapped,
+        waitingState: hasData ? 'waiting' : 'idle',
+      }),
+    );
+    if (hasData) return;
   } catch {
-    // The empty snapshot was already authoritative; reset after a failed confirmation read.
+    // Keep the prior empty snapshot for background cleanup, but a joined view
+    // must settle as failed rather than remaining loading or claiming freshness.
+    if ((yield* selectSubscriptionSnapshotStatus.effect(wsId, agentId)) === 'loading') {
+      yield* put(subscriptionSnapshotFetchFailed(wsId, agentId));
+    }
   }
   yield* put(resetSubscriptionUI(wsId, agentId));
 }
@@ -218,6 +229,7 @@ function* startSnapshotRead(
   mode: ReadMode,
 ): SagaGenerator<void> {
   const key = makeKey(wsId, agentId);
+  coordinator.contexts.set(key, { wsId, agentId });
   if (coordinator.reads.has(key)) {
     if (mode === 'confirmation') {
       coordinator.pendingConfirmations.add(key);
@@ -238,8 +250,20 @@ function* requestSubscriptionFetchWorker(
   coordinator: ReadCoordinator,
   action: ReturnType<typeof requestSubscriptionFetch>,
 ) {
-  const [wsId, agentId] = action.payload;
+  const [wsId, agentId, ensure] = action.payload;
   if (!wsId || !agentId) return;
+  if (ensure) {
+    yield* ensureSnapshotRead(coordinator, wsId, agentId);
+  } else {
+    yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+  }
+}
+
+/** Mount demand joins current work; only invalidation requires a trailing read. */
+function* ensureSnapshotRead(coordinator: ReadCoordinator, wsId: string, agentId: string) {
+  coordinator.contexts.set(makeKey(wsId, agentId), { wsId, agentId });
+  if (coordinator.reads.has(makeKey(wsId, agentId))) return;
+  if ((yield* selectSubscriptionSnapshotStatus.effect(wsId, agentId)) === 'ready') return;
   yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
 }
 
@@ -252,7 +276,7 @@ function* initializeChatPrefetchWorker(
 ) {
   const { agentId, wsId } = action.payload;
   if (!wsId || !agentId) return;
-  yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+  yield* ensureSnapshotRead(coordinator, wsId, agentId);
 }
 
 /** View-time prefetch on agent switch (`markAgentAsViewed` carries only the
@@ -266,6 +290,7 @@ function* markAgentAsViewedPrefetchWorker(
   if (!agentId) return;
   const session = yield* selectAgentSession.effect(agentId);
   if (!session?.workspaceId) return;
+  if (coordinator.reads.has(makeKey(session.workspaceId, agentId))) return;
   yield* startSnapshotRead(coordinator, session.workspaceId, agentId, 'snapshot');
 }
 
@@ -273,22 +298,54 @@ function* refreshWorkspaceSubscriptionsWorker(
   coordinator: ReadCoordinator,
   action: ReturnType<typeof refreshWorkspaceSubscriptionEntriesRequested>,
 ) {
-  const [wsId] = action.payload;
+  const [wsId, changedAgentId] = action.payload;
   if (!wsId) return;
-  const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
+  // Pending initial reads are demanded contexts even before Redux has a snapshot.
+  const agentIds = new Set(yield* selectTrackedAgentIds.effect(wsId));
+  for (const context of coordinator.contexts.values()) {
+    if (context.wsId === wsId) agentIds.add(context.agentId);
+  }
   for (const agentId of agentIds) {
-    yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+    if (!changedAgentId || changedAgentId === agentId) {
+      yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+    }
   }
 }
 
-function* clearWorkspaceSubscriptionsWorker(action: ReturnType<typeof workspaceUnmounted>) {
+function* clearWorkspaceSubscriptionsWorker(
+  coordinator: ReadCoordinator,
+  action: ReturnType<typeof workspaceUnmounted>,
+) {
   const [wsId] = action.payload;
+  for (const [key, context] of coordinator.contexts) {
+    if (context.wsId === wsId) coordinator.contexts.delete(key);
+  }
   const agentIds: string[] = yield* selectTrackedAgentIds.effect(wsId);
   for (const agentId of agentIds) yield* put(deleteSubscriptionUI(wsId, agentId));
 }
 
+/** Reconcile only after the event lease is live, so no watch change falls
+ * between the recovery snapshot and the replacement subscription. */
+function* watchSubscriptionGeneration(coordinator: ReadCoordinator): SagaGenerator<void> {
+  const channel = yield* createChannelFromSelector(selectDaemonEventsSubscriptionGeneration);
+  let generation = yield* selectDaemonEventsSubscriptionGeneration.effect();
+  try {
+    while (true) {
+      const { payload } = yield* take(channel);
+      if (payload === generation) continue;
+      generation = payload;
+      for (const { wsId, agentId } of coordinator.contexts.values()) {
+        yield* startSnapshotRead(coordinator, wsId, agentId, 'snapshot');
+      }
+    }
+  } finally {
+    channel.close();
+  }
+}
+
 export function* agentSubscriptionReadSaga() {
   const coordinator: ReadCoordinator = {
+    contexts: new Map(),
     reads: new Map(),
     completedCleanups: new Map(),
     pendingSnapshots: new Set(),
@@ -303,6 +360,7 @@ export function* agentSubscriptionReadSaga() {
       refreshWorkspaceSubscriptionsWorker,
       coordinator,
     ),
-    takeEvery(workspaceUnmounted, clearWorkspaceSubscriptionsWorker),
+    takeEvery(workspaceUnmounted, clearWorkspaceSubscriptionsWorker, coordinator),
+    fork(watchSubscriptionGeneration, coordinator),
   ]);
 }

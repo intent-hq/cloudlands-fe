@@ -340,7 +340,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({
-  selectComments: Object.assign(() => constantReadable([]), {
+  selectCommentsForNote: Object.assign(() => constantReadable([]), {
     select: () => [],
   }),
   selectCommentById: {

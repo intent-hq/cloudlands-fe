@@ -239,6 +239,7 @@
     onRegisterRef?: (element: HTMLDivElement) => void;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Keeps an edited virtualized turn materialized until edit mode closes. */
     onEditStateChange?: (isEditing: boolean) => void;
     isSticky?: boolean;
@@ -278,6 +279,7 @@
     onCopy,
     onRegisterRef,
     onScrollToPrevious,
+    previousMessageLoading = false,
     onEditStateChange,
     isSticky = false,
     onStickyClick,
@@ -437,11 +439,12 @@
   // more than one member, on plain human rows — agent-to-agent sends and
   // automated wakes carry their own sender header. Reads the daemon's
   // serve-time `author` projection verbatim; single-member workspaces, the
-  // viewer's own rows and rows without the projection render unchanged.
+  // viewer's own local rows and rows without the projection render unchanged.
+  // Portable human snapshots remain visible without current membership.
   //
   // A row whose content starts with the daemon's collaborator sender preamble
   // (exact match against the text rebuilt from the same projection) always
-  // shows the sender chip with the guest role — the preamble itself is
+  // shows the sender chip with its matched historical member or guest role — the preamble itself is
   // display-stripped by the presentation boundary, so the chip is the only
   // place the sender and their role remain visible, for owner and guest alike.
   // The workspace owner's own rows never qualify (the daemon prepends the
@@ -451,14 +454,15 @@
       ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
       : null,
   );
+  const projectedHumanAuthor = $derived(getHumanMessageAuthor(message, ownPrincipalId));
   let humanAuthor = $derived(
     collaboratorSender
       ? collaboratorSender.author
       : role === 'user' &&
-          (workspace?.memberCount ?? 0) >= 2 &&
+          ((workspace?.memberCount ?? 0) >= 2 || projectedHumanAuthor?.principalId === null) &&
           !agentAttribution &&
           !automatedWakePresentation
-        ? getHumanMessageAuthor(message, ownPrincipalId)
+        ? projectedHumanAuthor
         : null,
   );
   let humanAuthorLabel = $derived.by(() => {
@@ -471,7 +475,13 @@
     const login = cleanLogin ? `@${cleanLogin}` : null;
     const name = singleLineName(humanAuthor.displayName);
     // i18n-ignore (handle + name composition, mirrors the daemon preamble)
-    return login && name ? `${login} (${name})` : (login ?? name);
+    const who = login && name ? `${login} (${name})` : (login ?? name);
+    if (collaboratorSender.role === 'member') {
+      // i18n-ignore (principal fallback mirrors the accepted daemon preamble)
+      const label = who ?? `principal ${singleLineName(humanAuthor.principalId) ?? ''}`;
+      return getMessageAuthorLabel({ ...humanAuthor, login: null, displayName: label });
+    }
+    return who;
   });
 
   // Local state
@@ -1538,6 +1548,7 @@
               onCopy={handleCopy}
               requestId={backendSessionId ?? undefined}
               {onScrollToPrevious}
+              {previousMessageLoading}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
               {queueInfo}
@@ -1566,20 +1577,29 @@
           {/if}
 
           <!-- Human author identity in multi-member workspaces, and the
-               collaborator (guest) sender chip on preamble-carrying rows -->
+               historical member or guest sender chip on preamble-carrying rows -->
           {#if humanAuthor && !isSticky}
             <div
               class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
               data-testid="user-message-author"
               data-principal-id={humanAuthor.principalId}
-              data-sender-role={collaboratorSender ? 'collaborator' : undefined}
-              aria-label={collaboratorSender
-                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
-                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+              data-sender-role={collaboratorSender?.role === 'member'
+                ? 'member'
+                : collaboratorSender
+                  ? 'collaborator'
+                  : undefined}
+              aria-label={collaboratorSender?.role === 'member'
+                ? m.workspace_share_member_identityRole_label({
+                    handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    role: m.collaboration_host_member_label(),
                   })
-                : m.chat_chatMessage_author_ariaLabel({
-                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
-                  })}
+                : collaboratorSender
+                  ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })
+                  : m.chat_chatMessage_author_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })}
             >
               <PrincipalAvatar
                 avatarUrl={humanAuthor.avatarUrl}
@@ -1595,7 +1615,9 @@
               {#if collaboratorSender}
                 <span aria-hidden="true" class="shrink-0">·</span>
                 <span class="shrink-0" data-testid="user-message-author-role"
-                  >{m.chat_chatMessage_collaboratorRole_label()}</span
+                  >{collaboratorSender.role === 'member'
+                    ? m.collaboration_host_member_label()
+                    : m.chat_chatMessage_collaboratorRole_label()}</span
                 >
               {/if}
             </div>
@@ -1911,6 +1933,8 @@
           <MessageActions
             role="assistant"
             {onRegenerate}
+            {onScrollToPrevious}
+            {previousMessageLoading}
             {onFork}
             {onVote}
             onCopy={handleCopy}

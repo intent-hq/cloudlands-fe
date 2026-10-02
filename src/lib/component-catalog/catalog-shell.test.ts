@@ -366,11 +366,16 @@ describe('catalog route shell', () => {
           'src/lib/component-catalog/renderers/SubscriptionRowsCatalogPreview.svelte' ||
         relativeFile === 'src/lib/component-catalog/subscription-rows/subscription-row-fixtures.ts';
       if (isStoreSeededSubscriptionFixture) return [];
-      return boundaryViolations(
-        readFileSync(file, 'utf8'),
-        relativeFile,
-        presentationalFeatureImports[relativeFile] ?? [],
-      );
+      // The sandbox route bridges resolved preview appearance to Redux consumers.
+      // Keep the shell itself independent and other domain/host imports restricted.
+      const previewThemeImports =
+        relativeFile === 'src/routes/sandbox/+layout.svelte'
+          ? ['$store/renderer/store', '$store/renderer/slices/theme/theme-slice']
+          : [];
+      return boundaryViolations(readFileSync(file, 'utf8'), relativeFile, [
+        ...(presentationalFeatureImports[relativeFile] ?? []),
+        ...previewThemeImports,
+      ]);
     });
     expect(violations).toEqual([]);
   });

@@ -9,6 +9,14 @@
  */
 
 export const IPC_CHANNELS = {
+  DEV_CONSOLE: {
+    OPEN: 'dev-console:open',
+    CONNECT: 'dev-console:connect',
+    READ: 'dev-console:read',
+    RECORD: 'dev-console:record',
+    CLEAR: 'dev-console:clear',
+    SELECT: 'dev-console:select',
+  },
   // Workspace Management
   WORKSPACE: {
     LIST: 'workspace:list',
@@ -333,6 +341,14 @@ export const IPC_CHANNELS = {
 
   // Invite consent (renderer-rendered GitHub identity prompt of an invite join).
   // Payload contracts live in src/shared/ipc/invite-consent.ts.
+  COLLABORATION_AUTH: {
+    POLICY: 'collaboration-auth:policy',
+    OPEN: 'collaboration-auth:open',
+    SHOW: 'collaboration-auth:show',
+    ACTION: 'collaboration-auth:action',
+    DISMISS: 'collaboration-auth:dismiss',
+  },
+
   INVITE_CONSENT: {
     /** Main → renderer: show the invite-consent modal for a request. */
     SHOW: 'invite-consent:show',
@@ -1211,6 +1227,7 @@ export const EVENT_CHANNELS = [
   'token-usage:changed',
   // Live backend transport (main → renderer): daemon JSON-RPC notifications
   // and connection-status changes pushed from the main-process client.
+  'dev-console:changed',
   'backend:notification',
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)

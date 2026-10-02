@@ -1,4 +1,7 @@
 {
+  "presence_person_roleStatus": "*",
+  "settings_sidebar_guestSessions_label": ["fr"],
+  "settings_guestSessions_title": ["fr"],
   "agentOverview_hierarchyCard_agent_fallback": ["de", "fr"],
   "agentOverview_hierarchyCard_note_label": ["fr"],
   "agentOverview_hierarchyGraph_background_badge": ["ja", "ko", "de"],
@@ -198,6 +201,7 @@
   "onboarding_promptStep_setupEnvWith_after": ["fr", "es"],
   "onboarding_requirementsStep_ghOptional_label": ["de"],
   "onboarding_setupCard_ranSetupIn_middle": ["de"],
+  "settings_providers_serviceTierStandard_label": ["de", "fr"],
   "settings_agentBackend_acpHeap_megabytesValue": ["de", "es", "ja", "ko", "zh-CN", "zh-TW"],
   "settings_agentBackend_autoPlaceholder": ["fr"],
   "settings_agentBackend_idleReap_minutesValue": ["es", "fr"],

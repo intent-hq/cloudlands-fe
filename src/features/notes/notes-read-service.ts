@@ -12,7 +12,7 @@
  * the configured store, slice actions, and the logger. State reads use the raw
  * `appStore.state.workspaceNotes` shape.
  */
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
 import type { Note } from '$shared/types';
 import { NoteId } from '$shared/types/branded-ids';
@@ -39,10 +39,10 @@ const logger = createLogger('NotesReadService');
  */
 const inFlight = new Map<string, { dirty: boolean; settled: Promise<void> }>();
 
-function coalesce(key: string, fn: () => Promise<void>): Promise<void> {
+function coalesce(key: string, fn: () => Promise<void>, invalidate = true): Promise<void> {
   const pending = inFlight.get(key);
   if (pending) {
-    pending.dirty = true;
+    pending.dirty ||= invalidate;
     return pending.settled;
   }
   const entry = { dirty: false, settled: Promise.resolve() };
@@ -129,11 +129,15 @@ export function ensureNoteContentLoaded(workspaceId: string, noteId: string): Pr
   const cached = ws?.notes ? getItem(ws.notes, NoteId(String(noteId))) : undefined;
   if (!cached) return Promise.resolve(false);
   if (!isNoteContentStale(cached)) return Promise.resolve(true);
-  return coalesce(`note:${workspaceId}:${noteId}`, async () => {
-    const note = await appClient.notes.get(noteId, workspaceId);
-    if (!note || String(note.workspaceId) !== workspaceId) return;
-    dispatchNoteApply(workspaceId, note, 'note:updated');
-  }).then(() => {
+  return coalesce(
+    `note:${workspaceId}:${noteId}`,
+    async () => {
+      const note = await appClient.notes.get(noteId, workspaceId);
+      if (!note || String(note.workspaceId) !== workspaceId) return;
+      dispatchNoteApply(workspaceId, note, 'note:updated');
+    },
+    false,
+  ).then(() => {
     const after = appStore.state.workspaceNotes.byWorkspaceId[workspaceId];
     const row = after?.notes ? getItem(after.notes, NoteId(String(noteId))) : undefined;
     return row !== undefined && !isNoteContentStale(row);

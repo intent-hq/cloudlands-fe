@@ -1,10 +1,10 @@
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { PresenceMember, PresenceRoster, PresenceTypingEntry } from '$shared/types/presence';
 import type { WorkspaceRole } from '$shared/types';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import {
-  initialState,
+  initialState as emptyState,
   presenceMembersReceived,
   presenceOwnPrincipalReceived,
   presenceOwnTypingSourceReceived,
@@ -18,6 +18,7 @@ import {
   presenceWindowVisibilityChanged,
 } from './presence-slice';
 
+const initialState = { ...emptyState, context: 'test', workspaceIds: ['ws-1', 'ws-2', 'ws-3'] };
 const member = (principalId: string, overrides: Partial<PresenceMember> = {}): PresenceMember => ({
   principalId,
   login: principalId,
@@ -51,7 +52,7 @@ const accepted = (principalId: string, role: WorkspaceRole = 'collaborator'): Wo
 
 describe('presence slice', () => {
   it('starts empty and visible', () => {
-    expect(presenceReducer(undefined, { type: '@@init' })).toEqual(initialState);
+    expect(presenceReducer(undefined, { type: '@@init' })).toEqual(emptyState);
     expect(initialState.windowVisible).toBe(true);
   });
 
@@ -176,6 +177,6 @@ describe('presence slice', () => {
     state = presenceReducer(state, presenceOwnPrincipalReceived('me'));
     state = presenceReducer(state, presenceTypingPulse('agent-1'));
     const reset = presenceReducer(state, presenceReset());
-    expect(reset).toEqual({ ...initialState, windowVisible: false });
+    expect(reset).toEqual({ ...emptyState, windowVisible: false });
   });
 });

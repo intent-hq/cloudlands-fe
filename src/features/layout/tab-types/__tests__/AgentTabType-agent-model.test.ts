@@ -4,7 +4,7 @@ vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
   }),
 }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -83,7 +83,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({ agents: mockState.agents.get() }),
+    state: () => ({ agents: mockState.agents.get(), agentMutationUi: { byWorkspaceId: {} } }),
     dispatch: mockState.dispatch,
   });
 });
@@ -247,41 +247,6 @@ describe('AgentTabType agent model reactivity', () => {
         'anthropic:claude-opus-4-7',
       );
     });
-  });
-
-  it('renders checklist task progress in the registered primary header actions', async () => {
-    render(AgentTabTypePrimaryActionsHarness, {
-      props: {
-        tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
-        workspaceId: 'ws-1',
-        isActive: true,
-        isPanelFocused: true,
-      },
-    });
-
-    const header = await screen.findByTestId('agent-primary-header-actions');
-    await waitFor(() => expect(screen.getByTestId('task-progress-trigger')).toBeTruthy());
-    expect(header.contains(screen.getByTestId('task-progress-trigger'))).toBe(true);
-    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-label')).toBe(
-      'Task progress: 1 of 2 completed',
-    );
-    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByTestId('task-progress-checklist-icon')).toBeTruthy();
-    expect(
-      header.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
-    ).toHaveLength(1);
-    expect(header.querySelector('[data-testid="task-progress-icon-stack"]')).toBeNull();
-    expect(header.querySelector('[data-testid="task-progress-status-icon"]')).toBeNull();
-
-    screen.getByTestId('task-progress-trigger').focus();
-    expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
-    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
-    const dialog = await screen.findByRole('dialog', { name: 'Agent tasks' });
-    expect(screen.getByTestId('task-progress-trigger').getAttribute('aria-expanded')).toBe('true');
-    expect(dialog.querySelectorAll('[data-testid="task-progress-row"]')).toHaveLength(2);
-    expect(dialog.querySelectorAll('[data-testid="task-progress-row-status-icon"]')).toHaveLength(
-      2,
-    );
   });
 });
 

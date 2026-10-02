@@ -1,9 +1,9 @@
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 import type {
   PreloadedStoreState as ToolkitPreloadedStoreState,
   StoreSelector,
   StoreState as ToolkitStoreState,
-} from '@augmentcode/themis/types';
+} from '@themislib/themis/types';
 import type { store as configuredStore } from './configured-store';
 
 // ============================================================================

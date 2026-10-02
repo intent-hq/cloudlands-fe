@@ -1,7 +1,12 @@
+import { initialState as principalInitialState } from '$store/renderer/slices/principal/principal-slice';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { derived, get, readable, writable } from 'svelte/store';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import type { ProviderModelsState } from '$store/renderer/slices/provider-models/provider-models-types';
 
 const mockModelState = vi.hoisted(() => ({
   defaultProviderId: 'auggie',
@@ -16,7 +21,7 @@ const mockModelState = vi.hoisted(() => ({
 // Seedable session-lifetime provider-models cache (providerModels slice state)
 // exposed through the store mock, for the cache-hydration tests. Empty by
 // default so every existing test keeps the uncached first-boot path.
-const mockProviderModelsState = vi.hoisted(() => ({
+const mockProviderModelsState = vi.hoisted((): ProviderModelsState => ({
   byProviderId: {} as Record<
     string,
     {
@@ -27,6 +32,8 @@ const mockProviderModelsState = vi.hoisted(() => ({
     }
   >,
   clearEpoch: 0,
+  requests: { idField: 'providerId', ids: [], map: {}, refsCount: {} },
+  observers: { idField: 'id', ids: [], map: {}, refsCount: {} },
 }));
 
 // Caller-role slices read by the real `selectIsWorkspaceCollaborator` gate
@@ -106,7 +113,7 @@ vi.mock('$store/renderer/store', async () => {
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   );
 
-  return createAppStoreMockModule({
+  const module = createAppStoreMockModule({
     state: () => ({
       providerCatalog: {
         ...providerCatalog,
@@ -128,25 +135,27 @@ vi.mock('$store/renderer/store', async () => {
       // catalog row) — mirror the mocked selectActiveProviderId default.
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: mockModelState.defaultProviderId },
-      providerModels: {
-        byProviderId: mockProviderModelsState.byProviderId,
-        byWorkspaceId: {
-          'ws-1': {
-            [mockModelState.availableModels[0]?.value.includes(':')
-              ? mockModelState.availableModels[0].value.split(':')[0]
-              : mockModelState.availableModelsProviderId]: {
-              models: mockModelState.availableModels,
-              fetchedAt: '2026-09-28T00:00:00Z',
-            },
-            ...mockProviderModelsState.byProviderId,
-          },
-        },
-        clearEpoch: mockProviderModelsState.clearEpoch,
-      },
+      // Selector-channel memoization needs immutable snapshots like real Redux.
+      providerModels: { ...mockProviderModelsState },
       ...mockRoleState.current,
     }),
     dispatch: mockSvelteDispatch,
+    // Match the production selector stream: observer actions must not emit an
+    // unchanged provider catalog and recursively trigger the observation effect.
+    dedupeEmits: true,
   });
+  // Use the real catalog reducer/coordinator behind the component's mocked
+  // unrelated selectors. Saga selectors read the same state as the readables.
+  const { select } = await import('redux-saga/effects');
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (selectorFunc) => {
+    const selector = createSelector(selectorFunc);
+    selector.effect = function* (...args) {
+      return yield select(selectorFunc, ...args);
+    };
+    return selector;
+  };
+  return module;
 });
 
 const providerWarnings$ = writable<Record<string, string>>({});
@@ -157,6 +166,16 @@ const applyReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const mockSvelteDispatch = vi.hoisted(() =>
   vi.fn((action: { type?: string; payload?: unknown }) => {
+    if (action.type?.startsWith('providerModels/') || action.type === 'hostExecution/invalidated') {
+      Object.assign(
+        mockProviderModelsState,
+        providerModelsReducer(
+          mockProviderModelsState,
+          action as Parameters<typeof providerModelsReducer>[1],
+        ),
+      );
+      (mockAppStore as unknown as { emitState: () => void }).emitState();
+    }
     if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
       const [payload] = action.payload as [
         { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
@@ -179,6 +198,7 @@ const mockSvelteDispatch = vi.hoisted(() =>
         return remaining;
       });
     }
+    catalogChannel?.put(action);
     return action;
   }),
 );
@@ -301,6 +321,14 @@ import {
 } from '$store/renderer/slices/model/model-utils';
 import { selectModel } from '$store/renderer/slices/model/model-slice';
 import { store as mockAppStore } from '$store/renderer/store';
+import {
+  providerModelsCacheCleared,
+  providerModelsReducer,
+  providerModelsRequested,
+  initialState as providerModelsInitialState,
+} from '$store/renderer/slices/provider-models/provider-models-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 import ModelPicker from './ModelPicker.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -309,7 +337,39 @@ import { warmImport } from '../../../../test/warm-import';
 warmImport(() => import('../../ui/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 
+let catalogChannel: ReturnType<typeof stdChannel> | undefined;
+let catalogTask: Task;
+beforeEach(() => {
+  mockRoleState.current = withLegacyPrincipal(
+    mockRoleState.reset(),
+  ) as unknown as typeof mockRoleState.current;
+  mockRoleState.current.workspace.workspaces = {
+    idField: 'id',
+    ids: ['ws-1'],
+    map: { 'ws-1': { id: 'ws-1', myRole: 'owner' } },
+  };
+  catalogChannel = stdChannel();
+  catalogTask = runSaga(
+    {
+      channel: catalogChannel,
+      dispatch: mockSvelteDispatch,
+      getState: () => mockAppStore.state,
+      context: {
+        reduxStore: {
+          getState: () => mockAppStore.state,
+          subscribe: (listener: () => void) => mockAppStore.getReadableState().subscribe(listener),
+        },
+      },
+    },
+    modelReloadSaga,
+  );
+});
+
 afterEach(() => {
+  cleanup();
+  catalogTask.cancel();
+  catalogChannel = undefined;
+  Object.assign(mockProviderModelsState, providerModelsInitialState);
   availableProviderOverride$.set(null);
   enabledProvidersMap$.set({});
   mockModelState.availableModelsProviderId = 'auggie';
@@ -600,11 +660,52 @@ describe('ModelPicker guest / collaborator lock', () => {
 
   it('unsettled window identity: locks (fails closed)', () => {
     mockRoleState.current.guestSessions.hasReceivedList = false;
+    Object.assign(mockRoleState.current, { principal: principalInitialState });
     withWorkspaceRole('owner');
 
     renderAgentPicker();
 
     expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('member with canManage can pick its specialist provider while host administration remains unavailable', async () => {
+    withWorkspaceRole('collaborator');
+    const state = withLegacyPrincipal(mockRoleState.current);
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    state.workspace.workspaces.map['ws-1'].canManage = true;
+    state.workspace.loadedBackendId = state.connections.windowBackendId;
+    state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
+    Object.assign(mockRoleState.current, state);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'codex' });
+    activeProviderId$.set('claude-code');
+    enabledProviderIds$.set(['claude-code', 'codex']);
+    availableProviderOverride$.set(['claude-code', 'codex']);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models: [
+        {
+          value: providerId === 'codex' ? 'review-model' : 'host-default-model',
+          label: providerId === 'codex' ? 'Host reviewer' : 'Host default',
+        },
+      ],
+    }));
+    const { agentClient } = await import('$features/agent/agent.client');
+    renderAgentPicker('review-model');
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(button);
+    await fireEvent.click(await screen.findByRole('option', { name: /Host reviewer/ }));
+    await waitFor(() =>
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'review-model',
+        'ws-1',
+        'codex',
+      ),
+    );
+    expect(dispatchedTypes()).not.toContain('model/selectModel');
+    expect(screen.queryByText('Open provider settings')).toBeNull();
   });
 
   it('owner window: the picker stays interactive', async () => {
@@ -1215,7 +1316,7 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    expect(trigger.textContent).toContain('GPT-5.6-Sol');
+    await waitFor(() => expect(trigger.textContent).toContain('GPT-5.6-Sol'));
     await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · Medium')).toBeTruthy());
     expect(trigger.textContent).not.toContain('Medium');
     expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('1');
@@ -1813,10 +1914,14 @@ describe('ModelPicker combined reasoning mode', () => {
   });
 
   it('keeps a force-refreshed provider ahead of overlapping catalog fetches', async () => {
-    mockProviderModelsState.byProviderId = {
-      codex: {
-        models: [{ value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Cached model' }],
-        fetchedAt: new Date().toISOString(),
+    mockProviderModelsState.byWorkspaceId = {
+      'ws-1': {
+        codex: {
+          models: [
+            { value: 'codex:gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Cached model' },
+          ],
+          fetchedAt: new Date().toISOString(),
+        },
       },
     };
     let resolveCatalog!: (result: {
@@ -1855,6 +1960,9 @@ describe('ModelPicker combined reasoning mode', () => {
       },
     });
 
+    // Cached membership does not revalidate itself; explicitly read before
+    // forcing refresh to exercise overlapping catalog requests.
+    mockAppStore.dispatch(providerModelsRequested('codex', 'background', 'ws-1'));
     await waitFor(() => {
       expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
         workspaceId: 'ws-1',
@@ -1928,7 +2036,7 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    expect(trigger.textContent).toContain('GPT-5.6-Sol');
+    await waitFor(() => expect(trigger.textContent).toContain('GPT-5.6-Sol'));
     expect(trigger.textContent).not.toContain('Medium');
     expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeValue).toBe('1');
 
@@ -1956,7 +2064,7 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    expect(trigger.textContent).toContain('GPT-5.6-Sol');
+    await waitFor(() => expect(trigger.textContent).toContain('GPT-5.6-Sol'));
     await waitFor(() => expect(screen.getByLabelText('GPT-5.6-Sol · Auto')).toBeTruthy());
     expect(trigger.textContent).not.toContain('Auto');
     expect(screen.getByTestId('model-reasoning-effort-gauge').dataset.gaugeCentered).toBe('true');
@@ -2181,22 +2289,8 @@ describe('ModelPicker multi-provider mode', () => {
       { value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' },
     ];
     modelsByProvider.codex = [];
-    // Force the component to re-fetch by changing the provider list (busts the
-    // dedup cache inside fetchAllProviderModels which skips when the sorted key
-    // matches the previous fetch). Use an intermediate list whose debounced
-    // fetch is observable — ['codex'] sorts to a key different from
-    // 'auggie,codex', so the fetch actually runs — and wait for it, proving
-    // the dedup key moved off 'auggie,codex' before restoring the full list.
-    // A fixed sleep here races the debounce: if the intermediate timer is
-    // cleared by the re-set before firing, the dedup check would skip the
-    // refetch entirely and the final waitFor could never pass.
-    enabledProviderIds$.set(['codex']);
-    await waitFor(() => {
-      expect(vi.mocked(getModelsForProvider)).toHaveBeenCalledWith('codex');
-    });
-
-    vi.mocked(getModelsForProvider).mockClear();
-    enabledProviderIds$.set(['auggie', 'codex']);
+    // Only real invalidation, not membership churn, refreshes settled catalogs.
+    mockAppStore.dispatch(providerModelsCacheCleared());
 
     await rerender({
       selectedModel: 'codex:missing-model',
@@ -2215,6 +2309,196 @@ describe('ModelPicker multi-provider mode', () => {
       vi.mocked(getModelsForProvider).mock.calls.filter(([provider]) => provider === 'auggie'),
     ).toHaveLength(1);
   });
+
+  it.each(['silentRetry', 'retry'] as const)(
+    'keeps a terminal error after a failed silent fallback and recovers via %s',
+    async (recoveryMode) => {
+      mockModelState.availableModels = [];
+      enabledProviderIds$.set(['auggie', 'codex']);
+      let rejectSilent!: (reason: Error) => void;
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation((providerId) =>
+        providerId !== 'auggie' ||
+        vi.mocked(getModelsForProviderForLoadingState).mock.calls.filter(([id]) => id === 'auggie')
+          .length === 1
+          ? Promise.reject(new Error('background catalog unavailable'))
+          : new Promise((_resolve, reject) => {
+              rejectSilent = reject;
+            }),
+      );
+      const onModelChange = vi.fn();
+      render(ModelPicker, {
+        props: {
+          selectedModel: 'auggie:missing-model',
+          silentFallback: true,
+          showDefaultOption: true,
+          onModelChange,
+          portal: false,
+        },
+      });
+      await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(3));
+      const trigger = screen.getByRole('button');
+      await fireEvent.click(trigger);
+      let search = screen.getByRole('searchbox', { name: 'Search options' });
+      // The silent attempt must not replace the last actionable error with
+      // a loading skeleton or remove the inheritance option while in flight.
+      expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
+      expect(screen.getByText(/background catalog unavailable/)).toBeTruthy();
+      expect(onModelChange).not.toHaveBeenCalled();
+      rejectSilent(new Error('silent catalog unavailable'));
+      const { notify } = await import('$lib/components/patterns/notify');
+      await waitFor(() => expect(notify.warning).toHaveBeenCalledOnce());
+      const retry = await screen.findByRole('button', { name: 'Retry' });
+      expect(retry.hasAttribute('disabled')).toBe(false);
+      expect(screen.queryByRole('option')).toBeNull();
+      expect(screen.getByText(/background catalog unavailable/)).toBeTruthy();
+      expect(screen.queryByText(/silent catalog unavailable/)).toBeNull();
+      // Searching an entirely failed catalog must keep the actionable error,
+      // not replace it with generic no-results copy.
+      await fireEvent.input(search, { target: { value: 'missing-model' } });
+      expect(screen.getByRole('button', { name: 'Retry' })).toBe(retry);
+      await fireEvent.keyDown(search, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      await fireEvent.click(trigger);
+      search = screen.getByRole('searchbox', { name: 'Search options' });
+      await waitFor(() => expect(document.activeElement).toBe(search));
+      expect((await screen.findByRole('button', { name: 'Retry' })).hasAttribute('disabled')).toBe(
+        false,
+      );
+
+      const models = [{ value: 'auggie:recovered', label: 'Recovered model' }];
+      if (recoveryMode === 'silentRetry') {
+        vi.mocked(getModelsForProviderForLoadingState).mockResolvedValueOnce({ models });
+        mockAppStore.dispatch(providerModelsRequested('auggie', 'silentRetry'));
+      } else {
+        vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+          models: providerId === 'auggie' ? models : [],
+        }));
+        await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(5));
+      }
+      await waitFor(() =>
+        expect(onModelChange).toHaveBeenCalledWith('auggie:recovered', {
+          providerId: 'auggie',
+          modelId: 'recovered',
+        }),
+      );
+      await fireEvent.input(search, { target: { value: '' } });
+      expect(await screen.findByRole('option', { name: /Recovered model/ })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(
+        recoveryMode === 'silentRetry' ? 4 : 5,
+      );
+    },
+  );
+
+  it('keeps another provider selectable through a failed silent fallback', async () => {
+    mockModelState.availableModels = [];
+    enabledProviderIds$.set(['auggie', 'codex']);
+    let rejectSilent!: (reason: Error) => void;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation((providerId) => {
+      if (providerId !== 'auggie')
+        return Promise.resolve({ models: [{ value: 'codex:working', label: 'Working model' }] });
+      if (
+        vi.mocked(getModelsForProviderForLoadingState).mock.calls.filter(([id]) => id === 'auggie')
+          .length === 1
+      )
+        return Promise.reject(new Error('background catalog unavailable'));
+      return new Promise((_resolve, reject) => {
+        rejectSilent = reject;
+      });
+    });
+    const onModelChange = vi.fn();
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:missing-model',
+        silentFallback: true,
+        showDefaultOption: true,
+        onModelChange,
+        portal: false,
+      },
+    });
+    await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(3));
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.keyDown(screen.getByRole('tab', { name: /Auggie/ }), { key: 'ArrowDown' });
+    const codexTab = screen.getByRole('tab', { name: /Codex/ });
+    expect(codexTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(codexTab);
+    expect(
+      (await screen.findByRole('option', { name: /Working model/ })).getAttribute('aria-disabled'),
+    ).not.toBe('true');
+    rejectSilent(new Error('silent catalog unavailable'));
+    const { notify } = await import('$lib/components/patterns/notify');
+    await waitFor(() => expect(notify.warning).toHaveBeenCalledOnce());
+    expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
+    const search = screen.getByRole('searchbox', { name: 'Search options' });
+    await fireEvent.input(search, { target: { value: 'unmatched-model' } });
+    expect(await screen.findByText(/No results for/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    await fireEvent.input(search, { target: { value: '' } });
+    await fireEvent.click(screen.getByRole('option', { name: /Working model/ }));
+    expect(onModelChange).toHaveBeenCalledWith('codex:working', {
+      providerId: 'codex',
+      modelId: 'working',
+    });
+    expect(vi.mocked(getModelsForProviderForLoadingState).mock.calls).toEqual([
+      ['auggie'],
+      ['codex'],
+      ['auggie'],
+    ]);
+  });
+
+  it.each([false, true])(
+    'waits for every provider to settle before replacing groups and preserves cached success (%s)',
+    async (hasCachedModels) => {
+      mockModelState.availableModels = [];
+      enabledProviderIds$.set(['auggie', 'codex']);
+      if (hasCachedModels) {
+        mockProviderModelsState.byProviderId = {
+          codex: {
+            models: [{ value: 'codex:cached', label: 'Cached model' }],
+            fetchedAt: new Date().toISOString(),
+          },
+        };
+      }
+      let rejectPending!: (reason: Error) => void;
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation((providerId) =>
+        providerId === 'auggie'
+          ? Promise.reject(new Error('background catalog unavailable'))
+          : new Promise((_resolve, reject) => {
+              rejectPending = reject;
+            }),
+      );
+      const onModelChange = vi.fn();
+      render(ModelPicker, {
+        props: { showDefaultOption: true, onModelChange, portal: false },
+      });
+      // A cached provider is already settled; explicitly refresh it to retain
+      // coverage of cached options surviving a pending/failed refresh.
+      if (hasCachedModels) mockAppStore.dispatch(providerModelsRequested('codex', 'refresh'));
+      await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(2));
+      await fireEvent.click(screen.getByRole('button'));
+      expect(
+        await screen.findByRole('option', { name: /background catalog unavailable/ }),
+      ).toBeTruthy();
+      expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+
+      rejectPending(new Error('second catalog unavailable'));
+      await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
+      if (hasCachedModels) {
+        await fireEvent.click(await screen.findByRole('option', { name: /Cached model/ }));
+        expect(onModelChange).toHaveBeenCalledWith('codex:cached', {
+          providerId: 'codex',
+          modelId: 'cached',
+        });
+      } else {
+        expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
+        expect(screen.queryByRole('option')).toBeNull();
+        expect(onModelChange).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it('keeps working provider models selectable while showing a failed provider warning', async () => {
     vi.mocked(getModelsForProvider).mockImplementation((providerId) => {
@@ -2963,7 +3247,7 @@ describe('ModelPicker selected-model loading state', () => {
     mockModelState.availableModelsProviderId = 'auggie';
   });
 
-  it('shows a loader instead of the warning while availability has not hydrated yet, then clears once the model arrives', async () => {
+  it('keeps the trigger quiet while availability hydrates, then shows the resolved model', async () => {
     // Regression (transient warning on refresh): with the availability list not
     // hydrated, fetchAllProviderModels([]) marks the catalog "loaded" while
     // empty — the selected model must read as still-loading, not unavailable.
@@ -2981,17 +3265,17 @@ describe('ModelPicker selected-model loading state', () => {
     await new Promise((r) => setTimeout(r, 100));
 
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
-    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
 
     // Availability hydrates and the provider's catalog resolves with the model.
     hasCheckedOnce$.set(true);
     availableProviderOverride$.set(['auggie']);
 
     await waitFor(() => {
-      expect(screen.queryByRole('status')).toBeNull();
+      expect(trigger.textContent).toContain('Sonnet 4.6');
     });
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
-    expect(trigger.textContent).toContain('Sonnet 4.6');
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('treats a bare selected model as available when its provider catalog uses a compound id', async () => {
@@ -3015,6 +3299,115 @@ describe('ModelPicker selected-model loading state', () => {
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
   });
 
+  it.each(['error', 'empty-warning', 'stale'] as const)(
+    'preserves the selected model and effort through a transient %s catalog and recovery',
+    async (failure) => {
+      const { agentClient } = await import('$features/agent/agent.client');
+      const selectedModel = 'auggie:sonnet4.6';
+      const onModelChange = vi.fn();
+      const onReasoningChange = vi.fn();
+      reasoningEffort$.set('high');
+      if (failure === 'error') {
+        vi.mocked(getModelsForProviderForLoadingState).mockRejectedValue(
+          new Error('Temporary catalog failure'),
+        );
+      } else {
+        vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+          models: failure === 'stale' ? [{ value: 'other', label: 'Older model' }] : [],
+          warning: 'Temporary catalog failure',
+          stale: failure === 'stale',
+        });
+      }
+      render(ModelPicker, {
+        props: {
+          selectedModel,
+          agentId: 'test-agent',
+          workspaceId: 'ws-1',
+          onModelChange,
+          showReasoning: true,
+          reasoningEffort: 'high',
+          onReasoningChange,
+          portal: false,
+        },
+      });
+      const trigger = screen.getByRole('button');
+      await waitFor(() =>
+        expect(mockProviderModelsState.requestsByWorkspaceId?.['ws-1']?.map.auggie.status).toBe(
+          failure === 'error' ? 'error' : 'success',
+        ),
+      );
+      await tick();
+      expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+      expect(onModelChange).not.toHaveBeenCalled();
+      expect(agentClient.setModel).not.toHaveBeenCalled();
+      expect(onReasoningChange).not.toHaveBeenCalled();
+      await fireEvent.click(trigger);
+      expect(screen.queryByText(/is no longer available/)).toBeNull();
+
+      vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+        models: [{ value: selectedModel, label: 'Sonnet 4.6', effortLevels: ['low', 'high'] }],
+      });
+      if (failure === 'stale') {
+        // The production reconnect seeder clears this cache; mounted observers recover.
+        mockAppStore.dispatch(providerModelsCacheCleared());
+      } else {
+        const retry =
+          screen.queryByRole('button', { name: 'Retry' }) ??
+          screen.getByRole('button', { name: /Refresh .* models/ });
+        await fireEvent.click(retry);
+      }
+      await waitFor(() => expect(trigger.textContent).toContain('Sonnet 4.6'));
+      expect(await screen.findByRole('option', { name: /Sonnet 4.6/ })).toBeTruthy();
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(2);
+      expect(getModelsForProviderForLoadingState).toHaveBeenLastCalledWith('auggie', {
+        workspaceId: 'ws-1',
+        ...(failure === 'stale' ? {} : { forceRefresh: true }),
+      });
+      expect(onModelChange).not.toHaveBeenCalled();
+      expect(agentClient.setModel).not.toHaveBeenCalled();
+      expect(onReasoningChange).not.toHaveBeenCalled();
+      expect(get(reasoningEffort$)).toBe('high');
+    },
+  );
+
+  it('keeps an inconclusive silent retry bounded without selecting its older fallback model', async () => {
+    const onModelChange = vi.fn();
+    vi.mocked(getModelsForProviderForLoadingState)
+      .mockRejectedValueOnce(new Error('Temporary catalog failure'))
+      .mockResolvedValue({
+        models: [{ value: 'older', label: 'Older model' }],
+        warning: 'Last-good catalog after probe failure',
+        stale: true,
+      });
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:sonnet4.6',
+        agentId: 'test-agent',
+        workspaceId: 'ws-1',
+        showDefaultOption: true,
+        silentFallback: true,
+        onModelChange,
+        portal: false,
+      },
+    });
+    await waitFor(() =>
+      expect(mockProviderModelsState.byWorkspaceId?.['ws-1']?.auggie?.stale).toBe(true),
+    );
+    const trigger = screen.getByRole('button');
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('option', { name: /Older model/ })).toBeTruthy();
+    expect(screen.queryByText(/is no longer available/)).toBeNull();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(2);
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6' }],
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /Refresh .* models/ }));
+    expect(await screen.findByRole('option', { name: /Sonnet 4.6/ })).toBeTruthy();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(3);
+  });
+
   it('shows the warning once the selected model provider has settled without the model', async () => {
     hasCheckedOnce$.set(false);
     availableProviderOverride$.set([]);
@@ -3029,7 +3422,7 @@ describe('ModelPicker selected-model loading state', () => {
     await new Promise((r) => setTimeout(r, 100));
 
     expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
-    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
 
     hasCheckedOnce$.set(true);
     availableProviderOverride$.set(['auggie']);
@@ -4325,6 +4718,63 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
     document.body.innerHTML = '';
   });
 
+  it.each(['Balanced', 'Fast', 'Deep'])(
+    'searches and pins %s from the saga catalog, then restores inheritance without global writes',
+    async (label) => {
+      const models = [
+        { value: 'balanced', label: 'Balanced', isDefault: true },
+        { value: 'fast', label: 'Fast' },
+        { value: 'deep', label: 'Deep' },
+      ];
+      enabledProviderIds$.set(['codex']);
+      activeProviderId$.set('codex');
+      mockModelState.defaultProviderId = 'codex';
+      mockModelState.availableModels = [];
+      mockModelState.availableModelsProviderId = 'codex';
+      vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models });
+      const onModelChange = vi.fn();
+      render(ModelPicker, {
+        props: {
+          selectedModel: null,
+          defaultModelId: 'balanced',
+          showDefaultOption: true,
+          onModelChange,
+          portal: false,
+        },
+      });
+
+      await fireEvent.click(await screen.findByRole('button', { name: 'Default (Balanced)' }));
+      const inherited = await screen.findByRole('option', { name: /Default model/ });
+      expect(inherited.getAttribute('aria-selected')).toBe('true');
+      expect(onModelChange).not.toHaveBeenCalled();
+      await fireEvent.input(screen.getByRole('searchbox', { name: 'Search options' }), {
+        target: { value: label },
+      });
+      await fireEvent.click(await screen.findByRole('option', { name: label }));
+      await waitFor(() =>
+        expect(onModelChange).toHaveBeenCalledExactlyOnceWith(label.toLowerCase(), {
+          providerId: 'codex',
+          modelId: label.toLowerCase(),
+        }),
+      );
+
+      await fireEvent.click(screen.getByRole('button', { name: label }));
+      await fireEvent.click(await screen.findByRole('option', { name: /Default model/ }));
+      await waitFor(() => expect(onModelChange).toHaveBeenLastCalledWith(''));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Default (Balanced)' }));
+      expect(
+        (await screen.findByRole('option', { name: /Default model/ })).getAttribute(
+          'aria-selected',
+        ),
+      ).toBe('true');
+      expect(mockSvelteDispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+        selectModel.type,
+      );
+      const { agentClient } = await import('$features/agent/agent.client');
+      expect(agentClient.setModel).not.toHaveBeenCalled();
+    },
+  );
+
   it('renders the inherit state with the daemon resolvedModel preview on the trigger (no explicit pin)', async () => {
     render(ModelPicker, {
       props: {
@@ -4430,7 +4880,7 @@ describe('ModelPicker specialist inherit state (default-option plumbing)', () =>
   });
 });
 
-describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
+describe('ModelPicker cache hydration and explicit revalidation', () => {
   it('uses live Antigravity labels and preserves exact compound ids without effort controls', async () => {
     enabledProviderIds$.set(['antigravity']);
     activeProviderId$.set('antigravity');
@@ -4464,18 +4914,20 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     document.body.innerHTML = '';
   });
 
-  function seedCache() {
-    mockProviderModelsState.byProviderId = {
+  function seedCache(workspaceId?: string) {
+    const entries = {
       auggie: {
         models: [{ value: 'sonnet4.6', label: 'Claude Sonnet 4.6', description: 'Smart model' }],
         fetchedAt: new Date().toISOString(),
       },
     };
+    if (workspaceId) mockProviderModelsState.byWorkspaceId = { [workspaceId]: entries };
+    else mockProviderModelsState.byProviderId = entries;
   }
 
-  it('renders the cached model label immediately with no skeleton while the fetch is pending', async () => {
-    seedCache();
-    // Revalidation fetch never settles — only the cache can resolve the label.
+  it('renders the cached label without a remount fetch and keeps it during explicit refresh', async () => {
+    seedCache('ws-1');
+    // The explicit refresh never settles — only the cache can resolve the label.
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(() => new Promise(() => {}));
 
     render(ModelPicker, {
@@ -4494,14 +4946,18 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
     expect(button.querySelector('.animate-pulse')).toBeNull();
     expect(button.querySelector('[role="status"]')).toBeNull();
 
-    // The background revalidation fetch did start (stale-while-revalidate).
+    await new Promise((r) => setTimeout(r, 100));
+    expect(getModelsForProviderForLoadingState).not.toHaveBeenCalled();
+    await fireEvent.click(button);
+    await fireEvent.click(await screen.findByRole('button', { name: /Refresh .* models/ }));
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie', {
+        forceRefresh: true,
         workspaceId: 'ws-1',
       });
     });
     await new Promise((r) => setTimeout(r, 0));
-    // Still resolved after the debounced background revalidation kicked off.
+    // Still resolved while the user's explicit refresh is pending.
     expect(button.textContent).toContain('Claude Sonnet 4.6');
     expect(button.querySelector('.animate-pulse')).toBeNull();
     expect(button.querySelector('[role="status"]')).toBeNull();
@@ -4598,30 +5054,77 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
       },
     });
 
-    // The initial background revalidation settles.
-    await waitFor(() => {
-      expect(
-        vi
-          .mocked(getModelsForProviderForLoadingState)
-          .mock.calls.filter(([pid]) => pid === 'auggie'),
-      ).toHaveLength(1);
-    });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(getModelsForProviderForLoadingState).not.toHaveBeenCalled();
 
     // Backend reconnect: the seeder dispatches providerModelsCacheCleared and
     // the map goes empty (and the clear epoch bumps). The enabled-provider
-    // ids are UNCHANGED, so the fetch-effect dedup key alone would skip —
-    // the picker must still revalidate off the cache-clear signal.
-    mockProviderModelsState.byProviderId = {};
-    mockProviderModelsState.clearEpoch = 1;
-    (mockAppStore as unknown as { emitState: () => void }).emitState();
+    // ids are UNCHANGED; invalidation must bypass the membership guard.
+    mockAppStore.dispatch(providerModelsCacheCleared());
 
     await waitFor(() => {
-      expect(
-        vi
-          .mocked(getModelsForProviderForLoadingState)
-          .mock.calls.filter(([pid]) => pid === 'auggie'),
-      ).toHaveLength(2);
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie');
     });
+  });
+
+  it('refreshes a mounted workspace picker after host-context invalidation with unchanged providers', async () => {
+    vi.useFakeTimers();
+    try {
+      seedCache('ws-1');
+      vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+        models: [{ value: 'sonnet4.6', label: 'Current host Sonnet' }],
+      });
+      render(ModelPicker, {
+        props: { selectedModel: 'sonnet4.6', workspaceId: 'ws-1', portal: false },
+      });
+      const trigger = screen.getByRole('button');
+      expect(trigger.textContent).toContain('Claude Sonnet 4.6');
+      await tick();
+      // Complete the real membership debounce before invalidation, so an
+      // initial observation cannot accidentally rescue the missing reload.
+      await vi.advanceTimersByTimeAsync(50);
+      expect(getModelsForProviderForLoadingState).not.toHaveBeenCalled();
+      const observers = mockProviderModelsState.observers;
+      mockAppStore.dispatch(hostExecutionInvalidated());
+      await vi.advanceTimersByTimeAsync(0);
+      await tick();
+      expect(trigger.textContent).toContain('Current host Sonnet');
+      expect(mockProviderModelsState.observers).toBe(observers);
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie', {
+        workspaceId: 'ws-1',
+      });
+      expect(trigger.querySelector('.animate-pulse')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('replaces a held mounted workspace catalog after host-context invalidation without stale rows', async () => {
+    const releases: Array<(value: { models: { value: string; label: string }[] }) => void> = [];
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    render(ModelPicker, {
+      props: { selectedModel: 'sonnet4.6', workspaceId: 'ws-1', portal: false },
+    });
+    const trigger = screen.getByRole('button');
+    await waitFor(() => expect(releases).toHaveLength(1));
+    const observers = mockProviderModelsState.observers;
+    mockAppStore.dispatch(hostExecutionInvalidated());
+    mockAppStore.dispatch(hostExecutionInvalidated());
+    expect(releases).toHaveLength(1);
+    releases[0]({ models: [{ value: 'sonnet4.6', label: 'Obsolete host Sonnet' }] });
+    await waitFor(() => expect(releases).toHaveLength(2));
+    expect(trigger.textContent).not.toContain('Obsolete host Sonnet');
+    expect(mockProviderModelsState.byWorkspaceId?.['ws-1']?.auggie).toBeUndefined();
+    releases[1]({ models: [{ value: 'sonnet4.6', label: 'Current host Sonnet' }] });
+    await waitFor(() => expect(trigger.textContent).toContain('Current host Sonnet'));
+    expect(mockProviderModelsState.observers).toBe(observers);
+    expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(2);
+    expect(trigger.querySelector('.animate-pulse')).toBeNull();
   });
 
   it('discards a pre-clear response entirely (no local state, no write-through)', async () => {
@@ -4697,16 +5200,16 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
 
     // Backend reconnect: the seeder dispatches providerModelsCacheCleared.
     // The map stays {} (empty→empty) — only the epoch moves.
-    mockProviderModelsState.clearEpoch = 1;
-    (mockAppStore as unknown as { emitState: () => void }).emitState();
-
-    // A replacement fetch starts despite unchanged provider ids + empty map.
-    await waitFor(() => expect(resolvers.length).toBeGreaterThan(1));
+    mockAppStore.dispatch(providerModelsCacheCleared());
+    // Refetches are single-flight: the trailing replacement waits for the old
+    // request to settle, rather than overlapping a second daemon probe.
+    expect(resolvers).toHaveLength(1);
 
     // The stale pre-reconnect response settles late — fully discarded.
     resolvers[0]({
       models: [{ value: 'stale-model', label: 'Stale Model', description: 'Pre-reconnect' }],
     });
+    await waitFor(() => expect(resolvers).toHaveLength(2));
     await new Promise((r) => setTimeout(r, 50));
     expect(
       mockSvelteDispatch.mock.calls.find(
@@ -4734,13 +5237,14 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
 
   it('hydrates the agent-provider path (disabled effective provider) from the cache', async () => {
     // Locked/agent picker whose provider (codex) is no longer enabled: the
-    // all-provider fetch prunes cached codex rows, so only the per-agent
-    // path's own cache hydration can resolve the label while the
-    // never-settling revalidation is pending.
-    mockProviderModelsState.byProviderId = {
-      codex: {
-        models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
-        fetchedAt: new Date().toISOString(),
+    // per-agent path retains its cached label while the uncached enabled
+    // provider's never-settling request is pending.
+    mockProviderModelsState.byWorkspaceId = {
+      'ws-1': {
+        codex: {
+          models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+          fetchedAt: new Date().toISOString(),
+        },
       },
     };
     mockModelState.selectedModel = 'codex:gpt-5-codex';
@@ -4757,14 +5261,10 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
       },
     });
 
-    // Past the debounce: the 'auggie' call proves the all-provider fetch ran
-    // (it prunes codex from its local map synchronously before fetching), and
-    // the 'codex' call proves the agent-provider revalidation still fired.
+    // Past the debounce: only the missing provider loads, while the cached
+    // agent-provider catalog remains usable without another request.
     await waitFor(() => {
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
-        workspaceId: 'ws-1',
-      });
-      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex', {
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('auggie', {
         workspaceId: 'ws-1',
       });
     });
@@ -4820,7 +5320,7 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
   it('writes the silent-fallback retry fetch through to the cache slice', async () => {
     // The selected model's provider (auggie) has no models while another
     // enabled provider does, so the silent-fallback retry
-    // (getModelsForProvider) is the path that recovers auggie's models — it
+    // is the path that recovers auggie's models — it
     // must write through like the other fetch paths.
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
       if (providerId === 'codex') {
@@ -4828,7 +5328,14 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
           models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
         };
       }
-      return { models: [] };
+      return {
+        models:
+          vi
+            .mocked(getModelsForProviderForLoadingState)
+            .mock.calls.filter(([id]) => id === 'auggie').length === 1
+            ? []
+            : [{ value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' }],
+      };
     });
     vi.mocked(getModelsForProvider).mockResolvedValue([
       { value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' },

@@ -12,6 +12,7 @@
 //
 // Usage: intent-keychain-helper [--service <name>] list
 //        intent-keychain-helper [--service <name>] upsert <account>   ({"payload": "..."} on stdin)
+//        intent-keychain-helper [--service <name>] insert <account>   (create-only; duplicate bytes returned)
 //        intent-keychain-helper [--service <name>] delete <account> [access-group]
 //
 // `--service` selects the keychain service the subcommand operates on and
@@ -27,6 +28,7 @@
 //            ("group" per item and top-level "sharedGroup" appear only when
 //             resolvable; callers use them to migrate legacy default-group items)
 //   upsert:  {"ok": true}
+//   insert:  {"ok": true, "inserted": true | false, "payload": "..."}
 //   delete:  {"ok": true}
 //   failure: {"error": "<code>", "message": "...", "status": <OSStatus>} with exit code 1
 // Error codes:
@@ -157,7 +159,12 @@ func runList() -> Never {
         guard let account = row[kSecAttrAccount as String] as? String,
             let data = row[kSecValueData as String] as? Data,
             let payload = String(data: data, encoding: .utf8)
-        else { continue }
+        else {
+            if service == "com.cloudlands.intent.guest-sessions" {
+                fail("keychain-error", "list: unreadable item; complete listing unavailable")
+            }
+            continue
+        }
         var item: [String: Any] = ["account": account, "payload": payload]
         if let modified = row[kSecAttrModificationDate as String] as? Date {
             item["modifiedAtMs"] = Int(modified.timeIntervalSince1970 * 1000)
@@ -204,6 +211,34 @@ func runUpsert(account: String) -> Never {
     emit(["ok": true], exitCode: 0)
 }
 
+/// Removal facts are immutable. A duplicate must never reach SecItemUpdate.
+func runInsert(account: String) -> Never {
+    let payloadData = readStdinPayload()
+    // Without the shared entitlement, SecItemAdd's default is the first access
+    // group. Use that exact group for both the insert and duplicate read.
+    let writeGroup = sharedGroup ?? entitlementAccessGroups().first
+    var add = baseQuery(account: account, group: writeGroup)
+    add[kSecAttrSynchronizable as String] = true
+    add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+    add[kSecValueData as String] = payloadData
+    let status = SecItemAdd(add as CFDictionary, nil)
+    if status == errSecSuccess {
+        emit(["ok": true, "inserted": true, "payload": String(data: payloadData, encoding: .utf8)!], exitCode: 0)
+    }
+    guard status == errSecDuplicateItem else { failKeychain(status, "insert") }
+    var query = baseQuery(account: account, group: writeGroup)
+    query[kSecAttrSynchronizable as String] = true
+    query[kSecReturnData as String] = true
+    query[kSecMatchLimit as String] = kSecMatchLimitOne
+    var existing: CFTypeRef?
+    let readStatus = SecItemCopyMatching(query as CFDictionary, &existing)
+    guard readStatus == errSecSuccess else { failKeychain(readStatus, "insert duplicate read") }
+    guard let data = existing as? Data, let payload = String(data: data, encoding: .utf8) else {
+        fail("keychain-error", "insert: unreadable duplicate")
+    }
+    emit(["ok": true, "inserted": false, "payload": payload], exitCode: 0)
+}
+
 /// `group` scopes the delete to one access group (migration removes only the
 /// legacy default-group copy); nil deletes the account from every group.
 func runDelete(account: String, group: String?) -> Never {
@@ -214,7 +249,7 @@ func runDelete(account: String, group: String?) -> Never {
     emit(["ok": true], exitCode: 0)
 }
 
-let usage = "usage: intent-keychain-helper [--service <name>] <list | upsert <account> | delete <account> [access-group]>"
+let usage = "usage: intent-keychain-helper [--service <name>] <list | upsert <account> | insert <account> | delete <account> [access-group]>"
 guard let parsed = parseServiceOption(Array(CommandLine.arguments.dropFirst())) else {
     fail("bad-arguments", usage)
 }
@@ -236,6 +271,11 @@ case "upsert":
         fail("bad-arguments", "usage: intent-keychain-helper upsert <account> ({\"payload\": \"...\"} on stdin)")
     }
     runUpsert(account: arguments[1])
+case "insert":
+    guard arguments.count == 2, !arguments[1].isEmpty else {
+        fail("bad-arguments", "usage: intent-keychain-helper insert <account>")
+    }
+    runInsert(account: arguments[1])
 case "delete":
     guard arguments.count == 2 || arguments.count == 3, !arguments[1].isEmpty else {
         fail("bad-arguments", "usage: intent-keychain-helper delete <account> [access-group]")

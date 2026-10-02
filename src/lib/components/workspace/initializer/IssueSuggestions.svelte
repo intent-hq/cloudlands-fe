@@ -318,6 +318,11 @@
 </script>
 
 <script lang="ts">
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+  const hostMember$ = selectIsHostMember();
+  const connection$ = selectPrincipalConnectionContext();
+
   /* eslint-disable max-lines */
   import { onMount, onDestroy, tick, untrack } from 'svelte';
   import { slide } from '$lib/motion';
@@ -712,7 +717,7 @@
 
   // Watch for GitHub auth state changes (e.g., after user connects via Settings)
   $effect(() => {
-    const storeIsAuth = $githubAuthIsAuthenticated$;
+    const storeIsAuth = $hostMember$ || $githubAuthIsAuthenticated$;
     if (storeIsAuth && !isGitHubAuthenticated) {
       // Auth completed (e.g., user connected via Settings)
       if (workspaceId === undefined) isGitHubAuthenticated = true;
@@ -1125,9 +1130,10 @@
       // Auth initialization is handled by the components that manage GitHub auth
       // (GitHubAuthBanner, GitHubAuthConnection, etc.).
       const authenticated =
-        workspaceId === undefined
+        selectIsHostMember.select(appStore.state) ||
+        (workspaceId === undefined
           ? selectGitHubAuthIsAuthenticated.select(appStore.state)
-          : await githubAuthClient.isAuthenticated(context.workspaceId);
+          : await githubAuthClient.isAuthenticated(context.workspaceId));
       if (!context.isCurrent()) return;
       isGitHubAuthenticated = authenticated;
 
@@ -1688,6 +1694,7 @@
     const authed = isGitHubAuthenticated;
     workspaceId;
     connectionRevision;
+    $connection$;
     // Only reload if we have both and are authenticated
     if (owner && repo && authed) {
       // Use untrack to prevent infinite loop - the load functions update state
@@ -1695,6 +1702,8 @@
       untrack(() => {
         // Search the primary repo alone until the related set is known;
         // a session-cached set applies immediately.
+        githubIssuesPager.reset();
+        githubPRsPager.reset();
         relatedRepos = relatedReposCache.get(repoSetKey(owner, repo, [], workspaceId)) ?? [];
         loadGitHubIssues();
         loadGitHubPRs();
@@ -2559,7 +2568,7 @@
         {/if}
 
         <!-- GitHub auth status - only show when not authenticated -->
-        {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
+        {#if !$hostMember$ && (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
           <div
             class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
             transition:slide={{ tier: 'moderate' }}

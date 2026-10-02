@@ -2,15 +2,16 @@
  * Comments V2 Redux slice — actions & reducer.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   addItem,
   updateItem,
   removeItem,
   getItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+  getItems,
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
 import type { CommentsV2State, CommentThread } from './comments-types';
 
@@ -45,6 +46,11 @@ export const removeCommentAction = createAction<[id: string]>('comments/removeCo
 
 /** Bulk-load comments (replaces all existing data). */
 export const loadCommentsAction = createAction<[comments: CommentV2[]]>('comments/loadComments');
+
+/** Replace a single note snapshot without evicting other open notes. */
+export const replaceNoteCommentsAction = createAction<
+  [workspaceId: string, noteId: string, comments: CommentV2[]]
+>('comments/replaceNoteComments');
 
 /** Clear all comment data. */
 export const clearCommentsAction = createAction('comments/clear');
@@ -181,6 +187,21 @@ commentsReducer.with(loadCommentsAction, (state, { payload: [comments] }) => {
     threadsById: rebuildThreads(commentsById, commentIdsByThread),
   };
 });
+
+commentsReducer.with(
+  replaceNoteCommentsAction,
+  (state, { payload: [workspaceId, noteId, comments] }) => {
+    const belongsToNote = (comment: CommentV2) =>
+      comment.workspaceId === workspaceId && comment.noteId === noteId;
+    return commentsReducer(
+      state,
+      loadCommentsAction([
+        ...getItems(state.commentsById).filter((comment) => !belongsToNote(comment)),
+        ...comments.filter(belongsToNote),
+      ]),
+    );
+  },
+);
 
 // ── clear ───────────────────────────────────────────────────────────────
 commentsReducer.with(clearCommentsAction, () => initialState);

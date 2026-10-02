@@ -91,3 +91,21 @@ describe('binary PDF loading', () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 });
+
+it('reads scoped binary windows with the registered root on every chunk', async () => {
+  request.mockResolvedValueOnce({ content: '/wAB', bytesRead: 3, size: 5 });
+  request.mockResolvedValueOnce({ content: 'gP4=', bytesRead: 2, size: 5 });
+  expect(await readPdf('ws', 'preview.png', signal(), 'root-a')).toEqual(
+    new Uint8Array([255, 0, 1, 128, 254]),
+  );
+  expect(request.mock.calls).toEqual([
+    [
+      'file.readChunk',
+      { workspaceId: 'ws', path: 'preview.png', gitRootId: 'root-a', offset: 0, length: 1048576 },
+    ],
+    [
+      'file.readChunk',
+      { workspaceId: 'ws', path: 'preview.png', gitRootId: 'root-a', offset: 3, length: 1048576 },
+    ],
+  ]);
+});

@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  const hostMember$ = selectIsHostMember();
   import { onDestroy, onMount, untrack } from 'svelte';
   import { writable, derived } from 'svelte/store';
 
@@ -43,7 +46,6 @@
   import {
     clearModelFallbackInfo,
     selectModel,
-    setLoadingStateForProvider,
     setModelFallbackInfo,
     setModelPickerGroupCollapsed,
   } from '$store/renderer/slices/model/model-slice';
@@ -55,10 +57,6 @@
     selectActiveProviderId,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
-    getModelsForProvider,
-    getModelsForProviderForLoadingState,
-  } from '$store/renderer/slices/model/model-utils';
-  import {
     selectContextDefaultProvider,
     selectContextReadinessLoaded,
     selectContextSelectedModel,
@@ -69,12 +67,15 @@
     selectContextAvailableProviderIds,
     selectContextEnabledProviders,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
-  import { workspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
-  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import {
-    selectProviderModelsCacheEntry,
+    providerModelsObserved,
+    providerModelsReleased,
+    providerModelsRequested,
+  } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import {
     selectProviderModelsCacheMap,
-    selectProviderModelsClearEpoch,
+    selectProviderModelsRequests,
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -209,6 +210,8 @@
       labels?: { from: string; to: string; fromProviderId?: string; toProviderId?: string },
     ) => boolean | Promise<boolean>;
     providerId?: string;
+    /** Provider-local settings cannot persist a selection owned by another provider. */
+    allowProviderSwitch?: boolean;
     isCompact?: boolean;
     isLocked?: boolean;
     lockedTitle?: string;
@@ -273,6 +276,7 @@
     onModelChange = () => {},
     confirmModelChange,
     providerId,
+    allowProviderSwitch = true,
     isCompact = false,
     isLocked = false,
     lockedTitle,
@@ -324,7 +328,7 @@
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
   $effect(() => {
-    if (workspaceId) appStore.dispatch(workspaceCatalogRequested(workspaceId));
+    if (workspaceId) appStore.dispatch(ensureWorkspaceCatalogRequested(workspaceId));
   });
 
   // `default`-variant pickers stack the notice directly under a full-width
@@ -342,6 +346,7 @@
     agentId: string;
     workspaceId: string;
     revision: number;
+    connection: string | null;
   };
   let pendingModelUpdate = $state<ModelChange | null>(null);
   let isApplyingModelUpdate = $state(false);
@@ -388,32 +393,7 @@
   // live lock on each call, so no call site needs to re-check after an await.
   const mutate = createAgentModelMutator({ isLocked: () => effectiveLocked || destroyed });
 
-  let agentProviderModels = $state<
-    import('$features/auggie/auggie-models.client').AuggieModel[] | null
-  >(null);
   import { store as appStore } from '$store/renderer/store';
-  let agentProviderLoading = $state(false);
-  let agentProviderError = $state<string | null>(null);
-
-  function setProviderWarningState(
-    providerId: string,
-    warning: string | undefined,
-    stale: boolean | undefined,
-  ) {
-    if (workspaceId) return;
-    const normalizedId = normalizeProviderId(providerId);
-    appStore.dispatch(
-      setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning, stale }),
-    );
-  }
-
-  function setProviderErrorState(providerId: string, error: string) {
-    if (workspaceId) return;
-    const normalizedId = normalizeProviderId(providerId);
-    appStore.dispatch(
-      setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }),
-    );
-  }
 
   function getProviderWarningNotice(
     providerId: string,
@@ -423,140 +403,50 @@
     return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
   }
 
-  // Hydrate from the session-lifetime provider-models cache
-  // (stale-while-revalidate): cached providers render their catalogs — and a
-  // resolved trigger label — synchronously on mount, with no spinner/skeleton
-  // frame, while the debounced background fetch below still revalidates every
-  // provider and writes fresh results back through the cache. Uncached
-  // providers keep the normal loading path.
-  const cachedProviderCatalogs = selectProviderModelsCacheMap.select(appStore.state, workspaceId);
-  const seededProviderModels: Record<string, DropdownOption[]> = {};
-  const seededProviderLoading: Record<string, boolean> = {};
-  for (const [pid, entry] of Object.entries(cachedProviderCatalogs)) {
-    if (!canUseProviderModels(pid)) continue;
-    seededProviderModels[pid] = toDropdownOptions(entry.models);
-    seededProviderLoading[pid] = false;
-  }
-  // "All loaded" only when every currently-enabled provider is cache-covered;
-  // otherwise the first fetch pass settles it exactly as before.
-  const seededEnabledIds = $availableEnabledProviderIds$;
-  const seededAllProvidersLoaded =
-    seededEnabledIds.length > 0 &&
-    seededEnabledIds.every((pid) =>
-      Object.prototype.hasOwnProperty.call(seededProviderModels, normalizeProviderId(pid)),
-    );
-
-  let allProviderModels = $state<Record<string, DropdownOption[]>>(seededProviderModels);
-  let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
-  let allProviderLoading = $state<Record<string, boolean>>(seededProviderLoading);
-  let fetchGeneration = 0;
-  const providerFetchGenerations = new Map<string, number>();
-  const refreshingProviderEpochs = new Map<string, number>();
-  let allProvidersLoaded = $state(seededAllProvidersLoaded);
-  let lastFetchedProviderIds = '';
-
-  function advanceProviderFetchGeneration(providerId: string): number {
-    const generation = (providerFetchGenerations.get(providerId) ?? 0) + 1;
-    providerFetchGenerations.set(providerId, generation);
-    return generation;
-  }
+  // The saga owns the catalog and request generations. Read-through cache rows
+  // render synchronously on remount while the owner revalidates in the background.
+  const providerCatalogs$ = selectProviderModelsCacheMap(workspaceIdStore);
+  const providerRequests$ = selectProviderModelsRequests(workspaceIdStore);
+  const catalogObserverId = crypto.randomUUID();
+  const catalogProviderIds = $derived(
+    $modelFetchProviderIds$.filter((id) => canUseProviderModels(id)).map(normalizeProviderId),
+  );
+  const allProviderModels = $derived.by(() => {
+    const models: Record<string, DropdownOption[]> = {};
+    for (const pid of catalogProviderIds) {
+      const entry = $providerCatalogs$[pid];
+      if (entry) models[pid] = toDropdownOptions(entry.models);
+    }
+    return models;
+  });
+  const allProviderErrors = $derived.by(() => {
+    const errors: Record<string, ProviderLoadError> = {};
+    for (const pid of catalogProviderIds) {
+      const request = $providerRequests$[pid];
+      if (request?.error) {
+        errors[pid] = formatProviderLoadError(pid, request.error);
+      }
+    }
+    return errors;
+  });
+  const allProviderLoading = $derived(
+    Object.fromEntries(
+      catalogProviderIds.map((pid) => [
+        pid,
+        ($providerRequests$[pid]?.status === 'loading' &&
+          $providerRequests$[pid]?.mode !== 'silentRetry') ||
+          (!$providerCatalogs$[pid] && !allProviderErrors[pid]),
+      ]),
+    ),
+  );
+  const allProvidersLoaded = $derived(
+    Object.values(allProviderLoading).every((loading) => !loading),
+  );
 
   function hasProviderResult(providerId: string): boolean {
     return (
       Object.prototype.hasOwnProperty.call(allProviderModels, providerId) ||
       Boolean(allProviderErrors[providerId])
-    );
-  }
-
-  function setProviderLoading(providerId: string, loading: boolean) {
-    const nextLoading = {
-      ...allProviderLoading,
-      [providerId]: loading,
-    };
-    allProviderLoading = nextLoading;
-    allProvidersLoaded = Object.values(nextLoading).every((isLoading) => !isLoading);
-  }
-
-  async function fetchAllProviderModels(enabledIds: string[]) {
-    enabledIds = enabledIds.filter((id) => canUseProviderModels(id));
-    const key = enabledIds.slice().sort().join(',');
-    if (key === lastFetchedProviderIds && allProvidersLoaded) return;
-    lastFetchedProviderIds = key;
-
-    allProvidersLoaded = false;
-    const currentGen = ++fetchGeneration;
-
-    if (enabledIds.length === 0) {
-      allProviderModels = {};
-      allProviderErrors = {};
-      allProviderLoading = {};
-      allProvidersLoaded = true;
-      return;
-    }
-
-    const providerIds = enabledIds.map((pid) => normalizeProviderId(pid));
-    allProviderModels = Object.fromEntries(
-      Object.entries(allProviderModels).filter(([providerId]) => providerIds.includes(providerId)),
-    );
-    allProviderErrors = {};
-
-    // Epoch at fetch start: a reconnect clear that lands while these
-    // responses are in flight makes them stale — the settle-time isStale()
-    // check keeps them out of local state (the epoch effect's generation
-    // bump can run after a pending response settles) and the reducer drops
-    // any pre-clear write-through stamped below as a second line of defense.
-    const originWorkspaceId = workspaceId;
-    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-    const providerIdsToFetch = providerIds.filter(
-      (providerId) =>
-        !refreshingProviders.has(providerId) ||
-        refreshingProviderEpochs.get(providerId) !== cacheEpoch,
-    );
-    const fetchingProviderIds = new Set(providerIdsToFetch);
-    allProviderLoading = Object.fromEntries(
-      providerIds.map((providerId) => [providerId, fetchingProviderIds.has(providerId)]),
-    );
-    allProvidersLoaded = providerIdsToFetch.length === 0;
-
-    await Promise.allSettled(
-      providerIdsToFetch.map(async (providerId) => {
-        const providerGeneration = advanceProviderFetchGeneration(providerId);
-        const isStale = () =>
-          workspaceId !== originWorkspaceId ||
-          fetchGeneration !== currentGen ||
-          providerFetchGenerations.get(providerId) !== providerGeneration ||
-          selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
-        try {
-          const result = await getModelsForProviderForLoadingState(
-            providerId,
-            ...(originWorkspaceId ? [{ workspaceId: originWorkspaceId }] : []),
-          );
-          if (isStale()) return;
-          const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
-          allProviderErrors = remainingErrors;
-          allProviderModels = {
-            ...allProviderModels,
-            [providerId]: toDropdownOptions(result.models),
-          };
-          // Write through to the session cache (providerId is normalized here).
-          appStore.dispatch(
-            providerModelsLoaded(providerId, result, cacheEpoch, originWorkspaceId),
-          );
-          setProviderWarningState(providerId, result.warning, result.stale);
-        } catch (err) {
-          if (isStale()) return;
-          const providerError = formatProviderLoadError(providerId, err);
-          allProviderErrors = {
-            ...allProviderErrors,
-            [providerId]: providerError,
-          };
-          setProviderErrorState(providerId, providerError.displayText);
-        } finally {
-          if (!isStale()) {
-            setProviderLoading(providerId, false);
-          }
-        }
-      }),
     );
   }
 
@@ -586,11 +476,11 @@
   // and a disabled default has no re-home target, so its rows must not be
   // selectable (intent#5737). Same settings blind spot as above for guests.
   const selectableProviderIds = $derived(
-    isGuestLocked
-      ? $availableEnabledProviderIds$
-      : $availableEnabledProviderIds$.filter(
-          (pid) => !isProviderDisabledInSettings($enabledProviders$, pid),
-        ),
+    $availableEnabledProviderIds$.filter(
+      (pid) =>
+        (allowProviderSwitch || normalizeProviderId(pid) === effectiveProviderId) &&
+        (isGuestLocked || !isProviderDisabledInSettings($enabledProviders$, pid)),
+    ),
   );
 
   // The per-agent fetch is only needed when the effective provider's models
@@ -606,123 +496,28 @@
           : effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
   );
 
-  // Separate generation counter from fetchAllProviderModels: in unlocked mode
-  // both fetches can run concurrently and must not cancel each other.
-  let agentFetchGeneration = 0;
-  async function fetchAgentProviderModels(providerId: string) {
-    const currentGen = ++agentFetchGeneration;
-    if (!canUseProviderModels(providerId)) return;
-    // Hydrate from the session cache (stale-while-revalidate): a cached
-    // catalog renders immediately with no loading state — the all-provider
-    // fetch prunes disabled providers from allProviderModels, so this path is
-    // the only cache consumer for a locked/agent picker whose provider is no
-    // longer enabled. The fetch below still revalidates.
-    const cacheId = normalizeProviderId(providerId);
-    const cached = selectProviderModelsCacheEntry.select(appStore.state, cacheId, workspaceId);
-    if (cached) {
-      agentProviderModels = cached.models;
-      agentProviderLoading = false;
-    } else {
-      agentProviderLoading = true;
-    }
-    agentProviderError = null;
-
-    // Epoch at fetch start: a reconnect clear mid-flight makes this response
-    // stale for local state too, not just for the reducer write-through.
-    const originWorkspaceId = workspaceId;
-    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-    const isStale = () =>
-      workspaceId !== originWorkspaceId ||
-      agentFetchGeneration !== currentGen ||
-      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
-    try {
-      const result = await getModelsForProviderForLoadingState(
-        providerId,
-        ...(originWorkspaceId ? [{ workspaceId: originWorkspaceId }] : []),
-      );
-      if (isStale()) return;
-      agentProviderModels = result.models;
-      // Write through so the next mount of this picker hydrates too.
-      appStore.dispatch(providerModelsLoaded(cacheId, result, cacheEpoch, originWorkspaceId));
-      setProviderWarningState(providerId, result.warning, result.stale);
-    } catch (err) {
-      if (isStale()) return;
-      const providerError = formatProviderLoadError(providerId, err);
-      agentProviderError = providerError.displayText;
-      setProviderErrorState(providerId, providerError.displayText);
-    } finally {
-      if (!isStale()) {
-        agentProviderLoading = false;
-      }
-    }
-  }
-
-  $effect(() => {
-    const epid = effectiveProviderId;
-    if (!usesAgentProviderFetch) {
-      ++agentFetchGeneration;
-      agentProviderModels = null;
-      agentProviderLoading = false;
-      agentProviderError = null;
-      return;
-    }
-
-    void fetchAgentProviderModels(epid);
+  const agentProviderModels = $derived(
+    usesAgentProviderFetch ? ($providerCatalogs$[effectiveProviderId]?.models ?? null) : null,
+  );
+  const agentProviderError = $derived.by(() => {
+    const request = $providerRequests$[effectiveProviderId];
+    return usesAgentProviderFetch && request?.error
+      ? formatProviderLoadError(effectiveProviderId, request.error).displayText
+      : null;
   });
+  const agentProviderLoading = $derived(
+    usesAgentProviderFetch && !agentProviderModels && !agentProviderError,
+  );
+  const observedProviderIds = $derived([
+    ...new Set([...catalogProviderIds, ...(usesAgentProviderFetch ? [effectiveProviderId] : [])]),
+  ]);
 
-  let previousWorkspaceId = untrack(() => workspaceId);
+  // Prop/selector binding only: the registered owner handles debounce,
+  // replacement, reconnect invalidation and cancellation for this observer.
   $effect(() => {
-    const nextWorkspaceId = workspaceId;
-    if (nextWorkspaceId === previousWorkspaceId) return;
-    previousWorkspaceId = nextWorkspaceId;
-    untrack(() => {
-      ++fetchGeneration;
-      ++agentFetchGeneration;
-      lastFetchedProviderIds = '';
-      allProviderModels = {};
-      allProviderErrors = {};
-      allProviderLoading = {};
-      agentProviderModels = null;
-      agentProviderError = null;
-      refreshingProviders = new Set();
-      refreshingProviderEpochs.clear();
-      void fetchAllProviderModels($modelFetchProviderIds$);
-      if (usesAgentProviderFetch) void fetchAgentProviderModels(effectiveProviderId);
-    });
+    appStore.dispatch(providerModelsObserved(catalogObserverId, observedProviderIds, workspaceId));
   });
-
-  let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    const providerIds = $modelFetchProviderIds$;
-    clearTimeout(fetchDebounceTimer);
-    fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
-    return () => clearTimeout(fetchDebounceTimer);
-  });
-
-  // React to the session cache being cleared (backend reconnect, RESUB-1):
-  // a mounted picker has already copied cached rows into local state and
-  // fetchAllProviderModels dedups on unchanged enabled-provider ids, so
-  // without this an open picker would keep the pre-reconnect catalog
-  // indefinitely. Keyed on the clear EPOCH, not the map going empty: the
-  // epoch increments on every providerModelsCacheCleared, so a reconnect
-  // during initial load (cache already empty — an empty→empty map
-  // transition) still triggers the generation bump + refetch. The fresh
-  // fetches read the post-clear epoch at start, so their results land in
-  // both local state and the cache.
-  const providerModelsClearEpoch$ = selectProviderModelsClearEpoch();
-  let lastSeenClearEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-  $effect(() => {
-    const epoch = $providerModelsClearEpoch$;
-    if (epoch === lastSeenClearEpoch) return;
-    lastSeenClearEpoch = epoch;
-    untrack(() => {
-      lastFetchedProviderIds = '';
-      void fetchAllProviderModels($availableEnabledProviderIds$);
-      if (usesAgentProviderFetch) {
-        void fetchAgentProviderModels(effectiveProviderId);
-      }
-    });
-  });
+  onDestroy(() => appStore.dispatch(providerModelsReleased(catalogObserverId)));
 
   // Models for the effective provider: the per-agent fetch result when the
   // agent's provider differs from the active one, the global store otherwise.
@@ -767,86 +562,23 @@
     appStore.dispatch(setModelPickerGroupCollapsed(key, !collapsedGroups.has(key)));
   }
 
-  let refreshingProviders = $state<Set<string>>(new Set());
+  const refreshingProviders = $derived(
+    new Set(
+      Object.values($providerRequests$)
+        .filter((request) => request.status === 'loading' && request.mode === 'refresh')
+        .map((request) => request.providerId),
+    ),
+  );
 
-  async function handleRefreshProvider(providerId: string) {
+  function handleRefreshProvider(providerId: string) {
     if (!canUseProviderModels(providerId)) return;
     if (refreshingProviders.has(providerId)) return;
-    // Epoch at fetch start: a reconnect clear mid-flight makes this response
-    // stale for local state as well as for the reducer write-through.
-    const originWorkspaceId = workspaceId;
-    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-    const providerGeneration = advanceProviderFetchGeneration(providerId);
-    refreshingProviderEpochs.set(providerId, cacheEpoch);
-    refreshingProviders = new Set([...refreshingProviders, providerId]);
-    const isStale = () =>
-      workspaceId !== originWorkspaceId ||
-      providerFetchGenerations.get(providerId) !== providerGeneration ||
-      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
-    try {
-      // True force refresh: the daemon skips its cache and awaits a fresh
-      // probe (PROTOCOL §6.7), so the spinner spins for the real probe
-      // duration and the returned list replaces the group immediately.
-      const result = await getModelsForProviderForLoadingState(providerId, {
-        forceRefresh: true,
-        workspaceId: originWorkspaceId,
-      });
-      if (isStale()) return;
-      setProviderWarningState(providerId, result.warning, result.stale);
-      if (providerId === effectiveProviderId && usesAgentProviderFetch) {
-        agentProviderModels = result.models;
-      }
-      const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
-      allProviderErrors = remainingErrors;
-      allProviderModels = {
-        ...allProviderModels,
-        [providerId]: toDropdownOptions(result.models),
-      };
-      // Write through to the session cache (group keys are normalized ids).
-      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch, originWorkspaceId));
-    } catch (err) {
-      if (isStale()) return;
-      const providerError = formatProviderLoadError(providerId, err);
-      allProviderErrors = {
-        ...allProviderErrors,
-        [providerId]: providerError,
-      };
-      setProviderErrorState(providerId, providerError.displayText);
-      logger.warn('Failed to refresh models for provider', { providerId, error: err });
-    } finally {
-      if (!isStale()) {
-        refreshingProviderEpochs.delete(providerId);
-        const next = new Set(refreshingProviders);
-        next.delete(providerId);
-        refreshingProviders = next;
-      }
-    }
+    appStore.dispatch(providerModelsRequested(providerId, 'refresh', workspaceId));
   }
 
-  let isRefreshing = $state(false);
-
-  async function handleRetry() {
-    lastFetchedProviderIds = '';
-    const requests = [fetchAllProviderModels($availableEnabledProviderIds$)];
-    if (usesAgentProviderFetch) {
-      requests.push(fetchAgentProviderModels(effectiveProviderId));
-    }
-    await Promise.all(requests);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function handleRefreshModels() {
-    if (isRefreshing) return;
-    isRefreshing = true;
-    try {
-      lastFetchedProviderIds = '';
-      const requests = [fetchAllProviderModels($availableEnabledProviderIds$)];
-      if (usesAgentProviderFetch) {
-        requests.push(fetchAgentProviderModels(effectiveProviderId));
-      }
-      await Promise.all(requests);
-    } finally {
-      isRefreshing = false;
+  function handleRetry() {
+    for (const providerId of observedProviderIds) {
+      appStore.dispatch(providerModelsRequested(providerId, 'retry', workspaceId));
     }
   }
 
@@ -940,7 +672,8 @@
       !destroyed &&
       change.revision === modelChangeRevision &&
       change.agentId === agentId &&
-      change.workspaceId === workspaceId
+      change.workspaceId === workspaceId &&
+      change.connection === selectPrincipalConnectionContext.select(appStore.state)
     );
   }
 
@@ -1067,9 +800,17 @@
     }
     onModelChange?.(model, pick);
     if (effectiveLocked || destroyed) return;
-    if (updateGlobalDefault) appStore.dispatch(selectModel(pick.modelId, pick.providerId));
+    if (updateGlobalDefault && !$hostMember$)
+      appStore.dispatch(selectModel(pick.modelId, pick.providerId));
     if (!updateGlobalStore || !agentId || !workspaceId) return;
-    const change: ModelChange = { pick, previous, agentId, workspaceId, revision };
+    const change: ModelChange = {
+      pick,
+      previous,
+      agentId,
+      workspaceId,
+      revision,
+      connection: selectPrincipalConnectionContext.select(appStore.state),
+    };
     if (deferUpdate) pendingModelUpdate = change;
     else await applyBackendModelUpdate(change);
   }
@@ -1436,6 +1177,7 @@
   let noProviderToastShown = false;
 
   function openProviderSettings() {
+    if ($hostMember$) return;
     dropdownOpen = false;
     void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
       logger.error('Failed to open provider settings from model picker', error);
@@ -1446,14 +1188,21 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
-          id: 'no-provider-available',
-          duration: 6000,
-          action: {
-            label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
-            onClick: openProviderSettings,
+        notify.error(
+          $hostMember$
+            ? m.hostExecution_providerSetup_description()
+            : m.chat_modelPicker_noProviderAvailable_toast(),
+          {
+            id: 'no-provider-available',
+            duration: 6000,
+            action: $hostMember$
+              ? undefined
+              : {
+                  label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
+                  onClick: openProviderSettings,
+                },
           },
-        });
+        );
       }
     } else {
       noProviderToastShown = false;
@@ -1601,8 +1350,23 @@
   });
 
   // Display groups — every picker browses one provider at a time.
-  const displayGroups = $derived.by(() =>
-    groupedModelOptions
+  const displayGroups = $derived.by(() => {
+    // Once every catalog attempt settles without usable models, use the
+    // existing terminal error/Retry surface rather than disabled error rows.
+    // Pending retries and partial/cached success keep their groups/default row.
+    if (
+      !hasLoadedModelOptions &&
+      blockingLoadError &&
+      allProvidersLoaded &&
+      !agentProviderLoading &&
+      observedProviderIds.every(
+        (pid) =>
+          $providerRequests$[pid]?.status !== 'loading' &&
+          ($providerCatalogs$[pid]?.models.length ?? 0) === 0,
+      )
+    )
+      return [];
+    return groupedModelOptions
       .filter((group) => {
         const providerKey = group.parentKey ?? group.key;
         return (
@@ -1619,8 +1383,8 @@
             : providerTabsEnabled || !collapsedGroups.has(group.key)
               ? group.options
               : [],
-      })),
-  );
+      }));
+  });
 
   // True while a settled fetch result for the selected model's own provider is
   // still outstanding but expected. `allProvidersLoaded` is not enough: on boot
@@ -1689,7 +1453,7 @@
     return sessionModelId !== localModelId;
   });
 
-  const isSelectedModelUnavailable = $derived.by(() => {
+  const isSelectedModelMissingAfterLoad = $derived.by(() => {
     if (isGuestLocked) return false;
     // Settings-derived: does not wait for catalog loads or availability probes.
     if (isSelectedModelProviderDisabled) return true;
@@ -1700,6 +1464,23 @@
     if (!allProvidersLoaded) return false;
     if (isSelectedModelProviderPending) return false;
     return isSelectedModelMissingFromCatalog;
+  });
+
+  const isSelectedModelUnavailable = $derived.by(() => {
+    if (!isSelectedModelMissingAfterLoad) return false;
+    if (isSelectedModelProviderDisabled) return true;
+    const provider = selectedModelGateProviderId;
+    // A hydrated registry can establish that a historical provider no longer
+    // resolves, even though that provider can never return a model catalog.
+    if ($providerCatalogEntries$.length > 0 && !hasResolvedProvider(provider)) return true;
+    const catalog = $providerCatalogs$[provider];
+    const request = $providerRequests$[provider];
+    // A failed probe or a degraded/last-good list cannot establish removal.
+    // Keep the user's model and effort until this provider has a fresh result.
+    if (!catalog || catalog.stale || catalog.warning) return false;
+    if (request?.error || request?.status === 'loading' || request?.status === 'cancelled')
+      return false;
+    return true;
   });
 
   // --- Per-agent fallback tracking (persisted through Redux sagas so it survives page refresh) ---
@@ -1882,26 +1663,6 @@
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
     !!agentId && !isGuestLocked && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
-  );
-
-  // The selected model isn't in the catalog yet, but its provider hasn't
-  // settled — show a spinner in the trigger rather than a warning that would
-  // flip back to normal a moment later (transient warning on refresh).
-  const showModelLoading = $derived(
-    !!agentId &&
-      $fallbackInfo$ === null &&
-      !isSelectedModelProviderDisabled &&
-      isSelectedModelMissingFromCatalog &&
-      (!$hasCheckedOnce$ ||
-        isLoadingModels ||
-        !allProvidersLoaded ||
-        isSelectedModelProviderPending),
-  );
-
-  const modelLoadingTitle = $derived(
-    m.chat_modelPicker_loadingProviderModels_label({
-      provider: providerDisplayName(selectedModelProviderId || effectiveProviderId),
-    }),
   );
 
   // Warning message to display
@@ -2114,13 +1875,15 @@
     if (isGuestLocked) return;
     if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
-    if (!isSelectedModelUnavailable) return;
+    if (!isSelectedModelMissingAfterLoad) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
 
     const currentProvider = selectedModelGateProviderId;
 
     // Try same-provider fallback first
-    const fallbackOption = findFallbackOption(currentProvider);
+    const fallbackOption = isSelectedModelUnavailable
+      ? findFallbackOption(currentProvider)
+      : undefined;
     if (fallbackOption) {
       logger.info('Workspace initializer: falling back to same-provider model', {
         unavailableModel: localModel,
@@ -2142,39 +1905,7 @@
     if (silentRetryAttemptedForProvider === currentProvider) return;
     silentRetryAttemptedForProvider = currentProvider;
 
-    void (async () => {
-      // Epoch at fetch start: a reconnect clear mid-flight makes this
-      // response stale for local state as well as the cache write-through.
-      const originWorkspaceId = workspaceId;
-      const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-      try {
-        const models = await getModelsForProvider(currentProvider, originWorkspaceId);
-        if (
-          workspaceId !== originWorkspaceId ||
-          selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch
-        )
-          return;
-        if (models.length > 0) {
-          const normalizedId = normalizeProviderId(currentProvider);
-          allProviderModels = {
-            ...allProviderModels,
-            [normalizedId]: toDropdownOptions(models),
-          };
-          // Write through to the session cache like the other fetch paths.
-          appStore.dispatch(
-            providerModelsLoaded(normalizedId, { models }, cacheEpoch, originWorkspaceId),
-          );
-          return;
-        }
-      } catch (err) {
-        logger.warn('Retry fetch failed for provider', { provider: currentProvider, error: err });
-      }
-
-      const providerName = providerDisplayName(currentProvider);
-      notify.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
-        description: m.chat_modelPicker_tryRefreshing_description(),
-      });
-    })();
+    appStore.dispatch(providerModelsRequested(currentProvider, 'silentRetry', workspaceId));
   });
 
   let dropdownOpen = $state(false);
@@ -2201,11 +1932,16 @@
       dropdownValue = currentDropdownValue();
       return;
     }
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
     const modelValue = value as string;
     const pick =
       modelValue === USE_DEFAULT_VALUE
         ? undefined
         : resolvePickedTriple(modelValue, activeBrowseProviderId);
+    if (pick && !allowProviderSwitch && pick.providerId !== effectiveProviderId) {
+      dropdownValue = currentDropdownValue();
+      return;
+    }
     const fromProviderId = selectedModelProviderId || effectiveProviderId;
     const confirmation = ++confirmationRevision;
     // Gate user-picked changes to a *different* model behind the optional
@@ -2235,7 +1971,13 @@
                 parseCompoundModelId(modelValue).modelId),
         },
       );
-      if (!confirmed || confirmation !== confirmationRevision || effectiveLocked || destroyed) {
+      if (
+        !confirmed ||
+        connection !== selectPrincipalConnectionContext.select(appStore.state) ||
+        confirmation !== confirmationRevision ||
+        effectiveLocked ||
+        destroyed
+      ) {
         dropdownValue = currentDropdownValue();
         return;
       }
@@ -2442,11 +2184,7 @@
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
-          {#if showModelLoading}
-            <span class="size-3 shrink-0" title={modelLoadingTitle}>
-              <IntentMarkLoader size={12} />
-            </span>
-          {:else if showModelWarning}
+          {#if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
@@ -2504,7 +2242,7 @@
             </Button>
           {/each}
         </div>
-        {#if !hasNoAvailableProvider}
+        {#if !hasNoAvailableProvider && !$hostMember$}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -2621,6 +2359,7 @@
         {isLoadingModels}
         {blockingLoadError}
         {hasNoAvailableProvider}
+        hostManaged={$hostMember$}
         onOpenProviderSettings={openProviderSettings}
         onRetry={handleRetry}
       />

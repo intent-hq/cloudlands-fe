@@ -1,12 +1,12 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   getItem,
   getItems,
   removeItem,
   upsertItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
 export interface PdfPreview {
@@ -19,9 +19,15 @@ export interface PdfPreview {
 }
 export const initialState = { previews: createCollection<PdfPreview, 'id'>('id') };
 export const pdfPreviewRequested =
-  createAction<[viewId: string, requestId: string, workspaceId: string, path: string]>(
-    'pdfPreview/requested',
-  );
+  createAction<
+    [
+      viewId: string,
+      requestId: string,
+      workspaceId: string,
+      path: string,
+      options?: { gitRootId?: string; mimeType?: string },
+    ]
+  >('pdfPreview/requested');
 export const pdfPreviewReleased =
   createAction<[viewId: string, requestId: string]>('pdfPreview/released');
 export const pdfPreviewReady =

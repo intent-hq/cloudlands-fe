@@ -54,7 +54,7 @@ export const selectGreeting = store.createSelector((state) => {
 ```typescript
 // src/lib/store/slices/todos/todos-selectors.ts
 import { store } from "$lib/store/store";
-import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
+import { getItems } from "@themislib/themis/utils/collections/collection-utils";
 
 // state.todos.items is Collection<Todo, "id">; the array is derived output only.
 export const selectTodos = store.createSelector((state) => getItems(state.todos.items));
@@ -117,7 +117,7 @@ export function* profileSaga() {
 
 ```typescript
 // ❌ BAD: recomputes a migrated derived value in a handler instead of using the selector owner.
-import { getItems, type Collection } from "@augmentcode/themis/utils/collections/collection-utils";
+import { getItems, type Collection } from "@themislib/themis/utils/collections/collection-utils";
 
 type Todo = { id: string; completed: boolean };
 type AppState = { todos: { items: Collection<Todo, "id"> } };

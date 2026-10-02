@@ -298,16 +298,6 @@ describe('editorial conversation presentation contract', () => {
     expect(suggestions).not.toContain('faPaperPlane');
   });
 
-  it('uses the MessageComposer surface shell in docked and standalone contexts', () => {
-    const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
-
-    expect(input).toContain('surfaceClasses(2, 2)');
-    expect(input).toContain('rounded-(--radius-large)');
-    expect(input).toContain('data-ring-state={ringState}');
-    expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
-    expect(input).toContain('@container style(--motion-reduced: 1)');
-  });
-
   it('gives tool, context, and reasoning rows one shared muted shell', () => {
     const toolCall = source('src/lib/components/chat/ToolCall.svelte');
     const reasoning = source('src/lib/components/chat/ThinkingBlock.svelte');

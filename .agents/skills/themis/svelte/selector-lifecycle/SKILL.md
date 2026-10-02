@@ -15,7 +15,7 @@ triggers:
 ---
 # Selector Lifecycle — call-mode guardrails
 
-> Canonical call-site checklist for avoiding `lifecycle_outside_component`. Human reference and examples: `@augmentcode/themis/docs/SELECTORS.md` → Using Selectors and Selector Lifecycle Rules. Authoring/cache contracts: `../selectors/SKILL.md` → **Selector caching**. Store setup: `../store/SKILL.md` → **Lifecycle rules**.
+> Canonical call-site checklist for avoiding `lifecycle_outside_component`. Human reference and examples: `@themislib/themis/docs/SELECTORS.md` → Using Selectors and Selector Lifecycle Rules. Authoring/cache contracts: `../selectors/SKILL.md` → **Selector caching**. Store setup: `../store/SKILL.md` → **Lifecycle rules**.
 
 ## Use when
 
@@ -160,7 +160,7 @@ async function onSaveLaterSafely(itemId: string) {
 
 ## See also
 
-- `@augmentcode/themis/docs/SELECTORS.md` — examples for each selector call form.
+- `@themislib/themis/docs/SELECTORS.md` — examples for each selector call form.
 - `../selectors/SKILL.md` — selector authoring and composition.
 - `../component-integration/SKILL.md` — component store/dispatch wiring.
 - `../../core/selector-channels/SKILL.md` — selector reads from sagas.

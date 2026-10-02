@@ -26,8 +26,9 @@ import { invoke } from '$lib/electron-bridge';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { store as appStore } from '$store/renderer/store';
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
+import { isMissingWorkingTreeFile } from './is-missing-working-tree-file';
 import { gitlinkSidesFromHunks, gitlinkSidesFromShas, isGitlinkDiffChunk } from './gitlink';
 
 const logger = createLogger('diff-ipc-batcher');
@@ -227,14 +228,19 @@ function toDaemonDiffChunks(result: unknown): DiffChunk[] {
 }
 
 /** Working-tree side of an unstaged diff via `file.read` (PROTOCOL §5.9). A
- * read failure folds to empty content (the file was deleted from the workdir),
- * mirroring the legacy handler's fallback. */
+ * Scoped failures propagate unless the daemon confirms a missing file;
+ * unscoped reads retain the legacy empty-content fallback. */
 async function readWorkingTreeContent(
   workspaceId: string,
   filePath: string,
+  gitRootId?: string,
 ): Promise<ShowFileResponse> {
   try {
-    const result = await backendRequest<unknown>('file.read', { workspaceId, path: filePath });
+    const result = await backendRequest<unknown>('file.read', {
+      workspaceId,
+      path: filePath,
+      ...(gitRootId ? { gitRootId } : {}),
+    });
     const content =
       typeof result === 'string'
         ? result
@@ -243,6 +249,7 @@ async function readWorkingTreeContent(
           : '';
     return { success: true, data: content };
   } catch (error) {
+    if (gitRootId && !isMissingWorkingTreeFile(error)) throw error;
     logger.debug('file.read failed for working-tree diff side (file deleted?)', {
       workspaceId,
       filePath,
@@ -296,7 +303,10 @@ async function enrichChunkContents(
       ? dedupedShowFile(workspaceId, ':0', chunk.file, showOptions)
       : readWorkingTreeContent(
           workspaceId,
-          gitRootPath ? `${gitRootPath.replace(/\/$/, '')}/${chunk.file}` : chunk.file,
+          !gitRootId && gitRootPath
+            ? `${gitRootPath.replace(/\/$/, '')}/${chunk.file}`
+            : chunk.file,
+          gitRootId,
         ),
   ]);
   if (oldRes.success) chunk.oldContent = oldRes.data ?? '';

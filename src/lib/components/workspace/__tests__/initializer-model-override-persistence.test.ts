@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -37,6 +38,7 @@ const mocks = vi.hoisted(() => {
   return {
     writable,
     readable,
+    principalState: {} as Record<string, unknown>,
     dispatch: vi.fn(),
     goto: vi.fn(),
     create: vi.fn(),
@@ -68,6 +70,7 @@ vi.mock('$store/renderer/store', async () => {
   );
   return createAppStoreMockModule({
     state: () => ({
+      ...mocks.principalState,
       providerCatalog,
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: 'auggie' },
@@ -332,6 +335,7 @@ const SAVED_AGENT_STATE: CompactWorkspaceInitializerFormState = {
 
 describe('initializer model-override persistence (monorepo#2678)', () => {
   beforeEach(() => {
+    mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
     sessionStorage.clear();
     mocks.hydrated$.set(false);

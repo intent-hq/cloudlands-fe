@@ -3,6 +3,15 @@ import { SYSTEM_DEFAULT_FONT, type FontOption } from './user-preferences-slice';
 import { resolvePreferenceToLocale } from '$lib/i18n/locale';
 import { m } from '$shared/paraglide/messages.js';
 
+export const selectAgentRulesEditor = store.createSelector(
+  (state) => state.userPreferences.agentRulesEditor,
+);
+
+export const selectAgentRulesHaveChanges = store.createSelector((state) => {
+  const editor = selectAgentRulesEditor.select(state);
+  return editor.content.trim() !== editor.originalContent.trim();
+});
+
 export const selectAgentFontStyle = store.createSelector((state) => {
   return state.userPreferences.agentFontStyle;
 });
@@ -72,6 +81,16 @@ export const selectLabsMultiplayerEnabled = store.createSelector((state) => {
 
 export const selectLabsGitLabEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsGitLabEnabled === true;
+});
+
+/**
+ * Entry-point policy for NEW remote setup and placement, not runtime capability.
+ * Subscribe for visibility; re-read `.select(appStore.state)` at submission (and
+ * after awaits) so disabling Labs also rejects stale controls/persisted choices.
+ * Never use this to gate existing-session management, local execution or path/media safety.
+ */
+export const selectLabsRemoteAgentsEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsRemoteAgentsEnabled === true;
 });
 
 export const selectCounterScale = store.createSelector((state) => {

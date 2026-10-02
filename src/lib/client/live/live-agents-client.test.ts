@@ -19,6 +19,7 @@ import {
   type MockBackendHandle,
 } from '../../../test/mocks/backend-transport.mock';
 import { LiveAgentsClient } from './live-agents-client';
+import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 
 describe('LiveAgentsClient mutations (fake transport)', () => {
   let backend: MockBackendHandle;
@@ -617,6 +618,59 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('retains portable author snapshots and opaque provenance on queue reads and scrollback pages', async () => {
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab', host: 'one.example', externalUserId: '42' },
+    };
+    const metadata = {
+      humanAuthor: { sourcePrincipalId: 'local-collision' },
+      originalMetadata: ['inert'],
+    };
+    const queue = [
+      {
+        id: 'portable',
+        content: '  body\n',
+        queuedAt: '2026-01-01T00:00:00Z',
+        position: 0,
+        author,
+        messageMetadata: metadata,
+      },
+    ];
+    const messages = [
+      {
+        id: 'portable',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00Z',
+        author,
+        metadata,
+        contentBlocks: [{ type: 'text', text: '  body\n' }],
+      },
+    ];
+    backend.onRequest('agent.getQueue', () => ({ success: true, queue }));
+    backend.onRequest('agent.getConversation', () => ({
+      messages,
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
+    }));
+    const before = JSON.stringify({ queue, messages });
+    const client = new LiveAgentsClient();
+    expect(await client.getQueue('agent-1')).toEqual(queue);
+    expect((await client.getConversation('agent-1', 100, 'older')).messages).toEqual(messages);
+    expect(backend.requests).toEqual([
+      { method: 'agent.getQueue', params: { agentId: 'agent-1' } },
+      {
+        method: 'agent.getConversation',
+        params: { agentId: 'agent-1', limit: 100, nextToken: 'older', projection: 'slim' },
+      },
+    ]);
+    expect(JSON.stringify({ queue, messages })).toBe(before);
+  });
+
   it('getQueue returns [] when the daemon body omits queue', async () => {
     backend.onRequest('agent.getQueue', () => ({ success: true }));
     const client = new LiveAgentsClient();
@@ -1001,6 +1055,73 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       workspaceId: 'ws-1',
       changes: { reasoningEffort: null },
     });
+  });
+
+  it.each([
+    [true, false],
+    [false, false],
+    [true, true],
+    [false, true],
+  ])(
+    'persists background=%s and reloads (legacy top-level=%s)',
+    async (isBackground, legacyTopLevel) => {
+      let persisted = !isBackground;
+      const row = () => ({
+        id: 'agent-mode',
+        workspaceId: 'ws-mode',
+        name: 'Mode fixture',
+        status: 'active',
+        parentAgentId: 'parent',
+        ...(legacyTopLevel ? { isBackground: persisted } : {}),
+        metadata: {
+          isBackground: legacyTopLevel ? !persisted : persisted,
+          taskNoteId: 'task-note',
+          createdByAgentId: 'parent',
+        },
+        createdAt: '2026-09-30T00:00:00Z',
+        updatedAt: '2026-09-30T00:00:00Z',
+      });
+      backend.onRequest('agent.update', (params) => {
+        persisted = (params as { changes: { isBackground: boolean } }).changes.isBackground;
+        return { success: true, agent: row() };
+      });
+      backend.onRequest('agent.get', () => ({ agent: row() }));
+      expect(
+        await new LiveAgentsClient().setBackground({
+          agentId: 'agent-mode',
+          workspaceId: 'ws-mode',
+          isBackground,
+        }),
+      ).toEqual({ success: true });
+      expect(backend.requests[0]).toEqual({
+        method: 'agent.update',
+        params: {
+          agentId: 'agent-mode',
+          workspaceId: 'ws-mode',
+          changes: { isBackground },
+        },
+      });
+      const reloaded = await new LiveAgentsClient().get('agent-mode', 'ws-mode');
+      expect(isBackgroundAgentSession(reloaded!)).toBe(isBackground);
+      expect(reloaded?.isBackground).toBe(legacyTopLevel ? isBackground : undefined);
+      expect(reloaded).toMatchObject({
+        parentAgentId: 'parent',
+        metadata: { isBackground, taskNoteId: 'task-note', createdByAgentId: 'parent' },
+      });
+    },
+  );
+
+  it('returns a background mode failure from the daemon', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new Error('Forbidden mode change');
+    });
+    expect(
+      await new LiveAgentsClient().setBackground({
+        agentId: 'agent-mode',
+        workspaceId: 'ws-mode',
+        isBackground: true,
+      }),
+    ).toEqual({ success: false, error: 'Forbidden mode change' });
   });
 
   it('setNotificationsMuted forwards agent.update with the boolean notificationsMuted change (§5.5)', async () => {
@@ -2627,7 +2748,7 @@ describe('LiveAgentsClient.subscribe typed per-workspace agent channel (PROTOCOL
     unsubscribe();
   });
 
-  // Deletion-flow convergence (soft-hide-then-commit, agent-mutation-service):
+  // Deletion-flow convergence (soft-hide-then-commit, agent-mutation-saga):
   // after the committed `agent.delete` succeeds the daemon emits
   // `agent:deleted`, which the typed channel delivers as a `removedIds` delta
   // — the hidden session reconciles away directly.

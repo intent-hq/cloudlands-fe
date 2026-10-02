@@ -76,7 +76,7 @@
       },
     },
     {
-      id: 'guest-sessions',
+      id: 'collaboration',
       icon: UsersIcon,
       get label() {
         return m.settings_sidebar_guestSessions_label();

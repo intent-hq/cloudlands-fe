@@ -1,10 +1,11 @@
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 /**
  * Wire-level regression suite for the agent send pipeline (`agent-send.ts`),
  * ported from the deleted `agent-stream-lifecycle.send-wire.test.ts` after the
  * firehose accumulator removal (monorepo#1127).
  *
  * Drives the REAL `sendMessage()` against the REAL configured store and REAL
- * mutation middleware — only `backend-transport.backendRequest` is mocked,
+ * mutation saga — only `backend-transport.backendRequest` is mocked,
  * returning PROTOCOL.md §5.5-shaped daemon payloads captured from a live
  * daemon (a fresh `pending` agent projection with no acpSessionId).
  *
@@ -86,6 +87,7 @@ function workspace(): Workspace {
   return {
     id: WS,
     title: 'intent',
+    myRole: 'owner',
     branch: 'main',
     status: 'active',
     path: '/Users/clement/src/intent',
@@ -128,6 +130,7 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     stopMutationSaga = undefined;
   });
   beforeEach(() => {
+    admitLegacyPrincipal();
     backendRequestMock.mockReset();
     backendRequestMock.mockImplementation(async (method: string) => {
       if (method === 'agent.get') return { agent: daemonPendingAgent };
@@ -144,6 +147,15 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(chatReset(AGENT));
     __resetAgentQueueReadServiceForTests();
+  });
+
+  it('withholds a send while current admission is unknown, preserving the pending agent', async () => {
+    const { principalContextChanged } =
+      await import('$store/renderer/slices/principal/principal-slice');
+    appStore.dispatch(principalContextChanged(null));
+    await sendMessage(AGENT, 'must stay local', workspace(), {});
+    expect(backendRequestMock).not.toHaveBeenCalled();
+    expect(appStore.state.agentSessions.byAgentId[AGENT]).toBeDefined();
   });
 
   it('emits agent.sendMessage on the wire for a first send to a pending agent (§5.5 shape)', async () => {

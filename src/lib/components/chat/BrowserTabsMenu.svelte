@@ -4,9 +4,10 @@
   import BrowserIcon from 'phosphor-svelte/lib/BrowserIcon';
   import { CHAT_ICON_SIZE } from './chat-icon-size';
   import { faWindowMaximize, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import { FormDialog } from '$lib/components/patterns/confirm';
+  import { FormDialog, confirm } from '$lib/components/patterns/confirm';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import * as Popover from '$lib/components/ui/popover';
+  import * as Menu from '$lib/components/ui/menu';
   import { menuItem } from '$lib/components/ui/menu';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import {
@@ -34,9 +35,10 @@
     workspaceId: string;
     agentId: string;
     entries?: BrowserTabEntry[];
+    embedded?: boolean;
   }
 
-  let { workspaceId, agentId, entries: previewEntries }: Props = $props();
+  let { workspaceId, agentId, entries: previewEntries, embedded = false }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- intentional initial snapshot for store construction.
   const workspaceIdStore = writable(workspaceId);
@@ -151,11 +153,29 @@
     for (const tab of hiddenMirrors) closeMirror(tab);
   }
 
-  function requestClose(action: PendingClose) {
+  async function requestClose(action: PendingClose) {
     if (previewEntries) return;
     menuOpen = false;
     if (selectAgentIsRunning.select(appStore.state, agentId)) {
-      pendingClose = action;
+      if (embedded) {
+        const hidden = action.kind === 'hidden';
+        const confirmed = await confirm({
+          title: hidden
+            ? m.chat_browserTabs_closeHiddenDialog_title()
+            : m.chat_browserTabs_closeDialog_title(),
+          description: hidden
+            ? m.chat_browserTabs_closeHiddenDialog_description()
+            : m.chat_browserTabs_closeDialog_description(),
+          confirmLabel: hidden
+            ? m.chat_browserTabs_closeHiddenDialog_confirm_label()
+            : m.chat_browserTabs_closeDialog_confirm_label(),
+          cancelLabel: m.chat_browserTabs_closeDialog_cancel_label(),
+          destructive: true,
+        });
+        if (confirmed) performClose(action);
+      } else {
+        pendingClose = action;
+      }
       return;
     }
     performClose(action);
@@ -189,7 +209,53 @@
   </span>
 {/snippet}
 
-{#if entries.length > 0}
+{#if entries.length > 0 && embedded}
+  <Menu.Sub bind:open={menuOpen}>
+    <Menu.SubTrigger icon={faWindowMaximize} data-testid="browser-tabs-trigger"
+      >{triggerLabel}</Menu.SubTrigger
+    >
+    <Menu.SubContent class="w-64" alignIconColumn={false} onCloseAutoFocus={handleCloseAutoFocus}>
+      {#each entries as entry (entry.tab.id)}
+        {@const label = tabLabel(entry)}
+        <div class="flex min-w-0 items-center gap-1">
+          <Menu.Item
+            class="min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}"
+            textValue={label}
+            onclick={() => handleTabClick(entry)}
+            data-testid="browser-tabs-menu-item"
+            data-browser-tab-id={entry.tab.id}
+            data-hidden={entry.hidden || undefined}
+          >
+            {#snippet leading()}{@render favicon(entry)}{/snippet}
+            <span class="min-w-0 flex-1 truncate">{label}</span>
+          </Menu.Item>
+          <Menu.Item
+            class="size-7 shrink-0 items-center justify-center p-0"
+            textValue={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            aria-label={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            title={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            onSelect={(event) => event.preventDefault()}
+            onclick={() => requestClose({ kind: 'tab', entry })}
+            data-testid="browser-tab-close"
+            data-browser-tab-id={entry.tab.id}
+          >
+            <Fa icon={faXmark} size={16} class="size-4! shrink-0" />
+          </Menu.Item>
+        </div>
+      {/each}
+      {#if hiddenCount > 0}
+        <Menu.Separator />
+        <Menu.CommandItem
+          icon={faXmark}
+          label={m.chat_browserTabs_closeHidden_label({ count: formatInteger(hiddenCount) })}
+          onSelect={(event) => event.preventDefault()}
+          onclick={() => requestClose({ kind: 'hidden' })}
+          data-testid="browser-tabs-close-hidden"
+        />
+      {/if}
+    </Menu.SubContent>
+  </Menu.Sub>
+{:else if entries.length > 0}
   <Popover.Root bind:open={menuOpen}>
     <Popover.Trigger>
       {#snippet child({ props })}

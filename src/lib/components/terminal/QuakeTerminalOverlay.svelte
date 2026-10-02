@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -78,6 +79,7 @@
 
   import {
     selectWorkspaceScriptEntries,
+    selectAllWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { refreshScripts, removeScript } from '$store/renderer/slices/scripts/scripts-slice';
@@ -115,6 +117,7 @@
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
   const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
+  const allScriptEntries$ = selectAllWorkspaceScriptEntries(workspaceIdStore);
   const scriptEntries$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
 
@@ -390,7 +393,7 @@
 
   const selectedScript = $derived(
     selectedScriptId
-      ? ($scriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
+      ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
@@ -1251,6 +1254,7 @@
           {/if}
         </div>
 
+        <HostExecutionNotice />
         <!-- Terminal Content with Sidebar -->
         <div class="flex-1 flex min-h-0 relative overflow-hidden">
           <!-- Terminal Content + Setup Script Editor -->

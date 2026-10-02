@@ -1,3 +1,4 @@
+import type { SpecialistImportDiagnostic } from '$lib/client/app-client';
 import {
   selectEffectiveDefaultProviderId,
   selectNormalizedProviderId,
@@ -7,7 +8,7 @@ import {
   getItem,
   getItems,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import {
   SPECIALISTS,
   GITHUB_DEPENDENT_SPECIALIST_IDS,
@@ -164,6 +165,10 @@ export const selectSpecialists = store.createSelector(
           defaultBehaviorPrompt: file.behaviorPrompt,
           roleReminder: file.roleReminder,
           source: file.source,
+          importedFrom: file.importedFrom,
+          unsupportedFields: file.unsupportedFields,
+          requiredSkills: file.requiredSkills,
+          missingSkills: file.missingSkills,
           hidden: file.hidden,
           resolvedModel: file.resolvedModel,
           resolvedProvider: file.resolvedProvider,
@@ -188,7 +193,11 @@ export const selectSpecialists = store.createSelector(
     // source has produced specialists. Once file/daemon specialists loaded,
     // the loaded set is authoritative — shipped specialists absent from it
     // must not resurrect (daemon replacement mode).
-    if (fileSpecialists.length === 0 && bundledSpecialists.length === 0) {
+    if (
+      !state.specialists.bundledSpecialistsLoaded &&
+      fileSpecialists.length === 0 &&
+      bundledSpecialists.length === 0
+    ) {
       for (const specialist of SPECIALISTS) {
         if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
           seen.add(specialist.id);
@@ -281,6 +290,7 @@ export const selectSpecialistById = store.createSelector(
     // resolve during the async startup window, while specialists absent from
     // the loaded set must not resurrect (daemon replacement mode).
     if (
+      !state.specialists.bundledSpecialistsLoaded &&
       getItems(state.specialists.fileSpecialists).length === 0 &&
       state.specialists.bundledSpecialists.length === 0
     ) {
@@ -364,26 +374,52 @@ function isKnownBuiltIn(specialistId: string, bundledSpecialists: Specialist[]):
 }
 
 /** Check if a specialist is built-in (bundled or shipped in the catalog) */
-export const selectIsBuiltIn = store.createSelector((state, specialistId: string): boolean => {
-  return isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
-});
+export const selectIsBuiltIn = store.createSelector(
+  (state, specialistId: string, workspaceId?: string): boolean => {
+    if (workspaceId) {
+      const specialist = state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.find(
+        (s) => s.id === specialistId,
+      );
+      if (!specialist || specialist.importedFrom) return false;
+      return (
+        specialist.source === 'bundled' ||
+        (specialist.source === 'user' &&
+          isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists))
+      );
+    }
+    return isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
+  },
+);
 /** Check if a specialist is file-based */
-export const selectIsFileBased = store.createSelector((state, specialistId: string): boolean => {
-  return !!getItem(state.specialists.fileSpecialists, specialistId);
-});
+export const selectIsFileBased = store.createSelector(
+  (state, specialistId: string, workspaceId?: string): boolean => {
+    if (workspaceId) return !!selectGetFileSpecialist.select(state, specialistId, workspaceId);
+    return !!getItem(state.specialists.fileSpecialists, specialistId);
+  },
+);
 /**
  * Check if a built-in specialist has been overridden by a user file that
  * actually differs from the bundled defaults. A lingering override file that
  * is identical to the bundled definition (no model pin, all compared fields
  * equal) never reads as "Modified" (monorepo#1450).
  */
-export const selectHasOverrides = store.createSelector((state, specialistId: string): boolean => {
-  const isBuiltIn = isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
-  if (!isBuiltIn) return false;
-  const file = getItem(state.specialists.fileSpecialists, specialistId);
-  if (!file || file.source !== 'user') return false;
-  return !isRedundantBuiltInOverride(file, state.specialists.bundledSpecialists);
-});
+export const selectHasOverrides = store.createSelector(
+  (state, specialistId: string, workspaceId?: string): boolean => {
+    if (workspaceId) {
+      const def = selectGetFileSpecialist.select(state, specialistId, workspaceId);
+      if (!def || def.importedFrom || def.source === 'project') return false;
+      return (
+        isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists) &&
+        !isRedundantBuiltInOverride(def, state.specialists.bundledSpecialists)
+      );
+    }
+    const isBuiltIn = isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
+    if (!isBuiltIn) return false;
+    const file = getItem(state.specialists.fileSpecialists, specialistId);
+    if (!file || file.source !== 'user') return false;
+    return !isRedundantBuiltInOverride(file, state.specialists.bundledSpecialists);
+  },
+);
 /** Get a file specialist by ID */
 export const selectGetFileSpecialist = store.createSelector(
   (state, specialistId: string, workspaceId?: string): FileSpecialist | undefined => {
@@ -404,8 +440,14 @@ export const selectGetFileSpecialist = store.createSelector(
   },
 );
 export const selectSpecialistSourceLabel = store.createSelector(
-  (state, specialistId: string): 'Project' | 'User' | 'Built-in' | null => {
-    const file = getItem(state.specialists.fileSpecialists, specialistId);
+  (state, specialistId: string, workspaceId?: string): 'Project' | 'User' | 'Built-in' | null => {
+    const file = selectGetFileSpecialist.select(state, specialistId, workspaceId);
+    if (workspaceId && !file)
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.some(
+        (s) => s.id === specialistId,
+      )
+        ? 'Built-in'
+        : null;
     if (file?.source === 'project') {
       return 'Project';
     }
@@ -420,7 +462,11 @@ export const selectSpecialistSourceLabel = store.createSelector(
 );
 /** Get the on-disk file path for a specialist */
 export const selectSpecialistFilePath = store.createSelector(
-  (state, specialistId: string): string | undefined => {
+  (state, specialistId: string, workspaceId?: string): string | undefined => {
+    if (workspaceId)
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.find(
+        (s) => s.id === specialistId,
+      )?.path;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (file) return file.filePath;
     const bundled = state.specialists.bundledSpecialists.find(
@@ -480,5 +526,14 @@ const selectResolvedDefaultCodingAgent = store.createSelector(
     return selectIsActiveProviderAvailable.select(state)
       ? selectActiveProviderId.select(state)
       : '';
+  },
+);
+
+export const selectSpecialistImportDiagnostics = store.createSelector(
+  (state, workspaceId?: string): SpecialistImportDiagnostic[] => {
+    if (workspaceId)
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.importDiagnostics ?? [];
+    const diagnostics = state.specialists.importDiagnostics;
+    return diagnostics ? getItems(diagnostics) : [];
   },
 );

@@ -1,3 +1,7 @@
+// Native diagnostic windows share this display-backed Electron verification lane.
+import './electron-browser-lifetime-dev-console.fixture';
+import './electron-browser-lifetime-dev-console-ui.fixture';
+import './electron-browser-capture.fixture';
 /** Real Electron guest identity evidence; never launches Intent or a daemon. */
 import {
   _electron as electron,
@@ -83,6 +87,9 @@ test.beforeAll(async () => {
         },
       },
     ],
+    // This isolated main-process build bypasses the application Vite config.
+    // Its production dependencies (including token redaction) use $shared.
+    resolve: { alias: { $shared: resolve('src/shared') } },
     ssr: { noExternal: true },
     build: {
       ssr: entry,

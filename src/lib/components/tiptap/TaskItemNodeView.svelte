@@ -7,7 +7,11 @@
      displays the Task Note's title and status, with checkbox syncing to the Task Note.
 -->
 <script lang="ts">
-  import type { NodeViewProps } from '@tiptap/core';
+  import {
+    linkedTaskNoteId as readLinkedTaskNoteId,
+    previousTaskNoteId,
+  } from './task-item-adjacency';
+  import type { NodeViewProps, EditorEvents } from '@tiptap/core';
   import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
   import TaskAgentStatus from './TaskAgentStatus.svelte';
   import TaskRelationLink from '$lib/components/workspace/TaskRelationLink.svelte';
@@ -45,6 +49,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { getNoteTooltip } from '$features/notes/utils/note-tooltip';
 
   const logger = createLogger('TaskItemNodeView');
   const TASK_LINK_REGEX = /^intent:\/\/local\/task\/(.+)$/;
@@ -70,26 +75,28 @@
   let delegatedAgentId = $derived(node.attrs.delegatedAgentId ?? null);
 
   // Extract linked task note ID from node content
-  let linkedTaskNoteId = $derived.by(() => {
-    let noteId: string | null = null;
-    node.content.forEach((child: any) => {
-      if (child.content) {
-        child.content.forEach((grandchild: any) => {
-          if (grandchild.isText && grandchild.marks) {
-            for (const mark of grandchild.marks) {
-              if (mark.type.name === 'link' && mark.attrs?.href) {
-                const match = mark.attrs.href.match(TASK_LINK_REGEX);
-                if (match) {
-                  noteId = match[1];
-                  return;
-                }
-              }
-            }
-          }
-        });
-      }
-    });
-    return noteId as NoteId | null;
+  let linkedTaskNoteId = $derived(readLinkedTaskNoteId(node));
+  let previousLinkedTaskNoteId = $state<NoteId | null>(null);
+
+  // Moving a sibling need not update this node view's props. Read the current
+  // position after document transactions as well as when this row changes.
+  $effect(() => {
+    if (!linkedTaskNoteId) return;
+    const updatePrevious = () => {
+      previousLinkedTaskNoteId = previousTaskNoteId(
+        editor.state.doc,
+        getPos(),
+        extension?.options?.taskListTypeName,
+      );
+    };
+    updatePrevious();
+    const onTransaction = ({ transaction }: EditorEvents['transaction']) => {
+      if (transaction.docChanged) updatePrevious();
+    };
+    editor.on('transaction', onTransaction);
+    return () => {
+      editor.off('transaction', onTransaction);
+    };
   });
 
   let isLinkedTask = $derived(!!linkedTaskNoteId);
@@ -128,6 +135,10 @@
   // re-announces each dependent note via `note:updated`, so the refreshed
   // projection lands in the notes slice without any client-side derivation.
   let linkedTaskConflictsWith = $derived(linkedTaskNote?.metadata?.task?.conflictsWith ?? []);
+  let linkedTaskDependsOn = $derived(linkedTaskNote?.metadata?.task?.dependsOn ?? []);
+  let isAfterPrevious = $derived(
+    linkedTaskDependsOn.length === 1 && linkedTaskDependsOn[0] === previousLinkedTaskNoteId,
+  );
   let unmetDependsOn = $derived(linkedTaskNote?.metadata?.task?.unmetDependsOn ?? []);
 
   // Computed display values
@@ -455,6 +466,7 @@
           type="button"
           variant="plain"
           data-testid="linked-task-title"
+          title={getNoteTooltip(linkedTaskTitle, linkedTaskStatus)}
           data-task-row-content
           data-task-row-title
           class="min-w-0 flex-1 cursor-pointer h-auto! overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left font-normal text-[length:inherit] leading-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-primary-ink/40 {linkedTaskNotFound
@@ -496,7 +508,9 @@
                 contenteditable="false"
               >
                 <Fa icon={faHourglass} size="xs" />
-                {m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
+                {isAfterPrevious
+                  ? m.tiptap_taskItem_afterPrevious_label()
+                  : m.tiptap_taskItem_waitsOn_label({ count: unmetDependsOn.length })}
               </span>
             </Tooltip>
           {/if}

@@ -25,6 +25,7 @@ import {
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { store as appStore } from '$store/renderer/store';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 
 export type AgentModelMutatorOptions = {
   /** Live lock predicate, evaluated on every mutator call. */
@@ -70,8 +71,12 @@ export function isSkippedMutation(value: unknown): value is SkippedMutation {
 }
 
 export function createAgentModelMutator({ isLocked }: AgentModelMutatorOptions): AgentModelMutator {
-  const canWrite = () => !isLocked();
-  const writeOptions = { canMutate: canWrite, canSend: canWrite };
+  const context = () => selectPrincipalConnectionContext.select(appStore.state);
+  const writeOptions = (isCurrent?: () => boolean) => {
+    const started = context();
+    const canWrite = () => !isLocked() && context() === started && (isCurrent?.() ?? true);
+    return { canMutate: canWrite, canSend: canWrite };
+  };
   return {
     setSessionModel(agentId, model, providerId) {
       if (isLocked()) return false;
@@ -101,21 +106,25 @@ export function createAgentModelMutator({ isLocked }: AgentModelMutatorOptions):
 
     async setModel(agentId, model, workspaceId, providerId) {
       if (isLocked()) return SKIPPED_MUTATION;
-      return agentClient.setModel(agentId, model, workspaceId, providerId);
+      const options = writeOptions();
+      const result = await agentClient.setModel(agentId, model, workspaceId, providerId);
+      return options.canMutate() ? result : SKIPPED_MUTATION;
     },
 
     async reconcileEffort(agentId, workspaceId, currentEffort, supportedEfforts, isCurrent) {
       if (isLocked() || isCurrent?.() === false) return false;
-      const canReconcile = () => !isLocked() && (isCurrent?.() ?? true);
-      return reconcileAgentReasoningEffort(agentId, workspaceId, currentEffort, supportedEfforts, {
-        canMutate: canReconcile,
-        canSend: canReconcile,
-      });
+      return reconcileAgentReasoningEffort(
+        agentId,
+        workspaceId,
+        currentEffort,
+        supportedEfforts,
+        writeOptions(isCurrent),
+      );
     },
 
     async applyEffort(agentId, workspaceId, effort, previousEffort) {
       if (isLocked()) return false;
-      return applyReasoningEffort(agentId, workspaceId, effort, previousEffort, writeOptions);
+      return applyReasoningEffort(agentId, workspaceId, effort, previousEffort, writeOptions());
     },
   };
 }

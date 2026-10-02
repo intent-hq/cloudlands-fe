@@ -5,8 +5,8 @@ import {
   type PullRequestInfo,
   type Workspace,
 } from '$shared/types';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { CHIEF_WORKSPACE_ID, ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { selectIsNewlyCreatedWorkspace } from '../workspace-agents/workspace-agents-selectors';
 import {
   selectCurrentStagedWorkingChanges,
@@ -17,9 +17,13 @@ import { selectGitStatus } from '../git/git-selectors';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
 import {
-  selectIsGuestWindow,
-  selectWindowIdentitySettled,
-} from '../guest-sessions/guest-sessions-selectors';
+  selectCanAdministerHost,
+  selectCollaborationReady,
+  selectHostRole,
+  selectPrincipalSnapshot,
+  selectPrincipalRevoked,
+  selectPrincipalActionContext,
+} from '../principal/principal-selectors';
 import type {
   WorkflowStage,
   WorkspaceActivePrStatus,
@@ -50,7 +54,25 @@ export const selectWorkspaceListLoadedForBackend = store.createSelector<
   [backendId: string],
   boolean
 >((state, backendId) => {
-  return state.workspace.hasLoaded && state.workspace.loadedBackendId === backendId;
+  if (!state.workspace.hasLoaded || state.workspace.loadedBackendId !== backendId) return false;
+  const context = selectPrincipalActionContext.select(state);
+  if (
+    state.workspace.capabilityContext != null ||
+    selectPrincipalSnapshot.select(state)?.capabilities.hostMembership
+  ) {
+    return context !== null && context === state.workspace.capabilityContext;
+  }
+  return true;
+});
+
+/** Structural rows/tabs may survive reconnect; their capability projection may not. */
+const selectWorkspaceCapabilitiesReady = store.createSelector((state) => {
+  const context = selectPrincipalActionContext.select(state);
+  return (
+    context !== null &&
+    state.workspace.capabilityContext === context &&
+    selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
+  );
 });
 
 export const selectWorkspaceIsCreating = store.createSelector((state) => {
@@ -162,111 +184,80 @@ export const selectWorkspaceIsWaiting = store.createSelector<[wsId: string], boo
   (state, wsId) => selectWorkspaceById.select(state, wsId)?.waiting === true,
 );
 
-/**
- * True when the daemon reports the caller as a `collaborator` in the workspace
- * (`workspace.myRole`, PROTOCOL §5.1 — multiplayer w3), or the window is bound
- * to a host joined as a guest (multiplayer w4). Collaborator connections are
- * refused (-32003) on every owner-only method (terminals, browser tabs, port
- * forwarding, host exec), so the workspace UI hides those surfaces up front.
- * A guest window's connection carries a per-principal credential, which the
- * daemon refuses on those administrator-only methods and on `/tunnel`
- * regardless of the workspace role it reports — so the window reads as
- * collaborator whatever `myRole` says (an invite joined with the host owner's
- * own GitHub account reuses the primary principal and reports `owner`) — and
- * until the window's guest/owner identity has settled
- * (`selectWindowIdentitySettled`), since under the boot-time default a guest
- * window reads as an owner window. Absent `myRole` (older daemon, non-member,
- * unknown workspace) in a settled owner window reads as owner-equivalent.
- */
+/** Server management authority, independent of owner metadata and experimental visibility. */
+export const selectCanManageWorkspace = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => {
+    const snapshot = selectPrincipalSnapshot.select(state);
+    const role = selectHostRole.select(state);
+    if (!snapshot || role === null) return false;
+    // Virtual host administration never inherits member workspace rights.
+    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return role === 'owner';
+    const workspace = selectWorkspaceById.select(state, wsId);
+    if (!workspace) return false;
+    if (snapshot.capabilities.hostMembership) {
+      return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === true;
+    }
+    // A guest may retain ownership of one workspace without owning the host.
+    return (
+      workspace.myRole === 'owner' || (role === 'owner' && workspace.myRole !== 'collaborator')
+    );
+  },
+);
+
+/** Confirmed denial permits destructive cleanup; unknown authority and lab visibility do not. */
+export const selectWorkspaceManagementDenied = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => {
+    if (selectPrincipalRevoked.select(state)) return true;
+    const role = selectHostRole.select(state);
+    if (role === null) return false;
+    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return role !== 'owner';
+    const workspace = selectWorkspaceById.select(state, wsId);
+    if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
+      return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === false;
+    }
+    return workspace?.myRole === 'collaborator';
+  },
+);
+
+/** Existing owner controls remain ordinary UI; member management is an experimental surface. */
+const selectWorkspaceManagementVisible = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) =>
+    selectCanManageWorkspace.select(state, wsId) &&
+    (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
+);
+
+/** Compatibility name for existing workspace-management consumers. */
 export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) =>
-    !selectWindowIdentitySettled.select(state) ||
-    selectIsGuestWindow.select(state) ||
-    selectWorkspaceById.select(state, wsId)?.myRole === 'collaborator',
+  (state, wsId) => selectWorkspaceActionContext.select(state, wsId) === null,
 );
 
-/**
- * True when the workspace menus must not offer the owner-only workspace
- * actions (Transfer/Download, Archive, Delete): the daemon reports the caller
- * as a `collaborator` (`require_owner` refuses them with -32003), or the
- * window is bound to a host joined as a guest (multiplayer w4) — whatever
- * `myRole` the row carries, and before it has arrived: a guest window is
- * never an owner seat, so neither an unloaded row nor a row the daemon
- * reports as `owner` (the host owner's own account joining its own invite)
- * may expose them. The same holds while the window's identity is still the
- * boot-time default (`selectWindowIdentitySettled` false): a guest window is
- * not identifiable yet, so the actions stay hidden rather than flash. Absent
- * `myRole` in a settled owner window keeps owner semantics (older daemon).
- */
 export const selectHidesOwnerWorkspaceActions = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) =>
-    !selectWindowIdentitySettled.select(state) ||
-    selectIsGuestWindow.select(state) ||
-    selectWorkspaceById.select(state, wsId)?.myRole === 'collaborator',
+  (state, wsId) => selectWorkspaceActionContext.select(state, wsId) === null,
 );
 
-/**
- * True when the connected principal owns the workspace: the daemon reports
- * `myRole: 'owner'` (PROTOCOL §5.1) in a settled owner window. Gates the
- * surfaces the daemon's `require_owner` check protects and that a missing role
- * must never offer (sharing, the roster). Fails closed like
- * `selectHidesOwnerWorkspaceActions`: false in a guest window whatever
- * `myRole` the row carries (the host owner's own account joining its own
- * invite reports `owner`), and until the window's identity has settled.
- */
+/** Actual ownership stays distinct from management; members remain collaborators. */
 export const selectIsWorkspaceOwner = store.createSelector<[wsId: string], boolean>(
   (state, wsId) =>
-    selectWindowIdentitySettled.select(state) &&
-    !selectIsGuestWindow.select(state) &&
+    !!selectPrincipalSnapshot.select(state) &&
     selectWorkspaceById.select(state, wsId)?.myRole === 'owner',
 );
 
-/**
- * True when the workspace UI must not offer the agent lifecycle actions —
- * create (`agent.create`, `agent.delegate`, `agent.wakeOrCreate`) and delete
- * (`agent.delete`, `agent.cancelDelete`): the daemon refuses them with -32003
- * for a collaborator connection, so the affordances are hidden (never merely
- * disabled) and the creation / deletion sagas refuse before sending anything.
- * Same fail-closed shape as `selectIsWorkspaceCollaborator`: a guest window
- * whatever `myRole` it reports, a `collaborator` row in an owner window, and
- * any window whose guest/owner identity is still the boot-time default. A
- * collaborator-only client (`selectIsCollaboratorOnlyClient`) hides them for
- * every `wsId`, so a lookup that misses the row (missing, stale, or not yet
- * listed id) cannot fall open. Rename and model switching are not lifecycle
- * actions and stay available.
- */
-export const selectHidesAgentLifecycleActions = store.createSelector<[wsId: string], boolean>(
+export const selectCanShareWorkspace = store.createSelector<[wsId: string], boolean>(
   (state, wsId) =>
-    selectIsWorkspaceCollaborator.select(state, wsId) ||
-    selectIsCollaboratorOnlyClient.select(state),
+    selectCollaborationReady.select(state) &&
+    selectCanManageWorkspace.select(state, wsId) &&
+    (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership === true ||
+      selectIsWorkspaceOwner.select(state, wsId)),
 );
 
-/**
- * True when the connected principal is a collaborator everywhere: the list
- * has loaded and every workspace it can see reports `myRole: 'collaborator'`.
- * Gates app-wide administrator-only surfaces (workspace creation / repo
- * picker, provider + connection settings, voice dictation) that are not tied
- * to a single workspace. An empty list reads as owner: an owner with no
- * workspaces must still be able to create one — except in a window bound to
- * a host joined as a guest (multiplayer w4), whose principal is a
- * non-administrator by construction: it is a collaborator-only client from
- * boot, before the list loads and with zero shared workspaces. Until the
- * window's guest/owner identity has settled it therefore reads as
- * collaborator-only (the safe default: a guest window must never expose the
- * administrator surfaces while its identity is still the boot-time default);
- * only the workspace list itself stays optimistic while unloaded.
- */
-export const selectIsCollaboratorOnlyClient = store.createSelector((state) => {
-  if (selectIsGuestWindow.select(state)) return true;
-  if (!selectWindowIdentitySettled.select(state)) return true;
-  if (!state.workspace.hasLoaded) return false;
-  // The Chief is a client-side virtual workspace (no `myRole`); it must not
-  // read as an owned workspace and defeat the gate that hides it.
-  const workspaces = getItems(state.workspace.workspaces).filter(
-    (ws) => ws.id !== CHIEF_WORKSPACE_ID,
-  );
-  return workspaces.length > 0 && workspaces.every((ws) => ws.myRole === 'collaborator');
-});
+export const selectHidesAgentLifecycleActions = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => selectWorkspaceActionContext.select(state, wsId) === null,
+);
+
+/** Existing host-administration gate. Workspace creation uses selectCanCreateWorkspace. */
+export const selectIsCollaboratorOnlyClient = store.createSelector(
+  (state) => !selectCanAdministerHost.select(state),
+);
 
 export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state) => {
   return getItems(state.workspace.workspaces).filter(
@@ -815,4 +806,61 @@ export const selectWorkspaceProgressActions = store.createSelector<
     default:
       return [];
   }
+});
+
+/** Current workspace management proof; never inferred from an open tab or remembered dialog. */
+export const selectWorkspaceActionContext = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) =>
+    selectHostRole.select(state) !== 'guest' && selectWorkspaceManagementVisible.select(state, wsId)
+      ? selectPrincipalActionContext.select(state)
+      : null,
+);
+
+/** Collaborators retain ordinary chat/permission rights, without management authority. */
+export const selectWorkspaceParticipationContext = store.createSelector<
+  [wsId: string],
+  string | null
+>((state, wsId) => {
+  const snapshot = selectPrincipalSnapshot.select(state);
+  if (!snapshot) return null;
+  // Chief is a host-owner surface, without an ordinary workspace membership row.
+  if (wsId === CHIEF_WORKSPACE_ID)
+    return selectCanAdministerHost.select(state)
+      ? selectPrincipalActionContext.select(state)
+      : null;
+  if (snapshot.capabilities.hostMembership && !selectWorkspaceCapabilitiesReady.select(state))
+    return null;
+  if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
+    return null;
+  const row = selectWorkspaceById.select(state, wsId);
+  if (!row || (row.myRole !== 'owner' && row.myRole !== 'collaborator' && row.canManage !== true))
+    return null;
+  return selectPrincipalActionContext.select(state);
+});
+
+/** Current shared-host prompt service uses canManage; legacy guest prompts keep their wire rights. */
+export const selectWorkspacePermissionContext = store.createSelector<[wsId: string], string | null>(
+  (state, wsId) =>
+    selectPrincipalSnapshot.select(state)?.capabilities.hostMembership
+      ? selectWorkspaceManagementVisible.select(state, wsId)
+        ? selectPrincipalActionContext.select(state)
+        : null
+      : selectWorkspaceParticipationContext.select(state, wsId),
+);
+
+/** workspace.update collaborator fields from the frozen daemon capability contract. */
+export const selectWorkspaceUpdateContext = store.createSelector<
+  [wsId: string, fields: string[]],
+  string | null
+>((state, wsId, fields) => {
+  const context = selectWorkspaceParticipationContext.select(state, wsId);
+  if (!context) return null;
+  // workspace.update has a scoped owner/manager gate, independently of the
+  // host-execution gate on scripts, terminals and direct lifecycle methods.
+  if (selectWorkspaceManagementVisible.select(state, wsId)) return context;
+  return fields.every((field) =>
+    ['id', 'title', 'tags', 'statusMessage', 'statusImageAssetId'].includes(field),
+  )
+    ? context
+    : null;
 });

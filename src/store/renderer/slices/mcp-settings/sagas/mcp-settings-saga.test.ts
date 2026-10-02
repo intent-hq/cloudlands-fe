@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   setMcpServers: vi.fn(),
   getMcpServerStatuses: vi.fn(),
   restartMcpServer: vi.fn(),
-  getWorkspaceDisabledMcpServerNames: vi.fn(),
+  getWorkspaceDisabledMcpServerKeys: vi.fn(),
   toggleWorkspaceMcpServer: vi.fn(),
   invoke: vi.fn(),
 }));
@@ -19,7 +19,7 @@ vi.mock('$lib/client', () => ({
       setMcpServers: mocks.setMcpServers,
       getMcpServerStatuses: mocks.getMcpServerStatuses,
       restartMcpServer: mocks.restartMcpServer,
-      getWorkspaceDisabledMcpServerNames: mocks.getWorkspaceDisabledMcpServerNames,
+      getWorkspaceDisabledMcpServerKeys: mocks.getWorkspaceDisabledMcpServerKeys,
       toggleWorkspaceMcpServer: mocks.toggleWorkspaceMcpServer,
     },
   },
@@ -130,8 +130,8 @@ describe('mcpSettingsSaga', () => {
         disabled: true,
       },
     ]);
-    expect(run.state().statusMap).toEqual({ beta: 'disabled' });
-    expect(run.state().disabledServers).toEqual({ beta: true });
+    expect(run.state().statusMap).toEqual({ 'server-2': 'disabled' });
+    expect(run.state().disabledServers).toEqual({ 'server-2': true });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -194,15 +194,15 @@ describe('mcpSettingsSaga', () => {
 
     expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-up', 'srv-down', 'srv-auth']]]);
     expect(run.state().statusMap).toEqual({
-      up: 'connected',
-      down: 'error',
-      auth: 'auth_required',
-      off: 'disabled',
+      'srv-up': 'connected',
+      'srv-down': 'error',
+      'srv-auth': 'auth_required',
+      'srv-off': 'disabled',
       'no-id': 'configured',
     });
     expect(run.state().errorMessages).toEqual({
-      down: 'unreachable from daemon host',
-      auth: 'authentication required',
+      'srv-down': 'unreachable from daemon host',
+      'srv-auth': 'authentication required',
     });
     run.task.cancel();
     await run.task.toPromise();
@@ -217,7 +217,7 @@ describe('mcpSettingsSaga', () => {
     run.channel.put(loadServers());
     await settle();
 
-    expect(run.state().statusMap).toEqual({ up: 'configured' });
+    expect(run.state().statusMap).toEqual({ 'srv-up': 'configured' });
     expect(run.state().error).toBeNull();
     expect(run.state().loading).toBe(false);
     run.task.cancel();
@@ -250,7 +250,7 @@ describe('mcpSettingsSaga', () => {
       { id: 'srv-local', name: 'local', type: 'stdio', command: 'node' },
     ]);
     expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-local']]]);
-    expect(run.state().statusMap).toEqual({ local: 'connected' });
+    expect(run.state().statusMap).toEqual({ 'srv-local': 'connected' });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -278,8 +278,8 @@ describe('mcpSettingsSaga', () => {
       { id: 'srv-remote', name: 'remote', type: 'http', url: 'https://remote.test' },
     ]);
     expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-remote']]]);
-    expect(run.state().statusMap).toEqual({ remote: 'error' });
-    expect(run.state().errorMessages).toEqual({ remote: 'unreachable from daemon host' });
+    expect(run.state().statusMap).toEqual({ 'srv-remote': 'error' });
+    expect(run.state().errorMessages).toEqual({ 'srv-remote': 'unreachable from daemon host' });
     expect(run.state().advancedSaveStatus).toEqual('saved');
     run.task.cancel();
     await run.task.toPromise();
@@ -318,7 +318,7 @@ describe('mcpSettingsSaga', () => {
         initialState,
         setServers([{ id: 'srv-a', name: 'alpha', type: 'http', url: 'https://alpha.test' }]),
       ),
-      setServerErrorMessage('alpha', 'old boom'),
+      setServerErrorMessage('srv-a', 'old boom'),
     );
     mocks.getMcpServers.mockResolvedValue([
       { id: 'srv-a', name: 'alpha', type: 'http', url: 'https://alpha.test' },
@@ -329,7 +329,7 @@ describe('mcpSettingsSaga', () => {
     ]);
     const run = harness(seeded);
     run.channel.put(
-      updateServer('alpha', {
+      updateServer('srv-a', {
         name: 'alpha',
         type: 'http',
         url: 'https://alpha.test',
@@ -337,7 +337,7 @@ describe('mcpSettingsSaga', () => {
     );
     await settle();
 
-    expect(run.state().statusMap).toEqual({ alpha: 'connected' });
+    expect(run.state().statusMap).toEqual({ 'srv-a': 'connected' });
     expect(run.state().errorMessages).toEqual({});
     run.task.cancel();
     await run.task.toPromise();
@@ -363,7 +363,7 @@ describe('mcpSettingsSaga', () => {
     const run = harness();
     run.channel.put(addServer({ name: 'local', type: 'stdio', command: 'node' }));
     await settle();
-    run.channel.put(removeServer('local'));
+    run.channel.put(removeServer('srv-old'));
     await settle();
     run.channel.put(addServer({ name: 'local', type: 'stdio', command: 'node' }));
     await settle();
@@ -376,7 +376,7 @@ describe('mcpSettingsSaga', () => {
     expect(run.state().servers).toEqual([
       { id: 'srv-new', name: 'local', type: 'stdio', command: 'node' },
     ]);
-    expect(run.state().statusMap.local).toEqual('connected');
+    expect(run.state().statusMap['srv-new']).toEqual('connected');
     expect(run.state().errorMessages).toEqual({});
     run.task.cancel();
     await run.task.toPromise();
@@ -708,18 +708,18 @@ describe('mcpSettingsSaga', () => {
     const run = harness({
       ...initialState,
       servers: [remote],
-      errorMessages: { remote: 'connection failed' },
+      errorMessages: { 'srv-remote': 'connection failed' },
     });
-    run.channel.put(restartServer('remote'));
+    run.channel.put(restartServer('srv-remote'));
     await settle();
 
     expect(mocks.restartMcpServer).toHaveBeenCalledWith('srv-remote');
     expect(run.dispatched).toEqual([
-      { type: 'mcpSettings/clearServerErrorMessage', payload: ['remote'] },
-      { type: 'mcpSettings/setServerStatus', payload: ['remote', 'auth_required'] },
+      { type: 'mcpSettings/clearServerErrorMessage', payload: ['srv-remote'] },
+      { type: 'mcpSettings/setServerStatus', payload: ['srv-remote', 'auth_required'] },
       {
         type: 'mcpSettings/setServerErrorMessage',
-        payload: ['remote', 'authentication required (HTTP 401)'],
+        payload: ['srv-remote', 'authentication required (HTTP 401)'],
       },
     ]);
     run.task.cancel();
@@ -748,7 +748,7 @@ describe('mcpSettingsSaga', () => {
     };
     mocks.restartMcpServer.mockResolvedValue({ serverId: 'srv-figma', state: 'running' });
     const run = harness({ ...initialState, servers: [figma] });
-    run.channel.put(authenticateServer('figma'));
+    run.channel.put(authenticateServer('srv-figma'));
     await settle();
 
     expect(mocks.invoke).toHaveBeenCalledWith('user-mcp:authenticate', {
@@ -756,7 +756,7 @@ describe('mcpSettingsSaga', () => {
       url: 'https://mcp.figma.com/mcp',
     });
     expect(mocks.restartMcpServer).toHaveBeenCalledWith('srv-figma');
-    expect(run.state().statusMap.figma).toBe('connected');
+    expect(run.state().statusMap['srv-figma']).toBe('connected');
     expect(run.state().errorMessages).toEqual({});
     run.task.cancel();
     await run.task.toPromise();
@@ -774,12 +774,12 @@ describe('mcpSettingsSaga', () => {
       data: { success: false, error: 'Sign-in was denied' },
     });
     const run = harness({ ...initialState, servers: [figma] });
-    run.channel.put(authenticateServer('figma'));
+    run.channel.put(authenticateServer('srv-figma'));
     await settle();
 
     expect(mocks.restartMcpServer).not.toHaveBeenCalled();
-    expect(run.state().statusMap.figma).toBe('auth_required');
-    expect(run.state().errorMessages.figma).toBe('Sign-in was denied');
+    expect(run.state().statusMap['srv-figma']).toBe('auth_required');
+    expect(run.state().errorMessages['srv-figma']).toBe('Sign-in was denied');
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -796,12 +796,12 @@ describe('mcpSettingsSaga', () => {
       error: { code: 'MCP_SERVER_URL_MISMATCH', message: 'URL did not match the saved server' },
     });
     const run = harness({ ...initialState, servers: [figma] });
-    run.channel.put(authenticateServer('figma'));
+    run.channel.put(authenticateServer('srv-figma'));
     await settle();
 
     expect(mocks.restartMcpServer).not.toHaveBeenCalled();
-    expect(run.state().statusMap.figma).toBe('auth_required');
-    expect(run.state().errorMessages.figma).toBe('URL did not match the saved server');
+    expect(run.state().statusMap['srv-figma']).toBe('auth_required');
+    expect(run.state().errorMessages['srv-figma']).toBe('URL did not match the saved server');
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -900,14 +900,14 @@ describe('mcpSettingsSaga', () => {
       mcpSettingsReducer(initialState, setServers([{ ...remote, id: 'global-server' }])),
       { 'ws-1': [remote] },
     );
-    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'remote', false));
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
     await settle();
 
     expect(mocks.toggleWorkspaceMcpServer.mock.calls).toEqual([['ws-1', 'srv-remote', false]]);
     expect(run.dispatched).toEqual([
-      { type: 'mcpSettings/setWorkspaceMcpServerDisabled', payload: ['ws-1', 'remote', true] },
+      { type: 'mcpSettings/setWorkspaceMcpServerDisabled', payload: ['ws-1', 'srv-remote', true] },
     ]);
-    expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({ remote: true });
+    expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({ 'srv-remote': true });
     expect(run.state().disabledServers).toEqual({});
     run.task.cancel();
     await run.task.toPromise();
@@ -923,10 +923,10 @@ describe('mcpSettingsSaga', () => {
     mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true, workspaceDisabled: false });
     const seed = mcpSettingsReducer(
       mcpSettingsReducer(initialState, setServers([remote])),
-      setWorkspaceMcpServerDisabled('ws-1', 'remote', true),
+      setWorkspaceMcpServerDisabled('ws-1', 'srv-remote', true),
     );
     const run = harness(seed, { 'ws-1': [remote] });
-    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'remote', true));
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', true));
     await settle();
 
     expect(mocks.toggleWorkspaceMcpServer.mock.calls).toEqual([['ws-1', 'srv-remote', true]]);
@@ -943,15 +943,15 @@ describe('mcpSettingsSaga', () => {
       url: 'https://remote.test',
     };
     mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: false, error: 'not-found' });
-    mocks.getWorkspaceDisabledMcpServerNames.mockResolvedValue([]);
+    mocks.getWorkspaceDisabledMcpServerKeys.mockResolvedValue([]);
     const run = harness(
       mcpSettingsReducer(initialState, setServers([{ ...remote, id: 'global-server' }])),
       { 'ws-1': [remote] },
     );
-    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'remote', false));
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
     await settle();
 
-    expect(mocks.getWorkspaceDisabledMcpServerNames.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.getWorkspaceDisabledMcpServerKeys.mock.calls).toEqual([['ws-1']]);
     expect(run.dispatched).toEqual([
       { type: 'mcpSettings/setWorkspaceDisabledMcpServers', payload: ['ws-1', {}] },
     ]);
@@ -968,17 +968,20 @@ describe('mcpSettingsSaga', () => {
       url: 'https://remote.test',
     };
     mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true });
-    mocks.getWorkspaceDisabledMcpServerNames.mockResolvedValue(['remote']);
+    mocks.getWorkspaceDisabledMcpServerKeys.mockResolvedValue(['srv-remote']);
     const run = harness(
       mcpSettingsReducer(initialState, setServers([{ ...remote, id: 'global-server' }])),
       { 'ws-1': [remote] },
     );
-    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'remote', false));
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-remote', false));
     await settle();
 
-    expect(mocks.getWorkspaceDisabledMcpServerNames.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.getWorkspaceDisabledMcpServerKeys.mock.calls).toEqual([['ws-1']]);
     expect(run.dispatched).toEqual([
-      { type: 'mcpSettings/setWorkspaceDisabledMcpServers', payload: ['ws-1', { remote: true }] },
+      {
+        type: 'mcpSettings/setWorkspaceDisabledMcpServers',
+        payload: ['ws-1', { 'srv-remote': true }],
+      },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -997,14 +1000,14 @@ describe('mcpSettingsSaga', () => {
   });
 
   it('hydrates a workspace disabled map from the scoped list and keeps state on a failed read', async () => {
-    mocks.getWorkspaceDisabledMcpServerNames
+    mocks.getWorkspaceDisabledMcpServerKeys
       .mockResolvedValueOnce(['linear', 'filesystem'])
       .mockResolvedValueOnce(null);
     const run = harness();
     run.channel.put(hydrateWorkspaceMcpDisabled('ws-1'));
     await settle();
 
-    expect(mocks.getWorkspaceDisabledMcpServerNames.mock.calls).toEqual([['ws-1']]);
+    expect(mocks.getWorkspaceDisabledMcpServerKeys.mock.calls).toEqual([['ws-1']]);
     expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({
       linear: true,
       filesystem: true,
@@ -1017,6 +1020,123 @@ describe('mcpSettingsSaga', () => {
       linear: true,
       filesystem: true,
     });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+});
+
+describe('MCP identity regression contracts', () => {
+  const siblings = [
+    { id: 'srv-a', name: 'Desktop tools', type: 'http' as const, url: 'https://a.test' },
+    { id: 'srv-b', name: 'Desktop tools', type: 'http' as const, url: 'https://b.test' },
+  ];
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.setMcpServers.mockResolvedValue({ success: true });
+    mocks.getMcpServers.mockResolvedValue(siblings);
+    mocks.getMcpServerStatuses.mockResolvedValue([]);
+  });
+
+  it('preserves edited IDs, credentials and disabled siblings independently', async () => {
+    mocks.getMcpServers.mockResolvedValue([
+      { ...siblings[0], headers: { Authorization: 'a-secret' } },
+      { ...siblings[1], headers: { Authorization: 'b-secret' }, disabled: true },
+    ]);
+    const run = harness({ ...initialState, servers: siblings, disabledServers: { 'srv-b': true } });
+    run.channel.put(
+      updateServer('srv-a', { name: 'Desktop tools', type: 'http', url: 'https://edited.test' }),
+    );
+    await settle();
+    expect(mocks.setMcpServers).toHaveBeenCalledWith([
+      { ...siblings[0], url: 'https://edited.test', headers: { Authorization: 'a-secret' } },
+      { ...siblings[1], headers: { Authorization: 'b-secret' }, disabled: true },
+    ]);
+    expect(run.state().servers.map((s) => s.id)).toEqual(['srv-a', 'srv-b']);
+    expect(JSON.stringify(run.state())).not.toContain('secret');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('round trips array JSON with same-name IDs and existing names containing spaces', async () => {
+    const run = harness({ ...initialState, servers: siblings });
+    run.channel.put(saveAdvancedJson(JSON.stringify({ mcpServers: siblings })));
+    await settle();
+    expect(mocks.setMcpServers).toHaveBeenCalledWith(siblings);
+    expect(run.state().advancedSaveStatus).toBe('saved');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each([
+    [
+      { ...siblings[0], name: 'first' },
+      { ...siblings[1], id: 'srv-a', name: 'second' },
+    ],
+    [
+      { name: 'same', type: 'http' },
+      { name: 'same', type: 'http' },
+    ],
+    [
+      { ...siblings[0], name: 'same' },
+      { name: 'same', type: 'http' },
+    ],
+  ])('rejects ambiguous identities before saving %j', async (...configs) => {
+    const run = harness();
+    run.channel.put(saveAdvancedJson(JSON.stringify({ mcpServers: configs })));
+    await settle();
+    expect(mocks.setMcpServers).not.toHaveBeenCalled();
+    expect(run.state().advancedSaveStatus).toBe('error');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps same-name status results separate and drops results for removed IDs', async () => {
+    const statusResolvers: Array<(value: unknown) => void> = [];
+    mocks.getMcpServerStatuses.mockReturnValue(
+      new Promise((resolve) => {
+        statusResolvers.push(resolve);
+      }),
+    );
+    const run = harness();
+    run.channel.put(loadServers());
+    await settle();
+    run.channel.put(removeServer('srv-a'));
+    await settle();
+    statusResolvers.forEach((resolve) =>
+      resolve([
+        { serverId: 'srv-a', state: 'error', lastError: 'old' },
+        { serverId: 'srv-b', state: 'running' },
+      ]),
+    );
+    await settle();
+    expect(run.state().servers).toEqual([siblings[1]]);
+    expect(run.state().statusMap['srv-a']).toBeUndefined();
+    expect(run.state().statusMap['srv-b']).toBe('connected');
+    expect(run.state().errorMessages['srv-a']).toBeUndefined();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('restores a removed same-name server with its original ID and disabled state', async () => {
+    const run = harness({ ...initialState, servers: [siblings[1]] });
+    run.channel.put(addServer({ ...siblings[0], disabled: true }));
+    await settle();
+    expect(mocks.setMcpServers).toHaveBeenCalledWith([
+      siblings[1],
+      { ...siblings[0], disabled: true },
+    ]);
+    expect(run.state().disabledServers).toEqual({ 'srv-a': true });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('targets a workspace toggle by ID when names match', async () => {
+    mocks.toggleWorkspaceMcpServer.mockResolvedValue({ success: true, workspaceDisabled: true });
+    const run = harness({ ...initialState, servers: siblings }, { 'ws-1': siblings });
+    run.channel.put(toggleWorkspaceMcpServer('ws-1', 'srv-b', false));
+    await settle();
+    expect(mocks.toggleWorkspaceMcpServer).toHaveBeenCalledWith('ws-1', 'srv-b', false);
+    expect(run.state().byWorkspaceId['ws-1'].disabledServers).toEqual({ 'srv-b': true });
     run.task.cancel();
     await run.task.toPromise();
   });

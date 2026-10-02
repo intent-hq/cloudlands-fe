@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
-import type { StoreAction } from '@augmentcode/themis/types';
+import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../types';
 
 const mocks = vi.hoisted(() => ({
@@ -55,6 +55,8 @@ import {
   workspaceMounted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
+import { initialState as availabilityInitial } from '../agent-availability/agent-availability-slice';
+
 const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
@@ -92,15 +94,34 @@ describe('workspace catalog ownership', () => {
     ]);
     mocks.mcpStatuses.mockResolvedValue([]);
     const channel = stdChannel();
-    let state = { providerCatalog: initialState, workspaceLifecycle: lifecycleInitial };
+    let state = {
+      providerCatalog: initialState,
+      workspaceLifecycle: lifecycleInitial,
+      agentAvailability: availabilityInitial,
+    };
+    const listeners = new Set<() => void>();
     const dispatch = (action: StoreAction<unknown>) => {
       state = {
+        ...state,
         providerCatalog: providerCatalogReducer(state.providerCatalog, action),
         workspaceLifecycle: workspaceLifecycleReducer(state.workspaceLifecycle, action),
       };
       channel.put(action);
+      listeners.forEach((listener) => listener());
     };
-    const task = runSaga({ channel, dispatch, getState: () => state }, workspaceCatalogSaga);
+    const reduxStore = {
+      getState: () => state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+    const task = runSaga(
+      { channel, dispatch, getState: reduxStore.getState, context: { reduxStore } },
+      workspaceCatalogSaga,
+    );
     try {
       dispatch(workspaceMounted('A'));
       dispatch(workspaceMounted('B'));

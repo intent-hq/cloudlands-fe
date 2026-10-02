@@ -1,3 +1,4 @@
+import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 /**
  * Agent send pipeline.
@@ -138,8 +139,11 @@ export async function sendMessage(
     messageMetadata?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
+  const admission = selectWorkspaceParticipationContext.select(appStore.state, workspace.id);
+  if (!admission) return;
   const ownership = captureAgentMutationOwnership(agentId, workspace.id);
   const isCurrent = () =>
+    admission === selectWorkspaceParticipationContext.select(appStore.state, workspace.id) &&
     ownership.isCurrent(appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId);
   // Wrap entire sendMessage operation with performance tracking
   return performanceOptimizer.track(

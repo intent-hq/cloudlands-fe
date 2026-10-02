@@ -1,5 +1,14 @@
 <script lang="ts">
-  let { workspaceId, filePath }: { workspaceId: string; filePath: string } = $props();
+  let {
+    workspaceId,
+    filePath,
+    gitRootId,
+  }: { workspaceId: string; filePath: string; gitRootId?: string } = $props();
 </script>
 
-<div data-testid="pdf-viewer" data-workspace-id={workspaceId} data-file-path={filePath}></div>
+<div
+  data-testid="pdf-viewer"
+  data-workspace-id={workspaceId}
+  data-file-path={filePath}
+  data-git-root-id={gitRootId}
+></div>

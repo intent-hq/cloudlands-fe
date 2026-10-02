@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /* eslint-disable max-lines */
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
@@ -22,7 +24,6 @@
   } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
-  import { surfaceClasses } from '$lib/components/ui/surface-context';
   import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
@@ -306,11 +307,16 @@
   const skillsLoading$ = selectSkillsLoading(workspaceIdStore);
   const skillsError$ = selectSkillsError(workspaceIdStore);
 
+  const participation$ = selectWorkspaceParticipationContext(workspaceIdStore);
+  const creation$ = selectWorkspaceCreationVisible();
+  const admitted = $derived(workspace?.id ? !!$participation$ : $creation$);
+
   // Derived state: whether there's content to send (text, context items, or inline images).
   // Blocked while any attachment placement is in flight or failed — a failed
   // pill must be retried or removed before the message can go out.
   let canSend = $derived(
-    (value.trim() || contextItems.length > 0 || hasInlineImages) &&
+    admitted &&
+      (value.trim() || contextItems.length > 0 || hasInlineImages) &&
       !hasBlockingAttachments(contextItems),
   );
 
@@ -606,13 +612,7 @@
           ? 'hover'
           : 'rest',
   );
-  const edgeShadow = $derived(
-    ringState === 'drag'
-      ? '0 0 0 1px hsl(var(--focus-ring)), var(--shadow-surface-2)'
-      : ringState === 'hover'
-        ? '0 0 0 1px hsl(var(--border)), var(--shadow-surface-2)'
-        : undefined,
-  );
+  const edgeShadow = 'none';
   const composerStyle = $derived(
     `${
       isAutoExpand
@@ -799,7 +799,7 @@
   }
 
   async function handleEnhancePrompt() {
-    if (!enhanceAvailable || disabled) return;
+    if (!admitted || !enhanceAvailable || disabled) return;
     if (!value.trim() || isEnhancing) return;
 
     const originalPrompt = value;
@@ -1461,8 +1461,7 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border-0 p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
-    surfaceClasses(2, 2),
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
       : 'transition-[border-color,background-color,box-shadow]',

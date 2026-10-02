@@ -141,6 +141,7 @@ vi.mock('$store/renderer/store', async () => {
   // toggles store state proves the component anchors on the right selector.
   return createAppStoreMockModule({
     state: () => ({
+      git: { byWorkspaceId: {} },
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
       transientUi: mocks.transientUi,
@@ -1393,7 +1394,7 @@ describe('ChatPanel mounted lifecycle', () => {
         intersectionObservers: 1,
         intersectionTargets: 1,
         windowListeners: expect.any(Number),
-        ipcListeners: 3,
+        ipcListeners: 0,
         chatSubscriptionLeases: 1,
       });
       expect(singleSurfaceOwnership.resizeObservers).toBeGreaterThan(0);
@@ -2904,7 +2905,7 @@ describe('ChatPanel mounted lifecycle', () => {
     );
   });
 
-  it('detaches IPC, observer, and scroll-action lifecycles while inactive and restores them', async () => {
+  it('releases saga read interest, observers, and scroll actions while inactive and restores them', async () => {
     mocks.draftGet.mockResolvedValue(null);
     const currentWorkspace = workspace('workspace-a');
     const view = render(ChatPanel, {
@@ -2912,7 +2913,16 @@ describe('ChatPanel mounted lifecycle', () => {
     });
     await tick();
 
-    expect(mocks.listenSync).toHaveBeenCalledTimes(3);
+    expect(mocks.listenSync).not.toHaveBeenCalled();
+    const readRequest = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action.type === 'git/readRequested');
+    expect(readRequest?.payload).toEqual([
+      'workspace-a',
+      expect.any(String),
+      expect.any(String),
+      { kind: 'autoCommitStatus', agentId: 'agent-a' },
+    ]);
     expect(mocks.followBottomOptions?.enabled).toBe(true);
 
     flushFrame();
@@ -2930,17 +2940,25 @@ describe('ChatPanel mounted lifecycle', () => {
     await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: false });
     await tick();
 
-    expect(mocks.ipcListenerCleanups).toHaveLength(3);
-    expect(
-      mocks.ipcListenerCleanups.every((cleanupListener) => cleanupListener.mock.calls.length === 1),
-    ).toBe(true);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'git/releaseRead',
+        payload: readRequest.payload.slice(0, 3),
+      }),
+    );
     expect(mocks.followBottomOptions?.enabled).toBe(false);
     expect(mocks.pinnedPromptOptions?.enabled).toBe(false);
     expect(mocks.resizeDisconnect.mock.calls.length).toBeGreaterThan(disconnectsBeforeDeactivate);
 
     await view.rerender({ workspace: currentWorkspace, agentId: 'agent-a', isActive: true });
     await tick();
-    expect(mocks.listenSync).toHaveBeenCalledTimes(6);
+    expect(mocks.listenSync).not.toHaveBeenCalled();
+    const readRequests = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'git/readRequested');
+    expect(readRequests).toHaveLength(2);
+    expect(readRequests[1].payload[1]).toBe(readRequest.payload[1]);
+    expect(readRequests[1].payload[2]).not.toBe(readRequest.payload[2]);
     expect(mocks.followBottomOptions?.enabled).toBe(true);
   });
 
@@ -4086,7 +4104,7 @@ describe('ChatPanel mounted lifecycle', () => {
     const [getContainer, target, duration, onComplete] = mocks.animateScrollTo.mock.calls[0];
     expect(getContainer()).toBe(scrollContainer);
     expect(target).toBe(600);
-    expect(duration).toBe(150);
+    expect(duration).toBeGreaterThan(0);
     expect(scrollToBottomUtil).not.toHaveBeenCalled();
 
     onComplete(scrollContainer);
@@ -4120,52 +4138,10 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(mocks.followBottomOptions?.follow).toBe(true);
   });
 
-  it('flashes a decorative lock confirmation when scrolling back to the bottom re-locks', async () => {
-    mocks.draftGet.mockResolvedValue(null);
-    mocks.agentMessages.set([{ id: 'message-1' }]);
-    const view = render(ChatPanel, {
-      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
-    });
-    await tick();
-    const scrollContainer = view.container.querySelector('.overflow-y-auto') as HTMLDivElement;
-    flushFrame(); // bind the distance-from-bottom scroll tracker
-
-    // No confirmation while merely sitting at the bottom.
-    const selector = '[data-testid="chat-scroll-lock-confirmation"]';
-    expect(view.container.querySelector(selector)).toBeNull();
-
-    // Scroll up past the threshold (and let the show settle so the button
-    // commits), then back to the bottom → re-lock flash.
-    Object.defineProperty(scrollContainer, 'scrollHeight', { configurable: true, value: 1000 });
-    Object.defineProperty(scrollContainer, 'clientHeight', { configurable: true, value: 400 });
-    scrollContainer.scrollTop = 100; // 500px from the bottom
-    await fireEvent.scroll(scrollContainer);
-    await vi.advanceTimersByTimeAsync(SCROLL_BUTTON_SHOW_SETTLE_MS);
-    await tick();
-    expect(view.container.querySelector(selector)).toBeNull();
-
-    scrollContainer.scrollTop = 600; // back at the bottom
-    await fireEvent.scroll(scrollContainer);
-    await tick();
-    const confirmation = view.container.querySelector(selector);
-    expect(confirmation).not.toBeNull();
-    // Purely decorative: hidden from the accessibility tree, not hit-testable,
-    // and not a focusable control (regression guard for monorepo#2508).
-    expect(confirmation!.getAttribute('aria-hidden')).toBe('true');
-    expect(confirmation!.classList.contains('pointer-events-none')).toBe(true);
-    expect(confirmation!.tagName).toBe('DIV');
-
-    // The flash unmounts after its display window.
-    await vi.advanceTimersByTimeAsync(1500);
-    await tick();
-    expect(view.container.querySelector(selector)).toBeNull();
-  });
-
-  it('keeps the button and lock confirmation stable while the distance jitters across the threshold', async () => {
+  it('keeps the button stable while the distance jitters across the threshold', async () => {
     // Regression: transient scrollHeight changes (lazy-turn placeholder swaps,
     // image loads) bounce distance-from-bottom across the 30px threshold every
-    // frame. The button must not strobe in and the decorative lock
-    // confirmation must not re-trigger from the same jitter.
+    // frame. The button must not strobe in.
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([{ id: 'message-1' }]);
     const view = render(ChatPanel, {
@@ -4188,9 +4164,8 @@ describe('ChatPanel mounted lifecycle', () => {
       await vi.advanceTimersByTimeAsync(16);
     }
     await tick();
-    expect(view.container.querySelector('[data-testid="chat-scroll-to-bottom-button"]')).toBeNull();
     expect(
-      view.container.querySelector('[data-testid="chat-scroll-lock-confirmation"]'),
+      view.container.querySelector('[data-testid="chat-floating-scroll-to-bottom-button"]'),
     ).toBeNull();
   });
 

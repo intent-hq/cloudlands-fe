@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AgentSession, QueuedMessage } from '$shared/types';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const reconnectCallbacks = vi.hoisted(() => new Set<() => void>());
 vi.mock('$lib/client/live/backend-transport', async (importOriginal) => ({
@@ -96,6 +96,40 @@ afterEach(() => {
 });
 
 describe('hydrateAgentQueue', () => {
+  it('hydrates distinct portable authors and all-null humans without changing content or provenance', async () => {
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+    };
+    const rows: QueuedMessage[] = [
+      {
+        ...queued('portable-one', 0),
+        author,
+        messageMetadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      },
+      {
+        ...queued('portable-two', 1),
+        author: { ...author, identity: { ...author.identity, host: 'two.example' } },
+      },
+      {
+        ...queued('unknown-human', 2),
+        author: { principalId: null, login: null, displayName: null, avatarUrl: null },
+      },
+      { ...queued('no-author', 3), author: null },
+      queued('older-host', 4),
+    ];
+    const before = JSON.stringify(rows);
+    getQueueMock.mockResolvedValueOnce(rows);
+    await hydrateAgentQueue(AGENT);
+    expect(messagesOf(AGENT)).toEqual(rows);
+    expect(JSON.stringify(rows)).toBe(before);
+    expect(messagesOf(AGENT)[3]).toHaveProperty('author', null);
+    expect(messagesOf(AGENT)[4]).not.toHaveProperty('author');
+  });
+
   it('clears a stale mirrored row when the daemon queue is already drained (monorepo#1749)', async () => {
     // Simulate the missed agent:queue:updated: the mirror still holds a row
     // the daemon has drained.

@@ -260,6 +260,31 @@ describe('authoritative provider alias identity', () => {
     expect(selectNormalizedProviderId.select(storeWith(catalog), 'pi')).toBe('pi');
   });
 
+  it.each(aliases)('uses only advertised %s identity for login guidance', (alias) => {
+    const catalog = providerCatalogReducer(
+      initialState,
+      providerCatalogLoaded({
+        providers: [
+          CATALOG.providers[0],
+          {
+            ...CATALOG.providers[2],
+            legacyAliases: aliases,
+            authErrorPatterns: ['pi login required'],
+            loginCommandHint: 'pi login',
+          },
+        ],
+      }),
+    );
+    const state = storeWith(catalog, {}, { activeProviderId: 'auggie' });
+    expect(
+      selectProviderAuthFailureGuidance.select(state, alias, 'auggie:model', 'pi login required'),
+    ).toEqual({ providerId: 'pi', loginCommandHint: 'pi login', showClaudeDesktopNote: false });
+    expect(selectProviderAuthFailureGuidance.select(state, alias, null, 'auggie login')).toBeNull();
+    expect(
+      selectProviderAuthFailureGuidance.select(state, 'unknown', 'auggie:model', 'auggie login'),
+    ).toBeNull();
+  });
+
   it.each(['future-provider', 'acp', 'augment', 'default', ''])(
     'preserves unresolved %s before hydration and on an older daemon',
     (raw) => {
@@ -272,7 +297,7 @@ describe('authoritative provider alias identity', () => {
   );
 });
 
-it('retains only scoped MCP identity during refresh and clears it across connection and workspace lifetimes', async () => {
+it('retains workspace snapshots during refresh and clears them across connection and workspace lifetimes', async () => {
   const { workspaceCatalogReceived, workspaceCatalogInvalidated } =
     await import('./provider-catalog-slice');
   const { selectWorkspaceMcpServerName } = await import('../mcp-settings/mcp-settings-selectors');
@@ -292,7 +317,7 @@ it('retains only scoped MCP identity during refresh and clears it across connect
   );
   current = providerCatalogReducer(current, workspaceCatalogReceived('B', snapshot('B-server'), 0));
   const refreshing = providerCatalogReducer(current, workspaceCatalogInvalidated());
-  expect(refreshing.byWorkspaceId).toEqual({});
+  expect(refreshing.byWorkspaceId).toEqual(current.byWorkspaceId);
   expect(selectWorkspaceMcpServerName.select(storeWith(refreshing), 'A', 'shared-id')).toBe(
     'A-server',
   );

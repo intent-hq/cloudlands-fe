@@ -1,4 +1,8 @@
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  selectHostExecutionContext,
+  selectIsHostMember,
+} from '../host-execution/host-execution-selectors';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
 import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 import { store } from '../../store';
@@ -11,25 +15,53 @@ import {
   selectProviderCatalogEntry,
 } from '../provider-catalog/provider-catalog-selectors';
 
+export const selectProviderSettingsSessionRequests = store.createSelector(
+  (state, sessionId: string) =>
+    getItems(state.providerSettings.requests).filter((request) => request.sessionId === sessionId),
+);
+export const selectProviderSettingsSessionActive = store.createSelector(
+  (state, sessionId: string) => state.providerSettings.sessions.includes(sessionId),
+);
+export const selectProviderWriteRevision = store.createSelector(
+  (state, resource: string) => state.providerSettings.writeRevisions?.[resource] ?? 0,
+);
+export const selectProviderPaths = store.createSelector((state) => state.providerSettings.paths);
+export const selectProviderPathsRevision = store.createSelector(
+  (state) => state.providerSettings.pathsRevision,
+);
+export const selectPiAdapter = store.createSelector((state) => state.providerSettings.piAdapter);
+
 /**
  * Default provider id — the provider leg of the default model triple
  * (`model.defaultProvider`). The standalone `providers.active` concept is
  * retired; the state lives in the model slice ('' before hydration).
  */
 export const selectActiveProviderId = store.createSelector((state): string => {
-  return state.model.defaultProviderId;
+  return selectIsHostMember.select(state)
+    ? (selectHostExecutionContext.select(state)?.defaultProviderId ?? '')
+    : state.model.defaultProviderId;
 });
 
 export const selectIsProviderActive = store.createSelector((state, providerId: string): boolean => {
-  return state.model.defaultProviderId === providerId;
+  return selectActiveProviderId.select(state) === providerId;
 });
 
 export const selectEnabledProviders = store.createSelector((state): Record<string, boolean> => {
+  if (selectIsHostMember.select(state)) {
+    return Object.fromEntries(
+      (selectHostExecutionContext.select(state)?.enabledProviderIds ?? []).map((id) => [id, true]),
+    );
+  }
   return state.providerSettings.enabledProviders;
 });
 
 export const selectIsProviderEnabled = store.createSelector(
   (state, providerId: string): boolean => {
+    if (selectIsHostMember.select(state)) {
+      return (
+        selectHostExecutionContext.select(state)?.enabledProviderIds?.includes(providerId) === true
+      );
+    }
     const nonDisableable = state.providerSettings.nonDisableableProviderIds ?? [];
     return resolveProviderEnabled(state.providerSettings.enabledProviders, providerId, {
       canBeDisabled: !nonDisableable.includes(providerId),
@@ -38,6 +70,8 @@ export const selectIsProviderEnabled = store.createSelector(
 );
 
 export const selectEnabledProviderIds = store.createSelector((state): string[] => {
+  if (selectIsHostMember.select(state))
+    return selectHostExecutionContext.select(state)?.enabledProviderIds ?? [];
   const enabledProviders = state.providerSettings.enabledProviders;
   const catalogEntries = state.providerCatalog ? getItems(state.providerCatalog.providers) : [];
   const enabled = new Set(
@@ -62,6 +96,7 @@ export const selectEnabledProviderIds = store.createSelector((state): string[] =
  */
 function isProviderHidden(state: any, providerId: string): boolean {
   const entry = selectProviderCatalogEntry.select(state, providerId);
+  if (selectIsHostMember.select(state)) return entry?.visible !== true;
   return Boolean(entry?.requiresEnvVar || entry?.requiresFeatureCode);
 }
 

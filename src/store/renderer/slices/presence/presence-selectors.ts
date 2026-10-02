@@ -1,27 +1,18 @@
-/**
- * Presence Selectors (multiplayer w5)
- *
- * The people selectors project the daemon's two sources into the brief's
- * circles: the accepted membership (`workspace.members.list`, owners first)
- * says who belongs and which of them owns the workspace; the roster
- * (`presence:changed`) says who is online and where they look. Both people
- * selectors show nothing for an unshared workspace and while this window's
- * own principal is still unknown (nobody can then be told apart from self, so
- * the indicators fail closed); the chat circles additionally need someone
- * else online in their scope (`hasOtherPresence`), while the sidebar row
- * lists every other member of a shared workspace even when they are all
- * offline. The viewer's own principal is never among the people returned —
- * every surface shows everybody else. The typing selector hands back the
- * roster's own member objects, so its result stays shallow-equal between
- * rosters.
- */
+/** Current workspace-authorized presence projections. Online is host-connected;
+ * viewing is workspace focus. Management membership remains unfiltered. */
 
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { PresenceFocusItem, PresenceMember } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 import { store } from '../../store';
+import { selectActiveWorkspaceIds } from '../tab-state/tab-state-selectors';
+import {
+  selectCollaborationReady,
+  selectPrincipalActionContext,
+  selectPrincipalSnapshot,
+} from '../principal/principal-selectors';
 import type { StoreState } from '../../types';
 import type {
   PresenceFocusTarget,
@@ -29,6 +20,22 @@ import type {
   PresencePerson,
   PresenceState,
 } from './presence-types';
+
+/** One admitted presentation lifetime; no saved profile is an authority fallback. */
+export const selectPresenceContext = store.createSelector((state): string | null =>
+  selectCollaborationReady.select(state) ? selectPrincipalActionContext.select(state) : null,
+);
+const currentPresence = (state: StoreState): boolean => {
+  const context = selectPresenceContext.select(state);
+  return context !== null && state.presence.context === context;
+};
+
+/** Only current workspace records can own reads; a removed/rejoined ID gets a fresh lifetime. */
+export const selectPresenceWorkspaceIds = store.createSelector((state) =>
+  selectActiveWorkspaceIds
+    .select(state)
+    .filter((id) => !!getItem(state.workspace.workspaces, WorkspaceId(id))),
+);
 
 const NO_MEMBERS: PresenceMember[] = [];
 const NO_PEOPLE: PresencePerson[] = [];
@@ -44,7 +51,9 @@ const rosterMembers = (presence: PresenceState, workspaceId: string): PresenceMe
 /** The workspace row when it is shared (`memberCount > 1`); `undefined` gates both people selectors off. */
 const sharedWorkspace = (state: StoreState, workspaceId: string): Workspace | undefined => {
   const workspace = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
-  return workspace && (workspace.memberCount ?? 1) > 1 ? workspace : undefined;
+  return currentPresence(state) && workspace && (workspace.memberCount ?? 1) > 1
+    ? workspace
+    : undefined;
 };
 
 /** Accepted members with handles, independent of online presence; fail closed until self is known. */
@@ -71,6 +80,7 @@ const toPerson = (
   displayName: identity.displayName,
   avatarUrl: identity.avatarUrl,
   ...(identity.identity ? { identity: identity.identity } : {}),
+  ...(identity.hostRole ? { hostRole: identity.hostRole } : {}),
   ...facts,
 });
 
@@ -91,18 +101,8 @@ export const hasOtherPresence = (people: readonly PresencePerson[]): boolean =>
 const presenceRowRank = (person: PresencePerson): number =>
   person.owner ? 0 : person.online ? 1 : 2;
 
-/**
- * The circles of the workspace sidebar's presence row: every OTHER accepted
- * member of a SHARED workspace (`memberCount > 1`; the owner included, this
- * window's own principal left out), online when the roster lists them,
- * viewing when that roster row has a focus item. The owner leads (online or
- * not), then the other online members, then the offline ones, each group
- * keeping its `workspace.members.list` order. Offline members stay listed
- * (the stack draws them greyscale), so the row shows the whole membership
- * even while this window is the only one online. An unshared workspace, one
- * whose membership was not read yet, or an unknown own principal shows
- * nothing.
- */
+/** Online host users plus workspace guests (including offline guests), excluding self.
+ * Older daemons retain their legacy membership presentation without inventing host roles. */
 export const selectWorkspacePresencePeople = store.createSelector<
   [workspaceId: string],
   PresencePerson[]
@@ -116,12 +116,18 @@ export const selectWorkspacePresencePeople = store.createSelector<
     .filter((member) => member.principalId !== ownPrincipalId)
     .map((member) => {
       const online = roster ? getItem(roster, member.principalId) : undefined;
-      return toPerson(member, {
-        owner: member.role === 'owner',
+      const identity = online ? { ...member, ...online } : member;
+      return toPerson(identity, {
+        owner: identity.hostRole ? identity.hostRole === 'owner' : member.role === 'owner',
         online: online !== undefined,
         viewing: (online?.focus.length ?? 0) > 0,
         self: false,
       });
+    })
+    .filter((person) => {
+      const modern = selectPrincipalSnapshot.select(state)?.capabilities.hostMembership;
+      if (modern && !person.hostRole) return false;
+      return !person.hostRole || person.hostRole === 'guest' || person.online;
     })
     .sort((a, b) => presenceRowRank(a) - presenceRowRank(b));
   return people.length > 0 ? people : NO_PEOPLE;
@@ -136,6 +142,7 @@ export const selectWorkspacePresenceFocusTargets = store.createSelector<
   [workspaceId: string],
   Record<string, PresenceFocusTarget>
 >((state, workspaceId) => {
+  if (!sharedWorkspace(state, workspaceId)) return NO_TARGETS;
   let targets: Record<string, PresenceFocusTarget> | null = null;
   for (const member of rosterMembers(state.presence, workspaceId)) {
     const items = member.focus.filter((item) => item.workspaceId === workspaceId);

@@ -52,6 +52,8 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
 
 vi.mock('../main/browser-capture-service', () => ({
   browserCapture: {
+    assertSessionOwner: vi.fn(),
+    readCapture: vi.fn(),
     snapshot: vi.fn(),
     startSession: vi.fn(),
     endSession: vi.fn(),
@@ -1340,7 +1342,11 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(browserCapture.getSummary).toHaveBeenCalledWith('workspace-a', 'example.test/snap');
+      expect(browserCapture.getSummary).toHaveBeenCalledWith(
+        'workspace-a',
+        'example.test/snap',
+        'agent-1',
+      );
     });
 
     it('requires trusted workspace context for session operations', async () => {

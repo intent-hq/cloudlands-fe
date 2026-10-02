@@ -56,9 +56,9 @@ repositories, route by the files and behavior being changed.
   choosing silently.
 
 Detailed docs to consult when a task needs conceptual background:
-`@augmentcode/themis/docs/ARCHITECTURE.md`, `@augmentcode/themis/docs/SELECTORS.md`, `@augmentcode/themis/docs/SAGAS.md`,
-`@augmentcode/themis/docs/WAITFOR.md`, `@augmentcode/themis/docs/REDUCERS.md`, `@augmentcode/themis/docs/COLLECTIONS.md`,
-`@augmentcode/themis/docs/TESTING.md`, and `@augmentcode/themis/docs/INSTALLATION.md`.
+`@themislib/themis/docs/ARCHITECTURE.md`, `@themislib/themis/docs/SELECTORS.md`, `@themislib/themis/docs/SAGAS.md`,
+`@themislib/themis/docs/WAITFOR.md`, `@themislib/themis/docs/REDUCERS.md`, `@themislib/themis/docs/COLLECTIONS.md`,
+`@themislib/themis/docs/TESTING.md`, and `@themislib/themis/docs/INSTALLATION.md`.
 
 ## Agent Preflight Compliance Contract
 
@@ -87,7 +87,7 @@ Before editing code or docs under this skill:
 - Run architecture validation before handoff whenever Redux state, actions,
   selectors, sagas, or their governance docs change. Inside this repository use
   `npm run validate:architecture`; in a consuming app run ESLint with the
-  `svelte` domain root config imported from `@augmentcode/themis/eslint-plugins`.
+  `svelte` domain root config imported from `@themislib/themis/eslint-plugins`.
   Include the exit code/output and canonical-owner evidence in the handoff.
 - The architecture gate also checks RTK/shared Svelte-store boundaries,
   collection state shape/internal mutations, runtime state serialization,
@@ -184,5 +184,5 @@ state route above; a Svelte API does not make shared/domain state component-loca
 
 - First-time app setup: `../setup/SKILL.md`.
 - Migration playbook: `./migration/SKILL.md`.
-- Install/uninstall side effects and maintainer validation: `@augmentcode/themis/docs/INSTALLATION.md`.
+- Install/uninstall side effects and maintainer validation: `@themislib/themis/docs/INSTALLATION.md`.
 - Generic plain redux-saga API reference, outside this package's typed-redux-saga conventions: `../core/redux-saga/SKILL.md`.

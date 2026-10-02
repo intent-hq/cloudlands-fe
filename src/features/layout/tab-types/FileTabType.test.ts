@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { m } from '$shared/paraglide/messages.js';
+import { fileContentKey } from '$features/file/utils/file-content-key';
 import { appClient } from '$lib/client';
+import { runSaga, stdChannel } from 'redux-saga';
+import { pdfPreviewSaga } from '$store/renderer/slices/pdf-preview/sagas/pdf-preview-saga';
+import { filesReadSaga } from '$store/renderer/slices/files/sagas/files-read-saga';
+import { loadFileContentSucceeded } from '$store/renderer/slices/files/files-slice';
+import { invoke } from '$lib/electron-bridge';
+import { notify } from '$lib/components/patterns/notify';
+
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { FileNode } from '$shared/types';
 
@@ -38,6 +47,13 @@ const {
       worktreePath: '/repo',
       repositoryPath: '/repo',
     },
+    preview: null as null | {
+      id: string;
+      requestId: string;
+      status: string;
+      url: string | null;
+      error: string | null;
+    },
     files: {} as Record<string, FileEntry>,
     fileTrackingChanges: [] as unknown[],
     lineWrapping: true,
@@ -62,6 +78,7 @@ const {
         lastUpdated: 0,
       },
     };
+    mockReduxState.preview = null;
     mockReduxState.fileTrackingChanges = [];
     mockReduxState.lineWrapping = true;
     mockReduxState.diffIndicators = false;
@@ -136,11 +153,40 @@ const {
     loadFileContentRequested: makeAction('files/loadFileContentRequested'),
     saveFileContentRequested: makeAction('files/saveFileContentRequested'),
     updateFileContent: makeAction('files/updateFileContent'),
+    deleteFileWithUndoRequested: makeAction('files/deleteFileWithUndoRequested'),
     removeFileContentEntry: makeAction('files/removeFileContentEntry'),
     updateFileTabPath: makeAction('panelLayout/updateFileTabPath'),
   };
 
   const dispatchMock = vi.fn((action: { type: string; payload?: unknown[] }) => {
+    if (action.type === 'pdfPreview/requested') {
+      const [id, requestId] = action.payload as [string, string];
+      mockReduxState.preview = { id, requestId, status: 'loading', url: null, error: null };
+      flushMockSelectors();
+    }
+    if (action.type === 'pdfPreview/ready') {
+      const [id, requestId, url] = action.payload as [string, string, string];
+      if (mockReduxState.preview?.id === id && mockReduxState.preview.requestId === requestId)
+        mockReduxState.preview = { id, requestId, status: 'ready', url, error: null };
+      flushMockSelectors();
+    }
+    if (action.type === 'pdfPreview/released') {
+      mockReduxState.preview = null;
+      flushMockSelectors();
+    }
+    if (action.type === 'files/loadFileContentSucceeded') {
+      const [, path, , content] = action.payload as [string, string, string, string];
+      mockReduxState.files[path] = {
+        localContent: content,
+        originalContent: content,
+        loading: false,
+        saving: false,
+        error: null,
+        isBinary: false,
+        lastUpdated: 1,
+      };
+      flushMockSelectors();
+    }
     if (action.type === 'files/updateFileContent') {
       const [, path, content] = action.payload as [string, string, string];
       mockReduxState.files[path] = {
@@ -175,9 +221,10 @@ const {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { initialState } = await import('$store/renderer/slices/git/git-slice');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({ git: initialState }),
     dispatch: dispatchMock,
   });
 });
@@ -186,6 +233,10 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/client/live/backend-transport')>();
   return { ...actual, backendRequest: vi.fn() };
 });
+
+vi.mock('$store/renderer/slices/pdf-preview/pdf-preview-selectors', () => ({
+  selectPdfPreview: createMockSelector(() => mockReduxState.preview),
+}));
 
 vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   selectFileContent: createMockSelector((_wsId: string, path: string | null | undefined) =>
@@ -216,7 +267,10 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   ),
 }));
 
-vi.mock('$store/renderer/slices/files/files-slice', () => actionMocks);
+vi.mock('$store/renderer/slices/files/files-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/files/files-slice')>()),
+  ...actionMocks,
+}));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: createMockSelector((wsId: string) =>
@@ -314,6 +368,242 @@ describe('FileTabType Redux integration', () => {
   }
 
   const fileNode = (name: string): FileNode => ({ name, path: name, type: 'file' });
+
+  it('reads an untracked file from an external registered root', async () => {
+    renderFileTab({
+      ...fileTab,
+      filePath: '/external/repo/new.md',
+      data: { gitRootId: 'root-external', gitRootPath: '/external/repo' },
+    });
+    await waitFor(() =>
+      expect(actionMocks.loadFileContentRequested).toHaveBeenCalledWith(
+        fileTab.workspaceId ?? 'ws-1',
+        fileContentKey('/external/repo/new.md', 'root-external'),
+        '/external/repo/new.md',
+        { gitRoot: { id: 'root-external', relativePath: 'new.md' } },
+      ),
+    );
+  });
+
+  it.each(['/repo/packages', '/external'])(
+    'loads root-scoped Markdown under %s through the read saga and live client',
+    async (parentPath) => {
+      vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+        if (method !== 'file.read') throw new Error(`Unexpected request: ${method}`);
+        const request = params as { path: string; gitRootId?: string };
+        if (request.path !== 'new.md') throw new Error(`Wrong path: ${request.path}`);
+        if (request.gitRootId === 'root-a') return '# Secondary root A';
+        if (request.gitRootId === 'root-b') return '# Secondary root B';
+        return '# Primary root';
+      });
+      const channel = stdChannel();
+      const dispatch = dispatchMock.getMockImplementation()!;
+      dispatchMock.mockImplementation((action) => {
+        const result = dispatch(action);
+        channel.put(action);
+        return result;
+      });
+      const task = runSaga({ channel, dispatch: dispatchMock }, filesReadSaga);
+      const rootTab = (id: string): PanelTab => ({
+        ...fileTab,
+        filePath: `${parentPath}/${id}/new.md`,
+        data: { gitRootId: `root-${id}`, gitRootPath: `${parentPath}/${id}` },
+      });
+      try {
+        const view = renderFileTab(rootTab('a'));
+        await waitFor(() =>
+          expect(screen.getByTestId('markdown-viewer').textContent).toBe('# Secondary root A'),
+        );
+        expect(backendRequest).toHaveBeenCalledWith('file.read', {
+          workspaceId: 'ws-1',
+          path: 'new.md',
+          gitRootId: 'root-a',
+        });
+        expect(dispatchMock).toHaveBeenCalledWith(
+          loadFileContentSucceeded(
+            'ws-1',
+            fileContentKey(`${parentPath}/a/new.md`, 'root-a'),
+            `${parentPath}/a/new.md`,
+            '# Secondary root A',
+            false,
+            false,
+          ),
+        );
+        await view.rerender({
+          tab: rootTab('b'),
+          workspaceId: 'ws-1',
+          isActive: true,
+          isPanelFocused: true,
+        });
+        await waitFor(() =>
+          expect(screen.getByTestId('markdown-viewer').textContent).toBe('# Secondary root B'),
+        );
+        expect(backendRequest).toHaveBeenLastCalledWith('file.read', {
+          workspaceId: 'ws-1',
+          path: 'new.md',
+          gitRootId: 'root-b',
+        });
+        expect(
+          mockReduxState.files[fileContentKey(`${parentPath}/a/new.md`, 'root-a')].localContent,
+        ).toBe('# Secondary root A');
+        expect(
+          vi.mocked(backendRequest).mock.calls.filter(([method]) => method === 'file.read'),
+        ).toHaveLength(2);
+      } finally {
+        cleanup();
+        task.cancel();
+        await task.toPromise();
+        dispatchMock.mockImplementation(dispatch);
+      }
+    },
+  );
+
+  it.each([
+    ['png', 'image/png'],
+    ['mp4', 'video/mp4'],
+  ])(
+    'previews an external-root %s through scoped chunks and releases its Blob',
+    async (extension, mimeType) => {
+      const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:root-media');
+      const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+      vi.mocked(backendRequest).mockImplementation(async (method) => {
+        if (method === 'file.readChunk') return { content: 'AAEC', bytesRead: 3, size: 3 };
+        throw new Error(`Unexpected request: ${method}`);
+      });
+      const channel = stdChannel();
+      const dispatch = dispatchMock.getMockImplementation()!;
+      dispatchMock.mockImplementation((action) => {
+        const result = dispatch(action);
+        channel.put(action);
+        return result;
+      });
+      const task = runSaga({ channel, dispatch: dispatchMock }, pdfPreviewSaga);
+      try {
+        const view = renderFileTab({
+          ...fileTab,
+          filePath: `/external/repo/new.${extension}`,
+          data: { gitRootId: 'root-a', gitRootPath: '/external/repo' },
+        });
+        await waitFor(() =>
+          expect(screen.getByTestId('file-viewer').getAttribute('data-source-url')).toBe(
+            'blob:root-media',
+          ),
+        );
+        expect(backendRequest).toHaveBeenCalledWith('file.readChunk', {
+          workspaceId: 'ws-1',
+          path: `new.${extension}`,
+          gitRootId: 'root-a',
+          offset: 0,
+          length: 1048576,
+        });
+        expect(createUrl.mock.calls[0][0]).toMatchObject({ type: mimeType, size: 3 });
+        expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+        view.unmount();
+        expect(revokeUrl).toHaveBeenCalledWith('blob:root-media');
+      } finally {
+        cleanup();
+        task.cancel();
+        await task.toPromise();
+        dispatchMock.mockImplementation(dispatch);
+      }
+    },
+  );
+
+  it('passes root-relative PDF identity to the bounded PDF viewer', async () => {
+    renderFileTab({
+      ...fileTab,
+      filePath: '/external/repo/new.pdf',
+      data: { gitRootId: 'root-a', gitRootPath: '/external/repo' },
+    });
+    const viewer = await screen.findByTestId('pdf-viewer');
+    expect(viewer.getAttribute('data-file-path')).toBe('new.pdf');
+    expect(viewer.getAttribute('data-git-root-id')).toBe('root-a');
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it('keeps root-scoped code read-only and separate from a workspace draft at the same path', async () => {
+    const path = '/repo/packages/a/new.ts';
+    const key = fileContentKey(path, 'root-a');
+    const entry = { loading: false, saving: false, error: null, isBinary: false, lastUpdated: 1 };
+    mockReduxState.files[path] = {
+      ...entry,
+      originalContent: 'disk',
+      localContent: 'workspace draft',
+    };
+    mockReduxState.files[key] = {
+      ...entry,
+      originalContent: 'root content',
+      localContent: 'root content',
+    };
+    const view = renderFileTab({
+      ...fileTab,
+      filePath: path,
+      data: { gitRootId: 'root-a', gitRootPath: '/repo/packages/a' },
+    });
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    expect(editor.value).toBe('root content');
+    expect(editor.readOnly).toBe(true);
+    await fireEvent.input(editor, { target: { value: 'attempted edit' } });
+    await fireEvent.keyDown(window, { key: 's', ctrlKey: true, metaKey: true });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    expect(
+      screen.queryByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() }),
+    ).toBeNull();
+    view.unmount();
+    expect(actionMocks.updateFileContent).not.toHaveBeenCalled();
+    expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+    expect(actionMocks.deleteFileWithUndoRequested).not.toHaveBeenCalled();
+    expect(mockReduxState.files[path].localContent).toBe('workspace draft');
+  });
+
+  it('does not allow a scoped file tab to escape the selected root', async () => {
+    renderFileTab({
+      ...fileTab,
+      filePath: '/external/other/new.md',
+      data: { gitRootId: 'root-a', gitRootPath: '/external/a' },
+    });
+    expect(await screen.findByText(m.layout_fileTab_outsideWorkspace_label())).toBeTruthy();
+    expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
+  });
+
+  it('dispatches delete intent with the current draft and immutable workspace/tab identity', async () => {
+    renderFileTab();
+    const editor = await screen.findByTestId('code-editor');
+    await fireEvent.input(editor, { target: { value: 'unsaved draft' } });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() }),
+    );
+    expect(actionMocks.deleteFileWithUndoRequested).toHaveBeenCalledWith('ws-1', 'src/main.ts', {
+      absolutePath: '/repo/src/main.ts',
+      tabId: 'tab-1',
+      content: 'unsaved draft',
+    });
+  });
+
+  it('flushes the old workspace and root when switching an edited tab to another workspace', async () => {
+    const view = renderFileTab();
+    await fireEvent.input(await screen.findByTestId('code-editor'), {
+      target: { value: 'old workspace draft' },
+    });
+    mockReduxState.workspace = { id: 'ws-2', worktreePath: '/other', repositoryPath: '/other' };
+    await view.rerender({
+      tab: fileTab,
+      workspaceId: 'ws-2',
+      isActive: true,
+      isPanelFocused: true,
+    });
+    expect(actionMocks.saveFileContentRequested).toHaveBeenCalledWith(
+      'ws-1',
+      'src/main.ts',
+      '/repo/src/main.ts',
+      'old workspace draft',
+    );
+  });
   const directoryNode = (name: string): FileNode => ({ name, path: name, type: 'directory' });
 
   function mockIgnoredArtifacts() {
@@ -333,6 +623,111 @@ describe('FileTabType Redux integration', () => {
         return [];
       });
   }
+
+  async function downloadFromMenu() {
+    if (!screen.queryByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() })) {
+      await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    }
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() }),
+    );
+  }
+
+  it.each([
+    ['docs/Quarterly report #1.PDF', 'docs/Quarterly report #1.PDF', 'Quarterly report #1.PDF'],
+    ['/repo/images/café.png', 'images/café.png', 'café.png'],
+    ['src/main.ts', 'src/main.ts', 'main.ts'],
+    ['archive.zip', 'archive.zip', 'archive.zip'],
+  ])('downloads persisted %s through the workspace route', async (filePath, path, fileName) => {
+    vi.mocked(invoke).mockResolvedValue({
+      success: true,
+      data: { filePath: '/Downloads/' + fileName },
+    });
+    renderFileTab({ ...fileTab, filePath });
+    if (filePath.endsWith('.png')) await screen.findByTestId('file-viewer');
+    await downloadFromMenu();
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+      workspaceId: 'ws-1',
+      path,
+      fileName,
+    });
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '../secret.txt',
+    '/repo-other/file.txt',
+    '/repo/../secret.txt',
+    '~/secret.txt',
+    'dir//file.txt',
+    'C:secret.txt',
+    'bad\0.txt',
+    '/repo',
+  ])('rejects invalid download target %s', async (filePath) => {
+    renderFileTab({ ...fileTab, filePath });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    expect(
+      screen.queryByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() }),
+    ).toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('keeps cancellation quiet and allows another download', async () => {
+    vi.mocked(invoke).mockResolvedValue({ success: false, canceled: true });
+    renderFileTab();
+    await downloadFromMenu();
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    await downloadFromMenu();
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('disables repeat requests while the native download is pending', async () => {
+    let finish!: (result: unknown) => void;
+    vi.mocked(invoke).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderFileTab();
+    await downloadFromMenu();
+    await downloadFromMenu();
+    expect(invoke).toHaveBeenCalledTimes(1);
+    finish({ success: false, canceled: true });
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole('menuitem', { name: m.layout_fileTab_downloadFile_label() })
+          .getAttribute('aria-disabled'),
+      ).not.toBe('true'),
+    );
+  });
+
+  it('waits for a shortened media path to resolve before downloading', async () => {
+    vi.mocked(backendRequest).mockImplementation(() => new Promise(() => {}));
+    renderFileTab({ ...fileTab, filePath: 'preview.png' });
+    await downloadFromMenu();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each(['response', 'rejection'])('shows a download error after an IPC %s', async (kind) => {
+    if (kind === 'response')
+      vi.mocked(invoke).mockResolvedValue({
+        success: false,
+        error: { code: 'DOWNLOAD_FAILED', message: 'Transfer failed for main.ts' },
+      });
+    else vi.mocked(invoke).mockRejectedValue(new Error('bridge unavailable'));
+    renderFileTab();
+    await downloadFromMenu();
+    await waitFor(() =>
+      expect(notify.error).toHaveBeenCalledWith(
+        kind === 'response'
+          ? 'Transfer failed for main.ts'
+          : m.layout_fileTab_downloadFailed_error(),
+      ),
+    );
+  });
 
   it('groups editor presentation toggles into one view settings menu', async () => {
     renderFileTab();
@@ -703,6 +1098,13 @@ describe('FileTabType Redux integration', () => {
       const viewer = await screen.findByTestId('file-viewer');
       expect(viewer.getAttribute('data-file-path')).toBe(resolvedPath);
       expect(viewer.getAttribute('data-source-url')).toBe(`workspace-file://ws-1/${resolvedPath}`);
+      vi.mocked(invoke).mockResolvedValue({ success: true });
+      await downloadFromMenu();
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('file:download-attachment', {
+        workspaceId: 'ws-1',
+        path: resolvedPath,
+        fileName: resolvedPath.split('/').pop(),
+      });
       expect(actionMocks.updateFileTabPath).toHaveBeenCalledTimes(1);
       expect(list.mock.calls.every(([workspaceId]) => workspaceId === 'ws-1')).toBe(true);
       expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();

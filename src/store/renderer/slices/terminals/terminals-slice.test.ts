@@ -22,7 +22,7 @@ import {
   createCollection,
   getItems,
   getItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 
 const WS = 'ws-1';
 

@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 /**
  * Regression test for the /hud chrome-less behavior restored after e10980e5.
  * The route group enforces the boundary structurally: the root owns shared Store
@@ -272,6 +273,7 @@ describe('+layout.svelte root terminal gating for collaborators (multiplayer w3)
   });
 
   function loadWorkspaces(role: Workspace['myRole']) {
+    admitLegacyPrincipal(role === 'owner' ? 'owner' : 'guest');
     // The window's guest/owner identity has settled (multiplayer w4): no host
     // joined, so only the workspace roles decide.
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));

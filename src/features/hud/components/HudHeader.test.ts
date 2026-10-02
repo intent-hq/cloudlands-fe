@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * HudHeader tests — the workspace state counter strip moved to the footer
  * (HudFooter.svelte, which owns the counter/blink tests); the header keeps
@@ -45,7 +46,10 @@ vi.mock('../sound/hud-sound-player', () => ({
 
 const NOW_MS = Date.parse('2026-07-30T12:00:00Z');
 
-beforeAll(() => appStore.init());
+beforeAll(() => {
+  appStore.init();
+  admitLegacyPrincipal();
+});
 afterAll(() => appStore.dispose());
 
 const settle = async () => {
@@ -527,6 +531,7 @@ describe('HudHeader repo filter "all" label in a guest window (multiplayer w4)',
     appStore.dispatch(
       guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
     );
+    admitLegacyPrincipal('guest');
   }
 
   function bindWindowToLocal() {
@@ -538,6 +543,7 @@ describe('HudHeader repo filter "all" label in a guest window (multiplayer w4)',
       }),
     );
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+    admitLegacyPrincipal();
   }
 
   function repoTriggerLabel(container: HTMLElement) {

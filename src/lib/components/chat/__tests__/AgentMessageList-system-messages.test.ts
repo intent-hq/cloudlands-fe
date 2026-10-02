@@ -478,3 +478,43 @@ describe('AgentMessageList - search filter memo', () => {
     expect(screen.queryByText(/hello from the owner/)).toBeNull();
   });
 });
+
+describe('AgentMessageList member preamble search', () => {
+  it('re-filters the same member row when trusted owner context arrives', async () => {
+    const header =
+      'Message from @same (Same Person), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+    const messages: AgentMessage[] = [
+      {
+        id: 'member-search',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00Z',
+        contentBlocks: [{ type: 'text', text: `${header}\n\nsearchable member body` }],
+        author: {
+          principalId: 'person-1',
+          login: 'same',
+          displayName: 'Same Person',
+          avatarUrl: null,
+          identity: { provider: 'gitlab', host: 'gitlab.example:8443', externalUserId: '42' },
+        },
+      },
+    ];
+    const before = JSON.stringify(messages);
+    const { rerender } = render(AgentMessageList, {
+      props: { messages, searchQuery: 'a host member', workspace: null },
+    });
+    expect(screen.getByText(/searchable member body/)).toBeTruthy();
+    await rerender({
+      messages,
+      searchQuery: 'a host member',
+      workspace: { id: 'ws-1', ownerPrincipalId: 'owner' } as unknown as Workspace,
+    });
+    await waitFor(() => expect(screen.queryByText(/searchable member body/)).toBeNull());
+    await rerender({
+      messages,
+      searchQuery: 'searchable member body',
+      workspace: { id: 'ws-1', ownerPrincipalId: 'owner' } as unknown as Workspace,
+    });
+    await waitFor(() => expect(screen.getByText(/searchable member body/)).toBeTruthy());
+    expect(JSON.stringify(messages)).toBe(before);
+  });
+});

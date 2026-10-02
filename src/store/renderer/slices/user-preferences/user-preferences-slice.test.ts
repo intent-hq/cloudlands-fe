@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentRulesContentChanged,
+  agentRulesEditorOpened,
+  agentRulesEditorClosed,
+  agentRulesLoaded,
+  agentRulesSaveStarted,
+  agentRulesSaved,
+  agentRulesFailed,
+  agentRulesErrorCleared,
+  agentRulesSaveStatusCleared,
+  undoAgentRulesChanges,
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
@@ -19,6 +29,7 @@ import {
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -40,6 +51,7 @@ import {
   toggleChatAurora,
   toggleLabsMultiplayer,
   toggleLabsGitLab,
+  toggleLabsRemoteAgents,
   toggleLabsSettingsVisibility,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -47,7 +59,6 @@ import {
   toggleShellTransparency,
   setUpdateChannel,
   toggleSpellcheck,
-  type UserPreferencesState,
   userPreferencesReducer,
 } from './user-preferences-slice';
 import {
@@ -66,6 +77,7 @@ import {
   selectIsNoteMonospace,
   selectLabsMultiplayerEnabled,
   selectLabsGitLabEnabled,
+  selectLabsRemoteAgentsEnabled,
   selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
@@ -81,6 +93,81 @@ import {
 } from './user-preferences-selectors';
 
 describe('userPreferencesReducer', () => {
+  describe('rules editor state', () => {
+    it('keeps the opening baseline and draft while recording acknowledged persistence', () => {
+      let state = userPreferencesReducer(initialState, agentRulesEditorOpened());
+      expect(state.agentRulesEditor).toMatchObject({ generation: 1, active: true, loading: true });
+      state = userPreferencesReducer(state, agentRulesLoaded(1, 'original'));
+      state = userPreferencesReducer(state, agentRulesContentChanged('\ndraft\n'));
+      state = userPreferencesReducer(state, agentRulesSaveStarted(1));
+      expect(state.agentRulesEditor.saveStatus).toBe('saving');
+      state = userPreferencesReducer(state, agentRulesSaved(1, 'draft'));
+      expect(state.agentRulesEditor).toMatchObject({
+        originalContent: 'original',
+        content: '\ndraft\n',
+        persistedContent: 'draft',
+        saveStatus: 'saved',
+      });
+      state = userPreferencesReducer(state, agentRulesSaveStatusCleared(1));
+      expect(state.agentRulesEditor.saveStatus).toBe('idle');
+      state = userPreferencesReducer(state, undoAgentRulesChanges());
+      expect(state.agentRulesEditor).toMatchObject({
+        content: 'original',
+        persistedContent: 'draft',
+      });
+      expect(userPreferencesReducer(state, undoAgentRulesChanges())).toBe(state);
+      expect(userPreferencesReducer(state, agentRulesContentChanged('original'))).toBe(state);
+    });
+
+    it('does not mark newer content saved when an older write completes', () => {
+      let state = userPreferencesReducer(initialState, agentRulesEditorOpened());
+      state = userPreferencesReducer(state, agentRulesLoaded(1, 'original'));
+      state = userPreferencesReducer(state, agentRulesContentChanged('latest'));
+      state = userPreferencesReducer(state, agentRulesSaved(1, 'older'));
+      expect(state.agentRulesEditor).toMatchObject({
+        content: 'latest',
+        persistedContent: 'older',
+        saveStatus: 'saving',
+      });
+      state = userPreferencesReducer(state, agentRulesFailed(1, 'rejected'));
+      expect(state.agentRulesEditor).toMatchObject({
+        content: 'latest',
+        errorMessage: 'rejected',
+        saveStatus: 'idle',
+        loading: false,
+      });
+      state = userPreferencesReducer(state, agentRulesErrorCleared(1));
+      expect(state.agentRulesEditor.errorMessage).toBeNull();
+      expect(userPreferencesReducer(state, agentRulesErrorCleared(1))).toBe(state);
+      expect(userPreferencesReducer(state, agentRulesSaveStatusCleared(1))).toBe(state);
+    });
+
+    it('ignores stale completions and repeated cleanup across close/reopen generations', () => {
+      let state = userPreferencesReducer(initialState, agentRulesEditorOpened());
+      state = userPreferencesReducer(state, agentRulesEditorClosed());
+      expect(state.agentRulesEditor).toMatchObject({
+        active: false,
+        loading: false,
+        saveStatus: 'idle',
+      });
+      expect(userPreferencesReducer(state, agentRulesEditorClosed())).toBe(state);
+      expect(userPreferencesReducer(state, agentRulesLoaded(1, 'stale'))).toBe(state);
+      expect(userPreferencesReducer(state, agentRulesContentChanged('closed'))).toBe(state);
+      state = userPreferencesReducer(state, agentRulesEditorOpened());
+      expect(state.agentRulesEditor.generation).toBe(2);
+      for (const action of [
+        agentRulesLoaded(1, 'stale'),
+        agentRulesSaved(1, 'stale'),
+        agentRulesFailed(1, 'stale'),
+        agentRulesSaveStarted(1),
+        agentRulesErrorCleared(1),
+        agentRulesSaveStatusCleared(1),
+      ])
+        expect(userPreferencesReducer(state, action)).toBe(state);
+      expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+    });
+  });
+
   it('should return initial state', () => {
     const state = userPreferencesReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
@@ -253,7 +340,7 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('setZoomFactor', () => {
-    const state: UserPreferencesState = { ...initialState, zoomFactor: 1.0 };
+    const state = { ...initialState, zoomFactor: 1.0 };
 
     it('should set zoom factor', () => {
       expect(userPreferencesReducer(state, setZoomFactor(1.5)).zoomFactor).toBe(1.5);
@@ -516,6 +603,16 @@ describe('userPreferencesReducer', () => {
       expect(enabled.labsGitLabEnabled).toBe(true);
       expect(disabled.labsGitLabEnabled).toBe(false);
     });
+    it('defaults the RemoteAgents lab to disabled', () => {
+      expect(initialState.labsRemoteAgentsEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsRemoteAgentsEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsRemoteAgentsEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsRemoteAgents());
+      expect(enabled.labsRemoteAgentsEnabled).toBe(true);
+      expect(disabled.labsRemoteAgentsEnabled).toBe(false);
+    });
   });
 
   describe('language preference actions', () => {
@@ -620,6 +717,42 @@ describe('userPreferencesReducer', () => {
         } as any),
       ).toBe(true);
       expect(selectLabsGitLabEnabled.select({} as any)).toBe(false);
+    });
+
+    it('selects labsRemoteAgentsEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsRemoteAgentsEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsRemoteAgentsEnabled.select({
+          userPreferences: { ...initialState, labsRemoteAgentsEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsRemoteAgentsEnabled.select({} as any)).toBe(false);
+    });
+
+    it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+      'keeps remote entry points off for malformed state: %j',
+      (value) => {
+        expect(
+          selectLabsRemoteAgentsEnabled.select({
+            userPreferences: {
+              ...initialState,
+              labsRemoteAgentsEnabled: value,
+            },
+          } as any),
+        ).toBe(false);
+      },
+    );
+
+    it('reads the current remote opt-in after disabling, independently of Labs visibility', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsRemoteAgentsEnabled(true));
+      const hidden = userPreferencesReducer(enabled, setLabsSettingsVisible(false));
+      expect(selectLabsRemoteAgentsEnabled.select({ userPreferences: hidden } as any)).toBe(true);
+      const disabled = userPreferencesReducer(hidden, setLabsRemoteAgentsEnabled(false));
+      expect(selectLabsRemoteAgentsEnabled.select({ userPreferences: disabled } as any)).toBe(
+        false,
+      );
+      expect(disabled.labsMultiplayerEnabled).toBe(false);
+      expect(disabled.labsGitLabEnabled).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

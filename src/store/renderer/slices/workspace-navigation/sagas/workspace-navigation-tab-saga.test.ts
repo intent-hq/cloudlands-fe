@@ -1,6 +1,7 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
 import { ChangeStage, type TrackedChange } from '$features/file-tracking/types';
 import { m } from '$shared/paraglide/messages.js';
@@ -14,11 +15,11 @@ import { initialState as guestSessionsInitialState } from '../../guest-sessions/
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 
 /** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
-const ownerWindowSlices = {
+const ownerWindowSlices = withLegacyPrincipal({
   connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
   // Settled owner window: guest list received, no host joined.
   guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
-};
+});
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
@@ -362,6 +363,80 @@ describe('workspaceNavigationTabSaga', () => {
     vi.restoreAllMocks();
   });
 
+  it('preserves selected-root metadata on a literal file tab', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
+    try {
+      channel.put(
+        openWorkspaceFile('ws-1', '/external/repo/new.md:17', {
+          filePathIsLiteral: true,
+          gitRootId: 'root-a',
+          gitRootPath: '/external/repo',
+        }),
+      );
+      await settle();
+      expect(dispatch.mock.calls[0]?.[0].payload.tab).toMatchObject({
+        type: 'file',
+        filePath: '/external/repo/new.md:17',
+        data: { gitRootId: 'root-a', gitRootPath: '/external/repo' },
+      });
+      expect(dispatch.mock.calls[0]?.[0].payload.tab.data).not.toHaveProperty('line');
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
+  it('reuses file tabs within a root without conflating identical paths across roots', async () => {
+    const channel = stdChannel();
+    let panelLayout: PanelLayoutSliceState = {
+      byWorkspaceId: {
+        'ws-1': {
+          ...emptyWorkspaceState,
+          root: { type: 'panel', panelId: 'panel-1' },
+          focusedPanelId: 'panel-1',
+          panels: { 'panel-1': { id: 'panel-1', tabs: [], activeTabId: null } },
+        },
+      },
+    };
+    const task = runSaga(
+      {
+        channel,
+        getState: () => ({ ...ownerWindowSlices, panelLayout }),
+        dispatch: (action) => {
+          panelLayout = reducePanelAction(panelLayout, action);
+        },
+      },
+      workspaceNavigationTabSaga,
+    );
+    try {
+      for (const [filePath, gitRootId] of [
+        ['/repo/packages/a/new.md', undefined],
+        ['/repo/packages/a/new.md', 'root-a'],
+        ['/repo/packages/b/new.md', 'root-b'],
+        ['/repo/packages/a/new.md', 'root-a'],
+      ] as const) {
+        channel.put(openWorkspaceFile('ws-1', filePath, { filePathIsLiteral: true, gitRootId }));
+        await settle();
+      }
+      const panel = panelLayout.byWorkspaceId['ws-1'].panels['panel-1'];
+      expect(panel.tabs.map((tab) => tab.filePath)).toEqual([
+        '/repo/packages/a/new.md',
+        '/repo/packages/a/new.md',
+        '/repo/packages/b/new.md',
+      ]);
+      expect(panel.tabs.map((tab) => tab.data?.gitRootId)).toEqual([undefined, 'root-a', 'root-b']);
+      expect(panel.activeTabId).toBe(panel.tabs[1].id);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
   it.each([
     ['docs/chl-spec.md:2471', undefined, 'docs/chl-spec.md', 'chl-spec.md', 2471],
     ['src/a.ts:10:5', undefined, 'src/a.ts', 'a.ts', 10],
@@ -396,6 +471,31 @@ describe('workspaceNavigationTabSaga', () => {
       vi.restoreAllMocks();
     },
   );
+
+  it.each([
+    ['docs/design.md#L42', undefined],
+    ['docs/design.md:17', undefined],
+    ['docs/design.md#L42', 9],
+    ['docs/design.md:17', 9],
+  ])('preserves an already parsed literal file path %s with line %s', async (filePath, line) => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const task = runSaga(
+      { channel, dispatch, getState: () => noFocusedPanelState },
+      workspaceNavigationTabSaga,
+    );
+    try {
+      const options = { filePathIsLiteral: true, line };
+      channel.put(openWorkspaceFile('ws-1', filePath, options));
+      await settle();
+      const tab = dispatch.mock.calls[0]?.[0]?.payload?.tab;
+      expect(tab).toMatchObject({ filePath, title: filePath.split('/').pop() });
+      expect(tab.data?.line).toBe(line);
+    } finally {
+      task.cancel();
+      await task.toPromise();
+    }
+  });
 
   // Regression tests for intent-hq/monorepo#3398: a mod-clicked note-task link
   // (openInNewAdjacentPanel) permits a duplicate instead of activating an

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
-  import { tick } from 'svelte';
+  import { setContext, tick } from 'svelte';
   import { cn } from '$lib/utils.js';
   import ListHighlight from './menu-list-highlight.svelte';
   import { menuOverlay } from './menu-recipes';
@@ -10,6 +10,7 @@
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
   import { createMenuLayout } from './menu-layout-context.svelte';
+  import { SUBMENU_CONTENT_CLASS } from './submenu-context';
 
   const uid = $props.id();
 
@@ -17,6 +18,7 @@
     id = `${uid}-content`,
     ref = $bindable(null),
     class: className,
+    subContentClass,
     portal = true,
     portalProps,
     staticPosition,
@@ -39,9 +41,12 @@
     staticPosition?: boolean;
     /** Align declared leading slots, iconless rows and headings across this popup. */
     alignIconColumn?: boolean;
+    /** Appearance shared by descendant submenus, including portalled content. */
+    subContentClass?: string;
   } = $props();
 
   const rootStaticPosition = useStaticOverlay();
+  setContext(SUBMENU_CONTENT_CLASS, () => subContentClass);
   createMenuLayout(() => alignIconColumn);
   const isStatic = $derived(staticPosition ?? rootStaticPosition());
   const surface = clampSurface(useSurface() + 2);

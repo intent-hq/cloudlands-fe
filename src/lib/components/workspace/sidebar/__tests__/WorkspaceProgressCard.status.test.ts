@@ -7,7 +7,7 @@ import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
 import type { BrowserClientsState } from '$store/renderer/slices/browser-clients/browser-clients-types';
@@ -139,6 +139,12 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),
   selectHidesOwnerWorkspaceActions: mocks.selector(() => mocks.role.hidesOwnerActions),
+  selectCanShareWorkspace: mocks.selector(
+    () =>
+      mocks.storeState.userPreferences?.labsMultiplayerEnabled === true &&
+      !mocks.role.hidesOwnerActions &&
+      (mocks.workspaceEntity.canManage === true || mocks.workspaceEntity.myRole === 'owner'),
+  ),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -356,6 +362,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.storeState.browserClients = browserClientsInitialState;
     mocks.storeState.userPreferences = undefined;
     mocks.role.hidesOwnerActions = false;
+    delete mocks.workspaceEntity.canManage;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -422,6 +429,18 @@ describe('WorkspaceProgressCard status message', () => {
     expect(
       container.querySelector('[data-workspace-actions-trigger]')?.getAttribute('aria-expanded'),
     ).toBe('false');
+  });
+
+  it('offers Share when current sharing authority admits a member with collaborator metadata (#6390)', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    mocks.workspaceEntity.myRole = 'collaborator';
+    mocks.workspaceEntity.canManage = true;
+    const { container } = await renderProgressCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    await fireEvent.click(screen.getByRole('button', { name: 'Share…' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
   });
 
   it('offers Share to the workspace owner ahead of Transfer and opens the share dialog once the Multiplayer lab is on', async () => {

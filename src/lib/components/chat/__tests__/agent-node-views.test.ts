@@ -8,11 +8,14 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { AgentStatus, type AgentSession } from '$shared/types';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import AgentCard from '../AgentCard.svelte';
 import ChatChangesPanelHarness from '../ChatChangesPanelHarness.svelte';
 import ToolCall from '../ToolCall.svelte';
 import { invoke } from '$lib/electron-bridge';
 import { canOpenAgentPath } from '../agent-path-actions';
+import { appClient } from '$lib/client';
+import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 
 const id = 'agent-node-view';
 const makeAgent = (extra: Partial<AgentSession> = {}): AgentSession => ({
@@ -70,11 +73,44 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   appStore.dispatch(removeSession(id));
+  appStore.dispatch(setLabsRemoteAgentsEnabled(false));
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe('node agents in existing views', () => {
+  it('restores a failed remote rename while keeping halted status and path restrictions', async () => {
+    const response = Promise.withResolvers<{ success: false; error: string }>();
+    const rename = vi.spyOn(appClient.agents, 'rename').mockReturnValue(response.promise);
+    appStore.dispatch(bulkUpsertSessions([makeAgent()]));
+    const stop = appStore.runSaga(agentMutationSaga);
+    try {
+      const view = render(AgentCard, { agentId: id, panelRow: true, hidePreview: true });
+      await fireEvent.contextMenu(view.container.querySelector('[data-agent-panel-row]')!);
+      await fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
+      const input = await screen.findByRole('textbox', { name: 'Rename' });
+      await fireEvent.input(input, { target: { value: 'Temporary identity' } });
+      await fireEvent.keyDown(input, { key: 'Enter' });
+      await waitFor(() =>
+        expect(screen.getByTestId('agent-card-name').textContent).toBe('Temporary identity'),
+      );
+      expect(rename).toHaveBeenCalledExactlyOnceWith(
+        id,
+        'Temporary identity',
+        'preview-chat-changes',
+      );
+      response.resolve({ success: false, error: 'rename refused' });
+      await waitFor(() =>
+        expect(screen.getByTestId('agent-card-name').textContent).toBe('Remote builder'),
+      );
+      expect(screen.getByTestId('agent-card-status').textContent).toBe('Halted');
+      expect(canOpenAgentPath(appStore.state, id)).toBe(false);
+      expect(appStore.state.agentSessions.byAgentId[id]?.checkpoint?.id).toBe('checkpoint-view');
+    } finally {
+      stop();
+    }
+  });
+
   it('reacts to provisioning, halt and resume while preserving legacy labels', async () => {
     appStore.dispatch(
       bulkUpsertSessions([
@@ -104,32 +140,50 @@ describe('node agents in existing views', () => {
       expect(screen.getByTestId('agent-card-status').textContent).toBe('Existing label'),
     );
   });
-  it('separates available checkpoint time from transcript diffs and disables head path actions', async () => {
+  it.each([false, true])(
+    'preserves checkpoint inspection and path guards with remote Labs=%s',
+    async (enabled) => {
+      appStore.dispatch(setLabsRemoteAgentsEnabled(enabled));
+      appStore.dispatch(bulkUpsertSessions([makeAgent()]));
+      const dispatch = vi.spyOn(appStore, 'dispatch');
+      render(ChatChangesPanelHarness, {
+        changes,
+        agentId: id,
+        isAggregate: true,
+        showStagingControls: true,
+      });
+      const checkpointStatus = screen.getByText(/Last successful checkpoint:/);
+      expect(checkpointStatus.textContent).toContain('2026-09-28T08:45:00Z');
+      expect(checkpointStatus.textContent).toContain('not checkpoint contents');
+      const open = await screen.findByRole('button', { name: 'Open file' });
+      expect(open.hasAttribute('disabled')).toBe(true);
+      await fireEvent.click(open);
+      expect(
+        dispatch.mock.calls.some(
+          ([action]) => action.type === 'workspaceNavigation/openWorkspaceFile',
+        ),
+      ).toBe(false);
+      expect(
+        vi
+          .mocked(invoke)
+          .mock.calls.some(([channel]) => channel === 'git:diff' || channel === 'file:read'),
+      ).toBe(false);
+    },
+  );
+  it('keeps an existing remote agent visible and responsive after Labs is disabled', async () => {
+    appStore.dispatch(setLabsRemoteAgentsEnabled(true));
     appStore.dispatch(bulkUpsertSessions([makeAgent()]));
-    const dispatch = vi.spyOn(appStore, 'dispatch');
-    render(ChatChangesPanelHarness, {
-      changes,
-      agentId: id,
-      isAggregate: true,
-      showStagingControls: true,
-    });
-    const checkpointStatus = screen.getByText(/Last successful checkpoint:/);
-    expect(checkpointStatus.textContent).toContain('2026-09-28T08:45:00Z');
-    expect(checkpointStatus.textContent).toContain('not checkpoint contents');
-    const open = await screen.findByRole('button', { name: 'Open file' });
-    expect(open.hasAttribute('disabled')).toBe(true);
-    await fireEvent.click(open);
-    expect(
-      dispatch.mock.calls.some(
-        ([action]) => action.type === 'workspaceNavigation/openWorkspaceFile',
-      ),
-    ).toBe(false);
-    expect(
-      vi
-        .mocked(invoke)
-        .mock.calls.some(([channel]) => channel === 'git:diff' || channel === 'file:read'),
-    ).toBe(false);
+    render(AgentCard, { agentId: id });
+    expect(screen.getByTestId('agent-card-status').textContent).toBe('Halted');
+    vi.mocked(invoke).mockClear();
+    appStore.dispatch(setLabsRemoteAgentsEnabled(false));
+    appStore.dispatch(bulkUpsertSessions([makeAgent({ status: AgentStatus.Resuming })]));
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-card-status').textContent).toBe('Resuming'),
+    );
+    expect(invoke).not.toHaveBeenCalled();
   });
+
   it('does not invent a checkpoint time when no checkpoint succeeded', () => {
     appStore.dispatch(bulkUpsertSessions([makeAgent({ checkpoint: undefined })]));
     render(ChatChangesPanelHarness, { changes, agentId: id });

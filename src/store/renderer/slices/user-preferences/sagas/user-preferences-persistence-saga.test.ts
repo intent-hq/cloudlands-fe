@@ -26,6 +26,7 @@ vi.mock('$lib/utils/safe-storage', () => ({
 }));
 vi.mock('$lib/i18n/locale', () => ({
   applyLanguagePreference: mocks.applyLanguagePreference,
+  getActiveLocale: () => 'en',
   resolvePreferenceToLocale: vi.fn(),
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
@@ -45,7 +46,9 @@ import {
   setHasCompletedProviderSetup,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   toggleLabsGitLab,
+  toggleLabsRemoteAgents,
   setLabsSettingsVisible,
   setLanguagePreference,
   setNoteFontStyle,
@@ -134,7 +137,10 @@ describe('userPreferencesPersistenceSaga', () => {
     const fonts = ['Helvetica Neue', 'JetBrains Mono', 'Cascadia Code'];
     vi.mocked(window.electronAPI.invoke).mockResolvedValue({ success: true, data: fonts });
     const dispatch = vi.fn();
-    const task = runSaga({ dispatch, getState: () => ({}) }, userPreferencesPersistenceSaga);
+    const task = runSaga(
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      userPreferencesPersistenceSaga,
+    );
     await settle();
 
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([
@@ -189,6 +195,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'labs:settingsVisible': true,
       'labs:multiplayerEnabled': true,
       'labs:gitlabEnabled': true,
+      'labs:remoteAgentsEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -216,6 +223,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setLabsSettingsVisible(true)],
       [setLabsMultiplayerEnabled(true)],
       [setLabsGitLabEnabled(true)],
+      [setLabsRemoteAgentsEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -323,6 +331,72 @@ describe('userPreferencesPersistenceSaga', () => {
     run.dispatch(setOnboardingFullFlowRequested(true));
     run.dispatch(resetOnboarding());
     expect(run.getUserPreferences().labsGitLabEnabled).toBe(true);
+    await run.stop();
+  });
+
+  it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+    'keeps the RemoteAgents lab off for missing or invalid storage: %j',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'labs:remoteAgentsEnabled' ? stored : undefined,
+      );
+      const run = startPreferenceStore();
+      await settle();
+      expect(run.getUserPreferences().labsRemoteAgentsEnabled).toBe(false);
+      expect(
+        mocks.setJSON.mock.calls.filter(([key]) => key === 'labs:remoteAgentsEnabled'),
+      ).toEqual([]);
+      await run.stop();
+    },
+  );
+
+  it.each([true, false])(
+    'persists RemoteAgents %s across onboarding reruns and restart',
+    async (enabled) => {
+      const storage: Record<string, unknown> = {};
+      mocks.getJSON.mockImplementation((key: string) => storage[key]);
+      mocks.setJSON.mockImplementation((key: string, value: unknown) => {
+        storage[key] = value;
+      });
+      const first = startPreferenceStore();
+      await settle();
+      first.dispatch(setLabsRemoteAgentsEnabled(!enabled));
+      first.dispatch(toggleLabsRemoteAgents());
+      first.dispatch(setOnboardingFullFlowRequested(true));
+      first.dispatch(resetOnboarding());
+      first.dispatch(goToStep('forge'));
+      await settle();
+      expect(first.getUserPreferences().labsRemoteAgentsEnabled).toBe(enabled);
+      expect(storage['labs:remoteAgentsEnabled']).toBe(enabled);
+      expect(first.getUserPreferences().labsMultiplayerEnabled).toBe(false);
+      await first.stop();
+      const restarted = startPreferenceStore();
+      await settle();
+      expect(restarted.getUserPreferences().labsRemoteAgentsEnabled).toBe(enabled);
+      restarted.dispatch(resetOnboarding());
+      expect(restarted.getUserPreferences().labsRemoteAgentsEnabled).toBe(enabled);
+      await restarted.stop();
+    },
+  );
+
+  it('keeps RemoteAgents off until delayed preference hydration finishes without resetting it on rerun', async () => {
+    let finish!: (enabled: boolean) => void;
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'labs:remoteAgentsEnabled'
+        ? new Promise<boolean>((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    const run = startPreferenceStore();
+    expect(run.getUserPreferences().labsRemoteAgentsEnabled).toBe(false);
+    run.dispatch(resetOnboarding());
+    finish(true);
+    await settle();
+    expect(run.getUserPreferences().labsRemoteAgentsEnabled).toBe(true);
+    run.dispatch(setOnboardingFullFlowRequested(true));
+    run.dispatch(resetOnboarding());
+    expect(run.getUserPreferences().labsRemoteAgentsEnabled).toBe(true);
     await run.stop();
   });
 
@@ -590,6 +664,39 @@ describe('userPreferencesPersistenceSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+  it('applies rapid locale changes immediately but serializes and coalesces main-process writes', async () => {
+    let release!: () => void;
+    const invoke = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const { dispatch, stop } = startPreferenceStore();
+    window.electronAPI.invoke = invoke;
+    dispatch(setLanguagePreference('de'));
+    dispatch(setLanguagePreference('fr'));
+    dispatch(setLanguagePreference('ja'));
+    await settle();
+    expect(mocks.applyLanguagePreference.mock.calls).toEqual([['de'], ['fr'], ['ja']]);
+    expect(mocks.setJSON.mock.calls).toEqual([
+      ['language-preference', 'de'],
+      ['language-preference', 'fr'],
+      ['language-preference', 'ja'],
+    ]);
+    expect(invoke.mock.calls).toEqual([['app:set-language-preference', { preference: 'de' }]]);
+    release();
+    await settle();
+    expect(invoke.mock.calls).toEqual([
+      ['app:set-language-preference', { preference: 'de' }],
+      ['app:set-language-preference', { preference: 'ja' }],
+    ]);
+    await stop();
+  });
+
   it('skips main-process language IPC outside Electron', async () => {
     mocks.isElectron.mockReturnValue(false);
     await runSaga(
@@ -680,7 +787,10 @@ describe('userPreferencesPersistenceSaga', () => {
     let resolve!: (value: unknown) => void;
     mocks.getJSON.mockReturnValue(new Promise((done) => (resolve = done)));
     const dispatch = vi.fn();
-    const task = runSaga({ dispatch, getState: () => ({}) }, userPreferencesPersistenceSaga);
+    const task = runSaga(
+      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      userPreferencesPersistenceSaga,
+    );
     task.cancel();
     resolve({ enabled: true });
     await task.toPromise();

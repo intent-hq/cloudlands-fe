@@ -1,3 +1,4 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 /**
  * Provider Catalog Slice
  *
@@ -13,9 +14,9 @@ import {
   workspaceDeleted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type {
   ProviderCatalogEntry,
@@ -43,8 +44,20 @@ providerCatalogReducer.with(providerCatalogLoaded, (state, { payload: [catalog] 
   loaded: true,
 }));
 
+providerCatalogReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...initialState,
+  workspaceEpoch: (state.workspaceEpoch ?? 0) + 1,
+}));
+/** Mount demand reuses a hydrated catalog; explicit refreshes use workspaceCatalogRequested. */
+export const ensureWorkspaceCatalogRequested = createAction<[workspaceId: string]>(
+  'providerCatalog/ensureWorkspaceCatalogRequested',
+);
 export const workspaceCatalogRequested = createAction<[workspaceId: string]>(
   'providerCatalog/workspaceCatalogRequested',
+);
+/** Each admitted read needs a new successful snapshot, including trailing refreshes. */
+export const workspaceCatalogReadStarted = createAction<[workspaceId: string]>(
+  'providerCatalog/workspaceCatalogReadStarted',
 );
 export const workspaceCatalogReceived = createAction<
   [workspaceId: string, snapshot: WorkspaceCatalogSnapshot, epoch: number]
@@ -52,6 +65,11 @@ export const workspaceCatalogReceived = createAction<
 export const workspaceCatalogInvalidated = createAction<[connectionChanged?: boolean]>(
   'providerCatalog/workspaceCatalogInvalidated',
 );
+providerCatalogReducer.with(workspaceCatalogReadStarted, (state, { payload: [workspaceId] }) => {
+  const { [workspaceId]: _removed, ...workspaceSnapshotEpochs } =
+    state.workspaceSnapshotEpochs ?? {};
+  return { ...state, workspaceSnapshotEpochs };
+});
 providerCatalogReducer.with(
   workspaceCatalogReceived,
   (state, { payload: [workspaceId, snapshot, epoch] }) =>
@@ -60,6 +78,7 @@ providerCatalogReducer.with(
       : {
           ...state,
           byWorkspaceId: { ...state.byWorkspaceId, [workspaceId]: snapshot },
+          workspaceSnapshotEpochs: { ...state.workspaceSnapshotEpochs, [workspaceId]: epoch },
           mcpServerNamesByWorkspaceId: {
             ...state.mcpServerNamesByWorkspaceId,
             [workspaceId]: Object.fromEntries(
@@ -74,7 +93,9 @@ providerCatalogReducer.with(
   workspaceCatalogInvalidated,
   (state, { payload: [connectionChanged] }) => ({
     ...state,
-    byWorkspaceId: {},
+    // Keep the last successful snapshot during a refresh; a changed connection
+    // must discard it so data from another daemon cannot leak into this one.
+    byWorkspaceId: connectionChanged ? {} : state.byWorkspaceId,
     mcpServerNamesByWorkspaceId: connectionChanged ? {} : state.mcpServerNamesByWorkspaceId,
     workspaceEpoch: (state.workspaceEpoch ?? 0) + 1,
   }),
@@ -87,7 +108,9 @@ function clearWorkspaceCatalog(
   const { [workspaceId]: _removed, ...byWorkspaceId } = state.byWorkspaceId ?? {};
   const { [workspaceId]: _removedNames, ...mcpServerNamesByWorkspaceId } =
     state.mcpServerNamesByWorkspaceId ?? {};
-  return { ...state, byWorkspaceId, mcpServerNamesByWorkspaceId };
+  const { [workspaceId]: _removedEpoch, ...workspaceSnapshotEpochs } =
+    state.workspaceSnapshotEpochs ?? {};
+  return { ...state, byWorkspaceId, mcpServerNamesByWorkspaceId, workspaceSnapshotEpochs };
 }
 providerCatalogReducer.with(workspaceUnmounted, (state, { payload: [id] }) =>
   clearWorkspaceCatalog(state, id),

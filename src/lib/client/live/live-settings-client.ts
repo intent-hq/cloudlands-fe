@@ -1,3 +1,5 @@
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
+import { validateMcpServerIdentities } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 /**
  * Live settings domain backed by the intentd daemon (PROTOCOL §5.12).
  *
@@ -148,7 +150,8 @@ export function readSetting(
     const run = pending.promise
       .catch(() => null)
       .then(() => {
-        if (trailingSettingReads.get(key) === run) trailingSettingReads.delete(key);
+        if (trailingSettingReads.get(key) !== run) return null;
+        trailingSettingReads.delete(key);
         return readSetting(path, workspaceId);
       })
       .finally(() => {
@@ -191,11 +194,15 @@ export async function updateSettings(changes: AppSettingChange[]): Promise<Setti
   };
 }
 
-export function __resetSettingsReadCacheForTests(): void {
-  settingCache.clear();
+/** A new connection must neither reuse nor wait on the previous host's reads. */
+export function resetSettingsConnectionCache(): void {
+  invalidateSettingsReadCache();
   pendingSettingReads.clear();
   trailingSettingReads.clear();
-  settingsGeneration += 1;
+}
+
+export function __resetSettingsReadCacheForTests(): void {
+  resetSettingsConnectionCache();
 }
 
 /** Build a fresh `update` change list, omitting `undefined` values. */
@@ -369,7 +376,7 @@ export class LiveSettingsClient implements SettingsClient {
     return status;
   }
 
-  async getWorkspaceDisabledMcpServerNames(workspaceId: string): Promise<string[] | null> {
+  async getWorkspaceDisabledMcpServerKeys(workspaceId: string): Promise<string[] | null> {
     // Workspace-scoped `mcp.servers.list` (§5.22 per-workspace disable): every
     // entry adds `workspaceDisabled: boolean`. Lenient on the wire (an unknown
     // workspaceId yields all-false, never an error); a transport failure folds
@@ -381,7 +388,7 @@ export class LiveSettingsClient implements SettingsClient {
       if (!Array.isArray(result?.servers)) return null;
       return result.servers.flatMap((server) =>
         server.workspaceDisabled === true && typeof server.name === 'string' && server.name
-          ? [server.name]
+          ? [getMcpServerKey({ id: server.id, name: server.name })]
           : [],
       );
     } catch {
@@ -416,30 +423,45 @@ export class LiveSettingsClient implements SettingsClient {
 
   async setMcpServers(servers: McpServerConfig[]): Promise<MutationResult> {
     try {
+      validateMcpServerIdentities(servers);
       const existing = await listWireMcpServers();
-      const existingByName = new Map<string, WireMcpServerConfig>();
-      for (const server of existing) {
-        if (typeof server.name === 'string' && server.name) {
-          existingByName.set(server.name, server);
-        }
+      const existingById = new Map(existing.map((server) => [server.id, server]));
+      const desired = servers.map((config) => {
+        if (config.id !== undefined) return { config, current: existingById.get(config.id) };
+        const matches = existing.filter((server) => server.name === config.name);
+        if (matches.length > 1) throw new Error(`Ambiguous MCP server name: ${config.name}`);
+        return { config, current: matches[0] };
+      });
+      const desiredIds = new Set<string>();
+      for (const { config, current } of desired) {
+        const id = current?.id ?? config.id;
+        if (!id) continue;
+        if (desiredIds.has(id)) throw new Error(`Duplicate MCP server identity: ${id}`);
+        desiredIds.add(id);
       }
-      const desiredNames = new Set(servers.map((s) => s.name));
-
       for (const server of existing) {
-        if (server.name && server.id && !desiredNames.has(server.name)) {
+        if (server.id && !desiredIds.has(server.id)) {
           await backendRequest('mcp.servers.delete', { serverId: server.id });
         }
       }
-      for (const config of servers) {
-        const current = existingByName.get(config.name);
+      for (const { config, current } of desired) {
         if (!current?.id) {
-          await backendRequest('mcp.servers.create', { config: toWireMcpConfig(config) });
+          await backendRequest('mcp.servers.create', {
+            config: toWireMcpConfig(config, config.id),
+          });
           continue;
         }
-        if (!sameMcpConfigBody(current, config)) {
+        // Redux/export omit credentials. Preserve the selected ID's redacted
+        // fields unless the caller explicitly supplies replacements ({} clears).
+        const desiredConfig = {
+          ...config,
+          env: config.env ?? current.env,
+          headers: config.headers ?? current.headers,
+        };
+        if (!sameMcpConfigBody(current, desiredConfig)) {
           await backendRequest('mcp.servers.update', {
             serverId: current.id,
-            config: toWireMcpConfig(config, current.id),
+            config: toWireMcpConfig(desiredConfig, current.id),
           });
         }
         const desiredEnabled = config.disabled !== true;
@@ -617,7 +639,7 @@ function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
   const type = wire.transport === 'http' || wire.transport === 'sse' ? wire.transport : 'stdio';
   const config: McpServerConfig = { name: wire.name, type };
   // Carry the daemon-assigned `id` (§5.22) so the events bridge can resolve
-  // `mcp.servers:status-changed` payloads back to a server name; opaque to
+  // `mcp.servers:status-changed` payloads to a stable state key; opaque to
   // the UI and never authored by callers.
   if (typeof wire.id === 'string' && wire.id) config.id = wire.id;
   if (typeof wire.command === 'string' && wire.command) config.command = wire.command;

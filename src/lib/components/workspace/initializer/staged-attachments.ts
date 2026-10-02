@@ -73,12 +73,14 @@ export async function redeemStagedAttachments(
   items: ContextItem[],
   place: typeof placeAttachmentViaTransport = placeAttachmentViaTransport,
   mintKey: typeof mintPlacementIdempotencyKey = mintPlacementIdempotencyKey,
+  current: () => boolean = () => true,
 ): Promise<RedeemResult> {
   const out: ContextItem[] = [];
   const fileBlocks: FileBlock[] = [];
   let failedCount = 0;
 
   for (const item of items) {
+    if (!current()) return { items, fileBlocks: [], failedCount: 1 };
     if (!isStagedFileItem(item)) {
       out.push(item);
       const block = fileBlockFromItem(item);
@@ -96,11 +98,19 @@ export async function redeemStagedAttachments(
     const keyedItem: ContextItem =
       idempotencyKey !== undefined ? { ...item, placementIdempotencyKey: idempotencyKey } : item;
     try {
-      const result: PlaceAttachmentResult = await place(workspaceId, item.label, {
-        sourcePath: item.sourcePath,
-        mimeType: item.attachmentMimeType,
-        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-      });
+      const result: PlaceAttachmentResult = await place(
+        workspaceId,
+        item.label,
+        {
+          sourcePath: item.sourcePath,
+          mimeType: item.attachmentMimeType,
+          ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+        },
+        undefined,
+        undefined,
+        current,
+      );
+      if (!current()) return { items, fileBlocks: [], failedCount: 1 };
       const placed: ContextItem = {
         ...keyedItem,
         placementStatus: 'placed',
@@ -242,7 +252,9 @@ export async function sendHeldFirstMessage(
   fileBlocks: FileBlock[],
   request: typeof backendRequest = backendRequest,
   toReferences: typeof toImageReferenceBlocks = toImageReferenceBlocks,
+  current: () => boolean = () => true,
 ): Promise<SendHeldFirstMessageResult> {
+  if (!current()) return { sent: false };
   const hasContent = pending.content.length > 0;
   const hasBlocks =
     pending.imageBlocks.length > 0 || fileBlocks.length > 0 || pending.contextReferences.length > 0;
@@ -258,7 +270,7 @@ export async function sendHeldFirstMessage(
   if (imageBlocks.length > 0) {
     const attempted = imageBlocks as WireImageBlock[];
     try {
-      imageBlocks = await toReferences(pending.workspaceId, attempted);
+      imageBlocks = await toReferences(pending.workspaceId, attempted, undefined, current);
     } catch (error) {
       return {
         sent: false,
@@ -289,10 +301,12 @@ export async function sendHeldFirstMessage(
     // `backendRequest` resolves normal daemon send failures as
     // `{ success: false, error }` rather than rejecting — check it, or a
     // failed send would silently drop the held message and its retry path.
+    if (!current()) return { sent: false };
     const result = await request<{ success?: boolean; error?: string }>(
       'agent.sendMessage',
       params,
     );
+    if (!current()) return { sent: false };
     if (result?.success === false) {
       const error = typeof result.error === 'string' ? result.error.trim() : '';
       return {

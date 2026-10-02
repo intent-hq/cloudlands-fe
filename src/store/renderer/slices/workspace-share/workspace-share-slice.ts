@@ -18,9 +18,9 @@ import {
   createCollection,
   getItem,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+} from '@themislib/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
   HostPrincipal,
   InvitePin,
@@ -38,6 +38,8 @@ import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
  * link once the dialog has been closed or retargeted to workspace B.
  */
 export interface WorkspaceShareTarget {
+  /** Captured only by the request owner; omitted on pure presentation actions. */
+  authority?: string | null;
   workspaceId: string;
   session: number;
 }

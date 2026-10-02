@@ -17,7 +17,7 @@ triggers:
 
 > Selector scheduler helpers are implementation details. Do not import them from package subpaths or teach consumers to wrap selector readables manually.
 
-Public facade: `@augmentcode/themis/svelte-store` (`store.createSelector` and `Store` selector options). Selector implementation and scheduler internals are package-private; see `@augmentcode/themis/docs/SELECTORS.md` for behavior.
+Public facade: `@themislib/themis/svelte-store` (`store.createSelector` and `Store` selector options). Selector implementation and scheduler internals are package-private; see `@themislib/themis/docs/SELECTORS.md` for behavior.
 
 ## Scheduling options
 
@@ -45,7 +45,7 @@ live in `../selectors/SKILL.md` → **Choose the factory** and **Selector cachin
 ### Configure coalescing on the Store
 
 ```ts
-import { Store } from "@augmentcode/themis/svelte-store";
+import { Store } from "@themislib/themis/svelte-store";
 import { pointerReducer } from "./pointer-slice";
 
 export const store = new Store({ pointer: pointerReducer }, [], {
@@ -112,4 +112,4 @@ export function* pointerAuditSaga() {
 
 - `../selectors/SKILL.md` — building Store-bound selectors and cache contracts.
 - `../selector-lifecycle/SKILL.md` — selector call-site modes and cleanup.
-- `@augmentcode/themis/docs/SELECTORS.md` — selector memoization and lifecycle rules.
+- `@themislib/themis/docs/SELECTORS.md` — selector memoization and lifecycle rules.

@@ -1,4 +1,6 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -45,15 +47,29 @@ const typing = (source: string, pulse: number, agentId = 'agent-1'): PresenceTyp
 });
 
 const reduce = (...actions: Parameters<typeof presenceReducer>[1][]): PresenceState =>
-  actions.reduce((state, action) => presenceReducer(state, action), initialState);
+  actions.reduce((state, action) => presenceReducer(state, action), {
+    ...initialState,
+    context: 'fixture',
+    workspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+  });
 
-const stateWith = (presence: PresenceState, extra: Record<string, unknown> = {}): StoreState =>
-  ({
+const stateWith = (presence: PresenceState, extra: Record<string, unknown> = {}): StoreState => {
+  const state = withLegacyPrincipal({
     presence,
+    workspace: {
+      workspaces: createCollection('id', [
+        { id: WorkspaceId('ws-1'), memberCount: 2 } as Workspace,
+      ]),
+    },
     tabState: { currentTabId: null },
     panelLayout: { byWorkspaceId: {} },
     ...extra,
-  }) as unknown as StoreState;
+  });
+  return {
+    ...state,
+    presence: { ...presence, context: selectPrincipalActionContext.select(state) },
+  };
+};
 
 const ids = (people: { principalId: string }[]) => people.map((p) => p.principalId);
 

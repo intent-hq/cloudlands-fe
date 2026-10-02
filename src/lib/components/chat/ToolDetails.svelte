@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { commentAuthorLabel } from '$features/comments/comment-attribution';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
@@ -826,6 +827,21 @@
                         {m.chat_toolDetails_noAnchor_label()}
                       {/if}
                     </span>
+                    {#if thread.latestAuthor || thread.latestAuthorIdentity}
+                      {@const authorLabel = commentAuthorLabel({
+                        author: thread.latestAuthor,
+                        authorType: thread.latestAuthorType,
+                        authorIdentity: thread.latestAuthorIdentity,
+                      })}
+                      <span
+                        data-comment-author
+                        aria-label={authorLabel}
+                        title={authorLabel}
+                        class="text-xs text-subtle truncate"
+                      >
+                        {authorLabel}
+                      </span>
+                    {/if}
                     <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-subtle shrink-0">
                       {thread.status}
                     </span>

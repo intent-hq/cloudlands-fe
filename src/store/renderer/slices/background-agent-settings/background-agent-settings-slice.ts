@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   activeProviderAccepted,
   atomicDefaultModelAccepted,
@@ -16,6 +16,7 @@ import { m } from '$shared/paraglide/messages.js';
  * (PROTOCOL §5.31/§5.32). There is intentionally no hardcoded model id here.
  */
 export const DEFAULT_BACKGROUND_MODEL = '';
+export const BG_MODEL_MIGRATION_MARKER_KEY = 'bg-model-haiku45-migrated';
 
 export type BackgroundAgentType = 'commit' | 'pr' | 'review' | 'fast';
 
@@ -208,6 +209,13 @@ function pending(
   };
 }
 
+export const backgroundSettingsHydrationRequested = createAction<
+  [settings: Parameters<typeof hydrateSettings>[0]]
+>('backgroundAgentSettings/hydrationRequested');
+export const backgroundSettingsMigrationRequested = createAction<
+  [settings: Pick<ProviderBgSettings, 'defaultModel' | 'typeOverrides'>]
+>('backgroundAgentSettings/migrationRequested');
+
 /** Hydrate provider settings snapshots from the daemon */
 export const hydrateProviderSettings = createAction<
   [providerSettings: Record<string, ProviderBgSettings>]
@@ -230,6 +238,15 @@ export const restoreProviderSettings = createAction<[payload: ProviderBgSettings
 export const backgroundAgentSettingsReducer =
   createReducer<BackgroundAgentSettingsState>(initialState);
 
+backgroundAgentSettingsReducer.with(
+  backgroundSettingsMigrationRequested,
+  (state, { payload: [migrated] }) => ({
+    ...pending(state),
+    // A migration must neither replace newer local picks nor masquerade as a
+    // daemon snapshot: rejection rolls back to the unmodified authority.
+    ...(state.persistencePending ? {} : migrated),
+  }),
+);
 backgroundAgentSettingsReducer.with(setDefaultModel, (state, { payload: [model] }) => ({
   ...pending(state, ['defaultModel']),
   defaultModel: model,

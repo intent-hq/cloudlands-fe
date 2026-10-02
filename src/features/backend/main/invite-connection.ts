@@ -48,6 +48,7 @@ import type { IncomingMessage } from 'node:http';
 import type { RawData, WebSocket as WsWebSocket } from 'ws';
 import { Logger } from '$shared/logger';
 import type { PrincipalIdentity } from '../../workspace-sharing/types';
+import { isCollaborationIdentity } from '../../collaboration-auth/identity';
 import { PinMismatchError, normalizeFingerprint, pinnedTlsConnect } from './backend-connection';
 import {
   createTailcatTunnel,
@@ -97,8 +98,10 @@ const INVITE_PROVE_METHOD = 'invite.prove';
  * instead.
  */
 export interface InviteInspection {
-  workspaceId: string;
-  workspaceTitle: string;
+  scope?: 'workspace' | 'host';
+  role?: 'collaborator' | 'member';
+  workspaceId?: string;
+  workspaceTitle?: string;
   hostname?: string;
   prettyHostname?: string;
   /** Required account; null means unpinned. Older hosts omit this field. */
@@ -123,12 +126,75 @@ export type InviteProof =
   | { nonce: string; login: string; provider: 'gitlab'; host: string; proofId: string };
 
 /** Join result (`invite.prove` / `invite.accept`): the collaborator credential, returned exactly once. */
-interface InviteCredential {
+export interface InviteCredential {
   status: 'authorized';
   token: string;
   principalId: string;
   login: string;
-  workspaceId: string;
+  scope?: 'workspace' | 'host';
+  workspaceId?: string;
+  identity?: PrincipalIdentity;
+  hostRole?: 'guest' | 'member';
+}
+
+/** `/invite` has no hello. Host invitations require this exact preview before consent or proof. */
+export function validateInviteInspection(
+  value: InviteInspection,
+  scope: 'workspace' | 'host',
+): void {
+  if (
+    value &&
+    Object.hasOwn(value, 'pinIdentity') &&
+    value.pinIdentity !== null &&
+    !isCollaborationIdentity(value.pinIdentity)
+  ) {
+    throw new InviteRpcError(-32602, { code: 'invite-pin-mismatch' });
+  }
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    (scope === 'host'
+      ? value.scope !== 'host' ||
+        value.role !== 'member' ||
+        !isCollaborationIdentity(value.pinIdentity) ||
+        Object.hasOwn(value, 'workspaceId') ||
+        Object.hasOwn(value, 'workspaceTitle')
+      : (value.scope !== undefined && value.scope !== 'workspace') ||
+        (value.role !== undefined && value.role !== 'collaborator') ||
+        typeof value.workspaceId !== 'string' ||
+        !value.workspaceId ||
+        typeof value.workspaceTitle !== 'string') ||
+    (value.pinIdentity != null && !isCollaborationIdentity(value.pinIdentity))
+  ) {
+    throw new InviteRpcError(-32602, { code: 'invite-scope-mismatch' });
+  }
+}
+
+export function validateInviteCredential(
+  value: InviteCredential,
+  scope: 'workspace' | 'host',
+): void {
+  if (
+    !value ||
+    value.status !== 'authorized' ||
+    typeof value.token !== 'string' ||
+    !value.token ||
+    typeof value.principalId !== 'string' ||
+    !value.principalId ||
+    typeof value.login !== 'string' ||
+    (value.hostRole !== undefined && !['member', 'guest'].includes(value.hostRole)) ||
+    (value.identity !== undefined && !isCollaborationIdentity(value.identity)) ||
+    (scope === 'host'
+      ? value.scope !== 'host' ||
+        value.hostRole !== 'member' ||
+        !isCollaborationIdentity(value.identity) ||
+        Object.hasOwn(value, 'workspaceId')
+      : (value.scope !== undefined && value.scope !== 'workspace') ||
+        typeof value.workspaceId !== 'string' ||
+        !value.workspaceId)
+  ) {
+    throw new InviteRpcError(-32602, { code: 'invite-scope-mismatch' });
+  }
 }
 
 /**
@@ -160,6 +226,7 @@ const INVITE_ERROR_CODES = [
   'github-unreachable',
   'identity-unverifiable',
   'owner-self-join',
+  'invite-scope-mismatch',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];
@@ -260,6 +327,7 @@ function toTransportError(error: unknown): InviteTransportError {
 
 /** Where to dial: the invite link's envelope. */
 export interface InviteTarget {
+  scope?: 'workspace' | 'host';
   /** Direct candidate hosts (`host=`); may be empty when `tcAddress` is set. */
   hosts: string[];
   port: number;
@@ -531,7 +599,7 @@ export async function openInviteConnection(
   if (hosts.length > 0) {
     try {
       const winner = await raceDirectHosts(hosts, target.port, expected, timeoutMs);
-      return attachRpc(winner.host, 'direct', winner.ws);
+      return attachRpc(winner.host, 'direct', winner.ws, undefined, target.scope);
     } catch (error) {
       directError = error instanceof PinMismatchError ? error : toTransportError(error);
       if (tcAddress === null) throw directError;
@@ -551,7 +619,7 @@ export async function openInviteConnection(
       timeoutMs,
       options.tailcatSpawn,
     );
-    return attachRpc(tcAddress as string, 'tunnel', ws, tunnel);
+    return attachRpc(tcAddress as string, 'tunnel', ws, tunnel, target.scope);
   } catch (error) {
     if (error instanceof PinMismatchError) throw error;
     if (directError instanceof PinMismatchError) throw directError;
@@ -572,7 +640,9 @@ function attachRpc(
   via: InviteConnection['via'],
   ws: WsWebSocket,
   tunnel?: TailcatTunnel,
+  scope?: 'workspace' | 'host',
 ): InviteConnection {
+  const scopeParams: Record<string, string> = scope === undefined ? {} : { scope };
   const pending = new Map<number, Pending>();
   let nextId = 1;
   let closed = false;
@@ -651,25 +721,25 @@ function attachRpc(
     challenge: (inviteId, secret) =>
       request(
         INVITE_CHALLENGE_METHOD,
-        { inviteId, secret },
+        { inviteId, secret, ...scopeParams },
         INVITE_REQUEST_TIMEOUT_MS,
       ) as Promise<InviteChallenge>,
     prove: (inviteId, secret, proof, timeoutMs = INVITE_PROVE_TIMEOUT_MS) =>
       request(
         INVITE_PROVE_METHOD,
-        { inviteId, secret, ...proof },
+        { inviteId, secret, ...proof, ...scopeParams },
         timeoutMs,
       ) as Promise<InviteCredential>,
     inspect: (inviteId, secret) =>
       request(
         INVITE_INSPECT_METHOD,
-        { inviteId, secret },
+        { inviteId, secret, ...scopeParams },
         INVITE_REQUEST_TIMEOUT_MS,
       ) as Promise<InviteInspection>,
     accept: (inviteId, secret, credential) =>
       request(
         INVITE_ACCEPT_METHOD,
-        { inviteId, secret, credential },
+        { inviteId, secret, credential, ...scopeParams },
         INVITE_REQUEST_TIMEOUT_MS,
       ) as Promise<InviteCredential>,
     close: () => {
