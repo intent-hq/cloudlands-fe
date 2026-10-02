@@ -17,6 +17,7 @@ import {
   workspaceUnmounted,
 } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
+import { workspaceTasksReducer } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
 import {
   scriptsReducer,
@@ -79,10 +80,12 @@ function start() {
     tabState: { currentTabId: WS },
     workspaceShare: { open: false, byWorkspaceId: {} },
     scripts: scriptsReducer(undefined, { type: '@@init' }),
+    workspaceTasks: workspaceTasksReducer(undefined, { type: '@@init' }),
     workspace: { workspaces: createCollection('id', [{ id: WS, myRole: 'owner' }]) },
   });
   const dispatch = (a: any) => {
     state.scripts = scriptsReducer(state.scripts, a);
+    state.workspaceTasks = workspaceTasksReducer(state.workspaceTasks, a);
     channel.put(a);
     return a;
   };

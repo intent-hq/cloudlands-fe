@@ -24,7 +24,6 @@
     selectAgentPreview,
     type AgentPreview,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -61,7 +60,6 @@
     isLoading = false,
     activeAgentIds = [],
     loadAgentSessions = true,
-    loadWorkspaceData = true,
     onkeydown,
     staticData = false,
   }: Props = $props();
@@ -75,12 +73,6 @@
   const workspaceAgents$ = createWorkspaceAgentsStore();
   const prMonitors$ = createPrMonitorsStore();
   $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
-  $effect(() => {
-    if (workspace && loadWorkspaceData) {
-      const id = String(workspace.id);
-      appStore.dispatch(ensureWorkspaceTasksLoaded(id));
-    }
-  });
   let streamsVersion = $state(0);
   onMount(() => activeStreamsTracker.subscribe(() => streamsVersion++));
   let memberAgentIds = $derived(workspace?.agentSummary?.agentIds ?? []);

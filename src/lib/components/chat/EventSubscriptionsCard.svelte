@@ -355,6 +355,7 @@
               {compact}
               embedded
               forceWaitingHeader={!isSingleEvent}
+              isActive={isActive && !bodyIsClosing && $agentSubscriptionLane$.visible}
               visible={$agentSubscriptionLane$.visible}
               count={$agentSubscriptionLane$.count}
               participantAgentIds={$agentSubscriptionLane$.participantAgentIds}
