@@ -1,5 +1,4 @@
 import type { Task } from 'redux-saga';
-import { createAction } from '@themislib/themis/utils/store/create-action';
 import { call, cancel, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import type { DraftsClient } from '$lib/client/app-client';
@@ -8,6 +7,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   chatDraftClearRequested,
+  chatDraftClearStarted,
   chatDraftOwnerReleased,
   chatDraftRestoreRequested,
   chatDraftRestoreSettled,
@@ -26,8 +26,6 @@ export const CHAT_DRAFT_SAVE_DEBOUNCE_MS = 500;
 
 type ChatDraftsTransport = Pick<DraftsClient, 'get' | 'set' | 'clear'>;
 type FlushAction = ReturnType<typeof chatDraftSaveFlushRequested | typeof chatDraftOwnerReleased>;
-const chatDraftClearStarted =
-  createAction<[workspaceId: string, agentId: string]>('chatDrafts/clearStarted');
 type ClearRequestAction = ReturnType<typeof chatDraftClearRequested>;
 type ClearAction = ReturnType<typeof chatDraftClearStarted>;
 type SaveStartedAction = ReturnType<typeof chatDraftSaveStarted>;
