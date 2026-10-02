@@ -20,6 +20,7 @@
     selectConnectionsLoaded,
     selectRemoteConnections,
     selectConnectionWorkflow,
+    selectCurrentConnectionId,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     connectionWorkflowRequested,
@@ -37,6 +38,7 @@
   const devices$ = selectRemoteConnections();
   const loaded$ = selectConnectionsLoaded();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
+  const currentConnectionId$ = selectCurrentConnectionId();
 
   let connectModalOpen = $state(false);
   let activeDeviceId = $state<string | null>(null);
@@ -168,7 +170,13 @@
           </Button>
         </div>
       {/if}
-      {@render mobilePairing()}
+      {#if $currentConnectionId$ === LOCAL_CONNECTION_ID}
+        {@render mobilePairing()}
+      {:else}
+        {#key $currentConnectionId$}
+          <WebSocketApiSettings mobileOnly active={!$hostAdministrationDenied$} />
+        {/key}
+      {/if}
     </div>
   {/snippet}
 </WebSocketApiSettings>

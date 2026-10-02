@@ -45,6 +45,7 @@ const mocks = vi.hoisted(() => ({
   setSyncEnabled: vi.fn(),
   toastError: vi.fn(),
   settingsList: vi.fn(),
+  localSettingsList: vi.fn(),
   settingsUpdate: vi.fn(),
   pairingInfo: vi.fn(),
   qrCode: vi.fn().mockResolvedValue('data:image/png;base64,'),
@@ -54,7 +55,7 @@ vi.mock('qrcode', () => ({ default: { toDataURL: mocks.qrCode } }));
 
 vi.mock('$lib/client', () => ({
   localMachineClient: {
-    settings: { list: mocks.settingsList, update: mocks.settingsUpdate },
+    settings: { list: mocks.localSettingsList, update: mocks.settingsUpdate },
     server: { pairingInfo: mocks.pairingInfo, rotateToken: vi.fn() },
   },
   appClient: {
@@ -144,6 +145,7 @@ describe('DevicesSettings', () => {
       { path: 'server.wsApi.enabled', value: false },
       { path: 'server.wsApi.port', value: 5181 },
     ]);
+    mocks.localSettingsList.mockImplementation(() => mocks.settingsList());
     mocks.settingsUpdate.mockImplementation(async (changes) => {
       mocks.settingsList.mockResolvedValue([
         { path: 'server.wsApi.port', value: 5181 },
@@ -277,19 +279,21 @@ describe('DevicesSettings', () => {
     expect(copy.hasAttribute('disabled')).toBe(true);
   });
 
-  it('offers local-machine mobile pairing from a remote window without expanding the local row', async () => {
+  it('keeps mobile pairing disabled for a remote with access off even if the local listener is enabled', async () => {
     mocks.currentConnectionId = remote.id;
-    mocks.settingsList.mockResolvedValue([
+    mocks.localSettingsList.mockResolvedValue([
       { path: 'server.wsApi.enabled', value: true },
       { path: 'server.wsApi.port', value: 5181 },
     ]);
     render(DevicesSettings);
     const mobile = screen.getByRole('region', { name: m.settings_devices_mobile_title() });
     const qr = within(mobile).getByRole('button', { name: m.settings_wsApi_showQrCode() });
-    await waitFor(() => expect(qr.hasAttribute('disabled')).toBe(false));
+    await waitFor(() => expect(mocks.settingsList).toHaveBeenCalled());
+    expect(qr.hasAttribute('disabled')).toBe(true);
     await fireEvent.click(qr);
-    expect(await screen.findByRole('dialog')).toBeTruthy();
-    expect(mocks.pairingInfo).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(mocks.pairingInfo).not.toHaveBeenCalled();
+    expect(mocks.localSettingsList).not.toHaveBeenCalled();
   });
 
   it('shows named remotes without duplicating their address or visible status text', () => {

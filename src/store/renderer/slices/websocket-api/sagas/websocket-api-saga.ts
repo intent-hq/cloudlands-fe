@@ -11,6 +11,7 @@ import {
 } from 'typed-redux-saga';
 import { appClient, localMachineClient } from '$lib/client';
 import type { ServerPairingInfo } from '$lib/client/app-client';
+import { readSelfPairing } from '$features/devices/self-pairing';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -19,6 +20,7 @@ import {
   clearAllWebsocketCredentials,
   clearWebsocketCredentials,
   readWebsocketToken,
+  readPersonalPairingUri,
   receiveWebsocketCredentials,
 } from '$features/settings/websocket-api-credentials';
 import {
@@ -40,6 +42,12 @@ import { websocketApiQrOpened, websocketApiRequested } from '../websocket-api-sl
 import { selectWebsocketApiSnapshot } from '../websocket-api-selectors';
 import type { WebSocketApiSnapshot } from '../websocket-api-types';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
+import {
+  selectPrincipalActionContext,
+  selectPrincipalSnapshot,
+  selectCanAdministerHost,
+} from '../../principal/principal-selectors';
+import { store } from '../../../store';
 
 type RequestAction = ReturnType<typeof websocketApiRequested>;
 
@@ -121,19 +129,58 @@ function* loadSnapshot(
   return snapshot;
 }
 
-function pairingUri(request: SettingsFormRequest, snapshot: WebSocketApiSnapshot): string {
+function pairingUri(
+  request: SettingsFormRequest,
+  snapshot: WebSocketApiSnapshot,
+  personal = false,
+): string {
+  if (personal) {
+    const uri = readPersonalPairingUri(request);
+    if (!uri) throw new Error(m.settings_personalDevices_pairing_error());
+    return uri;
+  }
   return `intent://pair?token=${encodeURIComponent(readWebsocketToken(request))}&host=${snapshot.localIps.map(encodeURIComponent).join(',')}&port=${snapshot.port}&path=/ws${snapshot.certFingerprint ? `&certFingerprint=${encodeURIComponent(snapshot.certFingerprint)}` : ''}${snapshot.tcAddress ? `&tc=${encodeURIComponent(snapshot.tcAddress)}` : ''}`;
 }
 
 function* runRequest(action: RequestAction): SagaGenerator<void> {
   const [request, intent] = action.payload;
+  const context = 'context' in intent ? intent.context : undefined;
+  const dispatch = store.dispatch;
+  const current = () =>
+    !context ||
+    (dispatch === store.dispatch &&
+      selectSettingsFormRequestCurrent.select(store.state, request) &&
+      context === selectPrincipalActionContext.select(store.state));
   const client = intent.connectionId === LOCAL_CONNECTION_ID ? appClient : localMachineClient;
   let snapshot = yield* selectWebsocketApiSnapshot.effect(request);
   let values: Record<string, SettingsFormValue> = {};
   let error: string | undefined;
   try {
     if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
-    if (intent.kind === 'load') {
+    if (context && context !== (yield* selectPrincipalActionContext.effect())) return;
+    if (intent.kind === 'loadMobile') {
+      const principal = yield* selectPrincipalSnapshot.effect();
+      if (!(yield* selectCanAdministerHost.effect()) || !principal)
+        throw new Error(m.settings_personalDevices_pairing_error());
+      const settings = yield* call([appClient.settings, appClient.settings.list]);
+      if (context !== (yield* selectPrincipalActionContext.effect())) return;
+      const enabled = settings.find((entry) => entry.path === 'server.wsApi.enabled')?.value;
+      if (typeof enabled !== 'boolean') throw new Error(m.settings_personalDevices_pairing_error());
+      yield* put(settingsFormRequestProgressed(request, { enabled }));
+      if (enabled) {
+        if (!principal.capabilities.personalPairing)
+          throw new Error(m.settings_personalDevices_pairing_error());
+        yield* call(async () => {
+          try {
+            const uri = await readSelfPairing(principal.principal);
+            if (current()) receiveWebsocketCredentials(request, { pairingUri: uri });
+          } catch {
+            throw new Error(m.settings_personalDevices_pairing_error());
+          }
+        });
+      }
+      values = { enabled };
+    } else if (intent.kind === 'load') {
       snapshot = yield* call(loadSnapshot, client, request);
       values = { ...snapshot, portResetId: request.requestId };
     } else if (intent.kind === 'toggle') {
@@ -265,7 +312,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       }
     } else if (intent.kind === 'publish') yield* publication('publish');
     else if (intent.kind === 'copy') {
-      if (intent.target === 'share' && !snapshot.port)
+      if (intent.target === 'share' && !snapshot.port && !context)
         throw new Error(m.settings_wsApi_serverNotRunning());
       yield* call(async () => {
         const text =
@@ -275,9 +322,9 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
               ? snapshot.certFingerprint
               : intent.target === 'tc'
                 ? snapshot.tcAddress
-                : pairingUri(request, snapshot);
+                : pairingUri(request, snapshot, !!context);
         try {
-          await navigator.clipboard.writeText(text);
+          if (current()) await navigator.clipboard.writeText(text);
         } catch {
           throw new Error(m.settings_wsApi_tokenCopyError());
         }
@@ -294,16 +341,16 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
               : m.settings_wsApi_shareLink_copied(),
       );
     } else if (intent.kind === 'qr') {
-      if (!snapshot.port) throw new Error(m.settings_wsApi_serverNotRunning());
+      if (!snapshot.port && !context) throw new Error(m.settings_wsApi_serverNotRunning());
       yield* call(async () => {
         try {
           const QRCode = (await import('qrcode')).default;
-          const qrDataUrl = await QRCode.toDataURL(pairingUri(request, snapshot), {
+          const qrDataUrl = await QRCode.toDataURL(pairingUri(request, snapshot, !!context), {
             width: 544,
             margin: 2,
             color: { dark: '#000000', light: '#ffffff' },
           });
-          receiveWebsocketCredentials(request, { qrDataUrl });
+          if (current()) receiveWebsocketCredentials(request, { qrDataUrl });
         } catch {
           throw new Error(m.settings_wsApi_qrGenerateError());
         }
@@ -325,23 +372,25 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
     if (yield* selectSettingsFormRequestCurrent.effect(request)) {
       const message = cause instanceof Error ? cause.message : String(cause);
       error =
-        intent.kind === 'load'
-          ? m.settings_wsApi_loadStatusError({ error: message })
-          : intent.kind === 'toggle'
-            ? m.settings_wsApi_toggleError({ error: message })
-            : intent.kind === 'port'
-              ? m.settings_wsApi_portChangeError({ error: message })
-              : intent.kind === 'qr'
-                ? m.settings_wsApi_qrGenerateError()
-                : intent.kind === 'copy'
-                  ? intent.target === 'token'
-                    ? m.settings_wsApi_tokenCopyError()
-                    : intent.target === 'tc'
-                      ? m.settings_tunnel_tcAddress_copyError()
-                      : intent.target === 'share'
-                        ? m.settings_wsApi_shareLink_copyError()
-                        : m.ui_imageActionsMenu_copyFailed_error()
-                  : message;
+        intent.kind === 'loadMobile'
+          ? m.settings_personalDevices_pairing_error()
+          : intent.kind === 'load'
+            ? m.settings_wsApi_loadStatusError({ error: message })
+            : intent.kind === 'toggle'
+              ? m.settings_wsApi_toggleError({ error: message })
+              : intent.kind === 'port'
+                ? m.settings_wsApi_portChangeError({ error: message })
+                : intent.kind === 'qr'
+                  ? m.settings_wsApi_qrGenerateError()
+                  : intent.kind === 'copy'
+                    ? intent.target === 'token'
+                      ? m.settings_wsApi_tokenCopyError()
+                      : intent.target === 'tc'
+                        ? m.settings_tunnel_tcAddress_copyError()
+                        : intent.target === 'share'
+                          ? m.settings_wsApi_shareLink_copyError()
+                          : m.ui_imageActionsMenu_copyFailed_error()
+                    : message;
       yield* call(notify.error, error);
       yield* put(
         settingsFormRequestSettled(request, {
@@ -416,7 +465,12 @@ export function* websocketApiSaga(): SagaGenerator<void> {
         receiveWebsocketCredentials(request, { qrDataUrl: '' });
         yield* put(timers, { request, open: false });
         yield* put(settingsFormRequestSettled(request, { status: 'succeeded' }));
-      } else if (intent.kind === 'load' || intent.kind === 'copy' || intent.kind === 'qr') {
+      } else if (
+        intent.kind === 'load' ||
+        intent.kind === 'loadMobile' ||
+        intent.kind === 'copy' ||
+        intent.kind === 'qr'
+      ) {
         yield* put(reads, requestAction);
       } else yield* put(writes, requestAction);
     }

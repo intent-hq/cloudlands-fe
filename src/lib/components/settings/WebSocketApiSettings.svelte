@@ -28,6 +28,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     selectCurrentConnectionId,
+    selectCurrentConnection,
     selectKeychainSyncState,
     selectSelfPublication,
     selectSelfPublicationBusy,
@@ -44,6 +45,10 @@
   import { selectWebsocketApiSnapshotById } from '$store/renderer/slices/websocket-api/websocket-api-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import {
+    selectPrincipalActionContext,
+    selectPrincipalSnapshot,
+  } from '$store/renderer/slices/principal/principal-selectors';
 
   let {
     expanded = true,
@@ -51,15 +56,31 @@
     onEnabled,
     layout,
     active = true,
+    mobileOnly = false,
   }: {
     expanded?: boolean;
     children?: Snippet;
     onEnabled?: () => void;
     layout?: Snippet<[connectionSettings: Snippet<[Snippet?]>, mobilePairing: Snippet]>;
     active?: boolean;
+    mobileOnly?: boolean;
   } = $props();
 
   const activeConnectionId$ = selectCurrentConnectionId();
+  const principalContext$ = selectPrincipalActionContext();
+  const principal$ = selectPrincipalSnapshot();
+  const connection$ = selectCurrentConnection();
+  const mobileIdentity = $derived(
+    m.settings_personalDevices_identity_description({
+      person:
+        $principal$?.principal.displayName ??
+        $principal$?.principal.login ??
+        $principal$?.principal.id ??
+        '',
+      host: $connection$?.label ?? '',
+      role: m.settings_personalDevices_owner_label(),
+    }),
+  );
   const isRemote = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
   const formId = crypto.randomUUID();
   let identity = { formId, sessionId: '' };
@@ -70,12 +91,19 @@
   let toggleDraft = $state<boolean | null>(null);
   const enabled = $derived($snapshot$.enabled);
   let token = $state('');
+  let personalPairingReady = $state(false);
   const port = $derived($snapshot$.port);
   const certFingerprint = $derived($snapshot$.certFingerprint);
   const localIps = $derived($snapshot$.localIps);
   const availableIps = $derived($snapshot$.availableIps);
   const loading = $derived($load$?.status === 'pending' || (!$form$ && (!isRemote || expanded)));
   const saving = $derived($save$?.status === 'pending');
+  const mobileDisabled = $derived(
+    !enabled ||
+      !(mobileOnly ? personalPairingReady && $principalContext$ : port) ||
+      loading ||
+      saving,
+  );
   const regenerating = $derived(saving);
 
   // Port editing state
@@ -126,7 +154,9 @@
 
   $effect(() => {
     const connectionId = $activeConnectionId$;
-    if (!active || !(layout || connectionId === LOCAL_CONNECTION_ID || expanded)) return;
+    const context = mobileOnly ? $principalContext$ : undefined;
+    if (!active || (mobileOnly ? !context : !(connectionId === LOCAL_CONNECTION_ID || expanded)))
+      return;
     const session = { formId, sessionId: crypto.randomUUID() };
     identity = session;
     showToken = false;
@@ -135,12 +165,15 @@
     const dispose = registerWebsocketCredentials(session.formId, session.sessionId, (value) => {
       token = value.token;
       qrDataUrl = value.qrDataUrl;
+      personalPairingReady = !!value.pairingUri;
     });
     appStore.dispatch(settingsFormOpened(session, 'websocket-api'));
     appStore.dispatch(
       websocketApiRequested(
         { ...session, resource: 'load', requestId: crypto.randomUUID() },
-        { kind: 'load', connectionId },
+        mobileOnly && context
+          ? { kind: 'loadMobile', connectionId, context }
+          : { kind: 'load', connectionId },
       ),
     );
     return () => {
@@ -258,20 +291,29 @@
     );
   }
   function handleCopyShareLink() {
-    if (!enabled || !port || loading || saving) return;
+    if (mobileDisabled) return;
     appStore.dispatch(
       websocketApiRequested(
         { ...identity, resource: 'copy', requestId: crypto.randomUUID() },
-        { kind: 'copy', target: 'share', connectionId: $activeConnectionId$ },
+        {
+          kind: 'copy',
+          target: 'share',
+          connectionId: $activeConnectionId$,
+          context: mobileOnly ? ($principalContext$ ?? undefined) : undefined,
+        },
       ),
     );
   }
   function handleShowQr() {
-    if (!enabled || !port || loading || saving) return;
+    if (mobileDisabled) return;
     appStore.dispatch(
       websocketApiRequested(
         { ...identity, resource: 'qr', requestId: crypto.randomUUID() },
-        { kind: 'qr', connectionId: $activeConnectionId$ },
+        {
+          kind: 'qr',
+          connectionId: $activeConnectionId$,
+          context: mobileOnly ? ($principalContext$ ?? undefined) : undefined,
+        },
       ),
     );
   }
@@ -280,6 +322,16 @@
       websocketApiRequested(
         { ...identity, resource: 'qr', requestId: crypto.randomUUID() },
         { kind: 'closeQr', connectionId: $activeConnectionId$ },
+      ),
+    );
+  }
+
+  function retryMobile() {
+    if (!$principalContext$) return;
+    appStore.dispatch(
+      websocketApiRequested(
+        { ...identity, resource: 'load', requestId: crypto.randomUUID() },
+        { kind: 'loadMobile', connectionId: $activeConnectionId$, context: $principalContext$ },
       ),
     );
   }
@@ -312,16 +364,19 @@
         {
           id: 'intent-mobile',
           title: m.settings_devices_mobile_title(),
-          description: enabled
-            ? m.settings_wsApi_mobilePairing_description()
-            : m.settings_devices_mobileDisabled_description(),
+          description:
+            mobileOnly && $load$?.status === 'failed'
+              ? m.settings_personalDevices_pairing_error()
+              : enabled
+                ? m.settings_wsApi_mobilePairing_description()
+                : m.settings_devices_mobileDisabled_description(),
           entries: [
             {
               kind: 'custom',
               id: 'intent-mobile-pairing',
               label: m.settings_devices_mobile_title(),
               layout: 'full-width',
-              disabled: !enabled || !port || loading || saving,
+              disabled: mobileDisabled,
             },
           ],
         },
@@ -589,6 +644,9 @@
 {/snippet}
 
 {#snippet pairingControls({ disabled }: { disabled: boolean })}
+  {#if mobileOnly && $principal$}
+    <p class="mb-3 type-body text-muted-foreground">{mobileIdentity}</p>
+  {/if}
   <div class="flex flex-wrap gap-2">
     <Button variant="secondary" size="sm" type="button" onclick={handleShowQr} {disabled}>
       <Fa icon={faQrcode} size="sm" />
@@ -598,6 +656,11 @@
       <Fa icon={faCopy} size="sm" />
       {m.settings_wsApi_shareLink_label()}
     </Button>
+    {#if mobileOnly && $load$?.status === 'failed'}
+      <Button variant="ghost" size="sm" onclick={retryMobile}
+        >{m.settings_devices_retry_label()}</Button
+      >
+    {/if}
   </div>
 {/snippet}
 
@@ -615,6 +678,8 @@
 
 {#if layout}
   {@render layout(connectionSettings, mobilePairing)}
+{:else if mobileOnly}
+  {@render mobilePairing()}
 {:else}
   {@render connectionSettings()}
   {@render mobilePairing()}
@@ -624,7 +689,7 @@
   <ContentDialog
     open
     title={m.settings_wsApi_mobilePairing_label()}
-    description={m.settings_wsApi_scanDescription()}
+    description={mobileOnly ? mobileIdentity : m.settings_wsApi_scanDescription()}
     size="sm"
     closeLabel={m.settings_wsApi_close()}
     onClose={handleCloseQr}
