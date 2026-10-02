@@ -307,7 +307,9 @@ test('multiple diagram types reveal together and walkthrough steps stay visible'
 test('plain notes do not wait for diagrams', async ({ page }, info) => {
   await mountNote(page, 712, ['A note without diagrams.']);
   expectStableNote(await finishCapture(page, info, 0));
-  await expect(page.getByText('A note without diagrams.', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.tiptap-editor').getByText('A note without diagrams.', { exact: true }),
+  ).toBeVisible();
 });
 
 test('large notes wait for deferred content and diagram layout', async ({ page }, info) => {
