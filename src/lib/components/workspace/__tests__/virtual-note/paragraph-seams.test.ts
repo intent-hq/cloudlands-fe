@@ -127,3 +127,22 @@ it('returns only local boundary context from a large backing seam index', () => 
   expect(new TextEncoder().encode(JSON.stringify(context)).length).toBeLessThanOrEqual(4096);
   expect(s.stats.backingParagraphSeamCount).toBe(600);
 });
+
+it('keeps the boundary when remote text is inserted after its newline', () => {
+  const s = seeded(),
+    remote = { from: 9, to: 9, insert: 'REMOTE' };
+  s.atomic(() => {
+    s.apply(remote);
+    s.rebase(remote);
+  });
+  expect(seams(s)).toEqual([{ from: 8, to: 9 }]);
+  expect(s.region(0)).toBe('before\n\n\nREMOTEafter');
+  s.atomic(() => {
+    for (const c of s.changes(0, true)) s.replay(c, false);
+  });
+  s.atomic(() => {
+    for (const c of s.changes(0)) s.replay(c, true);
+  });
+  expect(s.region(0)).toBe('before\n\n\nREMOTEafter');
+  expect(seams(s)).toEqual([{ from: 8, to: 9 }]);
+});

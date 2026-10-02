@@ -1,3 +1,4 @@
+import { mapParagraphSeam, touchesParagraphSeam, type ParagraphSeam } from './paragraph-seam';
 import { Lexer, type Token as MarkdownToken } from 'marked';
 import type { JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
@@ -26,6 +27,7 @@ export type InlineContext = {
   fences?: Fence[];
   lists?: ListItem[];
   seams?: ListSeam[];
+  paragraphSeams?: ParagraphSeam[];
   documentEnd?: boolean;
   table?: TableWindow;
 };
@@ -148,6 +150,9 @@ export class SourceProjection {
             before: cursor === start ? (context?.before ?? []) : [],
             after: to === end ? (context?.after ?? []) : [],
             fences: [],
+            paragraphSeams: context?.paragraphSeams?.filter(
+              (seam) => seam.from < to && seam.to > cursor,
+            ),
           },
           indexOnly,
         );
@@ -360,10 +365,18 @@ export class SourceProjection {
       if (!indexOnly)
         this.positions.set(pm, Math.min(this.start + this.source.length, base + raw.length));
       const separator = match[2];
+      const suppressed = indexOnly
+        ? 0
+        : (context?.paragraphSeams ?? []).filter(
+            (seam) =>
+              seam.from >= base + raw.length && seam.to <= base + raw.length + separator.length,
+          ).length;
       const emptyParagraphs = /^\n{2,}$/.test(separator)
-        ? Math.max(0, separator.length - (raw.length ? 2 : 1))
+        ? Math.max(0, separator.length - (raw.length ? 2 : 1) - suppressed)
         : 0;
-      const firstSeparator = emptyParagraphs ? separator.slice(0, raw.length ? 2 : 1) : separator;
+      const firstSeparator = emptyParagraphs
+        ? separator.slice(0, (raw.length ? 2 : 1) + suppressed)
+        : separator;
       if (!indexOnly) this.paragraphs.push({ end: pm, next: pm + 2, separator: firstSeparator });
       if (!indexOnly) this.content.content!.push({ type: 'paragraph', content: nodes });
       pm++;
@@ -506,12 +519,25 @@ export class SourceProjection {
       oldEnd--;
       newEnd--;
     }
+    const splice = {
+      from: this.start + from,
+      to: this.start + oldEnd,
+      insert: source.slice(from, newEnd),
+    };
+    const paragraphSeams = this.context?.paragraphSeams
+      ?.filter((seam) => !touchesParagraphSeam(seam, splice))
+      .map((seam) => mapParagraphSeam(seam, splice));
     // Verify the entire bounded projection BEFORE admitting a source/journal mutation.
     const projected = before.type.schema.nodeFromJSON(
       new SourceProjection(
         source,
         this.start,
-        this.context && { ...this.context, to: this.start + source.length, fences: nextFences },
+        this.context && {
+          ...this.context,
+          to: this.start + source.length,
+          fences: nextFences,
+          paragraphSeams,
+        },
       ).content,
     );
     if (!projected.eq(after)) throw new Error('Translated source differs from accepted document');

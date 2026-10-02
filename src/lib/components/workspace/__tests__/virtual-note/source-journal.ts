@@ -1,3 +1,4 @@
+import { mapParagraphSeam, touchesParagraphSeam, type ParagraphSeam } from './paragraph-seam';
 import { planTableTextPaste } from './table-text-paste-plan';
 import type { TableCommandName } from './table-native-command';
 import { planTablePaste } from './table-paste-plan';
@@ -71,6 +72,7 @@ export type Change = Splice & {
   removed: string;
   seam?: { before: ListSeam | null; after: ListSeam | null };
   tableState?: string;
+  paragraphSeam?: { before: ParagraphSeam | null; after: ParagraphSeam | null };
 };
 export type Anchor = { id: string; from: number; to: number; alive: boolean };
 export type Event = {
@@ -830,6 +832,16 @@ export class SourceJournal {
       });
       for (const cell of plan.states)
         this.stageTableState(`cell:${cell.from}`, JSON.stringify(cell.node));
+      // Keep the native live boundary without rewriting either neighbor's source.
+      // The table scan owns its final row newline; the remaining right blank line
+      // would otherwise be a newly parsed empty paragraph when joined to the left.
+      if (
+        received.command === 'deleteTable' &&
+        !plan.text &&
+        source.slice(Math.max(0, table.from - 2), table.from) === '\n\n' &&
+        source[table.to] === '\n'
+      )
+        this.setParagraphSeam({ from: table.from + start, to: table.from + start + 1 });
     }
     const after: Selection = {
       anchor: plan.anchorSource,
@@ -1352,6 +1364,51 @@ export class SourceJournal {
   private regions = new Map<number, string>();
   // Mock backing session state. Seam journal entries occupy individual bounded pages.
   private seams = new Map<number, ListSeam>();
+  private paragraphSeams = new Map<number, ParagraphSeam>();
+  private mappedParagraphSeams(splice: Splice, validate = true) {
+    return new Map(
+      [...this.paragraphSeams.values()]
+        .filter((seam) => !validate || !touchesParagraphSeam(seam, splice))
+        .map((seam) => {
+          const next = mapParagraphSeam(seam, splice);
+          return [next.from, next];
+        }),
+    );
+  }
+  private paragraphSeamChange(
+    before: ParagraphSeam | null,
+    after: ParagraphSeam | null,
+    history: boolean,
+  ) {
+    const change: Change = {
+      from: 0,
+      to: 0,
+      insert: '',
+      removed: '',
+      paragraphSeam: { before, after },
+    };
+    const page = JSON.stringify(change);
+    if (bytes(page) > LIMITS.journalPage)
+      throw new Error('Paragraph seam journal page exceeds budget');
+    const next = new Map(this.paragraphSeams);
+    if (before) next.delete(before.from);
+    if (after) next.set(after.from, { ...after });
+    this.paragraphSeams = next;
+    this.revision++;
+    if (history) this.stagedPages.push(page);
+  }
+  setParagraphSeam(seam: ParagraphSeam, revision = this.revision, history = true) {
+    if (revision !== this.revision) throw new Error('Stale paragraph seam revision');
+    if (
+      !Number.isSafeInteger(seam.from) ||
+      seam.from < 0 ||
+      seam.to !== seam.from + 1 ||
+      seam.to > this.length ||
+      this.slice(seam.from, seam.to) !== '\n'
+    )
+      throw new Error('Invalid paragraph seam');
+    if (!this.paragraphSeams.has(seam.from)) this.paragraphSeamChange(null, seam, history);
+  }
   private atomicDepth = 0;
   backingSeamScannedBytes = 0;
   maxBackingSeamSourceBytes = 0;
@@ -1436,6 +1493,12 @@ export class SourceJournal {
               to: change.from + change.insert.length,
               insert: change.removed,
             },
+      );
+    else if (change.paragraphSeam)
+      this.paragraphSeamChange(
+        redo ? change.paragraphSeam.before : change.paragraphSeam.after,
+        redo ? change.paragraphSeam.after : change.paragraphSeam.before,
+        false,
       );
     else if (change.seam)
       this.seamChange(
@@ -1646,6 +1709,13 @@ export class SourceJournal {
       to,
       before,
       after,
+      ...([...this.paragraphSeams.values()].some((seam) => seam.from < to && seam.to > from)
+        ? {
+            paragraphSeams: [...this.paragraphSeams.values()].filter(
+              (seam) => seam.from < to && seam.to > from,
+            ),
+          }
+        : {}),
       ...(lists.length
         ? {
             lists,
@@ -1810,6 +1880,7 @@ export class SourceJournal {
     if (splice.from < 0 || splice.to < splice.from || splice.to > this.length)
       throw new Error('Invalid source range');
     const nextSeams = this.mappedSeams(splice, validateSeams);
+    const nextParagraphSeams = this.mappedParagraphSeams(splice, validateSeams);
     const removed = this.slice(splice.from, splice.to);
     this.draftWrites++;
     this.maxSpliceBytes = Math.max(this.maxSpliceBytes, bytes(JSON.stringify(splice)));
@@ -1837,6 +1908,7 @@ export class SourceJournal {
       alive: a.alive && !(splice.from <= a.from && splice.to >= a.to && splice.to > splice.from),
     }));
     this.seams = nextSeams;
+    this.paragraphSeams = nextParagraphSeams;
     this.tableStates = new Map(
       [...this.tableStates].map(([key, value]) => [this.mapTableKey(key, splice), value]),
     );
@@ -1921,6 +1993,7 @@ export class SourceJournal {
       logs: this.logs.slice(),
       stagedPages: this.stagedPages.slice(),
       seams: this.seams,
+      paragraphSeams: this.paragraphSeams,
       tableStates: this.tableStates,
       inputInbox: this.inputInbox,
     };
@@ -1935,10 +2008,23 @@ export class SourceJournal {
           this.mappedSeams({ from: 0, to: 0, insert: '' }).size !== this.seams.size)
       )
         throw new Error('Invalid final source and list seam state');
+      if (
+        this.atomicDepth === 1 &&
+        [...this.paragraphSeams.values()].some(
+          (seam) =>
+            !Number.isSafeInteger(seam.from) ||
+            seam.from < 0 ||
+            seam.to !== seam.from + 1 ||
+            seam.to > this.length ||
+            this.slice(seam.from, seam.to) !== '\n',
+        )
+      )
+        throw new Error('Invalid final source and paragraph seam state');
       return result;
     } catch (error) {
       this.stagedPages = state.stagedPages;
       this.seams = state.seams;
+      this.paragraphSeams = state.paragraphSeams;
       this.tableStates = state.tableStates;
       this.inputInbox = state.inputInbox;
       this.regions = regions;
@@ -2097,6 +2183,8 @@ export class SourceJournal {
     const pages = this.pages(change);
     for (const page of pages) {
       const bounded: Change = JSON.parse(page);
+      for (const seam of this.paragraphSeams.values())
+        if (touchesParagraphSeam(seam, bounded)) this.paragraphSeamChange(seam, null, history);
       const mapped = this.mappedSeams(bounded);
       for (const seam of this.seams.values())
         if (
@@ -2169,6 +2257,21 @@ export class SourceJournal {
         seam: { before: map(change.seam!.before), after: map(change.seam!.after) },
       };
     };
+    const mapParagraphChange = (change: Change, through: Splice): Change => {
+      const map = (seam: ParagraphSeam | null) => {
+        if (!seam) return null;
+        if (touchesParagraphSeam(seam, through))
+          throw new Error('Conflict: retained paragraph seam history');
+        return mapParagraphSeam(seam, through);
+      };
+      return {
+        ...change,
+        paragraphSeam: {
+          before: map(change.paragraphSeam!.before),
+          after: map(change.paragraphSeam!.after),
+        },
+      };
+    };
     let remote = splice;
     for (let i = this.cursor - 1; i >= 0; i--) {
       const event = this.events[i],
@@ -2182,6 +2285,10 @@ export class SourceJournal {
           if (remote.from <= at && remote.to > at)
             throw new Error('Conflict: retained table structure history');
           pages[n] = JSON.stringify({ ...c, tableState: this.mapTableKey(c.tableState, remote) });
+          continue;
+        }
+        if (c.paragraphSeam) {
+          pages[n] = JSON.stringify(mapParagraphChange(c, remote));
           continue;
         }
         if (c.seam) {
@@ -2213,6 +2320,10 @@ export class SourceJournal {
           pages.push(JSON.stringify({ ...c, tableState: this.mapTableKey(c.tableState, remote) }));
           continue;
         }
+        if (c.paragraphSeam) {
+          pages.push(JSON.stringify(mapParagraphChange(c, remote)));
+          continue;
+        }
         if (c.seam) {
           pages.push(JSON.stringify(mapSeamChange(c, remote)));
           continue;
@@ -2237,6 +2348,8 @@ export class SourceJournal {
       backingSeamScannedBytes: this.backingSeamScannedBytes,
       maxBackingSeamSourceBytes: this.maxBackingSeamSourceBytes,
       backingSeamCount: this.seams.size,
+      backingParagraphSeamCount: this.paragraphSeams.size,
+      backingParagraphSeamBytes: bytes(JSON.stringify([...this.paragraphSeams.values()])),
       backingTableIndexBytes: [...this.tableIndexes.values()].reduce(
         (n, index) => n + bytes(JSON.stringify(index.tables)),
         0,
