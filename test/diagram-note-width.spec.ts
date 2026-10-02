@@ -91,6 +91,10 @@ async function settled(page: Page, kind: Kind) {
       { timeout: 30_000 },
     );
   }
+  await expect(lane.locator('[data-diagram-presentation]')).toHaveAttribute(
+    'data-diagram-presentation-settled',
+    'true',
+  );
 }
 
 async function geometry(page: Page, kind: Kind) {

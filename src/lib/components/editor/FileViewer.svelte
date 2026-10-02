@@ -23,9 +23,17 @@
     sourceUrl?: string;
     language?: string;
     isBinary?: boolean;
+    allowDownload?: boolean;
   }
 
-  let { filePath, fileContent = '', sourceUrl, language, isBinary }: Props = $props();
+  let {
+    filePath,
+    fileContent = '',
+    sourceUrl,
+    language,
+    isBinary,
+    allowDownload = true,
+  }: Props = $props();
 
   // Determine file type from extension
   const getFileType = (path: string): string => {
@@ -250,6 +258,7 @@
   };
 
   const handleDownload = () => {
+    if (!allowDownload) return;
     const link = document.createElement('a');
     link.href = getImageSrc();
     link.download = fileName;
@@ -376,6 +385,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleDownload}
+          disabled={!allowDownload}
           title={m.editor_fileViewer_download_tooltip()}
         >
           <Fa icon={faDownload} size="sm" />
@@ -418,6 +428,7 @@
           variant="ghost"
           class="h-7 w-7"
           onclick={handleDownload}
+          disabled={!allowDownload}
           title={m.editor_fileViewer_download_tooltip()}
         >
           <Fa icon={faDownload} size="sm" />
@@ -495,7 +506,7 @@
         </svg>
       </div>
       <p class="text-sm text-subtle mb-4">{m.editor_fileViewer_pdfUnavailable_label()}</p>
-      <Button size="sm" variant="secondary" onclick={handleDownload}>
+      <Button size="sm" variant="secondary" onclick={handleDownload} disabled={!allowDownload}>
         <Fa icon={faDownload} size="sm" class="mr-2" />
         {m.editor_fileViewer_downloadPdf_label()}
       </Button>

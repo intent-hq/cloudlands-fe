@@ -89,6 +89,62 @@ function renderDialog(props: Record<string, unknown> = {}) {
   return render(ShareWorkspaceDialog, { props: { ...baseProps, ...props } });
 }
 
+it('offers explicit recipient pins on a capable host without repository authentication (#6392)', async () => {
+  const onCreateInvite = vi.fn();
+  const onSearchUsers = vi.fn();
+  renderDialog({
+    githubConnected: false,
+    gitlabConnected: false,
+    identitySeamSupported: true,
+    hostMembershipSupported: true,
+    onCreateInvite,
+    onSearchUsers,
+  });
+  const field = await screen.findByRole('combobox', { name: /restrict to a github/i });
+  await fireEvent.input(field, { target: { value: 'sam' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+  expect(onCreateInvite).toHaveBeenCalledWith('sam', { provider: 'github' });
+  expect(onSearchUsers.mock.calls.filter(([query]) => query !== '')).toEqual([]);
+});
+
+it('lets a capable workspace manager pin a different canonical GitLab instance (#6392)', async () => {
+  const onCreateInvite = vi.fn();
+  renderDialog({
+    githubConnected: false,
+    gitlabConnected: false,
+    gitlabEnabled: true,
+    gitlabHost: 'repository.example',
+    gitlabStatusReady: false,
+    canAdministerHost: false,
+    identityProvider: 'gitlab',
+    identitySeamSupported: true,
+    hostMembershipSupported: true,
+    onCreateInvite,
+  });
+  await fireEvent.input(screen.getByLabelText('GitLab instance'), {
+    target: { value: 'Forge.Example:8443' },
+  });
+  await fireEvent.input(screen.getByLabelText(/Restrict to a GitLab user/), {
+    target: { value: 'sam' },
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Create invite link' }));
+  expect(onCreateInvite).toHaveBeenCalledWith('sam', {
+    provider: 'gitlab',
+    host: 'forge.example:8443',
+  });
+});
+
+it('keeps inherited host members non-removable and uses daemon guest seats (#6390)', () => {
+  renderDialog({
+    members: [owner, { ...collaborator, hostRole: 'member' }],
+    guestCount: 0,
+    guestLimit: 5,
+  });
+  expect(screen.queryByRole('button', { name: /remove.*bob/i })).toBeNull();
+  expect(screen.getByText('Host member')).toBeTruthy();
+  expect(screen.getByText('Guests 0 / 5')).toBeTruthy();
+});
+
 beforeEach(() => {
   toastMocks.success.mockReset();
   toastMocks.error.mockReset();

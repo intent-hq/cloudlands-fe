@@ -84,3 +84,37 @@ describe('PresenceAggregator', () => {
     expect(request).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('window contribution ownership', () => {
+  it('moves one window between backends without replaying its old focus', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, typingSource: 'source' });
+    const aggregator = new PresenceAggregator(request);
+    await aggregator.report('old', 1, { focus: [{ workspaceId: 'private-old' }] });
+    await aggregator.report('old', 2, { focus: [{ workspaceId: 'stays' }] });
+    await aggregator.report('new', 1, { focus: [{ workspaceId: 'new' }] });
+    expect(aggregator.merged('old')).toEqual({ focus: [{ workspaceId: 'stays' }], typing: null });
+    aggregator.reconnected('old');
+    expect(request).toHaveBeenLastCalledWith('old', {
+      focus: [{ workspaceId: 'stays' }],
+      typing: null,
+    });
+  });
+  it('clears only a disabled window, preserving another window’s focus and typing', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, typingSource: 'source' });
+    const aggregator = new PresenceAggregator(request);
+    await aggregator.report('host', 1, {
+      focus: [{ workspaceId: 'gone' }],
+      typing: { agentId: 'gone-agent' },
+    });
+    await aggregator.report('host', 2, {
+      focus: [{ workspaceId: 'stays' }],
+      typing: { agentId: 'stays-agent' },
+    });
+    await aggregator.report('host', 1, { focus: [], typing: null });
+    aggregator.reconnected('host');
+    expect(request).toHaveBeenLastCalledWith('host', {
+      focus: [{ workspaceId: 'stays' }],
+      typing: { agentId: 'stays-agent' },
+    });
+  });
+});

@@ -777,7 +777,7 @@ function* recoverOpenInSettings(action: WorkflowAction, id: string): SagaGenerat
         }),
   );
   if (yield* workflowIsCurrent(action))
-    yield* call(navigateToSettings, { tab: guest ? 'guest-sessions' : 'devices' });
+    yield* call(navigateToSettings, { tab: guest ? 'collaboration' : 'devices' });
 }
 
 function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {

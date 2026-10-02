@@ -145,6 +145,7 @@ import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-setting
  * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
 import { isHostMembershipChange } from '$shared/types/principal';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 import {
   hostMembershipChanged,
   principalIdentityChanged,
@@ -2097,8 +2098,9 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   if (typeof noteId !== 'string' || typeof newStatus !== 'string') return;
   appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
-  // STAB-8: Force refetch task list (including BE-owned stats) so sidebar updates live
-  appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+  // Share the note-event debounce: one mutation can emit both events.
+  // The task row updates above remain immediate; the BE owns the rollup.
+  debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
 /**
@@ -3064,10 +3066,10 @@ function registerAgentDeleteTombstone(
  * Restore the soft-hidden session from the registry snapshot when one exists
  * (instant, mirrors the undo saga's `restoreHiddenSession`), then refetch the
  * canonical agent list — this also covers a window that filtered the pending
- * row out of a wire response before ever holding a snapshot. In the
- * originating window the undo saga restores its own snapshot; the registry
- * entry is already gone by the time this event lands, so only the reconcile
- * refetch runs there.
+ * row out of a wire response before ever holding a snapshot. This event or
+ * the originating undo saga may observe cancellation first; whichever still
+ * owns the registry entry restores the snapshot. If the saga was first,
+ * only the reconcile refetch runs here.
  */
 function handleAgentDeleteCancelledEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -3330,21 +3332,30 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
  */
 function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
+  if (typeof data?.principalId !== 'string' || !data.principalId.trim()) return;
   const identity = data?.identity;
-  if (identity === null) {
-    appStore.dispatch(identityChanged(null));
-    return;
+  let triple: PrincipalIdentity | null = null;
+  if (identity !== null) {
+    if (!identity || typeof identity !== 'object' || Array.isArray(identity)) return;
+    const { provider, host, externalUserId } = identity as Record<string, unknown>;
+    if (
+      (provider !== 'github' && provider !== 'gitlab') ||
+      typeof host !== 'string' ||
+      !host.trim() ||
+      typeof externalUserId !== 'string' ||
+      !externalUserId.trim()
+    )
+      return;
+    triple = { provider, host, externalUserId };
   }
-  if (!identity || typeof identity !== 'object') return;
-  const { provider, host, externalUserId } = identity as Record<string, unknown>;
+  const principal = appStore.state.principal;
   if (
-    (provider !== 'github' && provider !== 'gitlab') ||
-    typeof host !== 'string' ||
-    typeof externalUserId !== 'string'
-  ) {
-    return;
-  }
-  const triple: PrincipalIdentity = { provider, host, externalUserId };
+    principal?.context &&
+    principal.context === selectPrincipalConnectionContext.select(appStore.state) &&
+    principal.boundPrincipalId === data.principalId
+  )
+    appStore.dispatch(principalIdentityChanged(data.principalId));
+  // Keep the legacy primary-identity mirror and its profile refresh, including unlink.
   appStore.dispatch(identityChanged(triple));
 }
 
@@ -3447,14 +3458,13 @@ function debouncedChangesRefresh(workspaceId: string): void {
  * Debounced workspace-tasks refetch for `note:*` events. A created/updated/
  * deleted note can change the BE-owned `task.list` stats rollup (task state
  * lives in note metadata), so refetch via `loadWorkspaceTasksRequested` —
- * but only for workspaces whose workspace-tasks slice is already initialized.
- * Uninitialized workspaces have never been viewed; eagerly loading their
+ * but only for workspaces whose task list is loaded or currently loading.
+ * Undemanded workspaces have never been viewed; eagerly loading their
  * tasks would fan out one `task.list` per note event across all workspaces.
  */
 function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
-  const initialized =
-    appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
-  if (!initialized) return;
+  const entry = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
+  if (!entry?.initialized && !entry?.loading) return;
   const existing = tasksRefreshTimersByWorkspace.get(workspaceId);
   if (existing) {
     clearTimeout(existing);
@@ -3463,9 +3473,8 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
     tasksRefreshTimersByWorkspace.delete(workspaceId);
     // Re-check at fire time: the slice may have been cleared (workspace
     // unmounted/deleted) during the debounce window.
-    const stillInitialized =
-      appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
-    if (!stillInitialized) return;
+    const current = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
+    if (!current?.initialized && !current?.loading) return;
     appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
   }, TASKS_REFRESH_DEBOUNCE_MS);
   tasksRefreshTimersByWorkspace.set(workspaceId, timer);
@@ -3701,7 +3710,7 @@ export function routeDaemonEventsNotification(
 
   // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
   // `workspaceId` envelope — so they must also run before the gate below.
-  if (type === 'client:connected' || type === 'client:disconnected') {
+  if (type === 'client:connected' || type === 'client:disconnected' || type === 'client:updated') {
     handleClientTransitionEvent(event);
     return;
   }
@@ -3713,12 +3722,6 @@ export function routeDaemonEventsNotification(
   if (type === 'host:members-changed') {
     const data = (event as { data?: unknown }).data;
     if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
-    return;
-  }
-  if (type === 'principal:identity-changed') {
-    const data = (event as { data?: { principalId?: unknown } }).data;
-    if (typeof data?.principalId === 'string')
-      appStore.dispatch(principalIdentityChanged(data.principalId));
     return;
   }
 
@@ -3838,7 +3841,14 @@ export function routeDaemonEventsNotification(
   // agent-subscription-ui entry via `agent.getSubscriptions` — completion
   // counts tick live while a coordinator waits on `waitMode: after_all`.
   if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
-    appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    const agentId = (event as { data?: { agentId?: unknown } }).data?.agentId;
+    if (type === 'agent:subscriptions-changed' && typeof agentId === 'string' && agentId) {
+      // This event names the parent whose watch set changed. Other lifecycle
+      // events can affect arbitrary watched children and retain workspace scope.
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId, agentId));
+    } else {
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    }
   }
 
   // STAB-9: Agent lifecycle events (status-changed, idle) refresh ONLY the
@@ -4146,7 +4156,7 @@ export function routeDaemonEventsNotification(
     if (data?.action === 'removed' && typeof data.scriptId === 'string') {
       appStore.dispatch(removeScript(workspaceId, data.scriptId));
     }
-    appStore.dispatch(refreshScripts(workspaceId, true));
+    appStore.dispatch(refreshScripts(workspaceId));
     // fall through so the activity timeline records the mutation
   }
   if (type === 'script:output') {
@@ -4358,6 +4368,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // change events (`{ tab, changes? }`, patched into the browser-clients
   // mirror). The `workspace:updated` subscription above already carries the
   // `browserClientId` pin delta.
+  'client:updated',
   'client:connected',
   'client:disconnected',
   'browser:tab-opened',
@@ -4377,7 +4388,6 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'presence:changed',
   'host:members-changed',
   'host:execution-context-changed',
-  'principal:identity-changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(
@@ -4392,13 +4402,12 @@ export async function refreshDaemonEventsAfterReconnect(
       byWorkspaceId: Record<string, { activeAgentId?: string | null }>;
     };
   };
-  // Script history is cached between ordinary refreshes. Recover missed archive
-  // and restore events once on reconnect for every workspace holding script state.
+  // Recover missed active-list changes on reconnect for workspaces holding scripts.
   for (const workspaceId of new Set([
     ...Object.keys(state.scripts?.byWorkspaceId ?? {}),
     ...(activeWorkspaceId ? [activeWorkspaceId] : []),
   ])) {
-    appStore.dispatch(refreshScripts(workspaceId, true));
+    appStore.dispatch(refreshScripts(workspaceId));
   }
   if (activeWorkspaceId) {
     appStore.dispatch(hydrateAgentsRequested(activeWorkspaceId));

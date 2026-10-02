@@ -11,12 +11,12 @@ export const inputMetadata = parseUiComponentMetadata({
   owner: '007-B2',
   callers: [
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
+    'src/features/dev-console/TrafficInspector.svelte',
     'src/features/layout/components/content-header/ContentHeader.svelte',
     'src/features/onboarding/messages/DirectoryPickerView.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',
     'src/features/onboarding/messages/LocalRepoTab.svelte',
     'src/features/onboarding/messages/NewProjectTab.svelte',
-    'src/features/scripts/components/ScriptHistoryView.svelte',
     'src/lib/component-catalog/CatalogShell.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',

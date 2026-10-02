@@ -60,6 +60,23 @@ describe('FileViewer SVG preview', () => {
 });
 
 describe('FileViewer workspace media', () => {
+  it.each(['png', 'svg'])('disables downloads for a scoped %s preview', async (extension) => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(FileViewer, {
+      props: { filePath: `preview.${extension}`, fileContent: '', allowDownload: false },
+    });
+    const download = screen.getByTitle<HTMLButtonElement>('Download');
+    expect(download.disabled).toBe(true);
+    await fireEvent.click(download);
+    expect(click).not.toHaveBeenCalled();
+    click.mockRestore();
+  });
+
+  it('keeps downloads enabled for ordinary previews', () => {
+    render(FileViewer, { props: { filePath: 'preview.png', fileContent: '' } });
+    expect(screen.getByTitle<HTMLButtonElement>('Download').disabled).toBe(false);
+  });
+
   it('renders an image from the contained workspace-file source', () => {
     const sourceUrl = 'workspace-file://ws-1/.demo-artifacts/run/preview.png';
     render(FileViewer, {

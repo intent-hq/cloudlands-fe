@@ -11,101 +11,15 @@
   import '@fontsource/jetbrains-mono/700.css';
   import '@fontsource/jetbrains-mono/700-italic.css';
   import '@fontsource/doto/700.css';
-  import { onDestroy, onMount, type Snippet } from 'svelte';
-  import { wireSplashGate } from '$features/backend/splash-gate';
-  import { store as appStore } from '$store/renderer/store';
-  import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-  import { selectResolvedLocale } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
-  import {
-    attachMouseHistoryNavigation,
-    handleHistoryNavigateIpc,
-  } from '$lib/utils/history-navigation';
-  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
-  import { pauseWindowAnimations } from '$lib/actions/pause-window-animations';
-  import { isHudWindowRenderer } from '$lib/utils/navigation.client';
-
+  import type { Snippet } from 'svelte';
+  import RootAppProviders from './RootAppProviders.svelte';
+  import { isDevConsoleRoute } from '$shared/dev-console-route';
   let { children }: { children?: Snippet } = $props();
-
-  const disposeStore = startRootStoreLifecycle(
-    appStore,
-    { startSagas: () => [] },
-    import.meta.hot?.data,
-  );
-  onDestroy(disposeStore);
-
-  // The {#key} below remounts everything rendered by the app — product chrome,
-  // modals, and HUD surfaces — so every mounted m.*() string re-renders when
-  // the language preference changes (no reload needed).
-  const resolvedLocale$ = selectResolvedLocale();
-
-  onMount(() => {
-    const setWindowBlurred = (blurred: boolean) => {
-      document.documentElement.toggleAttribute('data-window-blurred', blurred);
-    };
-    const handleWindowBlur = () => setWindowBlurred(true);
-    const handleWindowFocus = () => setWindowBlurred(false);
-
-    // `data-window-blurred` pauses ambient motion (looping app.css keyframes via
-    // pauseWindowAnimations below, the shared frame clock, aurora, mark motion);
-    // one-shot entrances and flashes keep running. The HUD pop-out is a monitoring
-    // surface watched on a second display while another window holds focus, so
-    // it never sets the attribute: its takeover choreography must play unfocused,
-    // and any attribute already present on <html> is cleared on mount.
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous route check, no data fetch
-    const pausesMotionOnBlur = !isHudWindowRenderer();
-    const electronApi = window.electronAPI;
-    const usesNativeWindowFocus = isElectronPlatform();
-    let windowFocusListenerId: string | undefined;
-    if (!pausesMotionOnBlur) {
-      setWindowBlurred(false);
-    } else {
-      setWindowBlurred(!document.hasFocus());
-      if (usesNativeWindowFocus) {
-        // eslint-disable-next-line intent/no-component-async-data-fetch -- root native window lifecycle bridge
-        windowFocusListenerId = electronApi?.on?.('window:focus', (focused: boolean) => {
-          setWindowBlurred(!focused);
-        });
-      } else {
-        window.addEventListener('blur', handleWindowBlur);
-        window.addEventListener('focus', handleWindowFocus);
-      }
-    }
-
-    const windowAnimations = pauseWindowAnimations(document.documentElement);
-
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- root DOM splash lifecycle wiring does not own domain state.
-    const stopSplashGate = wireSplashGate(document.getElementById('splash'));
-    document.getElementById('app-drag-region')?.remove();
-
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- upstream global input listener registration
-    const cleanupMouseHistoryNavigation = attachMouseHistoryNavigation(window);
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- upstream main-process navigation bridge
-    const historyNavigateListenerId = window.electronAPI?.on?.(
-      IPC_CHANNELS.APP.HISTORY_NAVIGATE,
-      handleHistoryNavigateIpc,
-    );
-
-    return () => {
-      windowAnimations.destroy();
-      if (windowFocusListenerId) {
-        // eslint-disable-next-line intent/no-component-async-data-fetch -- paired native window listener cleanup
-        electronApi.offById('window:focus', windowFocusListenerId);
-      } else if (pausesMotionOnBlur && !usesNativeWindowFocus) {
-        window.removeEventListener('blur', handleWindowBlur);
-        window.removeEventListener('focus', handleWindowFocus);
-      }
-      document.documentElement.removeAttribute('data-window-blurred');
-      stopSplashGate();
-      cleanupMouseHistoryNavigation();
-      if (historyNavigateListenerId) {
-        // eslint-disable-next-line intent/no-component-async-data-fetch -- paired listener cleanup
-        window.electronAPI.offById(IPC_CHANNELS.APP.HISTORY_NAVIGATE, historyNavigateListenerId);
-      }
-    };
-  });
+  const diagnostic = typeof window !== 'undefined' && isDevConsoleRoute(window.location.pathname);
 </script>
 
-{#key $resolvedLocale$}
+{#if diagnostic}
   {@render children?.()}
-{/key}
+{:else}
+  <RootAppProviders {children} />
+{/if}

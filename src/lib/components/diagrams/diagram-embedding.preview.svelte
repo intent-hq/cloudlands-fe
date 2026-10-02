@@ -19,7 +19,7 @@
     },
     defaultState: 'note',
     captureReadiness: {
-      selector: '[data-diagram-settled="true"]',
+      selector: '[data-diagram-presentation-settled="true"] [data-diagram-settled="true"]',
       count: 1,
     },
     states: {

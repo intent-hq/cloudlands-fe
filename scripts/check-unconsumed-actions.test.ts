@@ -220,3 +220,235 @@ describe('unconsumed action guard', () => {
     expect(wholeSlice.violations).toEqual([]);
   });
 });
+
+// Predicates must enumerate a finite set of types from their own action parameter.
+// The unhandled sibling proves that a matching predicate is not a blanket consumer.
+describe('inline actionChannel predicates', () => {
+  const inspect = (
+    predicate: string,
+    {
+      imports = "import { actionChannel } from 'typed-redux-saga';",
+      before = '',
+      after = '',
+      call = 'actionChannel',
+    } = {},
+  ) =>
+    inspectUnconsumedActions(
+      [
+        slice([], ["export const c = createAction('demo/c');"]),
+        saga(
+          [
+            "yield* put(a({ id: 'x' }));",
+            'yield* put(b());',
+            'yield* put(c());',
+            before,
+            `yield* ${call}(${predicate});`,
+            after,
+          ],
+          { actions: `${ACTIONS_IMPORT}\nimport { c } from '../demo-slice';\n${imports}` },
+        ),
+      ],
+      noExceptions,
+    );
+  const diagnostic = (name: string, declaration: number, dispatch: number) =>
+    `${SLICE}:${declaration}: action ${name} is dispatched but has no reducer case or explicit watcher; dispatched at ${SAGA}:${dispatch}`;
+  const allUnhandled = [diagnostic('a', 3, 6), diagnostic('b', 4, 7), diagnostic('c', 5, 8)];
+
+  it.each([
+    '(action) => action.type === a.type',
+    '(action) => a.type === action.type',
+    '(action: Action): boolean => (action.type === a.type)',
+    '(action) => { return action.type === a.type; }',
+    '(action) => { const current = action; return current.type === a.type; }',
+    '(action) => (action.type === a.type) satisfies boolean',
+    '(action) => action.type === a.type && true',
+    '(action) => action.type === a.type && action.payload !== NaN',
+    '(action) => action.type === a.type && action.payload[0] === "x" && action.payload["0"] === "x"',
+    '(action) => action.type === a.type && action.payload === "x" && action["payload"] === "x"',
+    '(action) => action.type === a.type && action.payload === "x" && action?.payload === "x"',
+    '(action) => action.type === a.type && action.payload[0] === "x" && action.payload["00"] === "y"',
+    '(action) => action.type === a.type && action.payload["a.b"] === "x" && action.payload.a.b === "y"',
+    '(action) => action.type === a.type && NaN !== action.payload',
+    '(action) => false || action.type === a.type',
+    '(action) => (action.type === b.type && false) || action.type === a.type',
+    'function (action) { return action.type === a.type; }',
+    '(action) => action.type === "demo/a"',
+    '(action) => action.type === a.type && action.payload[0].workspaceId === workspaceId',
+    '(action) => action.payload[0] === workspaceId && action.type === a.type',
+    '(action) => action.payload[0]["workspaceId"] === workspaceId && action.type === a.type',
+    '(action) => typeof action.payload[0] === "object" && action.payload[0] !== null && action.type === a.type',
+    '(action) => { const payload = action.payload; const first = payload[0]; const candidate = first as { workspaceId: string }; return candidate.workspaceId === workspaceId && action.type === a.type; }',
+    '(action) => { const first = action.payload[0]; const candidate = typeof first === "object" && first !== null ? first as Record<string, unknown> : undefined; return candidate?.workspaceId === workspaceId && action.type === a.type; }',
+  ])('credits only the positively matched action: %s', (predicate) => {
+    expect(inspect(predicate)).toEqual({
+      violations: allUnhandled.slice(1),
+      actionCount: 3,
+      dispatchedCount: 3,
+      exceptionCount: 0,
+    });
+  });
+
+  it.each([
+    '(action) => action.type === a.type || action.type === b.type',
+    '(action) => action.payload[0] === workspaceId && (action.type === a.type || action.type === b.type)',
+    '(action) => { const first = action.payload[0]; const candidate = typeof first === "object" && first !== null ? first as Record<string, unknown> : undefined; return candidate?.workspaceId === workspaceId && (action.type === a.type || action.type === b.type); }',
+  ])('credits a finite returned disjunction: %s', (predicate) => {
+    expect(inspect(predicate).violations).toEqual(allUnhandled.slice(2));
+  });
+
+  it.each([
+    { imports: "import { actionChannel as channel } from 'typed-redux-saga';", call: 'channel' },
+    { imports: "import * as effects from 'redux-saga/effects';", call: 'effects.actionChannel' },
+  ])('follows effect import provenance: $call', (options) => {
+    expect(inspect('(action) => action.type === a.type', options).violations).toEqual(
+      allUnhandled.slice(1),
+    );
+  });
+
+  it.each([
+    {
+      imports:
+        "import { actionChannel } from 'typed-redux-saga'; import { a as matched } from '../demo-slice';",
+      creator: 'matched',
+    },
+    {
+      imports:
+        "import { actionChannel } from 'typed-redux-saga'; import * as actions from '../demo-slice';",
+      creator: 'actions.a',
+    },
+  ])('follows creator import provenance: $creator', ({ creator, ...options }) => {
+    expect(inspect(`(action) => action.type === ${creator}.type`, options).violations).toEqual(
+      allUnhandled.slice(1),
+    );
+  });
+
+  it('keeps async stages separate inside a predicate', () => {
+    const result = inspectUnconsumedActions(
+      [
+        slice([], ["export const req = createAsyncAction('demo/req', 'demo/stages');"]),
+        saga(
+          [
+            'yield* put(req.success());',
+            'yield* put(req.failure());',
+            'yield* actionChannel((action) => action.type === req.success.type);',
+          ],
+          { actions: `${ACTIONS_IMPORT} import { actionChannel } from 'typed-redux-saga';` },
+        ),
+      ],
+      noExceptions,
+    );
+    expect(result.violations).toEqual([
+      `${SLICE}:5: action req.failure is dispatched but has no reducer case or explicit watcher; dispatched at ${SAGA}:5`,
+    ]);
+  });
+
+  it('does not treat a shadowed NaN identifier as the intrinsic constant', () => {
+    expect(
+      inspect('(action) => action.type === a.type && action.payload === NaN', {
+        before: 'const NaN = expectedPayload;',
+      }).violations,
+    ).toEqual(allUnhandled.slice(1));
+  });
+
+  it('bounds expansion of repeated disjunctions', () => {
+    const predicate = `(action) => ${Array(65).fill('action.type === a.type').join(' || ')}`;
+    expect(inspect(predicate).violations).toEqual(allUnhandled);
+  });
+
+  it.each([
+    '(action) => action.type !== a.type',
+    '(action) => !(action.type === a.type)',
+    '(action) => action.type.startsWith("demo/")',
+    '(action) => action.type === getType(a)',
+    '(action) => action.type === a["type"]',
+    '(action) => action["type"] === a.type',
+    '(action) => other.type === a.type',
+    '(action) => action.payload.type === a.type',
+    '(action) => action.type === a.type || enabled',
+    '(action) => action.type === a.type || true',
+    '(action) => action.type === a.type || other.type === b.type',
+    '(action) => action.type === a.type && false',
+    '(action) => action.type === a.type && (enabled && false) === true',
+    '(action) => action.type === a.type && true === (enabled && false)',
+    '(action) => { const guard = enabled && false; return action.type === a.type && guard === true; }',
+    '(action) => action.type === a.type && typeof (enabled && false) === "object"',
+    '(action) => action.type === a.type && action["type"] !== "demo/a"',
+    '(action) => { const current = action; return action.type === a.type && current["type"] !== "demo/a"; }',
+    '(action) => action.type === a.type && other["type"] === "demo/b"',
+    '(action) => action.type === a.type && null',
+    '(action) => action.type === a.type && undefined',
+    '(action) => action.type === a.type && NaN',
+    '(action) => action.type === a.type && action.payload === NaN',
+    '(action) => action.type === a.type && action.payload[0] === "x" && action.payload["0"] === "y"',
+    '(action) => action.type === a.type && action.payload === "x" && action["payload"] === "y"',
+    '(action) => action.type === a.type && action.payload === "x" && action?.payload === "y"',
+    '(action) => { const payload = action.payload; return action.type === a.type && payload[0] === "x" && action.payload["0"] === "y"; }',
+    '(action) => action.type === a.type && NaN === action.payload',
+    '(action) => { const invalid = NaN; return action.type === a.type && action.payload === invalid; }',
+    '(action) => action.type === a.type && void 0',
+    '(action) => action.type === a.type && (enabled ? false : false)',
+    '(action) => { const guard = enabled ? false : false; return action.type === a.type && guard; }',
+    '(action) => { const first = candidate; const candidate = action.payload[0]; return action.type === a.type; }',
+    '(action) => { const first = first; return action.type === a.type; }',
+    '(action) => { const first = candidate, candidate = action.payload[0]; return action.type === a.type; }',
+    '(action) => action.type === a.type && 1 === 2',
+    '(action) => action.type === a.type && false !== false',
+    '(action) => action.type === a.type && workspaceId !== workspaceId',
+    '(action) => action.type === a.type && 0',
+    '(action) => action.type === a.type && ""',
+    '(action) => action.type === a.type && !true',
+    '(action) => action.type === a.type && !(1 === 1)',
+    '(action) => action.type === a.type && !typeof action',
+    '(action) => action.type === a.type && enabled === false && enabled',
+    '(action) => action.type === a.type && action.payload === null && action.payload',
+    '(action) => action.type === a.type && !action',
+    '(action) => action.type === a.type && action.type === b.type',
+    '(action) => action.type === a.type && enabled && !enabled',
+    '(action) => action.type === a.type && action.payload[0] === workspaceId && action.payload[0] !== workspaceId',
+    '(action) => action.type === a.type && typeof action.payload[0] === "object" && typeof action.payload[0] === "string"',
+    '(action) => { action.type === a.type; return false; }',
+    '(action) => { const match = action.type === a.type; return false; }',
+    '(action) => { return false; return action.type === a.type; }',
+    '(action) => { if (enabled) return action.type === a.type; return false; }',
+    '(action) => { function nested(action) { return action.type === a.type; } return false; }',
+    '(action) => (() => action.type === a.type)()',
+    '(action) => { action = other; return action.type === a.type; }',
+    '(action) => { action.type = a.type; return action.type === a.type; }',
+    '(action) => { let first = action.payload[0]; return action.type === a.type; }',
+    '(action) => { const first = mutate(action); return action.type === a.type; }',
+    '(action) => { const { type } = action; return type === a.type; }',
+    '(action) => { const candidate = other; return candidate.type === a.type; }',
+    '(action) => { const candidate = action; candidate.type = b.type; return action.type === a.type; }',
+    '(action) => { const a = other; return action.type === a.type; }',
+    '(action, a) => action.type === a.type',
+    '(action = other) => action.type === a.type',
+    'async (action) => action.type === a.type',
+    'function* (action) { return action.type === a.type; }',
+    '(action) => action.type === a.type && mutate(action)',
+  ])('does not infer a consumer from unsupported or impossible filters: %s', (predicate) => {
+    expect(inspect(predicate).violations).toEqual(allUnhandled);
+  });
+
+  it.each([
+    { before: 'const a = other;' },
+    { before: 'function* nested(a) {', after: '}' },
+    { before: 'function* nested(actionChannel) {', after: '}' },
+    { before: 'function actionChannel() {}' },
+    { before: 'try {} catch (a) {', after: '}' },
+    { before: '{ let a = other;', after: '}' },
+    { before: 'const actionChannel = unrelated;' },
+    { imports: "import { actionChannel } from 'foreign-effects';" },
+    {
+      imports: "import * as effects from 'redux-saga/effects';",
+      before: 'const effects = unrelated;',
+      call: 'effects.actionChannel',
+    },
+    { before: 'const predicate = (action) => action.type === a.type;', predicate: 'predicate' },
+    { before: '', call: 'takeEvery' },
+  ])(
+    'rejects shadowed/foreign effects, creators and named/watcher predicates: %j',
+    ({ predicate = '(action) => action.type === a.type', ...options }) => {
+      expect(inspect(predicate, options).violations).toEqual(allUnhandled);
+    },
+  );
+});
