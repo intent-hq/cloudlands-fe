@@ -97,12 +97,6 @@ function workspaceMountFanOut(
   force = false,
 ): ObservedAction[] {
   return [
-    {
-      type: force
-        ? 'workspaceTasks/loadWorkspaceTasksRequested'
-        : 'workspaceTasks/ensureWorkspaceTasksLoaded',
-      payload: [workspaceId],
-    },
     { type: 'workspaceAgents/hydrateAgentsRequested', payload: [workspaceId] },
     { type: 'terminals/hydrateTerminalsRequested', payload: [workspaceId] },
     {
@@ -665,7 +659,7 @@ describe('lifecycleIpcReadSaga', () => {
     const run = start(state(), (action, channel) => {
       if (
         !injectedSecondMount &&
-        action.type === 'workspaceTasks/ensureWorkspaceTasksLoaded' &&
+        action.type === 'workspaceAgents/hydrateAgentsRequested' &&
         action.payload?.[0] === WS
       ) {
         injectedSecondMount = true;

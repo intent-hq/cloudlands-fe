@@ -48,7 +48,10 @@
     selectWorkspaceTasksInitialized,
     selectWorkspaceTasksState,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import {
+    acquireWorkspaceTasksDemand,
+    releaseWorkspaceTasksDemand,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import type { TaskProgressItem } from './workspace-task-fallback';
   import {
     createAgentTaskProgressDeriver,
@@ -125,6 +128,8 @@
     compact?: boolean;
     embedded?: boolean;
     visible?: boolean;
+    /** Whether the owning chat and surrounding disclosure are displayed. */
+    isActive?: boolean;
     count?: number;
     participantAgentIds?: string[];
     participantAvatarItems?: AgentAvatarStackItem[];
@@ -146,6 +151,7 @@
     workspaceId,
     agentId,
     compact = false,
+    isActive = true,
     embedded = false,
     visible = $bindable(false),
     count = $bindable(0),
@@ -195,13 +201,6 @@
     if (nextKey === lastFetchKey) return;
     lastFetchKey = nextKey;
     untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId, true)));
-  });
-
-  let lastTaskWorkspaceId: string | null = null;
-  $effect(() => {
-    if (isolatedPreview || !workspaceId || workspaceId === lastTaskWorkspaceId) return;
-    lastTaskWorkspaceId = workspaceId;
-    untrack(() => appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId)));
   });
 
   const workspaceById = selectWorkspaceById(workspaceIdStore);
@@ -521,6 +520,14 @@
       return [...ungroupedAgentRows, ...finishedAgentRows];
     }
     return ungroupedAgentRows;
+  });
+  const hasDisplayedTaskConsumers = $derived(retainedTranscriptRows.length > 0);
+  $effect(() => {
+    if (isolatedPreview || !isActive || !workspaceId || !hasDisplayedTaskConsumers) return;
+    const currentWorkspaceId = workspaceId;
+    const demandId = crypto.randomUUID();
+    untrack(() => appStore.dispatch(acquireWorkspaceTasksDemand(currentWorkspaceId, demandId)));
+    return () => appStore.dispatch(releaseWorkspaceTasksDemand(currentWorkspaceId, demandId));
   });
   let retainedTranscriptWorkspaceId: string | null = null;
   let retainedTranscriptKey = '';
