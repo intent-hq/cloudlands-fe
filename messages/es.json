@@ -7032,5 +7032,11 @@
   "devConsole_payload_collapse_label": "Contraer todo",
   "devConsole_payload_expand_label": "Expandir todo",
   "devConsole_payload_load_error": "No se pudo cargar el visor. El texto capturado se muestra a continuación.",
-  "devConsole_payload_large_description": "Carga útil grande. El resaltado de sintaxis y el plegado no están disponibles; la búsqueda y la copia siguen funcionando."
+  "devConsole_payload_large_description": "Carga útil grande. El resaltado de sintaxis y el plegado no están disponibles; la búsqueda y la copia siguen funcionando.",
+  "devConsole_observed_label": "Observado a las {time}",
+  "devConsole_sinceRequest_label": "{elapsed} ms desde la solicitud",
+  "devConsole_sincePrevious_label": "{elapsed} ms desde la carga anterior de este lado",
+  "devConsole_retainedFrames_label": "{count} cargas conservadas",
+  "devConsole_droppedFrames_description": "Se descartaron {count} cargas por los límites de captura. Los totales incluyen las cargas descartadas; los intervalos se miden desde la carga anterior observada del mismo lado. Solo se copia el texto conservado.",
+  "devConsole_interval_label": "Intervalo: {elapsed} ms"
 }

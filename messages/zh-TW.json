@@ -7032,5 +7032,11 @@
   "devConsole_payload_collapse_label": "全部摺疊",
   "devConsole_payload_expand_label": "全部展開",
   "devConsole_payload_load_error": "無法載入檢視器。擷取的文字顯示於下方。",
-  "devConsole_payload_large_description": "承載資料較大，無法使用語法醒目提示和摺疊功能；搜尋與複製仍可使用。"
+  "devConsole_payload_large_description": "承載資料較大，無法使用語法醒目提示和摺疊功能；搜尋與複製仍可使用。",
+  "devConsole_observed_label": "觀測時間 {time}",
+  "devConsole_sinceRequest_label": "距請求 {elapsed} 毫秒",
+  "devConsole_sincePrevious_label": "距此側上一個承載資料 {elapsed} 毫秒",
+  "devConsole_retainedFrames_label": "已保留 {count} 個承載資料",
+  "devConsole_droppedFrames_description": "擷取限制導致 {count} 個承載資料被捨棄。總計包含已捨棄的承載資料；間隔以同側上一個觀測到的承載資料為基準。複製僅包含已保留的承載資料文字。",
+  "devConsole_interval_label": "間隔：{elapsed} 毫秒"
 }

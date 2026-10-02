@@ -7032,5 +7032,11 @@
   "devConsole_payload_collapse_label": "すべて折りたたむ",
   "devConsole_payload_expand_label": "すべて展開",
   "devConsole_payload_load_error": "ビューアーを読み込めませんでした。取得したテキストを以下に表示します。",
-  "devConsole_payload_large_description": "大きなペイロードです。構文の強調表示と折りたたみは利用できませんが、検索とコピーは引き続き使用できます。"
+  "devConsole_payload_large_description": "大きなペイロードです。構文の強調表示と折りたたみは利用できませんが、検索とコピーは引き続き使用できます。",
+  "devConsole_observed_label": "観測時刻 {time}",
+  "devConsole_sinceRequest_label": "リクエストから {elapsed} ミリ秒",
+  "devConsole_sincePrevious_label": "この側の前のペイロードから {elapsed} ミリ秒",
+  "devConsole_retainedFrames_label": "保持されたペイロード: {count}",
+  "devConsole_droppedFrames_description": "キャプチャ制限により {count} 件のペイロードが破棄されました。合計には破棄分も含まれ、間隔は同じ側で前に観測されたペイロードから計算されます。コピーには保持されたテキストのみが含まれます。",
+  "devConsole_interval_label": "間隔: {elapsed} ミリ秒"
 }

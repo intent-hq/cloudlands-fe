@@ -559,3 +559,32 @@ it('releases a completed inline message search before reusing its ID for streami
   );
   expect(h.rows()[0].frameCount).toBe(2);
 });
+
+it('retains authoritative interval origins when early responses are discarded', async () => {
+  const h = setup({ maxFramesPerRecord: 3 });
+  const start = h.client.request('host.execStream', { command: 'cat', requestId: 'exec' });
+  h.tick(5);
+  h.socket.receive({
+    method: 'events.event',
+    params: bus('s', 'host:exec:stdout', { requestId: 'exec', chunk: 'YQ==' }),
+  });
+  expect(h.rows()[0].frames?.map((frame) => frame.intervalFromRequest)).toEqual([true, true]);
+  h.tick(10);
+  h.socket.receive({ id: 1, result: { requestId: 'exec' } });
+  await start;
+  h.tick(20);
+  h.socket.receive({
+    method: 'events.event',
+    params: bus('s', 'host:exec:stdout', { requestId: 'exec', chunk: 'Yg==' }),
+  });
+  expect(h.rows()[0].droppedFrames).toBe(1);
+  expect(
+    h
+      .rows()[0]
+      .frames?.map((frame) => [frame.sequence, frame.intervalMs, frame.intervalFromRequest]),
+  ).toEqual([
+    [0, 0, true],
+    [2, 5, false],
+    [3, 10, false],
+  ]);
+});

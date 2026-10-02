@@ -27,6 +27,8 @@ export interface DevConsoleFrame {
   rpcMethod: string;
   timestamp: number;
   intervalMs: number;
+  /** True only for the first observation on this side; survives frame retention. */
+  intervalFromRequest?: boolean;
   payload: DevConsolePayload;
 }
 

@@ -7032,5 +7032,11 @@
   "devConsole_payload_collapse_label": "全部折叠",
   "devConsole_payload_expand_label": "全部展开",
   "devConsole_payload_load_error": "无法加载查看器。捕获的文本显示在下方。",
-  "devConsole_payload_large_description": "载荷较大，无法使用语法高亮和折叠功能；搜索和复制仍然可用。"
+  "devConsole_payload_large_description": "载荷较大，无法使用语法高亮和折叠功能；搜索和复制仍然可用。",
+  "devConsole_observed_label": "观测时间 {time}",
+  "devConsole_sinceRequest_label": "距请求 {elapsed} 毫秒",
+  "devConsole_sincePrevious_label": "距此侧上一个载荷 {elapsed} 毫秒",
+  "devConsole_retainedFrames_label": "已保留 {count} 个载荷",
+  "devConsole_droppedFrames_description": "捕获限制导致 {count} 个载荷被丢弃。总计包含已丢弃的载荷；间隔以同侧上一个观测到的载荷为基准。复制仅包含已保留的载荷文本。",
+  "devConsole_interval_label": "间隔：{elapsed} 毫秒"
 }

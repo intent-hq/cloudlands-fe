@@ -52,7 +52,7 @@ interface Entry {
   closed: boolean;
   retainedBytes: number;
   lastRequestAt: number;
-  lastResponseAt: number;
+  lastResponseAt?: number;
 }
 type CaptureListener = () => void | Promise<void>;
 
@@ -394,7 +394,6 @@ export class DevConsoleCaptureService {
       closed: false,
       retainedBytes: payload.retainedBytes,
       lastRequestAt: startedAt,
-      lastResponseAt: startedAt,
     };
     if (event.type === 'request') {
       record.totalBytes = payload.originalBytes ?? 0;
@@ -407,6 +406,7 @@ export class DevConsoleCaptureService {
           rpcMethod: event.method,
           timestamp: record.timestamp,
           intervalMs: 0,
+          intervalFromRequest: true,
           payload,
         },
       ];
@@ -568,7 +568,8 @@ export class DevConsoleCaptureService {
         side,
         rpcMethod: method,
         timestamp,
-        intervalMs: Math.max(0, now - last),
+        intervalMs: Math.max(0, now - (last ?? entry.startedAt)),
+        intervalFromRequest: last === undefined,
         payload,
       });
       entry.retainedBytes += payload.retainedBytes;

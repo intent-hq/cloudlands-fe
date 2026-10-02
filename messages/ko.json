@@ -7032,5 +7032,11 @@
   "devConsole_payload_collapse_label": "모두 접기",
   "devConsole_payload_expand_label": "모두 펼치기",
   "devConsole_payload_load_error": "뷰어를 불러올 수 없습니다. 캡처된 텍스트가 아래에 표시됩니다.",
-  "devConsole_payload_large_description": "큰 페이로드입니다. 구문 강조와 접기를 사용할 수 없지만 검색과 복사는 계속 사용할 수 있습니다."
+  "devConsole_payload_large_description": "큰 페이로드입니다. 구문 강조와 접기를 사용할 수 없지만 검색과 복사는 계속 사용할 수 있습니다.",
+  "devConsole_observed_label": "관측 시각 {time}",
+  "devConsole_sinceRequest_label": "요청 이후 {elapsed}ms",
+  "devConsole_sincePrevious_label": "이쪽의 이전 페이로드 이후 {elapsed}ms",
+  "devConsole_retainedFrames_label": "보관된 페이로드 {count}개",
+  "devConsole_droppedFrames_description": "캡처 제한으로 페이로드 {count}개가 삭제되었습니다. 합계에는 삭제된 페이로드가 포함되며, 간격은 같은 쪽에서 이전에 관측된 페이로드를 기준으로 합니다. 보관된 텍스트만 복사됩니다.",
+  "devConsole_interval_label": "간격: {elapsed}ms"
 }

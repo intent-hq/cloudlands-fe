@@ -7032,5 +7032,11 @@
   "devConsole_payload_collapse_label": "Collapse all",
   "devConsole_payload_expand_label": "Expand all",
   "devConsole_payload_load_error": "Could not load the viewer. The captured text is shown below.",
-  "devConsole_payload_large_description": "Large payload. Syntax highlighting and folding are unavailable; search and copy still work."
+  "devConsole_payload_large_description": "Large payload. Syntax highlighting and folding are unavailable; search and copy still work.",
+  "devConsole_observed_label": "Observed {time}",
+  "devConsole_sinceRequest_label": "{elapsed} ms since request",
+  "devConsole_sincePrevious_label": "{elapsed} ms since previous payload on this side",
+  "devConsole_retainedFrames_label": "{count} retained payloads",
+  "devConsole_droppedFrames_description": "{count} payloads discarded by capture limits. Totals include discarded payloads; intervals use the previous observed payload on the same side. Copy includes retained payload text only.",
+  "devConsole_interval_label": "Interval: {elapsed} ms"
 }
