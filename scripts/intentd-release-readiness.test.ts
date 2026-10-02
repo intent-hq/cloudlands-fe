@@ -131,7 +131,11 @@ function runCut(
   git('commit', '-qm', 'chore(release): 3.1.0');
   const headRefOid = git('rev-parse', 'HEAD');
   mkdirSync(join(directory, 'scripts'));
-  for (const script of ['intentd-release-readiness.mjs', 'release-pr-fast-path.mjs', 'intentd-pin-advance.sh'])
+  for (const script of [
+    'intentd-release-readiness.mjs',
+    'release-pr-fast-path.mjs',
+    'intentd-pin-advance.sh',
+  ])
     writeFileSync(join(directory, 'scripts', script), readFileSync(`scripts/${script}`));
   if (data.missingHelper) rmSync(join(directory, 'scripts', 'release-pr-fast-path.mjs'));
   writeFileSync(
@@ -449,24 +453,72 @@ function outputValue(outputs: string, key: string) {
 }
 
 // Execute each guarded workflow step with the preceding step's real outputs.
-function runPinChain(data = pinFixture(), event = 'push', mergeData = data) {
+function runPinChain(data = pinFixture(), event = 'push', mergeData = data, dryRun = true) {
   const throttle = runCut(data, event, 'Throttle to one cut per hour');
-  if (outputValue(throttle.outputs, 'defer') === 'true')
-    return { cut: false, output: throttle.output };
+  if (outputValue(throttle.outputs, 'defer') === 'true') return { ...throttle, cut: false };
   const inflight = runCut(data, event, 'Check for an in-flight intentd release build');
-  if (outputValue(inflight.outputs, 'defer') === 'true')
-    return { cut: false, output: inflight.output };
+  if (outputValue(inflight.outputs, 'defer') === 'true') return { ...inflight, cut: false };
   return runCut(
     mergeData,
     event,
     'Merge the Release PR when green',
     outputValue(throttle.outputs, 'tag'),
-    true,
+    dryRun,
     outputValue(throttle.outputs, 'pin_advance'),
   );
 }
 
 describe('prompt pin-driven alpha cut', () => {
+  it.each(['metadata', 'source', 'pin', 'mode'])(
+    'preserves the verified merge route for an exempt pin push with a %s PR diff',
+    (shape) => {
+      const data = { ...pinFixture(), shape };
+      const result = runPinChain(data, 'push', data, false);
+      const merge = result.calls.find((args) => args[0] === 'pr' && args[1] === 'merge');
+      expect(merge).toEqual([
+        'pr',
+        'merge',
+        '99',
+        '--repo',
+        FE,
+        '--squash',
+        '--match-head-commit',
+        result.headRefOid,
+        ...(shape === 'metadata' ? ['--admin'] : []),
+      ]);
+    },
+  );
+
+  it.each(['CHANGES_REQUESTED', 'REVIEW_REQUIRED'])(
+    'never merges an exempt pin push with review decision %s',
+    (reviewDecision) => {
+      const data = pinFixture();
+      data.detail.reviewDecision = reviewDecision;
+      const result = runPinChain(data, 'push', data, false);
+      expect(result.calls.some((args) => args[0] === 'pr' && args[1] === 'merge')).toBe(false);
+      expect(result.output).toContain('outstanding review requirements');
+    },
+  );
+
+  it('binds an exempt pin merge to the tested head when release-please refreshes it', () => {
+    const data = { ...pinFixture(), liveHead: 'c'.repeat(40) };
+    const result = runPinChain(data, 'push', data, false);
+    const merge = result.calls.find((args) => args[0] === 'pr' && args[1] === 'merge')!;
+    expect(merge).toContain('--match-head-commit');
+    expect(merge).toContain(result.headRefOid);
+    expect(result.output).toContain('gh pr merge failed');
+    expect(result.output).not.toContain('Directly squash-merged');
+  });
+
+  it('does not turn a missing metadata helper into a direct-merge exemption', () => {
+    const data = { ...pinFixture(), missingHelper: true };
+    const result = runPinChain(data, 'push', data, false);
+    const merge = result.calls.find((args) => args[0] === 'pr' && args[1] === 'merge')!;
+    expect(merge).toContain('--match-head-commit');
+    expect(merge).not.toContain('--admin');
+    expect(result.output).toContain('retaining the ordinary merge queue');
+  });
+
   it('preserves the pending pin push when an ordinary push arrives while another cut polls', () => {
     // A entered readiness polling before B advanced the pin. Once B lands,
     // A's Release PR pin check must prevent A from cutting its stale pin.
@@ -474,7 +526,14 @@ describe('prompt pin-driven alpha cut', () => {
     polling.before = 'd'.repeat(40);
     polling.after = BASE;
     polling.pins[polling.before] = '0.9.108';
-    const active = runCut(polling, 'push', 'Merge the Release PR when green', 'v3.0.0', 'true');
+    const active = runCut(
+      polling,
+      'push',
+      'Merge the Release PR when green',
+      'v3.0.0',
+      true,
+      'true',
+    );
     expect(active.cut, active.output).toBe(false);
     expect(active.output).toContain('head does not carry the pushed intentd pin');
 
@@ -516,7 +575,9 @@ describe('prompt pin-driven alpha cut', () => {
     expect(steps.indexOf(checkout)).toBeLessThan(steps.indexOf(throttle));
     expect(checkout.with?.['sparse-checkout']).toContain('/scripts/intentd-pin-advance.sh');
     expect(checkout.with?.['sparse-checkout']).toContain('/scripts/intentd-release-readiness.mjs');
-    expect(checkout.if).not.toContain('steps.throttle');
+    expect(checkout.with?.['sparse-checkout']).toContain('/scripts/release-pr-fast-path.mjs');
+    expect(checkout.if).toBe("steps.token.outputs.enabled == 'true'");
+    expect(steps.filter((s) => s.name.startsWith('Checkout'))).toHaveLength(1);
     expect(throttle.if).toContain("github.event_name != 'workflow_dispatch'");
     expect(inflight.if).toContain("steps.throttle.outputs.defer != 'true'");
     expect(merge.if).toContain("steps.throttle.outputs.defer != 'true'");
