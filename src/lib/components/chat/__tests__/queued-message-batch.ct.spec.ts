@@ -1,6 +1,141 @@
 import { expect, test } from '../../../../test/ct-test';
 import QueuedMessagesPreview from '../queued-messages.preview.svelte';
 
+for (const contentKind of ['plain', 'member'] as const) {
+  test(`keeps unchanged ${contentKind} text at the same height when entering and leaving edit mode`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(QueuedMessagesPreview, {
+      props: { messageCount: 3, contentKind },
+    });
+    await page.evaluate(() => document.fonts.ready);
+    const row = component.getByTestId('queued-message-row').first();
+    const next = component.getByTestId('queued-message-row').nth(1);
+    const before = (await row.boundingBox())!;
+    const nextTop = (await next.boundingBox())!.y;
+    await row.hover();
+    await row.getByRole('button', { name: 'Edit', exact: true }).click();
+    const editor = row.getByRole('textbox');
+    await expect(editor).toBeFocused();
+    await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(before.height, 1);
+    expect((await next.boundingBox())!.y).toBeCloseTo(nextTop, 1);
+    if (contentKind === 'plain') {
+      await editor.fill('First line\nSecond line\nThird line');
+      await expect
+        .poll(async () => (await row.boundingBox())!.height)
+        .toBeGreaterThan(before.height);
+    }
+    await editor.press('Escape');
+    await expect(editor).toHaveCount(0);
+    await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(before.height, 1);
+  });
+}
+
+test('keeps a visible edit compact and reveals a clipped row for keyboard editing', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(QueuedMessagesPreview, { props: { messageCount: 12 } });
+  const viewport = component.getByTestId('queued-messages-viewport');
+  const expand = component.getByRole('button', { name: 'Show all queued messages' });
+  await expect(expand).toBeVisible();
+  const compact = (await viewport.boundingBox())!.height;
+  const first = component.getByTestId('queued-message-row').first();
+  await first.hover();
+  await first.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(first.getByRole('textbox')).toBeFocused();
+  await expect(expand).toBeVisible();
+  expect((await viewport.boundingBox())!.height).toBeCloseTo(compact, 1);
+  await first.getByRole('textbox').fill(Array(8).fill('A longer draft').join('\n'));
+  await expect(expand).toHaveCount(0);
+  await first.getByRole('textbox').press('Escape');
+  const disclosure = component.getByTestId('queued-messages-disclosure');
+  await disclosure.click();
+  await expect(viewport).toHaveCount(0);
+  await disclosure.click();
+  await expect(expand).toBeVisible();
+  await component
+    .getByTestId('queued-message-row')
+    .nth(3)
+    .getByTestId('queued-message-content')
+    .focus();
+  await expect(expand).toHaveCount(0);
+  await disclosure.click();
+  await expect(viewport).toHaveCount(0);
+  await disclosure.click();
+  await expect(expand).toBeVisible();
+  const last = component.getByTestId('queued-message-row').last();
+  await last.getByRole('button', { name: 'Edit', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(last.getByRole('textbox')).toBeFocused();
+  await expect(expand).toHaveCount(0);
+  const bounds = (await viewport.boundingBox())!;
+  const input = (await last.getByRole('textbox').boundingBox())!;
+  expect(input.y).toBeGreaterThanOrEqual(bounds.y - 1);
+  expect(input.y + input.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);
+});
+
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`reopens a full queue without overshooting its compact height (${reducedMotion})`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(QueuedMessagesPreview, { props: { messageCount: 12 } });
+    const content = component.getByTestId('queued-messages-content');
+    const viewport = component.getByTestId('queued-messages-viewport');
+    const expand = component.getByRole('button', { name: 'Show all queued messages' });
+    const disclosure = component.getByTestId('queued-messages-disclosure');
+    await expect(expand).toBeVisible();
+    const compact = (await content.boundingBox())!.height;
+    await expand.click();
+    await expect.poll(async () => (await content.boundingBox())!.height).toBeGreaterThan(compact);
+    await page.emulateMedia({ reducedMotion });
+    await disclosure.click();
+    await expect(viewport).toHaveCount(0);
+    const frames = await disclosure.evaluate(async (button) => {
+      const surface = button.closest('[data-testid="queued-messages-container"]')!;
+      const samples: number[] = [];
+      (button as HTMLButtonElement).click();
+      for (let frame = 0; frame < 40; frame++) {
+        await new Promise(requestAnimationFrame);
+        samples.push(
+          surface.querySelector('[data-testid="queued-messages-content"]')?.getBoundingClientRect()
+            .height ?? 0,
+        );
+      }
+      return samples;
+    });
+    await expect(expand).toBeVisible();
+    expect(Math.max(...frames)).toBeLessThanOrEqual(compact + 1);
+    expect(frames.at(-1)).toBeCloseTo(compact, 1);
+    const reversal = await disclosure.evaluate(async (button) => {
+      const surface = button.closest('[data-testid="queued-messages-container"]')!;
+      const samples: number[] = [];
+      (button as HTMLButtonElement).click();
+      await new Promise(requestAnimationFrame);
+      (button as HTMLButtonElement).click();
+      for (let frame = 0; frame < 40; frame++) {
+        await new Promise(requestAnimationFrame);
+        samples.push(
+          surface.querySelector('[data-testid="queued-messages-content"]')?.getBoundingClientRect()
+            .height ?? 0,
+        );
+      }
+      return samples;
+    });
+    expect(Math.max(...reversal)).toBeLessThanOrEqual(compact + 1);
+    expect(reversal.at(-1)).toBeCloseTo(compact, 1);
+    await testInfo.attach('reopen-heights.json', {
+      body: JSON.stringify({ compact, frames, reversal }),
+      contentType: 'application/json',
+    });
+  });
+}
+
 for (const width of [420, 240]) {
   test(`expands a faded queue and keeps its actions reachable at ${width}px`, async ({
     mount,

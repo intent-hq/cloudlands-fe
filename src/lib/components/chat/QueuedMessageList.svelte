@@ -107,6 +107,7 @@
   let bodyHeight = $state(0);
   let viewportHeight = $state(0);
   let viewport = $state<HTMLDivElement>();
+  let previewExpander = $state<HTMLButtonElement | null>(null);
   const previewHeight = new Spring(0, 'moderate');
   let heightInitialized = false;
   const clipped = $derived(!showAll && bodyHeight > viewportHeight + 1);
@@ -145,10 +146,31 @@
     showAll = true;
   }
 
-  function revealFocusedMessage(event: FocusEvent) {
-    if (!clipped) return;
+  function toggleExpanded() {
+    if (!expanded) {
+      showAll = false;
+      // The disclosure measures its target before the next resize delivery.
+      // Discard the full preview's tween so reopening starts at the compact size.
+      void previewHeight.set(Math.min(bodyHeight, 144), { instant: true });
+    }
+    expanded = !expanded;
+  }
+
+  function revealFocusedMessage(target: HTMLElement) {
+    if (!clipped || !viewport) return;
+    const bounds = viewport.getBoundingClientRect();
+    const targetBounds = target.getBoundingClientRect();
+    const visibleBottom = Math.min(
+      bounds.bottom,
+      previewExpander?.getBoundingClientRect().top ?? bounds.bottom,
+    );
+    if (
+      viewport.scrollTop === 0 &&
+      targetBounds.top >= bounds.top &&
+      targetBounds.bottom <= visibleBottom
+    )
+      return;
     showAll = true;
-    const target = event.target as HTMLElement;
     void tick().then(() => {
       if (viewport && target.isConnected) {
         viewport.scrollTop += Math.max(
@@ -476,6 +498,15 @@
     return () => cancelAnimationFrame(frame);
   });
 
+  $effect(() => {
+    bodyHeight;
+    const input = editTextarea ?? editRichContainer?.querySelector<HTMLElement>('[role="textbox"]');
+    if (!input) return;
+    void tick().then(() => {
+      if (input === document.activeElement) revealFocusedMessage(input);
+    });
+  });
+
   async function startEdit(message: QueuedMessage, programmatic = false) {
     if (
       disabled ||
@@ -486,7 +517,6 @@
     )
       return;
     expanded = true;
-    showAll = true;
     const operation = beginEditOperation(message.id);
     await animateRowMutation(message.id, () => {
       editStartedProgrammatically = programmatic;
@@ -723,10 +753,7 @@
         aria-live="polite"
         title={headerLabel}
         data-testid="queued-messages-disclosure"
-        onclick={() => {
-          expanded = !expanded;
-          if (expanded) showAll = false;
-        }}
+        onclick={toggleExpanded}
       >
         <span class="min-w-0 flex-1 truncate" data-testid="queued-messages-label">
           {m.chat_queuedMessages_sendingWhenIdle_label()}
@@ -782,9 +809,10 @@
             class="queued-messages-viewport min-w-0 overscroll-contain {showAll
               ? 'overflow-y-auto'
               : 'overflow-hidden'}"
+            class:queued-messages-preview={!showAll}
             style:height={bodyHeight > 0 ? `${previewHeight.current}px` : undefined}
             data-testid="queued-messages-viewport"
-            onfocusin={revealFocusedMessage}
+            onfocusin={(event) => revealFocusedMessage(event.target as HTMLElement)}
           >
             <div class="flex min-w-0 flex-col py-2" bind:clientHeight={bodyHeight}>
               {#each messages as message (message.id)}
@@ -803,7 +831,7 @@
                   {#if editingId === message.id}
                     <!-- Edit mode -->
                     <div
-                      class="col-span-full row-span-full min-w-0 flex flex-1 gap-2 py-1"
+                      class="col-span-full row-span-full min-w-0 flex flex-1 gap-2"
                       data-testid="queued-message-edit-mode"
                     >
                       {#if editHasMembers}
@@ -821,7 +849,7 @@
                             onForceSubmit={saveEdit}
                             onEscape={cancelEdit}
                             minHeight={0}
-                            editorClassName="type-body! p-0! font-normal!"
+                            editorClassName="type-body! p-0! font-normal! [&_.mention-chip]:py-0! [&_.mention-chip]:leading-[inherit]!"
                           />
                         </div>
                       {:else}
@@ -1002,6 +1030,7 @@
           </div>
           {#if clipped}
             <Button
+              bind:ref={previewExpander}
               variant="plain"
               size="icon-compact"
               iconOnly
@@ -1030,7 +1059,15 @@
   }
 
   .queued-messages-viewport {
-    max-height: max(48px, calc(var(--queued-messages-max-height, 50vh) - 38px));
+    --queued-messages-viewport-limit: max(
+      48px,
+      calc(var(--queued-messages-max-height, 50vh) - 38px)
+    );
+    max-height: var(--queued-messages-viewport-limit);
+  }
+
+  .queued-messages-preview {
+    max-height: min(144px, var(--queued-messages-viewport-limit));
   }
 
   @container queued-messages (max-width: 280px) {
