@@ -1,3 +1,4 @@
+import { decodeTablePages, TABLE_ACTIVE_BYTES, type TablePage } from './table-transfer';
 import { cloneTableWindow } from './table-payload';
 import { Editor, Extension } from '@tiptap/core';
 import { Plugin, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
@@ -159,12 +160,45 @@ export class DocumentSession {
     }
     return source;
   }
+  maxTableTransferPageBytes = 0;
+  maxTableTransferBytes = 0;
+  maxTableAssemblyBytes = 0;
+  maxTableResidentAndAssemblyBytes = 0;
+  private receiveTable(pages: TablePage[] | undefined) {
+    if (!pages) return undefined;
+    const encodedBytes = pages.reduce((n, p) => n + bytes(JSON.stringify(p)), 0);
+    const assemblyBytes = pages.reduce((n, p) => n + bytes(p.payload), 0);
+    this.maxTableTransferBytes = Math.max(this.maxTableTransferBytes, encodedBytes);
+    this.maxTableAssemblyBytes = Math.max(this.maxTableAssemblyBytes, encodedBytes + assemblyBytes);
+    const window = decodeTablePages(pages, this.service.revision);
+    this.maxTableResidentAndAssemblyBytes = Math.max(
+      this.maxTableResidentAndAssemblyBytes,
+      encodedBytes +
+        assemblyBytes +
+        bytes(JSON.stringify(window)) +
+        bytes(this.projection?.source ?? '') +
+        bytes(JSON.stringify(this.projection?.context ?? {})),
+    );
+    for (const page of pages) {
+      const payload = JSON.stringify(page);
+      this.maxTableTransferPageBytes = Math.max(this.maxTableTransferPageBytes, bytes(payload));
+      const key = `table:${page.revision}:${window.from}:${window.cells[0].first}:${page.index}`;
+      this.cache.delete(key);
+      this.cache.set(key, payload);
+      while (
+        this.cache.size > LIMITS.cachePages ||
+        [...this.cache.values()].reduce((n, v) => n + bytes(v), 0) > TABLE_ACTIVE_BYTES
+      )
+        this.cache.delete(this.cache.keys().next().value!);
+    }
+    return window;
+  }
   private readWindow(id: number, position?: number) {
     const at = position ?? this.service.start(id);
     const scroller = this.host.parentElement;
     const preferred = position === this.selection.head ? this.selection.table?.head : undefined;
-    const table = scroller?.clientHeight
-      ? this.service.tableViewportWindow(
+    const pages = scroller?.clientHeight
+      ? this.service.tableViewportPages(
           at,
           {
             height: scroller.clientHeight,
@@ -175,7 +209,8 @@ export class DocumentSession {
           },
           preferred,
         )
-      : this.service.tableWindow(at, undefined, preferred);
+      : this.service.tableWindowPages(at, undefined, preferred);
+    const table = this.receiveTable(pages);
     if (table) {
       const source = table.cells.map((c) => c.raw).join('');
       const from = table.cells[0].first,
@@ -478,7 +513,8 @@ export class DocumentSession {
         layoutTable(editor, table.window, this.tableViewport);
         const size =
           bytes(this.projection!.source) + bytes(JSON.stringify(this.projection!.context));
-        if (size > LIMITS.request) throw new Error('Measured table context exceeds source budget');
+        if (size > TABLE_ACTIVE_BYTES)
+          throw new Error('Measured table context exceeds source budget');
         this.maxSourceContextBytes = Math.max(this.maxSourceContextBytes, size);
       }
     }
@@ -1178,7 +1214,7 @@ export class DocumentSession {
                     cell.last = mapPoint(cell.last, splice, 1);
                   }
                 const target = mapPoint(before.head, splices[0] ?? { from: 0, to: 0, insert: '' });
-                const table = this.service.tableWindow(target, retained)!;
+                const table = this.receiveTable(this.service.tableWindowPages(target, retained))!;
                 this.projection = this.project(
                   table.cells.map((c) => c.raw).join(''),
                   table.cells[0].first,
@@ -1378,6 +1414,10 @@ export class DocumentSession {
     });
     return {
       maxSourceContextBytes: this.maxSourceContextBytes,
+      maxTableTransferPageBytes: this.maxTableTransferPageBytes,
+      maxTableTransferBytes: this.maxTableTransferBytes,
+      maxTableAssemblyBytes: this.maxTableAssemblyBytes,
+      maxTableResidentAndAssemblyBytes: this.maxTableResidentAndAssemblyBytes,
       tableColumnWidth: this.tableColumnWidth,
       tableCells: this.projection?.table?.entries.length ?? 0,
       tableAnchorStateBytes: bytes(

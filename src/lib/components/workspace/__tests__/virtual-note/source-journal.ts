@@ -1,3 +1,4 @@
+import { encodeTablePages, TABLE_ACTIVE_BYTES } from './table-transfer';
 import { TableHeights } from './table-heights';
 import { cloneTableWindow, packTableWindow } from './table-payload';
 /** Test-only backing store. Its Maps model disk/server state, NOT renderer caches. */
@@ -440,6 +441,19 @@ export class SourceJournal {
   private tableIndexes = new Map<number, { source: string; tables: TableIndex[] }>();
   backingTableScannedBytes = 0;
   maxTableWindowBytes = 0;
+  tableViewportPages(...args: Parameters<SourceJournal['tableViewportWindow']>) {
+    const window = this.tableViewportWindow(...args);
+    return window && this.transferTable(window);
+  }
+  tableWindowPages(...args: Parameters<SourceJournal['tableWindow']>) {
+    const window = this.tableWindow(...args);
+    return window && this.transferTable(window);
+  }
+  transferTable(window: TableWindow) {
+    const pages = encodeTablePages(window);
+    for (const page of pages) this.log('table-page', window.from, bytes(JSON.stringify(page)));
+    return pages;
+  }
   tableViewportWindow(
     position: number,
     viewport: {
@@ -547,9 +561,8 @@ export class SourceJournal {
     }
     const packed = packTableWindow(window);
     const size = bytes(JSON.stringify(packed));
-    if (size > LIMITS.request) throw new Error('Table window exceeds admission budget');
+    if (size > TABLE_ACTIVE_BYTES) throw new Error('Table window exceeds admission budget');
     this.maxTableWindowBytes = Math.max(this.maxTableWindowBytes, size);
-    this.log('table-window', position, size);
     return packed;
   }
   readonly count: number;

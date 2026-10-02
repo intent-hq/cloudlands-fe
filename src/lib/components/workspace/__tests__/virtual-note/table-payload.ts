@@ -41,7 +41,17 @@ class PackedCell implements TableFragment {
   get runs() {
     return (
       this.data[7]?.runs ??
-      (this.raw ? [{ from: this.first, to: this.last, text: this.raw, marks: [], offset: 0 }] : [])
+      (this.raw
+        ? [
+            {
+              from: this.first,
+              to: this.last,
+              text: this.raw,
+              marks: [],
+              offset: this.first - this.body,
+            },
+          ]
+        : [])
     );
   }
   get span() {
@@ -77,7 +87,7 @@ export function packTableCell(c: TableFragment): TableFragment {
     !c.runs[0].marks.length &&
     !c.runs[0].hardBreak &&
     !c.runs[0].code &&
-    !(c.runs[0].offset ?? 0) &&
+    (c.runs[0].offset ?? 0) === c.first - c.body &&
     !(c.runs[0].block ?? 0);
   if (!plain && (c.runs.length || c.raw)) extra.runs = c.runs;
   for (const key of ['span', 'blocks', 'blockCount', 'attrs', 'nodeType'] as const)
@@ -111,4 +121,10 @@ export function cloneTableWindow(w: TableWindow): TableWindow {
         : {}),
     })),
   });
+}
+
+export function unpackTableWindow(
+  w: Omit<TableWindow, 'cells'> & { cells: CellData[] },
+): TableWindow {
+  return { ...w, cells: w.cells.map((data) => new PackedCell(data)) };
 }
