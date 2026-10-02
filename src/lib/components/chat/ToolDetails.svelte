@@ -15,6 +15,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import {
     focusBrowserTabRequested,
@@ -645,6 +646,7 @@
                     appStore.dispatch(
                       openAgentTabRequested(workspaceId, {
                         agentId: agent.agentId,
+                        sourcePanelId: findSourcePanelId(e.currentTarget),
                         openInAdjacentPanel: e.metaKey || e.ctrlKey,
                       }),
                     );
@@ -767,6 +769,7 @@
                       appStore.dispatch(
                         openAgentTabRequested(workspaceId, {
                           agentId,
+                          sourcePanelId: findSourcePanelId(e.currentTarget),
                           openInAdjacentPanel: e.metaKey || e.ctrlKey,
                         }),
                       );
