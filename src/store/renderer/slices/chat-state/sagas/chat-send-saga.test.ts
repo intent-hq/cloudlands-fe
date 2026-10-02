@@ -687,9 +687,8 @@ describe('chatSendSaga', () => {
     await settle();
     await settle();
 
-    // The turn-scoped retry record is still parked (cleaned by
-    // agent:queue:processing) — only the queue seed is guarded.
-    expect(run.dispatch).toHaveBeenCalledWith(
+    // A drained row must not regain a stale parked retry payload.
+    expect(run.dispatch).not.toHaveBeenCalledWith(
       chatQueuedRetryRecordSet(AGENT, 'queued-superseded', { text: 'later' }, 'turn-superseded'),
     );
     expect(run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type)).toBe(
@@ -700,6 +699,61 @@ describe('chatSendSaga', () => {
     // the daemon's true queue is re-read instead of trusting either side
     // (monorepo#2486 review).
     expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT, WS);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('retries the processed snapshot after an older queue append response arrives', async () => {
+    const first: QueuedMessage = {
+      id: 'survivor',
+      turnId: 'survivor',
+      content: 'first',
+      position: 0,
+      queuedAt: '2026-10-02T00:00:00Z',
+    };
+    const latest: QueuedMessage = {
+      ...first,
+      content: 'first\n\nsecond\n\nthird',
+      fileBlocks: [{ type: 'file', attachmentId: 'third-file', fileName: 'third.txt' }],
+      messageMetadata: {
+        mergedMessageMetadata: [
+          { type: 'question_answers', questionsMessageId: 'question-one' },
+          { type: 'question_answers', questionsMessageId: 'question-two' },
+        ],
+      },
+    };
+    const run = harness(session({ isStreaming: true, isProcessing: true }));
+    run.dispatch(chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.id));
+    run.dispatch(replaceAgentQueue(AGENT, [first], WS));
+    mocks.queue.mockImplementation(async () => {
+      run.dispatch(replaceAgentQueue(AGENT, [latest], WS));
+      noteAgentQueueEventSnapshotApplied(AGENT, WS);
+      run.dispatch(chatQueueProcessingReceived(AGENT, first.id));
+      run.dispatch(replaceAgentQueue(AGENT, [], WS));
+      noteAgentQueueEventSnapshotApplied(AGENT, WS);
+      return {
+        success: true,
+        turnId: first.id,
+        queuedMessage: { ...first, content: 'first\n\nsecond' },
+      };
+    });
+    run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'second' }));
+    await settle();
+    await settle();
+    run.dispatch(chatSendFailed(AGENT, 'turn failed', first.id));
+    run.dispatch(bulkUpsertSessions([session()]));
+    run.channel.put(agentSessionRetryLastMessageRequested(AGENT, WS));
+    await settle();
+    await settle();
+    expect(mocks.send).toHaveBeenCalledWith(
+      AGENT,
+      latest.content,
+      expect.anything(),
+      expect.objectContaining({
+        fileBlocks: latest.fileBlocks,
+        messageMetadata: latest.messageMetadata,
+      }),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });

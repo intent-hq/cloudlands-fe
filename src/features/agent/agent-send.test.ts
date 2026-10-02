@@ -50,6 +50,9 @@ import {
 } from './agent-queue-read-service';
 import {
   chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordSet,
+  chatQueueProcessingReceived,
+  chatSendFailed,
   chatReset,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
@@ -423,6 +426,54 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     },
   );
 
+  it('keeps the processed canonical retry when an older append response arrives after drain', async () => {
+    const first: QueuedMessage = {
+      id: 'survivor',
+      turnId: 'survivor',
+      content: 'first',
+      position: 0,
+      queuedAt: '2026-10-02T00:00:00Z',
+    };
+    const latest: QueuedMessage = {
+      ...first,
+      content: 'first\n\nsecond\n\nthird',
+      fileBlocks: [{ type: 'file', attachmentId: 'third-file', fileName: 'third.txt' }],
+      messageMetadata: {
+        mergedMessageMetadata: [
+          { type: 'question_answers', questionsMessageId: 'question-one' },
+          { type: 'question_answers', questionsMessageId: 'question-two' },
+        ],
+      },
+    };
+    appStore.dispatch(chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.id));
+    appStore.dispatch(replaceAgentQueue(AGENT, [first], WS));
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.getQueue') return { success: true, queue: [] };
+      if (method === 'agent.sendMessage') {
+        appStore.dispatch(replaceAgentQueue(AGENT, [latest], WS));
+        noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        appStore.dispatch(chatQueueProcessingReceived(AGENT, first.id));
+        appStore.dispatch(replaceAgentQueue(AGENT, [], WS));
+        noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        return {
+          success: true,
+          queued: true,
+          turnId: first.id,
+          queuedMessage: { ...first, content: 'first\n\nsecond' },
+        };
+      }
+      return {};
+    });
+    await sendMessage(AGENT, 'second', workspace());
+    appStore.dispatch(chatSendFailed(AGENT, 'turn failed', first.id));
+    expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual({
+      text: latest.content,
+      options: { fileBlocks: latest.fileBlocks, messageMetadata: latest.messageMetadata },
+    });
+    expect(appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+  });
+
   it('preserves another participant as a barrier when the daemon returns a fresh ID', async () => {
     const queued = (id: string, principal: string, position: number): QueuedMessage => ({
       id,
@@ -472,12 +523,9 @@ describe('agent-send wire contract (pending agent, first message)', () => {
 
     const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
     expect(queueMessages).toEqual([]);
-    // The retry-record park is turn-scoped and cleaned by
-    // agent:queue:processing — it stays untouched by the seed guard.
+    // A drained row must not regain a stale parked retry payload.
     const chatAgent = appStore.state.chatState.byAgentId[AGENT];
-    expect(chatAgent.queuedRetryRecords['queued-msg-superseded']).toMatchObject({
-      turnId: 'turn-superseded',
-    });
+    expect(chatAgent.queuedRetryRecords['queued-msg-superseded']).toBeUndefined();
   }, 30000);
 
   it('does not re-seed the queue when a hydrate-reconciled fold superseded the send (monorepo#2486)', async () => {

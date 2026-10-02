@@ -32,7 +32,7 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, QueuedMessage } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryFromStalledRequested,
@@ -326,16 +326,7 @@ function* dispatchToLifecycle(
       const queuedMessage = result.queuedMessage;
       if (queuedMessage) {
         const turnId = result.turnId ?? queuedMessage.turnId;
-        if (typeof turnId === 'string') {
-          yield* put(
-            chatQueuedRetryRecordSet(
-              agentId,
-              queuedMessage.id,
-              buildQueuedRecordedAttempt(queuedMessage, recordedAttempt),
-              turnId,
-            ),
-          );
-        }
+        let retryMessage: QueuedMessage | undefined = queuedMessage;
         // Seed only when no authoritative snapshot — live agent:queue:updated
         // fold or hydrate-reconciled fold — landed since the send started: a
         // snapshot (including the shrunk-after-drain one) is at least as
@@ -363,6 +354,23 @@ function* dispatchToLifecycle(
           // error must not surface as chatSendFailed; the service leaves the
           // prior mirror intact on error.
           yield* call(() => hydrateAgentQueue(agentId, wsId).catch(() => undefined));
+          retryMessage = (yield* selectAgentQueueMessages.effect(agentId, wsId)).find(
+            (message) => message.id === queuedMessage.id || message.turnId === turnId,
+          );
+        }
+        if (
+          retryMessage &&
+          typeof turnId === 'string' &&
+          (yield* mutationIsCurrent(agentId, ownership))
+        ) {
+          yield* put(
+            chatQueuedRetryRecordSet(
+              agentId,
+              retryMessage.id,
+              buildQueuedRecordedAttempt(retryMessage, recordedAttempt),
+              turnId,
+            ),
+          );
         }
       }
       if (wsId === CHIEF_WORKSPACE_ID) {

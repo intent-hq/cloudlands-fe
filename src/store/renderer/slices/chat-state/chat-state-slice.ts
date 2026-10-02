@@ -568,10 +568,18 @@ export const chatQueuedRetryRecordSet = createAction<
  * Dispatched by the agent-stream-lifecycle queued branch. `turnId`
  * (monorepo#1057) — see `chatQueuedRetryRecordSet`; here it comes from the
  * auto-queued `agent.sendMessage` response's top-level `turnId` (or the
- * echoed `queuedMessage.turnId`).
+ * echoed `queuedMessage.turnId`). The optional canonicalRecord supplies the
+ * reconciled payload; null only clears the optimistic attempt when the row
+ * has already drained, preserving any record promoted by its processing event.
  */
 export const chatQueuedRetryRecordParked = createAction<
-  [agentId: string, messageId: string, record: LastAttemptedMessage, turnId: string]
+  [
+    agentId: string,
+    messageId: string,
+    record: LastAttemptedMessage,
+    turnId: string,
+    canonicalRecord?: LastAttemptedMessage | null,
+  ]
 >('chatState/queuedRetryRecordParked');
 
 /**
@@ -1016,11 +1024,14 @@ chatStateReducer.with(
 );
 chatStateReducer.with(
   chatQueuedRetryRecordParked,
-  (state, { payload: [agentId, messageId, record, turnId] }) => {
+  (state, { payload: [agentId, messageId, record, turnId, canonicalRecord] }) => {
     const agent = getAgent(state, agentId);
     return updateAgent(state, agentId, {
       agentId,
-      queuedRetryRecords: parkRetryRecord(agent, messageId, record, turnId),
+      queuedRetryRecords:
+        canonicalRecord === null
+          ? agent.queuedRetryRecords
+          : parkRetryRecord(agent, messageId, canonicalRecord ?? record, turnId),
       // Undo the caller's own mid-turn overwrite (#1011) — but only when the
       // slot still holds this exact payload; a different value means another
       // attempt recorded itself since and must keep its record.

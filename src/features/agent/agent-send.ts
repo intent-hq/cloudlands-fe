@@ -41,10 +41,7 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
-import {
-  chatQueuedRetryRecordParked,
-  chatQueuedRetryRecordSet,
-} from '$store/renderer/slices/chat-state/chat-state-slice';
+import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   buildRecordedAttempt,
   buildQueuedRecordedAttempt,
@@ -453,57 +450,10 @@ export async function sendMessage(
                       // queue-on-send path does) so the UI immediately shows queued state
                       const queuedMessage = response.queuedMessage as QueuedMessage | undefined;
                       if (queuedMessage) {
-                        // #1011: the daemon echoed a stable id for the queued
-                        // entry, so park the retry payload under it (turn-scoped
-                        // records, #999) instead of leaving it in the caller's
-                        // mid-turn `lastAttemptedMessage` overwrite — the park
-                        // action also undoes that overwrite when the slot still
-                        // holds this payload. buildRecordedAttempt is the same
-                        // construction site chat-send-service records with, so
-                        // the structural match holds. The turnId (monorepo#1057
-                        // — the queued arm's top-level result field, falling
-                        // back to the echoed entry's) keys the record for exact
-                        // agent:queue:processing / agent:failed attribution —
-                        // it is the ONLY attribution path (pinned daemon
-                        // ≥0.2.12 always returns it), so nothing is parked
-                        // without one.
                         const rawTurnId = (response as { turnId?: unknown }).turnId;
                         const turnId =
-                          typeof rawTurnId === 'string'
-                            ? rawTurnId
-                            : typeof queuedMessage.turnId === 'string'
-                              ? queuedMessage.turnId
-                              : undefined;
-                        if (turnId !== undefined) {
-                          dispatchRedux(
-                            chatQueuedRetryRecordParked(
-                              agentId,
-                              queuedMessage.id,
-                              buildRecordedAttempt(content, options),
-                              turnId,
-                            ),
-                          );
-                          dispatchRedux(
-                            chatQueuedRetryRecordSet(
-                              agentId,
-                              queuedMessage.id,
-                              buildQueuedRecordedAttempt(
-                                queuedMessage,
-                                buildRecordedAttempt(content, options),
-                              ),
-                              turnId,
-                            ),
-                          );
-                        } else {
-                          // Unreachable against the pinned daemon; if it ever
-                          // fires, the caller's mid-turn lastAttemptedMessage
-                          // overwrite is left standing (a failure banner could
-                          // pair with the auto-queued payload) — surface it.
-                          logger.warn(
-                            'auto-queued sendMessage response carried no turnId; retry record not parked',
-                            { agentId, queuedMessageId: queuedMessage.id },
-                          );
-                        }
+                          typeof rawTurnId === 'string' ? rawTurnId : queuedMessage.turnId;
+                        let retryMessage: QueuedMessage | undefined = queuedMessage;
                         // Seed only when no authoritative snapshot — live
                         // agent:queue:updated fold or hydrate-reconciled fold
                         // — landed since the send started: a snapshot
@@ -537,6 +487,33 @@ export async function sendMessage(
                           // send itself succeeded, and the service leaves the
                           // prior mirror intact on error.
                           await hydrateAgentQueue(agentId, workspace.id).catch(() => undefined);
+                          retryMessage = selectAgentQueueMessages
+                            .select(appStore.state, agentId, workspace.id)
+                            .find(
+                              (message) =>
+                                message.id === queuedMessage.id || message.turnId === turnId,
+                            );
+                        }
+                        if (isCurrent() && typeof turnId === 'string') {
+                          const attempt = buildRecordedAttempt(content, options);
+                          // A superseding snapshot may already have promoted this turn.
+                          // Clear our optimistic attempt without re-parking a stale echo.
+                          dispatchRedux(
+                            chatQueuedRetryRecordParked(
+                              agentId,
+                              queuedMessage.id,
+                              attempt,
+                              turnId,
+                              retryMessage
+                                ? buildQueuedRecordedAttempt(retryMessage, attempt)
+                                : null,
+                            ),
+                          );
+                        } else if (isCurrent()) {
+                          logger.warn(
+                            'auto-queued sendMessage response carried no turnId; retry record not parked',
+                            { agentId, queuedMessageId: queuedMessage.id },
+                          );
                         }
                       }
 
