@@ -939,8 +939,10 @@ export class DocumentSession {
       }
       if (
         !restore &&
-        (this.selection.head < window.from ||
-          this.selection.head > window.from + window.source.length)
+        (next.table
+          ? next.table.pointPM(this.selection.table?.head) === undefined
+          : this.selection.head < window.from ||
+            this.selection.head > window.from + window.source.length)
       ) {
         // Navigation changes the viewport, not the durable document selection.
         this.editor.commands.setTextSelection(this.projection!.pmAt(window.from));

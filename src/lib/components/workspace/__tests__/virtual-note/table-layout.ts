@@ -12,6 +12,7 @@ export function layoutTable(editor: Editor, window: TableWindow, viewport: numbe
   // Keep the test-only sizing policy on the stable editor root instead.
   editor.view.dom.classList.add('proof-table-projection');
   editor.view.dom.style.setProperty('--proof-table-width', `${width * columns}px`);
+  editor.view.dom.style.setProperty('--proof-column-width', `${width}px`);
   editor.view.dom.style.width = `${window.columns * width}px`;
   editor.view.dom.style.minHeight = `${window.geometry?.total ?? window.rows * 41}px`;
   editor.view.dom.style.boxSizing = 'border-box';
@@ -35,7 +36,6 @@ export function layoutTable(editor: Editor, window: TableWindow, viewport: numbe
   table.style.maxWidth = 'none';
   table.style.borderCollapse = 'collapse';
   for (const cell of table.querySelectorAll<HTMLElement>('th,td')) {
-    cell.style.width = `${width * Number(cell.getAttribute('colspan') ?? 1)}px`;
     cell.style.minWidth = '0';
     cell.style.maxWidth = 'none';
     cell.style.whiteSpace = 'normal';

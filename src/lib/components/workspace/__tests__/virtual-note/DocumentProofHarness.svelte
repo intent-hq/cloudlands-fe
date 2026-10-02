@@ -149,6 +149,9 @@
     min-width: 0 !important;
     table-layout: fixed !important;
   }
+  :global(.proof-table-projection col) {
+    width: var(--proof-column-width) !important;
+  }
   :global(.proof-table-projection th),
   :global(.proof-table-projection td) {
     white-space: normal;
