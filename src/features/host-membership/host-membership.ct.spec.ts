@@ -46,7 +46,7 @@ for (const width of [390, 960]) {
     await page.keyboard.press('Tab');
     await expect(page.getByRole('checkbox')).toBeFocused();
     await page.keyboard.press('Space');
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole('dialog', { name: 'Invite to this instance', exact: true });
     await expect(dialog).toBeVisible();
     await expect(account).toHaveValue('sam');
     await expect(dialog).toContainText('current and future workspaces');
@@ -112,7 +112,7 @@ test('an invitation stays inside the dialog during create and copy, with no dupl
     },
   });
   await page.getByRole('button', { name: 'Invite a host member', exact: true }).click();
-  const dialog = page.getByRole('dialog');
+  const dialog = page.getByRole('dialog', { name: 'Invite to this instance', exact: true });
   await dialog.getByRole('textbox', { name: 'Account username' }).fill('sam');
   await expect(dialog.getByRole('button', { name: 'Create invite link' })).toBeDisabled();
   await dialog.getByRole('checkbox').check();

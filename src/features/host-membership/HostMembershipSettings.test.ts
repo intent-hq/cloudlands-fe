@@ -40,7 +40,7 @@ it('renders truthful host scope and submits a confirmed account pin without exte
   });
   expect(screen.queryByLabelText('Account username')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
-  expect(screen.getByRole('dialog', { name: 'Invite a host member' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: 'Invite to this instance' })).toBeTruthy();
   expect(
     within(screen.getByTestId('host-membership-settings')).queryByLabelText('Account username'),
   ).toBeNull();

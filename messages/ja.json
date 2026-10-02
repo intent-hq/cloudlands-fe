@@ -7007,6 +7007,7 @@
   "collaboration_pin_instance_label": "GitLabインスタンス",
   "collaboration_pin_account_label": "アカウントのユーザー名",
   "collaboration_host_invite_title": "ホストメンバーを招待",
+  "collaboration_host_inviteDialog_title": "このインスタンスに招待",
   "collaboration_host_invite_description": "このアカウント専用リンクは1回のみ使用でき、7日後に期限切れになります。個人用デバイスのリンクではありません。",
   "collaboration_host_invite_scope": "現在および今後のすべてのワークスペースへのアクセス",
   "collaboration_host_invite_permissions": "メンバーは現在および今後のすべてのワークスペースを作成、完全に管理、削除でき、ホストで利用可能なリポジトリとAI設定でコマンドやエージェントを実行できます。ホストの管理は所有者のみが行えます。",

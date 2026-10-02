@@ -58,7 +58,7 @@
 
 <ContentDialog
   open
-  title={m.collaboration_host_invite_title()}
+  title={m.collaboration_host_inviteDialog_title()}
   description={m.collaboration_host_invite_description()}
   initialFocus={accountInput}
   {busy}

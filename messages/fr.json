@@ -7007,6 +7007,7 @@
   "collaboration_pin_instance_label": "Instance GitLab",
   "collaboration_pin_account_label": "Nom d’utilisateur",
   "collaboration_host_invite_title": "Inviter un membre de l’hôte",
+  "collaboration_host_inviteDialog_title": "Inviter sur cette instance",
   "collaboration_host_invite_description": "Ce lien lié à un compte est à usage unique et expire après sept jours. Ce n’est pas un lien d’appareil personnel.",
   "collaboration_host_invite_scope": "Accès à tous les espaces actuels et futurs",
   "collaboration_host_invite_permissions": "Les membres peuvent créer, gérer intégralement et supprimer tous les espaces actuels et futurs, et exécuter des commandes et des agents avec la configuration de dépôts et d’IA disponible sur l’hôte. Seul le propriétaire administre l’hôte.",
