@@ -139,17 +139,21 @@ it('retains measured fragment placement through source-less terminal admission a
     { cell: cell.from, height: cell.raw.length * 0.73, padding: 17 },
   ]);
   const middle = s.tableViewportWindow(cell.body, {
-    ...viewport, top: initial.geometry!.total / 2,
+    ...viewport,
+    top: initial.geometry!.total / 2,
   })!;
   expect(middle.layout![0].top).toBeGreaterThan(10000);
-  const geometry = middle.geometry!, layout = middle.layout;
-  expect(() => s.atomic(() => {
-    s.stageTableTrailing(0, true, s.revision, false);
-    const next = s.tableWindow(cell.body, middle)!;
-    expect(next.layout).toEqual(layout);
-    expect(next.geometry).toEqual({ ...geometry, revision: s.revision });
-    throw Error('rollback measured append');
-  })).toThrow('rollback measured append');
+  const geometry = middle.geometry!,
+    layout = middle.layout;
+  expect(() =>
+    s.atomic(() => {
+      s.stageTableTrailing(0, true, s.revision, false);
+      const next = s.tableWindow(cell.body, middle)!;
+      expect(next.layout).toEqual(layout);
+      expect(next.geometry).toEqual({ ...geometry, revision: s.revision });
+      throw Error('rollback measured append');
+    }),
+  ).toThrow('rollback measured append');
   expect(s.revision).toBe(geometry.revision);
   expect(s.tableWindow(cell.body, middle)!.layout).toEqual(layout);
   s.atomic(() => s.stageTableTrailing(0, true, s.revision, false));

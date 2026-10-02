@@ -16,6 +16,31 @@ export class TableHeights {
     Map<number, { row: number; rowspan: number; rate: number; total: number }>
   >();
   maxCellWriteBytes = 0;
+  /** Backing-only revision copy when table source and live cells did not change. */
+  retainUnchangedTable(table: number, previous: number) {
+    const revision = this.revision();
+    for (const collection of [this.summaries, this.cellSamples]) {
+      for (const [id, values] of [...collection]) {
+        const key = JSON.parse(id) as [number, number, number, string];
+        if (key[0] !== previous || key[1] !== table) continue;
+        key[0] = revision;
+        // Each revision owns its samples; later measurement must not mutate history.
+        if (collection === this.summaries)
+          this.summaries.set(JSON.stringify(key), new Map(values as Map<number, number>));
+        else
+          this.cellSamples.set(
+            JSON.stringify(key),
+            new Map(
+              values as Map<number, { row: number; rowspan: number; rate: number; total: number }>,
+            ),
+          );
+      }
+    }
+  }
+  rollback(revision: number) {
+    for (const collection of [this.summaries, this.cellSamples])
+      for (const id of collection.keys()) if (JSON.parse(id)[0] > revision) collection.delete(id);
+  }
   private samples(key: HeightKey) {
     const id = JSON.stringify([key.revision, key.table, key.width, key.font]);
     let samples = this.cellSamples.get(id);

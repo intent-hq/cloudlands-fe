@@ -508,7 +508,10 @@ export class SourceJournal {
     if (next) states.set(change.tableState, next);
     else states.delete(change.tableState);
     this.tableStates = states;
+    const previousRevision = this.revision;
     this.revision++;
+    if (change.tableState.startsWith('tail:'))
+      this.tableHeights.retainUnchangedTable(Number(change.tableState.slice(5)), previousRevision);
   }
   private stageTableState(key: string, value: string, history = true) {
     if (!this.atomicDepth) throw new Error('Table source and metadata require atomic admission');
@@ -2061,6 +2064,7 @@ export class SourceJournal {
         throw new Error('Invalid final source and paragraph seam state');
       return result;
     } catch (error) {
+      this.tableHeights.rollback(state.revision);
       this.stagedPages = state.stagedPages;
       this.seams = state.seams;
       this.paragraphSeams = state.paragraphSeams;
