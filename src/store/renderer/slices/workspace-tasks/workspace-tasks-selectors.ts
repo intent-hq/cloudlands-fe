@@ -41,6 +41,13 @@ export const selectWorkspaceTasksInitialized = store.createSelector(
     state.workspaceTasks.byWorkspaceId[workspaceId]?.initialized ?? false,
 );
 
+/** Reconnect recovery considers only workspaces with displayed task consumers. */
+export const selectDemandedTaskWorkspaceIds = store.createSelector((state): string[] =>
+  Object.entries(state.workspaceTasks.byWorkspaceId)
+    .filter(([, workspace]) => workspace.demandIds.length > 0)
+    .map(([workspaceId]) => workspaceId),
+);
+
 /** Read admission must be checked after waiting for a scheduler slot. */
 export const selectWorkspaceTasksShouldLoad = store.createSelector(
   (state, workspaceId: string): boolean => {

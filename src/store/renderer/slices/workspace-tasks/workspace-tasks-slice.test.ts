@@ -13,6 +13,7 @@ import {
   clearWorkspaceTasks,
   emptyWorkspaceTaskStats,
   initialState,
+  invalidateWorkspaceTasks,
   loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
@@ -212,6 +213,22 @@ describe('workspaceTasksReducer', () => {
       expect(state).toBe(loaded);
       expect(state.byWorkspaceId[WS].stats).toEqual(canonical);
     });
+
+    it.each(['list', 'entity'])(
+      'accepts newer daemon summaries for loaded stale rows via %s',
+      (source) => {
+        const loaded = loadedState([makeTask('t1')], { total: 1, completed: 0, inProgress: 0 });
+        const stale = workspaceTasksReducer(loaded, invalidateWorkspaceTasks(WS));
+        const workspace = makeWorkspace({ id: WS, taskStats: seedStats });
+        const state = workspaceTasksReducer(
+          stale,
+          source === 'list' ? replaceWorkspaceList([workspace]) : setWorkspaceEntity(workspace),
+        );
+        expect(state.byWorkspaceId[WS].stats).toEqual(seedStats);
+        expect(state.byWorkspaceId[WS].stale).toBe(true);
+        expect(getItems(state.byWorkspaceId[WS].tasks)).toEqual([makeTask('t1')]);
+      },
+    );
 
     it('is a no-op for rows without taskStats', () => {
       const state = workspaceTasksReducer(

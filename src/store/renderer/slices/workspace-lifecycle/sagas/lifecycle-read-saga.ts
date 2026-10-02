@@ -158,7 +158,10 @@ import {
   loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
 } from '../../workspace-tasks/workspace-tasks-slice';
-import { selectWorkspaceTasksShouldLoad } from '../../workspace-tasks/workspace-tasks-selectors';
+import {
+  selectDemandedTaskWorkspaceIds,
+  selectWorkspaceTasksShouldLoad,
+} from '../../workspace-tasks/workspace-tasks-selectors';
 import {
   bulkUpdateWorkspaceEntities,
   loadRecencyData,
@@ -1281,6 +1284,9 @@ function* loadWorkspacesWorker() {
 function* backendReconnectWorkspacesWatcher(): SagaGenerator<void> {
   while (true) {
     yield* take(backendReconnected);
+    for (const workspaceId of yield* selectDemandedTaskWorkspaceIds.effect()) {
+      yield* put(ensureWorkspaceTasksLoaded(workspaceId));
+    }
     yield* put(loadWorkspacesRequested());
     yield* call(refreshIntegrationAuthAfterReconnect);
   }

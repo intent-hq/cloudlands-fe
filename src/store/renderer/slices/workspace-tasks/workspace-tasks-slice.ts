@@ -13,7 +13,10 @@ import {
   setWorkspaceEntity,
 } from '../workspace/workspace-slice';
 import type { WorkspaceTasksState, WorkspaceTasksWorkspaceState } from './workspace-tasks-types';
-import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceUnmounted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 
 export type { WorkspaceTasksState, WorkspaceTasksWorkspaceState };
 
@@ -113,6 +116,11 @@ function invalidate(state: WorkspaceTasksState, workspaceId: string): WorkspaceT
 workspaceTasksReducer.with(invalidateWorkspaceTasks, (state, { payload: [id] }) =>
   invalidate(state, id),
 );
+// Events may have been missed while disconnected. Retain rows and demand,
+// but invalidate every cache; the read owner refreshes displayed consumers only.
+workspaceTasksReducer.with(backendReconnected, (state) =>
+  Object.keys(state.byWorkspaceId).reduce(invalidate, state),
+);
 workspaceTasksReducer.with(loadWorkspaceTasksRequested, (state, { payload: [id] }) =>
   invalidate(state, id),
 );
@@ -201,8 +209,8 @@ workspaceTasksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =
 /**
  * Seed `stats` from a workspace list row's `taskStats` rollup (PROTOCOL §5.1)
  * so sidebar progress renders before any per-workspace `task.list` load.
- * `task.list` stays authoritative: a seed never touches an `initialized`
- * workspace and never marks one `initialized`.
+ * A clean task list stays authoritative. Once invalidated, accept fresher
+ * daemon summaries without treating stale individual rows as initialized anew.
  */
 function seedStatsFromListRow(
   state: WorkspaceTasksState,
@@ -212,7 +220,7 @@ function seedStatsFromListRow(
   if (!stats) return state;
 
   const ws = getWorkspaceState(state, workspace.id);
-  if (ws.initialized) return state;
+  if (ws.initialized && !ws.stale) return state;
   // Shallow-compare every field present on the incoming rollup so the no-op
   // check stays correct if the wire shape grows beyond the current trio.
   const keys = Object.keys(stats) as (keyof WorkspaceTaskStats)[];

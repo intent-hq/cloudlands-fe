@@ -14,6 +14,7 @@ import { ensureNoteContentLoaded, __resetNotesReadServiceForTests } from './note
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   acquireWorkspaceTasksDemand,
+  releaseWorkspaceTasksDemand,
   ensureWorkspaceTasksLoaded,
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
@@ -502,6 +503,31 @@ describe('background reads through the real store, sagas, clients and event brid
       expect(store.state.workspaceTasks.byWorkspaceId[WS].stats.completed).toBe(1);
     },
   );
+
+  it('invalidates task caches on reconnect but refreshes only currently displayed consumers', async () => {
+    store.dispatch(acquireWorkspaceTasksDemand(WS, 'visible-chat'));
+    store.dispatch(acquireWorkspaceTasksDemand(WS, 'second-visible-chat'));
+    store.dispatch(acquireWorkspaceTasksDemand('hidden-workspace', 'old-chat'));
+    await settle();
+    store.dispatch(releaseWorkspaceTasksDemand('hidden-workspace', 'old-chat'));
+    backend.onRequest('task.list', () => ({
+      tasks: [],
+      stats: { total: 3, completed: 2, inProgress: 1 },
+    }));
+    store.dispatch(backendReconnected());
+    await settle();
+    expect(reads('task.list')).toEqual([
+      { method: 'task.list', params: { workspaceId: WS } },
+      { method: 'task.list', params: { workspaceId: 'hidden-workspace' } },
+      { method: 'task.list', params: { workspaceId: WS } },
+    ]);
+    expect(store.state.workspaceTasks.byWorkspaceId[WS].stats.completed).toBe(2);
+    expect(store.state.workspaceTasks.byWorkspaceId['hidden-workspace'].stale).toBe(true);
+    store.dispatch(acquireWorkspaceTasksDemand('hidden-workspace', 'new-chat'));
+    await settle();
+    expect(reads('task.list')).toHaveLength(4);
+    expect(store.state.workspaceTasks.byWorkspaceId['hidden-workspace'].stats.completed).toBe(2);
+  });
 
   it('retries a failed first task read and keeps never-demanded workspaces quiet', async () => {
     event('task:status-changed', { noteId: 'task-note', newStatus: 'complete' });

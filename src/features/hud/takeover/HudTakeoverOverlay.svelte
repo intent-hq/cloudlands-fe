@@ -20,7 +20,6 @@
     selectHudTakeoverRequestWorkspaceId,
     selectHudTakeoverView,
   } from '$store/renderer/slices/hud/hud-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { hydrateTaskAgentAssociationsRequested } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
@@ -111,11 +110,10 @@
   // Hardware-key square gate: same as the grid card (connected + slotted).
   const microConnected$ = microConnectedReadable();
 
-  // Refresh the map's rollups on open (idempotent; the events bridge keeps them fresh).
+  // Refresh the map's agent links on open; task progress uses workspace summaries.
   $effect(() => {
     const workspaceId = queue.active?.workspaceId;
     if (!workspaceId) return;
-    appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
     appStore.dispatch(hydrateTaskAgentAssociationsRequested(workspaceId));
   });
 
