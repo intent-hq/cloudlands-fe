@@ -1,3 +1,4 @@
+import { cloneTableWindow } from './table-payload';
 import { Editor, Extension } from '@tiptap/core';
 import { Plugin, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -143,11 +144,21 @@ export class DocumentSession {
     return source;
   }
   private readWindow(id: number, position?: number) {
-    const table = this.service.tableWindow(
-      position ?? this.service.start(id),
-      undefined,
-      position === this.selection.head ? this.selection.table?.head : undefined,
-    );
+    const at = position ?? this.service.start(id);
+    const scroller = this.host.parentElement;
+    const preferred = position === this.selection.head ? this.selection.table?.head : undefined;
+    const table = scroller?.clientHeight
+      ? this.service.tableViewportWindow(
+          at,
+          {
+            height: scroller.clientHeight,
+            width: scroller.clientWidth,
+            font: this.tableFont(),
+            ...(this.tableScrollRequest?.position === at ? this.tableScrollRequest : {}),
+          },
+          preferred,
+        )
+      : this.service.tableWindow(at, undefined, preferred);
     if (table) {
       const source = table.cells.map((c) => c.raw).join('');
       const from = table.cells[0].first,
@@ -292,24 +303,60 @@ export class DocumentSession {
   private tableTabDestination?: Selection;
   tableViewport = 0;
   private tableScroller?: HTMLElement;
+  private tableScrollRequest?: { position: number; top: number; left: number };
+  private tableFont() {
+    const style = getComputedStyle(this.editor?.view.dom ?? this.host);
+    return [style.fontFamily, style.fontSize, style.lineHeight, style.letterSpacing].join('|');
+  }
   private tableResize?: ResizeObserver;
+  private tableMeasurements?: ResizeObserver;
+  private measuredTable?: Element;
   private tableScroll = () => {
     const table = this.projection?.table?.window,
       scroller = this.tableScroller;
     if (!table || !scroller || !this.tableColumnWidth || this.editor?.view.composing) return;
-    const row = Math.max(0, Math.min(table.rows - 1, Math.floor(scroller.scrollTop / 64)));
+    if (this.pointerSelecting) return;
+    const key = {
+      revision: this.service.revision,
+      table: table.from,
+      width: this.tableColumnWidth,
+      font: this.tableFont(),
+    };
+    const geometry = this.service.tableHeights.viewport(
+      key,
+      table.rows,
+      scroller.scrollTop,
+      scroller.clientHeight,
+    );
+    const row = geometry.row;
     const column = Math.max(
       0,
       Math.min(table.columns - 1, Math.floor(scroller.scrollLeft / this.tableColumnWidth)),
     );
+    const lastRow = Math.min(table.rows - 1, row + geometry.heights.length - 1);
+    const lastColumn = Math.min(
+      table.columns - 1,
+      Math.floor((scroller.scrollLeft + scroller.clientWidth - 1) / this.tableColumnWidth),
+    );
     if (
-      table.cells.some(
-        (c) => c.row === row && c.column <= column && c.column + (c.span ?? 1) > column,
+      [row, lastRow].every((r) =>
+        [column, lastColumn].every((c) =>
+          table.cells.some(
+            (cell) => cell.row === r && cell.column <= c && cell.column + (cell.span ?? 1) > c,
+          ),
+        ),
       )
     )
       return;
     const at = this.service.tableAddress(table.from, row, column);
-    void this.show(this.active, false, at.source, this.pointerSelecting);
+    this.tableScrollRequest = {
+      position: at.source,
+      top: scroller.scrollTop,
+      left: scroller.scrollLeft,
+    };
+    void this.show(this.active, false, at.source, false).finally(() => {
+      this.tableScrollRequest = undefined;
+    });
   };
   tableColumnWidth = 0;
   resizeTable(viewport: number, anchor = true) {
@@ -325,7 +372,50 @@ export class DocumentSession {
         before = undefined;
       }
     this.tableViewport = viewport || scroller?.clientWidth || 640;
+    if (table.window.geometry && !this.pointerSelecting) {
+      const current = table.window.geometry;
+      const key = {
+        revision: this.service.revision,
+        table: table.window.from,
+        width: Math.max(160, Math.floor(this.tableViewport / Math.min(3, table.window.columns))),
+        font: this.tableFont(),
+      };
+      table.window.geometry = this.service.tableHeights.range(
+        key,
+        table.window.rows,
+        current.row,
+        current.heights.length,
+      );
+    }
     this.tableColumnWidth = layoutTable(editor, table.window, this.tableViewport).width;
+    if (table.window.geometry && !this.pointerSelecting) {
+      const rows = Array.from(
+        editor.view.dom.querySelectorAll('tr'),
+        (row) => row.getBoundingClientRect().height,
+      );
+      if (rows.every((height) => height > 0)) {
+        table.window.geometry = this.service.tableHeights.record(table.window.geometry, rows);
+        layoutTable(editor, table.window, this.tableViewport);
+        const size =
+          bytes(this.projection!.source) + bytes(JSON.stringify(this.projection!.context));
+        if (size > LIMITS.request) throw new Error('Measured table context exceeds source budget');
+        this.maxSourceContextBytes = Math.max(this.maxSourceContextBytes, size);
+      }
+    }
+    const nativeTable = editor.view.dom.querySelector('table');
+    if (
+      nativeTable &&
+      nativeTable !== this.measuredTable &&
+      typeof ResizeObserver !== 'undefined'
+    ) {
+      this.tableMeasurements?.disconnect();
+      this.measuredTable = nativeTable;
+      this.tableMeasurements = new ResizeObserver(() => {
+        if (!this.pointerSelecting && !editor.isDestroyed && this.editor === editor)
+          this.resizeTable(this.tableViewport);
+      });
+      this.tableMeasurements.observe(nativeTable);
+    }
     if (before && scroller) {
       const after = editor.view.coordsAtPos(editor.state.selection.head);
       scroller.scrollLeft += after.left - before.left;
@@ -762,7 +852,8 @@ export class DocumentSession {
         const cells = this.projection.table.window.cells;
         this.tableScroller.scrollLeft =
           Math.min(...cells.map((c) => c.column)) * this.tableColumnWidth;
-        this.tableScroller.scrollTop = cells[0].row * 64;
+        this.tableScroller.scrollTop =
+          this.projection.table.window.geometry?.top ?? cells[0].row * 41;
       }
       if (
         !restore &&
@@ -961,7 +1052,7 @@ export class DocumentSession {
                   history,
                 );
               if (this.projection!.table) {
-                const retained = structuredClone(tableBatch!.window);
+                const retained = cloneTableWindow(tableBatch!.window);
                 for (const splice of splices)
                   for (const cell of retained.cells) {
                     cell.first = mapPoint(cell.first, splice, -1);
@@ -1170,6 +1261,11 @@ export class DocumentSession {
       maxSourceContextBytes: this.maxSourceContextBytes,
       tableColumnWidth: this.tableColumnWidth,
       tableCells: this.projection?.table?.entries.length ?? 0,
+      tableGeometryBytes: bytes(JSON.stringify(this.projection?.table?.window.geometry ?? {})),
+      maxTableGeometryReadBytes: this.service.tableHeights.maxReadBytes,
+      maxTableGeometryWriteBytes: this.service.tableHeights.maxWriteBytes,
+      backingTableGeometryBytes: this.service.tableHeights.backingBytes,
+      backingTableGeometryScannedRows: this.service.tableHeights.scannedRows,
       tableContextBytes: bytes(JSON.stringify(this.projection?.context?.table ?? {})),
       maxTableWindowBytes: this.service.maxTableWindowBytes,
       backingTableScannedBytes: this.service.backingTableScannedBytes,
@@ -1288,6 +1384,7 @@ export class DocumentSession {
   }
   destroy() {
     this.tableResize?.disconnect();
+    this.tableMeasurements?.disconnect();
     this.tableScroller?.removeEventListener('scroll', this.tableScroll);
     this.navigation++;
     this.host.removeEventListener('pointerdown', this.pointerDown);

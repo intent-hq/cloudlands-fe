@@ -1,3 +1,5 @@
+import type { TableGeometry } from './table-heights';
+import { packTableWindow } from './table-payload';
 import { Lexer, Parser, type Token } from 'marked';
 import { sanitizeMarkdownHTML } from '$lib/utils/html-sanitizer';
 import type { JSONContent } from '@tiptap/core';
@@ -55,6 +57,7 @@ export type TableWindow = {
   row: number;
   column: number;
   cells: TableFragment[];
+  geometry?: TableGeometry;
 };
 
 /** Mock backing scan. Full row/cell arrays never cross the window admission boundary. */
@@ -299,6 +302,14 @@ export function tableRuns(source: string, start: number): TableRun[] {
   return runs;
 }
 
+export type TableRectangle = {
+  row: number;
+  column: number;
+  rowCount: number;
+  columnCount: number;
+  geometry?: TableGeometry;
+};
+
 export function admitTableWindow(
   source: string,
   table: TableIndex,
@@ -307,6 +318,7 @@ export function admitTableWindow(
   nativeCell?: (cell: TableCellSource) => JSONContent | undefined,
   retained?: TableWindow,
   preferred?: TablePoint,
+  rectangle?: TableRectangle,
 ): TableWindow {
   const targetRow = table.rows.findIndex((row) => position < row.to);
   const row = Math.max(0, targetRow < 0 ? table.rows.length - 1 : targetRow);
@@ -450,13 +462,21 @@ export function admitTableWindow(
         );
     else
       for (
-        let r = Math.max(0, row - radius);
-        r <= Math.min(table.rows.length - 1, row + radius);
+        let r = Math.max(0, rectangle?.row ?? row - radius);
+        r <=
+        Math.min(
+          table.rows.length - 1,
+          rectangle ? rectangle.row + rectangle.rowCount - 1 : row + radius,
+        );
         r++
       )
         for (
-          let c = Math.max(0, column - radius);
-          c <= Math.min(table.columns - 1, column + radius);
+          let c = Math.max(0, rectangle?.column ?? column - radius);
+          c <=
+          Math.min(
+            table.columns - 1,
+            rectangle ? rectangle.column + rectangle.columnCount - 1 : column + radius,
+          );
           c++
         ) {
           const entry = table.rows[r].cells.find(
@@ -474,15 +494,19 @@ export function admitTableWindow(
       row,
       column,
       cells,
+      ...((rectangle?.geometry ?? retained?.geometry)
+        ? { geometry: rectangle?.geometry ?? retained?.geometry }
+        : {}),
     };
     // Raw fragments and token/structural context are admitted together, with edit headroom.
     if (
-      bytes(JSON.stringify(window)) + cells.reduce((n, c) => n + bytes(c.raw), 0) <=
+      bytes(JSON.stringify(packTableWindow(window))) +
+        cells.reduce((n, c) => n + bytes(c.raw), 0) <=
       (retained ? 3968 : 3072)
     )
       return window;
     if (retained) throw new Error('Table edit requires window headroom');
-    if (radius) radius--;
+    if (radius && !rectangle) radius--;
     else limit = Math.floor(limit / 2);
     if (limit < 8) throw new Error('Table cell context cannot fit admission budget');
   }

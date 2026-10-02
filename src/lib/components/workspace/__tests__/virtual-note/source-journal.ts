@@ -1,3 +1,5 @@
+import { TableHeights } from './table-heights';
+import { cloneTableWindow, packTableWindow } from './table-payload';
 /** Test-only backing store. Its Maps model disk/server state, NOT renderer caches. */
 import { bytes } from './bounded-note-service';
 import { SourceProjection, type InlineContext } from './source-projection';
@@ -9,6 +11,7 @@ import {
   type TableIndex,
   type TableWindow,
   type TableFragment,
+  type TableRectangle,
 } from './table-source';
 import type { JSONContent } from '@tiptap/core';
 import { patchTableCell } from './table-state';
@@ -166,7 +169,7 @@ export class SourceJournal {
         };
         this.stageTableState(`cell:${cell.from + start}`, JSON.stringify(native), history);
       }
-    const retained = structuredClone(window);
+    const retained = cloneTableWindow(window);
     retained.cells = retained.cells
       .filter((c) => c.row < edit.index || c.row >= edit.index + edit.remove)
       .map((c) => ({
@@ -253,7 +256,7 @@ export class SourceJournal {
           history,
         );
       }
-    const retained = structuredClone(window);
+    const retained = cloneTableWindow(window);
     retained.cells = retained.cells
       .filter((c) => c.column < edit.index || c.column >= edit.index + edit.remove)
       .map((c) => {
@@ -323,7 +326,7 @@ export class SourceJournal {
     const updated = this.tableIndex(this.region(id), start).find(
       (t) => t.from + start === window.from,
     )!;
-    const retained = structuredClone(window);
+    const retained = cloneTableWindow(window);
     for (const c of retained.cells) {
       c.first = mapPoint(c.first, splice, -1);
       c.last = mapPoint(c.last, splice, 1);
@@ -389,7 +392,7 @@ export class SourceJournal {
     const splice = { from: first.body + start, to: last.end + start, insert: edit.source };
     this.stage(splice, history);
     this.stageTableState(`cell:${first.from + start}`, JSON.stringify(edit.node), history);
-    const retained = structuredClone(window);
+    const retained = cloneTableWindow(window);
     retained.cells = retained.cells.filter(
       (c) =>
         c.row !== edit.row ||
@@ -433,10 +436,51 @@ export class SourceJournal {
         }
     throw new Error('Table cell identity is stale');
   }
+  readonly tableHeights = new TableHeights(() => this.revision);
   private tableIndexes = new Map<number, { source: string; tables: TableIndex[] }>();
   backingTableScannedBytes = 0;
   maxTableWindowBytes = 0;
-  tableWindow(position: number, retained?: TableWindow, preferred?: TablePoint) {
+  tableViewportWindow(
+    position: number,
+    viewport: { top?: number; left?: number; height: number; width: number; font: string },
+    preferred?: TablePoint,
+  ) {
+    const { id, start } = this.locate(position);
+    const table = this.tableIndex(this.region(id), start).find(
+      (t) => position - start >= t.from && position - start < t.to,
+    );
+    if (!table) return undefined;
+    const row = Math.max(
+      0,
+      table.rows.findIndex((r) => position - start < r.to),
+    );
+    const cell =
+      table.rows[row].cells.find((c) => position - start <= c.to) ?? table.rows[row].cells.at(-1)!;
+    const width = Math.max(160, Math.floor(viewport.width / Math.min(3, table.columns)));
+    const key = { revision: this.revision, table: table.from + start, width, font: viewport.font };
+    const minimumRows = Math.ceil(viewport.height / 41) + 1;
+    const targetRow = Math.min(row, Math.max(0, table.rows.length - minimumRows));
+    const top = viewport.top ?? this.tableHeights.range(key, table.rows.length, targetRow, 0).top;
+    const geometry = this.tableHeights.viewport(key, table.rows.length, top, viewport.height);
+    const columnCount = Math.ceil((((viewport.left ?? 0) % width) + viewport.width) / width);
+    const column =
+      viewport.left === undefined
+        ? Math.min(cell.column, Math.max(0, table.columns - columnCount))
+        : Math.max(0, Math.floor(viewport.left / width));
+    return this.tableWindow(position, undefined, preferred, {
+      row: geometry.row,
+      column,
+      rowCount: geometry.heights.length,
+      columnCount,
+      geometry,
+    });
+  }
+  tableWindow(
+    position: number,
+    retained?: TableWindow,
+    preferred?: TablePoint,
+    rectangle?: TableRectangle,
+  ) {
     const { id, start } = this.locate(position),
       source = this.region(id);
     let index = this.tableIndexes.get(id);
@@ -447,7 +491,7 @@ export class SourceJournal {
     }
     const table = index.tables.find((t) => position - start >= t.from && position - start < t.to);
     if (!table) return undefined;
-    const local = retained && structuredClone(retained);
+    const local = retained && cloneTableWindow(retained);
     for (const cell of local?.cells ?? []) {
       cell.first -= start;
       cell.last -= start;
@@ -463,6 +507,7 @@ export class SourceJournal {
       },
       local,
       preferred && { ...preferred, cell: preferred.cell - start },
+      rectangle,
     );
     window.from += start;
     window.to += start;
@@ -479,11 +524,12 @@ export class SourceJournal {
         block.to += start;
       }
     }
-    const size = bytes(JSON.stringify(window));
+    const packed = packTableWindow(window);
+    const size = bytes(JSON.stringify(packed));
     if (size > LIMITS.request) throw new Error('Table window exceeds admission budget');
     this.maxTableWindowBytes = Math.max(this.maxTableWindowBytes, size);
     this.log('table-window', position, size);
-    return window;
+    return packed;
   }
   readonly count: number;
   revision = 1;

@@ -167,7 +167,7 @@ test('table widths remain stable through real horizontal and vertical viewport e
     const p = (el as Host).proof,
       scroller = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
     scroller.scrollLeft = p.tableColumnWidth * 40;
-    scroller.scrollTop = 64 * 100;
+    scroller.scrollTop = 41 * 100;
   });
   await expect
     .poll(() =>
@@ -212,9 +212,16 @@ test('table widths remain stable through real horizontal and vertical viewport e
   expect(after.width).toBe(before.width);
   expect(after.stats.destroyed).toBeGreaterThan(0);
   expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
-  expect(after.stats.tableCells).toBeLessThanOrEqual(25);
+  expect(after.stats.pmNodes).toBeLessThanOrEqual(256);
   expect(after.dom).toBeLessThan(256);
   for (const width of after.widths) expect(Math.abs(width - before.width)).toBeLessThanOrEqual(1);
+  // Independent interior coverage: budget compliance cannot be achieved by blank canvas.
+  const v = after.viewport;
+  for (const x of [v.left + 20, v.left + v.width / 2, v.left + v.width - 20])
+    for (const y of [v.top + 20, v.top + v.height / 2, v.top + v.height - 20])
+      expect(
+        after.cells.some((c) => x >= c.left && x < c.right && y >= c.top && y < c.bottom),
+      ).toBe(true);
   await expect(root.locator('.tiptap')).toHaveCount(1);
   await info.attach('table-scroll-bounds.json', {
     body: JSON.stringify({

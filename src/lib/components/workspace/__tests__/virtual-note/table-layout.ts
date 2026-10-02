@@ -13,9 +13,9 @@ export function layoutTable(editor: Editor, window: TableWindow, viewport: numbe
   editor.view.dom.classList.add('proof-table-projection');
   editor.view.dom.style.setProperty('--proof-table-width', `${width * columns}px`);
   editor.view.dom.style.width = `${window.columns * width}px`;
-  editor.view.dom.style.minHeight = `${window.rows * 64}px`;
+  editor.view.dom.style.minHeight = `${window.geometry?.total ?? window.rows * 41}px`;
   editor.view.dom.style.boxSizing = 'border-box';
-  editor.view.dom.style.paddingTop = `${window.cells[0].row * 64}px`;
+  editor.view.dom.style.paddingTop = `${window.geometry?.top ?? window.cells[0].row * 41}px`;
   table.style.marginLeft = `${firstColumn * width}px`;
   table.style.tableLayout = 'fixed';
   table.style.width = `${width * columns}px`;
@@ -30,5 +30,9 @@ export function layoutTable(editor: Editor, window: TableWindow, viewport: numbe
     cell.style.overflowWrap = 'anywhere';
     cell.style.boxSizing = 'border-box';
   }
+  const rows = table.querySelectorAll<HTMLElement>('tr');
+  rows.forEach((row, i) => {
+    row.style.height = window.geometry ? `${window.geometry.heights[i]}px` : '';
+  });
   return { width, columns, cells: table.querySelectorAll('th,td').length };
 }
