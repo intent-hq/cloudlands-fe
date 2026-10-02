@@ -62,11 +62,14 @@ for (const [rows, inputRows, length] of [
       };
       const before = structuredClone(session.selection);
       await session.seek(raw.rows[Math.floor(rows / 2)].cells[0].body);
-      const paste = (editor: Editor) => {
+      const paste = (editor: Editor, external = false) => {
         const event = new Event('paste', { bubbles: true, cancelable: true });
         Object.defineProperty(event, 'clipboardData', {
           value: {
-            getData: (mime: string) => (mime === 'text/html' ? html : ''),
+            getData: (mime: string) => {
+              if (external) throw new Error('Renderer must not read whole clipboard input');
+              return mime === 'text/html' ? html : '';
+            },
             files: [],
           },
         });
@@ -76,7 +79,8 @@ for (const [rows, inputRows, length] of [
       // Full input/native document and output comparisons are external test-oracle costs.
       paste(native);
       const old = session.editor!;
-      paste(old);
+      session.clipboardInput = service.openClipboardInput({ 'text/plain': '', 'text/html': html });
+      paste(old, true);
       console.info('Native table paste baseline', {
         rows,
         inputRows,
@@ -89,10 +93,37 @@ for (const [rows, inputRows, length] of [
         await processMarkdownToHTML(processHTMLToMarkdown(native.getHTML())),
       );
       expect(session.error).toBe('');
+      await expect.poll(() => old.isDestroyed).toBe(true);
       const saved = service.region(0);
       expect(saved.match(/KEEP\d+/g)).toEqual(source.match(/KEEP\d+/g));
+      const untouched = (text: string) => {
+        const table = scanTables(text)[0];
+        let result = text;
+        for (const cell of table.rows
+          .slice(1)
+          .flatMap((row) => row.cells.slice(0, 2))
+          .reverse())
+          result = result.slice(0, cell.body) + '<edited-cell>' + result.slice(cell.end);
+        return result;
+      };
+      expect(untouched(saved)).toBe(untouched(source));
       expect(service.depth).toBe(1);
       session.save();
+      const updated = scanTables(saved)[0];
+      for (const [r, c] of [
+        [1, 0],
+        [1, 1],
+        [rows, 0],
+        [rows, 1],
+      ]) {
+        await session.seek(updated.rows[r].cells[c].body);
+        const entry = session.projection!.table!.entries.find(
+          (e) => e.cell.row === r && e.cell.column === c,
+        )!;
+        expect(session.editor!.state.doc.nodeAt(entry.pm)!.toJSON()).toEqual(
+          native.state.doc.firstChild!.child(r).child(c).toJSON(),
+        );
+      }
       await session.seek(0);
       expect(old.isDestroyed).toBe(true);
       await session.history();
@@ -103,6 +134,11 @@ for (const [rows, inputRows, length] of [
       expect(session.selection.table?.kind).toBe('cell');
       expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
       expect(service.stats.maxTableWriteBytes).toBeLessThanOrEqual(4096);
+      expect(service.clipboardInput.retainedBytes).toBe(0);
+      expect(service.clipboardInputSink.stagingBytes).toBe(0);
+      expect(service.clipboardInputSink.published).toEqual({ 'text/plain': '', 'text/html': '' });
+      expect(session.clipboardRelay.maxPageBytes).toBeLessThanOrEqual(4096);
+      expect(session.clipboardRelay.maxOutstandingPages).toBe(1);
     } finally {
       native.destroy();
       session.destroy();

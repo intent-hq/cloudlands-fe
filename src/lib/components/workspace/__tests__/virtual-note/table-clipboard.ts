@@ -1,8 +1,16 @@
-import { DOMSerializer, Fragment, Slice, type Schema, type Node as PMNode } from '@tiptap/pm/model';
-import { removeColSpan } from '@tiptap/pm/tables';
+import {
+  DOMParser,
+  DOMSerializer,
+  Fragment,
+  Slice,
+  type Schema,
+  type Node as PMNode,
+} from '@tiptap/pm/model';
+import { __clipCells, __pastedCells, removeColSpan } from '@tiptap/pm/tables';
 import { getTextBetween, getTextSerializersFromSchema, type JSONContent } from '@tiptap/core';
+import { processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 import { bytes } from './bounded-note-service';
-import { tableCellAt, tableRuns, type TableIndex } from './table-source';
+import { scanTables, tableCellAt, tableRuns, type TableIndex } from './table-source';
 import type { Selection } from './source-journal';
 
 export type ClipboardValue = { 'text/plain': string; 'text/html': string };
@@ -22,6 +30,45 @@ export type ClipboardManifest = {
   checksums: ClipboardValueSize;
 };
 type ClipboardValueSize = { 'text/plain': number; 'text/html': number };
+
+/** Input-sized parsing and selection-sized repeated cells belong to mock backing,
+ * not to the renderer relay. No complete target table/view is constructed here. */
+export function parseTableClipboard(
+  value: ClipboardValue,
+  schema: Schema,
+  width: number,
+  height: number,
+) {
+  const container = document.createElement('div');
+  container.innerHTML = value['text/html'];
+  const slice = DOMParser.fromSchema(schema).parseSlice(container);
+  const cells = __pastedCells(slice);
+  if (!cells) throw new Error('Non-table clipboard input still needs native fitting controls');
+  const fitted = __clipCells(cells, width, height);
+  let nodes = 0;
+  for (const row of fitted.rows)
+    row.descendants(() => {
+      nodes++;
+    });
+  return {
+    cells: fitted,
+    costs: {
+      inputBytes: bytes(value['text/html']) + bytes(value['text/plain']),
+      elements: container.querySelectorAll('*').length,
+      nodes,
+      repeatedBytes: bytes(JSON.stringify(fitted.rows.map((row) => row.toJSON()))),
+    },
+  };
+}
+
+/** Serializes one externally owned pasted cell with the real canonical serializer. */
+export function clipboardCellSource(cell: PMNode) {
+  const container = document.createElement('div');
+  container.append(DOMSerializer.fromSchema(cell.type.schema).serializeNode(cell));
+  const markdown = processHTMLToMarkdown(`<table><tr>${container.innerHTML}</tr></table>`);
+  const parsed = scanTables(markdown)[0].rows[0].cells[0];
+  return markdown.slice(parsed.body, parsed.end);
+}
 const empty = (): ClipboardValue => ({ 'text/plain': '', 'text/html': '' });
 const checksum = (text: string) => {
   let hash = 2166136261;
@@ -282,6 +329,11 @@ export class ExternalClipboardSink {
   }
   cancel() {
     this.staging = undefined;
+  }
+  discard() {
+    this.cancel();
+    this.published = empty();
+    this.lastPublication = undefined;
   }
   get stagingBytes() {
     return this.staging ? Object.values(this.staging.value).reduce((n, s) => n + bytes(s), 0) : 0;

@@ -2,6 +2,9 @@ import {
   ClipboardBacking,
   ExternalClipboardSink,
   serializeTableClipboard,
+  parseTableClipboard,
+  clipboardCellSource,
+  type ClipboardValue,
 } from './table-clipboard';
 import type { Schema } from '@tiptap/pm/model';
 import { encodeTablePages, TABLE_ACTIVE_BYTES } from './table-transfer';
@@ -95,6 +98,95 @@ export const mapSelection = (r: Selection, s: Splice, revision: number): Selecti
 export class SourceJournal {
   readonly clipboardBacking = new ClipboardBacking();
   readonly clipboardSink = new ExternalClipboardSink();
+  readonly clipboardInput = new ClipboardBacking();
+  readonly clipboardInputSink = new ExternalClipboardSink();
+  maxClipboardInputDOM = 0;
+  maxClipboardInputNodes = 0;
+  maxClipboardRepeatedBytes = 0;
+  openClipboardInput(value: ClipboardValue) {
+    return this.clipboardInput.open(this.revision, {
+      value,
+      costs: { selectedSourceBytes: 0, nodes: 0, elements: 0, serializedPMBytes: 0 },
+    });
+  }
+  stageTablePaste(selection: Selection, publication: number, schema: Schema) {
+    const encoded = JSON.stringify({ selection, publication });
+    if (bytes(encoded) > LIMITS.request) throw new Error('Clipboard paste intent exceeds budget');
+    const received = JSON.parse(encoded) as { selection: Selection; publication: number };
+    if (
+      received.selection.revision !== this.revision ||
+      received.selection.table?.kind !== 'cell' ||
+      this.clipboardInputSink.lastPublication?.id !== received.publication ||
+      this.clipboardInputSink.lastPublication.revision !== this.revision
+    )
+      throw new Error('Stale or incomplete clipboard input');
+    const logical = received.selection.table;
+    const { id, start } = this.locate(logical.anchor.cell),
+      source = this.region(id);
+    const table = this.tableIndex(source, start).find(
+      (t) => logical.anchor.cell - start >= t.from && logical.anchor.cell - start < t.to,
+    )!;
+    const all = table.rows.flatMap((row) => row.cells);
+    const anchor = all.find((cell) => cell.from + start === logical.anchor.cell)!,
+      head = all.find((cell) => cell.from + start === logical.head.cell)!;
+    const top = Math.min(anchor.row, head.row),
+      bottom = Math.max(anchor.row + (anchor.rowSpan ?? 1), head.row + (head.rowSpan ?? 1)),
+      left = Math.min(anchor.column, head.column),
+      right = Math.max(anchor.column + (anchor.span ?? 1), head.column + (head.span ?? 1));
+    const parsed = parseTableClipboard(
+      this.clipboardInputSink.published,
+      schema,
+      right - left,
+      bottom - top,
+    );
+    this.maxClipboardInputDOM = Math.max(this.maxClipboardInputDOM, parsed.costs.elements);
+    this.maxClipboardInputNodes = Math.max(this.maxClipboardInputNodes, parsed.costs.nodes);
+    this.maxClipboardRepeatedBytes = Math.max(
+      this.maxClipboardRepeatedBytes,
+      parsed.costs.repeatedBytes,
+    );
+    const selected = all.filter(
+      (cell) => cell.row >= top && cell.row < bottom && cell.column >= left && cell.column < right,
+    );
+    if (
+      selected.some((cell) => (cell.span ?? 1) !== 1 || (cell.rowSpan ?? 1) !== 1) ||
+      selected.length !== (bottom - top) * (right - left)
+    )
+      throw new Error('Crossing target spans still need paged paste isolation');
+    for (const row of parsed.cells.rows)
+      row.forEach((cell) => {
+        if (cell.attrs.colspan !== 1 || cell.attrs.rowspan !== 1)
+          throw new Error('Pasted spans still need structural source deltas');
+      });
+    for (const cell of selected.sort((a, b) => b.from - a.from)) {
+      const replacement = parsed.cells.rows[cell.row - top].child(cell.column - left);
+      this.stageTableState(`cell:${cell.from + start}`, JSON.stringify(replacement.toJSON()));
+      this.stage({
+        from: cell.body + start,
+        to: cell.end + start,
+        insert: clipboardCellSource(replacement),
+      });
+    }
+    this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, bytes(encoded));
+    const updated = this.tableIndex(this.region(id), start).find((t) => t.from === table.from)!;
+    const first = updated.rows[top].cells.find((c) => c.column === left)!,
+      last = updated.rows[bottom - 1].cells.find((c) => c.column === right - 1)!;
+    const after: Selection = {
+      anchor: first.body + start,
+      head: last.body + start,
+      affinity: 1,
+      revision: this.revision,
+      table: {
+        kind: 'cell',
+        anchor: { cell: first.from + start, block: 0, offset: 0 },
+        head: { cell: last.from + start, block: 0, offset: 0 },
+      },
+    };
+    const response = JSON.stringify(after);
+    if (bytes(response) > LIMITS.request)
+      throw new Error('Clipboard paste response exceeds budget');
+    return JSON.parse(response) as Selection;
+  }
   openTableClipboard(selection: Selection, schema: Schema) {
     const request = JSON.stringify(selection);
     if (bytes(request) > LIMITS.request) throw new Error('Clipboard intent exceeds budget');

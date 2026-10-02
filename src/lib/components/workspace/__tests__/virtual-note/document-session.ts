@@ -1,4 +1,8 @@
-import { relayClipboard, type ClipboardRelayStats } from './table-clipboard';
+import {
+  relayClipboard,
+  type ClipboardRelayStats,
+  type ClipboardManifest,
+} from './table-clipboard';
 import { tableEditWork } from './table-inline-source';
 import { tableNodeBudget, tableResourceBound, measureTableDOM } from './table-resources';
 import { tableRunWork } from './table-run-context';
@@ -29,6 +33,50 @@ import { CellSelection, tableEditingKey } from '@tiptap/pm/tables';
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
 export class DocumentSession {
+  clipboardInput?: ClipboardManifest;
+  pasteTableSelection() {
+    const manifest = this.clipboardInput;
+    if (!manifest) throw new Error('Missing external clipboard input');
+    const before = structuredClone(this.selection),
+      generation = this.selectionGeneration;
+    try {
+      relayClipboard(
+        manifest,
+        (index) => this.service.clipboardInput.page(manifest.id, index),
+        this.service.clipboardInputSink,
+        () => this.service.revision,
+        this.clipboardRelay,
+      );
+      if (generation !== this.selectionGeneration) throw new Error('Stale paste selection');
+      const after = this.service.atomic(() => {
+        this.service.beginChanges();
+        const anchorsBefore = structuredClone(this.service.anchors);
+        const after = this.service.stageTablePaste(before, manifest.id, this.editor!.schema);
+        this.service.record(
+          {
+            changes: [],
+            before,
+            after,
+            anchorsBefore,
+            anchorsAfter: structuredClone(this.service.anchors),
+          },
+          false,
+        );
+        return after;
+      });
+      this.selection = after;
+      this.selectionGeneration++;
+      this.prevTime = 0;
+      this.cache.clear();
+      queueMicrotask(() => {
+        void this.seek(after.head);
+      });
+    } finally {
+      this.service.clipboardInput.close(manifest.id);
+      this.service.clipboardInputSink.discard();
+      this.clipboardInput = undefined;
+    }
+  }
   readonly clipboardRelay: ClipboardRelayStats = {
     maxPageBytes: 0,
     maxTransientBytes: 0,
@@ -950,6 +998,17 @@ export class DocumentSession {
           ...config.editorProps,
           handleDOMEvents: {
             ...config.editorProps?.handleDOMEvents,
+            paste: (_view, event) => {
+              if (this.selection.table?.kind !== 'cell' || !this.clipboardInput) return false;
+              event.preventDefault();
+              try {
+                this.pasteTableSelection();
+                this.error = '';
+              } catch (error) {
+                this.error = String(error);
+              }
+              return true;
+            },
             copy: (_view, event) => {
               if (this.selection.table?.kind !== 'cell') return false;
               event.preventDefault();
