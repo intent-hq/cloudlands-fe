@@ -203,6 +203,19 @@ for (const mode of ['merged-input', 'crossing-target', 'combined'] as const) {
         );
         expect(session.clipboardRelay.maxPageBytes).toBeLessThanOrEqual(4096);
         expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
+        const serialization = Reflect.get(
+          session.snapshot().externalClipboardInput,
+          'cellSerialization',
+        );
+        expect(serialization).toBeDefined();
+        expect(serialization.calls).toBeGreaterThan(0);
+        expect(serialization.maxOwnedDOMElements).toBeGreaterThan(2);
+        expect(serialization.maxOwnedDOMNodes).toBeGreaterThan(serialization.maxOwnedDOMElements);
+        expect(serialization.maxCanonicalInputBytes).toBeGreaterThan(4096);
+        expect(serialization.maxOutputBytes).toBeGreaterThan(4096);
+        expect(serialization.maxEncodedStringBytes).toBeGreaterThan(
+          serialization.maxCanonicalInputBytes,
+        );
       } finally {
         restores.forEach((restore) => restore());
         native.destroy();
