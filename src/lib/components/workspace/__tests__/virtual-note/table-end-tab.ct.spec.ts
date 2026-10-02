@@ -60,8 +60,10 @@ test('native Tab appends once at the true end of a horizontally paged table and 
     )
     .toBe(2);
   const result = await page.evaluate(async () => {
-    const native = (document.querySelector('[data-testid="native"] [data-testid="proof"]') as Host)
-      .native;
+    const nativeHost = document.querySelector(
+      '[data-testid="native"] [data-testid="proof"]',
+    ) as Host & { reloadNative(source: string): Promise<void> };
+    const native = nativeHost.native;
     const host = document.querySelector('[data-testid="bounded"] [data-testid="proof"]') as Host,
       p = host.proof;
     const full = native.getJSON(),
