@@ -383,14 +383,34 @@ for (const state of [
   { name: 'one message at 200% zoom', width: 120, zoom: 2, messageCount: 1 },
   { name: 'multiple messages at 200% zoom', width: 120, zoom: 2, messageCount: 3 },
 ]) {
-  test(`keeps the disclosure and messages contained with ${state.name}`, async ({ mount }) => {
+  test(`keeps the disclosure and messages contained with ${state.name}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
     const component = await mount(QueuedMessageGeometryHost, { props: state });
     const container = component.getByTestId('queued-messages-container');
     const disclosure = component.getByTestId('queued-messages-disclosure');
     const label = component.getByTestId('queued-messages-label');
     const messageRows = component.getByTestId('queued-message-row');
 
+    // Font reflow can remove a line and retarget the preview-height spring.
+    // Record the baseline only once the loaded-font layout reaches that target.
+    await page.evaluate(() => document.fonts.ready);
+    const viewport = component.getByTestId('queued-messages-viewport');
+    await expect
+      .poll(() =>
+        viewport.evaluate(
+          (node) =>
+            Number.parseFloat((node as HTMLElement).style.height) ===
+            Math.min((node.firstElementChild as HTMLElement).clientHeight, 144),
+        ),
+      )
+      .toBe(true);
     const containerBox = await container.boundingBox();
+    await testInfo.attach('expanded-before', {
+      body: await container.screenshot(),
+      contentType: 'image/png',
+    });
     const disclosureBox = await disclosure.boundingBox();
     const labelBox = await label.boundingBox();
     const firstRowBox = await messageRows.first().boundingBox();
@@ -438,6 +458,10 @@ for (const state of [
     });
     await expect(messageRows).toHaveCount(state.messageCount);
     await expect.poll(() => container.boundingBox()).toEqual(containerBox);
+    await testInfo.attach('expanded-reopened', {
+      body: await container.screenshot(),
+      contentType: 'image/png',
+    });
   });
 }
 
