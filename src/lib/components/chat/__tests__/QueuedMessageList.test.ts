@@ -767,9 +767,6 @@ describe('QueuedMessageList', () => {
       ]);
       expect(headers[0].getAttribute('aria-label')).toContain('Guest User');
       expect(headers[1].getAttribute('aria-label')).toContain('owner');
-      expect(screen.getAllByTestId('queued-message-author-name').map((n) => n.textContent)).toEqual(
-        ['Guest User', 'owner'],
-      );
       const avatar = screen.getByTestId('queued-message-author-avatar') as HTMLImageElement;
       expect(avatar.getAttribute('src')).toBe(guest.avatarUrl);
       expect(screen.getByTestId('queued-message-author-avatar-fallback').textContent).toBe('O');
@@ -869,9 +866,8 @@ describe('QueuedMessageList', () => {
         guest.principalId,
         owner.principalId,
       ]);
-      expect(screen.getAllByTestId('queued-message-author-name').map((n) => n.textContent)).toEqual(
-        ['Guest User', 'Owner Renamed'],
-      );
+      expect(headers[0].getAttribute('aria-label')).toContain('Guest User');
+      expect(headers[1].getAttribute('aria-label')).toContain('Owner Renamed');
       expect(screen.getByText('first ever message, still queued')).toBeTruthy();
     });
 

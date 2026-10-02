@@ -23,6 +23,7 @@
   import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import TipTapEditor from './input/TipTapEditor.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
@@ -913,6 +914,30 @@
                       : null}
                     <!-- Display mode -->
                     <div class="queued-message-display flex min-w-0 flex-1 items-start gap-2">
+                      {#if queuedAuthor}
+                        <Tooltip
+                          class="first-line-icon"
+                          content={queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}
+                        >
+                          <span
+                            role="img"
+                            data-testid="queued-message-author"
+                            data-principal-id={queuedAuthor.principalId}
+                            aria-label={m.chat_queuedMessages_author_ariaLabel({
+                              name: queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                            })}
+                          >
+                            <PrincipalAvatar
+                              avatarUrl={queuedAuthor.avatarUrl}
+                              label={queuedAuthorLabel ?? ''}
+                              size={16}
+                              class="font-medium leading-none text-muted-foreground"
+                              referrerpolicy="no-referrer"
+                              testid="queued-message-author-avatar"
+                            />
+                          </span>
+                        </Tooltip>
+                      {/if}
                       <div class="queued-message-body min-w-0 flex-1">
                         {@render imageThumbnails(message)}
                         {@render fileChips(message)}
@@ -928,29 +953,6 @@
                           ondblclick={() => startEdit(message)}
                           onkeydown={(event) => handleDisplayKeydown(event, message)}
                         >
-                          {#if queuedAuthor}
-                            <span
-                              class="type-caption mb-0.5 flex min-w-0 items-center gap-1.5 text-subtle"
-                              data-testid="queued-message-author"
-                              data-principal-id={queuedAuthor.principalId}
-                              aria-label={m.chat_queuedMessages_author_ariaLabel({
-                                name: queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
-                              })}
-                            >
-                              <PrincipalAvatar
-                                avatarUrl={queuedAuthor.avatarUrl}
-                                label={queuedAuthorLabel ?? ''}
-                                size={16}
-                                class="font-medium leading-none text-muted-foreground"
-                                referrerpolicy="no-referrer"
-                                testid="queued-message-author-avatar"
-                              />
-                              <span class="truncate" data-testid="queued-message-author-name"
-                                >{queuedAuthorLabel ??
-                                  m.chat_chatMessage_authorUnknown_label()}</span
-                              >
-                            </span>
-                          {/if}
                           <span
                             class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
                             data-testid="queued-message-text"
@@ -1105,14 +1107,6 @@
   }
 
   @container queued-messages (max-width: 280px) {
-    .queued-message-display {
-      flex-wrap: wrap;
-    }
-
-    .queued-message-body {
-      flex-basis: 100%;
-    }
-
     .queued-message-actions {
       position: absolute;
       top: 0.25rem;
