@@ -14,6 +14,9 @@
     compact?: boolean;
     forge?: ForgeScenario;
     gitlabEnabled?: boolean;
+    settings?: boolean;
+    verificationUri?: string;
+    onOpenExternal?: (payload: unknown) => void;
   }
   export const preview = definePreview<Props>({
     id: 'onboarding-layout',
@@ -26,6 +29,19 @@
       'forge-github-device': { props: { step: 'forge', forge: 'github-device' } },
       'forge-gitlab-device': {
         props: { step: 'forge', forge: 'gitlab-device', gitlabEnabled: true },
+      },
+      'settings-gitlab-device': {
+        props: { step: 'forge', forge: 'gitlab-device', gitlabEnabled: true, settings: true },
+      },
+      'settings-gitlab-device-long': {
+        props: {
+          step: 'forge',
+          forge: 'gitlab-device',
+          gitlabEnabled: true,
+          settings: true,
+          verificationUri:
+            'https://engineeringgitlabinstancewithaverylongunbrokensubdomain.internal.example.test:8443/company/platform/identity/authorization/device',
+        },
       },
       'forge-gitlab-connecting': {
         props: { step: 'forge', forge: 'gitlab-connecting', gitlabEnabled: true },
@@ -42,6 +58,8 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import OnboardingPage from './OnboardingPage.svelte';
+  import GitLabAuthConnection from '$lib/components/settings/GitLabAuthConnection.svelte';
+  import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import { previewProviders } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
@@ -80,7 +98,14 @@
     compact = false,
     forge = 'idle',
     gitlabEnabled = false,
+    settings = false,
+    verificationUri,
+    onOpenExternal,
   }: Props = $props();
+  const restoreOpen = untrack(() =>
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only navigation interception; restores the original mock handler on teardown and never fetches domain data.
+    onOpenExternal ? overrideMockIpcHandler('shell:openExternal', onOpenExternal) : undefined,
+  );
   const previousGitLabEnabled = appStore.state.userPreferences.labsGitLabEnabled;
   const previousStep = selectOnboardingStep.select(appStore.state);
   const previousProviders = selectProviderCatalogEntries.select(appStore.state);
@@ -156,7 +181,10 @@
       case 'gitlab-device':
         gitlab.host = 'gitlab.example.com';
         gitlab.isAuthenticating = true;
-        gitlab.deviceFlow = DEVICE_CODES;
+        gitlab.deviceFlow = {
+          ...DEVICE_CODES,
+          verificationUri: verificationUri ?? DEVICE_CODES.verificationUri,
+        };
         break;
       case 'gitlab-connecting':
         gitlab.host = 'gitlab.example.com';
@@ -210,6 +238,7 @@
   appStore.dispatch(checkAllProvidersComplete());
   appStore.dispatch(goToStep(untrack(() => step)));
   onDestroy(() => {
+    restoreOpen?.();
     appStore.dispatch(goToStep(previousStep));
     appStore.dispatch(providerCatalogLoaded({ providers: previousProviders }));
     for (const provider of previewProviders) {
@@ -230,7 +259,9 @@
 </script>
 
 <div class="relative h-[720px] w-full" data-onboarding-layout-fixture>
-  {#if compact}
+  {#if settings}
+    <div class="p-6"><GitLabAuthConnection /></div>
+  {:else if compact}
     <div class="p-6"><CompactWorkspaceInitializer isExpanded={true} /></div>
   {:else}
     <OnboardingPage
