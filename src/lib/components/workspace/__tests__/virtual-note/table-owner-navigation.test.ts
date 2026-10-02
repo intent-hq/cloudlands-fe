@@ -90,6 +90,11 @@ for (const [height, width] of [
             expect(next?.point.cell).toBe(positions.get(selection.$head.before(3)));
             expect(next?.revision).toBe(1);
             expect(next?.point.block).toBe(0);
+            const end = service.tableNeighbor(from, direction, true);
+            expect(next?.point.block).toBe(selection.$anchor.index(3));
+            expect(next?.point.offset).toBe(selection.$anchor.parentOffset);
+            expect(end?.point.block).toBe(selection.$head.index(3));
+            expect(end?.point.offset).toBe(selection.$head.parentOffset);
           }
         }
       expect(service.region(0)).toBe(saved);

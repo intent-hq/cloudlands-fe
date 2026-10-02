@@ -393,16 +393,25 @@ export class DocumentSession {
                   input.command === 'tableHorizontalLeft',
                 )
               : undefined;
-        const target = neighbor?.source ?? input.selection?.head ?? this.selection.head;
+        const tabEnd =
+          input.command.startsWith('tableTab') && logical.table
+            ? this.service.tableNeighbor(
+                logical.table.head.cell,
+                input.command.endsWith('Backward') ? -1 : 1,
+                true,
+              )
+            : undefined;
+        const target =
+          tabEnd?.source ?? neighbor?.source ?? input.selection?.head ?? this.selection.head;
         const extending = input.command.startsWith('tableExtend');
         const neighborSelection: Selection | undefined = neighbor && {
           anchor: extending ? logical.anchor : neighbor.source,
-          head: neighbor.source,
+          head: tabEnd?.source ?? neighbor.source,
           affinity: extending && logical.anchor > neighbor.source ? -1 : 1,
           revision: this.service.revision,
           table: {
             anchor: extending ? { ...logical.table!.anchor, block: 0, offset: 0 } : neighbor.point,
-            head: neighbor.point,
+            head: tabEnd?.point ?? neighbor.point,
             kind: extending ? 'cell' : 'text',
           },
         };

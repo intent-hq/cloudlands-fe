@@ -23,11 +23,19 @@ for (const columns of [1, 6]) {
           (_, r) => '| ' + Array.from({ length: 8 }, (_, c) => `r${r}c${c}`).join(' | ') + ' |',
         ).join('\n');
       await mount(Pair, { props: { sourceOverride: source } });
-      await expect.poll(() => page.evaluate(() => {
-        const native = document.querySelector('[data-testid="native"] [data-testid="proof"]') as Host;
-        const bounded = document.querySelector('[data-testid="bounded"] [data-testid="proof"]') as Host;
-        return !!native?.native?.isInitialized && !!bounded?.proof?.editor?.isInitialized;
-      })).toBe(true);
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const native = document.querySelector(
+              '[data-testid="native"] [data-testid="proof"]',
+            ) as Host;
+            const bounded = document.querySelector(
+              '[data-testid="bounded"] [data-testid="proof"]',
+            ) as Host;
+            return !!native?.native?.isInitialized && !!bounded?.proof?.editor?.isInitialized;
+          }),
+        )
+        .toBe(true);
       const fixture = await page.evaluate(
         async ({ rows, columns, backward }) => {
           const host = (side: string) =>
@@ -131,6 +139,7 @@ for (const columns of [1, 6]) {
                 selection: editor.state.selection.toJSON(),
                 text: editor.state.selection.$head.parent.textContent,
                 offset: editor.state.selection.$head.parentOffset,
+                anchorOffset: editor.state.selection.$anchor.parentOffset,
                 logical: p?.selection.table,
                 source: p?.service.region(0),
                 error: p?.error ?? '',
@@ -146,6 +155,7 @@ for (const columns of [1, 6]) {
       expect(outcomes[1].error).toBe('');
       expect(outcomes[1].text).toBe(outcomes[0].text);
       expect(outcomes[1].offset).toBe(outcomes[0].offset);
+      expect(outcomes[1].anchorOffset).toBe(outcomes[0].anchorOffset);
       expect(outcomes[1].selection.type).toBe(outcomes[0].selection.type);
       expect(outcomes[1].logical?.head.cell).toBe(fixture.saved.indexOf(outcomes[0].text) - 1);
       expect(outcomes[1].source).toBe(fixture.saved);

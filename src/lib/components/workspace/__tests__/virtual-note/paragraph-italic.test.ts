@@ -10,6 +10,8 @@ beforeAll(() => store.init());
 afterAll(() => store.dispose());
 for (const source of [
   'before\n\n\nafter',
+  '\n\n\n_italic_',
+  '*italic*\n\n\n',
   'before\n\n\n\n\n**after**',
   '_italic_ and *other*',
   'before _italic_**bold** after',
