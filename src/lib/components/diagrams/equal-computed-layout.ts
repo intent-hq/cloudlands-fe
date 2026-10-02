@@ -1,5 +1,12 @@
 import type { ComputedLayout } from './types';
 
+function sameScalar(left: unknown, right: unknown): boolean {
+  return (
+    (left === null || (typeof left !== 'object' && typeof left !== 'function')) &&
+    Object.is(left, right)
+  );
+}
+
 function sameFields(left: object, right: object, nested: readonly PropertyKey[] = []): boolean {
   const keys = Reflect.ownKeys(left);
   return (
@@ -7,7 +14,7 @@ function sameFields(left: object, right: object, nested: readonly PropertyKey[] 
     keys.every(
       (key) =>
         Object.hasOwn(right, key) &&
-        (nested.includes(key) || Object.is(Reflect.get(left, key), Reflect.get(right, key))),
+        (nested.includes(key) || sameScalar(Reflect.get(left, key), Reflect.get(right, key))),
     )
   );
 }
@@ -18,7 +25,7 @@ function sameItems<T>(
   equal: (a: T, b: T) => boolean,
 ): boolean {
   return (
-    left === right ||
+    (left === undefined && right === undefined) ||
     (!!left &&
       !!right &&
       left.length === right.length &&
@@ -28,8 +35,9 @@ function sameItems<T>(
 
 /**
  * Compare the records and geometry arrays owned by the layout engine. Model-owned
- * objects (including arbitrary metadata and bindings) retain reference semantics:
- * replacing one always publishes, without serializing or interpreting its contents.
+ * objects (including arbitrary metadata and bindings) always require publication:
+ * reusing their identity can conceal a raw mutation behind an existing Svelte proxy.
+ * Do not serialize or interpret those opaque values.
  */
 export function equalComputedLayout(
   previous: ComputedLayout | null,
@@ -44,7 +52,8 @@ export function equalComputedLayout(
       next.nodes,
       (a, b) =>
         sameFields(a, b, ['size']) &&
-        (a.size === b.size || (!!a.size && !!b.size && sameFields(a.size, b.size))),
+        ((a.size === undefined && b.size === undefined) ||
+          (!!a.size && !!b.size && sameFields(a.size, b.size))),
     ) &&
     sameItems(
       previous.edges,

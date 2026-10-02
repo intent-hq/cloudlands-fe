@@ -508,6 +508,8 @@
   let visibleEdges = $derived(layout?.edges.filter((e) => visibleEdgeIds.includes(e.id)) ?? []);
 
   let edgeLabelPositions = $derived.by(() => {
+    // Fixed-size nodes can retain their geometry while connector fonts change.
+    fontMeasurementRevision;
     const positions = new Map<string, EdgeLabelPosition>();
     const placedLabels: Array<{ x: number; y: number; width: number; height: number }> = [];
 
@@ -906,7 +908,8 @@
         layoutWidthLimit,
       );
       // Width/font invalidations still measure again, but an unchanged result
-      // need not invalidate every node, connector and label placement downstream.
+      // need not invalidate every node and connector downstream. Label fonts have
+      // their own invalidation because their metrics are not part of ComputedLayout.
       if (!equalComputedLayout(publishedLayout, nextLayout)) {
         publishedLayout = nextLayout;
         layout = nextLayout;

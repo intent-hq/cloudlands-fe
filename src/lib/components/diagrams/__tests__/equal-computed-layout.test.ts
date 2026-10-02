@@ -120,7 +120,7 @@ it('does not serialize or conflate arbitrary model metadata', () => {
   const next = layout();
   previous.nodes[0].metadata = metadata;
   next.nodes[0].metadata = metadata;
-  expect(equalComputedLayout(previous, next)).toBe(true);
+  expect(equalComputedLayout(previous, next)).toBe(false);
   next.nodes[0].metadata = { ...metadata };
   expect(equalComputedLayout(previous, next)).toBe(false);
 });
@@ -146,3 +146,16 @@ it('compares freshly measured node sizes including authored size changes', () =>
   delete next.nodes[0].size;
   expect(equalComputedLayout(previous, next)).toBe(false);
 });
+
+it.each(['binding', 'metadata', 'futureField'])(
+  'publishes shared mutable %s values conservatively',
+  (key) => {
+    const previous = layout();
+    const next = layout();
+    const value = { target: 'old.ts' };
+    Reflect.set(previous.nodes[0], key, value);
+    Reflect.set(next.nodes[0], key, value);
+    value.target = 'new.ts';
+    expect(equalComputedLayout(previous, next)).toBe(false);
+  },
+);

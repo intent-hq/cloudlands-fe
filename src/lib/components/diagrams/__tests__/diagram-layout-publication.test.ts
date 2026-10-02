@@ -5,6 +5,7 @@ import type { DiagramPrimitive } from '$shared/types/notes-primitives';
 import { computeLayout, measureEdgeLabel } from '../layout-engine';
 import DiagramRenderer from '../DiagramRenderer.svelte';
 import { DEFAULT_NODE_STYLE } from '../types';
+import { equalComputedLayout } from '../equal-computed-layout';
 
 vi.mock('../layout-engine', async (load) => {
   const actual = await load<typeof import('../layout-engine')>();
@@ -99,15 +100,19 @@ async function settle() {
   flushSync();
 }
 
-it('remeasures ready fonts without republishing unchanged layout to edge-label placement', async () => {
-  const result = render(DiagramRenderer, { diagram: diagram() });
+it('recomputes equal style inputs without republishing unchanged layout to edge-label placement', async () => {
+  const input = diagram();
+  const result = render(DiagramRenderer, {
+    diagram: input,
+    styleConfig: { ...DEFAULT_NODE_STYLE },
+  });
   await settle();
   const before = geometry(result.container);
   expect(before).toHaveLength(2);
   const layouts = vi.mocked(computeLayout).mock.calls.length;
   const labels = vi.mocked(measureEdgeLabel).mock.calls.length;
   expect(labels).toBeGreaterThan(0);
-  resolveFonts();
+  await result.rerender({ diagram: input, styleConfig: { ...DEFAULT_NODE_STYLE } });
   await settle();
   expect(vi.mocked(computeLayout).mock.calls.length).toBeGreaterThan(layouts);
   expect(geometry(result.container)).toEqual(before);
@@ -192,4 +197,58 @@ it('republishes a previously equal result after a failed layout clears the scene
   await result.rerender({ diagram: diagram() });
   await settle();
   expect(geometry(result.container)).toEqual(before);
+});
+
+it('remeasures connector labels after fonts change even when fixed-size layout is equal', async () => {
+  const input = diagram();
+  input.baseView.layout = { type: 'circular', direction: 'LR', edgeRouting: 'polyline' };
+  input.model.nodes.forEach((node) => {
+    node.size = { width: 100, height: 40 };
+  });
+  input.model.edges[0].label = 'abcdefgh';
+  const result = render(DiagramRenderer, { diagram: input });
+  await settle();
+  const before = geometry(result.container);
+  const beforeLayout = vi.mocked(computeLayout).mock.results.at(-1)!.value;
+  const label = () => result.container.querySelector('.edge-label-html')!.closest('foreignObject')!;
+  const beforeWidth = Number(label().getAttribute('width'));
+  glyphWidth = 12;
+  resolveFonts();
+  await settle();
+  const afterLayout = vi.mocked(computeLayout).mock.results.at(-1)!.value;
+  expect(equalComputedLayout(beforeLayout, afterLayout)).toBe(true);
+  expect(geometry(result.container)).toEqual(before);
+  expect(Number(label().getAttribute('width'))).toBeGreaterThan(beforeWidth);
+  expect(label().textContent).toContain('abcdefgh');
+  for (let i = 0; i < 10 && frames.size; i += 1) {
+    const pending = [...frames.values()];
+    frames.clear();
+    pending.forEach((callback) => callback(performance.now()));
+    await settle();
+  }
+  expect(
+    result.container.querySelector('.diagram-renderer')!.getAttribute('data-diagram-settled'),
+  ).toBe('true');
+  expect(frames.size).toBe(0);
+});
+
+it('publishes a reused binding after its target changes in a new model wrapper', async () => {
+  const binding = { type: 'file' as const, target: 'old.ts' };
+  const input = diagram();
+  input.model.nodes[0].binding = binding;
+  const destinations: string[] = [];
+  const onBindingClick = (_event: MouseEvent, current: { type: string; target: string }) => {
+    destinations.push(current.target);
+  };
+  const result = render(DiagramRenderer, { diagram: input, onBindingClick });
+  await settle();
+  await fireEvent.click(result.container.querySelector('[data-node-id="a"] button')!);
+  expect(destinations).toEqual(['old.ts']);
+  binding.target = 'new.ts';
+  const next = diagram();
+  next.model.nodes[0].binding = binding;
+  await result.rerender({ diagram: next, onBindingClick });
+  await settle();
+  await fireEvent.click(result.container.querySelector('[data-node-id="a"] button')!);
+  expect(destinations).toEqual(['old.ts', 'new.ts']);
 });
