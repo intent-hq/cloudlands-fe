@@ -61,8 +61,8 @@ export interface DesktopPermissionChangedEvent {
   agentId: string;
   permission: DesktopPermissionState;
 }
-export type DesktopModifier = 'Shift' | 'Control' | 'Alt' | 'Meta';
-export interface DesktopPoint {
+type DesktopModifier = 'Shift' | 'Control' | 'Alt' | 'Meta';
+interface DesktopPoint {
   x: number;
   y: number;
 }

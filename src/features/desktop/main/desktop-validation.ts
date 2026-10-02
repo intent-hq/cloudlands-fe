@@ -24,7 +24,7 @@ const namedKeys = new Set([
   'Space',
   ...Array.from({ length: 24 }, (_, i) => `F${i + 1}`),
 ]);
-export const desktopActionSchema = z.discriminatedUnion('kind', [
+const desktopActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('screenshot') }).strict(),
   z
     .object({
@@ -71,7 +71,7 @@ const command = {
   commandId: id,
   sequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 };
-export const desktopRequestSchema = z.discriminatedUnion('operation', [
+const desktopRequestSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('prepare'), ...binding }).strict(),
   z
     .object({
@@ -90,7 +90,6 @@ export const desktopRequestSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('execute'), ...command, deadlineId: id }).strict(),
 ]);
 export type DesktopRequest = z.infer<typeof desktopRequestSchema>;
-export type DesktopBinding = z.infer<typeof desktopRequestSchema> & { sessionId?: string };
 export function desktopFailure(
   code: string,
   detail: string,

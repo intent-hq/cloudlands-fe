@@ -24,7 +24,7 @@ export type NativeRequest = (
   params?: Record<string, unknown>,
 ) => Promise<unknown>;
 
-export function desktopHelperPath(): string {
+function desktopHelperPath(): string {
   const name = process.platform === 'win32' ? 'intent-desktop-helper.exe' : 'intent-desktop-helper';
   return app.isPackaged
     ? join(process.resourcesPath, 'desktop-helper', name)
