@@ -1077,7 +1077,8 @@ export class SourceJournal {
     merged.last = merged.first + edit.source.length;
     return this.tableWindow(merged.first, retained)!;
   }
-  tableNeighbor(from: number, direction: number) {
+  maxBackingTableNavigationBytes = 0;
+  tableNeighbor(from: number, direction: number, end = false) {
     const { id, start } = this.locate(from);
     const source = this.region(id);
     const table = this.tableIndex(source, start).find(
@@ -1100,9 +1101,29 @@ export class SourceJournal {
             next = direction > 0 ? cells[0] : cells[cells.length - 1];
           }
           if (!next) return undefined;
+          const stored = end && this.tableStates.get(`cell:${next.from + start}`);
+          const blocks = stored ? ((JSON.parse(stored) as JSONContent).content ?? []) : [];
+          const last = blocks.at(-1);
+          const offset = !end
+            ? 0
+            : last
+              ? (last.content ?? []).reduce((n, child) => n + (child.text?.length ?? 1), 0)
+              : tableRuns(source.slice(next.body, next.end), next.body).reduce(
+                  (n, run) => n + (run.hardBreak ? 1 : run.text.length),
+                  0,
+                );
+          if (end)
+            this.maxBackingTableNavigationBytes = Math.max(
+              this.maxBackingTableNavigationBytes,
+              bytes(stored || source.slice(next.body, next.end)),
+            );
           const result = {
-            source: next.body + start,
-            point: { cell: next.from + start, block: 0, offset: 0 },
+            source: (end ? next.end : next.body) + start,
+            point: {
+              cell: next.from + start,
+              block: end ? Math.max(0, blocks.length - 1) : 0,
+              offset: end ? offset : 0,
+            },
             revision: this.revision,
           };
           this.log('table-neighbor', from, bytes(JSON.stringify(result)));
@@ -2212,6 +2233,7 @@ export class SourceJournal {
       maxBackingTableSplitCells: this.maxBackingTableSplitCells,
       maxBackingTableSplitBytes: this.maxBackingTableSplitBytes,
       maxBackingTableCommandBytes: this.maxBackingTableCommandBytes,
+      maxBackingTableNavigationBytes: this.maxBackingTableNavigationBytes,
       maxBackingTableCommandNodes: this.maxBackingTableCommandNodes,
       backingSeamBytes: bytes(JSON.stringify([...this.seams.values()])),
       backingListRepairs: this.backingListRepairs,

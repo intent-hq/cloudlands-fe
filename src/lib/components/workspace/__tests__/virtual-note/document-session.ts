@@ -302,10 +302,10 @@ export class DocumentSession {
     }
     return window;
   }
-  private readWindow(id: number, position?: number) {
+  private readWindow(id: number, position?: number, selection = this.selection) {
     const at = position ?? this.service.start(id);
     const scroller = this.host.parentElement;
-    const preferred = position === this.selection.head ? this.selection.table?.head : undefined;
+    const preferred = position === selection.head ? selection.table?.head : undefined;
     const pages = scroller?.clientHeight
       ? this.service.tableViewportPages(
           at,
@@ -317,9 +317,9 @@ export class DocumentSession {
             ...(this.tableScrollRequest?.position === at ? this.tableScrollRequest : {}),
           },
           preferred,
-          this.selection.table,
+          selection.table,
         )
-      : this.service.tableWindowPages(at, undefined, preferred, undefined, this.selection.table);
+      : this.service.tableWindowPages(at, undefined, preferred, undefined, selection.table);
     const table = this.receiveTable(pages);
     if (table) {
       const source = table.cells.map((c) => c.raw).join('');
@@ -376,21 +376,37 @@ export class DocumentSession {
         this.maxResidentInputBytes = Math.max(this.maxResidentInputBytes, this.residentInputBytes);
         const logical = input.selection ?? this.selection;
         const neighbor =
-          input.command.startsWith('tableArrow') && logical.table
+          (input.command.startsWith('tableArrow') || input.command.startsWith('tableExtend')) &&
+          logical.table
             ? this.service.tableAdjacent(
                 logical.table.head.cell,
-                'vert',
-                input.command.endsWith('Up') ? -1 : 1,
+                /(?:Up|Down)$/.test(input.command) ? 'vert' : 'horiz',
+                /(?:Up|Left)$/.test(input.command) ? -1 : 1,
               )
-            : input.command.startsWith('tableTab') && logical.table
+            : (input.command.startsWith('tableTab') ||
+                  input.command.startsWith('tableHorizontal')) &&
+                logical.table
               ? this.service.tableNeighbor(
                   logical.table.head.cell,
-                  input.command.endsWith('Backward') ? -1 : 1,
+                  /(?:Backward|Left)$/.test(input.command) ? -1 : 1,
+                  input.command === 'tableHorizontalLeft',
                 )
               : undefined;
         const target = neighbor?.source ?? input.selection?.head ?? this.selection.head;
+        const extending = input.command.startsWith('tableExtend');
+        const neighborSelection: Selection | undefined = neighbor && {
+          anchor: extending ? logical.anchor : neighbor.source,
+          head: neighbor.source,
+          affinity: extending && logical.anchor > neighbor.source ? -1 : 1,
+          revision: this.service.revision,
+          table: {
+            anchor: extending ? { ...logical.table!.anchor, block: 0, offset: 0 } : neighbor.point,
+            head: neighbor.point,
+            kind: extending ? 'cell' : 'text',
+          },
+        };
         // Share the outstanding fetch, but retain the input if navigation becomes stale.
-        if (!(await this.show(this.active, true, target, true))) {
+        if (!(await this.show(this.active, true, target, true, neighborSelection))) {
           if (!this.editor || this.editor.isDestroyed || this.editor.view.composing) break;
           continue;
         }
@@ -410,13 +426,7 @@ export class DocumentSession {
           // MutationObserver delivers its transaction before the next input task.
           let accepted = true;
           if (neighbor) {
-            this.selection = {
-              anchor: neighbor.source,
-              head: neighbor.source,
-              affinity: 1,
-              revision: this.service.revision,
-              table: { anchor: neighbor.point, head: neighbor.point, kind: 'text' },
-            };
+            this.selection = neighborSelection!;
             this.renderSelection();
           } else if (current.command === 'undo' || current.command === 'redo')
             await this.history(current.command === 'redo');
@@ -768,7 +778,13 @@ export class DocumentSession {
       void this.show(this.active, true, this.selection.head, true);
     });
   }
-  async show(id: number, restore = false, position?: number, preserveView = false) {
+  async show(
+    id: number,
+    restore = false,
+    position?: number,
+    preserveView = false,
+    requestedSelection?: Selection,
+  ) {
     if (this.editor?.view.composing) {
       this.error = 'Composition pins current view';
       this.changed();
@@ -810,7 +826,7 @@ export class DocumentSession {
       this.changed();
       return false;
     }
-    const window = this.readWindow(id, position);
+    const window = this.readWindow(id, position, requestedSelection);
     try {
       const next = this.project(window.source, window.from, window.table);
       if (next.table) {
@@ -1107,18 +1123,20 @@ export class DocumentSession {
               table &&
               !this.replayingInput &&
               this.selection.table &&
-              !event.shiftKey &&
               !event.ctrlKey &&
               !event.metaKey &&
               !event.altKey &&
-              (event.key === 'ArrowDown' || event.key === 'ArrowUp')
+              /^Arrow(Up|Down|Left|Right)$/.test(event.key)
             ) {
               const selection = _view.state.selection;
-              const direction = event.key === 'ArrowUp' ? -1 : 1;
-              // Match native atEndOfCell, including real browser line geometry.
-              // An artificial row edge must not become an exit from the table.
-              if (selection instanceof TextSelection && selection.empty) {
-                let atCellEdge = false;
+              const direction = /(?:Up|Left)$/.test(event.key) ? -1 : 1;
+              const vertical = /(?:Up|Down)$/.test(event.key);
+              let atCellEdge = event.shiftKey && selection instanceof CellSelection;
+              // Use the same real line-edge test as native table key handling.
+              if (
+                selection instanceof TextSelection &&
+                (event.shiftKey || !vertical || selection.empty)
+              ) {
                 const $head = selection.$head;
                 for (let d = $head.depth - 1; d >= 0; d--) {
                   const parent = $head.node(d);
@@ -1131,22 +1149,45 @@ export class DocumentSession {
                     parent.type.spec.tableRole === 'cell' ||
                     parent.type.spec.tableRole === 'header_cell'
                   ) {
-                    atCellEdge = _view.endOfTextblock(direction < 0 ? 'up' : 'down');
+                    atCellEdge = _view.endOfTextblock(
+                      vertical ? (direction < 0 ? 'up' : 'down') : direction < 0 ? 'left' : 'right',
+                    );
                     break;
                   }
                 }
-                if (atCellEdge) {
-                  const next = this.service.tableAdjacent(
-                    this.selection.table.head.cell,
-                    'vert',
-                    direction,
+              }
+              if (atCellEdge) {
+                const owner = this.selection.table.head.cell;
+                const adjacent =
+                  event.shiftKey || vertical
+                    ? this.service.tableAdjacent(owner, vertical ? 'vert' : 'horiz', direction)
+                    : undefined;
+                const extending = event.shiftKey && !!adjacent;
+                // Native unshifted horizontal arrows follow document order, even
+                // across rows. Shift-Left falls through to that same previous
+                // text position when no grid neighbor exists at the row origin.
+                const next =
+                  adjacent ??
+                  (!vertical && (!event.shiftKey || direction < 0)
+                    ? this.service.tableNeighbor(owner, direction, direction < 0)
+                    : undefined);
+                const entry = next && table.entries.find((e) => e.cell.from === next.point.cell);
+                const anchorMissing = !table.entries.some(
+                  (e) => e.cell.from === this.selection.table!.anchor.cell,
+                );
+                if (
+                  next &&
+                  (!entry ||
+                    this.pendingFetch ||
+                    this.service.pendingInputs ||
+                    (extending && anchorMissing))
+                ) {
+                  event.preventDefault();
+                  this.deferInput(
+                    (extending ? 'tableExtend' : vertical ? 'tableArrow' : 'tableHorizontal') +
+                      event.key.slice(5),
                   );
-                  const entry = next && table.entries.find((e) => e.cell.from === next.point.cell);
-                  if (next && (!entry || this.pendingFetch || this.service.pendingInputs)) {
-                    event.preventDefault();
-                    this.deferInput(direction < 0 ? 'tableArrowUp' : 'tableArrowDown');
-                    return true;
-                  }
+                  return true;
                 }
               }
             }
