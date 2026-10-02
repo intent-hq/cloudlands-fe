@@ -970,16 +970,19 @@ export class DocumentSession {
       let restoreAnchor: { left: number; top: number } | undefined;
       if (restore && next.table && this.projection?.table && this.editor) {
         const scroller = this.tableScroller ?? this.host.parentElement;
-        const caret = this.editor.view.coordsAtPos(this.editor.state.selection.head);
         const viewport = scroller?.getBoundingClientRect();
         if (
           scroller &&
           viewport &&
-          this.projection.table.pointAt(this.editor.state.selection.head) &&
-          caret.top >= viewport.top &&
-          caret.bottom <= viewport.top + scroller.clientHeight
-        )
-          restoreAnchor = { left: caret.left, top: caret.top };
+          scroller.clientHeight > 0 &&
+          this.projection.table.pointAt(this.editor.state.selection.head)
+        ) {
+          // Detached or non-layout hosts have no encountered pixel anchor.
+          // Do not ask native text geometry to measure an invisible viewport.
+          const caret = this.editor.view.coordsAtPos(this.editor.state.selection.head);
+          if (caret.top >= viewport.top && caret.bottom <= viewport.top + scroller.clientHeight)
+            restoreAnchor = { left: caret.left, top: caret.top };
+        }
       }
       if (restoreAnchor) {
         const anchorBytes = bytes(JSON.stringify(restoreAnchor));
