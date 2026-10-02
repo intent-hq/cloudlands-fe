@@ -96,3 +96,66 @@ it('rejects a remote deletion of live structural metadata atomically', async () 
     session.destroy();
   }
 });
+
+it('discards a delayed table navigation after a local native edit without overwriting source or selection', async () => {
+  const { service, session } = await start();
+  try {
+    let release!: () => void;
+    session.delayFetch = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const pending = session.seek(source.indexOf('bottom'));
+    session.editor!.view.dispatch(session.editor!.state.tr.insertText('LOCAL'));
+    expect(session.error).toBe('');
+    const doc = session.editor!.getJSON(),
+      selection = structuredClone(session.selection),
+      revision = service.revision;
+    session.delayFetch = undefined;
+    release();
+    expect(await pending).toBe(false);
+    expect(session.editor!.getJSON()).toEqual(doc);
+    expect(session.selection).toEqual(selection);
+    expect(service.revision).toBe(revision);
+    expect(service.region(0)).toBe(source.replace('beforeafter', 'beforeLOCALafter'));
+    expect(session.snapshot().mounted).toBe(1);
+    await session.history();
+    expect(service.region(0)).toBe(source);
+    await session.history(true);
+    expect(service.region(0)).toBe(source.replace('beforeafter', 'beforeLOCALafter'));
+    expect(session.editor!.getJSON()).toEqual(doc);
+  } finally {
+    session.destroy();
+  }
+});
+
+it('supersedes a delayed table window after a remote row insertion and preserves global history', async () => {
+  const { service, session } = await start();
+  try {
+    session.editor!.view.dispatch(session.editor!.state.tr.insertText('LOCAL'));
+    const cell = session.editor!.state.selection.$head.node(3).toJSON();
+    let release!: () => void;
+    session.delayFetch = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const pending = session.seek(source.indexOf('bottom'));
+    const at = service.region(0).indexOf('| before');
+    const remote = '| remote | row |\n';
+    session.remote({ from: at, to: at, insert: remote });
+    expect(await pending).toBe(false);
+    session.delayFetch = undefined;
+    release();
+    await vi.waitFor(() => expect(session.projection!.context!.revision).toBe(service.revision));
+    expect(session.error).toBe('');
+    expect(session.editor!.state.selection.$head.node(3).toJSON()).toEqual(cell);
+    expect(service.region(0)).toBe(source.replace('| beforeafter', remote + '| beforeLOCALafter'));
+    await session.history();
+    expect(service.region(0)).toBe(source.replace('| before', remote + '| before'));
+    await session.history(true);
+    expect(session.editor!.state.selection.$head.node(3).toJSON()).toEqual(cell);
+    expect(session.snapshot().mounted).toBe(1);
+  } finally {
+    session.destroy();
+  }
+});
