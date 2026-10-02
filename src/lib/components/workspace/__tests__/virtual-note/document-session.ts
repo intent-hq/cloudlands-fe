@@ -1734,6 +1734,15 @@ export class DocumentSession {
           this.service.beginChanges();
           let oldStart = this.projection!.start;
           const tableBatch = this.projection!.table;
+          const terminalAppend =
+            tableBatch &&
+            !tr.selectionSet &&
+            tr.before.childCount === 1 &&
+            tr.doc.childCount === 2 &&
+            tr.doc.lastChild!.type.name === 'paragraph' &&
+            !tr.doc.lastChild!.content.size &&
+            tr.before.firstChild!.eq(tr.doc.firstChild!);
+          let terminalState: ReturnType<SourceJournal['stageTableTrailing']> | undefined;
           const listBatch = !!this.projection!.list || !!tableBatch;
           for (let n = 0; n < (listBatch ? 1 : tr.steps.length); n++) {
             let fences: NonNullable<InlineContext['fences']> = [];
@@ -1824,8 +1833,8 @@ export class DocumentSession {
                   !tr.doc.lastChild!.content.size;
                 // Native trailingNode recreates this placeholder even during undo.
                 // Retain its session lifecycle without an inverse that removes it.
-                if (trailing !== (tableBatch.window.trailing !== false))
-                  this.service.stageTableTrailing(
+                if (terminalAppend || trailing !== (tableBatch.window.trailing !== false))
+                  terminalState = this.service.stageTableTrailing(
                     tableBatch.window.from,
                     trailing,
                     this.service.revision,
@@ -1833,14 +1842,50 @@ export class DocumentSession {
                   );
               }
               if (this.projection!.table) {
-                const retained = cloneTableWindow(tableBatch!.window);
-                for (const splice of splices)
-                  for (const cell of retained.cells) {
-                    cell.first = mapPoint(cell.first, splice, -1);
-                    cell.last = mapPoint(cell.last, splice, 1);
-                  }
-                const target = mapPoint(before.head, splices[0] ?? { from: 0, to: 0, insert: '' });
-                const table = this.receiveTable(this.service.tableWindowPages(target, retained))!;
+                let table;
+                if (terminalAppend && terminalState) {
+                  // The native table itself is unchanged. A bounded metadata reply
+                  // updates its revision without resending the resident fragments.
+                  const previous = tableBatch!.window;
+                  if (
+                    terminalState.table !== previous.from ||
+                    terminalState.revision !== this.service.revision
+                  )
+                    throw new Error('Stale table terminal acknowledgement');
+                  table = {
+                    ...previous,
+                    revision: terminalState.revision,
+                    trailing: terminalState.trailing,
+                    ...(previous.geometry
+                      ? { geometry: { ...previous.geometry, revision: terminalState.revision } }
+                      : {}),
+                  };
+                  const responseBytes = bytes(JSON.stringify(terminalState));
+                  this.maxTableTransferPageBytes = Math.max(
+                    this.maxTableTransferPageBytes,
+                    responseBytes,
+                  );
+                  this.maxTableTransferBytes = Math.max(this.maxTableTransferBytes, responseBytes);
+                  this.maxTableResidentAndAssemblyBytes = Math.max(
+                    this.maxTableResidentAndAssemblyBytes,
+                    responseBytes * 3 +
+                      bytes(JSON.stringify(previous)) +
+                      bytes(JSON.stringify(table)) +
+                      bytes(this.projection!.source),
+                  );
+                } else {
+                  const retained = cloneTableWindow(tableBatch!.window);
+                  for (const splice of splices)
+                    for (const cell of retained.cells) {
+                      cell.first = mapPoint(cell.first, splice, -1);
+                      cell.last = mapPoint(cell.last, splice, 1);
+                    }
+                  const target = mapPoint(
+                    before.head,
+                    splices[0] ?? { from: 0, to: 0, insert: '' },
+                  );
+                  table = this.receiveTable(this.service.tableWindowPages(target, retained))!;
+                }
                 this.projection = this.project(
                   table.cells.map((c) => c.raw).join(''),
                   table.cells[0].first,
@@ -1859,14 +1904,6 @@ export class DocumentSession {
               throw new Error('Translated source differs from accepted document');
             }
           }
-          const terminalAppend =
-            tableBatch &&
-            !tr.selectionSet &&
-            tr.before.childCount === 1 &&
-            tr.doc.childCount === 2 &&
-            tr.doc.lastChild!.type.name === 'paragraph' &&
-            !tr.doc.lastChild!.content.size &&
-            tr.before.firstChild!.eq(tr.doc.firstChild!);
           // A native source-less append does not move the logical selection,
           // including endpoints that are outside the admitted rectangle.
           const after =

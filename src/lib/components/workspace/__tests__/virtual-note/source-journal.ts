@@ -537,6 +537,11 @@ export class SourceJournal {
     const key = `tail:${table}`,
       value = trailing ? '1' : '';
     if ((this.tableStates.get(key) ?? '') !== value) this.stageTableState(key, value, history);
+    const response = JSON.stringify({ table, revision: this.revision, trailing });
+    if (bytes(response) > LIMITS.request) throw new Error('Table trailing response exceeds budget');
+    this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, bytes(response));
+    this.log('table-trailing-response', table, bytes(response));
+    return JSON.parse(response) as { table: number; revision: number; trailing: boolean };
   }
   maxTableWriteBytes = 0;
   stageTableInline(edit: TableInlineWrite, history = true) {

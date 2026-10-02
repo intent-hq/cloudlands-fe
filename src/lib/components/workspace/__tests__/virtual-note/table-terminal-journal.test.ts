@@ -115,7 +115,9 @@ it('refreshes retained viewport geometry after a native source-less terminal app
     height: 520,
     font: 'sans-serif|16px|24px|normal',
   })!;
-  s.atomic(() => s.stageTableTrailing(0, true, s.revision, false));
+  const ack = s.atomic(() => s.stageTableTrailing(0, true, s.revision, false));
+  expect(ack).toEqual({ table: 0, revision: s.revision, trailing: true });
+  expect(new TextEncoder().encode(JSON.stringify(ack)).length).toBeLessThanOrEqual(4096);
   const next = s.tableWindow(at, window)!;
   expect(next.revision).toBe(s.revision);
   expect(next.geometry!.revision).toBe(s.revision);
