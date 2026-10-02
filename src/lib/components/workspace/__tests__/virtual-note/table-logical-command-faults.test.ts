@@ -99,7 +99,8 @@ it('invalidates an older window after a logical command and retains chronologica
     expect(service.region(0)).toBe(source);
     await session.history(true);
     expect(service.region(0)).toBe(accepted);
-    expect(session.selection).toEqual(selection);
+    expect(service.revision).toBeGreaterThan(selection.revision);
+    expect(session.selection).toEqual({ ...selection, revision: service.revision });
     expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
     expect(service.stats.maxTableWriteBytes).toBeLessThanOrEqual(4096);
   } finally {

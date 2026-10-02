@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Editor, type JSONContent } from '@tiptap/core';
 import { CellSelection, TableMap, goToNextCell } from '@tiptap/pm/tables';
+import { Selection } from '@tiptap/pm/state';
 import { store } from '$store/renderer/configured-store';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
@@ -57,11 +58,20 @@ for (const [height, width] of [
       map = TableMap.get(native.state.doc.firstChild!);
       for (const [pos, from] of positions)
         for (const direction of [-1, 1]) {
-          const expected = map.nextCell(pos - 1, 'vert', direction);
-          const next = service.tableAdjacent(from, 'vert', direction);
-          expect(next?.point.cell).toBe(
-            expected === null ? undefined : positions.get(expected + 1),
-          );
+          for (const axis of ['vert', 'horiz'] as const) {
+            const expected = map.nextCell(pos - 1, axis, direction);
+            const next = service.tableAdjacent(from, axis, direction);
+            expect(next?.point.cell).toBe(
+              expected === null ? undefined : positions.get(expected + 1),
+            );
+          }
+          const previous = service.tableNeighbor(from, -1, true);
+          if (previous) {
+            const expected = Selection.near(native.state.doc.resolve(pos + 1), -1);
+            expect(previous.point.cell).toBe(positions.get(expected.$head.before(3)));
+            expect(previous.point.block).toBe(expected.$head.index(3));
+            expect(previous.point.offset).toBe(expected.$head.parentOffset);
+          }
         }
       for (let r = 0; r < map.height; r++)
         for (let c = 0; c < map.width; c++) {
