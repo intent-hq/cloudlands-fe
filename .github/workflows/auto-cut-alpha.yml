@@ -91,7 +91,8 @@
 #   Release PR must not wedge the release train; humans engage by replying
 #   (which makes the thread blocking) or resolving it. Anything else logs
 #   and exits 0 (push runs first retry transient states within their
-#   bounded wait) — the next scheduled run retries. Never force-merges.
+#   bounded wait) — the next scheduled run retries. Metadata-only PRs use
+#   the CI identity exemption to merge directly; other diffs use the queue.
 # - The PR branch is never updated from here: release-please owns the
 #   Release PR branch content and force-refreshes it on every release-worthy
 #   push to main.
@@ -334,12 +335,11 @@ jobs:
           else
             echo "intentd $tag is ${age_min} min old with no published alpha (its build likely failed); proceeding with the cut."
           fi
-      - name: Checkout release readiness helper
+      - name: Checkout trusted release helpers
         if: >-
           steps.token.outputs.enabled == 'true' &&
           steps.throttle.outputs.defer != 'true' &&
-          steps.inflight.outputs.defer != 'true' &&
-          github.event_name != 'workflow_dispatch'
+          steps.inflight.outputs.defer != 'true'
         uses: actions/checkout@v7
         # Missing helper means no exemption; retain the original guard even
         # if checkout is unavailable. No package install/build is needed.
@@ -347,7 +347,9 @@ jobs:
         with:
           persist-credentials: false
           sparse-checkout-cone-mode: false
-          sparse-checkout: /scripts/intentd-release-readiness.mjs
+          sparse-checkout: |
+            /scripts/intentd-release-readiness.mjs
+            /scripts/release-pr-fast-path.mjs
       - name: Merge the Release PR when green
         if: >-
           steps.token.outputs.enabled == 'true' &&
@@ -705,10 +707,18 @@ jobs:
             fi
 
             detail=$(gh pr view "$number" --repo "$GITHUB_REPOSITORY" \
-              --json isDraft,mergeable,mergeStateStatus,statusCheckRollup)
+              --json isDraft,mergeable,mergeStateStatus,statusCheckRollup,headRefOid,baseRefOid,reviewDecision)
 
             if [[ $(jq -r '.isDraft' <<<"$detail") != "false" ]]; then
               echo "Release PR #$number is a draft; skipping."
+              exit 0
+            fi
+
+            # Direct merging must preserve review requirements that the
+            # ordinary queue would enforce, including changes requested.
+            review_decision=$(jq -r '.reviewDecision // empty' <<<"$detail")
+            if [[ "$review_decision" == "CHANGES_REQUESTED" || "$review_decision" == "REVIEW_REQUIRED" ]]; then
+              echo "Release PR #$number has outstanding review requirements ($review_decision); skipping."
               exit 0
             fi
 
@@ -812,8 +822,30 @@ jobs:
               fi
             fi
 
+            # Bind both shape validation and the merge to the head whose
+            # CI Gate was read above. Never check out or execute PR code:
+            # fetch its blobs and use only the trusted workflow helper.
+            tested_head=$(jq -r '.headRefOid // empty' <<<"$detail")
+            tested_base=$(jq -r '.baseRefOid // empty' <<<"$detail")
+            if [[ ! "$tested_head" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::warning::Release PR #$number has no readable tested head; skipping."
+              exit 0
+            fi
+            merge_args=(--squash --match-head-commit "$tested_head")
+            merge_route="queue"
+            shape=""
+            if [[ "$tested_base" =~ ^[0-9a-f]{40}$ ]] &&
+              git fetch --no-tags --depth=1 origin "$tested_base" "$tested_head" &&
+              shape=$(node scripts/release-pr-fast-path.mjs --release-only "$tested_base" "$tested_head") &&
+              [[ "$shape" == "fast_path=true" ]]; then
+              merge_args+=(--admin)
+              merge_route="direct"
+            else
+              echo "Release metadata shape unconfirmed; retaining the ordinary merge queue."
+            fi
+
             if [[ "$DRY_RUN" == "true" ]]; then
-              echo "DRY RUN: would squash-merge Release PR #$number ($title)."
+              echo "DRY RUN: would squash-merge Release PR #$number ($title) via $merge_route at $tested_head."
               exit 0
             fi
 
@@ -825,8 +857,12 @@ jobs:
             # form as the PR title. A failure here is not fatal: the PR
             # state may have changed under us, and the next scheduled run
             # retries.
-            if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash; then
-              echo "Squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
+            if GH_TOKEN="$RELEASE_PAT" gh pr merge "$number" --repo "$GITHUB_REPOSITORY" "${merge_args[@]}"; then
+              if [[ "$merge_route" == "direct" ]]; then
+                echo "Directly squash-merged Release PR #$number ($title); release-please.yml now cuts the tag and release-alpha.yml publishes the alpha automatically."
+              else
+                echo "Submitted Release PR #$number ($title) to the merge queue; publication starts after it merges."
+              fi
             else
               echo "::warning::gh pr merge failed for Release PR #$number (state changed under us?); the next scheduled run retries"
             fi

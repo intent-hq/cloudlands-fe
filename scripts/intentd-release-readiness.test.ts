@@ -1,7 +1,7 @@
-// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs
+// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs
 
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -38,6 +38,7 @@ function fixture() {
       labels: [] as { name: string }[],
     },
     detail: {
+      reviewDecision: '',
       isDraft: false,
       mergeable: 'MERGEABLE',
       mergeStateStatus: 'CLEAN',
@@ -77,6 +78,11 @@ function fixture() {
       prs: [],
     },
     fail: '',
+    shape: 'metadata',
+    liveHead: '',
+    missingHead: false,
+    missingHelper: false,
+    fetchFail: false,
   };
 }
 
@@ -87,10 +93,38 @@ function runCut(
   event = 'schedule',
   stepName = 'Merge the Release PR when green',
   throttleTag = '',
+  dryRun = true,
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'intentd-readiness-'));
   directories.push(directory);
-  writeFileSync(join(directory, 'fixture.json'), JSON.stringify(data));
+  const git = (...args: string[]) =>
+    execFileSync('git', args, { cwd: directory, encoding: 'utf8' }).trim();
+  git('init', '-q', '-b', 'main');
+  git('config', 'user.email', 'test@example.com');
+  git('config', 'user.name', 'Test');
+  git('remote', 'add', 'origin', data.fetchFail ? join(directory, 'unavailable') : directory);
+  writeFileSync(join(directory, 'package.json'), '{ "version": "3.0.0" }\n');
+  writeFileSync(join(directory, 'intentd.version'), '0.9.110\n');
+  git('add', '.');
+  git('commit', '-qm', 'base');
+  const baseRefOid = git('rev-parse', 'HEAD');
+  if (data.shape === 'pin') writeFileSync(join(directory, 'intentd.version'), '0.9.111\n');
+  else writeFileSync(join(directory, 'package.json'), '{ "version": "3.1.0" }\n');
+  if (data.shape === 'source') writeFileSync(join(directory, 'app.js'), 'malicious()\n');
+  git('add', '.');
+  git('commit', '-qm', 'chore(release): 3.1.0');
+  const headRefOid = git('rev-parse', 'HEAD');
+  mkdirSync(join(directory, 'scripts'));
+  for (const script of ['intentd-release-readiness.mjs', 'release-pr-fast-path.mjs'])
+    writeFileSync(join(directory, 'scripts', script), readFileSync(`scripts/${script}`));
+  if (data.missingHelper) rmSync(join(directory, 'scripts', 'release-pr-fast-path.mjs'));
+  writeFileSync(
+    join(directory, 'fixture.json'),
+    JSON.stringify({
+      ...data,
+      detail: { ...data.detail, baseRefOid, headRefOid: data.missingHead ? '' : headRefOid },
+    }),
+  );
   writeFileSync(
     join(directory, 'gh'),
     `#!/usr/bin/env node
@@ -104,6 +138,11 @@ if (f.fail && endpoint.includes(f.fail)) process.exit(1);
 let value;
 if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : [f.pr];
 else if (a[0] === 'pr' && a[1] === 'view') value = f.detail;
+else if (a[0] === 'pr' && a[1] === 'merge') {
+  const expected = a[a.indexOf('--match-head-commit') + 1];
+  if (expected !== (f.liveHead || f.detail.headRefOid)) process.exit(1);
+  process.exit(0);
+}
 else if (endpoint === 'graphql') {
   if (a.some(x => x.includes('viewer'))) value = { data: { viewer: { login: 'releaser' } } };
   else { process.stdout.write(String(f.unresolved)); process.exit(0); }
@@ -143,6 +182,7 @@ process.stdout.write(JSON.stringify(value));
     { mode: 0o755 },
   );
   const result = spawnSync('bash', ['-c', steps.find((s) => s.name === stepName)!.run!], {
+    cwd: directory,
     encoding: 'utf8',
     timeout: 15_000,
     env: {
@@ -152,7 +192,7 @@ process.stdout.write(JSON.stringify(value));
       READINESS_CALLS: join(directory, 'calls'),
       GITHUB_REPOSITORY: FE,
       EVENT_NAME: event,
-      DRY_RUN: 'true',
+      DRY_RUN: String(dryRun),
       THROTTLE_TAG: throttleTag,
       GITHUB_OUTPUT: join(directory, 'outputs'),
       MANIFEST_MIRROR_URL: 'https://example.invalid/alpha.json',
@@ -162,8 +202,13 @@ process.stdout.write(JSON.stringify(value));
   });
   expect(result.status, result.stderr || result.stdout).toBe(0);
   const calls = readFileSync(join(directory, 'calls'), 'utf8');
-  expect(calls).not.toContain('"merge"');
+  if (dryRun) expect(calls).not.toContain('"merge"');
   return {
+    calls: calls
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as string[]),
+    headRefOid,
     cut: result.stdout.includes('DRY RUN: would squash-merge'),
     output: result.stdout,
     outputs:
@@ -187,7 +232,8 @@ describe('auto-cut intentd dependency guard', () => {
   it('retains deferral when the new proof cannot be read', () => {
     const data = fixture();
     data.fail = '/actions/';
-    expect(runCut(data).cut).toBe(false);
+    const result = runCut(data, 'schedule', 'Merge the Release PR when green', '', false);
+    expect(result.calls.some((args) => args[0] === 'pr' && args[1] === 'merge')).toBe(false);
   });
 
   it('still allows the explicit manual override without reading proof', () => {
@@ -233,6 +279,8 @@ describe('auto-cut intentd dependency guard', () => {
     'failed CI',
     'pending CI',
     'review',
+    'changes requested',
+    'review required',
     'conflict',
     'draft',
     'fork',
@@ -244,11 +292,14 @@ describe('auto-cut intentd dependency guard', () => {
     if (guard === 'failed CI') data.detail.statusCheckRollup[0].conclusion = 'FAILURE';
     if (guard === 'pending CI') data.detail.statusCheckRollup = [];
     if (guard === 'review') data.unresolved = 1;
+    if (guard === 'changes requested') data.detail.reviewDecision = 'CHANGES_REQUESTED';
+    if (guard === 'review required') data.detail.reviewDecision = 'REVIEW_REQUIRED';
     if (guard === 'conflict') data.detail.mergeable = 'CONFLICTING';
     if (guard === 'draft') data.detail.isDraft = true;
     if (guard === 'fork') data.pr.isCrossRepository = true;
     if (guard === 'author') data.pr.author.login = 'someone-else';
-    expect(runCut(data).cut).toBe(false);
+    const result = runCut(data, 'schedule', 'Merge the Release PR when green', '', false);
+    expect(result.calls.some((args) => args[0] === 'pr' && args[1] === 'merge')).toBe(false);
   });
 
   it.each(['no daemon delta', 'old frontend change', 'pin automation', 'release automation'])(
@@ -266,6 +317,72 @@ describe('auto-cut intentd dependency guard', () => {
       expect(runCut(data).cut).toBe(true);
     },
   );
+});
+
+describe('auto-cut direct release merge', () => {
+  const mergeStep = 'Merge the Release PR when green';
+  it.each(['schedule', 'workflow_dispatch'])(
+    'directly squash merges metadata with the tested head on %s',
+    (event) => {
+      const result = runCut(fixture(), event, mergeStep, '', false);
+      expect(result.calls.filter((args) => args[0] === 'pr' && args[1] === 'merge')).toEqual([
+        [
+          'pr',
+          'merge',
+          '99',
+          '--repo',
+          FE,
+          '--squash',
+          '--match-head-commit',
+          result.headRefOid,
+          '--admin',
+        ],
+      ]);
+      expect(result.output).toContain('Directly squash-merged');
+    },
+  );
+
+  it.each(['source', 'pin'])('keeps %s changes on the queue path', (shape) => {
+    const result = runCut({ ...fixture(), shape }, 'schedule', mergeStep, '', false);
+    expect(result.calls.filter((args) => args[0] === 'pr' && args[1] === 'merge')).toEqual([
+      ['pr', 'merge', '99', '--repo', FE, '--squash', '--match-head-commit', result.headRefOid],
+    ]);
+    expect(result.output).not.toContain('Squash-merged');
+    expect(result.output).not.toContain('Directly squash-merged');
+  });
+
+  it('does not claim success if release-please refreshed the tested head', () => {
+    const result = runCut(
+      { ...fixture(), liveHead: 'c'.repeat(40) },
+      'schedule',
+      mergeStep,
+      '',
+      false,
+    );
+    const merge = result.calls.find((args) => args[0] === 'pr' && args[1] === 'merge')!;
+    expect(merge).toContain('--match-head-commit');
+    expect(merge).toContain(result.headRefOid);
+    expect(result.output).toContain('gh pr merge failed');
+    expect(result.output).not.toContain('Directly squash-merged');
+  });
+
+  it.each(['missingHelper', 'fetchFail'] as const)('falls back to the queue on %s', (failure) => {
+    const result = runCut({ ...fixture(), [failure]: true }, 'schedule', mergeStep, '', false);
+    const merge = result.calls.find((args) => args[0] === 'pr' && args[1] === 'merge')!;
+    expect(merge).toContain('--match-head-commit');
+    expect(merge).not.toContain('--admin');
+  });
+
+  it('skips a PR without a readable tested head', () => {
+    const result = runCut({ ...fixture(), missingHead: true }, 'schedule', mergeStep, '', false);
+    expect(result.calls.some((args) => args[0] === 'pr' && args[1] === 'merge')).toBe(false);
+  });
+
+  it.each(['metadata', 'source'])('dry run reports the %s route without merging', (shape) => {
+    const result = runCut({ ...fixture(), shape });
+    expect(result.cut).toBe(true);
+    expect(result.output).toContain(shape === 'metadata' ? 'direct' : 'queue');
+  });
 });
 
 const HEAD_URL = `repos/${BE}/git/ref/heads/main`;

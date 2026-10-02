@@ -109,6 +109,48 @@ afterEach(() => {
 });
 
 describe('release-pr-fast-path', () => {
+  it('accepts metadata in release-only mode', () => {
+    const dir = initRepo();
+    releaseBump(dir);
+    commit(dir);
+    expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(true);
+  });
+
+  it('excludes sidecar pins from direct release eligibility without changing CI fast paths', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+    commit(dir);
+    expect(evaluate(dir).fastPath).toBe(true);
+    expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
+  it('rejects nested package version changes accompanying the release version', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_A, { version: VERSION_A }));
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_B, { version: VERSION_B }));
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
+  it('rejects another manifest package version changing alongside the root version', () => {
+    const dir = initRepo();
+    writeFileSync(
+      join(dir, '.release-please-manifest.json'),
+      `{ ".": "${VERSION_A}", "other": "${VERSION_A}" }\n`,
+    );
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    releaseBump(dir);
+    writeFileSync(
+      join(dir, '.release-please-manifest.json'),
+      `{ ".": "${VERSION_B}", "other": "${VERSION_B}" }\n`,
+    );
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
   it('matches a true release-shaped diff (version + manifest + changelog)', () => {
     const dir = initRepo();
     releaseBump(dir);
