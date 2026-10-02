@@ -154,7 +154,11 @@ for (const width of [280, 720]) {
           1,
         );
         expect(Math.abs(moved.composer.top - before.composer.top)).toBeLessThanOrEqual(1);
-        expect(Math.abs(moved.queue!.top - before.queue!.top)).toBeLessThanOrEqual(1);
+        // The queue lives in the transcript utility stack, so it
+        // follows the same wheel displacement while the composer stays fixed.
+        expect(Math.abs(moved.queue!.top - before.queue!.top - displacement)).toBeLessThanOrEqual(
+          1,
+        );
         await page.mouse.wheel(0, -100_000);
         await expect.poll(async () => viewport.evaluate((node) => node.scrollTop)).toBeLessThan(1);
         await expect(banner).not.toBeInViewport();

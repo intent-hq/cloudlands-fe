@@ -71,6 +71,9 @@ export interface QueuedMessage {
   editing?: boolean;
   /** Original active edit identity when a held entry was absorbed into this survivor. */
   editingMessageId?: string;
+  /** Server hold marker; readiness resumes at holdUntil. */
+  holdKind?: string;
+  holdUntil?: string;
   /**
    * Optional terminal-failure requeue marker (STAB-112). When true, this message
    * was requeued after a terminal provider failure and should be visually distinguished

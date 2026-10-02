@@ -628,6 +628,36 @@ export class LiveAgentsClient implements AgentsClient {
       return { success: false, error: mutationErrorMessage(error) };
     }
   }
+  async sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
+  }): Promise<MutationResult> {
+    try {
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        messageIds: string[];
+        turnId?: string;
+      }>('agent.sendQueuedMessagesNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageIds: params.messageIds,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        messageIds: result.messageIds,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(!result.queued && !result.quarantined && result.turnId
+          ? { turnId: result.turnId }
+          : {}),
+      };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
   async getQueue(agentId: string, workspaceId?: string): Promise<QueuedMessage[]> {
     // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
     // daemon's queue array through verbatim (incl. optional `messageMetadata`).

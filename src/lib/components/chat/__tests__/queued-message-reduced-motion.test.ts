@@ -19,10 +19,21 @@ function queued(id: string, position: number): QueuedMessage {
   };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('queued message reduced motion', () => {
   it('creates no animations through edit, cancel, save, reorder, and removal', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     vi.spyOn(window, 'matchMedia').mockReturnValue({
       matches: true,
       media: '(prefers-reduced-motion: reduce)',

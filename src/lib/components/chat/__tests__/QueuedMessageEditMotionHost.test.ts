@@ -12,6 +12,7 @@ import QueuedMessageEditMotionHost from './QueuedMessageEditMotionHost.svelte';
 
 class ResizeObserverStub {
   observe() {}
+  unobserve() {}
   disconnect() {}
 }
 
