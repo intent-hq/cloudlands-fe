@@ -179,6 +179,85 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     vi.clearAllMocks();
   });
 
+  it.each([undefined, false] as const)(
+    'starts older history from a byte-shortened snapshot cursor (resumed=%s)',
+    async (resumed) => {
+      const run = harness();
+      try {
+        const rows = Array.from({ length: 20 }, (_, i) => message(`m-${i}`, i));
+        // The wire may return fewer than five rows after byte budgeting.
+        // Its opaque boundary, not the assumed page size or an inclusive
+        // re-seek at m-18, is the authoritative start of the older walk.
+        run.dispatch(bulkUpsertSessions([session({ messages: rows.slice(18) })]));
+        const snapshot = {
+          truncated: true,
+          totalMessages: 20,
+          oldestMessageId: 'm-18',
+          nextToken: 'before-18',
+          ...(resumed === undefined ? {} : { resumed }),
+        };
+        run.dispatch(chatTranscriptSnapshotApplied(AGENT, snapshot));
+        await settle();
+        mocks.getConversation
+          .mockResolvedValueOnce(page(rows.slice(13, 18), { nextToken: 'before-13' }))
+          .mockResolvedValueOnce(page(rows.slice(8, 13), { nextToken: 'before-8' }));
+        run.dispatch(olderHistoryPageRequested(WS, AGENT));
+        await settle();
+        run.dispatch(olderHistoryPageRequested(WS, AGENT));
+        await settle();
+        expect(run.history()?.messages.map((row) => row.id)).toEqual(
+          rows.slice(8, 18).map((row) => row.id),
+        );
+        // Budget assertions live in the other tests: isolate the cursor
+        // handoff here so a changed page constant cannot hide this failure.
+        expect(mocks.getConversation.mock.calls).toEqual([
+          [AGENT, expect.any(Number), 'before-18', undefined, undefined, WS],
+          [AGENT, expect.any(Number), 'before-13', undefined, undefined, WS],
+        ]);
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it('keeps the existing older cursor when a recent resume carries nextToken null', async () => {
+    const run = harness();
+    try {
+      const rows = Array.from({ length: 20 }, (_, i) => message(`m-${i}`, i));
+      run.dispatch(bulkUpsertSessions([session({ messages: rows.slice(15) })]));
+      mocks.getConversation.mockResolvedValueOnce(
+        page(rows.slice(13, 18), { nextToken: 'before-13' }),
+      );
+      run.dispatch(olderHistoryPageRequested(WS, AGENT));
+      await settle();
+      // A resumed suffix has no gap to its resume anchor; null here must
+      // not erase the independent cursor for older retained history.
+      const snapshot = { resumed: true, truncated: false, totalMessages: 20, nextToken: null };
+      run.dispatch(chatTranscriptSnapshotApplied(AGENT, snapshot));
+      await settle();
+      mocks.getConversation.mockResolvedValueOnce(
+        page(rows.slice(8, 13), { nextToken: 'before-8' }),
+      );
+      run.dispatch(olderHistoryPageRequested(WS, AGENT));
+      await settle();
+      expect(mocks.getConversation.mock.calls[1]).toEqual([
+        AGENT,
+        expect.any(Number),
+        'before-13',
+        undefined,
+        undefined,
+        WS,
+      ]);
+      expect(run.history()?.messages.map((row) => row.id)).toEqual(
+        rows.slice(8, 15).map((row) => row.id),
+      );
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it('walks five-message older pages past an inclusive fallback anchor', async () => {
     const run = harness();
     try {
