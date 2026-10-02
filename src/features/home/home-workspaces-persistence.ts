@@ -1,4 +1,5 @@
 import type { HomeFilter } from './home-model';
+import { emptyCityLayout, normalizeCityLayout, type CityLayout } from './city/home-city-layout';
 
 export interface HomeIntegrationViewConfiguration {
   query: string;
@@ -15,7 +16,8 @@ export interface HomeConfiguration {
   tab: 'workspaces' | 'prs' | 'linear';
   query: string;
   updatedWithin: 'all' | 'day' | 'week' | 'month';
-  view: 'list' | 'board';
+  view: 'list' | 'board' | 'city';
+  cityLayout: CityLayout;
   groupBy: 'status' | 'repository' | 'none';
   expandedGroups: Record<string, boolean>;
   moreReposExpanded: boolean;
@@ -35,6 +37,7 @@ export function defaultHomeConfiguration(): HomeConfiguration {
     query: '',
     updatedWithin: 'all',
     view: 'list',
+    cityLayout: emptyCityLayout(),
     groupBy: 'status',
     expandedGroups: {},
     moreReposExpanded: false,
@@ -89,7 +92,8 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
       ['all', 'day', 'week', 'month'],
       defaults.updatedWithin,
     ),
-    view: member(raw.view, ['list', 'board'], defaults.view),
+    view: member(raw.view, ['list', 'board', 'city'], defaults.view),
+    cityLayout: normalizeCityLayout(raw.cityLayout),
     groupBy: member(raw.groupBy, ['status', 'repository', 'none'], defaults.groupBy),
     expandedGroups,
     moreReposExpanded: raw.moreReposExpanded === true,

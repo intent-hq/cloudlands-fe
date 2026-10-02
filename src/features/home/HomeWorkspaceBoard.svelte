@@ -79,7 +79,7 @@
               active={selectedId === workspace.id}
               aria-pressed={selectedId === workspace.id}
               wrapContent={false}
-              class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border/60 bg-background gap-0 p-4 text-left shadow-xs"
+              class="h-auto w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-4 text-left shadow-xs"
               onclick={() => onselect(workspace.id)}
               aria-label={workspace.title}
             >

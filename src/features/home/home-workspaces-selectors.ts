@@ -1,6 +1,9 @@
 import { store } from '$store/renderer/store';
 export const selectHomeWorkspaceView = store.createSelector((state) => state.homeWorkspaces);
 export const selectHomeWorkspaceError = store.createSelector((state) => state.workspace.error);
+export const selectHomeWorkspaceSummaries = store.createSelector(
+  (state) => state.workspaceSummaries.byWorkspaceId,
+);
 
 import { selectPrincipalSnapshot } from '$store/renderer/slices/principal/principal-selectors';
 import { homePersistenceKey } from './home-workspaces-persistence';

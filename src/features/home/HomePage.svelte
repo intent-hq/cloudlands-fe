@@ -84,6 +84,7 @@
   import HomeWorkspaceDetail from './HomeWorkspaceDetail.svelte';
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
+  import HomeCityView from './HomeCityView.svelte';
   import HomeWorkspacePullBadge from './HomeWorkspacePullBadge.svelte';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
@@ -322,7 +323,9 @@
       ),
   );
   const selectedWorkspace = $derived(
-    filteredWorkspaces.find((workspace) => workspace.id === selectedId),
+    $view$.view === 'city'
+      ? undefined
+      : filteredWorkspaces.find((workspace) => workspace.id === selectedId),
   );
   const triageOrder = ['needs-you', 'running', 'inactive'] as const;
   // Hiding a group that holds the selected workspace also closes the preview;
@@ -472,6 +475,9 @@
       repoKey: key,
       selectedId: null,
     });
+  }
+  function clearWorkspaceFilters() {
+    updateView({ query: '', filter: 'all', repoKey: null, updatedWithin: 'all' });
   }
   homeWorkspaceMotion(
     () => homeElement ?? undefined,
@@ -794,7 +800,8 @@
                         {filters}
                         onquery={(query) => updateView({ query })}
                         onfilter={chooseFilter}
-                        onview={(view) => updateView({ view })}
+                        onview={(view) =>
+                          updateView({ view, ...(view === 'city' ? { selectedId: null } : {}) })}
                         settings={workspaceSettings}
                       />
                     {/snippet}
@@ -811,6 +818,17 @@
                     {:else if !$hasLoaded$}<HomeLoading
                         view={$view$.view}
                         grouped={$view$.groupBy !== 'none'}
+                      />
+                    {:else if $view$.view === 'city' && workspaces.length > 0}
+                      <HomeCityView
+                        workspaces={scopedWorkspaces}
+                        groups={repositoryGroups}
+                        matchingIds={filteredWorkspaces.map((workspace) => workspace.id)}
+                        onsearch={() =>
+                          homeElement
+                            ?.querySelector<HTMLInputElement>('input[type="search"]')
+                            ?.focus()}
+                        onclear={clearWorkspaceFilters}
                       />
                     {:else if filteredWorkspaces.length === 0}
                       <EmptyState class="flex-1" emphasis="prominent">
@@ -829,14 +847,7 @@
                             >
                           {:else if workspaces.length > 0}<Button
                               variant="outline"
-                              onclick={() => {
-                                updateView({
-                                  query: '',
-                                  filter: 'all',
-                                  repoKey: null,
-                                  updatedWithin: 'all',
-                                });
-                              }}>{m.home_clear_filters()}</Button
+                              onclick={clearWorkspaceFilters}>{m.home_clear_filters()}</Button
                             >{/if}
                         {/snippet}
                       </EmptyState>
@@ -852,7 +863,7 @@
                     {:else}
                       {#snippet workspaceRow({ item }: { item: Workspace })}
                         <ListRow
-                          class="home-list-row h-12 items-center border-b border-border/50 px-3 py-1"
+                          class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                           data-home-workspace={item.id}
                           oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                         >

@@ -36,7 +36,7 @@
     {#each filtered as file (file.filename)}
       <Button
         variant="ghost"
-        class="flex w-full items-center gap-3 border-b border-border/50 px-3 py-2 text-left type-caption last:border-0 hover:bg-muted/50 {active?.filename ===
+        class="flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left type-caption last:border-0 hover:bg-muted/50 {active?.filename ===
         file.filename
           ? 'bg-muted'
           : ''}"

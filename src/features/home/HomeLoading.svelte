@@ -16,7 +16,7 @@
   }: {
     detail?: boolean;
     count?: number;
-    view?: 'list' | 'board';
+    view?: 'list' | 'board' | 'city';
     grouped?: boolean;
     rows?: 'workspace' | 'integration' | 'compact';
   } = $props();
@@ -47,7 +47,7 @@
           <div class="min-w-0 space-y-3">
             <div class="flex h-10 items-center px-2"><Skeleton class="h-3 w-20" /></div>
             {#each [0, 1, 2] as row (row)}
-              <div class="space-y-3 rounded-xl border border-border/60 p-4 shadow-xs">
+              <div class="space-y-3 rounded-xl border border-border p-4 shadow-xs">
                 <div class="flex items-center gap-3">
                   <Skeleton class="h-4 flex-1" /><Skeleton class="size-3 rounded-full" />
                 </div>
@@ -66,7 +66,7 @@
         <div
           class={rows === 'compact'
             ? 'flex min-h-6 items-center gap-2 py-1'
-            : `flex h-12 items-center gap-3 border-b border-border/50 ${rows === 'integration' ? 'px-2' : 'px-3'}`}
+            : `flex h-12 items-center gap-3 border-b border-border ${rows === 'integration' ? 'px-2' : 'px-3'}`}
         >
           <Skeleton class="size-4 shrink-0 rounded-sm" />
           <Skeleton class="h-4 min-w-0 flex-1" />

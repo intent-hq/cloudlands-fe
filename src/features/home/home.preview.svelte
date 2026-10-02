@@ -7,6 +7,10 @@
     scenario?:
       | 'populated'
       | 'board'
+      | 'city'
+      | 'city-empty'
+      | 'city-large'
+      | 'city-provenance'
       | 'empty'
       | 'error'
       | 'collaborator'
@@ -22,6 +26,10 @@
     states: {
       populated: { props: { scenario: 'populated' } },
       board: { props: { scenario: 'board' } },
+      city: { props: { scenario: 'city' } },
+      'city-empty': { props: { scenario: 'city-empty' } },
+      'city-large': { props: { scenario: 'city-large' } },
+      'city-provenance': { props: { scenario: 'city-provenance' } },
       empty: { props: { scenario: 'empty' } },
       error: { props: { scenario: 'error' } },
       collaborator: { props: { scenario: 'collaborator' } },
@@ -116,6 +124,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import HomePage from './HomePage.svelte';
+  import { createCityFixture, createCityProvenanceWorkspaces } from './city/home-city-fixtures';
   import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtures';
   import { homeIntegrationsFixtures } from './home-integrations-fixtures';
   import { store } from '$store/renderer/store';
@@ -151,9 +160,16 @@
     store.dispatch(resetHomeWorkspaceView());
     store.dispatch(
       replaceWorkspaceList(
-        scenario === 'empty'
+        scenario === 'empty' || scenario === 'city-empty'
           ? []
-          : fixtures.map((workspace) => ({
+          : (scenario === 'city-provenance'
+              ? createCityProvenanceWorkspaces()
+              : scenario === 'city' || scenario === 'city-large'
+                ? createCityFixture(
+                    scenario === 'city-large' ? 'two-hundred' : 'showcase',
+                  ).buildings.map((building) => building.workspace)
+                : fixtures
+            ).map((workspace) => ({
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
             })),
@@ -192,6 +208,7 @@
       ),
     );
     if (scenario === 'board') store.dispatch(updateHomeWorkspaceView({ view: scenario }));
+    if (scenario.startsWith('city')) store.dispatch(updateHomeWorkspaceView({ view: 'city' }));
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
       store.dispatch(updateHomeWorkspaceView({ tab: 'linear' }));

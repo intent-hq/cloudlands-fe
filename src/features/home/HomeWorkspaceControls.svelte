@@ -3,7 +3,7 @@
   import { Button } from '$lib/components/ui/button';
   import HomeSearch from './HomeSearch.svelte';
   import Fa from 'svelte-fa';
-  import { faList, faTableColumns } from '@fortawesome/free-solid-svg-icons';
+  import { faList, faTableColumns, faCube } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import HomeFilterSelect from './HomeFilterSelect.svelte';
@@ -21,11 +21,11 @@
   }: {
     query: string;
     filter: HomeFilter;
-    view: 'list' | 'board';
+    view: 'list' | 'board' | 'city';
     filters: { id: HomeFilter; label: string; count: number }[];
     onquery: (query: string) => void;
     onfilter: (filter: HomeFilter) => void;
-    onview: (view: 'list' | 'board') => void;
+    onview: (view: 'list' | 'board' | 'city') => void;
     settings: Snippet;
     children?: Snippet;
   } = $props();
@@ -93,6 +93,15 @@
     aria-label={m.home_board_view()}
     tooltip={m.home_board_view()}
     onclick={() => onview('board')}><Fa icon={faTableColumns} /></Button
+  >
+  <Button
+    variant="ghost"
+    size="icon-sm"
+    active={view === 'city'}
+    aria-pressed={view === 'city'}
+    aria-label={m.home_city_view()}
+    tooltip={m.home_city_view()}
+    onclick={() => onview('city')}><Fa icon={faCube} /></Button
   >
 </div>
 <HomeViewOptions>{@render settings()}</HomeViewOptions>
