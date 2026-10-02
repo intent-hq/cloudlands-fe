@@ -295,7 +295,13 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
     // Let the successful stop handler settle before checking for redundant reads.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(scriptsClient.stop).toHaveBeenCalledWith(WS_A, 'prev-1');
+    expect((appStore as any).__dispatched).toContainEqual(
+      expect.objectContaining({
+        type: 'scripts/stopScriptRequested',
+        payload: [WS_A, 'prev-1', m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()],
+      }),
+    );
+    expect(scriptsClient.stop).not.toHaveBeenCalled();
     expect(dispatchedTypes()).not.toContain('scripts/refreshScripts');
   });
 

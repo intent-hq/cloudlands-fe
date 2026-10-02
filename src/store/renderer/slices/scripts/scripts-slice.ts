@@ -96,9 +96,9 @@ export const startScriptRequested = createAction<[wsId: string, scriptId: string
   'scripts/startScriptRequested',
 );
 
-export const stopScriptRequested = createAction<[wsId: string, scriptId: string]>(
-  'scripts/stopScriptRequested',
-);
+export const stopScriptRequested = createAction<
+  [wsId: string, scriptId: string, failureMessage?: string]
+>('scripts/stopScriptRequested');
 
 export const restartScriptRequested = createAction<[wsId: string, scriptId: string]>(
   'scripts/restartScriptRequested',

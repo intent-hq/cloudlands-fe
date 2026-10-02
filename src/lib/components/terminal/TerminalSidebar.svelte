@@ -11,6 +11,7 @@
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
     refreshScripts,
+    stopScriptRequested,
     removeScript,
     upsertScript,
   } from '$store/renderer/slices/scripts/scripts-slice';
@@ -587,8 +588,10 @@ Your entire response must be ONLY the tags with JSON inside. Nothing else.`;
     pendingScrollScriptId = scriptId;
   }
 
-  async function handleStop(scriptId: string) {
-    await scriptsClient.stop(workspaceId, scriptId);
+  function handleStop(scriptId: string) {
+    appStore.dispatch(
+      stopScriptRequested(workspaceId, scriptId, m.terminal_quakeOverlay_stopScriptFailed_error()),
+    );
   }
 
   async function handleRestart(scriptId: string) {

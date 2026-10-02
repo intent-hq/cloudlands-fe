@@ -82,7 +82,11 @@
     selectAllWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { refreshScripts, removeScript } from '$store/renderer/slices/scripts/scripts-slice';
+  import {
+    refreshScripts,
+    removeScript,
+    stopScriptRequested,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
@@ -374,6 +378,12 @@
       restart: m.terminal_quakeOverlay_restartScriptFailed_error,
       delete: m.terminal_quakeOverlay_deleteScriptFailed_error,
     };
+    if (action === 'stop') {
+      appStore.dispatch(
+        stopScriptRequested(mutationWorkspaceId, scriptId, scriptActionErrors.stop()),
+      );
+      return;
+    }
     const succeeded = await runScriptMutation(
       () => scriptsClient[action === 'delete' ? 'remove' : action](mutationWorkspaceId, scriptId),
       scriptActionErrors[action](),
@@ -570,9 +580,12 @@
   async function dismissPreviouslyRunningTab(scriptId: string, event: MouseEvent) {
     event.stopPropagation();
     if (!workspaceId) return;
-    await runScriptMutation(
-      () => scriptsClient.stop(workspaceId, scriptId),
-      m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
+    appStore.dispatch(
+      stopScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
+      ),
     );
   }
 

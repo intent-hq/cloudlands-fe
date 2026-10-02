@@ -3,6 +3,7 @@ import { selectWorkspaceActionContext } from '../../workspace/workspace-selector
 import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 
+import { notify } from '$lib/components/patterns/notify';
 import { scriptsClient } from '$features/scripts/scripts.client';
 import { scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { beginScriptRead, isScriptReadCurrent } from '../utils/script-read-context';
@@ -49,7 +50,7 @@ function operationFor(action: ScriptOperationRequest): ScriptQuickAction {
 }
 
 function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void> {
-  const [workspaceId, scriptId] = action.payload;
+  const [workspaceId, scriptId, failureMessage] = action.payload;
   const operation = operationFor(action);
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
   if (!authority) return;
@@ -68,14 +69,9 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     if (outcome.cleanup || authority !== (yield* selectWorkspaceActionContext.effect(workspaceId)))
       return;
     if (!outcome.result?.success) {
-      yield* put(
-        scriptOperationFailed(
-          workspaceId,
-          scriptId,
-          operation,
-          outcome.result?.error ?? 'Script operation failed',
-        ),
-      );
+      const message = outcome.result?.error || failureMessage || 'Script operation failed';
+      yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
+      if (failureMessage) yield* call([notify, notify.error], message);
       return;
     }
     if (
@@ -102,7 +98,9 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
     yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
   } catch (error) {
     if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
-    yield* put(scriptOperationFailed(workspaceId, scriptId, operation, errorMessage(error)));
+    const message = errorMessage(error);
+    yield* put(scriptOperationFailed(workspaceId, scriptId, operation, message));
+    if (failureMessage) yield* call([notify, notify.error], message || failureMessage);
   } finally {
     if (stoppedRead) yield* put(scriptReadFinished(workspaceId, stoppedRead.requestId));
   }

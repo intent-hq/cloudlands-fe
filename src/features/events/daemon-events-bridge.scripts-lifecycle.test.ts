@@ -3,6 +3,8 @@ import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withLegacyPrincipal } from '../../test/fixtures/principal-state';
 const transport = vi.hoisted(() => ({ request: vi.fn() }));
+const notifyError = vi.hoisted(() => vi.fn());
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: notifyError } }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: transport.request }));
 vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
@@ -99,6 +101,7 @@ beforeEach(() => {
   store.init();
   __resetDaemonEventsBridgeForTests();
   transport.request.mockReset();
+  notifyError.mockClear();
   transport.request.mockImplementation(async (method) => {
     if (method === 'client.hello') return { server: { capabilities: { scriptLifecycle: 1 } } };
     if (method === 'script.list') return { scripts: [row()] };
@@ -211,6 +214,43 @@ describe('script lifecycle event to transport', () => {
     emit('script:changed', { scriptId: ID, action: 'updated', script: { id: ID } });
     await settle();
     expect(listCalls()).toHaveLength(2);
+  });
+
+  it('stops mixed finished/live rows independently and preserves failed rows and output', async () => {
+    const run = start();
+    run.dispatch(
+      setScriptsData(WS, [
+        row({
+          id: 'finished',
+          purpose: 'saved',
+          runtime: { status: 'exited', exitCode: 0, restartCount: 0 },
+        }),
+        row({ id: 'live', purpose: 'saved' }),
+        row({ id: 'failed', purpose: 'saved' }),
+      ]),
+    );
+    run.dispatch(appendScriptOutput(WS, 'finished', { text: 'kept output', timestamp: 'now' }));
+    transport.request.mockImplementation(async (method, args) => {
+      if (method === 'script.status') return { status: 'idle', restartCount: 0 };
+      if (method === 'script.stop' && args.scriptId === 'failed') throw new Error('Stop denied');
+      if (method === 'script.stop' && args.scriptId === 'live')
+        emit('script:state', { scriptId: 'live', status: 'idle', restartCount: 0 });
+      return { ok: true };
+    });
+    for (const id of ['finished', 'live', 'failed'])
+      run.dispatch(stopScriptRequested(WS, id, 'Stop failed'));
+    await settle();
+    expect(run.scripts().scripts.finished.runtime.status).toBe('idle');
+    expect(run.scripts().scripts.live.runtime.status).toBe('idle');
+    expect(run.scripts().scripts.failed.runtime.status).toBe('running');
+    expect(run.scripts().operations.failed.error).toBe('Stop denied');
+    expect(notifyError).toHaveBeenCalledWith('Stop denied');
+    expect(run.scripts().outputBuffers.finished.chunks[0].text).toBe('kept output');
+    expect(run.active()).toHaveLength(3);
+    expect(listCalls()).toHaveLength(0);
+    expect(transport.request.mock.calls.filter(([method]) => method === 'script.status')).toEqual([
+      ['script.status', { workspaceId: WS, scriptId: 'finished' }],
+    ]);
   });
 
   it('reconciles a legacy silent finished-stop with status only', async () => {
