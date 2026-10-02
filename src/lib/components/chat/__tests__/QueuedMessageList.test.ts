@@ -348,6 +348,36 @@ describe('QueuedMessageList', () => {
       },
     );
 
+    it('retains input when a second editor hold is rejected after typing', async () => {
+      const pending = deferred<{ success: boolean; error?: string }>();
+      const onedit = vi.fn().mockImplementationOnce(() => pending.promise);
+      renderQueue({
+        props: {
+          messages: [
+            queued({ content: 'first\n\nsecond', editing: true, editingMessageId: 'q-1' }),
+          ],
+          onedit,
+        },
+      });
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', 'first\n\nsecond', true));
+      await fireEvent.input(screen.getByRole('textbox'), {
+        target: { value: 'my second-client unsaved draft' },
+      });
+      await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(onedit).toHaveBeenCalledTimes(1);
+      pending.resolve({
+        success: false,
+        error:
+          'queued edit conflict: this draft was combined into another queued message; refresh before editing',
+      });
+      const conflict = await screen.findByTestId('queued-draft-conflict');
+      expect(conflict.getAttribute('data-conflict-message-id')).toBe('q-1');
+      expect(conflict.textContent).toContain('my second-client unsaved draft');
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(onedit).toHaveBeenCalledTimes(1);
+    });
+
     it('retains a displaced draft without submitting it to the other held row', async () => {
       const onedit = vi.fn().mockResolvedValue({ success: true });
       const view = renderQueue({
