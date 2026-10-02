@@ -273,7 +273,8 @@ function reduceAgentIdleReconcile(
 /**
  * Daemon-authoritative content sync for parked retry records (#1011): the
  * `agent:queue:updated` snapshot carries the current content of every queued
- * entry, so a parked record whose entry is still PRESENT syncs its text —
+ * entry, so a parked record whose entry is still PRESENT syncs its text,
+ * attachments and contribution metadata. This preserves a merged send on retry;
  * an edit is reflected even when the save's self-drain (agent idle at save,
  * STAB-27 release awaits the drain BEFORE the RPC response returns) promotes
  * the record before ChatPanel's post-response `chatQueuedRetryRecordUpdated`
@@ -306,19 +307,19 @@ function reduceQueueContentSync(
   for (const message of queue) {
     if (message.turnId !== undefined) presentByTurnId.set(message.turnId, message);
   }
-  let textSynced = false;
+  let payloadSynced = false;
   const next: Record<string, QueuedRetryRecord> = {};
   for (const [id, parked] of Object.entries(agent.queuedRetryRecords)) {
     const present = presentById.get(id) ?? presentByTurnId.get(parked.turnId);
     const record = present ? buildQueuedRecordedAttempt(present, parked.record) : parked.record;
     if (!deepEqual(parked.record, record)) {
-      textSynced = true;
+      payloadSynced = true;
       next[id] = { ...parked, record };
     } else {
       next[id] = parked;
     }
   }
-  return textSynced ? updateAgent(state, agentId, { queuedRetryRecords: next }) : state;
+  return payloadSynced ? updateAgent(state, agentId, { queuedRetryRecords: next }) : state;
 }
 
 /**
