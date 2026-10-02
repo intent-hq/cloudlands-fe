@@ -239,6 +239,12 @@ for (const preserveAnchors of [true, false]) {
       await h.reloadNative(markdown);
       const mathSource = '| H |\n| --- |\n| $x_1 + y$ |';
       const math = await h.parseSource(mathSource, true);
+      const anchors = h
+        .serializeHTML(
+          '<table><tr><th><p>H</p></th></tr><tr><td><p><span data-anchor-id="review:start"></span><strong>bold</strong><span data-anchor-id="review:end"></span></p></td></tr></table>',
+          preserveAnchors,
+        )
+        .trim();
       return {
         before,
         markdown,
@@ -248,6 +254,8 @@ for (const preserveAnchors of [true, false]) {
         after: h.native.state.doc.firstChild!.toJSON(),
         mathSource,
         mathSaved: h.serializeHTML(math.html, preserveAnchors).trim(),
+        anchors,
+        anchorCanonical: (await h.parseSource(anchors)).html,
       };
     }, preserveAnchors);
     await testInfo.attach('table-combined-roundtrip.json', {
@@ -260,5 +268,13 @@ for (const preserveAnchors of [true, false]) {
     expect(result.direct).toBe(result.markdown);
     expect(result.markdown.split('\n')[1]).toBe('| :---: | --- |');
     expect(result.mathSaved).toBe(result.mathSource);
+    expect(result.anchors).toBe(
+      '| H |\n| --- |\n| ' +
+        (preserveAnchors
+          ? '<!--anchor:review:start-->**bold**<!--anchor:review:end-->'
+          : '**bold**') +
+        ' |',
+    );
+    expect(result.anchorCanonical.includes('data-anchor-id="review:start"')).toBe(preserveAnchors);
   });
 }

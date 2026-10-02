@@ -1866,10 +1866,22 @@ export function processHTMLToMarkdown(
                   );
                   // Inert separators prevent adjacent marks or punctuation from
                   // changing delimiter flanking. The parser removes the comments.
-                  const before = node.previousSibling;
-                  const after = node.nextSibling;
-                  const prefix = before && !/\s$/.test(before.textContent ?? '') ? '<!-- -->' : '';
-                  const suffix = after && !/^\s/.test(after.textContent ?? '') ? '<!-- -->' : '';
+                  const needsSeparator = (direction: 'previousSibling' | 'nextSibling') => {
+                    for (let adjacent = node[direction]; adjacent; adjacent = adjacent[direction]) {
+                      if (adjacent.nodeType === Node.COMMENT_NODE) {
+                        // A retained anchor comment already separates delimiters.
+                        if ((adjacent as Comment).data.startsWith('anchor:')) return false;
+                        continue;
+                      }
+                      const text = adjacent.textContent ?? '';
+                      // Empty anchor spans disappear when anchors are not preserved.
+                      if (!text) continue;
+                      return !(direction === 'previousSibling' ? /\s$/ : /^\s/).test(text);
+                    }
+                    return false;
+                  };
+                  const prefix = needsSeparator('previousSibling') ? '<!-- -->' : '';
+                  const suffix = needsSeparator('nextSibling') ? '<!-- -->' : '';
                   node.replaceWith(
                     document.createTextNode(`${prefix}${delimiter}${inline}${delimiter}${suffix}`),
                   );

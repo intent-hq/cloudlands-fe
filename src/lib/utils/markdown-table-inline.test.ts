@@ -8,6 +8,17 @@ beforeAll(() => store.init());
 afterAll(() => store.dispose());
 
 for (const preserveAnchors of [true, false]) {
+  it(`keeps table anchor spelling unchanged (preserveAnchors=${preserveAnchors})`, async () => {
+    const html =
+      '<table><tr><th><p>H</p></th></tr><tr><td><p><span data-anchor-id="review:start"></span><strong>bold</strong><span data-anchor-id="review:end"></span></p></td></tr></table>';
+    const inline = preserveAnchors
+      ? '<!--anchor:review:start-->**bold**<!--anchor:review:end-->'
+      : '**bold**';
+    const saved = processHTMLToMarkdown(html, { preserveAnchors }).trim();
+    expect(saved).toBe(`| H |\n| --- |\n| ${inline} |`);
+    const canonical = await processMarkdownToHTML(saved);
+    expect(canonical.includes('data-anchor-id="review:start"')).toBe(preserveAnchors);
+  });
   for (const [name, inline] of [
     [
       'combined marks',
