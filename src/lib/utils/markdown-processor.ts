@@ -1794,6 +1794,12 @@ export function processHTMLToMarkdown(
       // Convert HTML table to markdown table
       const rows: string[][] = [];
       const alignments: string[] = [];
+      const cellAlignment = (cell: Element): string => {
+        const value = ((cell as HTMLElement).style.textAlign || cell.getAttribute('align') || '')
+          .trim()
+          .toLowerCase();
+        return /^(left|center|right)$/.test(value) ? value : '';
+      };
 
       // Process thead
       const thead = el.querySelector('thead');
@@ -1806,8 +1812,7 @@ export function processHTMLToMarkdown(
 
           // Extract alignments from th elements
           headerCells.forEach((cell) => {
-            const align = cell.getAttribute('align') || 'left';
-            alignments.push(align);
+            alignments.push(cellAlignment(cell));
           });
         }
       }
@@ -1826,8 +1831,7 @@ export function processHTMLToMarkdown(
         // If no header, get alignments from first row
         if (alignments.length === 0 && cells.length > 0) {
           cells.forEach((cell) => {
-            const align = cell.getAttribute('align') || 'left';
-            alignments.push(align);
+            alignments.push(cellAlignment(cell));
           });
         }
       });
@@ -1843,7 +1847,8 @@ export function processHTMLToMarkdown(
 
         // Separator row with alignments
         const separators = rows[0].map((_, i) => {
-          const align = alignments[i] || 'left';
+          const align = alignments[i];
+          if (align === 'left') return ':---';
           if (align === 'center') return ':---:';
           if (align === 'right') return '---:';
           return '---';

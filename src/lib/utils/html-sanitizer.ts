@@ -19,6 +19,7 @@ let enforceWorkspaceFileScope = false;
 let preserveKatexLayoutStyles = false;
 
 const KATEX_DIMENSION = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:em|px|%)$/;
+const TABLE_ALIGNMENT = /^(left|center|right)$/;
 const KATEX_DIMENSION_PROPERTIES = new Set([
   'border-bottom-width',
   'border-right-width',
@@ -81,6 +82,12 @@ function isAllowedWorkspaceFileUrl(value: string): boolean {
 // Inline markdown videos are local workspace artifacts only. Remove the whole
 // element rather than leaving an inert player when an unsafe source is used.
 DOMPurify.addHook('uponSanitizeElement', (node) => {
+  // Native table cells emit text-align styles. Preserve only their finite
+  // alignment value as an attribute; the style itself still gets removed.
+  if (node instanceof HTMLElement && (node.nodeName === 'TH' || node.nodeName === 'TD')) {
+    const alignment = node.style.textAlign.trim().toLowerCase();
+    if (TABLE_ALIGNMENT.test(alignment)) node.setAttribute('align', alignment);
+  }
   if (
     node instanceof Element &&
     node.nodeName === 'VIDEO' &&
@@ -97,6 +104,12 @@ DOMPurify.addHook('uponSanitizeElement', (node) => {
 // anchor hrefs; keeping it media-only avoids relying on the main-process
 // shell.openExternal allowlist to keep such links inert.
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (data.attrName === 'align') {
+    data.attrValue = data.attrValue.trim().toLowerCase();
+    data.keepAttr =
+      (node.nodeName === 'TH' || node.nodeName === 'TD') && TABLE_ALIGNMENT.test(data.attrValue);
+    return;
+  }
   // A bare filename with a line suffix looks like a URL scheme to DOMPurify
   // (and to the browser). Make only that file form explicitly relative, while
   // leaving the URI allowlist in charge of all actual schemes.
@@ -282,8 +295,8 @@ const ALLOWED_ATTRIBUTES = {
   code: ['class'],
   pre: ['class'],
   // Table attributes
-  td: ['colspan', 'rowspan'],
-  th: ['colspan', 'rowspan', 'scope'],
+  td: ['colspan', 'rowspan', 'align'],
+  th: ['colspan', 'rowspan', 'scope', 'align'],
 };
 
 // Configure DOMPurify
@@ -367,6 +380,7 @@ export function sanitizeMarkdownHTML(
         'dir',
         'lang', // Global attributes from "*"
         'start', // Ordered lists retain their source starting number
+        'align', // Only left/center/right on table cells, enforced by the hook
         'href',
         'target',
         'rel', // Link attributes from "a"
