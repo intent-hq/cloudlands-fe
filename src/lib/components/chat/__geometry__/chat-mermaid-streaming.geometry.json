@@ -1,0 +1,57 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "complete": {
+    "420": {
+      "probes": {
+        "data-probe=chat-mermaid-preview": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 16,
+          "height": 384.3,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        },
+        "data-probe=conversation": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 256.3,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 370,
+          "x": 25,
+          "y": 153
+        },
+        "data-probe=replay-controls": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 8,
+          "height": 28,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 370,
+          "x": 25,
+          "y": 109
+        }
+      },
+      "root": {
+        "height": 434.3,
+        "width": 420
+      }
+    }
+  }
+}

@@ -35,10 +35,116 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  document.documentElement.removeAttribute('data-reduce-motion');
   for (const name of Object.keys(tokens)) document.documentElement.style.removeProperty(name);
 });
 
 describe('Mermaid streaming presentation', () => {
+  const revealSvg =
+    '<svg aria-roledescription="flowchart-v2"><g class="node" data-id="A"><rect/><text>A</text></g></svg>';
+
+  it('opts in only streaming chat content and settles immediately on finalization', async () => {
+    mocks.render.mockResolvedValue({ svg: revealSvg });
+    const result = render(MermaidRenderer, { code: 'graph LR\nA', isStreaming: true });
+    await waitFor(() => expect(result.container.querySelector('svg text')).not.toBeNull());
+    expect(result.container.querySelector('[data-mermaid-reveal]')).toBeNull();
+    await result.rerender({ code: 'graph LR\nA\nB', isStreaming: true, revealNewContent: true });
+    await waitFor(() =>
+      expect(result.container.querySelector('[data-mermaid-reveal]')).not.toBeNull(),
+    );
+    const existingSvg = result.container.querySelector('.mermaid-svg svg');
+    // A final validation still in flight must not leave delayed labels hidden.
+    let finish!: (value: { svg: string }) => void;
+    mocks.render.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await result.rerender({ code: 'graph LR\nA\nB', isStreaming: false, revealNewContent: true });
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(result.container.querySelector('.mermaid-svg svg')).toBe(existingSvg);
+    expect(result.container.querySelector('[data-mermaid-reveal]')).toBeNull();
+    finish({ svg: revealSvg });
+    await waitFor(() =>
+      expect(result.container.querySelector('.mermaid-svg svg')).not.toBe(existingSvg),
+    );
+    expect(result.container.querySelector('[data-mermaid-reveal]')).toBeNull();
+  });
+
+  it('cancels an active reveal when reduced motion is enabled and does not replay when disabled', async () => {
+    mocks.render.mockResolvedValue({ svg: revealSvg });
+    const result = render(MermaidRenderer, {
+      code: 'graph LR\nA',
+      isStreaming: true,
+      revealNewContent: true,
+    });
+    await waitFor(() =>
+      expect(result.container.querySelector('[data-mermaid-reveal]')).not.toBeNull(),
+    );
+    document.documentElement.setAttribute('data-reduce-motion', '');
+    await waitFor(() => expect(result.container.querySelector('[data-mermaid-reveal]')).toBeNull());
+    document.documentElement.removeAttribute('data-reduce-motion');
+    await result.rerender({ code: 'graph LR\nA\nB', isStreaming: true, revealNewContent: true });
+    await waitFor(() => expect(mocks.render.mock.calls.at(-1)?.[1]).toContain('B'));
+    expect(result.container.querySelector('[data-mermaid-reveal]')).toBeNull();
+  });
+
+  it('does not publish an in-flight render or reveal after unmount', async () => {
+    let finish!: (value: { svg: string }) => void;
+    mocks.render.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const onRenderStateChange = vi.fn();
+    const result = render(MermaidRenderer, {
+      code: 'graph LR\nA',
+      isStreaming: true,
+      revealNewContent: true,
+      onRenderStateChange,
+    });
+    await waitFor(() => expect(finish).toBeDefined());
+    result.unmount();
+    onRenderStateChange.mockClear();
+    finish({ svg: revealSvg });
+    await Promise.resolve();
+    expect(onRenderStateChange).not.toHaveBeenCalled();
+    expect(result.container.querySelector('svg')).toBeNull();
+  });
+
+  it('coalesces rapid appends and finalization without marking discarded content as revealed', async () => {
+    let finish!: (value: { svg: string }) => void;
+    mocks.render.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const result = render(MermaidRenderer, {
+      code: 'graph LR\nA',
+      isStreaming: true,
+      revealNewContent: true,
+    });
+    await waitFor(() => expect(finish).toBeDefined());
+    await result.rerender({ code: 'graph LR\nA\nB', isStreaming: true, revealNewContent: true });
+    await result.rerender({ code: 'graph LR\nA\nB\nC', isStreaming: true, revealNewContent: true });
+    await result.rerender({
+      code: 'graph LR\nA\nB\nC',
+      isStreaming: false,
+      revealNewContent: true,
+    });
+    mocks.render.mockResolvedValue({ svg: revealSvg.replace(/>A</g, '>Final<') });
+    finish({ svg: revealSvg.replace(/>A</g, '>Stale<') });
+    await waitFor(() =>
+      expect(result.container.querySelector('.mermaid-svg text')?.textContent).toBe('Final'),
+    );
+    expect(mocks.render).toHaveBeenCalledTimes(2);
+    expect(result.container.querySelector('[data-mermaid-reveal]')).toBeNull();
+    expect(result.container.textContent).not.toContain('Stale');
+  });
+
   it.each([
     'flowchart LR',
     'sequenceDiagram',

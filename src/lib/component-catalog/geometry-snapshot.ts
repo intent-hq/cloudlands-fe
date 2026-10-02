@@ -5,6 +5,7 @@ import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- This helper executes in Playwright's Node test process.
 import { basename, dirname } from 'node:path';
 import type { GeometryProbeResult } from './geometry-probe';
+import type { PreviewCaptureReadiness } from './preview-definition';
 
 type GeometryCells = Record<string, Record<string, GeometryProbeResult>>;
 
@@ -21,6 +22,7 @@ export interface GeometrySnapshotSuiteOptions<Props extends Record<string, unkno
   states?: string[];
   widths?: number[];
   selector?: string;
+  captureReadiness?: PreviewCaptureReadiness;
   snapshotPath: string;
 }
 
@@ -256,20 +258,26 @@ export function defineGeometrySnapshotSuite<Props extends Record<string, unknown
         });
         let actual: GeometryProbeResult;
         try {
-          actual = await root.evaluate(async (element, selector) => {
-            const rootElement = element as HTMLElement;
-            const geometryWindow = window as typeof window & {
-              __INTENT_GEOMETRY_CT__: {
-                collectGeometry: typeof import('./geometry-probe').collectGeometry;
-                waitForCaptureStability: typeof import('./capture-stability').waitForCaptureStability;
+          actual = await root.evaluate(
+            async (element, { selector, readiness }) => {
+              const rootElement = element as HTMLElement;
+              const geometryWindow = window as typeof window & {
+                __INTENT_GEOMETRY_CT__: {
+                  collectGeometry: typeof import('./geometry-probe').collectGeometry;
+                  waitForCaptureStability: typeof import('./capture-stability').waitForCaptureStability;
+                };
               };
-            };
-            await geometryWindow.__INTENT_GEOMETRY_CT__.waitForCaptureStability(rootElement);
-            return geometryWindow.__INTENT_GEOMETRY_CT__.collectGeometry(
-              rootElement,
-              selector ? { selector } : {},
-            );
-          }, options.selector);
+              await geometryWindow.__INTENT_GEOMETRY_CT__.waitForCaptureStability(rootElement, {
+                readiness,
+                readinessTimeoutMs: readiness?.readinessTimeoutMs,
+              });
+              return geometryWindow.__INTENT_GEOMETRY_CT__.collectGeometry(
+                rootElement,
+                selector ? { selector } : {},
+              );
+            },
+            { selector: options.selector, readiness: options.captureReadiness },
+          );
         } finally {
           await component.unmount();
         }
