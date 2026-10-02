@@ -245,18 +245,22 @@ export class SourceProjection {
         match[2] = source.slice(split.from - start, split.to - start);
         paragraphs.lastIndex = split.to - start;
       }
-      const raw = match[1],
-        base = start + match.index;
-      if (
+      const raw = match[1];
+      let base = start + match.index;
+      const leading =
         !raw &&
         !indexOnly &&
-        context?.paragraphSeams?.some(
+        context?.paragraphSeams?.find(
           (seam) =>
             seam.kind === 'leading' && seam.from === base && seam.to <= base + match![2].length,
-        )
-      ) {
-        this.leading += match[2];
-        continue;
+        );
+      if (leading) {
+        this.leading += source.slice(match.index, leading.to - start);
+        // Only the recorded deletion boundary disappears from the live tree.
+        // Remaining LF/CRLF separators still represent surviving blank paragraphs.
+        match[2] = match[2].slice(leading.to - base);
+        base = leading.to;
+        if (!match[2]) continue;
       }
       if (!indexOnly) this.boundaries.set(pm, base);
       pm++;
