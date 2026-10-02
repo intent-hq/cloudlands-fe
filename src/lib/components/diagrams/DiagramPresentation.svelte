@@ -33,6 +33,7 @@
   // Renderer settlement covers its scene. Note consumers also need the queued
   // presentation measurement and its Svelte style update to have completed.
   let presentationSettled = $state(false);
+  let initializing = $state(false);
 
   onMount(() => {
     const lane = contentElement?.closest<HTMLElement>('.node-mermaidBlock, .node-diagram_block');
@@ -42,6 +43,7 @@
       return;
     }
     const content = contentElement;
+    initializing = true;
     let intrinsic = 0;
     let revision = 0;
     let disposed = false;
@@ -73,10 +75,16 @@
       cancelWrite = scheduleLayoutWrite(() => {
         if (disposed || revision !== measuredRevision) return;
         cancelWrite = undefined;
+        const widthChanged = noteWidth !== nextNoteWidth;
         noteWidth = nextNoteWidth;
         controlsWidth = nextControlsWidth;
         // Publish the marker in the same Svelte DOM flush as these dimensions.
         presentationSettled = childSettled;
+        if (initializing && childSettled && laneWidth > 0 && proseWidth > 0) {
+          // Let the fitted width reach the child before the first visible frame.
+          if (widthChanged) cancelRead ??= scheduleLayoutRead(measureWidth);
+          else initializing = false;
+        }
       });
     };
     const updateWidth = () => {
@@ -117,7 +125,9 @@
 <section
   class="diagram-presentation"
   class:selected
+  class:initializing
   class:renderer-owns-actions={rendererOwnsActions}
+  inert={initializing}
   data-diagram-presentation
   data-diagram-presentation-settled={presentationSettled}
   data-diagram-kind={kind}
@@ -170,6 +180,12 @@
     background: transparent;
     color: hsl(var(--card-foreground));
     box-shadow: none;
+  }
+
+  .diagram-presentation.initializing {
+    height: 0;
+    overflow: clip;
+    opacity: 0;
   }
 
   :global([data-diagram-presentation] [data-diagram-presentation]) {
