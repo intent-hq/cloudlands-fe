@@ -128,7 +128,24 @@ for (const tail of [true, false])
         }
         for (let cycle = 0; cycle < 2; cycle++) {
           for (const key of ['Control+z', 'Control+Shift+z']) {
+            if (side === 'bounded' && reconstruct && cycle === 0) {
+              await root.evaluate((el) => {
+                const h = el as Host & { releaseHistory: () => void };
+                const held = new Promise<void>((resolve) => {
+                  h.releaseHistory = resolve;
+                });
+                h.proof.delayFetch = () => held;
+              });
+            }
             await page.keyboard.press(key);
+            if (side === 'bounded' && reconstruct && cycle === 0) {
+              expect(await root.evaluate((el) => !!(el as Host).proof.pendingFetch)).toBe(true);
+              await root.evaluate((el) => {
+                const h = el as Host & { releaseHistory: () => void };
+                h.proof.delayFetch = undefined;
+                h.releaseHistory();
+              });
+            }
             const current = await frame(page, side);
             phases.push({ name: `${cycle}:${key}`, ...current });
             if (side === 'bounded') {
@@ -137,6 +154,29 @@ for (const tail of [true, false])
               expect(current.destroyed).toBeGreaterThan(typed.destroyed!);
             } else expect(current.offset).toBe(key === 'Control+z' ? clicked.offset : typed.offset);
           }
+        }
+        if (side === 'bounded' && reconstruct) {
+          const beforeRemote = await frame(page, side);
+          const stale = await root.evaluate(async (el) => {
+            const p = (el as Host).proof;
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            p.delayFetch = () => held;
+            const obsolete = p.seek(p.selection.head);
+            const at = p.service.region(0).indexOf('neighbor');
+            p.remote({ from: at, to: at + 8, insert: 'remote neighbor' });
+            p.delayFetch = undefined;
+            release();
+            return obsolete;
+          });
+          expect(stale).toBe(false);
+          const remote = await frame(page, side);
+          expect(remote.source).toBe(beforeRemote.source!.replace('neighbor', 'remote neighbor'));
+          expect(remote.actual).toEqual(beforeRemote.actual);
+          expect(remote.destroyed).toBeGreaterThan(beforeRemote.destroyed!);
+          phases.push({ name: 'remote supersedes delayed reconstruction', ...remote });
         }
         await info.attach(`${side}-history-viewport.json`, {
           body: JSON.stringify(phases),
