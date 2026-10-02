@@ -378,9 +378,11 @@ export class TableProjection {
             JSON.stringify(node.marks.map((mark) => mark.toJSON())),
           ),
         );
+        // Collapsed single-mark insertion uses native mark affinity below;
+        // inherited caret marks need not equal explicitly stored insertion marks.
         const contextMarks =
           step.from === step.to
-            ? [before.resolve(step.from).marks()]
+            ? []
             : [
                 before.resolve(step.from).nodeBefore?.marks ?? [],
                 before.resolve(step.to).nodeAfter?.marks ?? [],
