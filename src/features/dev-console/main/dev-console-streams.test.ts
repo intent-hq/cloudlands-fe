@@ -456,3 +456,67 @@ it('enforces the global byte limit on stream growth without discarding pinned pa
   h.socket.receive({ method: 'subscription.push', params: push('sub', 3) });
   expect(h.rows().every((r) => r.kind === 'notification')).toBe(true);
 });
+
+it.each([false, true])(
+  'keeps trailing host output after exit (server-minted ID: %s)',
+  async (serverId) => {
+    const h = setup();
+    const params = { command: 'printf', ...(serverId ? {} : { requestId: 'exec' }) };
+    const pending = h.client.request('host.execStream', params);
+    const ack = { requestId: 'exec' };
+    if (!serverId) {
+      h.tick(2);
+      h.socket.receive({ id: 1, result: ack });
+      await pending;
+    }
+    const exit = bus('s', 'host:exec:exit', { requestId: 'exec', ok: true, exitCode: 0 });
+    const stdout = bus('s', 'host:exec:stdout', { requestId: 'exec', chunk: 'YQ==' });
+    const stderr = bus('s', 'host:exec:stderr', { requestId: 'exec', chunk: 'Yg==' });
+    for (const [time, payload] of [
+      [10, exit],
+      [11, stdout],
+      [12, stderr],
+    ] as const) {
+      h.tick(time);
+      h.socket.receive({ method: 'events.event', params: payload });
+    }
+    if (serverId) {
+      h.tick(13);
+      h.socket.receive({ id: 1, result: ack });
+      await pending;
+    }
+    expect(h.rows()[0]).toMatchObject({
+      frameCount: 5,
+      streamState: 'ended',
+      durationMs: serverId ? 13 : 12,
+    });
+    expect(trafficBytes(h.rows()[0])).toBe(
+      [params, ack, exit, stdout, stderr].reduce((n, p) => n + bytes(p), 0),
+    );
+  },
+);
+
+it.each(['host.execStream.write', 'host.execStream.cancel'])(
+  'keeps an already linked %s reply after exit',
+  async (method) => {
+    const h = setup();
+    const params = { command: 'cat', requestId: 'exec' };
+    const start = h.client.request('host.execStream', params);
+    const ack = { requestId: 'exec' };
+    h.socket.receive({ id: 1, result: ack });
+    await start;
+    h.tick(5);
+    const continuation = { requestId: 'exec', ...(method.endsWith('write') ? { eof: true } : {}) };
+    const pending = h.client.request(method, continuation);
+    h.tick(7);
+    const exit = bus('s', 'host:exec:exit', { requestId: 'exec', ok: true, exitCode: 0 });
+    h.socket.receive({ method: 'events.event', params: exit });
+    h.tick(9);
+    h.socket.receive({ id: 2, result: { ok: true } });
+    await pending;
+    expect(h.rows()[0]).toMatchObject({ frameCount: 5, streamState: 'ended', durationMs: 9 });
+    expect(trafficBytes(h.rows()[0])).toBe(
+      [params, ack, continuation, exit, { ok: true }].reduce((n, p) => n + bytes(p), 0),
+    );
+  },
+);

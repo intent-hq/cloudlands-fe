@@ -197,7 +197,7 @@ it('ends terminal streams even when their acknowledgement arrives afterward', ()
   h.source.notification('inbound', 'events.event', {
     event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'YQ==' } },
   });
-  expect(h.rows()[0]).toMatchObject({ streamState: 'ended', frameCount: 3 });
+  expect(h.rows()[0]).toMatchObject({ streamState: 'ended', frameCount: 4 });
 });
 
 it.each(['clear', 'generation'] as const)(
@@ -218,3 +218,85 @@ it.each(['clear', 'generation'] as const)(
     });
   },
 );
+
+it.each(['clear', 'disconnect', 'evict', 'generation'] as const)(
+  'drops ended host associations on %s',
+  (boundary) => {
+    const h = setup(boundary === 'evict' ? 3 : 100);
+    h.source.request('exec', 'outbound', 'host.execStream', { command: 'cat', requestId: 'id' });
+    h.source.reply('exec', { requestId: 'id' });
+    h.source.request('write', 'outbound', 'host.execStream.write', { requestId: 'id', eof: true });
+    h.source.notification('inbound', 'events.event', {
+      event: { type: 'host:exec:exit', data: { requestId: 'id', ok: true, exitCode: 0 } },
+    });
+    if (boundary === 'clear') h.service.clearSession('one', h.sessionId);
+    if (boundary === 'disconnect') h.source.emit({ type: 'disconnected' });
+    if (boundary === 'generation') h.source.generation++;
+    if (boundary === 'evict') h.source.notification('inbound', 'unrelated', {});
+    h.source.reply('write', { ok: true });
+    h.source.notification('inbound', 'events.event', {
+      event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'YQ==' } },
+    });
+    expect(
+      h
+        .rows()
+        .filter((r) => r.requestId === 'exec')
+        .every((r) => r.frameCount === 4),
+    ).toBe(true);
+  },
+);
+
+it('does not guess ownership of trailing output when a completed host ID is reused', () => {
+  const h = setup();
+  h.source.request('old', 'outbound', 'host.execStream', { command: 'true', requestId: 'id' });
+  h.source.reply('old', { requestId: 'id' });
+  h.source.notification('inbound', 'events.event', {
+    event: { type: 'host:exec:exit', data: { requestId: 'id', ok: true, exitCode: 0 } },
+  });
+  h.source.request('late-write', 'outbound', 'host.execStream.write', {
+    requestId: 'id',
+    eof: true,
+  });
+  h.source.reply('late-write', { ok: true });
+  expect(h.rows()[0].frameCount).toBe(3);
+  h.source.request('new', 'outbound', 'host.execStream', { command: 'true', requestId: 'id' });
+  h.source.reply('new', { requestId: 'id' });
+  h.source.notification('inbound', 'events.event', {
+    event: { type: 'host:exec:stdout', data: { requestId: 'id', chunk: 'YQ==' } },
+  });
+  expect(h.rows()[0].frameCount).toBe(3);
+  expect(h.rows().find((r) => r.requestId === 'new')?.frameCount).toBe(2);
+});
+
+it.each([
+  'search.inFiles',
+  'search.fileNames',
+  'search.messages',
+  'search.events',
+  'search.codebase',
+])('releases a completed nonempty inline %s result before ID reuse', (method) => {
+  const h = setup();
+  h.source.request('first', 'outbound', method, {
+    workspaceId: 'w',
+    query: 'x',
+    pattern: 'x',
+    requestId: 'query',
+  });
+  h.source.reply('first', {
+    requestId: 'query',
+    ...(method === 'search.fileNames' ? { files: ['x.ts'] } : { matches: [{ preview: 'x' }] }),
+  });
+  expect(h.rows()[0]).toMatchObject({ streamState: 'ended', frameCount: 2 });
+  h.source.request('second', 'outbound', method, {
+    workspaceId: 'w',
+    query: 'xy',
+    pattern: 'xy',
+    requestId: 'query',
+  });
+  h.source.reply('second', { requestId: 'query', matches: [] });
+  h.source.notification('inbound', 'events.event', {
+    event: { type: 'search:result', data: { requestId: 'query', matches: [{ preview: 'xy' }] } },
+  });
+  expect(h.rows()[1]).toMatchObject({ streamState: 'open', frameCount: 3 });
+  expect(h.rows()[0].frameCount).toBe(2);
+});

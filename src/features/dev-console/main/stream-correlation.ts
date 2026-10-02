@@ -43,6 +43,14 @@ export function responseStream(method: string, result: unknown): StreamHandle | 
   const family = operationFamily(method);
   return family ? handle(family, data.requestId) : undefined;
 }
+export function responseEndsStream(method: string, result: unknown): boolean {
+  if (operationFamily(method) !== 'search') return false;
+  const data = object(result);
+  // Streamed search acknowledgements contain empty arrays too. Only a nonempty
+  // inline answer unambiguously completes the search without a search:done event.
+  const results = method === 'search.fileNames' ? data.files : data.matches;
+  return Array.isArray(results) && results.length > 0;
+}
 export function requestContinuation(method: string, params: unknown): StreamHandle | undefined {
   if (method === 'host.execStream.write' || method === 'host.execStream.cancel')
     return handle('host-exec', object(params).requestId);

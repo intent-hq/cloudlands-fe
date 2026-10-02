@@ -2,6 +2,7 @@ import {
   notificationStreams,
   requestContinuation,
   requestStream,
+  responseEndsStream,
   responseStream,
   subscriptionGroup,
   unsubscribeStream,
@@ -304,6 +305,8 @@ export class DevConsoleCaptureService {
             this.bind(session, entry, handle);
             this.replayUnmatched(session, entry, handle);
           }
+          if (responseEndsStream(entry.record.rpcMethod, event.payload))
+            this.endStream(session, entry);
           if (entry.unsubscribeKey && unsubscribeSucceeded(event.payload)) {
             for (const target of [...(session.streams.get(entry.unsubscribeKey) ?? [])])
               this.endStream(session, target);
@@ -312,7 +315,7 @@ export class DevConsoleCaptureService {
         this.append(session, entry, 'response', entry.record.rpcMethod, response);
         this.complete(entry, event.status);
         const parent = entry.parentKey && session.records.get(entry.parentKey);
-        if (parent && !parent.closed && parent.record.streamState !== 'ended') {
+        if (parent && !parent.closed) {
           this.appendValue(session, parent, 'response', entry.record.rpcMethod, event.payload);
         }
         entry.revision = session.revision + 1;
@@ -329,7 +332,7 @@ export class DevConsoleCaptureService {
       // invocation stream, but never more than once to the same RPC.
       const matched = new Set<Entry>();
       for (const match of notificationStreams(event.method, event.payload)) {
-        const target = this.findStream(session, scope, origin, match.handle);
+        const target = this.findStream(session, scope, origin, match.handle, true);
         if (!target) {
           unmatched.set(this.streamKey(scope, origin, match.handle), match.terminal);
           continue;
@@ -337,7 +340,7 @@ export class DevConsoleCaptureService {
         if (matched.has(target)) continue;
         matched.add(target);
         this.appendValue(session, target, 'response', event.method, event.payload);
-        if (match.terminal) this.endStream(session, target);
+        if (match.terminal) this.endStream(session, target, match.handle.family === 'host-exec');
       }
     }
     const continuation = requestContinuation(event.method, event.payload);
@@ -446,10 +449,16 @@ export class DevConsoleCaptureService {
     scope: string,
     direction: DevConsoleRecord['direction'],
     handle: StreamHandle,
+    trailingOutput = false,
   ): Entry | undefined {
     const owners = session.streams.get(this.streamKey(scope, direction, handle));
-    // Duplicate live handles have no unambiguous RPC owner. Never guess.
-    return owners?.size === 1 ? owners.values().next().value : undefined;
+    // Retained host executions may still emit output after exit. If their ID is
+    // reused, even an ended owner makes trailing output ambiguous. Never guess.
+    const owner = owners?.size === 1 ? owners.values().next().value : undefined;
+    if (!owner || owner.closed) return;
+    return owner.record.streamState !== 'ended' || (trailingOutput && handle.family === 'host-exec')
+      ? owner
+      : undefined;
   }
 
   private replayUnmatched(session: Session, entry: Entry, handle: StreamHandle): void {
@@ -482,8 +491,8 @@ export class DevConsoleCaptureService {
         monotonic: notification.startedAt,
       });
       if (terminal) {
-        this.endStream(session, entry);
-        break;
+        this.endStream(session, entry, handle.family === 'host-exec');
+        if (handle.family !== 'host-exec') break;
       }
     }
   }
@@ -497,8 +506,10 @@ export class DevConsoleCaptureService {
     entry.handles.clear();
   }
 
-  private endStream(session: Session, entry: Entry): void {
-    this.releaseHandles(session, entry);
+  private endStream(session: Session, entry: Entry, trailingOutput = false): void {
+    // Host pipe readers can outlive the exit event. Keep this diagnostic handle
+    // only while its bounded record is retained; new continuations are excluded.
+    if (!trailingOutput) this.releaseHandles(session, entry);
     if (entry.record.streamState) entry.record.streamState = 'ended';
     entry.revision = session.revision + 1;
   }
@@ -622,12 +633,11 @@ export class DevConsoleCaptureService {
   private disconnected(session: Session, registration: Registration): void {
     let changed = false;
     for (const entry of session.records.values()) {
-      if (entry.registrationId === registration.id) entry.unmatched?.clear();
-      if (
-        entry.registrationId === registration.id &&
-        (entry.record.status === 'pending' || entry.record.streamState === 'open')
-      ) {
-        entry.closed = true;
+      if (entry.registrationId !== registration.id) continue;
+      entry.unmatched?.clear();
+      entry.closed = true;
+      this.releaseHandles(session, entry);
+      if (entry.record.status === 'pending' || entry.record.streamState === 'open') {
         this.endStream(session, entry);
         this.complete(entry, 'disconnected');
         entry.revision = session.revision + 1;
