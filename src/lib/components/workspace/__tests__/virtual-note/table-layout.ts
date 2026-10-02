@@ -42,9 +42,5 @@ export function layoutTable(editor: Editor, window: TableWindow, viewport: numbe
     cell.style.overflowWrap = 'anywhere';
     cell.style.boxSizing = 'border-box';
   }
-  const rows = table.querySelectorAll<HTMLElement>('tr');
-  rows.forEach((row, i) => {
-    row.style.height = window.geometry ? `${window.geometry.heights[i]}px` : '';
-  });
   return { width, columns, cells: table.querySelectorAll('th,td').length };
 }

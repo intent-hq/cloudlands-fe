@@ -15,7 +15,7 @@ import {
 import { SourceProjection, openMark, closeMark, type InlineContext } from './source-projection';
 import { continuationWindow, CONTINUATION } from './continuation-window';
 import { layoutTable } from './table-layout';
-import { CellSelection } from '@tiptap/pm/tables';
+import { CellSelection, tableEditingKey } from '@tiptap/pm/tables';
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
 export class DocumentSession {
@@ -154,6 +154,7 @@ export class DocumentSession {
             height: scroller.clientHeight,
             width: scroller.clientWidth,
             font: this.tableFont(),
+            include: this.pointerSelecting ? this.selection.table?.anchor.cell : undefined,
             ...(this.tableScrollRequest?.position === at ? this.tableScrollRequest : {}),
           },
           preferred,
@@ -351,7 +352,6 @@ export class DocumentSession {
     const table = this.projection?.table?.window,
       scroller = this.tableScroller;
     if (!table || !scroller || !this.tableColumnWidth || this.editor?.view.composing) return;
-    if (this.pointerSelecting) return;
     const key = {
       revision: this.service.revision,
       table: table.from,
@@ -402,11 +402,12 @@ export class DocumentSession {
       (e) => e.cell.from === this.selection.table?.head.cell,
     )?.cell;
     const preserve =
-      !!active &&
-      active.row >= row &&
-      active.row <= lastRow &&
-      active.column >= column &&
-      active.column <= lastColumn;
+      this.pointerSelecting ||
+      (!!active &&
+        active.row >= row &&
+        active.row <= lastRow &&
+        active.column >= column &&
+        active.column <= lastColumn);
     void this.show(this.active, false, at.source, preserve).finally(() => {
       this.tableScrollRequest = undefined;
     });
@@ -447,6 +448,7 @@ export class DocumentSession {
         current.row,
         current.heights.length,
       );
+      editor.view.setProps({});
     }
     this.tableColumnWidth = layoutTable(editor, table.window, this.tableViewport).width;
     if (table.window.geometry && !this.pointerSelecting) {
@@ -456,6 +458,7 @@ export class DocumentSession {
       );
       if (rows.every((height) => height > 0)) {
         table.window.geometry = this.service.tableHeights.record(table.window.geometry, rows);
+        editor.view.setProps({});
         layoutTable(editor, table.window, this.tableViewport);
         const size =
           bytes(this.projection!.source) + bytes(JSON.stringify(this.projection!.context));
@@ -634,6 +637,8 @@ export class DocumentSession {
                   next.pmAt(this.selection.head, this.selection.affinity),
               ),
           );
+          if (this.pointerSelecting && next.table && tr.selection instanceof CellSelection)
+            tr.setMeta(tableEditingKey, tr.selection.$anchorCell.pos);
           editor.view.dispatch(tr.setMeta('addToHistory', false));
         } finally {
           this.suppress = false;
@@ -664,7 +669,20 @@ export class DocumentSession {
           this.service.revision,
           this.service.generation,
         );
+        const rows: Decoration[] = [];
+        if (p.table?.window.geometry && state.doc.firstChild?.type.name === 'table') {
+          const heights = p.table.window.geometry.heights;
+          state.doc.firstChild.forEach((row, offset, index) => {
+            if (heights[index] !== undefined)
+              rows.push(
+                Decoration.node(offset + 1, offset + 1 + row.nodeSize, {
+                  style: `height:${heights[index]}px`,
+                }),
+              );
+          });
+        }
         return DecorationSet.create(state.doc, [
+          ...rows,
           ...(p.list?.synthetic ?? []).map((pos) =>
             Decoration.node(pos, pos + 2, { style: 'display:none', contenteditable: 'false' }),
           ),
@@ -887,6 +905,7 @@ export class DocumentSession {
           // Restore that source anchor before admitting its next selection transaction.
           if (
             !this.suppress &&
+            !this.projection?.table &&
             this.pointerSelecting &&
             this.pointerRemapped &&
             this.pointerAnchor !== undefined &&
@@ -912,7 +931,7 @@ export class DocumentSession {
           this.rollbackState = this.editor!.state;
           try {
             dispatch.call(this.editor!.view, tr);
-            if (this.pointerSelecting && this.pointerRemapped) {
+            if (this.pointerSelecting && this.pointerRemapped && !this.projection?.table) {
               // The view deliberately defers DOM selection writes during native mouse
               // drags. A crop replaced the highlighted text nodes, so reattach both
               // endpoints now rather than leaving Chromium on the detached anchor.

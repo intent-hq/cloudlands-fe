@@ -75,6 +75,27 @@ it('includes the encountered-height page in a full viewport admission', () => {
   expect(bytes).toBeLessThanOrEqual(3072);
 });
 
+it('includes the native drag anchor alongside visible cells under the unchanged admission budget', () => {
+  const service = new SourceJournal(() => source, 1);
+  const anchor = service.tableAddress(0, 101, 39);
+  const address = service.tableAddress(0, 100, 40);
+  const window = service.tableViewportWindow(address.source, {
+    top: 4100,
+    left: 17040,
+    width: 1280,
+    height: 520,
+    font: 'sans-serif|14px|20px|normal',
+    include: anchor.point.cell,
+  })!;
+  expect(window.cells.some((c) => c.from === anchor.point.cell)).toBe(true);
+  expect(window.cells.some((c) => c.row === 113 && c.column === 43)).toBe(true);
+  expect(window.cells).toHaveLength(70);
+  expect(
+    new TextEncoder().encode(JSON.stringify(window) + window.cells.map((c) => c.raw).join(''))
+      .length,
+  ).toBeLessThanOrEqual(4096);
+});
+
 it('admits partial first and last columns without leaving a one-pixel viewport hole', () => {
   const service = new SourceJournal(() => source, 1);
   const address = service.tableAddress(0, 100, 40);

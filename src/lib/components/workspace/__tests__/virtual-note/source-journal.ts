@@ -442,7 +442,14 @@ export class SourceJournal {
   maxTableWindowBytes = 0;
   tableViewportWindow(
     position: number,
-    viewport: { top?: number; left?: number; height: number; width: number; font: string },
+    viewport: {
+      top?: number;
+      left?: number;
+      height: number;
+      width: number;
+      font: string;
+      include?: number;
+    },
     preferred?: TablePoint,
   ) {
     const { id, start } = this.locate(position);
@@ -461,12 +468,26 @@ export class SourceJournal {
     const minimumRows = Math.ceil(viewport.height / 41) + 1;
     const targetRow = Math.min(row, Math.max(0, table.rows.length - minimumRows));
     const top = viewport.top ?? this.tableHeights.range(key, table.rows.length, targetRow, 0).top;
-    const geometry = this.tableHeights.viewport(key, table.rows.length, top, viewport.height);
-    const columnCount = Math.ceil((((viewport.left ?? 0) % width) + viewport.width) / width);
-    const column =
+    let geometry = this.tableHeights.viewport(key, table.rows.length, top, viewport.height);
+    let columnCount = Math.ceil((((viewport.left ?? 0) % width) + viewport.width) / width);
+    let column =
       viewport.left === undefined
         ? Math.min(cell.column, Math.max(0, table.columns - columnCount))
         : Math.max(0, Math.floor(viewport.left / width));
+    if (viewport.include !== undefined) {
+      // Mock backing lookup; only the bounded union rectangle reaches the renderer.
+      const anchor = table.rows
+        .flatMap((r) => r.cells)
+        .find((c) => c.from + start === viewport.include);
+      if (anchor) {
+        const lastRow = Math.max(geometry.row + geometry.heights.length, anchor.row + 1);
+        const firstRow = Math.min(geometry.row, anchor.row);
+        geometry = this.tableHeights.range(key, table.rows.length, firstRow, lastRow - firstRow);
+        const lastColumn = Math.max(column + columnCount, anchor.column + (anchor.span ?? 1));
+        column = Math.min(column, anchor.column);
+        columnCount = lastColumn - column;
+      }
+    }
     return this.tableWindow(position, undefined, preferred, {
       row: geometry.row,
       column,
