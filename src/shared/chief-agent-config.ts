@@ -1,5 +1,5 @@
 export const CHIEF_SPECIALIST_ID = 'chief-of-staff';
-export const CHIEF_PROMPT_VERSION = 3;
+export const CHIEF_PROMPT_VERSION = 4;
 
 export const CHIEF_RUNTIME_IDENTITY = `## Assistant Runtime Identity
 
