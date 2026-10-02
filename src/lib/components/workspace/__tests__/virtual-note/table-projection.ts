@@ -1,3 +1,4 @@
+import { tableInlineSourcePatch } from './table-inline-source';
 import type { JSONContent } from '@tiptap/core';
 import { DOMSerializer, Mark, type Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection, type Transaction } from '@tiptap/pm/state';
@@ -371,6 +372,22 @@ export class TableProjection {
       const entry = this.entries.find((e) => step.from >= e.paragraph + 1 && step.to <= e.end);
       const textOnly = step.slice.content.content.every((n) => n.isText);
       if (entry && textOnly && !step.slice.openStart && !step.slice.openEnd) {
+        const removed = before.slice(step.from, step.to).content;
+        const signatures = new Set(
+          [...removed.content, ...step.slice.content.content].map((node) =>
+            JSON.stringify(node.marks.map((mark) => mark.toJSON())),
+          ),
+        );
+        const contextMarks =
+          step.from === step.to
+            ? [before.resolve(step.from).marks()]
+            : [
+                before.resolve(step.from).nodeBefore?.marks ?? [],
+                before.resolve(step.to).nodeAfter?.marks ?? [],
+              ];
+        for (const marks of contextMarks)
+          signatures.add(JSON.stringify(marks.map((mark) => mark.toJSON())));
+        if (signatures.size > 1) return [tableInlineSourcePatch(this, entry.cell, step, before)];
         const literal = step.slice.content.textBetween(0, step.slice.content.size, '');
         // A native caret has one position on both sides of Markdown delimiters.
         // Match the inserted native marks to the right-hand text when possible;

@@ -413,3 +413,42 @@ for (const [edge, marked] of [
       session.destroy();
     }
   });
+
+it('repairs only touched mark envelopes for native cross-bold/italic/code cut and paste', async () => {
+  const source =
+    '| H | R |\n| --- | ---: |\n| exact \\| **bold** _italic_ `code` tail \\\\ | untouched |';
+  const service = new SourceJournal(() => source, 1);
+  const session = new DocumentSession(service, document.createElement('div'));
+  try {
+    const start = source.indexOf('bold') + 2,
+      end = source.indexOf('code') + 4;
+    await session.seek(start);
+    const editor = session.editor!,
+      before = editor.getJSON();
+    const from = session.projection!.pmAt(start),
+      to = session.projection!.pmAt(end, -1);
+    editor.commands.setTextSelection({ from, to });
+    expect(editor.state.doc.textBetween(from, to)).toBe('ld italic code');
+    const copied = editor.state.doc.slice(from, to);
+    editor.view.dispatch(editor.state.tr.deleteSelection());
+    expect(session.error).toBe('');
+    expect(service.region(0)).toBe(source.replace('**bold** _italic_ `code`', '**bo**'));
+    const cut = document.createElement('div');
+    cut.innerHTML = await processMarkdownToHTML(service.region(0));
+    expect(DOMParser.fromSchema(editor.schema).parse(cut).firstChild!.toJSON()).toEqual(
+      editor.state.doc.firstChild!.toJSON(),
+    );
+    editor.view.dispatch(editor.state.tr.replaceSelection(copied).setTime(Date.now() + 1000));
+    expect(session.error).toBe('');
+    expect(editor.getJSON()).toEqual(before);
+    expect(service.region(0).startsWith(source.slice(0, source.indexOf('**bold**')))).toBe(true);
+    expect(service.region(0).endsWith(source.slice(source.indexOf('`code`') + 6))).toBe(true);
+    const pasted = document.createElement('div');
+    pasted.innerHTML = await processMarkdownToHTML(service.region(0));
+    expect(DOMParser.fromSchema(editor.schema).parse(pasted).firstChild!.toJSON()).toEqual(
+      editor.state.doc.firstChild!.toJSON(),
+    );
+  } finally {
+    session.destroy();
+  }
+});

@@ -1,3 +1,4 @@
+import { tableEditWork } from './table-inline-source';
 import { tableNodeBudget, tableResourceBound, measureTableDOM } from './table-resources';
 import { tableRunWork } from './table-run-context';
 import {
@@ -1487,6 +1488,7 @@ export class DocumentSession {
       tableBound && this.editor ? measureTableDOM(this.editor.view.dom, tableBound) : undefined;
     return {
       maxSourceContextBytes: this.maxSourceContextBytes,
+      tableEditWork: { ...tableEditWork },
       tableRunParseCalls: tableRunWork.calls,
       tableRunParseBytes: tableRunWork.bytes,
       maxTableRunParseBytes: tableRunWork.maxBytes,
