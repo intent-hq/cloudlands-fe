@@ -12,7 +12,7 @@ import {
 import { chatErrorCleared, chatSendFailed } from '../../chat-state/chat-state-slice';
 import { selectChatAgentState, selectChatError } from '../../chat-state/chat-state-selectors';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
-import { selectRetryAgentUi, selectUserMessageIndexUi } from '../chat-panel-ui-selectors';
+import { selectUserMessageIndexUi } from '../chat-panel-ui-selectors';
 import {
   chatPanelRetryAgentFinished,
   chatPanelRetryAgentRequested,

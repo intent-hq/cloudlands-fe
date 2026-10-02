@@ -83,7 +83,6 @@ import {
   initialState as queueInitialState,
   queuedMessageMutationRequested,
   replaceAgentQueue,
-  upsertQueuedMessageInAgentQueue,
 } from '../../agent-queue/agent-queue-slice';
 import type { QueuedMessageMutationOperation } from '../../agent-queue/agent-queue-types';
 import {
@@ -94,7 +93,6 @@ import { initialState as workspaceInitialState } from '../../workspace/workspace
 import {
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
-  chatQueuedRetryRecordUpdated,
   chatLastAttemptedMessageSet,
   chatSendFailed,
   initialState as chatInitialState,
@@ -502,7 +500,7 @@ describe('chatSendSaga', () => {
     mocks.removeQueued.mockRejectedValue(new Error('offline'));
     const run = harness();
     run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'ignored', queuedMessageId: 'queued-1' }));
-    const removal = run.request(queuedMutation('queued-2', { kind: 'remove' }));
+    run.request(queuedMutation('queued-2', { kind: 'remove' }));
     await settle();
 
     expect(mocks.sendQueuedNow).toHaveBeenCalledWith({
