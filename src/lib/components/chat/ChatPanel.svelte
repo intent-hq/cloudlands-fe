@@ -6040,24 +6040,18 @@
            clears it on a later animation frame after the turns unmount), so it
            would otherwise paint stale message content above the skeleton. -->
       {#if pinnedPrompt && !deferTranscriptReveal}
-        <!-- Mirror the conversation column's horizontal padding plus the chief
-             variant's user-row inset so the pinned bubble aligns with
-             in-conversation user bubbles. -->
+        <!-- Share the transcript inset so the pinned bubble aligns with its source. -->
         <div
-          class="chat-content-measure mx-auto w-full min-w-0 {isChiefWorkspace
-            ? 'px-0'
-            : 'px-4 sm:px-6'}"
+          class="chat-content-measure mx-auto w-full min-w-0"
           class:regular-chat-content-inset={!isChiefWorkspace}
           data-testid="pinned-prompt-overlay-lane"
         >
-          <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-            <PinnedTurnPrompt
-              message={pinnedPrompt.message}
-              surface={pinnedPrompt.surface}
-              {workspace}
-              onActivate={handlePinnedPromptClick}
-            />
-          </div>
+          <PinnedTurnPrompt
+            message={pinnedPrompt.message}
+            surface={pinnedPrompt.surface}
+            {workspace}
+            onActivate={handlePinnedPromptClick}
+          />
         </div>
       {/if}
     </div>
@@ -6091,8 +6085,8 @@
     >
       <div
         class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
-          ? 'px-0'
-          : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
+          ? ''
+          : 'pt-8'} {transcriptBottomInsetClass}"
         class:regular-chat-content-inset={!isChiefWorkspace}
         data-testid="chat-transcript-inner"
         data-structural-recompute-count={transcriptStructure.recomputeCount}
@@ -6732,7 +6726,7 @@
                         class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
                           message,
                           hasTurnBody,
-                        )} {isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}"
+                        )}"
                         use:attachPinnedPromptMessage={message}
                         transition:safeDisclosureTransition={{ tier: 'moderate' }}
                       >
@@ -6799,28 +6793,26 @@
                           estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
                         >
                           {#snippet children()}
-                            <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-                              <ChatMessage
-                                {agentId}
-                                messageId={message.id}
-                                ownsMessageIdentity={false}
-                                {workspace}
-                                ownPrincipalId={$presenceOwnPrincipalId$}
-                                onEditSubmit={isRetiredSession
-                                  ? undefined
-                                  : (newText, model, blocks) =>
-                                      handleEditMessage(message.id, newText, model, blocks)}
-                                onEditStateChange={(isEditing) =>
-                                  handleTurnEditStateChange(turnKey, isEditing)}
-                                editModel={turn.assistantMessages[0]?.metadata?.model ??
-                                  hydratedInputModel}
-                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                                previousMessageLoading={previousMessageLoadingId === message.id}
-                                backendSessionId={auggieSessionId}
-                                suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
-                                  cardSpacingOwnedBefore}
-                              />
-                            </div>
+                            <ChatMessage
+                              {agentId}
+                              messageId={message.id}
+                              ownsMessageIdentity={false}
+                              {workspace}
+                              ownPrincipalId={$presenceOwnPrincipalId$}
+                              onEditSubmit={isRetiredSession
+                                ? undefined
+                                : (newText, model, blocks) =>
+                                    handleEditMessage(message.id, newText, model, blocks)}
+                              onEditStateChange={(isEditing) =>
+                                handleTurnEditStateChange(turnKey, isEditing)}
+                              editModel={turn.assistantMessages[0]?.metadata?.model ??
+                                hydratedInputModel}
+                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                              previousMessageLoading={previousMessageLoadingId === message.id}
+                              backendSessionId={auggieSessionId}
+                              suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
+                                cardSpacingOwnedBefore}
+                            />
                           {/snippet}
                         </LazyTurn>
                       </div>
@@ -7155,7 +7147,6 @@
   <div
     bind:this={composerElement}
     class="conversation-composer relative z-10 w-full"
-    class:chief-composer={isChiefWorkspace}
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
@@ -7338,11 +7329,6 @@
     container: chat-panel / inline-size;
   }
 
-  .regular-chat-content-inset {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
-
   .workspace-setup-card-alignment {
     --chat-operational-row-inline-padding: 0.5rem;
     --chat-operational-leading-gap: 0.5rem;
@@ -7361,13 +7347,6 @@
     }
   }
 
-  @container chat-panel (min-width: 640px) {
-    .regular-chat-content-inset {
-      padding-left: 3.1rem;
-      padding-right: 3.1rem;
-    }
-  }
-
   .regular-panel-aurora-host {
     border-bottom-left-radius: var(--panel-shell-radius);
     border-bottom-right-radius: var(--panel-shell-radius);
@@ -7375,6 +7354,7 @@
 
   .chat-content-measure {
     max-width: 140em;
+    padding-inline: var(--chat-content-inline-inset, var(--panel-content-inset));
   }
 
   /* Keep style invalidation local without paint-containing sticky descendants. */
@@ -7432,30 +7412,8 @@
     animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
-  .conversation-composer {
-    --composer-lane-inset-x: 1rem;
-    --composer-lane-inset-bottom: 1rem;
-  }
-
-  .conversation-composer.chief-composer {
-    --composer-lane-inset-x: 0;
-    --composer-lane-inset-bottom: 0.25rem;
-  }
-
   .composer-prompt-lane {
-    padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
-  }
-
-  @container chat-panel (min-width: 640px) {
-    .conversation-composer {
-      --composer-lane-inset-x: 1.5rem;
-      --composer-lane-inset-bottom: 1.5rem;
-    }
-
-    .conversation-composer.chief-composer {
-      --composer-lane-inset-x: 0;
-      --composer-lane-inset-bottom: 0.5rem;
-    }
+    padding-block: var(--panel-content-inset);
   }
 
   @keyframes input-flash {

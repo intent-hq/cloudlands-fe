@@ -77,6 +77,8 @@
 :root {
   color-scheme: light dark;
 
+  --panel-content-inset: 0.5rem;
+
   --theme-light-background: 0 0% 100%;
   --theme-light-foreground: 0 0% 0%;
   --theme-light-card: 0 0% 100%;

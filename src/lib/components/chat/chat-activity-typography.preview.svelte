@@ -6,6 +6,7 @@
     agentName?: string;
     conversationWidth?: number;
     chiefWorkspace?: boolean;
+    composerExtras?: boolean;
   }
 
   export const preview = definePreview<Props>({
@@ -22,6 +23,7 @@
       'conversation-narrow': { props: { conversationWidth: 320 } },
       'conversation-wide': { props: { conversationWidth: 720 } },
       'conversation-chief': { props: { conversationWidth: 560, chiefWorkspace: true } },
+      'conversation-extras': { props: { conversationWidth: 420, composerExtras: true } },
     },
   });
 </script>
@@ -31,12 +33,14 @@
   import ChatMessage from './ChatMessage.svelte';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import ChatPanelOperationalGeometryHost from './__tests__/ChatPanelOperationalGeometryHost.svelte';
+  import ChatPanelComposerGeometryHost from './__tests__/ChatPanelComposerGeometryHost.svelte';
 
   let {
     monospace = false,
     agentName = 'Builder',
     conversationWidth,
     chiefWorkspace = false,
+    composerExtras = false,
   }: Props = $props();
   const timestamp = '2026-09-16T12:00:00.000Z';
   const message: AgentMessage = $derived({
@@ -119,7 +123,16 @@
   ];
 </script>
 
-{#if conversationWidth}
+{#if composerExtras}
+  <ChatPanelComposerGeometryHost
+    width={conversationWidth}
+    height={800}
+    queued
+    suggestions
+    transcript
+    draft="Keep the header, messages, and prompt box lined up."
+  />
+{:else if conversationWidth}
   <ChatPanelOperationalGeometryHost
     width={conversationWidth}
     height={700}
