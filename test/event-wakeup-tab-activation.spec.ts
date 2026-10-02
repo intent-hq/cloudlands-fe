@@ -336,7 +336,7 @@ async function captureFirstMountedFrame(page: Page) {
 
 test.describe('EventWakeupBanner panel navigation geometry', () => {
   for (const width of [1400, 760]) {
-    test(`first wake target opens in the rightmost panel at ${width}px`, async ({ page }) => {
+    test(`first wake target opens after its source pane at ${width}px`, async ({ page }) => {
       await mountWakeupLayout(page, width);
       const firstFramePromise = captureFirstMountedFrame(page);
       await page.waitForFunction(
@@ -348,25 +348,29 @@ test.describe('EventWakeupBanner panel navigation geometry', () => {
         .getByRole('button', { name: /^Open agent Wakeup target$/ })
         .click();
       const frame = await firstFramePromise;
-      const target = frame.sibling.tabs.find(
+      const target = frame.source.tabs.find(
         (tab: { agentId?: string }) => tab.agentId === 'agent-wakeup-target',
       );
 
       expect(frame.panelIds).toEqual(['source', 'sibling']);
       expect(frame.root).toMatchObject({ type: 'split', direction: 'horizontal' });
-      // ba53c575 routes default agent opens to the rightmost fixed column.
-      expect(frame.source.tabs).toHaveLength(1);
-      expect(frame.source.activeTabId).toBe('agent-source');
-      expect(frame.sibling.tabs).toHaveLength(2);
+      // Source-context agent opens preserve their panel and insert after the opener.
+      expect(frame.source.tabs.map((tab: { id: string }) => tab.id)).toEqual([
+        'agent-source',
+        target?.id,
+      ]);
       expect(target).toBeDefined();
-      expect(frame.sibling.activeTabId).toBe(target?.id);
-      expect(frame.focusedPanelId).toBe('sibling');
+      expect(target?.openerTabId).toBe('agent-source');
+      expect(frame.source.activeTabId).toBe(target?.id);
+      expect(frame.sibling.tabs.map((tab: { id: string }) => tab.id)).toEqual(['sibling-file']);
+      expect(frame.sibling.activeTabId).toBe('sibling-file');
+      expect(frame.focusedPanelId).toBe('source');
       expect(frame.rects[0].right).toBeLessThanOrEqual(frame.rects[1].left);
       expect(frame.activeElementInInactiveWrapper).toBe(false);
       expect(frame.wrappers).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            hasWakeup: false,
+            hasWakeup: true,
             display: 'none',
             ariaHidden: 'true',
             inert: true,
@@ -378,13 +382,16 @@ test.describe('EventWakeupBanner panel navigation geometry', () => {
       const routingActions = [
         'appLayout/openAgentTabRequested',
         'workspaceAgents/ensureAgentSessionLoaded',
+        'panelLayout/openTab',
         'panelLayout/openTabInRightmostColumnRequested',
         'panelLayout/reconcilePanelColumnCount',
         'panelLayout/openTabInRightmostColumn',
       ];
-      expect(frame.actionOrder.filter((type) => routingActions.includes(type))).toEqual(
-        routingActions,
-      );
+      expect(frame.actionOrder.filter((type) => routingActions.includes(type))).toEqual([
+        'appLayout/openAgentTabRequested',
+        'workspaceAgents/ensureAgentSessionLoaded',
+        'panelLayout/openTab',
+      ]);
     });
   }
 });
