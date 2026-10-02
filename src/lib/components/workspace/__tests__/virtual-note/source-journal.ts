@@ -220,7 +220,7 @@ export class SourceJournal {
           head: plan.caret,
           affinity: 1,
           revision: this.revision,
-          table: { kind: 'text', anchor: plan.point, head: plan.point },
+          table: plan.point && { kind: 'text', anchor: plan.point, head: plan.point },
         };
         this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, bytes(encoded));
         const response = JSON.stringify(after);

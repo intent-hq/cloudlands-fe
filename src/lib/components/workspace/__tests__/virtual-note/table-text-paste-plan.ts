@@ -85,7 +85,20 @@ export function planTableTextPaste(
       )
     : fitNativeTextPaste(doc, position(anchor), position(head), value, editor, [tableEditing()]);
   const result = fitted.state.doc.firstChild!;
-  if (result.type.name !== 'table') throw new Error('Cross-cell replacement removed the table');
+  if (result.type.name !== 'table') {
+    if (command?.name !== 'deleteTable' || result.type.name !== 'paragraph' || result.content.size)
+      throw new Error('Cross-cell replacement removed the table');
+    return {
+      accepted: 'accepted' in fitted ? fitted.accepted : true,
+      text: '',
+      states: [],
+      point: undefined,
+      caret: table.from + start,
+      anchorSource: table.from + start,
+      logicalSelection: undefined,
+      costs: { ...fitted.costs, planBytes: 0, cells: 0, sourceBytes: 0, metadataBytes: 0 },
+    };
+  }
   let text = '';
   const states: Array<{ from: number; node: JSONContent }> = [];
   let point: TablePoint | undefined, caret: number | undefined;

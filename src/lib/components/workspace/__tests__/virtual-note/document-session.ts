@@ -1002,6 +1002,7 @@ export class DocumentSession {
           );
           if (
             complete &&
+            name !== 'deleteTable' &&
             !(header && ['addRowBefore', 'deleteRow', 'mergeCells', 'mergeOrSplit'].includes(name))
           )
             return undefined;

@@ -9,6 +9,7 @@ export const tableCommands = [
   'addRowBefore',
   'addRowAfter',
   'deleteRow',
+  'deleteTable',
   'addColumnBefore',
   'addColumnAfter',
   'deleteColumn',
