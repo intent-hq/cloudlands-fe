@@ -495,3 +495,158 @@ it('keeps the draft disabled through member revalidation, reloads external chang
     saga.cancel();
   }
 });
+
+it.each(
+  ['remove', 'revoke'].flatMap((kind) =>
+    ['resume', 'role', 'connection', 'identity'].map((resolution) => ({ kind, resolution })),
+  ),
+)(
+  'retains disabled $kind confirmation during revalidation and handles $resolution',
+  async ({ kind, resolution }) => {
+    const { runSaga, stdChannel } = await import('redux-saga');
+    const { hostMembershipSaga } =
+      await import('$store/renderer/slices/host-membership/sagas/host-membership-saga');
+    const { routeDaemonEventsNotification } =
+      await import('$features/events/daemon-events-bridge.client');
+    const channel = stdChannel();
+    const reduce = mocks.dispatch.getMockImplementation()!;
+    mocks.dispatch.mockImplementation((action) => {
+      reduce(action);
+      channel.put(action);
+    });
+    const member = {
+      principalId: 'original-member',
+      hostRole: 'member',
+      displayName: 'Original member',
+      login: 'sam',
+      avatarUrl: null,
+      addedAt: '2026-10-02T00:00:00Z',
+    };
+    const invite = {
+      id: 'original-invite',
+      scope: 'host',
+      role: 'member',
+      createdByPrincipalId: 'owner',
+      pinLogin: 'sam',
+      pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '2' },
+      reusable: false,
+      redemptionCount: 0,
+      createdAt: '2026-10-02T00:00:00Z',
+      expiresAt: '2026-10-09T00:00:00Z',
+    };
+    mocks.request.mockImplementation(async (method) =>
+      method === 'host.members.list'
+        ? { members: [member], revision: 2 }
+        : method === 'host.invite.list'
+          ? { invites: [invite] }
+          : {},
+    );
+    const saga = runSaga(
+      { channel, dispatch: mocks.dispatch, getState: () => mocks.state },
+      hostMembershipSaga,
+    );
+    const snapshot = mocks.state.principal.snapshot!;
+    const label = kind === 'remove' ? 'Remove' : 'Revoke';
+    const command =
+      kind === 'remove' ? { kind, principalId: member.principalId } : { kind, inviteId: invite.id };
+    const mutation = kind === 'remove' ? 'host.members.remove' : 'host.invite.revoke';
+    try {
+      render(HostMembershipSettingsHost);
+      await waitFor(() => expect(mocks.state.hostMembership.loaded).toBe(true));
+      await fireEvent.click(screen.getByRole('button', { name: label, exact: true }));
+      const dialog = screen.getByRole('dialog');
+      const originalContext = mocks.state.hostMembership.target!.context;
+      mocks.dispatch.mockClear();
+      mocks.request.mockClear();
+      routeDaemonEventsNotification(
+        'events.event',
+        {
+          subscriptionId: 'current',
+          event: {
+            type: 'host:members-changed',
+            data: {
+              revision: 2,
+              principalId: 'another-member',
+              hostRole: 'member',
+              action: 'added',
+            },
+          },
+        },
+        'current',
+      );
+      const confirm = within(dialog).getByRole('button', { name: label, exact: true });
+      await waitFor(() => expect(confirm.hasAttribute('disabled')).toBe(true));
+      await fireEvent.click(confirm);
+      await fireEvent.keyDown(dialog, { key: 'Enter' });
+      expect(screen.getByRole('dialog')).toBe(dialog);
+      expect(
+        mocks.dispatch.mock.calls.some(
+          ([a]) => a.type === 'hostMembership/requested' && a.payload[1].kind === kind,
+        ),
+      ).toBe(false);
+      expect(mocks.request.mock.calls.some(([method]) => method === mutation)).toBe(false);
+      if (resolution === 'connection') {
+        mocks.state = {
+          ...mocks.state,
+          connections: { ...mocks.state.connections, windowBackendId: 'other-host' },
+        };
+        mocks.emit();
+      } else {
+        mocks.dispatch(
+          principalReceived(
+            {
+              context: mocks.state.principal.context!,
+              invalidation: mocks.state.principal.invalidation,
+              presentationVersion: mocks.state.principal.presentationVersion,
+            },
+            {
+              ...snapshot,
+              principal: {
+                ...snapshot.principal,
+                hostMembershipRevision: 2,
+                ...(resolution === 'role' ? { hostRole: 'member', isAdministrator: false } : {}),
+                ...(resolution === 'identity'
+                  ? {
+                      identity: {
+                        provider: 'github',
+                        host: 'github.com',
+                        externalUserId: 'new-identity',
+                      },
+                    }
+                  : {}),
+              },
+            },
+          ),
+        );
+      }
+      if (resolution !== 'resume') {
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(mocks.request.mock.calls.some(([method]) => method === mutation)).toBe(false);
+        return;
+      }
+      await waitFor(() => expect(confirm.hasAttribute('disabled')).toBe(false));
+      const freshContext = mocks.state.hostMembership.target!.context;
+      expect(freshContext).not.toBe(originalContext);
+      expect(mocks.request.mock.calls.some(([method]) => method === mutation)).toBe(false);
+      await fireEvent.click(confirm);
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      const requests = mocks.dispatch.mock.calls.filter(
+        ([a]) => a.type === 'hostMembership/requested' && a.payload[1].kind === kind,
+      );
+      expect(requests).toHaveLength(1);
+      expect(requests[0][0].payload).toEqual([
+        expect.objectContaining({ context: freshContext }),
+        command,
+      ]);
+      expect(mocks.request.mock.calls.filter(([method]) => method === mutation)).toEqual([
+        [
+          mutation,
+          kind === 'remove' ? { principalId: member.principalId } : { inviteId: invite.id },
+        ],
+      ]);
+    } finally {
+      cleanup();
+      saga.cancel();
+    }
+  },
+);

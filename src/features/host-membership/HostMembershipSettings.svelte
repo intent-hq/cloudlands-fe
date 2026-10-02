@@ -228,6 +228,11 @@
 
 <BulkActionConfirmDialog
   bind:open={confirmOpen}
+  preflightReady={allowed &&
+    !suspended &&
+    !$state$.busy &&
+    $state$.target?.session === target.session &&
+    $state$.target.context === target.context}
   title={confirmation?.kind === 'revoke'
     ? m.collaboration_host_revoke_title()
     : m.collaboration_host_remove_title()}

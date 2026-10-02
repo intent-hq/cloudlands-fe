@@ -126,3 +126,76 @@ test('an invitation stays inside the dialog during create and copy, with no dupl
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole('list', { name: 'Open invites' })).toContainText('@sam');
 });
+
+for (const [action, width] of [
+  ['Remove', 390],
+  ['Revoke', 960],
+] as const) {
+  test(`${action} confirmation waits for current authority at ${width}px`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mount(Harness, {
+      props: { confirmationRevalidation: true },
+      hooksConfig: {
+        mockBackend: {
+          ...mockBackend,
+          'host.invite.list': {
+            invites: [
+              {
+                id: 'original-invite',
+                scope: 'host',
+                role: 'member',
+                createdByPrincipalId: 'owner',
+                pinLogin: 'sam',
+                pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '2' },
+                reusable: false,
+                redemptionCount: 0,
+                createdAt: '2026-10-02T00:00:00Z',
+                expiresAt: '2026-10-09T00:00:00Z',
+              },
+            ],
+          },
+          'host.members.remove': {},
+          'host.invite.revoke': {},
+        },
+      },
+    });
+    await page.getByRole('button', { name: action, exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    const confirm = dialog.getByRole('button', { name: action, exact: true });
+    await expect(confirm).toBeEnabled();
+    // Controlled event injection stays available while the modal makes its page inert.
+    await page
+      .getByTestId('suspend-authority')
+      .evaluate((node) => (node as HTMLButtonElement).click());
+    await expect(confirm).toBeDisabled();
+    await dialog.press('Enter');
+    await expect(dialog).toBeVisible();
+    if (process.env.COLLABORATION_CAPTURE_DIR) {
+      await mkdir(process.env.COLLABORATION_CAPTURE_DIR, { recursive: true });
+      await page.screenshot({
+        path: join(
+          process.env.COLLABORATION_CAPTURE_DIR,
+          `confirmation-${action}-${width}-disabled.png`,
+        ),
+      });
+    }
+    await page
+      .getByTestId('restore-authority')
+      .evaluate((node) => (node as HTMLButtonElement).click());
+    await expect(confirm).toBeEnabled();
+    await expect(dialog).toBeVisible();
+    if (process.env.COLLABORATION_CAPTURE_DIR) {
+      await page.screenshot({
+        path: join(
+          process.env.COLLABORATION_CAPTURE_DIR,
+          `confirmation-${action}-${width}-ready.png`,
+        ),
+      });
+    }
+    await confirm.click();
+    await expect(dialog).toHaveCount(0);
+  });
+}

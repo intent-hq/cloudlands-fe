@@ -3721,10 +3721,14 @@ export function routeDaemonEventsNotification(
     return;
   }
   if (type === 'host:invites-changed') {
-    const data = (event as { data?: { inviteId?: unknown; action?: unknown } }).data;
+    const data = (event as { data?: unknown }).data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    const { inviteId, action } = data as { inviteId?: unknown; action?: unknown };
     if (
-      typeof data?.inviteId === 'string' &&
-      ['created', 'revoked', 'redeemed'].includes(String(data.action))
+      typeof inviteId === 'string' &&
+      inviteId.trim().length > 0 &&
+      typeof action === 'string' &&
+      ['created', 'revoked', 'redeemed'].includes(action)
     )
       appStore.dispatch(hostMembershipListsChanged());
     return;
