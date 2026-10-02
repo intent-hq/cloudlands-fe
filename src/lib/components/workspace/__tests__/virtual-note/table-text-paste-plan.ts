@@ -10,6 +10,8 @@ import {
 } from './table-clipboard';
 import { tableRuns, type TableIndex, type TableCellSource } from './table-source';
 import type { TablePoint } from './source-journal';
+import { applyNativeTableCommand, type TableCommandName } from './table-native-command';
+import { CellSelection } from '@tiptap/pm/tables';
 
 /** External backing model, NOT a renderer projection or production algorithm.
  * Cross-cell native replacement needs table repair. This full table PM state and
@@ -25,6 +27,7 @@ export function planTableTextPaste(
   editor: Editor,
   stored: (from: number) => JSONContent | undefined,
   serialization?: CellSerializationWork,
+  command?: { name: TableCommandName; kind: 'text' | 'cell' },
 ) {
   const schema = editor.schema;
   const origins = new Map<PMNode, TableCellSource>();
@@ -70,14 +73,22 @@ export function planTableTextPaste(
     for (let i = 0; i < point.block; i++) offset += cell.child(i).nodeSize;
     return offset + point.offset;
   };
-  const fitted = fitNativeTextPaste(doc, position(anchor), position(head), value, editor, [
-    tableEditing(),
-  ]);
+  const fitted = command
+    ? applyNativeTableCommand(
+        doc,
+        command.kind === 'cell' ? positions.get(anchor.cell)! : position(anchor),
+        command.kind === 'cell' ? positions.get(head.cell)! : position(head),
+        command.kind,
+        command.name,
+        editor,
+      )
+    : fitNativeTextPaste(doc, position(anchor), position(head), value, editor, [tableEditing()]);
   const result = fitted.state.doc.firstChild!;
   if (result.type.name !== 'table') throw new Error('Cross-cell replacement removed the table');
   let text = '';
   const states: Array<{ from: number; node: JSONContent }> = [];
   let point: TablePoint | undefined, caret: number | undefined;
+  let anchorPoint: TablePoint | undefined, anchorSource: number | undefined;
   result.forEach((row, ro, r) => {
     const old = table.rows.find((_, i) => rows[i] === row);
     const ending =
@@ -97,8 +108,27 @@ export function planTableTextPaste(
       states.push({ from: from + start, node: cell.toJSON() });
       const nodePosition = 2 + ro + co;
       const selection = fitted.state.selection.$head;
-      if (selection.pos > nodePosition && selection.pos < nodePosition + cell.nodeSize) {
-        point = { cell: from + start, block: selection.index(3), offset: selection.parentOffset };
+      const cellSelection = fitted.state.selection instanceof CellSelection;
+      const headPosition = cellSelection
+        ? (fitted.state.selection as CellSelection).$headCell.pos
+        : selection.pos;
+      const anchorPosition = cellSelection
+        ? (fitted.state.selection as CellSelection).$anchorCell.pos
+        : fitted.state.selection.anchor;
+      if (anchorPosition >= nodePosition && anchorPosition < nodePosition + cell.nodeSize) {
+        anchorPoint = {
+          cell: from + start,
+          block: cellSelection ? 0 : fitted.state.selection.$anchor.index(3),
+          offset: cellSelection ? 0 : fitted.state.selection.$anchor.parentOffset,
+        };
+        anchorSource = from + start + raw.length - raw.trimStart().length;
+      }
+      if (headPosition >= nodePosition && headPosition < nodePosition + cell.nodeSize) {
+        point = {
+          cell: from + start,
+          block: cellSelection ? 0 : selection.index(3),
+          offset: cellSelection ? 0 : selection.parentOffset,
+        };
         let offset = point.offset;
         for (let i = 0; i < point.block; i++) offset += cell.child(i).content.size;
         const body = from + raw.length - raw.trimStart().length;
@@ -158,10 +188,17 @@ export function planTableTextPaste(
   if (!point || caret === undefined)
     throw new Error('Cross-cell text paste did not retain a cell caret');
   return {
+    accepted: 'accepted' in fitted ? fitted.accepted : true,
     text,
     states,
     point,
     caret,
+    logicalSelection: {
+      kind: fitted.state.selection instanceof CellSelection ? ('cell' as const) : ('text' as const),
+      anchor: anchorPoint ?? point,
+      head: point,
+    },
+    anchorSource: fitted.state.selection.empty ? caret : (anchorSource ?? caret),
     costs: {
       ...fitted.costs,
       planBytes: bytes(JSON.stringify({ text, states })),

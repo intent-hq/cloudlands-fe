@@ -4,6 +4,7 @@ import {
   type ClipboardManifest,
 } from './table-clipboard';
 import { tableEditWork } from './table-inline-source';
+import { tableCommands, type TableCommandName } from './table-native-command';
 import { tableNodeBudget, tableResourceBound, measureTableDOM } from './table-resources';
 import { tableRunWork } from './table-run-context';
 import {
@@ -955,6 +956,35 @@ export class DocumentSession {
         return true;
       };
       const extensions = config.extensions.map((ext) => {
+        const logicalCommand = (
+          name: TableCommandName,
+          props: CommandProps,
+        ): boolean | undefined => {
+          const p = this.projection?.table,
+            logical = this.selection.table;
+          if (!p || !logical) return undefined;
+          const window = p.window;
+          const complete =
+            window.cells.every((c) => !c.owner && !c.partial) &&
+            window.cells.length === window.rows * window.columns;
+          const header = window.cells.some(
+            (c) => c.row === 0 && (c.from === logical.anchor.cell || c.from === logical.head.cell),
+          );
+          if (
+            complete &&
+            !(header && ['addRowBefore', 'deleteRow', 'mergeCells', 'mergeOrSplit'].includes(name))
+          )
+            return undefined;
+          const intent = {
+            revision: this.service.revision,
+            table: window.from,
+            command: name,
+            selection: structuredClone(this.selection),
+          };
+          if (!this.service.stageLogicalTableCommand(intent, this.editor!, false)) return false;
+          if (props.dispatch) props.tr.setMeta('proofLogicalTableCommand', intent);
+          return true;
+        };
         if (ext.name === 'table')
           return ext
             .extend({
@@ -962,6 +992,15 @@ export class DocumentSession {
                 const parent = this.parent!();
                 return {
                   ...parent,
+                  ...Object.fromEntries(
+                    tableCommands
+                      .filter((name) => name !== 'splitCell')
+                      .map((name) => [
+                        name,
+                        () => (props: CommandProps) =>
+                          logicalCommand(name, props) ?? parent[name]!()(props),
+                      ]),
+                  ),
                   splitCell: () => (props) => splitLogicalCell(props) ?? parent.splitCell!()(props),
                 };
               },
@@ -1311,6 +1350,45 @@ export class DocumentSession {
   }
   private accept(transactions: Transaction[]) {
     if (this.suppress) return;
+    const command = transactions.find((tr) => tr.getMeta('proofLogicalTableCommand'));
+    if (command) {
+      const before = structuredClone(this.selection);
+      try {
+        const after = this.service.atomic(() => {
+          this.service.beginChanges();
+          const anchorsBefore = structuredClone(this.service.anchors);
+          const after = this.service.stageLogicalTableCommand(
+            command.getMeta('proofLogicalTableCommand'),
+            this.editor!,
+          );
+          if (!after) throw new Error('Logical table command no longer applies');
+          this.service.record(
+            {
+              changes: [],
+              before,
+              after,
+              anchorsBefore,
+              anchorsAfter: structuredClone(this.service.anchors),
+            },
+            false,
+          );
+          return after;
+        });
+        this.selection = after;
+        this.selectionGeneration++;
+        this.prevTime = 0;
+        this.cache.clear();
+        this.error = '';
+        queueMicrotask(() => {
+          void this.seek(after.head);
+        });
+      } catch (error) {
+        this.error = String(error);
+        this.rejectedTransactions++;
+        this.changed();
+      }
+      return;
+    }
     const logicalSplit = transactions.find((tr) => tr.getMeta('proofLogicalTableSplit'));
     if (logicalSplit) {
       const before = structuredClone(this.selection);

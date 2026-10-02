@@ -77,8 +77,12 @@ it('admits one bounded logical owner continuation at vertical span origin, inter
       // native paragraph, not replay the first seven blocks at every position.
       expect(continuation[0].blocks!.some((block) => block.index === row - 1)).toBe(true);
       for (const block of continuation[0].blocks!) {
-        expect(continuation[0].runs.filter((run) => run.block === block.index).map((run) => run.text).join(''))
-          .toBe(full.child(1).firstChild!.child(block.index).textContent);
+        expect(
+          continuation[0].runs
+            .filter((run) => run.block === block.index)
+            .map((run) => run.text)
+            .join(''),
+        ).toBe(full.child(1).firstChild!.child(block.index).textContent);
       }
       expect(table.firstChild!.firstChild!.attrs.rowspan).toBe(count);
       expect(projection.entries.filter((e) => e.cell.from === owner.from)).toHaveLength(1);

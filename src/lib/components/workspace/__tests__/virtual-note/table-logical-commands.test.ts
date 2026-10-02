@@ -23,35 +23,63 @@ const cases = [
 ] as const;
 for (const test of cases) {
   it(`matches native logical ${test.command} at ${test.row},${test.column} ${'endRow' in test ? `to ${test.endRow},${test.endColumn}` : ''}`, async () => {
-    const row = (r: number) => '| ' + Array.from({ length: 8 }, (_, c) => `r${r}c${c}`).join(' | ') + ' |';
-    const source = row(0) + '\n| ' + Array(8).fill('---').join(' | ') + ' |\n' +
+    const row = (r: number) =>
+      '| ' + Array.from({ length: 8 }, (_, c) => `r${r}c${c}`).join(' | ') + ' |';
+    const source =
+      row(0) +
+      '\n| ' +
+      Array(8).fill('---').join(' | ') +
+      ' |\n' +
       Array.from({ length: 60 }, (_, r) => row(r + 1)).join('\n');
-    const native = new Editor(createEditorConfig({
-      element: document.createElement('div'), content: await processMarkdownToHTML(source),
-      editable: true, useMarkdown: true, enableComments: false, enableMentions: false, onUpdate: () => {},
-    }));
+    const native = new Editor(
+      createEditorConfig({
+        element: document.createElement('div'),
+        content: await processMarkdownToHTML(source),
+        editable: true,
+        useMarkdown: true,
+        enableComments: false,
+        enableMentions: false,
+        onUpdate: () => {},
+      }),
+    );
     const service = new SourceJournal(() => source, 1);
     const session = new DocumentSession(service, document.createElement('div'));
     const index = scanTables(source)[0];
     // Test oracle only: full backing JSON is never returned through a renderer request.
     const backingJSON = async () => {
       const saved = service.region(0);
-      const backing = service as unknown as { tableIndex: (s: string, start: number) => TableIndex[]; tableStates: Map<string, string> };
+      const backing = service as unknown as {
+        tableIndex: (s: string, start: number) => TableIndex[];
+        tableStates: Map<string, string>;
+      };
       const table = backing.tableIndex(saved, 0)[0];
-      const canonical = new Editor(createEditorConfig({
-        element: document.createElement('div'), content: await processMarkdownToHTML(saved),
-        editable: true, useMarkdown: true, enableComments: false, enableMentions: false, onUpdate: () => {},
-      }));
+      const canonical = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: await processMarkdownToHTML(saved),
+          editable: true,
+          useMarkdown: true,
+          enableComments: false,
+          enableMentions: false,
+          onUpdate: () => {},
+        }),
+      );
       try {
         return {
-          type: 'table', content: table.rows.map((r, ri) => ({
-            type: 'tableRow', content: r.cells.map((c, ci) => {
+          type: 'table',
+          content: table.rows.map((r, ri) => ({
+            type: 'tableRow',
+            content: r.cells.map((c, ci) => {
               const stored = backing.tableStates.get(`cell:${c.from}`);
-              return stored ? JSON.parse(stored) as JSONContent : canonical.state.doc.firstChild!.child(ri).child(ci).toJSON();
+              return stored
+                ? (JSON.parse(stored) as JSONContent)
+                : canonical.state.doc.firstChild!.child(ri).child(ci).toJSON();
             }),
           })),
         };
-      } finally { canonical.destroy(); }
+      } finally {
+        canonical.destroy();
+      }
     };
     try {
       const anchor = index.rows[test.row].cells[test.column];
@@ -59,11 +87,21 @@ for (const test of cases) {
       const map = TableMap.get(native.state.doc.firstChild!);
       const ap = 1 + map.map[test.row * 8 + test.column];
       const hp = 'endRow' in test ? 1 + map.map[test.endRow * 8 + test.endColumn] : ap;
-      if ('endRow' in test) native.view.dispatch(native.state.tr.setSelection(CellSelection.create(native.state.doc, ap, hp)));
+      if ('endRow' in test)
+        native.view.dispatch(
+          native.state.tr.setSelection(CellSelection.create(native.state.doc, ap, hp)),
+        );
       else native.commands.setTextSelection(ap + 2);
       session.selection = {
-        anchor: anchor.body, head: head.body, affinity: anchor.body <= head.body ? 1 : -1, revision: 1,
-        table: { kind: 'endRow' in test ? 'cell' : 'text', anchor: { cell: anchor.from, block: 0, offset: 0 }, head: { cell: head.from, block: 0, offset: 0 } },
+        anchor: anchor.body,
+        head: head.body,
+        affinity: anchor.body <= head.body ? 1 : -1,
+        revision: 1,
+        table: {
+          kind: 'endRow' in test ? 'cell' : 'text',
+          anchor: { cell: anchor.from, block: 0, offset: 0 },
+          head: { cell: head.from, block: 0, offset: 0 },
+        },
       };
       await session.seek(head.body);
       const before = native.state.doc.firstChild!.toJSON();
@@ -85,6 +123,9 @@ for (const test of cases) {
       expect(await backingJSON()).toEqual(native.state.doc.firstChild!.toJSON());
       expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
       expect(service.stats.maxTableWriteBytes).toBeLessThanOrEqual(4096);
-    } finally { native.destroy(); session.destroy(); }
+    } finally {
+      native.destroy();
+      session.destroy();
+    }
   });
 }

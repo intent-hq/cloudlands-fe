@@ -1,4 +1,5 @@
 import { planTableTextPaste } from './table-text-paste-plan';
+import type { TableCommandName } from './table-native-command';
 import { planTablePaste } from './table-paste-plan';
 import {
   ClipboardBacking,
@@ -755,6 +756,93 @@ export class SourceJournal {
     };
   }
   maxTableStructuralTransientBytes = 0;
+  maxBackingTableCommandBytes = 0;
+  maxBackingTableCommandNodes = 0;
+  /** A revisioned command and logical endpoints, not a cropped native tree.
+   * Full native planning and source/session serialization belong to mock backing. */
+  stageLogicalTableCommand(
+    intent: { revision: number; table: number; command: TableCommandName; selection: Selection },
+    editor: Editor,
+    apply = true,
+  ): Selection | false {
+    const encoded = JSON.stringify(intent),
+      size = bytes(encoded);
+    if (size > LIMITS.request) throw new Error('Table command request exceeds budget');
+    const received = JSON.parse(encoded) as typeof intent;
+    if (received.revision !== this.revision || received.selection.revision !== this.revision)
+      throw new Error('Stale logical table command');
+    const logical = received.selection.table;
+    if (!logical) throw new Error('Missing logical table selection');
+    const { id, start } = this.locate(received.table);
+    const source = this.region(id);
+    const table = this.tableIndex(source, start).find((t) => t.from + start === received.table);
+    if (!table) throw new Error('Logical table no longer exists');
+    const plan = planTableTextPaste(
+      source,
+      start,
+      table,
+      logical.anchor,
+      logical.head,
+      { 'text/plain': '', 'text/html': '' },
+      editor,
+      (from) => {
+        const value = this.tableStates.get(`cell:${from + start}`);
+        return value ? JSON.parse(value) : undefined;
+      },
+      this.clipboardCellSerialization,
+      { name: received.command, kind: logical.kind },
+    );
+    this.maxBackingTableCommandBytes = Math.max(
+      this.maxBackingTableCommandBytes,
+      plan.costs.serializedBytes + plan.costs.planBytes,
+    );
+    this.maxBackingTableCommandNodes = Math.max(this.maxBackingTableCommandNodes, plan.costs.nodes);
+    this.maxTableStructuralTransientBytes = Math.max(
+      this.maxTableStructuralTransientBytes,
+      size * 3,
+    );
+    if (!plan.accepted) return false;
+    if (apply) {
+      for (const row of table.rows)
+        for (const cell of row.cells)
+          if (this.tableStates.has(`cell:${cell.from + start}`))
+            this.stageTableState(`cell:${cell.from + start}`, '');
+      const previous = source.slice(table.from, table.to);
+      let prefix = 0,
+        suffix = 0;
+      while (
+        prefix < previous.length &&
+        prefix < plan.text.length &&
+        previous[prefix] === plan.text[prefix]
+      )
+        prefix++;
+      while (
+        suffix < previous.length - prefix &&
+        suffix < plan.text.length - prefix &&
+        previous[previous.length - suffix - 1] === plan.text[plan.text.length - suffix - 1]
+      )
+        suffix++;
+      this.stage({
+        from: table.from + start + prefix,
+        to: table.to + start - suffix,
+        insert: plan.text.slice(prefix, plan.text.length - suffix),
+      });
+      for (const cell of plan.states)
+        this.stageTableState(`cell:${cell.from}`, JSON.stringify(cell.node));
+    }
+    const after: Selection = {
+      anchor: plan.anchorSource,
+      head: plan.caret,
+      affinity: plan.anchorSource <= plan.caret ? 1 : -1,
+      revision: this.revision,
+      table: plan.logicalSelection,
+    };
+    const response = JSON.stringify(after);
+    if (bytes(response) > LIMITS.request) throw new Error('Table command response exceeds budget');
+    this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, size, bytes(response));
+    this.log('table-logical-command', received.table, size);
+    return JSON.parse(response) as Selection;
+  }
   maxBackingTableSplitCells = 0;
   maxBackingTableSplitBytes = 0;
   /** A bounded command intent; full cell reconstruction stays in mock backing. */
@@ -1002,7 +1090,11 @@ export class SourceJournal {
           // physical cell of the next nonempty row. Covered rowspan slots are
           // not additional Tab stops (nor necessarily owners in that row).
           let next = row.cells[column + direction];
-          for (let r = cell.row + direction; !next && r >= 0 && r < table.rows.length; r += direction) {
+          for (
+            let r = cell.row + direction;
+            !next && r >= 0 && r < table.rows.length;
+            r += direction
+          ) {
             const cells = table.rows[r].cells;
             next = direction > 0 ? cells[0] : cells[cells.length - 1];
           }
@@ -2095,6 +2187,8 @@ export class SourceJournal {
       maxTableStructuralTransientBytes: this.maxTableStructuralTransientBytes,
       maxBackingTableSplitCells: this.maxBackingTableSplitCells,
       maxBackingTableSplitBytes: this.maxBackingTableSplitBytes,
+      maxBackingTableCommandBytes: this.maxBackingTableCommandBytes,
+      maxBackingTableCommandNodes: this.maxBackingTableCommandNodes,
       backingSeamBytes: bytes(JSON.stringify([...this.seams.values()])),
       backingListRepairs: this.backingListRepairs,
       maxListRepairRead: this.maxListRepairRead,

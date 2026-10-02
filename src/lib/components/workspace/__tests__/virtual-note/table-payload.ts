@@ -71,6 +71,9 @@ class PackedCell implements TableFragment {
   get owner() {
     return this.data[7]?.owner;
   }
+  get partial() {
+    return this.data[7]?.partial;
+  }
   get mounted() {
     return this.data[7]?.mounted;
   }
@@ -122,6 +125,7 @@ function packTableCell(c: TableFragment): TableFragment {
     }
   }
   for (const key of [
+    'partial',
     'span',
     'rowSpan',
     'owner',
@@ -155,6 +159,7 @@ export function cloneTableWindow(w: TableWindow): TableWindow {
       last: c.last,
       raw: c.raw,
       runs: c.runs,
+      ...(c.partial ? { partial: true } : {}),
       ...(c.owner ? { owner: c.owner, mounted: c.mounted } : {}),
       ...(c.rowSpan === undefined ? {} : { rowSpan: c.rowSpan }),
       ...(c.span === undefined ? {} : { span: c.span }),

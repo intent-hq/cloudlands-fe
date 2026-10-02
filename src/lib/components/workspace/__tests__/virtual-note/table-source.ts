@@ -40,6 +40,7 @@ export type TableIndex = {
   rows: Array<{ from: number; to: number; cells: TableCellSource[] }>;
 };
 export type TableFragment = TableCellSource & {
+  partial?: boolean;
   owner?: { row: number; column: number; rowspan: number; colspan: number };
   mounted?: { rowspan: number; colspan: number };
   first: number;
@@ -139,7 +140,10 @@ export function scanTables(
     const table: TableIndex = {
       from: lines[n].from,
       to: lines[n + 1].to,
-      columns: header.length,
+      columns: header.reduce(
+        (sum, cell) => sum + Number(metadata?.(cell.from)?.attrs?.colspan ?? 1),
+        0,
+      ),
       delimiter: { from: lines[n + 1].from, to: lines[n + 1].to, cells: delimiter },
       rows: [],
     };
@@ -418,10 +422,24 @@ export function admitTableWindow(
       if (index !== runs.length || offset) throw new Error('Table metadata lost source text');
       runs = mapped;
     }
+    // Unseen merged cells use the approved logical-row estimate. Their bounded
+    // paragraph window must progress with the admitted span, including empty
+    // paragraphs whose source positions coincide. An explicit caret wins.
+    const projectedBlock =
+      rectangle && (entry.rowSpan ?? 1) > 1 && blocks.length > 1
+        ? Math.min(
+            blocks.length - 1,
+            Math.floor((Math.max(0, rectangle.row - entry.row) * blocks.length) / entry.rowSpan!),
+          )
+        : undefined;
     const center =
-      entry === target ? Math.max(entry.body, Math.min(entry.end, position)) : entry.body;
+      projectedBlock !== undefined && preferred?.cell !== entry.from
+        ? blocks[projectedBlock].from
+        : entry === target
+          ? Math.max(entry.body, Math.min(entry.end, position))
+          : entry.body;
     let first =
-      rectangle?.fragmentStart?.(entry, limit) ??
+      (projectedBlock === undefined ? rectangle?.fragmentStart?.(entry, limit) : undefined) ??
       Math.max(entry.body, center - Math.floor(limit / 2));
     let last = Math.min(entry.end, first + limit);
     const old = retained?.cells.find((c) => c.row === entry.row && c.column === entry.column);
@@ -436,7 +454,7 @@ export function admitTableWindow(
       const wanted =
         preferred?.cell === entry.from
           ? preferred.block
-          : (runs.find((r) => r.to >= center)?.block ?? blocks.length - 1);
+          : (projectedBlock ?? runs.find((r) => r.to >= center)?.block ?? blocks.length - 1);
       let begin = Math.max(0, Math.min(blocks.length - 7, wanted - 3)),
         end = Math.min(blocks.length, begin + 7);
       if (old?.blocks?.length) {
@@ -474,6 +492,11 @@ export function admitTableWindow(
     }
     return {
       ...entry,
+      ...(selectedBlocks.length !== blocks.length ||
+      selected.length !== runs.length ||
+      selected.some((run, i) => run.text !== runs[i].text)
+        ? { partial: true }
+        : {}),
       first,
       last,
       raw: source.slice(first, last),
