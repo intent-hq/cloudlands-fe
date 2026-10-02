@@ -106,3 +106,43 @@ for (const delimiter of ['_', '*']) {
     }
   });
 }
+
+for (const count of [2, 3, 4, 5])
+  it(`preserves canonical empty paragraphs after a fence with ${count} newlines`, async () => {
+    const source = '```text\ncode\n```' + '\n'.repeat(count) + '_after_';
+    const native = new Editor(
+      createEditorConfig({
+        element: document.createElement('div'),
+        content: await processMarkdownToHTML(source),
+        editable: true,
+        useMarkdown: true,
+        enableComments: false,
+        enableMentions: false,
+        onUpdate: () => {},
+      }),
+    );
+    const service = new SourceJournal(() => source, 1);
+    const session = new DocumentSession(service, document.createElement('div'));
+    try {
+      await session.show(0);
+      expect(session.editor!.getJSON()).toEqual(native.getJSON());
+      expect(service.region(0)).toBe(source);
+      const at = source.indexOf('after') + 2;
+      session.editor!.commands.setTextSelection(session.projection!.pmAt(at));
+      native.commands.setTextSelection(session.editor!.state.selection.from);
+      native.commands.insertContent('Z');
+      session.editor!.commands.insertContent('Z');
+      expect(session.error).toBe('');
+      expect(session.editor!.getJSON()).toEqual(native.getJSON());
+      expect(service.region(0)).toBe(source.slice(0, at) + 'Z' + source.slice(at));
+      const old = session.editor!;
+      await session.seek(at);
+      expect(old.isDestroyed).toBe(true);
+      expect(session.editor!.getJSON()).toEqual(native.getJSON());
+      await session.history();
+      expect(service.region(0)).toBe(source);
+    } finally {
+      native.destroy();
+      session.destroy();
+    }
+  });

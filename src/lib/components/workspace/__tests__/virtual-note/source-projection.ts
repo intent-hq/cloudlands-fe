@@ -1,4 +1,4 @@
-import { Lexer, type Token } from 'marked';
+import { Lexer, type Token as MarkdownToken } from 'marked';
 import type { JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { Transform, type Step } from '@tiptap/pm/transform';
@@ -220,7 +220,7 @@ export class SourceProjection {
     source = prefix + source + suffix;
     start -= prefix.length;
     let pm = 0;
-    const paragraphs = /([^]*?)(\n[ \t]+\n+|\n\n+|$)/g;
+    const paragraphs = /([^]*?)(^\n+|\n[ \t]+\n+|\n\n+|$)/g;
     let match: RegExpExecArray | null;
     while ((match = paragraphs.exec(source)) && match[0]) {
       const raw = match[1],
@@ -264,7 +264,7 @@ export class SourceProjection {
       // and escapes. Renderer input is still just this bounded paragraph; the
       // full-source index-only pass remains separately accounted mock backing.
       const italics = new Map<number, number>();
-      const indexItalics = (tokens: Token[], offset: number) => {
+      const indexItalics = (tokens: MarkdownToken[], offset: number) => {
         for (const token of tokens) {
           if (token.type === 'em') italics.set(offset, offset + token.raw.length);
           if (token.type === 'em' || token.type === 'strong')
@@ -493,7 +493,10 @@ export class SourceProjection {
       });
       transition(index === after.childCount - 1 ? (this.context?.after ?? []) : []);
       const end = offset + paragraph.nodeSize - 1;
-      source += index < after.childCount - 1 ? separators.get(end) || '\n\n' : this.trailing;
+      source +=
+        index < after.childCount - 1
+          ? separators.get(end) || (paragraph.content.size ? '\n\n' : '\n')
+          : this.trailing;
     });
     let from = 0,
       oldEnd = this.source.length,
