@@ -7211,9 +7211,11 @@
         <!-- The utility stack owns short-chat surplus through its auto margin.
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
-          {#if queuedMessagesVisibility.showQueue}
+          {#key `${workspace?.id}::${agentId}`}
+            <!-- Keep private edit recovery alive after the final queue row disappears. -->
             <div
-              class="pb-2"
+              hidden={!!pendingQuestions && !questionWizardCollapsed}
+              class:pb-2={queuedMessagesVisibility.showQueue}
               style:--queued-messages-max-height="{Math.max(120, containerHeight / 2)}px"
             >
               <QueuedMessageList
@@ -7232,7 +7234,7 @@
                 ondone={() => inputComponent?.focus?.()}
               />
             </div>
-          {/if}
+          {/key}
           <!-- {#key} forces a full remount when workspace or agent changes,
              preventing stale utility UI from leaking across switches.
              Hidden until transcript hydration settles; the workspace-task
