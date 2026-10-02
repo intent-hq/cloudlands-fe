@@ -447,7 +447,7 @@
 
   function openGuestSessionsSettings() {
     dropdownOpen = false;
-    void navigateToSettings({ tab: 'guest-sessions' });
+    void navigateToSettings({ tab: 'collaboration' });
   }
 
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));

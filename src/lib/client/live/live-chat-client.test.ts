@@ -1552,6 +1552,56 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('preserves portable authors across snapshot, delta and recovery without merging null identities', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (t) => seen.push(t));
+    try {
+      await flush();
+      const first = {
+        principalId: null,
+        login: 'same',
+        displayName: null,
+        avatarUrl: null,
+        identity: { provider: 'gitlab', host: 'one.example', externalUserId: '42' },
+      };
+      const second = { ...first, identity: { ...first.identity, host: 'two.example' } };
+      const metadata = {
+        humanAuthor: { sourcePrincipalId: 'destination-self' },
+        originalMetadata: ['inert'],
+      };
+      const raw = { ...SEEDED_SNAPSHOT.messages[0], author: first, metadata };
+      const before = JSON.stringify(raw);
+      snapshotPush('sub-1', 0, { ...SEEDED_SNAPSHOT, messages: [raw] });
+      const entity = {
+        agentId: 'agent-1',
+        messageId: 'portable-two',
+        role: 'user',
+        messageSeq: 1,
+        timestamp: raw.timestamp,
+        author: second,
+        metadata,
+        block: { id: 'portable-two:0', type: 'text', text: 'second body' },
+      };
+      deltaPush('sub-1', 1, { added: [entity], updated: [], removedIds: [] });
+      expect(seen.at(-1)!.messages.map((row) => row.author)).toEqual([first, second]);
+      const { author: _author, ...absent } = entity;
+      deltaPush('sub-1', 2, { added: [], updated: [absent], removedIds: [] });
+      expect(seen.at(-1)!.messages[1].author).toEqual(second);
+      deltaPush('sub-1', 3, { added: [], updated: [{ ...entity, author: null }], removedIds: [] });
+      expect(seen.at(-1)!.messages[1]).toHaveProperty('author', null);
+      expect(seen.at(-1)!.messages[1].metadata).toEqual(metadata);
+      expect(seen.at(-1)!.messages[1].contentBlocks?.[0].text).toBe('second body');
+      emitReconnect();
+      await flush();
+      snapshotPush('sub-2', 0, { ...SEEDED_SNAPSHOT, messages: [raw] });
+      expect(seen.at(-1)!.messages[0].author).toEqual(first);
+      expect(JSON.stringify(raw)).toBe(before);
+    } finally {
+      off();
+    }
+  });
+
   it("carries the user-row entity's author projection onto the materialized message (intentd#1869)", async () => {
     // A user row served live carries the daemon's serve-time `author`
     // projection lifted onto each §7.1 entity, exactly as the snapshot page
@@ -1650,7 +1700,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     last = seen[seen.length - 1];
     const legacy = last.messages[2] as Authored;
     expect(legacy.id).toBe('user-msg-legacy-2');
-    expect(legacy.author).toBeUndefined();
+    expect(legacy.author).toBeNull();
     off();
   });
 

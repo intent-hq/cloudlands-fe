@@ -1,4 +1,5 @@
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
+import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
 import { hostExecutionSaga } from './slices/host-execution/sagas/host-execution-saga';
 /**
@@ -170,6 +171,7 @@ export const sagas = [
   workspaceOperationsSaga,
   workspaceTransferSaga,
   workspaceShareSaga,
+  hostMembershipSaga,
   workspaceImportSaga,
   scriptsOperationSaga,
   lifecycleReadSaga,

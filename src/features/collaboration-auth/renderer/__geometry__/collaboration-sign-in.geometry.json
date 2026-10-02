@@ -9,7 +9,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 666,
+          "height": 444,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -21,7 +21,7 @@
         }
       },
       "root": {
-        "height": 716,
+        "height": 494,
         "width": 390
       }
     }
@@ -33,7 +33,7 @@
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 728,
+          "height": 468,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -45,7 +45,7 @@
         }
       },
       "root": {
-        "height": 778,
+        "height": 518,
         "width": 390
       }
     }

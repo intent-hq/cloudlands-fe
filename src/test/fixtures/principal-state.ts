@@ -79,3 +79,32 @@ export function admitLegacyPrincipal(role: 'owner' | 'guest' = 'owner'): void {
     ),
   );
 }
+
+/** Current admitted host roles for consumer tests, without a linked external profile. */
+export function withHostPrincipal(
+  input: object,
+  role: 'owner' | 'member' | 'guest' = 'owner',
+): StoreState {
+  const state = withLegacyPrincipal(input);
+  return {
+    ...state,
+    principal: {
+      ...state.principal,
+      snapshot: {
+        ...state.principal.snapshot!,
+        principal: {
+          ...state.principal.snapshot!.principal,
+          hostRole: role,
+          isAdministrator: role === 'owner',
+          hostMembershipRevision: 1,
+        },
+        capabilities: {
+          hostMembership: true,
+          collaborationIdentity: true,
+          personalPairing: true,
+          authenticatedDevices: true,
+        },
+      },
+    },
+  };
+}

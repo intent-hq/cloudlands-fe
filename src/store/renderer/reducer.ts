@@ -1,3 +1,4 @@
+import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
@@ -224,4 +225,5 @@ export const reducers = {
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
+  hostMembership: hostMembershipReducer,
 } as const;

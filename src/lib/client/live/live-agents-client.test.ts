@@ -618,6 +618,59 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('retains portable author snapshots and opaque provenance on queue reads and scrollback pages', async () => {
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab', host: 'one.example', externalUserId: '42' },
+    };
+    const metadata = {
+      humanAuthor: { sourcePrincipalId: 'local-collision' },
+      originalMetadata: ['inert'],
+    };
+    const queue = [
+      {
+        id: 'portable',
+        content: '  body\n',
+        queuedAt: '2026-01-01T00:00:00Z',
+        position: 0,
+        author,
+        messageMetadata: metadata,
+      },
+    ];
+    const messages = [
+      {
+        id: 'portable',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00Z',
+        author,
+        metadata,
+        contentBlocks: [{ type: 'text', text: '  body\n' }],
+      },
+    ];
+    backend.onRequest('agent.getQueue', () => ({ success: true, queue }));
+    backend.onRequest('agent.getConversation', () => ({
+      messages,
+      truncated: false,
+      totalMessages: 1,
+      nextToken: null,
+    }));
+    const before = JSON.stringify({ queue, messages });
+    const client = new LiveAgentsClient();
+    expect(await client.getQueue('agent-1')).toEqual(queue);
+    expect((await client.getConversation('agent-1', 100, 'older')).messages).toEqual(messages);
+    expect(backend.requests).toEqual([
+      { method: 'agent.getQueue', params: { agentId: 'agent-1' } },
+      {
+        method: 'agent.getConversation',
+        params: { agentId: 'agent-1', limit: 100, nextToken: 'older', projection: 'slim' },
+      },
+    ]);
+    expect(JSON.stringify({ queue, messages })).toBe(before);
+  });
+
   it('getQueue returns [] when the daemon body omits queue', async () => {
     backend.onRequest('agent.getQueue', () => ({ success: true }));
     const client = new LiveAgentsClient();

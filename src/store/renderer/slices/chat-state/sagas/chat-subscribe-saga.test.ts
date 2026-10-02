@@ -238,6 +238,45 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     vi.clearAllMocks();
   });
 
+  it('retains portable author objects and explicit null in admitted transcript hydration and replacement', async () => {
+    const agentId = 'portable-hydration';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+    };
+    const rows: AgentMessage[] = [
+      {
+        ...makeMessage('portable-one', 'body'),
+        role: 'user',
+        author,
+        metadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      },
+      {
+        ...makeMessage('portable-two', 'body'),
+        role: 'user',
+        author: { ...author, identity: { ...author.identity, host: 'two.example' } },
+      },
+      { ...makeMessage('no-author', 'body'), role: 'user', author: null },
+    ];
+    const before = JSON.stringify(rows);
+    sub.handler({ ...transcript(rows), fromSnapshot: true });
+    await vi.waitFor(() =>
+      expect(selectAgentMessages.select(appStore.state, agentId).map((row) => row.author)).toEqual(
+        rows.map((row) => row.author),
+      ),
+    );
+    sub.handler({ ...transcript(rows), fromSnapshot: true });
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].metadata).toEqual(
+      rows[0].metadata,
+    );
+    expect(JSON.stringify(rows)).toBe(before);
+  });
+
   it('initializeChatRequested opens exactly one standing subscription per agent', () => {
     const agentId = 'agent-sub-open';
     seedSession(agentId);
