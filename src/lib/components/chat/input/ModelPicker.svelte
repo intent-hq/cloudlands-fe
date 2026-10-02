@@ -66,6 +66,7 @@
     selectContextModelProviderIds,
     selectContextAvailableProviderIds,
     selectContextEnabledProviders,
+    selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
   import { workspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import {
@@ -327,7 +328,11 @@
   const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
   const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
   const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
+  const workspaceCatalogEpoch$ = selectWorkspaceCatalogEpoch();
   $effect(() => {
+    // An open picker can outlive its workspace lifecycle subscription. Refresh
+    // its own context when settings or the backend invalidate the registry.
+    void $workspaceCatalogEpoch$;
     if (workspaceId) appStore.dispatch(workspaceCatalogRequested(workspaceId));
   });
 
@@ -1458,8 +1463,10 @@
     // Settings-derived: does not wait for catalog loads or availability probes.
     if (isSelectedModelProviderDisabled) return true;
     if (isAwaitingReHomedModel) return false;
-    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
+    // A cleared registry is unknown until its replacement arrives, even if
+    // the last successful models.list response is still cached.
     if (!$hasCheckedOnce$) return false;
+    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (isLoadingModels) return false;
     if (!allProvidersLoaded) return false;
     if (isSelectedModelProviderPending) return false;

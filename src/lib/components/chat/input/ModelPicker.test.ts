@@ -7,6 +7,7 @@ import { tick } from 'svelte';
 import { derived, get, readable, writable } from 'svelte/store';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import type { ProviderModelsState } from '$store/renderer/slices/provider-models/provider-models-types';
+import type { ProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-types';
 
 const mockModelState = vi.hoisted(() => ({
   defaultProviderId: 'auggie',
@@ -251,6 +252,8 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 }));
 
 const hasCheckedOnce$ = writable(true);
+const workspaceCatalogEpoch$ = writable(0);
+const providerEntriesOverride$ = writable<ProviderCatalogEntry[] | null>(null);
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectHasCheckedOnce: () => hasCheckedOnce$,
 }));
@@ -381,6 +384,8 @@ afterEach(() => {
   mockRoleState.current = mockRoleState.reset();
   reasoningEffort$.set(undefined);
   agentModelEffortLevels$.set(undefined);
+  workspaceCatalogEpoch$.set(0);
+  providerEntriesOverride$.set(null);
 });
 
 describe('ModelPicker locked state', () => {
@@ -2926,6 +2931,63 @@ describe('ModelPicker availability gating', () => {
     daemonHealth$.set('healthy');
   });
 
+  it('preserves a cached agent model while its workspace registry refreshes', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const onModelChange = vi.fn();
+    const onReasoningChange = vi.fn();
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6' }],
+    });
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        providerId: 'auggie',
+        workspaceId: 'ws-1',
+        agentId: 'test-agent',
+        reasoningEffort: 'high',
+        onModelChange,
+        onReasoningChange,
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => expect(trigger.textContent).toContain('Sonnet 4.6'));
+
+    // Registry invalidation clears readiness before its replacement arrives,
+    // while the last successful models.list result is still cached.
+    hasCheckedOnce$.set(false);
+    providerEntriesOverride$.set([]);
+    workspaceCatalogEpoch$.update((epoch) => epoch + 1);
+    await tick();
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    await fireEvent.click(trigger);
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    providerEntriesOverride$.set(null);
+    hasCheckedOnce$.set(true);
+    await waitFor(() => expect(screen.getByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy());
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(agentClient.setModel).not.toHaveBeenCalled();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(onReasoningChange).not.toHaveBeenCalled();
+  });
+
+  it('requests its own workspace catalog again after invalidation while still mounted', async () => {
+    render(ModelPicker, {
+      props: { workspaceId: 'ws-1', providerId: 'auggie', portal: false },
+    });
+    await tick();
+    const requests = () =>
+      mockSvelteDispatch.mock.calls
+        .filter(([action]) => action.type === 'providerCatalog/workspaceCatalogRequested')
+        .map(([action]) => action.payload);
+    expect(requests()).toEqual([['ws-1']]);
+    workspaceCatalogEpoch$.update((epoch) => epoch + 1);
+    await tick();
+    expect(requests()).toEqual([['ws-1'], ['ws-1']]);
+  });
+
   it('does not show the no-provider failure notice or toast while availability has not been checked yet', async () => {
     const { notify } = await import('$lib/components/patterns/notify');
     hasCheckedOnce$.set(false);
@@ -5369,7 +5431,12 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
   const { selectProviderCatalogEntries } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
   return {
-    selectContextProviderEntries: selectProviderCatalogEntries,
+    selectContextProviderEntries: () =>
+      derived(
+        [selectProviderCatalogEntries(), providerEntriesOverride$],
+        ([entries, override]) => override ?? entries,
+      ),
+    selectWorkspaceCatalogEpoch: () => workspaceCatalogEpoch$,
     selectContextDefaultProvider: () => readable(mockModelState.defaultProviderId),
     selectContextSelectedModel: () => readable(mockModelState.selectedModel),
     selectContextEnabledProviders: () => enabledProvidersMap$,
