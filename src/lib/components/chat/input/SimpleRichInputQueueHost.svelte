@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { store } from '$store/renderer/store';
+  import { createChiefVirtualWorkspace } from '$store/renderer/slices/workspace-agents/chief-virtual-workspace';
+  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
     principalContextChanged,
@@ -13,10 +15,12 @@
     streaming = false,
     queueCount = 12,
     width = 360,
-  }: { streaming?: boolean; queueCount?: number; width?: number } = $props();
+    chief = false,
+  }: { streaming?: boolean; queueCount?: number; width?: number; chief?: boolean } = $props();
+  const workspace = untrack(() => (chief ? createChiefVirtualWorkspace() : null));
+  if (workspace) store.dispatch(setWorkspaceEntity(workspace));
   const fixtureDispatch = store.dispatch;
   const previousPrincipal = untrack(() => store.state.principal);
-  // This fixture sends a new message without an existing workspace.
   untrack(() => admitLegacyPrincipal());
   const fixturePrincipal = untrack(() => store.state.principal);
   onDestroy(() => {
@@ -47,7 +51,7 @@
 <div class="group/panel" style="height: 240px;" style:width="{width}px">
   <SimpleRichInput
     bind:value
-    workspace={null}
+    {workspace}
     isStreaming={streaming}
     isResponding={streaming}
     onsubmit={() => (lastAction = 'sent')}

@@ -823,9 +823,13 @@ export const selectWorkspaceParticipationContext = store.createSelector<
 >((state, wsId) => {
   const snapshot = selectPrincipalSnapshot.select(state);
   if (!snapshot) return null;
+  // Chief is a host-owner surface, without an ordinary workspace membership row.
+  if (wsId === CHIEF_WORKSPACE_ID)
+    return selectCanAdministerHost.select(state)
+      ? selectPrincipalActionContext.select(state)
+      : null;
   if (snapshot.capabilities.hostMembership && !selectWorkspaceCapabilitiesReady.select(state))
     return null;
-  if (wsId === CHIEF_WORKSPACE_ID && !selectCanAdministerHost.select(state)) return null;
   if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
     return null;
   const row = selectWorkspaceById.select(state, wsId);
