@@ -304,8 +304,8 @@
 
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: live (running/restarting) > exited > idle
-      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
+      // Priority: live (starting/running/restarting) > exited > idle
+      const statusPriority = { starting: 0, running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 

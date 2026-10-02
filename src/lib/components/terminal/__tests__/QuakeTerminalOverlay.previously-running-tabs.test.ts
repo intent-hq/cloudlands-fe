@@ -239,16 +239,19 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
     expect(dispatchedTypes()).not.toContain('terminals/selectScript');
   });
 
-  it('still renders live scripts as tabs, without a dismiss button', async () => {
-    seedScripts([makeScript('live-1', { status: 'running', pid: 42 })]);
+  it.each(['starting', 'running', 'restarting'] as const)(
+    'renders %s scripts as tabs without a dismiss button',
+    async (status) => {
+      seedScripts([makeScript('live-1', { status, pid: 42 })]);
 
-    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+      const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
 
-    await waitFor(() => expect(scriptTabs(container)).toHaveLength(1));
-    const labels = scriptTabs(container).map((tab) => tab.textContent ?? '');
-    expect(labels.some((text) => text.includes('script-live-1'))).toBe(true);
-    expect(container.querySelector('[data-dismiss-script-tab]')).toBeNull();
-  });
+      await waitFor(() => expect(scriptTabs(container)).toHaveLength(1));
+      const labels = scriptTabs(container).map((tab) => tab.textContent ?? '');
+      expect(labels.some((text) => text.includes('script-live-1'))).toBe(true);
+      expect(container.querySelector('[data-dismiss-script-tab]')).toBeNull();
+    },
+  );
 
   it('labels bottom-tab status without relying on color', async () => {
     seedScripts([

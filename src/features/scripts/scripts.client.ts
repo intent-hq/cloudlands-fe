@@ -25,8 +25,6 @@ import type {
   ScriptRuntimeState,
   ScriptWithState,
   ScriptMode,
-  ScriptCategory,
-  ScriptSource,
   ScriptPurpose,
 } from './types';
 import { createLogger } from '$lib/utils/client-logger';
@@ -47,8 +45,8 @@ export interface CreateScriptInput {
   cwd?: string;
   env?: Record<string, string>;
   mode: ScriptMode;
-  category?: ScriptCategory;
-  source?: ScriptSource;
+  category?: string;
+  source?: string;
   autoStart?: boolean;
 }
 
@@ -59,7 +57,7 @@ export interface UpdateScriptInput {
   cwd?: string;
   env?: Record<string, string>;
   mode?: ScriptMode;
-  category?: ScriptCategory;
+  category?: string;
   autoStart?: boolean;
 }
 
