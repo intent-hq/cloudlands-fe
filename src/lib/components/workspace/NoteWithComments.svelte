@@ -521,6 +521,7 @@
   let isInitializing = $state(true);
   let isLayingOutDiagrams = $state(true);
   let isNoteLoading = $derived(isInitializing || isLayingOutDiagrams);
+  let editorToFocus = $state<Editor | null>(null);
 
   // Streaming-in animation state: triggers a cascading reveal
   // when a newly created note first loads
@@ -622,6 +623,23 @@
     });
     revealSettledNote();
     return () => observer.disconnect();
+  });
+
+  $effect(() => {
+    const target = editorToFocus;
+    if (!target || isNoteLoading || isTooLargeForRichEditor || shouldShowRawNoteView) return;
+    editorToFocus = null;
+    void tick().then(() => {
+      if (
+        !isComponentDestroyed &&
+        editor === target &&
+        !target.isDestroyed &&
+        shouldFocus &&
+        editable
+      ) {
+        target.commands.focus('end');
+      }
+    });
   });
 
   // Reactive selector subscriptions at component init time
@@ -1307,16 +1325,7 @@
 
     // Focus the editor if requested (e.g., when creating a new note)
     if (shouldFocus && editable) {
-      // Wait for editor to be fully initialized before focusing
-      setTimeout(() => {
-        try {
-          if (editor && !editor.isDestroyed && editor.view) {
-            editor.commands.focus('end');
-          }
-        } catch {
-          // Editor view may not be fully mounted yet - safe to ignore
-        }
-      }, 100);
+      editorToFocus = editor;
     }
 
     // Add click handler for comment marks (wait for view to be ready)

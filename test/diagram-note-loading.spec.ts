@@ -1,15 +1,43 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { createServer, type ViteDevServer } from 'vite';
 import {
   CUSTOM_WORKBENCH_CASES,
   MERMAID_WORKBENCH_CASES,
 } from '../src/lib/components/diagrams/diagram-workbench.preview-fixtures';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
-const baseUrl = process.env.UI_PREVIEW_BASE_URL?.replace(/\/$/, '');
-test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the running preview server.');
+const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL?.replace(/\/$/, '');
+let baseUrl = externalBaseUrl ?? '';
+let server: ViteDevServer | undefined;
+test.describe.configure({ mode: 'default' });
 test.setTimeout(90_000);
 test.use({
   viewport: { width: 1500, height: 1000 },
   video: { mode: 'on', size: { width: 1500, height: 1000 } },
+});
+
+test.beforeAll(async ({}, workerInfo) => {
+  if (externalBaseUrl) return;
+  const ownedServer = await createServer({
+    cacheDir: viteHarnessCacheDir('diagram-note-loading', { workerIndex: workerInfo.workerIndex }),
+    server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
+  });
+  server = ownedServer;
+  try {
+    await ownedServer.listen();
+    baseUrl = ownedServer.resolvedUrls?.local[0]?.replace(/\/$/, '') ?? '';
+    expect(baseUrl).not.toBe('');
+  } catch (error) {
+    await ownedServer.close().catch(() => undefined);
+    server = undefined;
+    throw error;
+  }
+});
+
+test.afterAll(async () => {
+  const ownedServer = server;
+  server = undefined;
+  await ownedServer?.close();
 });
 
 const flow = 'flowchart LR\n A[Receive request] --> B[Process request] --> C[Return result]';
@@ -43,15 +71,14 @@ async function mountNote(
   page: Page,
   width: number,
   blocks: string[],
-  holdFont = false,
-  hidden = false,
+  { holdFont = false, hidden = false, shouldFocus = false } = {},
 ) {
   await page.goto(`${baseUrl}/sandbox/button?state=default&motion=full`, {
     waitUntil: 'domcontentloaded',
   });
   await expect(page.locator('[data-preview-ready=true]')).toBeVisible({ timeout: 60_000 });
   await page.evaluate(
-    async ({ width, blocks, holdFont, hidden }) => {
+    async ({ width, blocks, holdFont, hidden, shouldFocus }) => {
       const [{ mount }, { writable, fromStore }, { default: NoteWithComments }] = await Promise.all(
         [
           import('/@id/svelte'),
@@ -155,12 +182,13 @@ async function mountNote(
             return currentNote.current.noteId;
           },
           editable: true,
+          shouldFocus,
           showSuggestions: false,
           showComments: false,
         },
       });
     },
-    { width, blocks, holdFont, hidden },
+    { width, blocks, holdFont, hidden, shouldFocus },
   );
 }
 
@@ -244,7 +272,7 @@ for (const [name, width, source] of [
 test('a note opened from a hidden panel waits for its available width before revealing', async ({
   page,
 }, info) => {
-  await mountNote(page, 712, [mermaid(flow)], false, true);
+  await mountNote(page, 712, [mermaid(flow)], { hidden: true });
   const host = page.locator('#diagram-loading-note');
   await expect(host.locator('.mermaid-renderer')).toHaveAttribute('data-render-settled', 'true', {
     timeout: 30_000,
@@ -260,7 +288,7 @@ test('slow sequence fonts keep text and faster diagrams hidden until the note is
     page,
     960,
     [mermaid(flow), mermaid(MERMAID_WORKBENCH_CASES['mermaid-sequence-note'].source)],
-    true,
+    { holdFont: true },
   );
   await expect
     .poll(() => page.evaluate(() => (window as LoadingWindow).diagramFontHeld))
@@ -277,6 +305,23 @@ test('slow sequence fonts keep text and faster diagrams hidden until the note is
   expect(pendingVisible).toBe(false);
   expectStableReveal(frames);
   expectStableReveal(frames, 1);
+});
+
+test('requested editor focus waits for slow diagrams to finish loading', async ({ page }, info) => {
+  await mountNote(page, 712, [mermaid(MERMAID_WORKBENCH_CASES['mermaid-sequence-note'].source)], {
+    holdFont: true,
+    shouldFocus: true,
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as LoadingWindow).diagramFontHeld))
+    .toBe(true);
+  const editor = page.locator('#diagram-loading-note .tiptap-editor');
+  await expect(editor).not.toBeFocused();
+  await page.evaluate(() => (window as LoadingWindow).releaseDiagramFont());
+  expectStableReveal(await finishCapture(page, info));
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('Typing after loading.');
+  await expect(editor).toContainText('Typing after loading.');
 });
 
 test('multiple diagram types reveal together and walkthrough steps stay visible', async ({
