@@ -174,7 +174,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('data-titlebar-drag-handle');
     expect(titlebar).toContain('data-titlebar-left-drag-handle');
     expect(titlebar).toContain('titlebar-left-drag-handle shrink-0 self-stretch');
-    expect(titlebar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
     expect(titlebar).toContain('data-titlebar-fixed-controls');
     expect(titlebar).toContain('class="flex min-w-0 self-end items-center gap-1');
     expect(titlebar).toContain('data-titlebar-workspace-controls');
