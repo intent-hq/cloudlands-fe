@@ -1419,6 +1419,13 @@ export class DocumentSession {
       } else this.renderSelection();
       this.suppress = false;
       if (this.projection.table?.window.trailing !== false) this.editor.view.focus();
+      if (!restore && this.projection.table && this.tableScroller && this.tableScrollRequest) {
+        // Destroying the old DOM temporarily shrinks the scroll canvas. Restore
+        // the requested viewport after mounting/layout, including fresh sessions
+        // that have no focused native caret to recover the scroll position.
+        this.tableScroller.scrollLeft = this.tableScrollRequest.left + this.tableOriginX;
+        this.tableScroller.scrollTop = this.tableScrollRequest.top + this.tableOriginY;
+      }
       this.error = '';
       this.changed();
       return true;
@@ -1810,10 +1817,13 @@ export class DocumentSession {
       });
       if (this.tableTabAtEnd && this.tableTabDestination) {
         this.tableTabAtEnd = false;
+        const destination = this.tableTabDestination;
         queueMicrotask(() => {
-          this.selection = this.tableTabDestination!;
+          // Native focus/selection callbacks may dispatch before this queued mount.
+          // Retain the accepted destination, not a mutable dispatch scratch field.
+          this.selection = destination;
           this.tableTabDestination = undefined;
-          void this.seek(this.selection.head);
+          void this.seek(destination.head);
         });
       }
       this.resizeTable(this.tableViewport);

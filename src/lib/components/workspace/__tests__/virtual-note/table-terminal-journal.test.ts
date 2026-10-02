@@ -107,3 +107,23 @@ it('rejects remote deletion of a nonhistorical native terminal owner', () => {
   expect(s.region(0)).toBe(source);
   expect(s.revision).toBe(revision);
 });
+
+it('refreshes retained viewport geometry after a native source-less terminal append', () => {
+  const s = new SourceJournal(() => source, 1);
+  const window = s.tableViewportWindow(at, {
+    width: 640,
+    height: 520,
+    font: 'sans-serif|16px|24px|normal',
+  })!;
+  s.atomic(() => s.stageTableTrailing(0, true, s.revision, false));
+  const next = s.tableWindow(at, window)!;
+  expect(next.revision).toBe(s.revision);
+  expect(next.geometry!.revision).toBe(s.revision);
+  expect(next.trailing).toBe(true);
+  expect(next.cells.map((c) => c.raw)).toEqual(window.cells.map((c) => c.raw));
+  expect(() => s.tableHeights.record(window.geometry!, window.geometry!.heights)).toThrow(
+    'Stale table geometry',
+  );
+  expect(() => s.tableHeights.record(next.geometry!, next.geometry!.heights)).not.toThrow();
+  expect(s.region(0)).toBe(source);
+});

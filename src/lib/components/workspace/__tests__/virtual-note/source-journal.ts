@@ -1372,6 +1372,15 @@ export class SourceJournal {
         backwardColumns: anchor.column > head.column,
       };
     } else delete window.selected;
+    if (window.geometry && retained && window.geometry.revision !== this.revision) {
+      const previous = window.geometry;
+      window.geometry = this.tableHeights.range(
+        { ...previous, revision: this.revision, table: window.from },
+        window.rows,
+        previous.row,
+        previous.heights.length,
+      );
+    }
     window.layout = this.tableHeights.layout(window);
     const packed = packTableWindow(window);
     const size = bytes(JSON.stringify(packed));
