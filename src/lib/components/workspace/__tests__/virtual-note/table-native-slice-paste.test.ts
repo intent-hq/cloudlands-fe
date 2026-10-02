@@ -9,7 +9,7 @@ import { scanTables } from './table-source';
 
 beforeAll(() => store.init());
 afterAll(() => store.dispose());
-for (const origin of ['paragraph', 'cell'] as const)
+for (const origin of ['paragraph', 'cell', 'blockquote', 'nested-list'] as const)
   for (const range of [false, true]) {
     it(`retains native cell text paste fitting and history: origin=${origin}, range=${range}`, async () => {
       const source = '| H | K |\n| :--- | ---: |\n| **BEFORE** middle AFTER | untouched |\n\nTail';
@@ -31,7 +31,11 @@ for (const origin of ['paragraph', 'cell'] as const)
           content:
             origin === 'cell'
               ? '<table><tbody><tr><td>' + paragraphs + '</td></tr></tbody></table><p>Tail</p>'
-              : paragraphs,
+              : origin === 'blockquote'
+                ? '<blockquote>' + paragraphs + '</blockquote>'
+                : origin === 'nested-list'
+                  ? '<ul><li><p>Outer</p><ul><li>' + paragraphs + '</li></ul></li></ul>'
+                  : paragraphs,
           editable: true,
           useMarkdown: true,
           enableComments: false,
@@ -70,7 +74,11 @@ for (const origin of ['paragraph', 'cell'] as const)
         let donorStart = -1,
           donorEnd = -1;
         donor.state.doc.descendants((node, pos) => {
-          if (node.type.name === 'paragraph' && node.textContent !== 'Tail') {
+          if (
+            node.type.name === 'paragraph' &&
+            node.textContent !== 'Tail' &&
+            node.textContent !== 'Outer'
+          ) {
             if (donorStart < 0) donorStart = pos + 1;
             donorEnd = pos + node.nodeSize - 1;
           }
