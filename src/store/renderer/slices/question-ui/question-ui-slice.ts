@@ -57,9 +57,11 @@ export const questionWizardReleased = createAction<[consumerId: string, requestI
   'questionUi/wizardReleased',
 );
 
-export const questionUiReducer = createReducer<QuestionUiState>({
+export const initialState: QuestionUiState = {
   consumers: createCollection('id'),
-});
+};
+
+export const questionUiReducer = createReducer<QuestionUiState>(initialState);
 
 questionUiReducer.with(
   questionWizardConsumed,

@@ -12,6 +12,12 @@ import type { Workspace } from '$shared/types';
 import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
 import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
 import { resolveShortcut } from '$lib/utils/shortcut-bindings';
+import { initialState as initialChatDrafts } from '$store/renderer/slices/chat-drafts/chat-drafts-slice';
+import { initialState as initialQuestionUi } from '$store/renderer/slices/question-ui/question-ui-slice';
+import {
+  createChatDraftStoreDriver,
+  type ChatDraftStoreDriver,
+} from './mocks/chat-draft-store-driver';
 import {
   animateScrollTo as animateScrollToUtil,
   followToBottom as scrollToBottomUtil,
@@ -23,6 +29,7 @@ import {
   setWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { pendingSubmissionsReducer } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+let draftDriver: ChatDraftStoreDriver | undefined;
 const mocks = vi.hoisted(() => {
   let activeReadableSubscriptions = 0;
   const mutableReadable = <T>(initial: T) => {
@@ -164,6 +171,8 @@ vi.mock('$store/renderer/store', async () => {
       git: { byWorkspaceId: {} },
       ...(mocks.storeState as Record<string, unknown>),
       agentSubscriptionUI: { entries: mocks.agentSubscriptionUIEntries },
+      chatDrafts: draftDriver?.state ?? initialChatDrafts,
+      questionUi: initialQuestionUi,
       transientUi: mocks.transientUi,
     }),
     dispatch: mocks.dispatch,
@@ -210,6 +219,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatAgentState: mocks.selector({
     scrollbackOlderBlocked: false,
     scrollbackGapBlocked: false,
+    scrollbackDiscardEpoch: 0,
   }),
   selectAwaitingSwitchBackSnapshot: Object.assign(() => mocks.awaitingSwitchBackSnapshot, {
     select: () => false,
@@ -752,6 +762,13 @@ beforeEach(() => {
   clearAllChatInterestLeases();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
   mocks.listUserMessages.mockResolvedValue({ ok: true, items: [], total: 0 });
+  draftDriver?.stop();
+  draftDriver = createChatDraftStoreDriver({
+    get: (...args) => mocks.draftGet(...args),
+    set: (...args) => mocks.draftSet(...args),
+    clear: (...args) => mocks.draftClear(...args),
+  });
+  draftDriver.subscribe(() => (appStore as unknown as { emitState(): void }).emitState());
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
   for (const key of Object.keys(mocks.agentSubscriptionUIEntries)) {
     delete mocks.agentSubscriptionUIEntries[key];
@@ -759,6 +776,7 @@ beforeEach(() => {
   mocks.transientUi = initialTransientUi;
   mocks.deferComposerEmits = false;
   mocks.dispatch.mockImplementation((action) => {
+    if (action?.type?.startsWith('chatDrafts/')) return draftDriver?.dispatch(action) ?? action;
     const state = mocks.storeState as import('$store/renderer/types').StoreState;
     if (state.pendingSubmissions) {
       const pending = pendingSubmissionsReducer(state.pendingSubmissions, action);
@@ -831,6 +849,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  draftDriver?.stop();
+  draftDriver = undefined;
   clearAllChatInterestLeases();
   Reflect.deleteProperty(globalThis.CSS, 'highlights');
   vi.useRealTimers();
@@ -4962,9 +4982,7 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
-    // The lightweight store mock reads selector-store arguments once, before
-    // EventSubscriptionsCard's effects populate the workspace and agent IDs.
-    mocks.agentSubscriptionUIEntries[':'] = {
+    mocks.agentSubscriptionUIEntries['workspace-a:agent-a'] = {
       subscriptions: [],
       delegationGroups: [],
       agentStatuses: {},
