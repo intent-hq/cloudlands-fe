@@ -1,4 +1,6 @@
 <script module lang="ts">
+  import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
+  import { Button } from '$lib/components/ui/button';
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import type { MessageAuthor, QueuedMessage } from '$shared/types';
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
@@ -19,6 +21,13 @@
     startSending?: boolean;
     clearFails?: boolean;
     docked?: boolean;
+    scenario?:
+      | 'owner'
+      | 'participant'
+      | 'merged'
+      | 'system-interleaved'
+      | 'author-barrier'
+      | 'edit-conflict';
   }
 
   export const preview = definePreview<Props>({
@@ -50,6 +59,12 @@
       'send-failed': { props: { messageCount: 2, sendOutcome: 'failed' } },
       'awaiting-removal': { props: { messageCount: 2, sendOutcome: 'delivered' } },
       'clear-failed': { props: { messageCount: 3, clearFails: true } },
+      owner: { props: { scenario: 'owner' } },
+      participant: { props: { scenario: 'participant' } },
+      merged: { props: { scenario: 'merged' } },
+      'system-interleaved': { props: { scenario: 'system-interleaved' } },
+      'author-barrier': { props: { scenario: 'author-barrier' } },
+      'edit-conflict': { props: { scenario: 'edit-conflict' } },
     },
   });
 </script>
@@ -60,6 +75,7 @@
 
   let {
     messageCount = 3,
+    scenario,
     heldCount = 0,
     heldStart = 0,
     retry = false,
@@ -146,7 +162,7 @@
   let messages = $state<QueuedMessage[]>([]);
   let draft = $state('');
   $effect(() => {
-    messages = Array.from({ length: messageCount }, (_, i) => ({
+    let next: QueuedMessage[] = Array.from({ length: messageCount }, (_, i) => ({
       id: `preview-queue-${i}`,
       content: messageContent(i),
       ...attachments(i),
@@ -155,7 +171,51 @@
       editing: i >= heldStart && i < heldStart + heldCount,
       requeuedAfterFailure: retry && i === 0,
       author: showAuthors ? people[i % people.length] : undefined,
+      messageMetadata: {
+        fromPrincipalId: showAuthors ? people[i % people.length].principalId! : 'preview-self',
+      },
     }));
+    if (scenario) {
+      const author = (principalId: string, displayName: string) => ({
+        principalId,
+        displayName,
+        login: null,
+        avatarUrl: null,
+      });
+      const first = {
+        ...next[0],
+        content: 'Check the empty state too.',
+        author: author('owner', 'Alex'),
+        messageMetadata: { fromPrincipalId: 'owner' },
+      };
+      const guest = {
+        ...next[1],
+        content: 'Keep the spacing consistent.',
+        author: author('guest', 'Sam'),
+        messageMetadata: { fromPrincipalId: 'guest' },
+      };
+      next = [first, guest, { ...next[2], author: first.author }];
+      if (scenario === 'edit-conflict') {
+        next = [
+          { ...first, editing: true, editingMessageId: first.id },
+          { ...next[2], position: 1, content: 'My unsaved follow-up draft.' },
+        ];
+      }
+      if (scenario === 'merged' || scenario === 'system-interleaved') {
+        next = [
+          { ...first, content: 'Check the empty state too.\n\nAdd a keyboard navigation test.' },
+        ];
+        if (scenario === 'system-interleaved')
+          next.push({
+            id: 'system',
+            content: 'Automatic wake',
+            position: 1,
+            queuedAt: first.queuedAt,
+            messageMetadata: { source: 'system' },
+          });
+      }
+    }
+    messages = next;
   });
 
   function remove(id: string) {
@@ -182,12 +242,33 @@
   }
 </script>
 
+{#if scenario === 'edit-conflict'}
+  <Button
+    onpointerdown={(event) => event.preventDefault()}
+    onclick={() => {
+      const first = messages[0];
+      messages = [
+        {
+          ...first,
+          content: 'Check the empty state too.\n\nMy unsaved follow-up draft.',
+          editing: true,
+          editingMessageId: first.id,
+        },
+      ];
+    }}
+  >
+    Combine held entries
+  </Button>
+{/if}
+
 {#snippet queue()}
   <QueuedMessageList
-    {messages}
+    messages={messages.filter(isUserQueuedMessage)}
     {disabled}
-    {authors}
-    ownPrincipalId="preview-self"
+    authors={scenario ? new Map() : authors}
+    ownPrincipalId={scenario === 'participant' ? 'guest' : scenario ? 'owner' : 'preview-self'}
+    ownerPrincipalId={scenario ? 'owner' : 'preview-self'}
+    isHostOwner={!scenario}
     onedit={async (id, content, editing) => {
       messages = messages.map((message) =>
         message.id === id ? { ...message, content, editing } : message,

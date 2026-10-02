@@ -12,6 +12,25 @@
  */
 export type ScriptMode = 'service' | 'command';
 
+export type ScriptArchiveFilter = 'active' | 'archived' | 'all';
+export type ScriptPurpose = 'saved' | 'oneOff';
+interface ScriptLastRun {
+  runId?: string;
+  outcome: 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+  exitCode?: number;
+  startedAt?: string;
+  stoppedAt: string;
+  error?: string;
+}
+export interface ScriptArchiveResult {
+  archived: string[];
+  skipped: { scriptId: string; reason: 'live' | 'service' | 'notFound' }[];
+}
+export interface ScriptRestoreResult {
+  restored: string[];
+  skipped: { scriptId: string; reason: 'notFound' }[];
+}
+
 /**
  * Script category for grouping in the UI.
  */
@@ -19,16 +38,9 @@ export type ScriptCategory =
   'dev' | 'build' | 'test' | 'lint' | 'typecheck' | 'format' | 'storybook' | 'other';
 
 /**
- * How the script was created.
- * - `auto-detected`: Discovered from package.json or similar
- * - `user`: Manually created by user or agent
- */
-export type ScriptSource = 'auto-detected' | 'user';
-
-/**
  * Runtime status of a script process.
  */
-export type ScriptStatus = 'idle' | 'running' | 'restarting' | 'exited';
+export type ScriptStatus = 'idle' | 'starting' | 'running' | 'restarting' | 'exited';
 
 /**
  * A workspace script definition — persisted by the intentd daemon.
@@ -41,18 +53,23 @@ export interface WorkspaceScript {
   cwd?: string; // Relative to workspace repo root
   env?: Record<string, string>;
   mode: ScriptMode;
-  category?: ScriptCategory;
-  source: ScriptSource;
+  // Daemon fields are open strings; creation UI uses the known aliases above.
+  category?: string;
+  source: string;
   autoStart?: boolean; // Start when workspace opens (services only)
   createdAt: string;
   updatedAt?: string;
   lastRunAt?: string;
+  purpose?: ScriptPurpose;
+  archivedAt?: string;
+  lastRun?: ScriptLastRun;
 }
 
 /**
  * Runtime state of a script process — kept in memory, not persisted.
  */
 export interface ScriptRuntimeState {
+  runId?: string;
   status: ScriptStatus;
   pid?: number;
   exitCode?: number | null;

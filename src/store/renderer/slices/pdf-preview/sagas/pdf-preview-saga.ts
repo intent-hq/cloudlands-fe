@@ -9,7 +9,7 @@ import {
 } from '../pdf-preview-slice';
 
 function* readPreview(action: ReturnType<typeof pdfPreviewRequested>) {
-  const [viewId, requestId, workspaceId, path] = action.payload;
+  const [viewId, requestId, workspaceId, path, options] = action.payload;
   const abort = new AbortController();
   let url: string | undefined;
   const isReleased = (next: { type: string; payload?: unknown }) =>
@@ -25,12 +25,14 @@ function* readPreview(action: ReturnType<typeof pdfPreviewRequested>) {
       next.payload[0] === workspaceId);
   try {
     const result = yield* race({
-      bytes: call(readPdf, workspaceId, path, abort.signal),
+      bytes: call(readPdf, workspaceId, path, abort.signal, options?.gitRootId),
       released: take(isReleased),
     });
     if (!result.bytes) return;
     // Redux holds only the revocable URL/status; binary bytes stay in the browser's Blob store.
-    url = URL.createObjectURL(new Blob([result.bytes], { type: 'application/pdf' }));
+    url = URL.createObjectURL(
+      new Blob([result.bytes], { type: options?.mimeType ?? 'application/pdf' }),
+    );
     yield* put(pdfPreviewReady(viewId, requestId, url));
     yield* take(isReleased);
   } catch (error) {

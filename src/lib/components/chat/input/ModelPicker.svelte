@@ -68,7 +68,7 @@
     selectContextEnabledProviders,
     selectWorkspaceCatalogEpoch,
   } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
-  import { workspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+  import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import {
     providerModelsObserved,
     providerModelsReleased,
@@ -333,7 +333,7 @@
     // An open picker can outlive its workspace lifecycle subscription. Refresh
     // its own context when settings or the backend invalidate the registry.
     void $workspaceCatalogEpoch$;
-    if (workspaceId) appStore.dispatch(workspaceCatalogRequested(workspaceId));
+    if (workspaceId) appStore.dispatch(ensureWorkspaceCatalogRequested(workspaceId));
   });
 
   // `default`-variant pickers stack the notice directly under a full-width

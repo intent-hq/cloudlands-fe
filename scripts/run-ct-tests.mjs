@@ -89,6 +89,7 @@ export function usage() {
     '',
     'Runs Playwright component tests with the CT-aligned playwright CLI.',
     'All arguments are forwarded to `playwright test -c playwright-ct.config.ts`.',
+    'Tests that pass only on retry fail the run; retries and reports are preserved.',
     '',
     'Launcher options:',
     `  ${OPEN_REPORT_FLAG}     Serve the HTML report after the run (same as ${CT_HTML_REPORT_ENV}=open).`,
@@ -528,6 +529,9 @@ async function main(argv) {
     args = [...plan.install.args, ...options];
   } else {
     args = ['test', '-c', 'playwright-ct.config.ts', ...forwarded];
+    // Local runs (including both verify:changed CT paths) use the same strict
+    // flaky-result policy as CI, without changing retries or their evidence.
+    if (!forwarded.includes('--fail-on-flaky-tests')) args.splice(1, 0, '--fail-on-flaky-tests');
   }
   console.error(
     `[run-ct-tests] CT runner ${cli.version}; browser supplier ${CT_BROWSER.supplierVersion}; Chromium ${CT_BROWSER.chromiumVersion} revision ${CT_BROWSER.revision}; CLI ${launchCliPath}`,

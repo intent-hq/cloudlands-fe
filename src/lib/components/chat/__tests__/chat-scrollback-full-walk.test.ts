@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import {
   agentSessionReducer,
@@ -50,7 +51,7 @@ import {
  * history→tail hole — the regime where the QA symptoms live.
  */
 const CONVERSATION_ROWS = 1400;
-/** Saga page size (mirrors chat-scrollback-saga PAGE_LIMIT). */
+/** Coarse legacy geometry scenarios; production-sized walks are covered below. */
 const PAGE_ROWS = 200;
 /** Simulated transcript container clientHeight. */
 const VIEWPORT_PX = 800;
@@ -148,6 +149,7 @@ class WalkSim {
   constructor(
     readonly conversation: AgentMessage[],
     tailRows: number,
+    readonly pageRows = CHAT_PAGE_SIZE,
   ) {
     this.state = seedState(conversation, tailRows);
     this.fetchCursor = conversation.length - tailRows;
@@ -233,7 +235,7 @@ class WalkSim {
    */
   fetchOlderPage(): void {
     const end = this.fetchCursor;
-    const start = Math.max(0, end - PAGE_ROWS);
+    const start = Math.max(0, end - this.pageRows);
     const page = this.conversation.slice(start, end);
     const anchor = this.captureAnchor();
     this.state = agentSessionReducer(this.state, prependHistoryMessages(AGENT_ID, page));
@@ -396,8 +398,8 @@ class WalkSim {
    */
   performSeek(target: number): void {
     const total = this.conversation.length;
-    const start = estimateSeekLandingStartOrdinal(target, PAGE_ROWS, total);
-    const page = this.conversation.slice(start, start + PAGE_ROWS);
+    const start = estimateSeekLandingStartOrdinal(target, this.pageRows, total);
+    const page = this.conversation.slice(start, start + this.pageRows);
     this.state = agentSessionReducer(this.state, seedHistoryAround(AGENT_ID, page, start));
     this.fetchCursor = start;
     this.gapFillCursor = start + page.length;
@@ -431,12 +433,12 @@ class WalkSim {
       this.gapFillCursor ??
       estimateSeekLandingStartOrdinal(
         ordinalOf(history[history.length - 1]),
-        PAGE_ROWS,
+        this.pageRows,
         this.conversation.length,
       );
     const page = this.conversation.slice(
       start,
-      Math.min(this.conversation.length, start + PAGE_ROWS),
+      Math.min(this.conversation.length, start + this.pageRows),
     );
     this.gapFillCursor = start + page.length;
     const anchor = this.captureAnchor();
@@ -532,7 +534,7 @@ describe('full-walk scrollback harness', () => {
 
   it('serial walk tail→top keeps extent error under 15% at every quiet point', () => {
     const conversation = buildConversation();
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
 
     // Initial hydration settles: first reconcile seeds the EMA + spacer.
     sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
@@ -570,7 +572,7 @@ describe('full-walk scrollback harness', () => {
 
   it('serial walk never leaves the settled viewport resting in blank spacer territory', () => {
     const conversation = buildConversation();
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
     sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
     sim.reconcile();
 
@@ -633,7 +635,7 @@ describe('full-walk scrollback harness', () => {
   // top of the walk.
   it('continuous-scroll (frozen) walk: no blank viewport mid-walk, no thumb snap at exhaustion', () => {
     const conversation = buildConversation();
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
     // Seed like the real panel: the transcript settles once BEFORE the user
     // starts the gesture, sizing the spacer + seeding the EMA.
     sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
@@ -744,7 +746,7 @@ describe('full-walk scrollback harness', () => {
   // parked viewport — the blank clears within one landed page.
   it('viewport parked inside the spacer is reached by landing pages (no persistent blank)', () => {
     const conversation = buildConversation();
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
     sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
     sim.reconcile();
 
@@ -795,7 +797,7 @@ describe('full-walk scrollback harness', () => {
   // only stop at exhaustion (an unbounded walk on huge conversations).
   it('capped settle chain terminates when the restated above spacer drops below the viewport, not at exhaustion', () => {
     const conversation = buildConversation(4000);
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
     sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
     sim.reconcile();
 
@@ -912,7 +914,7 @@ describe('full-walk scrollback harness', () => {
 
   it('downward flick to ~60% from the exhausted top settles onto real rows (no persistent blank)', () => {
     const conversation = buildConversation();
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
     walkToTop(sim);
 
     // Flick DOWN to ~60% of the bar (thumb drag: one discrete jump). Grant
@@ -968,7 +970,7 @@ describe('full-walk scrollback harness', () => {
 
   it('walking down from the landing to the tail closes the gap (no spacer/affordance left when contiguous)', () => {
     const conversation = buildConversation();
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
     walkToTop(sim);
 
     // Downward flick to ~60%, then keep scrolling down one viewport per
@@ -1042,7 +1044,7 @@ describe('full-walk scrollback harness', () => {
 
   it('flick from the exhausted top straight to the tail leaves no phantom gap between history and tail', () => {
     const conversation = buildConversation();
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
     walkToTop(sim);
 
     // One flick to the very bottom (the tail rows). The drag sweeps the
@@ -1084,7 +1086,7 @@ describe('full-walk scrollback harness', () => {
 
   it('re-arms on demand: after the return-to-tail collapse an upward scroll restarts the serial walk', () => {
     const conversation = buildConversation();
-    const sim = new WalkSim(conversation, 20);
+    const sim = new WalkSim(conversation, 20, PAGE_ROWS);
     walkToTop(sim);
 
     // Flick straight to the tail and settle — the collapse drops the segment.
@@ -1248,7 +1250,7 @@ describe('full-walk scrollback harness', () => {
 
     it('rapid flick deep into the spacer defers to the settle debounce and issues ONE seek (no serial chase)', () => {
       const conversation = buildConversation();
-      const sim = new WalkSim(conversation, 20);
+      const sim = new WalkSim(conversation, 20, PAGE_ROWS);
       sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
       sim.reconcile();
       expect(sim.above).toBeGreaterThan(0);
@@ -1281,7 +1283,7 @@ describe('full-walk scrollback harness', () => {
 
     it('serial page in flight + far drag: the settle chain re-classifies and jumps instead of chaining pages', () => {
       const conversation = buildConversation();
-      const sim = new WalkSim(conversation, 20);
+      const sim = new WalkSim(conversation, 20, PAGE_ROWS);
       sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
       sim.reconcile();
       const driver = new PanelDriver(sim);
@@ -1313,7 +1315,7 @@ describe('full-walk scrollback harness', () => {
 
     it('gentle near-top scrolling keeps the immediate edge-triggered serial dispatch', () => {
       const conversation = buildConversation();
-      const sim = new WalkSim(conversation, 20);
+      const sim = new WalkSim(conversation, 20, PAGE_ROWS);
       sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
       sim.reconcile();
       const driver = new PanelDriver(sim);
@@ -1331,7 +1333,7 @@ describe('full-walk scrollback harness', () => {
 
     it('serial page in flight + flick down past the hole: the settle chain runs the below drivers (collapse) with zero extra scroll events', () => {
       const conversation = buildConversation();
-      const sim = new WalkSim(conversation, 20);
+      const sim = new WalkSim(conversation, 20, PAGE_ROWS);
       sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
       sim.reconcile();
       const driver = new PanelDriver(sim);
@@ -1371,7 +1373,7 @@ describe('full-walk scrollback harness', () => {
 
     it('below-spacer drivers are unaffected: a flick back to the tail still collapses the segment', () => {
       const conversation = buildConversation();
-      const sim = new WalkSim(conversation, 20);
+      const sim = new WalkSim(conversation, 20, PAGE_ROWS);
       walkToTop(sim);
       const driver = new PanelDriver(sim);
 
@@ -1388,5 +1390,85 @@ describe('full-walk scrollback harness', () => {
       expect(sim.meta.gapToTail).toBe(false);
       expect(sim.spacerOverlapPx()).toBe(0);
     });
+  });
+});
+
+describe('five-message full history traversal', () => {
+  it.each([true, false])(
+    'walks both directions through cap pruning without losing rows or reading anchors (seq=%s)',
+    (withSeq) => {
+      const conversation = buildConversation().map((row, seq) => (withSeq ? { ...row, seq } : row));
+      const sim = new WalkSim(conversation, CHAT_PAGE_SIZE);
+      expect(sim.pageRows).toBe(5);
+      sim.reconcile();
+      const seen = new Set(sim.tail.map((row) => row.id));
+      let olderPages = 0;
+      while (!sim.meta.oldestReached && olderPages < CONVERSATION_ROWS) {
+        // Keep the reading anchor on the oldest resident row; newest-side
+        // cap pruning must not move it when another small page lands.
+        sim.scrollTop = sim.above;
+        const anchor = sim.captureAnchor();
+        const cursor = sim.fetchCursor;
+        sim.fetchOlderPage();
+        olderPages++;
+        expect(cursor - sim.fetchCursor).toBeGreaterThan(0);
+        expect(cursor - sim.fetchCursor).toBeLessThanOrEqual(5);
+        expect(sim.history.length).toBeLessThanOrEqual(500);
+        sim.history.forEach((row) => seen.add(row.id));
+        if (anchor) {
+          const row = sim.rowDocTops().find((row) => row.id === anchor.id)!;
+          expect(Math.abs(row.top - sim.scrollTop - anchor.offsetFromViewport)).toBeLessThanOrEqual(
+            5,
+          );
+        }
+      }
+      expect(olderPages).toBe(279);
+      expect(seen.size).toBe(CONVERSATION_ROWS);
+      expect(sim.meta.oldestReached).toBe(true);
+      expect(sim.meta.gapToTail).toBe(true);
+      sim.reconcile();
+      expect(sim.above).toBe(0);
+      let forwardPages = 0;
+      const forwardSeen = new Set([...sim.history, ...sim.tail].map((row) => row.id));
+      while (sim.meta.gapToTail && forwardPages < CONVERSATION_ROWS) {
+        const before = Math.max(...sim.history.map(ordinalOf));
+        // Oldest-side cap pruning must preserve a reader near the newest
+        // resident rows as the history-to-tail gap is filled.
+        sim.scrollTop = sim.above + heightOf(sim.history.slice(0, -8));
+        const anchor = sim.captureAnchor();
+        sim.fetchGapFillPage();
+        forwardPages++;
+        const after = Math.max(...sim.history.map(ordinalOf));
+        // Presentation ordering groups turns; the newest ordinal need not
+        // be the last DOM row on an odd-sized page.
+        expect(after - before).toBeLessThanOrEqual(5);
+        if (sim.meta.gapToTail) expect(after).toBeGreaterThan(before);
+        sim.history.forEach((row) => forwardSeen.add(row.id));
+        expect(sim.history.length).toBeLessThanOrEqual(500);
+        if (anchor) {
+          const row = sim.rowDocTops().find((row) => row.id === anchor.id)!;
+          expect(Math.abs(row.top - sim.scrollTop - anchor.offsetFromViewport)).toBeLessThanOrEqual(
+            5,
+          );
+        }
+      }
+      expect(forwardPages).toBeGreaterThan(100);
+      expect(forwardSeen.size).toBe(CONVERSATION_ROWS);
+      expect(sim.meta.gapToTail).toBe(false);
+      expect(sim.meta.oldestReached).toBe(false);
+      expect(sim.below).toBe(0);
+    },
+  );
+
+  it('direct seek lands on the requested distant row within a five-message window', () => {
+    const sim = new WalkSim(
+      buildConversation().map((row, seq) => ({ ...row, seq })),
+      CHAT_PAGE_SIZE,
+    );
+    sim.reconcile();
+    sim.performSeek(700);
+    expect(sim.history).toHaveLength(5);
+    expect(sim.history.map(ordinalOf)).toContain(700);
+    expect(sim.meta.gapToTail).toBe(true);
   });
 });

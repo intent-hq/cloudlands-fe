@@ -13,6 +13,7 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
   import { store } from '$store/renderer/store';
+  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   // eslint-disable-next-line themis/forbidden-component-import -- Isolated fixture runs the production membership lifecycle against a mock transport.
@@ -125,19 +126,38 @@
       'note.list': response('note.list', { notes: [] }),
     });
     const previousPrincipal = store.state.principal;
+    const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
     const fixtureDispatch = store.dispatch;
     store.dispatch(presenceReset());
     store.dispatch(replaceWorkspaceList([workspace]));
     store.dispatch(openWorkspaceTab(workspace.id));
-    const cancel = store.runSaga(presenceSaga);
     store.dispatch(daemonEventsSubscribed());
-    // Bind admission after subscription readiness; principal.me above only supplies mention identity.
+    // CT has no application admission saga. Enable before a fresh, self-bound admission.
+    store.dispatch(setLabsMultiplayerEnabled(true));
     admitLegacyPrincipal();
+    const admitted = store.state.principal;
+    store.dispatch(principalContextChanged(admitted.context));
+    store.dispatch(
+      principalReceived(
+        {
+          context: admitted.context!,
+          invalidation: store.state.principal.invalidation,
+          presentationVersion: store.state.principal.presentationVersion,
+        },
+        {
+          ...admitted.snapshot!,
+          principal: { ...admitted.snapshot!.principal, id: 'self' },
+        },
+      ),
+    );
     const fixturePrincipal = store.state.principal;
+    // Start only after self admission so the generic helper principal never hydrates members.
+    const cancel = store.runSaga(presenceSaga);
     return () => {
       cancel();
       store.dispatch(presenceReset());
       if (store.dispatch === fixtureDispatch && store.state.principal === fixturePrincipal) {
+        store.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
         store.dispatch(principalContextChanged(previousPrincipal.context));
         if (previousPrincipal.context && previousPrincipal.snapshot)
           store.dispatch(

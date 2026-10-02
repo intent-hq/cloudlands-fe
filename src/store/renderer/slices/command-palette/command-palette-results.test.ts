@@ -239,3 +239,58 @@ describe('computeResults', () => {
     expect(groupLabel).toBeUndefined();
   });
 });
+
+describe('indexed note result merge', () => {
+  const note = (workspaceId: string, noteId: string, label = 'Unrelated title') => ({
+    id: JSON.stringify([workspaceId, noteId]),
+    workspaceId,
+    noteId,
+    type: 'note' as const,
+    label,
+    description: 'body only needle',
+    icon,
+  });
+  const rows = (input: Partial<ComputeResultsInput>) =>
+    computeResults(makeInput(input)).filter((r) => r.type === 'note');
+
+  it.each([null, 'note'] as const)(
+    'retains body-only results and server order with filter %s',
+    (activeFilter) => {
+      const indexedNotes = [note('other', 'b'), note('ws-1', 'a')];
+      expect(rows({ query: 'needle', activeFilter, indexedNotes }).map((r) => r.id)).toEqual(
+        indexedNotes.map((r) => r.id),
+      );
+    },
+  );
+
+  it('deduplicates by workspace and note, keeping the first remote hit before fuzzy local matches', () => {
+    const remote = note('ws-1', 'spec');
+    const indexedNotes = [remote, { ...remote, description: 'duplicate' }, note('other', 'spec')];
+    const notes = [
+      note('ws-1', 'spec', 'needle'),
+      { ...note('ws-1', 'title', 'Needle'), description: '' },
+      { ...note('ws-1', 'tag', 'Plan'), description: 'needle' },
+      { ...note('ws-1', 'fuzzy', 'New expedition entry diary log example'), description: '' },
+      { ...note('ws-1', 'miss', 'XYZ'), description: '' },
+    ];
+    const result = rows({ query: 'needle', activeFilter: 'note', indexedNotes, notes });
+    expect(result.map((r) => r.noteId)).toEqual(['spec', 'spec', 'title', 'tag', 'fuzzy']);
+    expect(result[0].description).toBe(remote.description);
+    expect(result[1].workspaceId).toBe('other');
+  });
+
+  it('keeps the normal five-row cap and allows ten ranked hits under the notes filter', () => {
+    const indexedNotes = Array.from({ length: 10 }, (_, i) => note('other', String(i)));
+    expect(rows({ query: 'needle', indexedNotes })).toHaveLength(5);
+    expect(rows({ query: 'needle', activeFilter: 'note', indexedNotes })).toHaveLength(10);
+  });
+
+  it('browses local notes for an empty query, ignoring stale remote results', () => {
+    const notes = Array.from({ length: 6 }, (_, i) => note('ws-1', String(i)));
+    const indexedNotes = [note('other', 'remote')];
+    expect(rows({ notes, indexedNotes })).toHaveLength(3);
+    expect(rows({ notes, indexedNotes, activeFilter: 'note' }).map((r) => r.id)).toEqual(
+      notes.map((r) => r.id),
+    );
+  });
+});

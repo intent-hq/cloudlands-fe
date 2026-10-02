@@ -14,10 +14,10 @@
   let { onCreate, onCreateWithSpecialist, compact = false }: Props = $props();
 
   function handleCreateAgent() {
-    if (onCreateWithSpecialist) {
-      onCreateWithSpecialist(null);
-    } else if (onCreate) {
+    if (onCreate) {
       onCreate();
+    } else {
+      onCreateWithSpecialist?.(null);
     }
   }
 </script>

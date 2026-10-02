@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { tick, type ComponentProps } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueuedMessage } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -18,22 +18,35 @@ import QueuedMessageList from '../QueuedMessageList.svelte';
 import QueuedMessageEditMotionHost from './QueuedMessageEditMotionHost.svelte';
 import { resolveAttachmentImageUrl } from '../attachment-image-url';
 
+function renderQueue(options: {
+  props: ComponentProps<typeof QueuedMessageList>;
+  context?: Map<symbol, unknown>;
+}) {
+  return render(QueuedMessageList, {
+    ...options,
+    props: { ownPrincipalId: 'self', ...options.props },
+  });
+}
+
 function queued(overrides: Partial<QueuedMessage>): QueuedMessage {
   return {
     id: 'q-1',
     content: 'hello',
     queuedAt: '2026-01-01T00:00:00.000Z',
     position: 0,
+    messageMetadata: { fromPrincipalId: 'self' },
     ...overrides,
   };
 }
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function buttonTooltips(container: HTMLElement): string[] {
@@ -53,6 +66,119 @@ describe('QueuedMessageList', () => {
       },
     );
   });
+  it('bulk actions select only messages the admitted principal can mutate', async () => {
+    const onsendall = vi.fn().mockResolvedValue('queued');
+    const onclearall = vi.fn().mockResolvedValue(undefined);
+    renderQueue({
+      props: {
+        ownPrincipalId: 'self',
+        messages: [
+          queued({ id: 'own' }),
+          queued({ id: 'foreign', messageMetadata: { fromPrincipalId: 'other' } }),
+        ],
+        onsendall,
+        onclearall,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Send all ready messages now' }));
+    await waitFor(() => expect(onsendall).toHaveBeenCalledWith(['own']));
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear all queued messages' }));
+    await waitFor(() => expect(onclearall).toHaveBeenCalledWith(['own']));
+  });
+
+  it('host-owner bulk send excludes script-monitor wakes', async () => {
+    const onsendall = vi.fn().mockResolvedValue('queued');
+    renderQueue({
+      props: {
+        isHostOwner: true,
+        messages: [
+          queued({ id: 'human' }),
+          queued({ id: 'imported', messageMetadata: { humanAuthor: {} } }),
+          queued({ id: 'held', holdKind: 'debounce', holdUntil: '2099-01-01T00:00:00Z' }),
+          queued({
+            id: 'monitor',
+            messageMetadata: { type: 'script_monitor_wake', monitorId: 'monitor-1' },
+          }),
+        ],
+        onsendall,
+        onsendnow: vi.fn(),
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Send all ready messages now' }));
+    await waitFor(() => expect(onsendall).toHaveBeenCalledWith(['human']));
+    expect(screen.getAllByRole('button', { name: 'Send immediately' })).toHaveLength(3);
+  });
+
+  describe('shared queue permissions', () => {
+    it.each(['participant', 'owner', 'host-owner'])(
+      'guards foreign edit entry points for a %s',
+      async (role) => {
+        const onedit = vi.fn();
+        const onremove = vi.fn();
+        const onsendnow = vi.fn();
+        const { component } = renderQueue({
+          props: {
+            messages: [queued({ messageMetadata: { fromPrincipalId: 'alice' } })],
+            ownPrincipalId: 'bob',
+            isHostOwner: role === 'host-owner',
+            ownerPrincipalId: role === 'owner' ? 'bob' : 'alice',
+            onedit,
+            onremove,
+            onsendnow,
+          },
+        });
+        const row = screen.getByTestId('queued-message-content');
+        expect(screen.queryByRole('button', { name: 'Edit', exact: true })).toBeNull();
+        await fireEvent.dblClick(row);
+        await fireEvent.keyDown(row, { key: 'F2' });
+        await fireEvent.keyDown(row, { key: 'Enter' });
+        expect(component.editLastMessage()).toBe(false);
+        expect(onedit).not.toHaveBeenCalled();
+        expect(screen.queryByRole('textbox')).toBeNull();
+        await fireEvent.keyDown(row, { key: 'Delete' });
+        await fireEvent.keyDown(row, { key: 'Enter', ctrlKey: true });
+        expect(onremove).toHaveBeenCalledTimes(role !== 'participant' ? 1 : 0);
+        expect(onsendnow).toHaveBeenCalledTimes(role === 'host-owner' ? 1 : 0);
+      },
+    );
+
+    it('up-arrow edits the latest own row, skipping later participants', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const { component } = renderQueue({
+        props: {
+          ownPrincipalId: 'alice',
+          messages: [
+            queued({ id: 'alice-row', messageMetadata: { fromPrincipalId: 'alice' } }),
+            queued({ id: 'bob-row', position: 1, messageMetadata: { fromPrincipalId: 'bob' } }),
+          ],
+          onedit,
+        },
+      });
+      expect(component.editLastMessage()).toBe(true);
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('alice-row', 'hello', true));
+    });
+
+    it('does not infer authorship for unstamped or portable entries', async () => {
+      const onedit = vi.fn();
+      const { component } = renderQueue({
+        props: {
+          ownPrincipalId: 'alice',
+          ownerPrincipalId: 'alice',
+          messages: [
+            queued({
+              messageMetadata: undefined,
+              author: { principalId: null, displayName: null, login: null, avatarUrl: null },
+            }),
+          ],
+          onedit,
+        },
+      });
+      expect(component.editLastMessage()).toBe(false);
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      expect(onedit).not.toHaveBeenCalled();
+    });
+  });
+
   it('keeps a member readable while editing and releases its original identity on cancel', async () => {
     const payload = {
       label: 'alice.dev_ops-team',
@@ -62,7 +188,7 @@ describe('QueuedMessageList', () => {
     };
     const content = `Ask @member[${btoa(JSON.stringify(payload))}] please`;
     const onedit = vi.fn().mockResolvedValue({ success: true });
-    render(QueuedMessageList, { props: { messages: [queued({ content })], onedit } });
+    renderQueue({ props: { messages: [queued({ content })], onedit } });
     await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
     const editor = await screen.findByRole('textbox');
     expect(editor instanceof HTMLTextAreaElement ? editor.value : editor.textContent).toBe(
@@ -91,7 +217,7 @@ describe('QueuedMessageList', () => {
     );
     const onsendnow = vi.fn();
     const message = queued({ content: `Ask @member[${payload}] please` });
-    render(QueuedMessageList, { props: { messages: [message], onsendnow } });
+    renderQueue({ props: { messages: [message], onsendnow } });
     const row = screen.getByTestId('queued-message-content');
     expect(row.getAttribute('aria-label')).toBe('Ask @alice.dev please');
     expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe(
@@ -103,7 +229,7 @@ describe('QueuedMessageList', () => {
   });
 
   it('renders a regular queued message as raw text with the reference remove affordance', () => {
-    const { container } = render(QueuedMessageList, {
+    const { container } = renderQueue({
       props: { messages: [queued({ content: 'run the tests' })] },
     });
 
@@ -116,7 +242,7 @@ describe('QueuedMessageList', () => {
     const onedit = vi.fn().mockResolvedValue({ success: true });
     const onremove = vi.fn();
     const onsendnow = vi.fn();
-    render(QueuedMessageList, {
+    renderQueue({
       props: {
         messages: [queued({ content: 'A long queued message that stays on one line' })],
         onedit,
@@ -140,11 +266,244 @@ describe('QueuedMessageList', () => {
   });
 
   describe('edit action', () => {
+    it('keeps an active draft stable when the daemon appends to the held entry', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const view = renderQueue({ props: { messages: [queued({ content: 'first' })], onedit } });
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', 'first', true));
+      await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'edited first' } });
+      await view.rerender({ messages: [queued({ content: 'first\n\nsecond', editing: true })] });
+      expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('edited first');
+      await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      await waitFor(() => expect(onedit).toHaveBeenLastCalledWith('q-1', 'edited first', false));
+      // The daemon preserves the append suffix when accepting this held edit.
+      await view.rerender({ messages: [queued({ content: 'edited first\n\nsecond' })] });
+      expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
+      expect(screen.getByTestId('queued-message-text').textContent).toContain(
+        'edited first\n\nsecond',
+      );
+    });
+
+    it.each(['save', 'cancel'])('preserves a migrated held draft through %s', async (action) => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const view = renderQueue({
+        props: { messages: [queued({ id: 'newer', content: 'second' })], onedit },
+      });
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('newer', 'second', true));
+      await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'edited second' } });
+      await view.rerender({
+        messages: [
+          queued({
+            id: 'older',
+            content: 'first\n\nsecond',
+            editing: true,
+            editingMessageId: 'newer',
+          }),
+        ],
+      });
+      expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
+      expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('edited second');
+      await view.rerender({
+        messages: [
+          queued({
+            id: 'older',
+            content: 'first\n\nsecond\n\nthird',
+            editing: true,
+            editingMessageId: 'newer',
+          }),
+        ],
+      });
+      expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('edited second');
+      await fireEvent.keyDown(screen.getByRole('textbox'), {
+        key: action === 'save' ? 'Enter' : 'Escape',
+      });
+      await waitFor(() =>
+        expect(onedit).toHaveBeenLastCalledWith(
+          'newer',
+          action === 'save' ? 'edited second' : 'second',
+          false,
+        ),
+      );
+      await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
+    });
+
+    it.each([
+      ['save', 'released', true],
+      ['save', 'empty', true],
+      ['cancel', 'released', true],
+      ['cancel', 'empty', true],
+      ['save', 'released', false],
+      ['cancel', 'empty', false],
+      ['save', 'empty', 'throw'],
+      ['cancel', 'released', 'throw'],
+      ['save', 'released', 'conflict'],
+    ] as const)(
+      'settles %s after an earlier %s snapshot (success: %s)',
+      async (action, snapshot, success) => {
+        const pending = deferred<{ success: boolean; error?: string }>();
+        const onedit = vi
+          .fn()
+          .mockResolvedValueOnce({ success: true })
+          .mockImplementationOnce(() => pending.promise);
+        const view = renderQueue({
+          props: { messages: [queued({ id: 'newer', content: 'second' })], onedit },
+        });
+        await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+        await waitFor(() => expect(onedit).toHaveBeenCalledTimes(1));
+        await fireEvent.input(screen.getByRole('textbox'), {
+          target: { value: 'my unsaved draft' },
+        });
+        await view.rerender({
+          messages: [
+            queued({
+              id: 'older',
+              content: 'first\n\nsecond',
+              editing: true,
+              editingMessageId: 'newer',
+            }),
+          ],
+        });
+        await fireEvent.keyDown(screen.getByRole('textbox'), {
+          key: action === 'save' ? 'Enter' : 'Escape',
+        });
+        await waitFor(() => expect(onedit).toHaveBeenCalledTimes(2));
+        await view.rerender({
+          messages:
+            snapshot === 'empty'
+              ? []
+              : [queued({ id: 'older', content: 'first\n\nsecond', editing: false })],
+        });
+        expect(screen.queryByTestId('queued-draft-conflict')).toBeNull();
+        if (success === 'throw') pending.reject(new Error('connection lost'));
+        else
+          pending.resolve(
+            success === true
+              ? { success: true }
+              : {
+                  success: false,
+                  error:
+                    success === 'conflict'
+                      ? 'queued edit conflict: this draft was combined into another queued message; refresh before editing'
+                      : 'release failed',
+                },
+          );
+        await tick();
+        await tick();
+        if (success === true) {
+          await waitFor(() => expect(screen.queryByTestId('queued-draft-conflict')).toBeNull());
+        } else {
+          expect((await screen.findByTestId('queued-draft-conflict')).textContent).toContain(
+            'my unsaved draft',
+          );
+        }
+        expect(screen.queryByRole('textbox')).toBeNull();
+      },
+    );
+
+    it('retains input when a second editor hold is rejected after typing', async () => {
+      const pending = deferred<{ success: boolean; error?: string }>();
+      const onedit = vi.fn().mockImplementationOnce(() => pending.promise);
+      renderQueue({
+        props: {
+          messages: [
+            queued({ content: 'first\n\nsecond', editing: true, editingMessageId: 'q-1' }),
+          ],
+          onedit,
+        },
+      });
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', 'first\n\nsecond', true));
+      await fireEvent.input(screen.getByRole('textbox'), {
+        target: { value: 'my second-client unsaved draft' },
+      });
+      await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(onedit).toHaveBeenCalledTimes(1);
+      pending.resolve({
+        success: false,
+        error:
+          'queued edit conflict: this draft was combined into another queued message; refresh before editing',
+      });
+      const conflict = await screen.findByTestId('queued-draft-conflict');
+      expect(conflict.getAttribute('data-conflict-message-id')).toBe('q-1');
+      expect(conflict.textContent).toContain('my second-client unsaved draft');
+      expect(screen.queryByRole('textbox')).toBeNull();
+      expect(onedit).toHaveBeenCalledTimes(1);
+    });
+
+    it('retains a displaced draft without submitting it to the other held row', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const view = renderQueue({
+        props: {
+          messages: [
+            queued({ id: 'older', content: 'first', editing: true }),
+            queued({ id: 'newer', content: 'second', position: 1 }),
+          ],
+          onedit,
+        },
+      });
+      await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[1]);
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('newer', 'second', true));
+      await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'unsaved second' } });
+      await view.rerender({
+        messages: [
+          queued({
+            id: 'older',
+            content: 'first\n\nsecond',
+            editing: true,
+            editingMessageId: 'older',
+          }),
+        ],
+      });
+      const conflict = await screen.findByTestId('queued-draft-conflict');
+      expect(conflict.getAttribute('data-conflict-message-id')).toBe('newer');
+      expect(conflict.textContent).toContain('unsaved second');
+      expect(within(conflict).queryByRole('textbox')).toBeNull();
+      await fireEvent.keyDown(conflict, { key: 'Enter' });
+      expect(onedit).toHaveBeenCalledTimes(1);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+      await fireEvent.click(within(conflict).getByRole('button', { name: 'Copy' }));
+      expect(writeText).toHaveBeenCalledWith('unsaved second');
+      await view.rerender({ messages: [queued({ id: 'unrelated', content: 'new input' })] });
+      expect(screen.getByTestId('queued-draft-conflict').textContent).toContain('unsaved second');
+      expect(screen.queryByRole('textbox')).toBeNull();
+      await fireEvent.click(within(conflict).getByRole('button', { name: 'Discard draft' }));
+      expect(screen.queryByTestId('queued-draft-conflict')).toBeNull();
+    });
+
+    it('preserves the draft when a migrated save conflicts after another client releases', async () => {
+      const onedit = vi.fn().mockResolvedValueOnce({ success: true }).mockResolvedValueOnce({
+        success: false,
+        error:
+          'queued edit conflict: this draft was combined into another queued message; refresh before editing',
+      });
+      const view = renderQueue({
+        props: { messages: [queued({ id: 'newer', content: 'second' })], onedit },
+      });
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      await waitFor(() => expect(onedit).toHaveBeenCalledTimes(1));
+      await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'keep me' } });
+      await view.rerender({
+        messages: [
+          queued({
+            id: 'older',
+            content: 'first\n\nsecond',
+            editing: true,
+            editingMessageId: 'newer',
+          }),
+        ],
+      });
+      await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect((await screen.findByTestId('queued-draft-conflict')).textContent).toContain('keep me');
+      expect(screen.queryByRole('textbox')).toBeNull();
+    });
+
     it('edits only the selected row, cancelling drafts or saving without sending or removing', async () => {
       const onedit = vi.fn().mockResolvedValue({ success: true });
       const onsendnow = vi.fn();
       const onremove = vi.fn();
-      render(QueuedMessageList, {
+      renderQueue({
         props: {
           messages: [queued({}), queued({ id: 'q-2', content: 'second', position: 1 })],
           onedit,
@@ -180,7 +539,7 @@ describe('QueuedMessageList', () => {
 
     it('does not expose editing or accept its keyboard shortcut while disabled', async () => {
       const onedit = vi.fn();
-      render(QueuedMessageList, { props: { messages: [queued({})], onedit, disabled: true } });
+      renderQueue({ props: { messages: [queued({})], onedit, disabled: true } });
       expect(screen.queryByRole('button', { name: 'Edit', exact: true })).toBeNull();
       await fireEvent.keyDown(screen.getByTestId('queued-message-content'), { key: 'F2' });
       expect(screen.queryByRole('textbox')).toBeNull();
@@ -194,7 +553,7 @@ describe('QueuedMessageList', () => {
       async (scope) => {
         const pending = deferred<'queued'>();
         const send = vi.fn(() => pending.promise);
-        render(QueuedMessageList, {
+        renderQueue({
           props: {
             messages: [queued({})],
             ...(scope === 'single' ? { onsendnow: send } : { onsendall: send }),
@@ -235,7 +594,7 @@ describe('QueuedMessageList', () => {
           },
         ],
       });
-      const view = render(QueuedMessageList, {
+      const view = renderQueue({
         props: {
           messages: [message, queued({ id: 'q-2', content: 'second', position: 1 })],
           onsendnow,
@@ -282,7 +641,7 @@ describe('QueuedMessageList', () => {
       'keeps %s outcomes actionable without removing attachments',
       async (outcome) => {
         const onsendnow = vi.fn().mockResolvedValue(outcome);
-        render(QueuedMessageList, { props: { messages: [queued({})], onsendnow } });
+        renderQueue({ props: { messages: [queued({})], onsendnow } });
         const send = screen.getByRole('button', { name: 'Send immediately' });
         await fireEvent.click(send);
         await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
@@ -299,7 +658,7 @@ describe('QueuedMessageList', () => {
         .mockRejectedValueOnce(new Error('fixture failure'))
         .mockResolvedValue('delivered');
       const onremove = vi.fn();
-      render(QueuedMessageList, { props: { messages: [queued({})], onsendnow, onremove } });
+      renderQueue({ props: { messages: [queued({})], onsendnow, onremove } });
       await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
       await waitFor(() =>
         expect(screen.getByRole('alert').textContent).toContain('fixture failure'),
@@ -312,7 +671,7 @@ describe('QueuedMessageList', () => {
 
     it('does not send disabled or edit-held messages through the shortcut', async () => {
       const onsendnow = vi.fn();
-      const view = render(QueuedMessageList, {
+      const view = renderQueue({
         props: { messages: [queued({})], onsendnow, disabled: true },
       });
       await fireEvent.keyDown(screen.getByTestId('queued-message-content'), {
@@ -330,7 +689,7 @@ describe('QueuedMessageList', () => {
     it('ignores an acknowledgement after the selected message disappeared', async () => {
       const pending = deferred<'queued'>();
       const onsendnow = vi.fn(() => pending.promise);
-      const view = render(QueuedMessageList, { props: { messages: [queued({})], onsendnow } });
+      const view = renderQueue({ props: { messages: [queued({})], onsendnow } });
       await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
       await view.rerender({ messages: [queued({ id: 'q-2', content: 'next' })] });
       pending.resolve('queued');
@@ -345,7 +704,7 @@ describe('QueuedMessageList', () => {
 
   describe('queue disclosure', () => {
     it('starts expanded and exposes the controlled queue content', () => {
-      render(QueuedMessageList, { props: { messages: [queued({})] } });
+      renderQueue({ props: { messages: [queued({})] } });
 
       const disclosure = screen.getByTestId('queued-messages-disclosure');
       const content = screen.getByTestId('queued-messages-content');
@@ -358,7 +717,7 @@ describe('QueuedMessageList', () => {
     });
 
     it('keeps focus and updates the live count while collapsed', async () => {
-      const view = render(QueuedMessageList, { props: { messages: [queued({})] } });
+      const view = renderQueue({ props: { messages: [queued({})] } });
       const disclosure = screen.getByTestId('queued-messages-disclosure');
       disclosure.focus();
 
@@ -385,7 +744,7 @@ describe('QueuedMessageList', () => {
   });
 
   it('editLastMessage() starts editing the last queued message', async () => {
-    const { component, container } = render(QueuedMessageList, {
+    const { component, container } = renderQueue({
       props: {
         messages: [
           queued({ id: 'q-1', content: 'first message', position: 0 }),
@@ -403,7 +762,7 @@ describe('QueuedMessageList', () => {
   });
 
   it('editLastMessage() returns false when the queue is empty', async () => {
-    const { component, container } = render(QueuedMessageList, {
+    const { component, container } = renderQueue({
       props: { messages: [] },
     });
 
@@ -417,7 +776,7 @@ describe('QueuedMessageList', () => {
     async function beginEdit(
       props: Parameters<typeof render<typeof QueuedMessageList>>[1]['props'],
     ) {
-      const view = render(QueuedMessageList, { props });
+      const view = renderQueue({ props });
       const row = view.container.querySelector<HTMLElement>('[data-testid="queued-message-row"]')!;
       await fireEvent.dblClick(
         view.container.querySelector<HTMLElement>('[data-testid="queued-message-content"]')!,
@@ -498,7 +857,7 @@ describe('QueuedMessageList', () => {
         queued({ id: 'q-1', content: 'first', position: 0 }),
         queued({ id: 'q-2', content: 'second', position: 1 }),
       ];
-      const view = render(QueuedMessageList, { props: { messages, onedit } });
+      const view = renderQueue({ props: { messages, onedit } });
 
       await fireEvent.dblClick(view.container.querySelector('[data-message-id="q-1"] button')!);
       const firstTextarea = await waitFor(() => view.container.querySelector('textarea'));
@@ -533,7 +892,7 @@ describe('QueuedMessageList', () => {
           queued({ id: 'q-1', content: 'first', position: 0 }),
           queued({ id: 'q-2', content: 'second', position: 1 }),
         ];
-        const view = render(QueuedMessageList, { props: { messages, onedit } });
+        const view = renderQueue({ props: { messages, onedit } });
 
         await fireEvent.dblClick(view.container.querySelector('[data-message-id="q-1"] button')!);
         const firstTextarea = await waitFor(() => view.container.querySelector('textarea'));
@@ -575,7 +934,7 @@ describe('QueuedMessageList', () => {
         queued({ id: 'q-1', content: 'first', position: 0 }),
         queued({ id: 'q-2', content: 'second', position: 1 }),
       ];
-      const view = render(QueuedMessageList, { props: { messages, onedit } });
+      const view = renderQueue({ props: { messages, onedit } });
       const rows = Array.from(view.container.querySelectorAll<HTMLElement>('[data-message-id]'));
       await fireEvent.dblClick(rows[0].querySelector('[data-testid="queued-message-content"]')!);
       const textarea = await waitFor(() => view.container.querySelector('textarea'));
@@ -619,7 +978,7 @@ describe('QueuedMessageList', () => {
         queued({ id: 'q-1', content: 'first', position: 0 }),
         queued({ id: 'q-2', content: 'second', position: 1 }),
       ];
-      const view = render(QueuedMessageList, { props: { messages, onedit } });
+      const view = renderQueue({ props: { messages, onedit } });
       await fireEvent.dblClick(view.container.querySelector('[data-message-id="q-1"] button')!);
       const firstTextarea = await waitFor(() => view.container.querySelector('textarea'));
       await fireEvent.input(firstTextarea!, { target: { value: 'changed' } });
@@ -640,7 +999,7 @@ describe('QueuedMessageList', () => {
     });
 
     it('removes an editing row without residual shell state', async () => {
-      const view = render(QueuedMessageList, { props: { messages: [queued({})] } });
+      const view = renderQueue({ props: { messages: [queued({})] } });
       await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
       await waitFor(() => expect(view.container.querySelector('textarea')).toBeTruthy());
       await view.rerender({ messages: [] });
@@ -649,7 +1008,7 @@ describe('QueuedMessageList', () => {
     });
 
     it('rapidly reverses on Escape without remounting the row or overlapping modes', async () => {
-      const view = render(QueuedMessageList, { props: { messages: [queued({})] } });
+      const view = renderQueue({ props: { messages: [queued({})] } });
       const row = screen.getByTestId('queued-message-row');
       await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
       const textarea = await waitFor(() => view.container.querySelector('textarea'));
@@ -704,7 +1063,7 @@ describe('QueuedMessageList', () => {
 
   it('shows retry status separately from message content until sending starts', async () => {
     const pending = deferred<'delivered'>();
-    render(QueuedMessageList, {
+    renderQueue({
       props: {
         messages: [queued({ content: 'try again', requeuedAfterFailure: true })],
         onsendnow: () => pending.promise,
@@ -716,6 +1075,51 @@ describe('QueuedMessageList', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
     expect(screen.queryByTestId('queued-message-retry-status')).toBeNull();
     pending.resolve('delivered');
+  });
+
+  it('renders portable queue authors without a roster cache and keeps unknown, null and absent distinct', () => {
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: 'Same Person',
+      avatarUrl: null,
+      identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+    };
+    const messages = [
+      queued({
+        id: 'p1',
+        content: 'first',
+        author,
+        messageMetadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      }),
+      queued({
+        id: 'p2',
+        content: 'second',
+        author: { ...author, identity: { ...author.identity, host: 'two.example' } },
+      }),
+      queued({
+        id: 'unknown',
+        content: 'unknown',
+        author: { principalId: null, login: null, displayName: null, avatarUrl: null },
+      }),
+      queued({ id: 'null', content: 'no author', author: null }),
+      queued({ id: 'absent', content: 'old host' }),
+      queued({
+        id: 'automatic',
+        content: 'automatic',
+        author,
+        messageMetadata: { type: 'hook_wake' },
+      }),
+    ];
+    const before = JSON.stringify(messages);
+    renderQueue({ props: { messages, authors: null, ownPrincipalId: 'self' } });
+    const chips = screen.getAllByTestId('queued-message-author');
+    expect(chips).toHaveLength(3);
+    expect(chips[0].getAttribute('aria-label')).toContain('gitlab@one.example');
+    expect(chips[1].getAttribute('aria-label')).toContain('gitlab@two.example');
+    expect(chips[2].textContent?.trim()).not.toBe('');
+    expect(chips.every((chip) => !chip.hasAttribute('data-principal-id'))).toBe(true);
+    expect(JSON.stringify(messages)).toBe(before);
   });
 
   describe('human author identity (multiplayer)', () => {
@@ -741,7 +1145,7 @@ describe('QueuedMessageList', () => {
     ]);
 
     it('renders each stamped entry with its own author once authors are provided', () => {
-      render(QueuedMessageList, {
+      renderQueue({
         props: {
           messages: [
             queued({
@@ -775,7 +1179,7 @@ describe('QueuedMessageList', () => {
     });
 
     it('omits the author when no authors are provided (single-member workspace)', () => {
-      render(QueuedMessageList, {
+      renderQueue({
         props: {
           messages: [
             queued({ content: 'solo', messageMetadata: { fromPrincipalId: guest.principalId } }),
@@ -788,7 +1192,7 @@ describe('QueuedMessageList', () => {
     });
 
     it("omits the author on the viewer's own entries, keeping it on other members'", () => {
-      render(QueuedMessageList, {
+      renderQueue({
         props: {
           messages: [
             queued({
@@ -815,7 +1219,7 @@ describe('QueuedMessageList', () => {
     });
 
     it('omits the author on unstamped or unresolvable entries', () => {
-      render(QueuedMessageList, {
+      renderQueue({
         props: {
           messages: [
             queued({ id: 'q-legacy', content: 'older daemon entry' }),
@@ -839,7 +1243,7 @@ describe('QueuedMessageList', () => {
       // A member whose first message is queued before any of their transcript
       // rows exist: the daemon serves the projection on the queue entry
       // (intent-hq/intentd#1869), so the empty transcript map is not needed.
-      render(QueuedMessageList, {
+      renderQueue({
         props: {
           messages: [
             queued({
@@ -874,7 +1278,7 @@ describe('QueuedMessageList', () => {
     it('omits the author on an explicit null projection even when the transcript resolves it', () => {
       // `author: null` is the daemon's authoritative "principal row is gone";
       // the stamp-based transcript fallback applies only when the field is absent.
-      render(QueuedMessageList, {
+      renderQueue({
         props: {
           messages: [
             queued({
@@ -904,9 +1308,9 @@ describe('QueuedMessageList', () => {
     });
 
     it('omits the author on daemon-origin entries even when a projection is attached', () => {
-      // Agent-to-agent sends and system wakes fall back to the workspace owner
-      // on the daemon side; they are not human-authored and get no attribution.
-      render(QueuedMessageList, {
+      // Legacy projections do not upgrade unstamped automatic metadata to human.
+      // Current automatic ingress strips caller-supplied human stamps.
+      renderQueue({
         props: {
           messages: [
             queued({
@@ -915,7 +1319,6 @@ describe('QueuedMessageList', () => {
               messageMetadata: {
                 type: 'agent_message',
                 fromAgentId: 'agent-2',
-                fromPrincipalId: owner.principalId,
               },
               author: owner,
             }),
@@ -923,7 +1326,7 @@ describe('QueuedMessageList', () => {
               id: 'q-system',
               content: 'system wake',
               position: 1,
-              messageMetadata: { source: 'system', fromPrincipalId: owner.principalId },
+              messageMetadata: { source: 'system' },
               author: owner,
             }),
           ],
@@ -936,8 +1339,8 @@ describe('QueuedMessageList', () => {
       expect(screen.getByText('system wake')).toBeTruthy();
     });
 
-    it('does not render the author while the entry is being edited', async () => {
-      render(QueuedMessageList, {
+    it('keeps a foreign author visible when a double click cannot edit the entry', async () => {
+      renderQueue({
         props: {
           messages: [
             queued({
@@ -952,8 +1355,8 @@ describe('QueuedMessageList', () => {
       expect(screen.getByTestId('queued-message-author')).toBeTruthy();
       await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
       await tick();
-      expect(screen.getByTestId('queued-message-edit-mode')).toBeTruthy();
-      expect(screen.queryByTestId('queued-message-author')).toBeNull();
+      expect(screen.queryByTestId('queued-message-edit-mode')).toBeNull();
+      expect(screen.getByTestId('queued-message-author')).toBeTruthy();
     });
   });
 
@@ -970,7 +1373,7 @@ describe('QueuedMessageList', () => {
     }
 
     it('renders one thumbnail per image block with the data-URL src', () => {
-      const { container } = render(QueuedMessageList, {
+      const { container } = renderQueue({
         props: { messages: [queued({ content: 'look at these', imageBlocks: IMAGE_BLOCKS })] },
       });
 
@@ -984,7 +1387,7 @@ describe('QueuedMessageList', () => {
     });
 
     it('renders no thumbnails when imageBlocks is absent or empty', () => {
-      const { container } = render(QueuedMessageList, {
+      const { container } = renderQueue({
         props: {
           messages: [
             queued({ id: 'q-1', content: 'no images', position: 0 }),
@@ -999,7 +1402,7 @@ describe('QueuedMessageList', () => {
 
     it('clicking a thumbnail opens the lightbox and does not start edit mode', async () => {
       const onedit = vi.fn().mockResolvedValue({ success: true });
-      const { container } = render(QueuedMessageList, {
+      const { container } = renderQueue({
         props: { messages: [queued({ content: 'with image', imageBlocks: IMAGE_BLOCKS })], onedit },
       });
 
@@ -1019,7 +1422,7 @@ describe('QueuedMessageList', () => {
     });
 
     it('offers no remove or edit affordance for images', () => {
-      const { container } = render(QueuedMessageList, {
+      const { container } = renderQueue({
         props: { messages: [queued({ content: 'with image', imageBlocks: IMAGE_BLOCKS })] },
       });
 
@@ -1075,7 +1478,7 @@ describe('QueuedMessageList', () => {
       });
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      render(QueuedMessageList, {
+      renderQueue({
         props: {
           messages: [
             queued({

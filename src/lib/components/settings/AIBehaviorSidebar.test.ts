@@ -36,6 +36,7 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: () => mocks.specialists$,
   selectFileSpecialists: () => mocks.fileSpecialists$,
+  selectSpecialistImportDiagnostics: () => mocks.readable([]),
   filterSpecialistsByGitHubAuth: (specialists: unknown[]) => specialists,
   selectHasOverrides: { select: () => false },
   selectSpecialistSourceLabel: { select: () => undefined },

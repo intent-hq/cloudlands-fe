@@ -58,8 +58,9 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
   },
 }));
 
+let mainWindow: unknown = null;
 vi.mock('../../../../main/state', () => ({
-  getMainWindow: () => null,
+  getMainWindow: () => mainWindow,
 }));
 
 const logLines: string[] = [];
@@ -80,6 +81,7 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 
+import { JsonRpcClient } from '../../../backend/main/json-rpc-client';
 import { handlePairDeepLink, routePairLinkFromOs } from '../pair-deep-link';
 import { TC_ADDRESS_WITH_PSK } from '../../../../test/fixtures/tc-address.fixture';
 
@@ -90,6 +92,7 @@ const LINK = `intent://pair?v=1&host=192.168.1.10&port=8443&fp=${PIN}&token=${TO
 beforeEach(() => {
   vi.clearAllMocks();
   lifetime = true;
+  mainWindow = null;
   inspectCredential.mockResolvedValue({
     principal: { id: 'owner', isAdministrator: true },
     capabilities: { hostMembership: false },
@@ -105,6 +108,68 @@ beforeEach(() => {
 });
 
 describe('handlePairDeepLink', () => {
+  it.each(['warm', 'cold'])(
+    'shows the real early compatibility error for a %s pairing link without opening a window',
+    async (launch) => {
+      const actual = await vi.importActual<
+        typeof import('../../../backend/main/invited-principal')
+      >('../../../backend/main/invited-principal');
+      inspectCredential.mockImplementation(actual.inspectPersonalCredential);
+      const request = vi.spyOn(JsonRpcClient.prototype, 'request').mockResolvedValue({
+        server: {
+          version: '0.9.12',
+          protocolVersion: '9.4',
+          capabilities: { liveState: true },
+        },
+      });
+      const dispose = vi.spyOn(JsonRpcClient.prototype, 'dispose');
+      try {
+        const park = vi.fn();
+        if (launch === 'cold') {
+          appIsReady.mockReturnValue(false);
+          await routePairLinkFromOs(LINK, park);
+          expect(park).toHaveBeenCalledWith(LINK);
+          expect(showMessageBox).not.toHaveBeenCalled();
+          appIsReady.mockReturnValue(true);
+          await handlePairDeepLink(park.mock.calls[0][0]);
+        } else await routePairLinkFromOs(LINK, park);
+        expect(showMessageBox).toHaveBeenCalledOnce();
+        const options = showMessageBox.mock.calls[0][0];
+        expect(options.type).toBe('warning');
+        expect(options.message).toContain('0.9.12');
+        const { readPinnedVersion } = await import('../../../backend/main/intentd-version-pin');
+        expect(readPinnedVersion()).not.toBeNull();
+        expect(options.message).toContain(readPinnedVersion()!);
+        expect(JSON.stringify(options)).not.toContain(TOKEN);
+        expect(request.mock.calls.map(([method]) => method)).toEqual(['client.hello']);
+        expect(dispose).toHaveBeenCalledOnce();
+        expect(add).not.toHaveBeenCalled();
+        expect(invitedAdd).not.toHaveBeenCalled();
+        expect(openBackendWindow).not.toHaveBeenCalled();
+      } finally {
+        request.mockRestore();
+        dispose.mockRestore();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'shows one failure dialog when credential inspection fails (window=%s)',
+    async (hasWindow) => {
+      mainWindow = hasWindow ? { isDestroyed: () => false } : null;
+      inspectCredential.mockRejectedValue(new Error(`Could not connect with token=${TOKEN}`));
+      await handlePairDeepLink(LINK);
+      expect(showMessageBox).toHaveBeenCalledOnce();
+      const options = showMessageBox.mock.calls[0].at(-1);
+      expect(options.type).toBe('error');
+      expect(JSON.stringify(options)).not.toContain(TOKEN);
+      expect(add).not.toHaveBeenCalled();
+      expect(invitedAdd).not.toHaveBeenCalled();
+      expect(openBackendWindow).not.toHaveBeenCalled();
+      expect(showMessageBox.mock.calls[0].length).toBe(hasWindow ? 2 : 1);
+    },
+  );
+
   it('known server: opens its window without dialog or credential rewrite', async () => {
     findMatching.mockResolvedValue({ id: 'known-id', fingerprint: PIN });
     await handlePairDeepLink(LINK);
@@ -199,6 +264,27 @@ describe('handlePairDeepLink', () => {
     await first;
     expect(add).toHaveBeenCalledTimes(1);
     expect(openBackendWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one failure dialog open for concurrent clicks and permits a later retry', async () => {
+    inspectCredential.mockRejectedValue(new Error('unavailable'));
+    let dismiss!: (result: { response: number }) => void;
+    showMessageBox.mockReturnValue(
+      new Promise((resolve) => {
+        dismiss = resolve;
+      }),
+    );
+    const first = handlePairDeepLink(LINK);
+    await vi.waitFor(() => expect(showMessageBox).toHaveBeenCalledOnce());
+    await handlePairDeepLink(LINK);
+    expect(showMessageBox).toHaveBeenCalledOnce();
+    dismiss({ response: 0 });
+    await first;
+    showMessageBox.mockResolvedValue({ response: 0 });
+    await handlePairDeepLink(LINK);
+    expect(showMessageBox).toHaveBeenCalledTimes(2);
+    expect(add).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
   });
 
   it('handles a subsequent link after the previous one settles', async () => {

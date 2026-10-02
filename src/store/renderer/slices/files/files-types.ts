@@ -19,6 +19,7 @@ export type FileContentEntry = {
 };
 
 export type FileContentReadOptions = {
+  gitRoot?: { id: string; relativePath: string };
   maxSize?: number;
   truncateIfLarge?: boolean;
 };

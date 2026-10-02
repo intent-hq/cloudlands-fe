@@ -1,4 +1,8 @@
-import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  withHostPrincipal,
+  withLegacyPrincipal,
+} from '../../../../../test/fixtures/principal-state';
 /**
  * Saga → wire contract for the owner-side Share dialog. FAKE transport only:
  * `backendRequest` is mocked, so each test asserts the exact JSON-RPC method
@@ -145,6 +149,7 @@ function rootState(share: WorkspaceShareState, roles: Record<string, WorkspaceRo
 function harness(
   seed: WorkspaceShareState = initialState,
   roles: Record<string, WorkspaceRole | undefined> = { 'ws-1': 'owner', 'ws-2': 'owner' },
+  project: (state: StoreState) => StoreState = (state) => state,
 ) {
   const channel = stdChannel();
   let state = seed;
@@ -159,7 +164,7 @@ function harness(
     channel.put(action);
   });
   const task = runSaga(
-    { channel, dispatch, getState: () => rootState(state, roles) },
+    { channel, dispatch, getState: () => project(rootState(state, roles)) },
     workspaceShareSaga,
   );
   return {
@@ -244,6 +249,45 @@ describe('workspaceShareSaga', () => {
     mocks.request.mockReset();
     consoleSpies.warn.mockClear();
     consoleSpies.error.mockClear();
+  });
+
+  it('a capable member can pin GitLab without host-admin or repository-auth rights (#6392)', async () => {
+    replyByMethod({ 'workspace.invite.create': createReply() });
+    const h = harness(opened(), { 'ws-1': 'collaborator' }, (root) => {
+      const state = withHostPrincipal(root, 'member');
+      state.userPreferences = { ...state.userPreferences, labsGitLabEnabled: true };
+      state.workspace = {
+        ...state.workspace,
+        hasLoaded: true,
+        loadedBackendId: state.connections.windowBackendId,
+        workspaces: createCollection(
+          'id',
+          getItems(state.workspace.workspaces).map((ws) => ({ ...ws, canManage: true })),
+        ),
+        capabilityContext: selectPrincipalActionContext.select(state),
+      };
+      return state;
+    });
+    try {
+      h.dispatch(
+        shareInviteCreateRequested({
+          pinLogin: 'sam',
+          pin: { provider: 'gitlab', host: 'Other.Example:8443' },
+        }),
+      );
+      await settle();
+      expect(mocks.request).toHaveBeenCalledWith('workspace.invite.create', {
+        workspaceId: 'ws-1',
+        pinLogin: 'sam',
+        pinProvider: 'gitlab',
+        pinHost: 'other.example:8443',
+      });
+      expect(calls('sourceControl.authStatus')).toEqual([]);
+      expect(calls('github.authStatus')).toEqual([]);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
   });
 
   it('uses admission-owned status without warming either provider from Share', async () => {

@@ -187,6 +187,10 @@
     return !containsPanel(nodeToCheck, zoomedPanelId);
   }
 
+  // CSS-hidden split branches remain mounted; all descendant consumers need
+  // the same effective visibility as the panel surface.
+  const effectiveActive = $derived(active && !isPanelHiddenByZoom(node));
+
   function containsPanel(nodeToCheck: PanelLayoutNode, panelId: string): boolean {
     if (nodeToCheck.type === 'panel') {
       return nodeToCheck.panelId === panelId;
@@ -237,7 +241,7 @@
   }
 
   $effect(() => {
-    if (!active) {
+    if (!effectiveActive) {
       lifecycleMotionReady = false;
       return;
     }
@@ -348,7 +352,7 @@
   }
 
   $effect(() => {
-    if (!active || node.type !== 'split' || !containerRef) return;
+    if (!effectiveActive || node.type !== 'split' || !containerRef) return;
 
     const observedElement =
       nodePath.length === 0
@@ -658,7 +662,7 @@
         {panel}
         {workspaceId}
         {layoutId}
-        {active}
+        active={effectiveActive}
         {availableCanvasWidth}
         canCreateColumn={countHorizontalPanelColumns(layoutRoot) < 4}
         isRightmostPanel={panelOrder.at(-1) === node.panelId}
@@ -758,7 +762,7 @@
             {focusedPanelId}
             {workspaceId}
             {layoutId}
-            {active}
+            active={effectiveActive}
             {availableCanvasWidth}
             {contained}
             {suppressLayoutMotion}
@@ -795,7 +799,7 @@
           />
         {:else}
           <!-- i18n-ignore (scanner false positive on the < comparison) -->
-          {#if active}
+          {#if effectiveActive}
             <PanelSplitHandle
               direction={node.direction}
               {nodePath}

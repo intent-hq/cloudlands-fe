@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   rename: vi.fn(),
   setNotificationsMuted: vi.fn(),
   setBackground: vi.fn(),
+  stop: vi.fn(),
+  cancelSubscriptions: vi.fn(),
   deleteAgent: vi.fn(),
   cancelDelete: vi.fn(),
   dismissQuestions: vi.fn(),
@@ -29,6 +31,8 @@ vi.mock('$lib/client', () => ({
       rename: mocks.rename,
       setNotificationsMuted: mocks.setNotificationsMuted,
       setBackground: mocks.setBackground,
+      stop: mocks.stop,
+      cancelSubscriptions: mocks.cancelSubscriptions,
       delete: mocks.deleteAgent,
       cancelDelete: mocks.cancelDelete,
       dismissQuestions: mocks.dismissQuestions,
@@ -48,6 +52,8 @@ import {
   clearPendingAgentDeletions,
   getPendingAgentDeletion,
   listPendingAgentDeletions,
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { agentAttentionToastId } from '$features/agent/agent-attention-toast-service';
 import { claimAgentReadOwnership } from '$features/agent/agent-read-ownership';
@@ -72,7 +78,11 @@ import {
   initialState as guestSessionsInitialState,
 } from '../../guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '../../guest-sessions/guest-sessions-types';
-import { initialState as daemonHealthInitialState } from '../../daemon-health/daemon-health-slice';
+import {
+  connectionStatusChanged,
+  daemonHealthReducer,
+  initialState as daemonHealthInitialState,
+} from '../../daemon-health/daemon-health-slice';
 import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
 import {
   activateAgentRequested,
@@ -112,6 +122,14 @@ import {
 import { selectAgentSession } from '../agent-session-selectors';
 import { TOAST_COUNTDOWN_CLASS } from '$lib/components/patterns/notify';
 import { AGENT_DELETION_TOMBSTONE_TTL_MS, agentMutationSaga } from './agent-mutation-saga';
+import {
+  agentMutationUiReducer,
+  agentMutationUiRequested,
+  agentMutationUiReleased,
+  agentMutationUiConsumed,
+  agentMutationUiFinished,
+} from '../../agent-mutation-ui/agent-mutation-ui-slice';
+import { selectAgentMutationUi } from '../../agent-mutation-ui/agent-mutation-ui-selectors';
 
 const WS = 'ws-mutation';
 const A1 = 'agent-1';
@@ -206,10 +224,17 @@ function start(
   let state = {
     ...identity,
     agentSessions: { ...agentSessionInitialState, byAgentId: sessions },
+    agentMutationUi: agentMutationUiReducer.initialState,
   };
   const dispatch = (action: any) => {
     if (live) {
-      state = { ...identity, agentSessions: agentSessionReducer(state.agentSessions, action) };
+      state = {
+        ...state,
+        agentSessions: agentSessionReducer(state.agentSessions, action),
+        agentMutationUi: agentMutationUiReducer(state.agentMutationUi, action),
+        connections: connectionsReducer(state.connections, action),
+        daemonHealth: daemonHealthReducer(state.daemonHealth, action),
+      };
     }
     dispatched.push(action);
     channel.put(action);
@@ -572,6 +597,7 @@ describe('agentMutationSaga', () => {
     const action = saveAgentSessionRequested(WS, A1, true, {
       specialistUpdate: {
         specialist: 'spec-writer',
+        rememberSpecialist: true,
         model: 'grok4.6',
         systemPrompt: 'Coordinate the work.',
       },
@@ -583,6 +609,7 @@ describe('agentMutationSaga', () => {
       agentId: A1,
       workspaceId: WS,
       specialist: 'spec-writer',
+      rememberSpecialist: true,
       model: 'grok4.6',
       systemPrompt: 'Coordinate the work.',
     });
@@ -593,7 +620,7 @@ describe('agentMutationSaga', () => {
     mocks.updateSpecialist.mockResolvedValue({ success: true });
     const { channel, task } = start();
     const action = saveAgentSessionRequested(WS, A1, true, {
-      specialistUpdate: { specialist: null, systemPrompt: null },
+      specialistUpdate: { specialist: null, systemPrompt: null, rememberSpecialist: true },
     });
     channel.put(action);
 
@@ -603,6 +630,7 @@ describe('agentMutationSaga', () => {
       workspaceId: WS,
       specialist: null,
       systemPrompt: null,
+      rememberSpecialist: true,
     });
     await stop(task);
   });
@@ -622,6 +650,7 @@ describe('agentMutationSaga', () => {
     const action = saveAgentSessionRequested(WS, A1, true, {
       specialistUpdate: {
         specialist: 'spec-writer',
+        rememberSpecialist: true,
         model: 'grok4.6',
         systemPrompt: 'Coordinate the work.',
       },
@@ -645,6 +674,311 @@ describe('agentMutationSaga', () => {
 
     await expect(action.promise).rejects.toThrow('rename rejected');
     expect(mocks.rename).toHaveBeenCalledWith(A1, 'New Name', WS);
+    await stop(task);
+  });
+
+  it('owns optimistic rename and restores both original identity fields on failure', async () => {
+    const pending = Promise.withResolvers<{ success: false; error: string }>();
+    mocks.rename.mockReturnValueOnce(pending.promise);
+    const { dispatch, task, getState } = start(
+      {
+        [A1]: session(A1, {
+          name: 'Automatic title',
+          nameExplicitlySet: false,
+        }),
+      },
+      { live: true },
+    );
+    const request = renameAgentSessionRequested(WS, A1, 'Chosen title');
+    dispatch(request);
+    expect(getState().agentSessions.byAgentId[A1]).toMatchObject({
+      name: 'Chosen title',
+      nameExplicitlySet: true,
+    });
+    pending.resolve({ success: false, error: 'refused' });
+    await expect(request.promise).rejects.toThrow('refused');
+    expect(getState().agentSessions.byAgentId[A1]).toMatchObject({
+      name: 'Automatic title',
+      nameExplicitlySet: false,
+    });
+    await stop(task);
+  });
+
+  it.each(['Newer title', 'Same title'])(
+    'does not undo a newer successful rename to %s',
+    async (newerName) => {
+      const older = Promise.withResolvers<{ success: false; error: string }>();
+      mocks.rename.mockReturnValueOnce(older.promise).mockResolvedValueOnce({ success: true });
+      const { dispatch, task, getState } = start(undefined, { live: true });
+      const first = renameAgentSessionRequested(WS, A1, 'Same title');
+      const second = renameAgentSessionRequested(WS, A1, newerName);
+      dispatch(first);
+      dispatch(second);
+      await second.promise;
+      older.resolve({ success: false, error: 'old failure' });
+      await expect(first.promise).rejects.toThrow('old failure');
+      expect(getState().agentSessions.byAgentId[A1]).toMatchObject({
+        name: newerName,
+        nameExplicitlySet: true,
+      });
+      await stop(task);
+    },
+  );
+
+  it('restores the original identity when overlapping renames both fail', async () => {
+    const older = Promise.withResolvers<{ success: false }>();
+    const newer = Promise.withResolvers<{ success: false }>();
+    mocks.rename.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    const first = renameAgentSessionRequested(WS, A1, 'First');
+    const second = renameAgentSessionRequested(WS, A1, 'Second');
+    dispatch(first);
+    dispatch(second);
+    older.resolve({ success: false });
+    await expect(first.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]?.name).toBe('Second');
+    newer.resolve({ success: false });
+    await expect(second.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]?.name).toBe(A1);
+    await stop(task);
+  });
+
+  it('does not rename or roll back a row owned by another workspace', async () => {
+    const pending = Promise.withResolvers<{ success: false }>();
+    mocks.rename.mockReturnValueOnce(pending.promise);
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    const request = renameAgentSessionRequested(WS, A1, 'Pending name');
+    dispatch(request);
+    claimAgentReadOwnership(A1, 'other-workspace');
+    dispatch(
+      updateSession(A1, {
+        workspaceId: 'other-workspace' as AgentSession['workspaceId'],
+        name: 'Pending name',
+      }),
+    );
+    pending.resolve({ success: false });
+    await expect(request.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]).toMatchObject({
+      workspaceId: 'other-workspace',
+      name: 'Pending name',
+    });
+    mocks.rename.mockResolvedValueOnce({ success: false });
+    const stale = renameAgentSessionRequested(WS, A1, 'Wrong workspace');
+    dispatch(stale);
+    await expect(stale.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]?.name).toBe('Pending name');
+    await stop(task);
+  });
+
+  it('settles cancelled renames without resurrecting a removed row', async () => {
+    mocks.rename.mockReturnValueOnce(new Promise(() => {}));
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    const request = renameAgentSessionRequested(WS, A1, 'Pending');
+    dispatch(request);
+    dispatch(removeSession(A1));
+    await stop(task);
+    await expect(request.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]).toBeUndefined();
+  });
+
+  it('keeps daemon-hydrated identity when a later optimistic rename and its stale predecessor fail', async () => {
+    const older = Promise.withResolvers<{ success: false }>();
+    const newer = Promise.withResolvers<{ success: false }>();
+    mocks.rename.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    const first = renameAgentSessionRequested(WS, A1, 'First edit');
+    dispatch(first);
+    dispatch(
+      bulkUpsertSessions([session(A1, { name: 'Daemon identity', nameExplicitlySet: false })]),
+    );
+    const second = renameAgentSessionRequested(WS, A1, 'Second edit');
+    dispatch(second);
+    newer.resolve({ success: false });
+    await expect(second.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]).toMatchObject({
+      name: 'Daemon identity',
+      nameExplicitlySet: false,
+    });
+    older.resolve({ success: false });
+    await expect(first.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]).toMatchObject({
+      name: 'Daemon identity',
+      nameExplicitlySet: false,
+    });
+    await stop(task);
+  });
+
+  it('does not roll back a daemon identity that replaces a pending rename', async () => {
+    const pending = Promise.withResolvers<{ success: false }>();
+    mocks.rename.mockReturnValueOnce(pending.promise);
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    const request = renameAgentSessionRequested(WS, A1, 'Pending edit');
+    dispatch(request);
+    dispatch(bulkUpsertSessions([session(A1, { name: 'Daemon title', nameExplicitlySet: false })]));
+    pending.resolve({ success: false });
+    await expect(request.promise).rejects.toThrow();
+    expect(getState().agentSessions.byAgentId[A1]).toMatchObject({
+      name: 'Daemon title',
+      nameExplicitlySet: false,
+    });
+    await stop(task);
+  });
+
+  it('deduplicates a UI request while pending, finished, and consumed without blocking a new request', async () => {
+    const pending = Promise.withResolvers<{ success: true }>();
+    mocks.stop.mockReturnValueOnce(pending.promise).mockResolvedValue({ success: true });
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    const request = agentMutationUiRequested(WS, 'card', 'stop-1', A1, { kind: 'stop' });
+    dispatch(request);
+    dispatch(request);
+    expect(mocks.stop).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    pending.resolve({ success: true });
+    await settle();
+    dispatch(request);
+    expect(selectAgentMutationUi.select(getState() as any, WS, 'card')?.status).toBe('succeeded');
+    dispatch(agentMutationUiConsumed(WS, 'card', 'stop-1'));
+    dispatch(request);
+    expect(selectAgentMutationUi.select(getState() as any, WS, 'card')).toBeUndefined();
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+    dispatch(agentMutationUiRequested(WS, 'card', 'stop-2', A1, { kind: 'stop' }));
+    await settle();
+    expect(mocks.stop).toHaveBeenCalledTimes(2);
+    expect(selectAgentMutationUi.select(getState() as any, WS, 'card')).toMatchObject({
+      requestId: 'stop-2',
+      status: 'succeeded',
+    });
+    await stop(task);
+  });
+
+  it('routes UI intent through the existing worker and isolates released consumers', async () => {
+    const pending = Promise.withResolvers<{ success: false; error: string }>();
+    mocks.rename.mockReturnValueOnce(pending.promise);
+    mocks.stop.mockResolvedValueOnce({ success: true });
+    const { dispatch, task, getState, dispatched } = start(undefined, { live: true });
+    dispatch(
+      agentMutationUiRequested(WS, 'card', 'rename-1', A1, { kind: 'rename', name: 'UI name' }),
+    );
+    expect(selectAgentMutationUi.select(getState() as any, WS, 'card')?.status).toBe('pending');
+    dispatch(agentMutationUiReleased(WS, 'card'));
+    dispatch(agentMutationUiRequested(WS, 'other-card', 'stop-1', A1, { kind: 'stop' }));
+    pending.resolve({ success: false, error: 'refused' });
+    await settle();
+    await settle();
+    expect(selectAgentMutationUi.select(getState() as any, WS, 'card')).toBeUndefined();
+    expect(selectAgentMutationUi.select(getState() as any, WS, 'other-card')).toMatchObject({
+      requestId: 'stop-1',
+      status: 'succeeded',
+    });
+    expect(
+      selectAgentMutationUi.select(getState() as any, 'other-workspace', 'other-card'),
+    ).toBeUndefined();
+    expect(mocks.rename).toHaveBeenCalledExactlyOnceWith(A1, 'UI name', WS);
+    expect(mocks.stop).toHaveBeenCalledExactlyOnceWith(A1, WS);
+    const original = dispatched.find((item) => item.type === renameAgentSessionRequested.type);
+    const failure = dispatched.find(
+      (item) => item.type === renameAgentSessionRequested.failure.type,
+    );
+    expect(failure.payload.seq).toBe(original.seq);
+    expect(mocks.error).not.toHaveBeenCalled();
+    await stop(task);
+  });
+
+  it('publishes correlated cancellation when the mutation owner stops', async () => {
+    mocks.stop.mockReturnValueOnce(new Promise(() => {}));
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    dispatch(agentMutationUiRequested(WS, 'card', 'stop-1', A1, { kind: 'stop' }));
+    await stop(task);
+    expect(selectAgentMutationUi.select(getState() as any, WS, 'card')).toMatchObject({
+      requestId: 'stop-1',
+      status: 'cancelled',
+    });
+  });
+
+  it.each(['backend', 'generation'] as const)(
+    'cancels delayed UI success and failure after a %s switch without notifying the new context',
+    async (changed) => {
+      for (const success of [true, false]) {
+        const pending = Promise.withResolvers<{ success: boolean; error?: string }>();
+        mocks.rename.mockReturnValueOnce(pending.promise);
+        const { dispatch, task, getState, dispatched } = start(undefined, { live: true });
+        const requestId = `rename-${success}`;
+        dispatch(
+          agentMutationUiRequested(WS, 'card', requestId, A1, {
+            kind: 'rename',
+            name: 'Pending name',
+          }),
+        );
+        if (changed === 'backend') {
+          dispatch(
+            connectionsListReceived({
+              connections: [],
+              activeId: 'other',
+              windowBackendId: 'other',
+            }),
+          );
+        } else {
+          dispatch(connectionStatusChanged('disconnected'));
+        }
+        pending.resolve({ success, ...(!success ? { error: 'Old backend refused' } : {}) });
+        await settle();
+        expect(dispatched.filter((item) => item.type === agentMutationUiFinished.type)).toEqual([
+          agentMutationUiFinished(WS, 'card', requestId, 'cancelled'),
+        ]);
+        expect(selectAgentMutationUi.select(getState() as any, WS, 'card')).toMatchObject({
+          requestId,
+          status: 'cancelled',
+        });
+        expect(mocks.error).not.toHaveBeenCalled();
+        await stop(task);
+      }
+    },
+  );
+
+  it('accepts an undo acknowledgement after the cancellation event has restored the agent', async () => {
+    const pending = Promise.withResolvers<{ success: true; cancelled: true }>();
+    mocks.cancelDelete.mockReturnValueOnce(pending.promise);
+    const { dispatch, task, getState, dispatched } = start(undefined, { live: true });
+    const snapshot = session() as StoredAgentSession;
+    setPendingAgentDeletion({ wsId: WS, agentId: A1, snapshot });
+    dispatch(removeSession(A1));
+    const undo = undoAgentDeletionRequested(WS, A1);
+    dispatch(undo);
+    expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith(A1, WS);
+
+    // The delete-cancelled bridge can restore/refetch before the RPC settles.
+    removePendingAgentDeletion(A1);
+    dispatch(restoreStoredSessions([snapshot]));
+    dispatch(updateSession(A1, { name: 'Reconciled after cancellation' }));
+    pending.resolve({ success: true, cancelled: true });
+
+    await expect(undo.promise).resolves.toBe(true);
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(getPendingAgentDeletion(A1)).toBeUndefined();
+    expect(getState().agentSessions.byAgentId[A1]?.name).toBe('Reconciled after cancellation');
+    expect(dispatched.filter((action) => action.type === restoreStoredSessions.type)).toHaveLength(
+      1,
+    );
+    await stop(task);
+  });
+
+  it('never applies an undo acknowledgement to a newer deletion entry', async () => {
+    const pending = Promise.withResolvers<{ success: true; cancelled: true }>();
+    mocks.cancelDelete.mockReturnValueOnce(pending.promise);
+    const { dispatch, task, getState } = start(undefined, { live: true });
+    setPendingAgentDeletion({ wsId: WS, agentId: A1, snapshot: session() as StoredAgentSession });
+    dispatch(removeSession(A1));
+    const undo = undoAgentDeletionRequested(WS, A1);
+    dispatch(undo);
+    const replacement = { wsId: WS, agentId: A1, snapshot: session() as StoredAgentSession };
+    setPendingAgentDeletion(replacement);
+    pending.resolve({ success: true, cancelled: true });
+    await expect(undo.promise).resolves.toBe(false);
+    expect(getPendingAgentDeletion(A1)).toBe(replacement);
+    expect(getState().agentSessions.byAgentId[A1]).toBeUndefined();
+    const staleWorkspace = undoAgentDeletionRequested('other-workspace', A1);
+    dispatch(staleWorkspace);
+    await expect(staleWorkspace.promise).resolves.toBe(false);
+    expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith(A1, WS);
     await stop(task);
   });
 
@@ -837,7 +1171,7 @@ describe('agentMutationSaga', () => {
     await conversationStarted.promise;
     expect(mocks.getConversation).toHaveBeenCalledWith(
       agentId,
-      50,
+      5,
       undefined,
       undefined,
       undefined,
@@ -930,7 +1264,7 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
-  it('clears and restores the owned immediate-delete tombstone on saga cancellation', async () => {
+  it('retains the immediate-delete tombstone on cancellation even if the transport later succeeds', async () => {
     const pendingDelete = Promise.withResolvers<{ success: true }>();
     mocks.deleteAgent.mockReturnValueOnce(pendingDelete.promise);
     const { channel, dispatched, task } = start();
@@ -942,9 +1276,11 @@ describe('agentMutationSaga', () => {
     task.cancel();
     await task.toPromise();
     await expect(deletion.promise).rejects.toThrow();
-    expect(getPendingAgentDeletion(A1)).toBeUndefined();
+    expect(getPendingAgentDeletion(A1)).toBeDefined();
+    pendingDelete.resolve({ success: true });
+    await settle();
     expect(dispatched.filter((candidate) => candidate.type === restoreStoredSessions.type)).toEqual(
-      [restoreStoredSessions([session() as StoredAgentSession])],
+      [],
     );
     expect(dispatched.some((candidate) => candidate.type === bulkUpsertSessions.type)).toBe(false);
   });
@@ -1446,7 +1782,7 @@ describe('agentMutationSaga', () => {
         await stop(task);
       });
 
-      it('through an immediate delete cancelled mid-flight', async () => {
+      it('does not re-register membership for an immediate delete cancelled mid-flight', async () => {
         mocks.deleteAgent.mockReturnValue(new Promise(() => {}));
         const { channel, dispatched, task } = start({ [A1]: storedSession() });
         const action = deleteAgentSessionRequested(WS, A1);
@@ -1456,8 +1792,8 @@ describe('agentMutationSaga', () => {
 
         await stop(task);
         await expect(action.promise).rejects.toThrow();
-        expect(restoresOf(dispatched)).toHaveLength(1);
-        expect(membershipAfter(dispatched).agentIds).toEqual([A1]);
+        expect(restoresOf(dispatched)).toHaveLength(0);
+        expect(membershipAfter(dispatched).agentIds).toEqual([]);
       });
     });
   });

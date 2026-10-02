@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, within, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withHostPrincipal } from '../../../../test/fixtures/principal-state';
+import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentMessage, QueuedMessage } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -91,6 +93,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', async () =>
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).stub({
     selectChatAuroraEnabled: false,
+    selectLabsMultiplayerEnabled: false,
     selectIsAgentMonospace: false,
   }),
 );
@@ -324,6 +327,95 @@ describe('chat content column contracts', () => {
     expect(hasClasses(lane, 'chat-content-measure mx-auto w-full min-w-0')).toBe(true);
     expect(classTokens(host).has('chat-content-measure')).toBe(false);
   });
+
+  it.each([
+    ['owner', true, true, true],
+    ['member', true, true, false],
+    ['guest', false, false, false],
+    [null, false, false, false],
+  ] as const)(
+    'uses admitted %s identity while Multiplayer presence is disabled',
+    async (role, workspaceOwner, foreignDelete, foreignSend) => {
+      if (role) {
+        const state = withHostPrincipal({}, role);
+        state.userPreferences.labsMultiplayerEnabled = false;
+        scaffold.authorityState = state;
+      }
+      scaffold.queuedMessages = [
+        {
+          ...queuedMessage,
+          content: 'Own queue input',
+          messageMetadata: { fromPrincipalId: 'principal' },
+        },
+        {
+          ...queuedMessage,
+          id: 'foreign',
+          content: 'Other queue input',
+          messageMetadata: { fromPrincipalId: 'other' },
+        },
+      ];
+      vi.mocked(appClient.agents.editQueued).mockClear().mockResolvedValue({ success: true });
+      const container = await renderPanel({
+        id: 'ws-1',
+        title: 'Workspace',
+        ownerPrincipalId: workspaceOwner ? 'principal' : 'other',
+      });
+      const rows = container.querySelectorAll('[data-testid="queued-message-row"]');
+      const own = within(rows[0] as HTMLElement);
+      const foreign = within(rows[1] as HTMLElement);
+      expect(
+        own.queryByRole('button', { name: m.chat_queuedMessages_edit_tooltip() }) !== null,
+      ).toBe(role !== null);
+      expect(
+        own.queryByRole('button', { name: m.chat_queuedMessages_remove_tooltip() }) !== null,
+      ).toBe(role !== null);
+      expect(
+        own.queryByRole('button', { name: m.chat_queuedMessages_sendImmediately_label() }) !== null,
+      ).toBe(role !== null);
+      expect(
+        foreign.queryByRole('button', { name: m.chat_queuedMessages_edit_tooltip() }),
+      ).toBeNull();
+      expect(
+        foreign.queryByRole('button', { name: m.chat_queuedMessages_remove_tooltip() }) !== null,
+      ).toBe(foreignDelete);
+      expect(
+        foreign.queryByRole('button', { name: m.chat_queuedMessages_sendImmediately_label() }) !==
+          null,
+      ).toBe(foreignSend);
+      if (role) {
+        await fireEvent.dblClick(own.getByTestId('queued-message-content'));
+        await waitFor(() =>
+          expect(appClient.agents.editQueued).toHaveBeenCalledWith(
+            'agent-1',
+            queuedMessage.id,
+            'Own queue input',
+            true,
+            'ws-1',
+          ),
+        );
+        await fireEvent.keyDown(own.getByRole('textbox'), { key: 'Escape' });
+        await waitFor(() => expect(own.queryByRole('textbox')).toBeNull());
+        await fireEvent.click(
+          own.getByRole('button', { name: m.chat_queuedMessages_remove_tooltip() }),
+        );
+        expect(scaffold.dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'agentQueue/removeRequested',
+            payload: ['agent-1', queuedMessage.id],
+          }),
+        );
+        await fireEvent.click(
+          own.getByRole('button', { name: m.chat_queuedMessages_sendImmediately_label() }),
+        );
+        expect(scaffold.dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'chatState/sendQueuedMessageNowRequested',
+            payload: ['agent-1', 'ws-1', queuedMessage.id],
+          }),
+        );
+      }
+    },
+  );
 
   it('renders queued messages before subscriptions and outside the composer', async () => {
     scaffold.queuedMessages = [queuedMessage];

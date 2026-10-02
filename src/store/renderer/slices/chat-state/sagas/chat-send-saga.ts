@@ -1,3 +1,4 @@
+import { reconcileQueuedMessage } from '$features/agent/utils/reconcile-queued-message';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 import {
@@ -17,7 +18,10 @@ import {
   getAgentQueueEventSnapshotSeq,
   hydrateAgentQueue,
 } from '$features/agent/agent-queue-read-service';
-import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+import {
+  buildRecordedAttempt,
+  buildQueuedRecordedAttempt,
+} from '$features/agent/utils/build-recorded-attempt';
 import {
   imageRetryBlocks,
   toImageReferenceBlocks,
@@ -28,7 +32,7 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, QueuedMessage } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryFromStalledRequested,
@@ -64,6 +68,7 @@ import {
   chatModelUnavailableCleared,
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
+  chatQueuedSendStarted,
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
@@ -368,6 +373,7 @@ function* dispatchToLifecycle(
       // (monorepo#2481) or a hydrate-reconciled fold (monorepo#2486) —
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
+      yield* put(chatQueuedSendStarted(agentId));
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
       const result = yield* call(
         [appClient.agents, appClient.agents.queue],
@@ -386,9 +392,7 @@ function* dispatchToLifecycle(
       const queuedMessage = result.queuedMessage;
       if (queuedMessage) {
         const turnId = result.turnId ?? queuedMessage.turnId;
-        if (typeof turnId === 'string') {
-          yield* put(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt, turnId));
-        }
+        let retryMessage: QueuedMessage | undefined = queuedMessage;
         // Seed only when no authoritative snapshot — live agent:queue:updated
         // fold or hydrate-reconciled fold — landed since the send started: a
         // snapshot (including the shrunk-after-drain one) is at least as
@@ -399,9 +403,8 @@ function* dispatchToLifecycle(
           getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend
         ) {
           const existing = yield* selectAgentQueueMessages.effect(agentId, wsId);
-          if (!existing.some((message) => message.id === queuedMessage.id)) {
-            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage], wsId));
-          }
+          const next = reconcileQueuedMessage(existing, queuedMessage);
+          yield* put(replaceAgentQueue(agentId, next, wsId));
         } else if (yield* mutationIsCurrent(agentId, ownership)) {
           logger.debug(
             'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
@@ -417,6 +420,17 @@ function* dispatchToLifecycle(
           // error must not surface as chatSendFailed; the service leaves the
           // prior mirror intact on error.
           yield* call(() => hydrateAgentQueue(agentId, wsId).catch(() => undefined));
+          retryMessage = (yield* selectAgentQueueMessages.effect(agentId, wsId)).find(
+            (message) => message.id === queuedMessage.id || message.turnId === turnId,
+          );
+        }
+        if (typeof turnId === 'string' && (yield* mutationIsCurrent(agentId, ownership))) {
+          const record = buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt);
+          yield* put(
+            retryMessage
+              ? chatQueuedRetryRecordSet(agentId, retryMessage.id, record, turnId)
+              : chatQueuedRetryRecordSet(agentId, queuedMessage.id, record, turnId, true),
+          );
         }
       }
       if (wsId === CHIEF_WORKSPACE_ID) {

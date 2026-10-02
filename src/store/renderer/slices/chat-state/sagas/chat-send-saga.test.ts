@@ -614,6 +614,61 @@ describe('chatSendSaga', () => {
     await run.task.toPromise();
     expect(mocks.removeQueued).not.toHaveBeenCalled();
   });
+  it.each(['before', 'after'] as const)(
+    'keeps send-now processing payload when its event arrives %s the response',
+    async (eventOrder) => {
+      const run = harness();
+      const original: QueuedMessage = {
+        id: 'chosen',
+        turnId: 'turn-now',
+        content: 'first',
+        position: 0,
+        queuedAt: '2026-10-02T00:00:00Z',
+      };
+      const admitted: QueuedMessage = {
+        ...original,
+        content: 'first\n\nsecond',
+        fileBlocks: [{ type: 'file', attachmentId: 'f', fileName: 'file.txt' }],
+        messageMetadata: {
+          mergedMessageMetadata: [
+            { answeredQuestionsMessageId: 'one' },
+            { answeredQuestionsMessageId: 'two' },
+          ],
+        },
+      };
+      run.dispatch(
+        chatQueuedRetryRecordSet(AGENT, original.id, { text: original.content }, original.turnId!),
+      );
+      run.dispatch(replaceAgentQueue(AGENT, [original], WS));
+      mocks.sendQueuedNow.mockImplementation(async () => {
+        if (eventOrder === 'before')
+          run.dispatch(chatQueueProcessingReceived(AGENT, 'turn-now', [admitted]));
+        return { success: true, queued: false, turnId: 'turn-now' };
+      });
+      const action = sendQueuedMessageNowRequested(AGENT, WS, original.id);
+      run.channel.put(action);
+      await expect(action.promise).resolves.toBe('delivered');
+      if (eventOrder === 'after')
+        run.dispatch(chatQueueProcessingReceived(AGENT, 'turn-now', [admitted]));
+      run.dispatch(replaceAgentQueue(AGENT, [original], WS));
+      run.dispatch(replaceAgentQueue(AGENT, [], WS));
+      run.dispatch(chatSendFailed(AGENT, 'provider failed', 'turn-now'));
+      run.channel.put(agentSessionRetryLastMessageRequested(AGENT, WS));
+      await settle();
+      await settle();
+      expect(mocks.send).toHaveBeenCalledWith(
+        AGENT,
+        admitted.content,
+        expect.anything(),
+        expect.objectContaining({
+          fileBlocks: admitted.fileBlocks,
+          messageMetadata: admitted.messageMetadata,
+        }),
+      );
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
 
   it('rejects failed and cancelled send-now requests without retrying or dropping the queued item', async () => {
     mocks.sendQueuedNow.mockResolvedValueOnce({ success: false, error: 'already drained' });
@@ -764,9 +819,8 @@ describe('chatSendSaga', () => {
     await settle();
     await settle();
 
-    // The turn-scoped retry record is still parked (cleaned by
-    // agent:queue:processing) — only the queue seed is guarded.
-    expect(run.dispatch).toHaveBeenCalledWith(
+    // A drained row must not regain a stale parked retry payload.
+    expect(run.dispatch).not.toHaveBeenCalledWith(
       chatQueuedRetryRecordSet(AGENT, 'queued-superseded', { text: 'later' }, 'turn-superseded'),
     );
     expect(run.dispatch.mock.calls.some(([action]) => action.type === replaceAgentQueue.type)).toBe(
@@ -777,6 +831,199 @@ describe('chatSendSaga', () => {
     // the daemon's true queue is re-read instead of trusting either side
     // (monorepo#2486 review).
     expect(mocks.hydrateQueue).toHaveBeenCalledWith(AGENT, WS);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each(
+    [true, false].flatMap((prior) =>
+      [
+        'snapshot-first',
+        'processing-first',
+        'ack-only',
+        'lagged-old-snapshot',
+        'stale-after-processing',
+        'legacy-lagged',
+        'batch',
+        'recovered-before-ack',
+      ].map((order) => [prior, order] as const),
+    ),
+  )(
+    'retries the processed snapshot after a delayed response (prior record: %s, order: %s)',
+    async (hasPriorRecord, order) => {
+      const first: QueuedMessage = {
+        id: 'survivor',
+        turnId: 'survivor',
+        content: 'first',
+        position: 0,
+        queuedAt: '2026-10-02T00:00:00Z',
+      };
+      const latest: QueuedMessage = {
+        ...first,
+        content: 'first\n\nsecond\n\nthird',
+        fileBlocks: [
+          { type: 'file', attachmentId: 'first-file', fileName: 'first.txt' },
+          { type: 'file', attachmentId: 'third-file', fileName: 'third.txt' },
+        ],
+        messageMetadata: {
+          mergedMessageMetadata: [
+            { type: 'question_answers', answeredQuestionsMessageId: 'question-one' },
+            { type: 'question_answers', answeredQuestionsMessageId: 'question-two' },
+          ],
+        },
+      };
+      const run = harness(session({ isStreaming: true, isProcessing: true }));
+      const bob: QueuedMessage = {
+        ...first,
+        id: 'bob',
+        turnId: 'bob-turn',
+        content: 'Bob input',
+        fileBlocks: [{ type: 'file', attachmentId: 'bob-file', fileName: 'bob.txt' }],
+        messageMetadata: {
+          fromPrincipalId: 'bob',
+          type: 'question_answers',
+          answeredQuestionsMessageId: 'question-bob',
+        },
+      };
+      const processedRows = order === 'batch' ? [latest, bob] : [latest];
+      const expectedContent = order === 'batch' ? latest.content + '\n\nBob input' : latest.content;
+      const expectedFiles =
+        order === 'batch' ? [...latest.fileBlocks!, ...bob.fileBlocks!] : latest.fileBlocks;
+      const expectedMetadata =
+        order === 'batch'
+          ? {
+              mergedMessageMetadata: [
+                ...(latest.messageMetadata!.mergedMessageMetadata as unknown[]),
+                bob.messageMetadata,
+              ],
+            }
+          : latest.messageMetadata;
+      if (hasPriorRecord)
+        run.dispatch(chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.id));
+      run.dispatch(replaceAgentQueue(AGENT, [first], WS));
+      mocks.queue.mockImplementation(async () => {
+        if (order === 'lagged-old-snapshot' || order === 'legacy-lagged') {
+          run.dispatch(replaceAgentQueue(AGENT, [first], WS));
+          noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        }
+        if (order !== 'snapshot-first')
+          run.dispatch(
+            chatQueueProcessingReceived(
+              AGENT,
+              first.id,
+              order === 'legacy-lagged'
+                ? undefined
+                : order === 'recovered-before-ack'
+                  ? [first]
+                  : processedRows,
+            ),
+          );
+        if (order !== 'ack-only' && order !== 'lagged-old-snapshot' && order !== 'legacy-lagged') {
+          run.dispatch(replaceAgentQueue(AGENT, [latest], WS));
+          noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        }
+        if (order === 'snapshot-first')
+          run.dispatch(
+            chatQueueProcessingReceived(
+              AGENT,
+              first.id,
+              order === 'legacy-lagged'
+                ? undefined
+                : order === 'recovered-before-ack'
+                  ? [first]
+                  : processedRows,
+            ),
+          );
+        if (order === 'recovered-before-ack') {
+          run.dispatch(
+            chatQueueProcessingReceived(AGENT, first.id, [{ ...latest, id: 'recovered-id' }]),
+          );
+        }
+        if (order === 'stale-after-processing') {
+          run.dispatch(replaceAgentQueue(AGENT, [first], WS));
+          noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        }
+        run.dispatch(replaceAgentQueue(AGENT, [], WS));
+        noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        return {
+          success: true,
+          turnId: order === 'batch' ? bob.turnId : first.id,
+          queuedMessage:
+            order === 'batch'
+              ? bob
+              : order === 'ack-only' || order === 'lagged-old-snapshot' || order === 'legacy-lagged'
+                ? latest
+                : { ...first, content: 'first\n\nsecond' },
+        };
+      });
+      run.channel.put(sendMessage(AGENT, { wsId: WS, text: 'second' }));
+      await settle();
+      await settle();
+      run.dispatch(chatSendFailed(AGENT, 'turn failed', first.id));
+      run.dispatch(bulkUpsertSessions([session()]));
+      run.channel.put(agentSessionRetryLastMessageRequested(AGENT, WS));
+      await settle();
+      await settle();
+      expect(mocks.send).toHaveBeenCalledWith(
+        AGENT,
+        expectedContent,
+        expect.anything(),
+        expect.objectContaining({
+          fileBlocks: expectedFiles,
+          messageMetadata: expectedMetadata,
+        }),
+      );
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
+  it('replaces the surviving row in place after append and parks the full retry payload', async () => {
+    const original: QueuedMessage = {
+      id: 'surviving',
+      turnId: 'surviving',
+      content: 'first',
+      queuedAt: '2026-10-02T00:00:00Z',
+      position: 0,
+      messageMetadata: { fromPrincipalId: 'alice' },
+      imageBlocks: [{ type: 'image', attachmentId: 'first-image' }],
+    };
+    const system: QueuedMessage = {
+      id: 'system',
+      content: 'wake',
+      queuedAt: original.queuedAt,
+      position: 1,
+      messageMetadata: { source: 'system' },
+    };
+    const merged = {
+      ...original,
+      content: 'first\n\nsecond',
+      fileBlocks: [{ type: 'file' as const, attachmentId: 'second-file', fileName: 'report.txt' }],
+    };
+    mocks.queue.mockResolvedValue({ success: true, turnId: 'surviving', queuedMessage: merged });
+    const run = harness(session({ isStreaming: true, isProcessing: true }));
+    run.dispatch(replaceAgentQueue(AGENT, [original, system], WS));
+    run.channel.put(
+      sendMessage(AGENT, { wsId: WS, text: 'second', fileBlocks: merged.fileBlocks }),
+    );
+    await settle();
+    await settle();
+    expect(run.dispatch).toHaveBeenCalledWith(replaceAgentQueue(AGENT, [merged, system], WS));
+    expect(run.dispatch).toHaveBeenCalledWith(
+      chatQueuedRetryRecordSet(
+        AGENT,
+        'surviving',
+        {
+          text: 'first\n\nsecond',
+          options: {
+            imageBlocks: original.imageBlocks,
+            fileBlocks: merged.fileBlocks,
+            messageMetadata: original.messageMetadata,
+          },
+        },
+        'surviving',
+      ),
+    );
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -836,7 +1083,13 @@ describe('chatSendSaga', () => {
     mocks.queue.mockResolvedValue({
       success: true,
       turnId: 'turn-queued',
-      queuedMessage: { id: 'queued-1', content: 'later file', timestamp: 1 },
+      queuedMessage: {
+        id: 'queued-1',
+        content: '',
+        queuedAt: '2026-10-02T00:00:00Z',
+        position: 0,
+        fileBlocks,
+      },
     });
     const queueRun = harness(
       session({ status: AgentStatus.Active, isStreaming: true, isProcessing: true }),

@@ -212,10 +212,11 @@ def main():
     scope = os.environ.get('BUILD_SMOKE_MACOS_SCOPE', 'full')
     if scope not in ('full', 'fixture-correction'):
         raise RuntimeError('Unknown packaged smoke scope')
+    native_arch = {'ARM64': 'arm64', 'X64': 'x86_64'}.get(os.environ.get('RUNNER_ARCH'))
     if (os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted' or
-        os.environ.get('RUNNER_OS') != 'macOS' or os.environ.get('RUNNER_ARCH') != 'ARM64' or
-        platform.system() != 'Darwin' or platform.machine() != 'arm64'):
-        raise RuntimeError('Requires a fresh GitHub-hosted macOS arm64 job')
+        os.environ.get('RUNNER_OS') != 'macOS' or native_arch is None or
+        platform.system() != 'Darwin' or platform.machine() != native_arch):
+        raise RuntimeError('Requires a fresh GitHub-hosted macOS job with matching native ARM64 or X64 architecture')
     REPORT.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix='smoke-', dir=os.environ['RUNNER_TEMP']))
     FIXTURE_ROOT = root
@@ -268,8 +269,8 @@ def main():
     architectures = {}
     for target in targets:
         arches = command(['lipo', '-archs', str(target)]).decode().strip().split()
-        if 'arm64' not in arches:
-            raise RuntimeError(f'Actual executable lacks arm64: {target}')
+        if native_arch not in arches:
+            raise RuntimeError(f'Actual executable lacks {native_arch}: {target}')
         architectures[str(target.relative_to(app))] = arches
     record('executables', architectures)
     env = test_environment(root, executable)

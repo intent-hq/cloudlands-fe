@@ -1,15 +1,13 @@
 <script lang="ts">
   import { USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
+  import {
+    findQueuedMessageForEdit,
+    isQueuedMessageReadyForBatch,
+    queuedMessagePermissions,
+  } from '$lib/utils/queued-message-permissions';
   import { memberMentionsToText } from '$lib/utils/member-mention-token';
-  /**
-   * QueuedMessageList Component
-   *
-   * Displays queued messages at the bottom of the chat panel.
-   * Messages are shown in a muted style with edit and delete functionality.
-   */
-
   import Fa from 'svelte-fa';
-  import { faCheck, faFile, faArrowUp } from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faArrowUp } from '@fortawesome/free-solid-svg-icons';
   import ArrowClockwiseIcon from 'phosphor-svelte/lib/ArrowClockwiseIcon';
   import ArrowUUpLeftIcon from 'phosphor-svelte/lib/ArrowUUpLeftIcon';
   import PencilSimpleLineIcon from 'phosphor-svelte/lib/PencilSimpleLineIcon';
@@ -22,9 +20,11 @@
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
   import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import TipTapEditor from './input/TipTapEditor.svelte';
+  import QueuedMessageAttachments from './QueuedMessageAttachments.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -58,17 +58,22 @@
     onclearall?: (messageIds: string[]) => Promise<void>;
     ondone?: () => void;
     /**
-     * Queue-surface attribution (multiplayer w2). `null` = off (single-member
-     * workspace). Otherwise a user-authored entry renders its own `author`
+     * Local queue attribution (multiplayer w2). `null` disables local fallback
+     * in a single-member workspace. Portable author snapshots remain visible
+     * independently. Otherwise a user-authored entry renders its own `author`
      * projection, or — on a daemon that stamps `fromPrincipalId` only — the
      * transcript author this map resolves it to.
      */
     authors?: ReadonlyMap<string, MessageAuthor> | null;
     /**
-     * The viewer's own principal (`presence.ownPrincipalId`): their own
-     * entries render no author. `null` = not yet known, every author shown.
+     * The admitted principal used for authorization; never inferred from presence.
+     * Null keeps all mutations disabled until identity is verified.
      */
     ownPrincipalId?: string | null;
+    /** Presence identity affects attribution display only. */
+    presentationPrincipalId?: string | null;
+    ownerPrincipalId?: string | null;
+    isHostOwner?: boolean;
   }
 
   let {
@@ -82,12 +87,29 @@
     ondone,
     authors = null,
     ownPrincipalId = null,
+    presentationPrincipalId = ownPrincipalId,
+    ownerPrincipalId = null,
+    isHostOwner = false,
   }: Props = $props();
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
+  function permissions(message: QueuedMessage | undefined) {
+    return queuedMessagePermissions(message, ownPrincipalId, ownerPrincipalId, isHostOwner);
+  }
+
+  function canStartEdit(message: QueuedMessage) {
+    return (
+      permissions(message).edit &&
+      !(message.editing && message.editingMessageId && message.editingMessageId !== message.id)
+    );
+  }
+
   // Track which message is being edited
   let editingId = $state<string | null>(null);
+  let conflictedDrafts = $state<
+    Array<{ id: string; content: string; pendingOperationId?: number }>
+  >([]);
   let editContent = $state('');
   let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
@@ -97,7 +119,9 @@
   const editHasMembers = $derived(
     memberMentionsToText(editOriginalContent) !== editOriginalContent,
   );
-  let activeEditOperation: { messageId: string } | null = null;
+  type EditOperation = { messageId: string; token: number; releasing: boolean };
+  let editOperationSequence = 0;
+  let activeEditOperation: EditOperation | null = null;
   let pendingFocusRestore: { messageId: string; element: HTMLElement } | null = null;
   let expanded = $state(true);
   let showAll = $state(false);
@@ -119,10 +143,28 @@
     bulkAction !== null ||
       Object.values(sendStates).some((state) => state === 'sending' || state === 'delivered'),
   );
+  let readinessTime = $state(Date.now());
+  $effect(() => {
+    if (!messages.some((message) => message.holdKind !== undefined)) return;
+    readinessTime = Date.now();
+    const timer = setInterval(() => {
+      readinessTime = Date.now();
+    }, 1000);
+    return () => clearInterval(timer);
+  });
   const readyIds = $derived(
     messages
-      .filter((message) => !message.editing && message.id !== editingId && !isSending(message.id))
+      .filter(
+        (message) =>
+          permissions(message).sendNow &&
+          isQueuedMessageReadyForBatch(message, readinessTime) &&
+          message.id !== editingId &&
+          !isSending(message.id),
+      )
       .map((message) => message.id),
+  );
+  const removableIds = $derived(
+    messages.filter((message) => permissions(message).remove).map((message) => message.id),
   );
   let previousMessageCount = $state(0);
   const contentId = $derived(`queued-messages-content-${messages[0]?.id ?? 'empty'}`);
@@ -197,7 +239,13 @@
 
   async function handleBulkAction(action: 'send' | 'clear') {
     if (disabled || busy || (action === 'send' ? !onsendall : !onclearall)) return;
-    const ids = action === 'send' ? [...readyIds] : messages.map((message) => message.id);
+    const ids =
+      action === 'send'
+        ? readyIds.filter((id) => {
+            const message = messages.find((entry) => entry.id === id);
+            return message && isQueuedMessageReadyForBatch(message);
+          })
+        : [...removableIds];
     if (!ids.length) return;
     bulkAction = action;
     bulkError = null;
@@ -247,6 +295,7 @@
       disabled ||
       bulkAction ||
       !message ||
+      !permissions(message).sendNow ||
       message.editing ||
       editingId === id ||
       sendingIds.has(id) ||
@@ -299,23 +348,23 @@
     play();
   }
 
-  function beginEditOperation(messageId: string) {
-    const operation = { messageId };
+  function beginEditOperation(messageId: string, releasing = false) {
+    const operation = { messageId, token: ++editOperationSequence, releasing };
     activeEditOperation = operation;
     return operation;
   }
 
-  function ownsEditOperation(operation: { messageId: string }) {
+  function ownsEditOperation(operation: EditOperation) {
     return activeEditOperation === operation && editingId === operation.messageId;
   }
 
-  function finishEditOperation(operation: { messageId: string }) {
+  function finishEditOperation(operation: EditOperation) {
     if (!ownsEditOperation(operation)) return false;
     activeEditOperation = null;
     return true;
   }
 
-  function clearEditState(operation?: { messageId: string }) {
+  function clearEditState(operation?: EditOperation) {
     if (operation && !ownsEditOperation(operation)) return false;
     editingId = null;
     editContent = '';
@@ -326,7 +375,37 @@
     return true;
   }
 
-  async function clearOwnedEditState(operation: { messageId: string }) {
+  function preserveConflictedDraft(pendingOperationId?: number) {
+    if (editingId) {
+      conflictedDrafts = [
+        ...conflictedDrafts.filter((draft) => draft.id !== editingId),
+        { id: editingId, content: editContent, pendingOperationId },
+      ];
+    }
+    clearEditState();
+  }
+
+  // Queue events may release or drain a row before its save/cancel reply. Keep
+  // that draft private until the reply settles, without blocking another editor.
+  function settleDetachedEdit(operation: EditOperation, success: boolean) {
+    if (!conflictedDrafts.some((draft) => draft.pendingOperationId === operation.token))
+      return false;
+    conflictedDrafts = conflictedDrafts.flatMap((draft) => {
+      if (draft.pendingOperationId !== operation.token) return [draft];
+      return success ? [] : [{ id: draft.id, content: draft.content }];
+    });
+    return true;
+  }
+
+  function preserveServerConflict(error: string | undefined, operation: EditOperation) {
+    if (settleDetachedEdit(operation, false)) return true;
+    if (!ownsEditOperation(operation) || !error?.includes('queued edit conflict:')) return false;
+    preserveConflictedDraft();
+    return true;
+  }
+
+  async function clearOwnedEditState(operation: EditOperation) {
+    if (settleDetachedEdit(operation, true)) return false;
     if (!ownsEditOperation(operation)) return false;
     let cleared = false;
     await animateRowMutation(operation.messageId, () => {
@@ -348,7 +427,11 @@
   });
 
   $effect(() => {
-    if (editingId && !messages.some((message) => message.id === editingId)) clearEditState();
+    if (editingId && !findQueuedMessageForEdit(messages, editingId)) {
+      preserveConflictedDraft(
+        activeEditOperation?.releasing ? activeEditOperation.token : undefined,
+      );
+    }
   });
 
   $effect.pre(() => {
@@ -523,6 +606,7 @@
 
   async function startEdit(message: QueuedMessage, programmatic = false) {
     if (
+      !canStartEdit(message) ||
       disabled ||
       bulkAction ||
       isSending(message.id) ||
@@ -547,6 +631,7 @@
       try {
         const result = await onedit(message.id, message.content, true);
         if (!result.success) {
+          if (preserveServerConflict(result.error, operation)) return;
           // Message was already dequeued - clear edit state
           // TODO STAB-27: Drop content into composer as draft instead of losing it
           console.warn('Failed to hold queued message for editing:', result.error);
@@ -564,9 +649,14 @@
   }
 
   async function cancelEdit() {
-    if (activeEditOperation || !editingId) return;
+    if (
+      activeEditOperation ||
+      !editingId ||
+      !permissions(findQueuedMessageForEdit(messages, editingId)).edit
+    )
+      return;
     const wasProgrammatic = editStartedProgrammatically;
-    const operation = beginEditOperation(editingId);
+    const operation = beginEditOperation(editingId, true);
     const originalContent = editOriginalContent;
 
     // STAB-27: Release hold with original content (editing:false) BEFORE clearing edit state
@@ -575,6 +665,7 @@
       try {
         const result = await onedit(operation.messageId, originalContent, false);
         if (!result.success) {
+          if (preserveServerConflict(result.error, operation)) return;
           // Release failed - stay in edit mode
           console.error('Failed to release queued message hold on cancel:', result.error);
           finishEditOperation(operation);
@@ -583,6 +674,7 @@
       } catch (error) {
         // IPC/network failure - stay in edit mode
         console.error('Exception while releasing queued message hold on cancel:', error);
+        if (settleDetachedEdit(operation, false)) return;
         finishEditOperation(operation);
         return;
       }
@@ -595,10 +687,11 @@
   }
 
   async function saveEdit() {
-    if (activeEditOperation) return;
+    if (activeEditOperation || !permissions(findQueuedMessageForEdit(messages, editingId)).edit)
+      return;
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
-      const operation = beginEditOperation(editingId);
+      const operation = beginEditOperation(editingId, true);
       const newContent = editContent.trim();
 
       // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
@@ -607,6 +700,7 @@
         try {
           const result = await onedit(operation.messageId, newContent, false);
           if (!result.success) {
+            if (preserveServerConflict(result.error, operation)) return;
             // Save failed - stay in edit mode
             console.error('Failed to save queued message edit:', result.error);
             finishEditOperation(operation);
@@ -615,6 +709,7 @@
         } catch (error) {
           // IPC/network failure - stay in edit mode
           console.error('Exception while saving queued message edit:', error);
+          if (settleDetachedEdit(operation, false)) return;
           finishEditOperation(operation);
           return;
         }
@@ -641,7 +736,14 @@
   }
 
   function handleRemove(id: string) {
-    if (disabled || bulkAction || isSending(id) || sendingIds.has(id)) return;
+    if (
+      disabled ||
+      bulkAction ||
+      !permissions(messages.find((message) => message.id === id)).remove ||
+      isSending(id) ||
+      sendingIds.has(id)
+    )
+      return;
     onremove?.(id);
   }
 
@@ -674,76 +776,38 @@
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
-    const last = messages[messages.length - 1];
-    if (!last) return false;
+    const last = messages.findLast(canStartEdit);
+    if (!last || disabled || activeEditOperation || editingId === last.id || isSending(last.id))
+      return false;
     void startEdit(last, true);
     return true;
   }
 </script>
 
-{#snippet imageThumbnails(message: QueuedMessage)}
-  {#if message.imageBlocks && message.imageBlocks.length > 0}
-    <div class="inline-flex max-w-full flex-wrap items-center gap-1">
-      {#each message.imageBlocks as block, i (i)}
-        {@const src = queuedImageSrc(block)}
-        <Button
-          type="button"
-          variant="plain"
-          size="compact"
-          class="inline-flex shrink-0 p-0 border-0 bg-transparent cursor-pointer align-text-bottom rounded-xs"
-          data-testid="queued-image-thumbnail"
-          onclick={(e) => {
-            e.stopPropagation();
-            openImageLightbox(block, e.currentTarget as HTMLButtonElement, i);
-          }}
-          aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
-            number: formatInteger(i + 1),
-            total: formatInteger(message.imageBlocks?.length ?? 0),
-          })}
-        >
-          {#if src}
-            <img
-              {src}
-              alt={m.chat_chatMessage_attachedImage_alt({ number: formatInteger(i + 1) })}
-              class="h-[1.1em] w-[1.1em] rounded-xs border border-border object-cover hover:opacity-90 transition-opacity"
-              onerror={() => handleReferenceImageError(block, src)}
-            />
-          {:else}
-            <!-- Reference still resolving, failed to load, or its file is
-             gone: neutral placeholder tile instead of a broken img. -->
-            <span
-              class="h-[1.1em] w-[1.1em] rounded-xs border border-border bg-muted/50 inline-block"
-              data-testid="queued-image-placeholder"
-            ></span>
-          {/if}
-        </Button>
-      {/each}
+{#each conflictedDrafts.filter((draft) => draft.pendingOperationId === undefined) as draft (draft.id)}
+  <div
+    class="border-b border-border p-3 space-y-2"
+    data-testid="queued-draft-conflict"
+    data-conflict-message-id={draft.id}
+  >
+    <p class="type-caption text-warning-ink" role="status">
+      {m.chat_queuedMessages_draftConflict_description()}
+    </p>
+    <pre class="type-body whitespace-pre-wrap break-words select-text">{draft.content}</pre>
+    <div class="flex items-center gap-2">
+      <CopyButton text={draft.content} />
+      <Button
+        type="button"
+        variant="plain"
+        onclick={() => {
+          conflictedDrafts = conflictedDrafts.filter((item) => item.id !== draft.id);
+        }}
+      >
+        {m.chat_queuedMessages_discardDraft_label()}
+      </Button>
     </div>
-  {/if}
-{/snippet}
-
-{#snippet fileChips(message: QueuedMessage)}
-  {#if message.fileBlocks && message.fileBlocks.length > 0}
-    <div class="inline-flex max-w-full flex-wrap items-center gap-1">
-      {#each message.fileBlocks as block, i (i)}
-        <Button
-          type="button"
-          variant="plain"
-          class="inline-flex max-w-full min-w-0 items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-muted/50 hover:bg-muted transition-colors text-[0.7rem] text-muted-foreground hover:text-foreground cursor-pointer"
-          data-testid="queued-file-chip"
-          onclick={(e) => {
-            e.stopPropagation();
-            openQueuedFileAttachment(block);
-          }}
-          title={m.chat_chatMessage_openAttachment_title({ name: block.fileName })}
-        >
-          <Fa icon={faFile} class="w-2.5 h-2.5" />
-          <span class="truncate max-w-[120px]">{block.fileName}</span>
-        </Button>
-      {/each}
-    </div>
-  {/if}
-{/snippet}
+  </div>
+{/each}
 
 {#if messages.length > 0}
   <div
@@ -777,7 +841,7 @@
         </span>
       </Button>
       {#if !disabled}
-        {#if onsendall}
+        {#if onsendall && messages.some((message) => permissions(message).sendNow)}
           <Button
             variant="ghost-light"
             size="icon-xs"
@@ -792,7 +856,7 @@
             <Fa icon={faArrowUp} class="h-3 w-3" />
           </Button>
         {/if}
-        {#if onclearall}
+        {#if onclearall && removableIds.length > 0}
           <Button
             variant="ghost-light"
             size="icon-xs"
@@ -848,7 +912,7 @@
                   transition:queuedMessageRowTransition
                   title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
                 >
-                  {#if editingId === message.id}
+                  {#if editingId && findQueuedMessageForEdit([message], editingId)}
                     <!-- Edit mode -->
                     <div
                       class="col-span-full row-span-full min-w-0 flex flex-1 gap-2"
@@ -908,7 +972,11 @@
                       </Button>
                     </div>
                   {:else}
-                    {@const queuedAuthor = getQueuedMessageAuthor(message, authors, ownPrincipalId)}
+                    {@const queuedAuthor = getQueuedMessageAuthor(
+                      message,
+                      authors,
+                      presentationPrincipalId,
+                    )}
                     {@const queuedAuthorLabel = queuedAuthor
                       ? getMessageAuthorLabel(queuedAuthor)
                       : null}
@@ -939,8 +1007,13 @@
                         </Tooltip>
                       {/if}
                       <div class="queued-message-body min-w-0 flex-1">
-                        {@render imageThumbnails(message)}
-                        {@render fileChips(message)}
+                        <QueuedMessageAttachments
+                          {message}
+                          {queuedImageSrc}
+                          {openImageLightbox}
+                          {handleReferenceImageError}
+                          {openQueuedFileAttachment}
+                        />
                         <Button
                           variant="plain"
                           size="compact"
@@ -978,23 +1051,27 @@
                           class="queued-message-actions {QUEUE_ACTION_CLUSTER_CLASS}"
                           data-testid="queued-message-actions"
                         >
-                          <Button
-                            variant="ghost-light"
-                            size="icon-xs"
-                            iconOnly
-                            class="-my-1"
-                            aria-label={m.chat_queuedMessages_edit_tooltip()}
-                            disabled={bulkAction !== null || isSending(message.id)}
-                            onpointerdown={(event) => event.stopPropagation()}
-                            onclick={(event) => {
-                              event.stopPropagation();
-                              void startEdit(message);
-                            }}
-                            tooltip={m.chat_queuedMessages_edit_tooltip()}
-                          >
-                            <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
-                          </Button>
-                          {#if onsendnow}
+                          {#if permissions(message).edit}
+                            <Button
+                              variant="ghost-light"
+                              size="icon-xs"
+                              iconOnly
+                              class="-my-1"
+                              aria-label={m.chat_queuedMessages_edit_tooltip()}
+                              disabled={bulkAction !== null ||
+                                isSending(message.id) ||
+                                !canStartEdit(message)}
+                              onpointerdown={(event) => event.stopPropagation()}
+                              onclick={(event) => {
+                                event.stopPropagation();
+                                void startEdit(message);
+                              }}
+                              tooltip={m.chat_queuedMessages_edit_tooltip()}
+                            >
+                              <PencilSimpleLineIcon size={16} weight="regular" aria-hidden="true" />
+                            </Button>
+                          {/if}
+                          {#if onsendnow && permissions(message).sendNow}
                             <Button
                               variant="ghost-light"
                               size="icon-xs"
@@ -1014,19 +1091,21 @@
                               <Fa icon={faArrowUp} class="w-3 h-3" />
                             </Button>
                           {/if}
-                          <Button
-                            variant="ghost-light"
-                            size="icon-xs"
-                            iconOnly
-                            class="-my-1"
-                            aria-label={m.chat_queuedMessages_remove_tooltip()}
-                            disabled={bulkAction !== null || isSending(message.id)}
-                            onpointerdown={(event) => event.stopPropagation()}
-                            onclick={() => handleRemove(message.id)}
-                            tooltip={m.chat_queuedMessages_remove_tooltip()}
-                          >
-                            <XIcon size={13} weight="regular" aria-hidden="true" />
-                          </Button>
+                          {#if permissions(message).remove}
+                            <Button
+                              variant="ghost-light"
+                              size="icon-xs"
+                              iconOnly
+                              class="-my-1"
+                              aria-label={m.chat_queuedMessages_remove_tooltip()}
+                              disabled={bulkAction !== null || isSending(message.id)}
+                              onpointerdown={(event) => event.stopPropagation()}
+                              onclick={() => handleRemove(message.id)}
+                              tooltip={m.chat_queuedMessages_remove_tooltip()}
+                            >
+                              <XIcon size={13} weight="regular" aria-hidden="true" />
+                            </Button>
+                          {/if}
                         </div>
                       {/if}
                     </div>

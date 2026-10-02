@@ -1552,6 +1552,56 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     off();
   });
 
+  it('preserves portable authors across snapshot, delta and recovery without merging null identities', async () => {
+    mockChatSubscribe();
+    const seen: Array<import('../app-client').ChatTranscript> = [];
+    const off = new LiveChatClient().subscribe('agent-1', (t) => seen.push(t));
+    try {
+      await flush();
+      const first = {
+        principalId: null,
+        login: 'same',
+        displayName: null,
+        avatarUrl: null,
+        identity: { provider: 'gitlab', host: 'one.example', externalUserId: '42' },
+      };
+      const second = { ...first, identity: { ...first.identity, host: 'two.example' } };
+      const metadata = {
+        humanAuthor: { sourcePrincipalId: 'destination-self' },
+        originalMetadata: ['inert'],
+      };
+      const raw = { ...SEEDED_SNAPSHOT.messages[0], author: first, metadata };
+      const before = JSON.stringify(raw);
+      snapshotPush('sub-1', 0, { ...SEEDED_SNAPSHOT, messages: [raw] });
+      const entity = {
+        agentId: 'agent-1',
+        messageId: 'portable-two',
+        role: 'user',
+        messageSeq: 1,
+        timestamp: raw.timestamp,
+        author: second,
+        metadata,
+        block: { id: 'portable-two:0', type: 'text', text: 'second body' },
+      };
+      deltaPush('sub-1', 1, { added: [entity], updated: [], removedIds: [] });
+      expect(seen.at(-1)!.messages.map((row) => row.author)).toEqual([first, second]);
+      const { author: _author, ...absent } = entity;
+      deltaPush('sub-1', 2, { added: [], updated: [absent], removedIds: [] });
+      expect(seen.at(-1)!.messages[1].author).toEqual(second);
+      deltaPush('sub-1', 3, { added: [], updated: [{ ...entity, author: null }], removedIds: [] });
+      expect(seen.at(-1)!.messages[1]).toHaveProperty('author', null);
+      expect(seen.at(-1)!.messages[1].metadata).toEqual(metadata);
+      expect(seen.at(-1)!.messages[1].contentBlocks?.[0].text).toBe('second body');
+      emitReconnect();
+      await flush();
+      snapshotPush('sub-2', 0, { ...SEEDED_SNAPSHOT, messages: [raw] });
+      expect(seen.at(-1)!.messages[0].author).toEqual(first);
+      expect(JSON.stringify(raw)).toBe(before);
+    } finally {
+      off();
+    }
+  });
+
   it("carries the user-row entity's author projection onto the materialized message (intentd#1869)", async () => {
     // A user row served live carries the daemon's serve-time `author`
     // projection lifted onto each §7.1 entity, exactly as the snapshot page
@@ -1650,7 +1700,7 @@ describe('LiveChatClient.subscribe (standing §7.1 subscription)', () => {
     last = seen[seen.length - 1];
     const legacy = last.messages[2] as Authored;
     expect(legacy.id).toBe('user-msg-legacy-2');
-    expect(legacy.author).toBeUndefined();
+    expect(legacy.author).toBeNull();
     off();
   });
 
@@ -3105,6 +3155,36 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     off();
   });
 
+  it('hands the five-message snapshot cursor to history consumers unchanged', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: unknown[] = [];
+    const off = client.subscribe('agent-1', (value) => seen.push(value));
+    try {
+      await flush();
+      snapshotPush('sub-1', 0, {
+        ...SEEDED_SNAPSHOT,
+        messages: Array.from({ length: 5 }, (_, index) => ({
+          ...SEEDED_SNAPSHOT.messages[0],
+          id: `newest-${index}`,
+          seq: 115 + index,
+        })),
+        totalMessages: 120,
+        truncated: true,
+        nextToken: 'opaque-before-newest-five',
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        fromSnapshot: true,
+        totalMessages: 120,
+        truncated: true,
+        nextToken: 'opaque-before-newest-five',
+      });
+    } finally {
+      off();
+    }
+  });
+
   it('stamps resumed: false when the daemon falls back to the full newest page', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();
@@ -3122,6 +3202,39 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     expect(seen[0].messages.map((m) => (m as { id: string }).id)).toEqual(['0190a1b2-user']);
     off();
   });
+
+  it.each([undefined, '0190a1b2-user'])(
+    'forwards a mid-stream reset after initial hydration (anchor %s)',
+    async (sinceMessageId) => {
+      mockChatSubscribe();
+      const client = new LiveChatClient();
+      const seen: Array<{ resumed?: boolean; messages: unknown[] }> = [];
+      const off = client.subscribe('agent-1', (t) => seen.push(t), undefined, {
+        sinceMessageId,
+      });
+      await flush();
+      expect(mockedRequest).toHaveBeenCalledWith('chat.subscribe', {
+        agentId: 'agent-1',
+        deltaEncoding: 'incremental',
+        projection: 'slim',
+        ...(sinceMessageId === undefined ? {} : { sinceMessageId }),
+      });
+      snapshotPush('sub-1', 0, {
+        ...SEEDED_SNAPSHOT,
+        ...(sinceMessageId === undefined ? {} : { resumed: true }),
+      });
+      snapshotPush('sub-1', 1, {
+        ...SEEDED_SNAPSHOT,
+        messages: [],
+        totalMessages: 0,
+        resumed: false,
+      });
+      expect(seen).toHaveLength(2);
+      expect(seen[1].resumed).toBe(false);
+      expect(seen[1].messages).toEqual([]);
+      off();
+    },
+  );
 
   it('omits sinceMessageId entirely when no resume is requested', async () => {
     mockChatSubscribe();

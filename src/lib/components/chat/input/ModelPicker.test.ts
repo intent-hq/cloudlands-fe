@@ -2980,7 +2980,7 @@ describe('ModelPicker availability gating', () => {
     await tick();
     const requests = () =>
       mockSvelteDispatch.mock.calls
-        .filter(([action]) => action.type === 'providerCatalog/workspaceCatalogRequested')
+        .filter(([action]) => action.type === 'providerCatalog/ensureWorkspaceCatalogRequested')
         .map(([action]) => action.payload);
     expect(requests()).toEqual([['ws-1']]);
     workspaceCatalogEpoch$.update((epoch) => epoch + 1);

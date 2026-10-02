@@ -22,6 +22,7 @@
  * Only remote transports route here (`backend.ipc.ts` gates on
  * `transport !== 'uds'`); the local sidecar keeps the single UDS socket.
  */
+import { isScopedFileRead } from '$shared/root-file-read-support';
 import { Logger } from '$shared/logger';
 import type { BackendConnectionConfig } from './backend-connection';
 import { JsonRpcClient } from './json-rpc-client';
@@ -352,10 +353,18 @@ export async function requestOverTransferConnection<T = unknown>(
     );
   }
 
-  // Single-shot transfers (`file.placeAttachment` data arm).
+  // Single-shot transfers (`file.placeAttachment` data arm and file.readChunk).
   return withTransferConnection(
     config,
-    (connection) => connection.request<T>(method, params, options),
+    async (connection) => {
+      // This dedicated client has no pooled-client identity observer. Negotiate
+      // support here only for scoped reads; sendNow validates the actual socket
+      // again, so a reconnect between hello and read fails closed.
+      if (isScopedFileRead(method, params)) {
+        await connection.request('client.hello', {}, { timeoutMs: 5_000 });
+      }
+      return connection.request<T>(method, params, options);
+    },
     backendId,
   );
 }

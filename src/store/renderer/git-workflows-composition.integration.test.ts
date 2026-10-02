@@ -109,12 +109,8 @@ beforeEach(async () => {
   );
   appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
   await vi.waitFor(() => expect(selectHostRole.select(appStore.state)).toBe('owner'));
-  // Existing presence attachment reads its own ID; principal admission separately
-  // discovers authority. Both production owners use the same §5.49 wire contract.
-  expect(calls('principal.me')).toEqual([
-    ['principal.me', {}],
-    ['principal.me', {}],
-  ]);
+  // Principal admission reads authority once; presence reuses the admitted snapshot.
+  expect(calls('principal.me')).toEqual([['principal.me', {}]]);
   expect(calls('client.hello')).toEqual([['client.hello', {}]]);
 });
 
