@@ -52,10 +52,21 @@ test('native cell pointer selection crosses a projected column edge without disa
         const rect = editor!.view.coordsAtPos(editor!.view.posAtDOM(node, 1));
         return { x: rect.left, y: (rect.top + rect.bottom) / 2 };
       }, text);
+    await settled(page);
     const start = await point('r0c1');
+    expect(
+      await page.evaluate(
+        ({ x, y }) => document.elementFromPoint(x, y)?.closest('td')?.textContent,
+        start,
+      ),
+    ).toBe('r0c1');
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
     try {
+      // Establish the native cell-drag anchor before scrolling its original
+      // screen coordinates away; the native plugin initially resolves that point.
+      const next = await point('r1c1');
+      await page.mouse.move(next.x, next.y, { steps: 4 });
       await root.evaluate((el) => {
         const host = el.querySelector('[data-testid="editor-host"]')!;
         host.parentElement!.scrollLeft = 183 * 2;

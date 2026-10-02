@@ -371,7 +371,13 @@ test('encountered row height survives horizontal eviction of its tall cell', asy
   mount,
   page,
 }, info) => {
-  await mount(Harness, { props: { sourceOverride: source } });
+  // Hold the admitted fragment constant: more visible rows can otherwise reduce
+  // its byte allowance, legitimately changing the encountered height estimate.
+  const heightSource = source
+    .split('\n')
+    .filter((_, i) => i < 2 || (i >= 101 && i <= 103))
+    .join('\n');
+  await mount(Harness, { props: { sourceOverride: heightSource } });
   const root = page.getByTestId('proof');
   await expect(root.locator('.tiptap')).toHaveCount(1);
   await root.evaluate(async (el) => {
@@ -383,8 +389,9 @@ test('encountered row height survives horizontal eviction of its tall cell', asy
     root.evaluate((el) => {
       const p = (el as Host).proof,
         table = p.projection!.table!.window;
-      const index = [...new Set(table.cells.map((c) => c.row))].indexOf(100);
+      const index = [...new Set(table.cells.map((c) => c.row))].indexOf(1);
       return {
+        fragment: table.cells.find((c) => c.row === 1 && c.column === 44)?.raw,
         height: p.editor!.view.dom.querySelectorAll('tr')[index].getBoundingClientRect().height,
         geometry: table.geometry,
         stats: p.snapshot(),
@@ -415,7 +422,7 @@ test('encountered row height survives horizontal eviction of its tall cell', asy
     .poll(() =>
       root.evaluate((el) =>
         (el as Host).proof.projection!.table!.window.cells.some(
-          (c) => c.row === 100 && c.column === 44,
+          (c) => c.row === 1 && c.column === 44,
         ),
       ),
     )
@@ -427,9 +434,10 @@ test('encountered row height survives horizontal eviction of its tall cell', asy
     contentType: 'application/json',
   });
   expect(before.height).toBeGreaterThan(41);
+  expect(returned.fragment).toBe(before.fragment);
   for (const after of [hidden, returned]) {
     expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
     expect(after.stats.maxSourceContextBytes).toBeLessThanOrEqual(4096);
-    expect(after.source).toBe(source);
+    expect(after.source).toBe(heightSource);
   }
 });
