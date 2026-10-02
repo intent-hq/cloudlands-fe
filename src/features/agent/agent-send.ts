@@ -41,7 +41,10 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { errorRecovery, DEFAULT_STRATEGIES } from './browser/services/error-recovery.service';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
-import { chatQueuedRetryRecordParked } from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  chatQueuedSendStarted,
+  chatQueuedRetryRecordParked,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   buildRecordedAttempt,
   buildQueuedRecordedAttempt,
@@ -364,6 +367,7 @@ export async function sendMessage(
                   // hydrate-reconciled fold (monorepo#2486) — advances this
                   // seq, and the queued-response queue seed below must then
                   // yield to it.
+                  dispatchRedux(chatQueuedSendStarted(agentId));
                   const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
                   // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
                   // the BackendTransport seam. History is daemon-owned (loaded from
@@ -504,9 +508,8 @@ export async function sendMessage(
                               queuedMessage.id,
                               attempt,
                               turnId,
-                              retryMessage
-                                ? buildQueuedRecordedAttempt(retryMessage, attempt)
-                                : null,
+                              buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, attempt),
+                              !retryMessage,
                             ),
                           );
                         } else if (isCurrent()) {

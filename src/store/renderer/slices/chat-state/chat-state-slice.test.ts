@@ -415,10 +415,13 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].queuedRetryRecords['qm-1'].record.text).toBe('after');
     });
 
-    it('replaceAgentQueue with no parked records is a no-op (state identity preserved)', () => {
+    it('retains a snapshot before the first enqueue acknowledgement without promoting it)', () => {
       const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
       const s2 = chatStateReducer(s1, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
-      expect(s2).toBe(s1);
+      expect(s2.byAgentId[AGENT].queueSnapshot).toEqual({ 'qm-1': queuedEntry('qm-1') });
+      expect(s2.byAgentId[AGENT].lastAttemptedMessage).toBe(
+        s1.byAgentId[AGENT].lastAttemptedMessage,
+      );
     });
 
     it('replaceAgentQueue never materializes a chat-state entry for an unopened chat', () => {
@@ -545,13 +548,13 @@ describe('chatStateReducer', () => {
       });
     });
 
-    it('a snapshot with unchanged content leaves parked records untouched (state identity preserved)', () => {
+    it('a snapshot with unchanged content leaves parked records untouched', () => {
       const s = chatStateReducer(
         initialState,
         chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'content of qm-1' }, 'qm-1'),
       );
       const s2 = chatStateReducer(s, replaceAgentQueue(AGENT, [queuedEntry('qm-1')]));
-      expect(s2).toBe(s);
+      expect(s2.byAgentId[AGENT].queuedRetryRecords).toBe(s.byAgentId[AGENT].queuedRetryRecords);
     });
 
     it('chatQueuedRetryRecordUpdated is a no-op when nothing is parked under the id', () => {
@@ -677,6 +680,19 @@ describe('chatStateReducer', () => {
       expect(s.byAgentId[AGENT].lastAttemptedMessage).toBeNull();
     });
 
+    it('recovers the first auto-queue acknowledgement when processing arrived without a snapshot', () => {
+      const attempt = { text: 'pending answer' };
+      let state = chatStateReducer(initialState, chatLastAttemptedMessageSet(AGENT, attempt));
+      state = chatStateReducer(state, chatQueueProcessingReceived(AGENT, 'survivor'));
+      state = chatStateReducer(
+        state,
+        chatQueuedRetryRecordParked(AGENT, 'survivor', attempt, 'survivor', null),
+      );
+      state = chatStateReducer(state, chatSendFailed(AGENT, 'failed after response', 'survivor'));
+      expect(state.byAgentId[AGENT].lastAttemptedMessage).toEqual(attempt);
+      expect(state.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    });
+
     it('chatQueueProcessingReceived promotes the exact record by turnId', () => {
       let s = chatStateReducer(initialState, chatSendFailed(AGENT, 'boom'));
       s = chatStateReducer(s, chatQueuedRetryRecordSet(AGENT, 'qm-1', { text: 'B' }, 'turn-1'));
@@ -729,10 +745,13 @@ describe('chatStateReducer', () => {
       expect(s2).toBe(s1);
     });
 
-    it('chatQueueProcessingReceived is a no-op when nothing matches (no approximation)', () => {
+    it('records processing before acknowledgement without approximating a retry payload', () => {
       const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
       const s2 = chatStateReducer(s1, chatQueueProcessingReceived(AGENT, 'turn-x'));
-      expect(s2).toBe(s1);
+      expect(s2.byAgentId[AGENT].processedQueuedTurn?.turnId).toBe('turn-x');
+      expect(s2.byAgentId[AGENT].lastAttemptedMessage).toBe(
+        s1.byAgentId[AGENT].lastAttemptedMessage,
+      );
       // Never materializes state for an unopened chat either.
       const s3 = chatStateReducer(
         initialState,

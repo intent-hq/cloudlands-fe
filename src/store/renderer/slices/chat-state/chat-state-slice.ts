@@ -301,7 +301,6 @@ function reduceQueueContentSync(
 ): ChatStateSlice {
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
-  if (Object.keys(agent.queuedRetryRecords).length === 0) return state;
   const presentById = new Map(queue.map((message) => [message.id, message]));
   const presentByTurnId = new Map<string, QueuedMessage>();
   for (const message of queue) {
@@ -319,7 +318,14 @@ function reduceQueueContentSync(
       next[id] = parked;
     }
   }
-  return payloadSynced ? updateAgent(state, agentId, { queuedRetryRecords: next }) : state;
+  return updateAgent(state, agentId, {
+    queueSnapshot: Object.fromEntries(
+      queue
+        .filter((message) => message.turnId !== undefined)
+        .map((message) => [message.turnId!, message]),
+    ),
+    ...(payloadSynced ? { queuedRetryRecords: next } : {}),
+  });
 }
 
 /**
@@ -354,14 +360,24 @@ function reduceQueueProcessing(
   agentId: string,
   turnId: string | undefined,
 ): ChatStateSlice {
+  if (turnId === undefined) return state;
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
+  const processedQueuedTurn = {
+    turnId,
+    message:
+      agent.queueSnapshot?.[turnId] ??
+      (agent.processedQueuedTurn?.turnId === turnId
+        ? agent.processedQueuedTurn.message
+        : undefined),
+  };
   const key = findParkedRecordKey(agent, turnId);
-  if (key === null) return state;
+  if (key === null) return updateAgent(state, agentId, { processedQueuedTurn });
   const parked = agent.queuedRetryRecords[key];
   const remaining = { ...agent.queuedRetryRecords };
   delete remaining[key];
   return updateAgent(state, agentId, {
+    processedQueuedTurn,
     lastAttemptedMessage: parked.record,
     queuedRetryRecords: remaining,
     error: null,
@@ -549,8 +565,17 @@ export const chatLastAttemptedMessageSet = createAction<
  * exactly on `agent:queue:processing` / `chatSendFailed` turnId matches. The
  * pinned daemon (≥0.2.12) returns it on every enqueue path.
  */
+/** Open local tracking before the enqueue RPC can race with queue events. */
+export const chatQueuedSendStarted = createAction<[agentId: string]>('chatState/queuedSendStarted');
+
 export const chatQueuedRetryRecordSet = createAction<
-  [agentId: string, messageId: string, record: LastAttemptedMessage, turnId: string]
+  [
+    agentId: string,
+    messageId: string,
+    record: LastAttemptedMessage,
+    turnId: string,
+    onlyIfProcessed?: boolean,
+  ]
 >('chatState/queuedRetryRecordSet');
 
 /**
@@ -579,6 +604,7 @@ export const chatQueuedRetryRecordParked = createAction<
     record: LastAttemptedMessage,
     turnId: string,
     canonicalRecord?: LastAttemptedMessage | null,
+    onlyIfProcessed?: boolean,
   ]
 >('chatState/queuedRetryRecordParked');
 
@@ -1012,10 +1038,28 @@ chatStateReducer.with(
   (state, { payload: [agentId, lastAttemptedMessage] }) =>
     updateAgent(state, agentId, { lastAttemptedMessage }),
 );
+chatStateReducer.with(chatQueuedSendStarted, (state, { payload: [agentId] }) =>
+  state.byAgentId[agentId] ? state : updateAgent(state, agentId, { agentId }),
+);
+
+/** Resolve an enqueue acknowledgement only against its exact processed turn. */
+function acknowledgedProcessedAttempt(
+  agent: ChatAgentState,
+  turnId: string,
+  record: LastAttemptedMessage,
+) {
+  const processed = agent.processedQueuedTurn;
+  if (processed?.turnId !== turnId) return undefined;
+  return processed.message ? buildQueuedRecordedAttempt(processed.message, record) : record;
+}
+
 chatStateReducer.with(
   chatQueuedRetryRecordSet,
-  (state, { payload: [agentId, messageId, record, turnId] }) => {
+  (state, { payload: [agentId, messageId, record, turnId, onlyIfProcessed] }) => {
     const agent = getAgent(state, agentId);
+    const processed = acknowledgedProcessedAttempt(agent, turnId, record);
+    if (processed) return updateAgent(state, agentId, { lastAttemptedMessage: processed });
+    if (onlyIfProcessed) return state;
     return updateAgent(state, agentId, {
       agentId,
       queuedRetryRecords: parkRetryRecord(agent, messageId, record, turnId),
@@ -1024,17 +1068,17 @@ chatStateReducer.with(
 );
 chatStateReducer.with(
   chatQueuedRetryRecordParked,
-  (state, { payload: [agentId, messageId, record, turnId, canonicalRecord] }) => {
+  (state, { payload: [agentId, messageId, record, turnId, canonicalRecord, onlyIfProcessed] }) => {
     const agent = getAgent(state, agentId);
+    const processed = acknowledgedProcessedAttempt(agent, turnId, canonicalRecord ?? record);
+    if (processed) return updateAgent(state, agentId, { lastAttemptedMessage: processed });
     return updateAgent(state, agentId, {
       agentId,
       queuedRetryRecords:
-        canonicalRecord === null
+        canonicalRecord === null || onlyIfProcessed
           ? agent.queuedRetryRecords
           : parkRetryRecord(agent, messageId, canonicalRecord ?? record, turnId),
-      // Undo the caller's own mid-turn overwrite (#1011) — but only when the
-      // slot still holds this exact payload; a different value means another
-      // attempt recorded itself since and must keep its record.
+      // Clear only the exact optimistic attempt belonging to this auto-queued send.
       lastAttemptedMessage: deepEqual(agent.lastAttemptedMessage, record)
         ? null
         : agent.lastAttemptedMessage,

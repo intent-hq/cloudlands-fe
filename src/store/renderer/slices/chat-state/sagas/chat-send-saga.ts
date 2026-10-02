@@ -68,6 +68,7 @@ import {
   chatModelUnavailableCleared,
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
+  chatQueuedSendStarted,
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
@@ -308,6 +309,7 @@ function* dispatchToLifecycle(
       // (monorepo#2481) or a hydrate-reconciled fold (monorepo#2486) —
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
+      yield* put(chatQueuedSendStarted(agentId));
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
       const result = yield* call(
         [appClient.agents, appClient.agents.queue],
@@ -358,18 +360,12 @@ function* dispatchToLifecycle(
             (message) => message.id === queuedMessage.id || message.turnId === turnId,
           );
         }
-        if (
-          retryMessage &&
-          typeof turnId === 'string' &&
-          (yield* mutationIsCurrent(agentId, ownership))
-        ) {
+        if (typeof turnId === 'string' && (yield* mutationIsCurrent(agentId, ownership))) {
+          const record = buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt);
           yield* put(
-            chatQueuedRetryRecordSet(
-              agentId,
-              retryMessage.id,
-              buildQueuedRecordedAttempt(retryMessage, recordedAttempt),
-              turnId,
-            ),
+            retryMessage
+              ? chatQueuedRetryRecordSet(agentId, retryMessage.id, record, turnId)
+              : chatQueuedRetryRecordSet(agentId, queuedMessage.id, record, turnId, true),
           );
         }
       }

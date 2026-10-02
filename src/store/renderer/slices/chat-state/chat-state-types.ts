@@ -1,3 +1,5 @@
+import type { QueuedMessage } from '$shared/types';
+
 // ============================================================================
 // Per-Agent Chat State
 // ============================================================================
@@ -211,6 +213,9 @@ export interface ChatAgentState {
    * instead of promoting.
    */
   queuedRetryRecords: Record<string, QueuedRetryRecord>;
+  /** Latest queue snapshot and one processed turn bridge events arriving before enqueue acknowledgement. */
+  queueSnapshot?: Record<string, QueuedMessage>;
+  processedQueuedTurn?: { turnId: string; message?: QueuedMessage };
   modelUnavailable: ModelUnavailableInfo | null;
   /**
    * Set when the last turn failed with the daemon's `quota-exceeded` code
