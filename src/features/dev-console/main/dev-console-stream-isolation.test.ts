@@ -199,3 +199,22 @@ it('ends terminal streams even when their acknowledgement arrives afterward', ()
   });
   expect(h.rows()[0]).toMatchObject({ streamState: 'ended', frameCount: 3 });
 });
+
+it.each(['clear', 'generation'] as const)(
+  'does not replay early frames across %s boundaries',
+  (boundary) => {
+    const h = setup();
+    h.source.request('old', 'outbound', 'host.execStream', { command: 'cat' });
+    h.source.notification('inbound', 'events.event', {
+      event: { type: 'host:exec:stdout', data: { requestId: 'server-id', chunk: 'YQ==' } },
+    });
+    if (boundary === 'clear') h.service.clearSession('one', h.sessionId);
+    else h.source.generation++;
+    h.source.request('new', 'outbound', 'host.execStream', { command: 'cat' });
+    h.source.reply('new', { requestId: 'server-id' });
+    expect(h.rows().find((r) => r.requestId === 'new')).toMatchObject({
+      frameCount: 2,
+      droppedFrames: 0,
+    });
+  },
+);

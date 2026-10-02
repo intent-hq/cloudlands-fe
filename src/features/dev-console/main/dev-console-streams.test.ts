@@ -377,3 +377,82 @@ it('correlates retained early output once a server-minted stream ID becomes know
   ]);
   expect(h.rows()[0]).toMatchObject({ frameCount: 4, streamState: 'ended', durationMs: 5 });
 });
+
+it('counts each payload once per RPC even when subscription, operation and standalone rows share it', async () => {
+  const h = setup();
+  const subscribeParams = { eventTypes: ['host:exec:*'] };
+  const subscribe = h.client.request('events.subscribe', subscribeParams);
+  const subscribeAck = { subscriptionId: 'events' };
+  h.socket.receive({ id: 1, result: subscribeAck });
+  await subscribe;
+  const startParams = { command: 'cat', requestId: 'exec' };
+  const start = h.client.request('host.execStream', startParams);
+  const startAck = { requestId: 'exec' };
+  h.socket.receive({ id: 2, result: startAck });
+  await start;
+  const writeParams = { requestId: 'exec', stdin: '🙂' };
+  const write = h.client.request('host.execStream.write', writeParams);
+  const writeAck = { ok: true };
+  h.socket.receive({ id: 3, result: writeAck });
+  await write;
+  const output = bus('events', 'host:exec:stdout', { requestId: 'exec', chunk: '8J+Zgg==' });
+  h.socket.receive({ method: 'events.event', params: output });
+  const [subscription, operation, stdin, notification] = h.rows();
+  expect(trafficBytes(subscription)).toBe(
+    bytes(subscribeParams) + bytes(subscribeAck) + bytes(output),
+  );
+  expect(trafficBytes(operation)).toBe(
+    bytes(startParams) + bytes(startAck) + bytes(writeParams) + bytes(writeAck) + bytes(output),
+  );
+  expect(trafficBytes(stdin)).toBe(bytes(writeParams) + bytes(writeAck));
+  expect(trafficBytes(notification)).toBe(bytes(output));
+  expect([subscription.frameCount, operation.frameCount, stdin.frameCount]).toEqual([3, 5, 2]);
+});
+
+it('bounds early-frame replay while retaining cumulative bytes and original observation intervals', async () => {
+  const h = setup({ maxFramesPerRecord: 3 });
+  const params = { command: 'printf', args: ['hello'] };
+  const pending = h.client.request('host.execStream', params);
+  let outputBytes = 0;
+  for (let n = 1; n <= 20; n++) {
+    h.tick(n);
+    const output = bus('s', 'host:exec:stdout', { requestId: 'server-id', chunk: 'aGVsbG8=' });
+    outputBytes += bytes(output);
+    h.socket.receive({ method: 'events.event', params: output });
+  }
+  h.tick(25);
+  const ack = { requestId: 'server-id' };
+  h.socket.receive({ id: 1, result: ack });
+  await pending;
+  const row = h.rows()[0];
+  expect(row.frames?.map((f) => [f.sequence, f.intervalMs])).toEqual([
+    [0, 0],
+    [20, 1],
+    [21, 5],
+  ]);
+  expect(row).toMatchObject({ frameCount: 22, droppedFrames: 19, durationMs: 25 });
+  expect(trafficBytes(row)).toBe(bytes(params) + outputBytes + bytes(ack));
+});
+
+it('enforces the global byte limit on stream growth without discarding pinned payloads from surviving rows', async () => {
+  const h = setup({ maxPayloadBytes: 180, previewBytes: 50 });
+  const params = { workspaceId: 'w' };
+  const pending = h.client.request('note.subscribe', params);
+  h.socket.receive({ id: 1, result: { subscriptionId: 'sub' } });
+  await pending;
+  h.socket.receive({ method: 'subscription.push', params: push('sub', 1) });
+  expect(
+    h
+      .rows()[0]
+      .frames?.slice(0, 2)
+      .map((f) => JSON.parse(f.payload.text)),
+  ).toEqual([params, { subscriptionId: 'sub' }]);
+  h.socket.receive({ method: 'subscription.push', params: push('sub', 2) });
+  const snapshot = h.service.getSnapshot('local', h.sessionId)!;
+  expect(snapshot.retainedPayloadBytes).toBeLessThanOrEqual(180);
+  expect(snapshot.evictedRecords).toBe(1);
+  expect(snapshot.records.every((r) => r.kind === 'notification')).toBe(true);
+  // Eviction also retires the old stream association: later frames stay standalone.
+  h.socket.receive({ method: 'subscription.push', params: push('sub', 3) });
+  expect(h.rows().every((r) => r.kind === 'notification')).toBe(true);
+});
