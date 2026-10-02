@@ -5582,6 +5582,7 @@
     const saveAction = saveAgentSessionRequested(workspace.id, agentId, true, {
       specialistUpdate: {
         specialist: specialistId,
+        rememberSpecialist: true,
         ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
         ...(specialistId === null
           ? { systemPrompt: null }

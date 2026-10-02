@@ -15,7 +15,8 @@
     variant="ghost"
     wrapContent={false}
     class="fixture-control"
-    onclick={() => fixture.append(300)}>{m.devConsole_append_label()}</Button
+    onclick={() => (scenario === 'streams' ? fixture.stream() : fixture.append(300))}
+    >{m.devConsole_append_label()}</Button
   >
   {#if scenario === 'nested'}
     <!-- i18n-ignore (Synthetic browser-test fixture control.) -->
