@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    acquireWorkspaceTasksDemand,
+    releaseWorkspaceTasksDemand,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { on } from 'svelte/events';
   import { Popover } from 'bits-ui';
   import Fa from 'svelte-fa';
@@ -34,9 +39,26 @@
     tasks: TaskProgressItem[];
     presentation?: 'status-stack' | 'checklist';
     embedded?: boolean;
+    /** Acquire task data while this workspace's control is displayed, including empty discovery. */
+    workspaceId?: string;
+    isActive?: boolean;
   }
 
-  let { tasks, presentation = 'status-stack', embedded = false }: Props = $props();
+  let {
+    tasks,
+    presentation = 'status-stack',
+    embedded = false,
+    workspaceId,
+    isActive = true,
+  }: Props = $props();
+
+  $effect(() => {
+    if (!workspaceId || !isActive) return;
+    const id = workspaceId;
+    const demandId = crypto.randomUUID();
+    untrack(() => appStore.dispatch(acquireWorkspaceTasksDemand(id, demandId)));
+    return () => appStore.dispatch(releaseWorkspaceTasksDemand(id, demandId));
+  });
   let open = $state(false);
   let query = $state('');
   let statusFilter = $state<TaskProgressStatus | 'all'>('all');

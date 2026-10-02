@@ -349,6 +349,24 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
     vi.unstubAllGlobals();
   });
 
+  it('does not acquire task demand merely because a hydrated chat reports header progress', async () => {
+    testState.transcriptHydration = 'settled';
+    testState.transcriptHydratedOnce = true;
+    await renderInitialWorkspaceChatPanel(vi.fn());
+    expect(testState.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      'workspaceTasks/acquireWorkspaceTasksDemand',
+    );
+  });
+
+  it('does not request task rows for a chat without a displayed header task consumer', async () => {
+    testState.transcriptHydration = 'settled';
+    testState.transcriptHydratedOnce = true;
+    await renderInitialWorkspaceChatPanel();
+    expect(testState.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      'workspaceTasks/acquireWorkspaceTasksDemand',
+    );
+  });
+
   it('renders skeleton rows WITHOUT the setup card while the first hydration is in flight', async () => {
     testState.transcriptHydration = 'loading';
     testState.transcriptHydratedOnce = false;

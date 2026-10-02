@@ -1,12 +1,10 @@
-import { settleBackgroundSettings } from '../../background-agent-settings/sagas/settle-background-settings';
 import { isQuickActionProviderSwitchBlocked } from '../../background-agent-settings/quick-action-provider-switch';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
 import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
 import { backgroundProviderSwitchBlocked } from '../../background-agent-settings/background-agent-settings-slice';
 import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
-import { backgroundSettingsChanges } from '../../background-agent-settings/background-agent-settings-persistence';
 import { buffers, channel, type Channel } from 'redux-saga';
-import { all, call, cancelled, delay, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, cancelled, delay, put, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient, type AppSettingChange } from '$lib/client';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
@@ -19,22 +17,18 @@ import {
   selectProviderDisplayName,
 } from '../../provider-catalog/provider-catalog-selectors';
 import {
-  selectActiveProviderId,
   selectEnabledProviders,
   selectProviderSettingsSessionActive,
   selectProviderWriteRevision,
 } from '../provider-settings-selectors';
 import type { ProviderSettingsRequestContext } from '../provider-settings-types';
 import { checkAllProvidersRequested } from '../../agent-availability/agent-availability-slice';
-import { reloadModelsForProvider, setSelectedModel } from '../../model/model-slice';
-import {
-  persistSelectedModelsWorker,
-  PROVIDER_DEFAULTS_RETRY_DELAYS_MS,
-} from '../../model/sagas/model-selection-saga';
+import { setSelectedModel } from '../../model/model-slice';
+import { selectModelSelectionState } from '../../model/model-selectors';
+import { persistSelectedModelsWorker } from '../../model/sagas/model-selection-saga';
 import { m } from '$shared/paraglide/messages.js';
 import { providerSettingsReadSaga } from './provider-settings-read-saga';
 import {
-  activeProviderPersistRejected,
   enablementPersistRejected,
   ensureEnabledIfUnset,
   setActiveProvider,
@@ -55,8 +49,9 @@ import { providerFastModeSaga } from './provider-fast-mode-saga';
 const logger = createLogger('ProviderSettingsSaga');
 
 type ProviderSettingsUpdate = {
+  connection?: string | null;
+  waitForBackground?: boolean;
   modelPick?: { providerId: string; model: string; atomic: boolean };
-  superseded?: boolean;
   request?: ProviderSettingsRequestContext;
   resource?: string;
   revision?: number;
@@ -82,71 +77,28 @@ type ProviderSettingsUpdate = {
   enabledProviderDelta?: { providerId: string; enabled: boolean };
 };
 
-type ModelQueue = {
-  latest?: ProviderSettingsUpdate;
-  changed: Channel<boolean>;
-};
-
 function* queueModelWorker(
   updates: Channel<ProviderSettingsUpdate>,
-  models: ModelQueue,
   action: ReturnType<typeof setAtomicDefaultModel> | ReturnType<typeof setSelectedModel>,
 ) {
   const atomic = action.type === setAtomicDefaultModel.type;
   if (atomic) {
     const pick = action.payload[0];
-    const previousProviderId = yield* selectActiveProviderId.effect();
     const background = yield* selectBgSettings.effect();
     if (isQuickActionProviderSwitchBlocked(background, pick.providerId)) {
       yield* put(backgroundProviderSwitchBlocked(pick.providerId));
       return;
     }
     yield* put(atomicDefaultModelAccepted(pick));
-    if (pick.providerId !== previousProviderId) yield* put(reloadModelsForProvider());
   }
-  if (models.latest) models.latest.superseded = true;
+  const selection = yield* selectModelSelectionState.effect();
   const update: ProviderSettingsUpdate = {
     modelPick: { ...action.payload[0], atomic },
     revision: yield* selectProviderWriteRevision.effect('default'),
+    connection: selection.selectionConnection,
+    waitForBackground: (yield* selectBgSettings.effect()).persistencePending,
   };
-  models.latest = update;
-  yield* put(models.changed, true);
   yield* put(updates, update);
-}
-
-function* persistModelUpdate(
-  update: ProviderSettingsUpdate,
-  models: ModelQueue,
-  sessionPicks: Record<string, string>,
-) {
-  const pick = update.modelPick;
-  if (!pick) return;
-  sessionPicks[pick.providerId] = pick.model;
-  if (update.superseded) return;
-  models.latest = undefined;
-  let attempt = 0;
-  while (true) {
-    const result = yield* call(
-      persistSelectedModelsWorker,
-      { ...sessionPicks },
-      pick.atomic ? pick.providerId : undefined,
-      update.revision,
-    );
-    if (result === 'rejected') {
-      for (const id of Object.keys(sessionPicks)) delete sessionPicks[id];
-    }
-    if (result !== 'retry' || models.latest) return;
-    const { next } = yield* race({
-      next: take(models.changed),
-      retry: delay(
-        PROVIDER_DEFAULTS_RETRY_DELAYS_MS[
-          Math.min(attempt, PROVIDER_DEFAULTS_RETRY_DELAYS_MS.length - 1)
-        ],
-      ),
-    });
-    if (next) return;
-    attempt += 1;
-  }
 }
 
 /** Map a queued partial update to its §5.12 wire changes (PROTOCOL paths). */
@@ -168,17 +120,6 @@ function* changesFor(update: ProviderSettingsUpdate) {
     const current = yield* selectEnabledProviders.effect();
     if (Object.keys(update.enabledSeed).every((id) => current[id] !== undefined)) return changes;
     changes.push({ path: 'providers.enabled', value: { ...update.enabledSeed, ...current } });
-  }
-  if (update.activeProviderId !== undefined) {
-    // Provider leg of the default model triple — `providers.active` is
-    // deprecated (unread by the daemon).
-    const background = yield* selectBgSettings.effect();
-    // The other switch entry point may have superseded this queued request.
-    if (!background?.providerId || background.providerId === update.activeProviderId) {
-      changes.push({ path: 'model.defaultProvider', value: update.activeProviderId });
-      if (background?.providerSwitchPending)
-        changes.push(...backgroundSettingsChanges(background, update.activeProviderId));
-    }
   }
   if (update.enabledProviderDelta !== undefined) {
     const { providerId, enabled } = update.enabledProviderDelta;
@@ -205,10 +146,13 @@ function* queueActiveProviderWorker(
     return;
   }
   yield* put(activeProviderAccepted(providerId));
+  const selection = yield* selectModelSelectionState.effect();
   yield* put(updates, {
     activeProviderId: providerId,
     request: action.payload[1],
     resource: 'default',
+    connection: selection.selectionConnection,
+    waitForBackground: background.persistencePending,
     revision: yield* selectProviderWriteRevision.effect('default'),
   });
 }
@@ -314,19 +258,36 @@ function* notifyOutcome(update: ProviderSettingsUpdate, success: boolean) {
  */
 export const PROVIDER_SETTINGS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
-function* persistProviderSettingsQueue(
-  updates: Channel<ProviderSettingsUpdate>,
-  models: ModelQueue,
-) {
-  const sessionPicks: Record<string, string> = {};
+function* persistProviderSettingsQueue(updates: Channel<ProviderSettingsUpdate>) {
   while (true) {
     const update = yield* take(updates);
-    if (update.modelPick) {
-      yield* call(persistModelUpdate, update, models, sessionPicks);
+    if (update.modelPick || update.activeProviderId !== undefined) {
+      if (update.connection !== (yield* selectModelSelectionState.effect()).selectionConnection) {
+        if (update.request)
+          yield* put(providerSettingsRequestSettled(update.request.id, 'cancelled'));
+        continue;
+      }
+      const pick = update.modelPick;
+      const success = yield* call(
+        persistSelectedModelsWorker,
+        pick ? { [pick.providerId]: pick.model } : {},
+        pick?.atomic ? pick.providerId : update.activeProviderId,
+        update.connection,
+        update.waitForBackground,
+      );
+      if (update.connection !== (yield* selectModelSelectionState.effect()).selectionConnection) {
+        if (update.request)
+          yield* put(providerSettingsRequestSettled(update.request.id, 'cancelled'));
+        continue;
+      }
+      if (update.request)
+        yield* put(
+          providerSettingsRequestSettled(update.request.id, success ? 'success' : 'failure'),
+        );
+      yield* call(notifyOutcome, update, success);
       continue;
     }
     yield* take(backgroundSettingsWriteLock);
-    const background = yield* selectBgSettings.effect();
     try {
       const changes = yield* call(changesFor, update);
       if (changes.length === 0) {
@@ -343,17 +304,6 @@ function* persistProviderSettingsQueue(
                 applied: yield* call([appClient.settings, appClient.settings.update], changes),
                 revision: 0,
               };
-          if (update.activeProviderId && background?.providerSwitchPending)
-            yield* call(
-              settleBackgroundSettings,
-              {
-                revision: result.revision,
-                generation: background.persistenceGeneration ?? 0,
-                providerId: update.activeProviderId,
-              },
-              background,
-              result.applied,
-            );
           if (appClient.settings.updateSnapshot)
             yield* put(
               settingsChangesReceived(
@@ -374,8 +324,6 @@ function* persistProviderSettingsQueue(
           if (update.path) {
             yield* put(providerPathSaved(update.path.providerId, update.path.value));
             yield* put(checkAllProvidersRequested(true));
-          } else if (update.activeProviderId && update.request) {
-            yield* put(reloadModelsForProvider());
           }
           if (update.request) {
             const current =
@@ -400,16 +348,6 @@ function* persistProviderSettingsQueue(
       }
     } catch {
       logger.warn('Provider settings write failed');
-      if (
-        update.activeProviderId !== undefined &&
-        update.revision === (yield* selectProviderWriteRevision.effect('default'))
-      )
-        yield* put(activeProviderPersistRejected(update.activeProviderId));
-      if (update.activeProviderId && background?.providerSwitchPending)
-        yield* call(settleBackgroundSettings, {
-          generation: background.persistenceGeneration ?? 0,
-          providerId: update.activeProviderId,
-        });
       if (update.enabledProviderDelta !== undefined)
         yield* put(
           enablementPersistRejected(update.enabledProviderDelta.providerId, update.revision),
@@ -427,12 +365,11 @@ function* persistProviderSettingsQueue(
 /** Sole ordered owner of provider settings writes, including whole-map migrations. */
 export function* providerSettingsSaga() {
   const updates = channel<ProviderSettingsUpdate>(buffers.expanding());
-  const models: ModelQueue = { changed: channel<boolean>(buffers.none()) };
   try {
     yield* all([
-      call(persistProviderSettingsQueue, updates, models),
+      call(persistProviderSettingsQueue, updates),
       call(providerFastModeSaga),
-      takeEvery([setAtomicDefaultModel, setSelectedModel], queueModelWorker, updates, models),
+      takeEvery([setAtomicDefaultModel, setSelectedModel], queueModelWorker, updates),
       takeEvery(setActiveProvider, queueActiveProviderWorker, updates),
       takeEvery(toggleProvider, queueToggleProviderWorker, updates),
       takeEvery(setProviderEnabled, queueSetProviderEnabledWorker, updates),
@@ -442,7 +379,6 @@ export function* providerSettingsSaga() {
     ]);
   } finally {
     updates.close();
-    models.changed.close();
     yield* put(providerSettingsStopped());
   }
 }

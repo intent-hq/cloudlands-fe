@@ -46,7 +46,6 @@
   import type { PullRequestInfo } from '$shared/types';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import {
     requestArchiveWorkspace,
     requestDeleteWorkspace,
@@ -189,13 +188,6 @@
   // daemon for collaborators (`require_owner`), so a collaborator row hides
   // them instead of offering a failing action.
   const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
-
-  // Load canonical tasks for progress display (no-op once initialized).
-  $effect(() => {
-    const workspaceId = workspace?.id;
-    if (!workspaceId) return;
-    appStore.dispatch(ensureWorkspaceTasksLoaded(String(workspaceId)));
-  });
 
   const workspaceStatusState = $derived(resolveWorkspaceStatusState(workspace ?? {}));
   const workspaceStatusPresentation = $derived(

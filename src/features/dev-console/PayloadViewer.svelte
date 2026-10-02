@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { editor as MonacoEditor } from 'monaco-editor';
+  import type { editor as MonacoEditor, IDisposable } from 'monaco-editor';
   import { Button } from '$lib/components/ui/button';
   import * as m from '$shared/paraglide/messages.js';
   import { payloadDocument, payloadSupportsRichView } from './traffic-view';
@@ -27,8 +27,10 @@
     let model: MonacoEditor.ITextModel | undefined;
     let instance: MonacoEditor.IStandaloneCodeEditor | undefined;
     let themeObserver: MutationObserver | undefined;
+    const findBindings: IDisposable[] = [];
     function release() {
       themeObserver?.disconnect();
+      for (const binding of findBindings.splice(0)) binding.dispose();
       instance?.dispose();
       model?.dispose();
       themeObserver = undefined;
@@ -70,6 +72,26 @@
           find: { addExtraSpaceOnTop: true, seedSearchStringFromSelection: 'never' },
           padding: { top: 8, bottom: 8 },
         });
+        // Monaco defers widget blur, so two panes can briefly report focus. Its global
+        // Find command then chooses the wrong editor. Scope Enter to this input's editor
+        // context and invoke the native action directly, preserving Find behavior.
+        for (const [actionId, keybinding] of [
+          ['editor.action.nextMatchFindAction', monaco.KeyCode.Enter],
+          ['editor.action.previousMatchFindAction', monaco.KeyMod.Shift | monaco.KeyCode.Enter],
+        ] as const) {
+          const action = instance.getAction(actionId);
+          if (action) {
+            findBindings.push(
+              instance.addAction({
+                id: `dev-console.${actionId}`,
+                label: action.label,
+                keybindings: [keybinding],
+                keybindingContext: 'findInputFocussed',
+                run: () => action.run(),
+              }),
+            );
+          }
+        }
         update = () => {
           const language = richView ? content.language : 'plaintext';
           if (modelRichView !== richView) {

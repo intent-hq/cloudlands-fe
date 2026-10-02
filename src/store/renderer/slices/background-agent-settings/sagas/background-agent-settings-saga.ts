@@ -1,5 +1,6 @@
 import { settleBackgroundSettings } from './settle-background-settings';
 import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
+import { readSettingsSnapshot } from '../../settings-events/sagas/read-settings-snapshot';
 import { backgroundSettingsWriteLock } from './background-settings-write-lock';
 import { buffers } from 'redux-saga';
 import { actionChannel, all, call, put, take, takeEvery } from 'typed-redux-saga';
@@ -8,7 +9,10 @@ import { m } from '$shared/paraglide/messages.js';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { selectBgSettings } from '../background-agent-settings-selectors';
-import { backgroundSettingsChanges } from '../background-agent-settings-persistence';
+import {
+  backgroundSettingsChanges,
+  rebaseBackgroundSettings,
+} from '../background-agent-settings-persistence';
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { setLocalStorageItem } from '../../../utils/safe-local-storage-saga';
 import {
@@ -34,9 +38,11 @@ function* persistBackgroundAgentSettingsWorker() {
   yield* take(backgroundSettingsWriteLock);
   const settings = yield* selectBgSettings.effect();
   try {
-    const changes = backgroundSettingsChanges(settings);
-    if (settings.providerId)
-      changes.unshift({ path: 'model.defaultProvider', value: settings.providerId });
+    const snapshot = yield* call(readSettingsSnapshot);
+    const rebased = rebaseBackgroundSettings(snapshot.settings, settings);
+    const changes = backgroundSettingsChanges(rebased);
+    if (rebased.providerId)
+      changes.unshift({ path: 'model.defaultProvider', value: rebased.providerId });
     const result = appClient.settings.updateSnapshot
       ? yield* call([appClient.settings, appClient.settings.updateSnapshot], changes)
       : {
@@ -50,7 +56,7 @@ function* persistBackgroundAgentSettingsWorker() {
         generation: settings.persistenceGeneration ?? 0,
         providerId: settings.providerId,
       },
-      settings,
+      rebased,
       result.applied,
     );
     if (appClient.settings.updateSnapshot)
@@ -59,7 +65,7 @@ function* persistBackgroundAgentSettingsWorker() {
           [
             ...changes.filter((change) => !result.applied.some(({ path }) => path === change.path)),
             ...result.applied,
-          ],
+          ].filter(({ path }) => !path.startsWith('model.')),
           result.revision,
         ),
       );

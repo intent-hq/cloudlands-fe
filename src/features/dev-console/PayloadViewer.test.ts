@@ -202,12 +202,16 @@ it('does not create an editor after being closed during worker startup', async (
   expect(monaco.editor.create).not.toHaveBeenCalled();
 });
 
-it('releases editor, model and theme observer when closed', async () => {
+it('releases editor, model, Find bindings and theme observer when closed', async () => {
   const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
   const view = render(PayloadViewer, { text: '{}', label: 'Request' });
   await waitFor(() => expect(editors).toHaveLength(1));
   view.unmount();
   expect(editors[0].dispose).toHaveBeenCalledOnce();
+  expect(editors[0].addAction.mock.results).toHaveLength(2);
+  for (const { value: binding } of editors[0].addAction.mock.results) {
+    expect(binding.dispose).toHaveBeenCalledOnce();
+  }
   expect(models[0].dispose).toHaveBeenCalledOnce();
   expect(disconnect).toHaveBeenCalled();
   disconnect.mockRestore();

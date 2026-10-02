@@ -1,9 +1,5 @@
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import {
-  activeProviderAccepted,
-  atomicDefaultModelAccepted,
-} from '../provider-settings/provider-settings-slice';
 import { m } from '$shared/paraglide/messages.js';
 
 // ============================================================================
@@ -100,7 +96,6 @@ export type BackgroundAgentSettingsState = {
   /** Local intent protects the entire provider bundle from delayed settings echoes. */
   persistenceGeneration?: number;
   persistencePending?: boolean;
-  providerSwitchPending?: boolean;
   providerId?: string;
   defaultReasoningEffort: string;
   typeReasoningEffortOverrides: Record<string, string>;
@@ -358,43 +353,6 @@ backgroundAgentSettingsReducer.with(resetTypeOverride, (state, { payload: [type]
   };
 });
 
-function switchProvider(
-  state: BackgroundAgentSettingsState,
-  providerId: string,
-): BackgroundAgentSettingsState {
-  if (!providerId) return state;
-  if (providerId === state.providerId)
-    return { ...state, persistencePending: state.persistencePending ?? false };
-  const { defaultModel, typeOverrides, defaultReasoningEffort, typeReasoningEffortOverrides } =
-    state;
-  const providerSettings = { ...state.providerSettings };
-  if (state.providerId)
-    providerSettings[state.providerId] = {
-      defaultModel,
-      typeOverrides,
-      defaultReasoningEffort,
-      typeReasoningEffortOverrides,
-    };
-  const next = providerSettings[providerId];
-  return {
-    ...pending(state),
-    providerId,
-    providerSwitchPending: true,
-    providerSettings,
-    defaultModel: next?.defaultModel ?? '',
-    typeOverrides: { ...DEFAULT_TYPE_OVERRIDES, ...next?.typeOverrides },
-    defaultReasoningEffort: next?.defaultReasoningEffort?.trim() ?? '',
-    typeReasoningEffortOverrides: normalizeEffortOverrides(next?.typeReasoningEffortOverrides),
-  };
-}
-backgroundAgentSettingsReducer.with(activeProviderAccepted, (state, { payload: [providerId] }) =>
-  switchProvider(state, providerId),
-);
-backgroundAgentSettingsReducer.with(
-  atomicDefaultModelAccepted,
-  (state, { payload: [{ providerId }] }) => switchProvider(state, providerId),
-);
-
 backgroundAgentSettingsReducer.with(
   setTypeReasoningEffortOverrides,
   (state, { payload: [overrides] }) => ({
@@ -472,7 +430,6 @@ export function reconcileBackgroundSettings(
         ([, generation]) => (generation ?? 0) > ack.generation,
       ),
     ),
-    providerSwitchPending: settled ? false : state.providerSwitchPending,
     persistencePending: settled ? false : state.persistencePending,
   };
 }

@@ -176,11 +176,8 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 vi.mock(
   '$store/renderer/slices/provider-settings/provider-settings-slice',
   async (importOriginal) => ({
-    // Keep the real action creators/reducer (e.g. `atomicDefaultModelAccepted`,
-    // `activeProviderPersistRejected`) so the model-slice reducer this file
-    // exercises directly in the monorepo#4102 reproduction test below stays
-    // wired to its actual dependencies; only `setActiveProvider` is
-    // overridden for the dispatch-shape assertions elsewhere in this file.
+    // Keep real exports for reducer dependencies; only `setActiveProvider`
+    // is overridden for the dispatch-shape assertions in this file.
     ...(await importOriginal<
       typeof import('$store/renderer/slices/provider-settings/provider-settings-slice')
     >()),
@@ -272,8 +269,9 @@ vi.mock('svelte-fa', async () => ({
 import {
   initialState as modelInitialState,
   modelReducer,
+  loadProviderModelsFromStorage,
+  hydrateDefaultProvider,
 } from '$store/renderer/slices/model/model-slice';
-import { atomicDefaultModelAccepted } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { specialistsReducer } from '$store/renderer/slices/specialists/specialists-slice';
 import { selectSpecialistCreation } from '$store/renderer/slices/specialists/specialists-selectors';
 import { store as appStore } from '$store/renderer/store';
@@ -466,23 +464,19 @@ describe('DefaultAgentModelSettings Default model picker', () => {
     );
     expect(mocks.dispatched.some((a) => a.type === 'model/reloadModelsForProvider')).toBe(false);
 
-    // Drive the REAL (unmocked) production reducer through the exact action
-    // the picker's `updateGlobalDefault` dispatch resolves to
-    // (`model-selection-saga` persists a cross-provider pick as one
-    // `atomicDefaultModelAccepted` action — see model-selection-saga.test.ts's
-    // "persists a cross-provider default as one revision-bearing atomic
-    // batch"), so this assertion exercises the actual persistence contract
-    // rather than a value poked directly into the mocked selector.
+    // Daemon receipts are the only source of the displayed default pair.
     const modelState = modelReducer(
-      modelInitialState,
-      atomicDefaultModelAccepted({ providerId: 'codex', model: 'cross-provider-model' }),
+      modelReducer(modelInitialState, hydrateDefaultProvider('codex')),
+      loadProviderModelsFromStorage({ codex: 'cross-provider-model' }),
     );
     expect(modelState.defaultProviderId).toBe('codex');
     expect(modelState.providerModels.codex).toBe('cross-provider-model');
 
     // Leave and return to Providers with that persisted state hydrated
     // (`selectSelectedModel` reading `providerModels`/`defaultProviderId`).
-    selectedModel$.set('codex:cross-provider-model');
+    selectedModel$.set(
+      `${modelState.defaultProviderId}:${modelState.providerModels[modelState.defaultProviderId]}`,
+    );
     cleanup();
     render(DefaultAgentModelSettings);
 

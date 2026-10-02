@@ -1761,3 +1761,50 @@ describe('ChatMessage historical host-member sender', () => {
     expect(JSON.stringify(message)).toBe(before);
   });
 });
+
+describe('ChatMessage script monitor wake attribution', () => {
+  it.each(['finished', 'ttl-expired', 'output-match', 'line-count'])(
+    'attributes %s to the monitor and renders untrusted content without links or controls',
+    async (reason) => {
+      const matchedLine = '<img src=x onerror=alert(1)> https://example.com @agent';
+      const metadata = {
+        type: 'script_monitor_wake',
+        source: 'system',
+        monitorId: 'monitor-script',
+        workspaceId: 'ws-script',
+        agentId: 'agent-script',
+        scriptId: 'checks',
+        runId: 'run-old',
+        scriptName: 'Checks',
+        mode: 'command',
+        reason,
+        expiresAt: '2026-10-02T10:10:00Z',
+        settledAt: '2026-10-02T10:01:00Z',
+        ...(reason === 'output-match' ? { trigger: { observedLineCount: 3, matchedLine } } : {}),
+      };
+      const onEditSubmit = vi.fn();
+      const { container } = render(ChatMessage, {
+        props: {
+          message: {
+            id: 'msg-script',
+            role: 'user',
+            timestamp: new Date('2026-10-02T10:01:00Z'),
+            metadata,
+            contentBlocks: [{ type: 'text', text: `Monitoring ended. ${matchedLine}` }],
+          },
+          onEditSubmit,
+        },
+      });
+      expect(screen.getByTestId('automated-wake-header').getAttribute('data-wake-kind')).toBe(
+        'script',
+      );
+      await expandAutomatedWake();
+      const body = screen.getByTestId('automated-wake-details');
+      expect(body.textContent).toContain(matchedLine);
+      expect(body.querySelector('a, img')).toBeNull();
+      await fireEvent.click(body);
+      expect(container.querySelector('textarea')).toBeNull();
+      expect(onEditSubmit).not.toHaveBeenCalled();
+    },
+  );
+});

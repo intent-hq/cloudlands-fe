@@ -20,6 +20,18 @@ export interface DevConsolePayload {
   retainedBytes: number;
 }
 
+/** Arrival order across both sides; intervals are independent per side. */
+export interface DevConsoleFrame {
+  sequence: number;
+  side: 'request' | 'response';
+  rpcMethod: string;
+  timestamp: number;
+  intervalMs: number;
+  /** True only for the first observation on this side; survives frame retention. */
+  intervalFromRequest?: boolean;
+  payload: DevConsolePayload;
+}
+
 export interface DevConsoleRecord extends DevConsoleCaptureSelection {
   id: string;
   /** Original wire method; method is the event type for events.event notifications. */
@@ -36,6 +48,13 @@ export interface DevConsoleRecord extends DevConsoleCaptureSelection {
   status: DevConsoleStatus;
   payload: DevConsolePayload;
   response?: DevConsolePayload;
+  /** Bounded history including the original request and reply; fetched only on selection. */
+  frames?: DevConsoleFrame[];
+  /** Includes discarded frames, and each original request/reply exactly once. */
+  totalBytes?: number;
+  frameCount?: number;
+  droppedFrames?: number;
+  streamState?: 'open' | 'ended';
 }
 
 export interface DevConsoleSnapshot {
@@ -54,7 +73,7 @@ export interface DevConsoleSnapshot {
 }
 
 /** Live rows omit payload text. Fetch a selected record explicitly. */
-export type DevConsoleRow = Omit<DevConsoleRecord, 'payload' | 'response'> & {
+export type DevConsoleRow = Omit<DevConsoleRecord, 'payload' | 'response' | 'frames'> & {
   payload: Omit<DevConsolePayload, 'text'>;
   response?: Omit<DevConsolePayload, 'text'>;
 };

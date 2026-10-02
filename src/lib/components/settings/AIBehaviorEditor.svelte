@@ -203,8 +203,7 @@
       : '';
   });
 
-  // Sync specialist model value when specialist changes or file specialists
-  // change. The picker's selected value is the EXPLICIT frontmatter model
+  // Sync the EXPLICIT frontmatter model from the specialist's owning scope
   // only — undefined when inheriting (the daemon resolvedModel preview is
   // shown via the picker's default-option plumbing instead). The stored
   // model is a BARE id (PROTOCOL §5.11); the picker boundary still speaks
@@ -212,16 +211,19 @@
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
+      // User/bundled saves update the global list before the route projection.
+      const specialistWorkspaceId =
+        currentSpecialist.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
       const codingAgent = selectEffectiveCodingAgent.select(
         appStore.state,
         currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
+        specialistWorkspaceId,
       );
       _specialistCodingAgentValue = codingAgent;
       const explicitModel = selectExplicitModel.select(
         appStore.state,
         currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
+        specialistWorkspaceId,
       );
       specialistModelValue =
         explicitModel && codingAgent && !explicitModel.includes(':')
@@ -230,7 +232,7 @@
       specialistEffortValue = selectExplicitReasoningEffort.select(
         appStore.state,
         currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
+        specialistWorkspaceId,
       );
     }
   });

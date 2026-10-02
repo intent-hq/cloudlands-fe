@@ -373,6 +373,50 @@ test('Dev Console searches the end of an oversized payload with an explained fol
   await expect(page.locator('footer')).toBeInViewport({ ratio: 1 });
 });
 
+test('Dev Console routes Find navigation to its input during a same-turn focus handoff', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 640, height: 400 });
+  await mount(Fixture, { props: { scenario: 'nested' } });
+  await page.locator('[data-index]').filter({ hasText: 'fixture.inspect' }).click();
+  const labels = ['Request', 'Response / error'];
+  for (const label of labels) {
+    const region = viewer(page, label);
+    await ready(region);
+    await region.getByRole('button', { name: 'Search', exact: true }).click();
+    await region.getByRole('textbox', { name: 'Find', exact: true }).fill('needle');
+    await expect(region.locator('.matchesCount')).toHaveText('1 of 2');
+  }
+  for (const previous of [false, true]) {
+    for (const label of labels) {
+      const region = viewer(page, label);
+      const other = viewer(page, label === 'Request' ? 'Response / error' : 'Request');
+      const otherCount = await other.locator('.matchesCount').innerText();
+      // Keep focus and keydown in one browser task to exercise Monaco's deferred blur.
+      // Real click + keyboard input also reproduced this overlap in retained traces.
+      await region
+        .getByRole('textbox', { name: 'Find', exact: true })
+        .evaluate((input, shiftKey) => {
+          input.focus();
+          input.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              bubbles: true,
+              cancelable: true,
+              shiftKey,
+            }),
+          );
+        }, previous);
+      await expect(region.locator('.matchesCount')).toHaveText(previous ? '1 of 2' : '2 of 2');
+      await expect(other.locator('.matchesCount')).toHaveText(otherCount);
+      await expect(region.locator('.currentFindMatch')).toBeInViewport({ ratio: 1 });
+    }
+  }
+});
+
 for (const scenario of ['nested', 'oversized'] as const) {
   test(`Dev Console keeps ${scenario} payloads usable while resizing between compact and split views`, async ({
     mount,
@@ -502,3 +546,63 @@ for (const theme of ['light', 'dark']) {
     });
   });
 }
+
+test('Dev Console streams keep two searchable editors, preserve reading position and copy all retained frames', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(Fixture, { props: { scenario: 'streams' } });
+  await page.getByRole('cell', { name: 'host.execStream', exact: true }).click();
+  const request = viewer(page, 'Request');
+  const response = viewer(page, 'Response / error');
+  await ready(request);
+  await ready(response);
+  const append = page.getByRole('button', { name: 'Append fixture traffic' });
+  for (let i = 0; i < 8; i++) await append.click();
+  await expect(page.locator('.monaco-editor')).toHaveCount(2);
+  await request.getByRole('button', { name: 'Search', exact: true }).click();
+  const search = request.getByRole('textbox', { name: 'Find', exact: true });
+  await search.fill('input 8');
+  await expect(lines(request)).toContainText('input 8');
+  await page.keyboard.press('Escape');
+  // Preserve the line being read while another stream frame arrives.
+  const reading = request.locator('.view-line').filter({ hasText: 'input 8' });
+  await expect(reading).toBeInViewport();
+  const before = (await reading.boundingBox())!.y;
+  await append.click();
+  await expect(reading).toBeInViewport();
+  await expect
+    .poll(async () => {
+      // Monaco can replace the virtual line between lookup and measurement during append.
+      // A missing box must fail this sample so polling waits for the rendered line.
+      const box = await reading.boundingBox();
+      return box ? Math.abs(box.y - before) : Infinity;
+    })
+    .toBeLessThanOrEqual(1);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: 'Copy payload' }).first().click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  const payloads = copied.split('\n\n').map((text) => JSON.parse(text));
+  expect(payloads[0]).toEqual({ command: 'cat', requestId: 'demo-exec' });
+  expect(payloads.at(-1)).toEqual({ requestId: 'demo-exec', stdin: 'input 9\n' });
+  expect(payloads).toHaveLength(11);
+  // Searching new content after append must use the current document.
+  await request.getByRole('button', { name: 'Search', exact: true }).click();
+  await search.fill('input 9');
+  await expect(lines(request)).toContainText('input 9');
+  await page.keyboard.press('Escape');
+  await testInfo.attach('request-response-streams', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.getByRole('button', { name: 'Close details' }).click();
+  await page.getByRole('cell', { name: 'chat.subscribe', exact: true }).click();
+  await ready(viewer(page, 'Response / error'));
+  await page.getByRole('button', { name: 'Copy payload' }).last().click();
+  const chat = (await page.evaluate(() => navigator.clipboard.readText()))
+    .split('\n\n')
+    .map((text) => JSON.parse(text));
+  expect(chat[0]).toEqual({ subscriptionId: 'demo-chat' });
+  expect(chat[1].kind).toBe('snapshot');
+  expect(chat.at(-1).delta.updated[0].block.text).toBe('Live message 9');
+});

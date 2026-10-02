@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
   state: {
@@ -15,17 +17,64 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => mocks.state, dispatch: mocks.dispatch });
+  const module = createAppStoreMockModule({
+    state: () =>
+      withLegacyPrincipal({
+        ...mocks.state,
+        agentModel: mutationState,
+        agentSessions: {
+          byAgentId: {
+            'agent-1': {
+              id: 'agent-1',
+              workspaceId: 'ws-1',
+              model: 'sonnet4.6',
+              provider: 'auggie',
+            },
+          },
+        },
+        workspace: {
+          workspaces: { ids: ['ws-1'], map: { 'ws-1': { id: 'ws-1', myRole: 'owner' } } },
+        },
+        guestSessions: { hasReceivedList: true, sessions: { ids: [], map: {} } },
+      }),
+    dispatch: (action) => {
+      mutationState = agentModelReducer(mutationState, action);
+      if (action.type === updateSession.type) mocks.dispatch(action);
+      channel.put(action);
+      return action;
+    },
+  });
+  const { select } = await import('redux-saga/effects');
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (fn) => {
+    const selector = createSelector(fn);
+    selector.effect = function* (...args) {
+      return yield select(fn, ...args);
+    };
+    return selector;
+  };
+  return module;
 });
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentProvider: { select: () => 'auggie' },
+}));
+vi.mock('$store/renderer/slices/model/model-selectors', () => ({
+  selectAgentModelEffortLevels: { select: () => undefined },
+}));
 vi.mock('$features/agent/agent.client', () => ({
   agentClient: { setModel: mocks.setModel },
 }));
 vi.mock('$features/agent/reasoning-effort', () => ({
   applyReasoningEffort: mocks.applyReasoningEffort,
   reconcileAgentReasoningEffort: mocks.reconcileAgentReasoningEffort,
+  markReasoningEffortIntent: vi.fn(() => ++effortIntent),
 }));
+let effortIntent = 0;
 
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
+import { agentModelReducer } from '$store/renderer/slices/agent-model/agent-model-slice';
+import { store } from '$store/renderer/store';
 import {
   SKIPPED_MUTATION,
   createAgentModelMutator,
@@ -35,6 +84,10 @@ import {
 const AGENT = 'agent-1';
 const WORKSPACE = 'ws-1';
 const SET_MODEL_OK = { ok: true as const, data: { success: true, modelId: 'auggie:sonnet4.6' } };
+let channel: ReturnType<typeof stdChannel>;
+let task: Task;
+let mutationState = agentModelReducer(undefined, { type: 'init' });
+afterEach(() => task.cancel());
 
 function expectNoUnderlyingCalls() {
   expect(mocks.dispatch).not.toHaveBeenCalled();
@@ -44,6 +97,12 @@ function expectNoUnderlyingCalls() {
 }
 
 beforeEach(() => {
+  mutationState = agentModelReducer(undefined, { type: 'init' });
+  channel = stdChannel();
+  task = runSaga(
+    { channel, dispatch: store.dispatch, getState: () => store.state },
+    agentModelSaga,
+  );
   vi.clearAllMocks();
   mocks.state.connections.windowBackendId = 'host-a';
   mocks.setModel.mockResolvedValue(SET_MODEL_OK);
@@ -167,7 +226,7 @@ describe('createAgentModelMutator — call-time lock evaluation', () => {
     const second = await mutator.setModel(AGENT, 'auggie:opus4.6', WORKSPACE, 'auggie');
     expect(second).toBe(SKIPPED_MUTATION);
     expect(mocks.setModel).toHaveBeenCalledTimes(1);
-    expect(isLocked).toHaveBeenCalledTimes(3);
+    expect(isLocked).toHaveReturnedWith(true);
   });
 
   it('a lock flip between a model write and the follow-up effort reconcile skips the reconcile', async () => {

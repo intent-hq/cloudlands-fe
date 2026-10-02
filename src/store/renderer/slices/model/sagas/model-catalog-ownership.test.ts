@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const settings = vi.hoisted(() => ({ getProviderSettings: vi.fn(), update: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   onBackendNotification: vi.fn(() => () => {}),
@@ -9,8 +8,13 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 vi.mock('$lib/client', async () => {
   const { LiveModelsClient } = await import('$lib/client/live/live-models-client');
   const { LiveProvidersClient } = await import('$lib/client/live/live-providers-client');
+  const { LiveSettingsClient } = await import('$lib/client/live/live-settings-client');
   return {
-    appClient: { models: new LiveModelsClient(), providers: new LiveProvidersClient(), settings },
+    appClient: {
+      models: new LiveModelsClient(),
+      providers: new LiveProvidersClient(),
+      settings: new LiveSettingsClient(),
+    },
   };
 });
 
@@ -25,6 +29,9 @@ import { modelBootSaga } from './model-boot-saga';
 import { modelReloadSaga } from './model-reload-saga';
 import { modelSelectionSaga } from './model-selection-saga';
 import { providerSettingsSaga } from '../../provider-settings/sagas/provider-settings-saga';
+import { settingsHydrationSaga } from '../../settings-events/sagas/settings-hydration-saga';
+import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
+import type { AppSettingChange, SettingsUpdateResult } from '$lib/client/app-client';
 
 type PendingCatalog = {
   providerId: string;
@@ -41,18 +48,25 @@ const wire = (providerId: string, id: string) => ({
   models: [{ id, name: id, effortLevels: ['low', 'medium', 'high'] }],
 });
 let dispose: () => void;
+let persisted: Record<string, unknown>;
+let revision: number;
+const receipts: SettingsUpdateResult[] = [];
+const snapshot = () =>
+  Object.entries(persisted).map(([path, value]) => ({ path, value: structuredClone(value) }));
 
 function seed() {
   admitLegacyPrincipal();
-  applySettingsChanges([
-    { path: 'model.defaultProvider', value: 'codex' },
-    { path: 'model.providerDefaults', value: { codex: 'initial', 'claude-code': 'picked' } },
-    { path: 'model.defaultReasoningEffort', value: 'high' },
-  ]);
+  applySettingsChanges(snapshot(), revision);
 }
 
 async function start() {
-  for (const saga of [modelSelectionSaga, providerSettingsSaga, modelReloadSaga, modelBootSaga]) {
+  for (const saga of [
+    settingsHydrationSaga,
+    modelSelectionSaga,
+    providerSettingsSaga,
+    modelReloadSaga,
+    modelBootSaga,
+  ]) {
     cancellations.push(store.runSaga(saga));
   }
   await vi.waitFor(() => expect(pending).toHaveLength(1));
@@ -64,9 +78,17 @@ async function start() {
 
 async function switchProvider() {
   store.dispatch(selectModel('picked', 'claude-code'));
+  await vi.waitFor(() => expect(receipts).toHaveLength(1));
+  await settle();
+  expect(store.state.model.defaultProviderId).toBe('codex');
+  expect(pending.filter(({ providerId }) => providerId === 'claude-code')).toEqual([]);
+  const receipt = receipts.shift()!;
+  store.dispatch(settingsChangesReceived(receipt.applied, receipt.revision));
   await vi.waitFor(() =>
     expect(pending.some(({ providerId }) => providerId === 'claude-code')).toBe(true),
   );
+  // The receipt starts readiness loading; the first explicit refresh joins that read.
+  store.dispatch(reloadModelsForProvider());
   await settle();
   return pending.filter(({ providerId }) => providerId === 'claude-code');
 }
@@ -96,6 +118,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   pending.length = 0;
   handlers.length = 0;
+  receipts.length = 0;
+  revision = 0;
+  persisted = {
+    'model.defaultProvider': 'codex',
+    'model.providerDefaults': { codex: 'initial', 'claude-code': 'picked' },
+    'model.defaultReasoningEffort': 'high',
+    'quickActions.defaultModel': '',
+    'quickActions.typeOverrides': { commit: '', fast: '', pr: '', review: '' },
+    'quickActions.defaultReasoningEffort': '',
+    'quickActions.typeReasoningEffortOverrides': {},
+    'quickActions.providerSettings': {},
+  };
   dispose = store.init();
   window.electronAPI = {
     on: vi.fn((_channel, handler) => {
@@ -104,9 +138,18 @@ beforeEach(() => {
     }),
     offById: vi.fn(),
   } as unknown as typeof window.electronAPI;
-  settings.getProviderSettings.mockResolvedValue(null);
-  settings.update.mockImplementation(async (changes) => changes);
   vi.mocked(backendRequest).mockImplementation(async (method, params) => {
+    if (method === 'settings.list') return { settings: snapshot(), revision };
+    if (method === 'settings.update') {
+      const { changes } = params as { changes: AppSettingChange[] };
+      const applied = changes
+        .filter(({ path, value }) => JSON.stringify(persisted[path]) !== JSON.stringify(value))
+        .map((change) => ({ ...structuredClone(change), origin: 'file' as const }));
+      for (const { path, value } of applied) persisted[path] = structuredClone(value);
+      const result = { applied, revision: ++revision };
+      receipts.push(structuredClone(result));
+      return result;
+    }
     if (method !== 'models.list') throw new Error(`Unexpected composition request ${method}`);
     return new Promise((resolve, reject) => {
       pending.push({ providerId: (params as { providerId: string }).providerId, resolve, reject });
@@ -121,30 +164,55 @@ afterEach(() => {
 });
 
 describe('catalog ownership across the real selection, provider, boot and reload sagas', () => {
-  it('coalesces one model-provider selection into one catalog read and preserves saved effort', async () => {
+  it('shares the receipt-triggered catalog read with the first explicit reload and preserves saved effort', async () => {
     await start();
+    persisted['model.providerDefaults'] = {
+      codex: 'initial',
+      'claude-code': 'picked',
+      grok: 'external',
+    };
+    revision += 1;
+    expect(store.state.model.providerModels.grok).toBeUndefined();
     const requests = await switchProvider();
     expect(requests).toHaveLength(1);
     requests[0].resolve(wire('claude-code', 'picked'));
     await vi.waitFor(() => expectCurrent('success', 'picked'));
-    expect(settings.update).toHaveBeenCalledWith([
-      { path: 'model.defaultProvider', value: 'claude-code' },
-      { path: 'model.providerDefaults', value: { codex: 'initial', 'claude-code': 'picked' } },
-      { path: 'quickActions.defaultModel', value: '' },
-      { path: 'quickActions.typeOverrides', value: { commit: '', fast: '', pr: '', review: '' } },
-      { path: 'quickActions.defaultReasoningEffort', value: '' },
-      { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
-      {
-        path: 'quickActions.providerSettings',
-        value: {
-          codex: {
-            defaultModel: '',
-            defaultReasoningEffort: '',
-            typeOverrides: { commit: '', fast: '', pr: '', review: '' },
-            typeReasoningEffortOverrides: {},
-          },
+    expect(
+      vi.mocked(backendRequest).mock.calls.filter(([method]) => method === 'settings.list'),
+    ).toEqual([['settings.list'], ['settings.list']]);
+    expect(
+      vi.mocked(backendRequest).mock.calls.filter(([method]) => method === 'settings.update'),
+    ).toEqual([
+      [
+        'settings.update',
+        {
+          changes: [
+            { path: 'model.defaultProvider', value: 'claude-code' },
+            {
+              path: 'model.providerDefaults',
+              value: { codex: 'initial', 'claude-code': 'picked', grok: 'external' },
+            },
+            { path: 'quickActions.defaultModel', value: '' },
+            {
+              path: 'quickActions.typeOverrides',
+              value: { commit: '', fast: '', pr: '', review: '' },
+            },
+            { path: 'quickActions.defaultReasoningEffort', value: '' },
+            { path: 'quickActions.typeReasoningEffortOverrides', value: {} },
+            {
+              path: 'quickActions.providerSettings',
+              value: {
+                codex: {
+                  defaultModel: '',
+                  defaultReasoningEffort: '',
+                  typeOverrides: { commit: '', fast: '', pr: '', review: '' },
+                  typeReasoningEffortOverrides: {},
+                },
+              },
+            },
+          ],
         },
-      },
+      ],
     ]);
     expect(store.state.userPreferences.labsMultiplayerEnabled).toBe(false);
   });

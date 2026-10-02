@@ -669,6 +669,8 @@ async function loadComment(page: Page, content = 'Synthetic sidebar comment') {
       loadCommentsAction([
         {
           id: 'width-comment',
+          workspaceId: 'diagram-note-width-test',
+          noteId: 'diagram-width-fixture',
           threadId: 'width-thread',
           content,
           author: 'Reviewer',
