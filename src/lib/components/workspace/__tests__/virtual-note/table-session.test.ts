@@ -1,3 +1,5 @@
+import { Editor } from '@tiptap/core';
+import { createEditorConfig } from '$lib/utils/editor-config';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { DOMParser } from '@tiptap/pm/model';
 import { store } from '$store/renderer/configured-store';
@@ -419,18 +421,36 @@ it('repairs only touched mark envelopes for native cross-bold/italic/code cut an
     '| H | R |\n| --- | ---: |\n| exact \\| **bold** _italic_ `code` tail \\\\ | untouched |';
   const service = new SourceJournal(() => source, 1);
   const session = new DocumentSession(service, document.createElement('div'));
+  const native = new Editor(
+    createEditorConfig({
+      element: document.createElement('div'),
+      content: await processMarkdownToHTML(source),
+      editable: true,
+      useMarkdown: true,
+      enableComments: false,
+      enableMentions: false,
+      onUpdate: () => {},
+    }),
+  );
   try {
     const start = source.indexOf('bold') + 2,
       end = source.indexOf('code') + 4;
     await session.seek(start);
-    const editor = session.editor!,
-      before = editor.getJSON();
+    const editor = session.editor!;
+    expect(editor.getJSON()).toEqual(native.getJSON());
     const from = session.projection!.pmAt(start),
       to = session.projection!.pmAt(end, -1);
     editor.commands.setTextSelection({ from, to });
+    native.commands.setTextSelection({ from, to });
+    // Both real native selection transactions have now added the terminal placeholder.
+    const before = editor.getJSON();
+    expect(before).toEqual(native.getJSON());
     expect(editor.state.doc.textBetween(from, to)).toBe('ld italic code');
-    const copied = editor.state.doc.slice(from, to);
+    const copied = editor.state.doc.slice(from, to),
+      nativeCopied = native.state.doc.slice(from, to);
     editor.view.dispatch(editor.state.tr.deleteSelection());
+    native.view.dispatch(native.state.tr.deleteSelection());
+    expect(editor.getJSON()).toEqual(native.getJSON());
     expect(session.error).toBe('');
     expect(service.region(0)).toBe(source.replace('**bold** _italic_ `code`', '**bo**'));
     const cut = document.createElement('div');
@@ -440,6 +460,8 @@ it('repairs only touched mark envelopes for native cross-bold/italic/code cut an
     );
     editor.view.dispatch(editor.state.tr.replaceSelection(copied).setTime(Date.now() + 1000));
     expect(session.error).toBe('');
+    native.view.dispatch(native.state.tr.replaceSelection(nativeCopied).setTime(Date.now() + 1000));
+    expect(editor.getJSON()).toEqual(native.getJSON());
     expect(editor.getJSON()).toEqual(before);
     expect(service.region(0).startsWith(source.slice(0, source.indexOf('**bold**')))).toBe(true);
     expect(service.region(0).endsWith(source.slice(source.indexOf('`code`') + 6))).toBe(true);
@@ -449,6 +471,7 @@ it('repairs only touched mark envelopes for native cross-bold/italic/code cut an
       editor.state.doc.firstChild!.toJSON(),
     );
   } finally {
+    native.destroy();
     session.destroy();
   }
 });

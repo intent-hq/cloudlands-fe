@@ -521,6 +521,15 @@ export class SourceJournal {
       if (history) this.stagedPages.push(encoded);
     }
   }
+  stageTableTrailing(table: number, trailing: boolean, revision: number, history = true) {
+    if (revision !== this.revision) throw new Error('Stale table trailing state');
+    const { id, start } = this.locate(table);
+    if (!this.tableIndex(this.region(id), start).some((t) => t.from + start === table))
+      throw new Error('Missing table trailing owner');
+    const key = `tail:${table}`,
+      value = trailing ? '1' : '';
+    if ((this.tableStates.get(key) ?? '') !== value) this.stageTableState(key, value, history);
+  }
   maxTableWriteBytes = 0;
   stageTableInline(edit: TableInlineWrite, history = true) {
     if (edit.revision !== this.revision) throw new Error('Stale table inline write');
@@ -584,7 +593,8 @@ export class SourceJournal {
     this.log('table-fragment-write', fragment.from, payload);
   }
   private mapTableKey(key: string, splice: Splice) {
-    return `cell:${mapPoint(Number(key.slice(5)), splice, -1)}`;
+    const affinity = key.startsWith('tail:') && splice.from === splice.to ? 1 : -1;
+    return `${key.slice(0, 5)}${mapPoint(Number(key.slice(5)), splice, affinity)}`;
   }
   stageTableStructure(window: TableWindow, edit: TableStructure, history = true) {
     if (edit.kind === 'split') return this.stageTableSplit(window, edit, history);
@@ -600,6 +610,7 @@ export class SourceJournal {
     const from = start + (table.rows[edit.index]?.from ?? table.to);
     const to = edit.remove ? start + table.rows[edit.index + edit.remove - 1].to : from;
     for (const key of this.tableStates.keys()) {
+      if (!key.startsWith('cell:')) continue;
       const at = Number(key.slice(5));
       if (at >= from && at < to) this.stageTableState(key, '', history);
     }
@@ -670,7 +681,7 @@ export class SourceJournal {
         const from = cell.from - (edit.index === row.cells.length - 1 ? 1 : 0) + start;
         const to = (row.cells[edit.index + edit.remove]?.from ?? cell.to) + start;
         for (const key of this.tableStates.keys())
-          if (Number(key.slice(5)) >= from && Number(key.slice(5)) < to)
+          if (key.startsWith('cell:') && Number(key.slice(5)) >= from && Number(key.slice(5)) < to)
             this.stageTableState(key, '', history);
         splices.push({ from, to, insert: '' });
       } else {
@@ -811,6 +822,8 @@ export class SourceJournal {
       source.slice(Math.max(0, table.from - 2), table.from) === '\n\n' &&
       source[table.to] === '\n';
     if (apply) {
+      if (!plan.text && this.tableStates.has(`tail:${received.table}`))
+        this.stageTableState(`tail:${received.table}`, '');
       for (const row of table.rows)
         for (const cell of row.cells)
           if (this.tableStates.has(`cell:${cell.from + start}`))
@@ -1008,6 +1021,14 @@ export class SourceJournal {
     for (const key of this.tableStates.keys()) {
       const at = Number(key.slice(5)),
         { id, start } = this.locate(at);
+      if (key.startsWith('tail:')) {
+        if (
+          !this.tableIndex(this.region(id), start).some((t) => t.from + start === at) ||
+          (splice.from <= at && splice.to > at)
+        )
+          throw new Error('Conflict: remote source removes native table terminal owner');
+        continue;
+      }
       const cell = this.tableIndex(this.region(id), start)
         .flatMap((t) => t.rows.flatMap((r) => r.cells))
         .find((c) => c.from + start === at);
@@ -1317,6 +1338,7 @@ export class SourceJournal {
     );
     window.from += start;
     window.to += start;
+    window.trailing = window.to !== this.length || this.tableStates.has(`tail:${window.from}`);
     for (const cell of window.cells) {
       for (const field of ['from', 'to', 'body', 'end', 'first', 'last'] as const)
         cell[field] += start;

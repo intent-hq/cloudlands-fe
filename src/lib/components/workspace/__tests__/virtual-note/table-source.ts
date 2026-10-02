@@ -54,6 +54,7 @@ export type TableFragment = TableCellSource & {
 };
 export type TableWindow = {
   revision: number;
+  trailing?: boolean;
   selected?: {
     anchor: number;
     head: number;

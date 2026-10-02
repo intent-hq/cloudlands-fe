@@ -151,11 +151,13 @@ export class TableProjection {
     if (window.extent)
       for (let r = rowIndex + 1; r < window.extent.row + window.extent.rowCount; r++)
         table.content!.push({ type: 'tableRow', content: [] });
-    // Match the native editor's source-less terminal placeholder.
-    this.content.content!.push({ type: 'paragraph' });
+    // Fresh canonical tables have no placeholder. Native live transactions may
+    // add one; revisioned session context carries that source-less structure.
+    if (window.trailing !== false) this.content.content!.push({ type: 'paragraph' });
     this.boundaries.set(size(table) - 1, window.cells.at(-1)!.end);
     this.boundaries.set(size(table), window.cells.at(-1)!.end);
     this.boundaries.set(size(table) + 1, window.cells.at(-1)!.end);
+    if (window.trailing !== false) this.boundaries.set(size(table) + 2, window.cells.at(-1)!.end);
   }
   restoreSelection(doc: PMNode, selection: Selection) {
     const logical = selection.table;

@@ -15,7 +15,7 @@ import {
 } from './table-transfer';
 import { cloneTableWindow } from './table-payload';
 import { Editor, Extension, type CommandProps } from '@tiptap/core';
-import { Plugin, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
+import { Plugin, TextSelection, EditorState, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { bytes } from './bounded-note-service';
@@ -1402,10 +1402,23 @@ export class DocumentSession {
             this.selection.head > window.from + window.source.length)
       ) {
         // Navigation changes the viewport, not the durable document selection.
-        this.editor.commands.setTextSelection(this.projection!.pmAt(window.from));
+        if (next.table?.window.trailing === false) {
+          const selection = TextSelection.create(
+            this.editor.state.doc,
+            this.projection!.pmAt(window.from),
+          );
+          this.editor.view.updateState(
+            EditorState.create({
+              schema: this.editor.schema,
+              doc: this.editor.state.doc,
+              plugins: this.editor.state.plugins,
+              selection,
+            }),
+          );
+        } else this.editor.commands.setTextSelection(this.projection!.pmAt(window.from));
       } else this.renderSelection();
       this.suppress = false;
-      this.editor.view.focus();
+      if (this.projection.table?.window.trailing !== false) this.editor.view.focus();
       this.error = '';
       this.changed();
       return true;
@@ -1416,19 +1429,30 @@ export class DocumentSession {
   private renderSelection() {
     const p = this.projection!,
       editor = this.editor!;
-    editor.view.dispatch(
-      editor.state.tr.setSelection(
-        p.table?.restoreSelection(editor.state.doc, this.selection) ??
-          TextSelection.create(
-            editor.state.doc,
-            p.table?.pointPM(this.selection.table?.anchor) ??
-              p.pmAt(this.selection.anchor, this.selection.affinity),
-            p.table?.pointPM(this.selection.table?.head) ??
-              p.pmAt(this.selection.head, this.selection.affinity),
-          ),
-      ),
-    );
+    const selection =
+      p.table?.restoreSelection(editor.state.doc, this.selection) ??
+      TextSelection.create(
+        editor.state.doc,
+        p.table?.pointPM(this.selection.table?.anchor) ??
+          p.pmAt(this.selection.anchor, this.selection.affinity),
+        p.table?.pointPM(this.selection.table?.head) ??
+          p.pmAt(this.selection.head, this.selection.affinity),
+      );
+    if (this.suppress && p.table?.window.trailing === false) {
+      // Mount a fresh selection without inventing a native edit transaction.
+      // Real user transactions still run every native appendTransaction hook.
+      if (!editor.state.selection.eq(selection))
+        editor.view.updateState(
+          EditorState.create({
+            schema: editor.schema,
+            doc: editor.state.doc,
+            plugins: editor.state.plugins,
+            selection,
+          }),
+        );
+    } else editor.view.dispatch(editor.state.tr.setSelection(selection));
   }
+
   selectAll() {
     this.selection = {
       anchor: 0,
@@ -1695,6 +1719,21 @@ export class DocumentSession {
                   this.service.revision,
                   history,
                 );
+              if (tableBatch && tr.doc.firstChild?.type.name === 'table') {
+                const trailing =
+                  tr.doc.childCount === 2 &&
+                  tr.doc.lastChild!.type.name === 'paragraph' &&
+                  !tr.doc.lastChild!.content.size;
+                // Native trailingNode recreates this placeholder even during undo.
+                // Retain its session lifecycle without an inverse that removes it.
+                if (trailing !== (tableBatch.window.trailing !== false))
+                  this.service.stageTableTrailing(
+                    tableBatch.window.from,
+                    trailing,
+                    this.service.revision,
+                    false,
+                  );
+              }
               if (this.projection!.table) {
                 const retained = cloneTableWindow(tableBatch!.window);
                 for (const splice of splices)
@@ -1722,7 +1761,21 @@ export class DocumentSession {
               throw new Error('Translated source differs from accepted document');
             }
           }
-          const after = tableAfter ?? this.fromPM(tr.selection);
+          const terminalAppend =
+            tableBatch &&
+            !tr.selectionSet &&
+            tr.before.childCount === 1 &&
+            tr.doc.childCount === 2 &&
+            tr.doc.lastChild!.type.name === 'paragraph' &&
+            !tr.doc.lastChild!.content.size &&
+            tr.before.firstChild!.eq(tr.doc.firstChild!);
+          // A native source-less append does not move the logical selection,
+          // including endpoints that are outside the admitted rectangle.
+          const after =
+            tableAfter ??
+            (terminalAppend
+              ? { ...before, revision: this.service.revision }
+              : this.fromPM(tr.selection));
           const composition = tr.getMeta('composition');
           const group =
             this.prevTime !== 0 &&

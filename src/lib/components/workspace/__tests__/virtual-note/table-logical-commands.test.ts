@@ -168,6 +168,13 @@ for (const test of cases) {
         },
       };
       await session.seek(head.body);
+      // Native activation can append a placeholder after the logical selection
+      // was mounted. It must not reselect the cropped rectangle's endpoints.
+      const logicalBeforeActivation = structuredClone(session.selection.table);
+      session.editor!.view.dispatch(
+        session.editor!.state.tr.setMeta('proofNativeActivation', true),
+      );
+      expect(session.selection.table).toEqual(logicalBeforeActivation);
       const before = native.state.doc.firstChild!.toJSON();
       const revisionBeforeCan = service.revision;
       expect(session.editor!.can()[test.command]()).toBe(native.can()[test.command]());
