@@ -1,4 +1,9 @@
-import { mapParagraphSeam, touchesParagraphSeam, type ParagraphSeam } from './paragraph-seam';
+import {
+  validParagraphSeam,
+  mapParagraphSeam,
+  touchesParagraphSeam,
+  type ParagraphSeam,
+} from './paragraph-seam';
 import { planTableTextPaste } from './table-text-paste-plan';
 import type { TableCommandName } from './table-native-command';
 import { planTablePaste } from './table-paste-plan';
@@ -816,11 +821,26 @@ export class SourceJournal {
       size * 3,
     );
     if (!plan.accepted) return false;
-    const deletionBoundary =
-      received.command === 'deleteTable' &&
-      !plan.text &&
-      source.slice(Math.max(0, table.from - 2), table.from) === '\n\n' &&
-      source[table.to] === '\n';
+    const deleting = received.command === 'deleteTable' && !plan.text;
+    const left = source.slice(0, table.from),
+      right = source.slice(table.to);
+    const rightNewline = right.match(/^\r?\n/)?.[0];
+    const leftNewline = left.match(/\r?\n$/)?.[0];
+    const deletionSeam: ParagraphSeam | undefined =
+      deleting && rightNewline
+        ? {
+            from: table.from + start,
+            to: table.from + start + rightNewline.length,
+            ...(left ? {} : { kind: 'leading' as const }),
+          }
+        : deleting && leftNewline && !right
+          ? {
+              from: table.from + start - leftNewline.length,
+              to: table.from + start,
+              kind: 'terminal',
+            }
+          : undefined;
+    const deletionCaret = deletionSeam?.to;
     if (apply) {
       if (!plan.text && this.tableStates.has(`tail:${received.table}`))
         this.stageTableState(`tail:${received.table}`, '');
@@ -853,12 +873,11 @@ export class SourceJournal {
       // Keep the native live boundary without rewriting either neighbor's source.
       // The table scan owns its final row newline; the remaining right blank line
       // would otherwise be a newly parsed empty paragraph when joined to the left.
-      if (deletionBoundary)
-        this.setParagraphSeam({ from: table.from + start, to: table.from + start + 1 });
+      if (deletionSeam) this.setParagraphSeam(deletionSeam);
     }
     const after: Selection = {
-      anchor: deletionBoundary ? table.from + start + 1 : plan.anchorSource,
-      head: deletionBoundary ? table.from + start + 1 : plan.caret,
+      anchor: deletionCaret ?? plan.anchorSource,
+      head: deletionCaret ?? plan.caret,
       affinity: plan.anchorSource <= plan.caret ? 1 : -1,
       revision: this.revision,
       table: plan.logicalSelection,
@@ -1430,13 +1449,7 @@ export class SourceJournal {
   }
   setParagraphSeam(seam: ParagraphSeam, revision = this.revision, history = true) {
     if (revision !== this.revision) throw new Error('Stale paragraph seam revision');
-    if (
-      !Number.isSafeInteger(seam.from) ||
-      seam.from < 0 ||
-      seam.to !== seam.from + 1 ||
-      seam.to > this.length ||
-      this.slice(seam.from, seam.to) !== '\n'
-    )
+    if (!validParagraphSeam(seam, this.length, this.slice(seam.from, seam.to)))
       throw new Error('Invalid paragraph seam');
     if (!this.paragraphSeams.has(seam.from)) this.paragraphSeamChange(null, seam, history);
   }
@@ -2042,12 +2055,7 @@ export class SourceJournal {
       if (
         this.atomicDepth === 1 &&
         [...this.paragraphSeams.values()].some(
-          (seam) =>
-            !Number.isSafeInteger(seam.from) ||
-            seam.from < 0 ||
-            seam.to !== seam.from + 1 ||
-            seam.to > this.length ||
-            this.slice(seam.from, seam.to) !== '\n',
+          (seam) => !validParagraphSeam(seam, this.length, this.slice(seam.from, seam.to)),
         )
       )
         throw new Error('Invalid final source and paragraph seam state');

@@ -1718,6 +1718,8 @@ export class DocumentSession {
                     ];
                 },
               );
+              for (const seam of this.projection!.addedParagraphSeams)
+                this.service.setParagraphSeam(seam, this.service.revision, history);
               if (listSeams)
                 this.service.setSeams(
                   oldStart,

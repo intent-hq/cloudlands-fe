@@ -92,6 +92,12 @@ for (const [name, prefix, suffix] of [
       await session.seek(session.selection.head);
       expect(edited.isDestroyed).toBe(true);
       expect(session.editor!.getJSON()).toEqual(native.getJSON());
+      native.commands.insertContent(' AGAIN');
+      session.editor!.commands.insertContent(' AGAIN');
+      expect(session.error).toBe('');
+      expect(service.region(0).replace('TYPED AGAIN', '')).toBe(saved);
+      await session.seek(session.selection.head);
+      expect(session.editor!.getJSON()).toEqual(native.getJSON());
       expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
     } finally {
       session.destroy();

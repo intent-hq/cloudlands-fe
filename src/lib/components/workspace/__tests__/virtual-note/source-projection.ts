@@ -96,6 +96,8 @@ export class SourceProjection {
   readonly code: Array<{ pm: number; end: number; fence: Fence; prefix: string; suffix: string }> =
     [];
   private trailing = '';
+  private leading = '';
+  readonly addedParagraphSeams: ParagraphSeam[] = [];
   readonly list?: ListProjection;
   readonly table?: TableProjection;
   constructor(
@@ -225,11 +227,37 @@ export class SourceProjection {
     source = prefix + source + suffix;
     start -= prefix.length;
     let pm = 0;
-    const paragraphs = /([^]*?)(^\n+|\n[ \t]+\n+|\n\n+|$)/g;
+    const paragraphs = /([^]*?)(^(?:\r?\n)+|\r?\n[ \t]+(?:\r?\n)+|(?:\r?\n){2,}|$)/g;
     let match: RegExpExecArray | null;
     while ((match = paragraphs.exec(source)) && match[0]) {
+      const split =
+        !indexOnly &&
+        context?.paragraphSeams?.find(
+          (seam) =>
+            seam.kind === 'split' &&
+            seam.from >= start + match!.index &&
+            seam.from < start + match!.index + match![1].length,
+        );
+      if (split) {
+        const raw = source.slice(match.index, split.from - start);
+        match[0] = raw + source.slice(split.from - start, split.to - start);
+        match[1] = raw;
+        match[2] = source.slice(split.from - start, split.to - start);
+        paragraphs.lastIndex = split.to - start;
+      }
       const raw = match[1],
         base = start + match.index;
+      if (
+        !raw &&
+        !indexOnly &&
+        context?.paragraphSeams?.some(
+          (seam) =>
+            seam.kind === 'leading' && seam.from === base && seam.to <= base + match[2].length,
+        )
+      ) {
+        this.leading += match[2];
+        continue;
+      }
       if (!indexOnly) this.boundaries.set(pm, base);
       pm++;
       if (!indexOnly) this.positions.set(pm, base);
@@ -369,13 +397,21 @@ export class SourceProjection {
         ? 0
         : (context?.paragraphSeams ?? []).filter(
             (seam) =>
-              seam.from >= base + raw.length && seam.to <= base + raw.length + separator.length,
+              !seam.kind &&
+              seam.from >= base + raw.length &&
+              seam.to <= base + raw.length + separator.length,
           ).length;
-      const emptyParagraphs = /^\n{2,}$/.test(separator)
-        ? Math.max(0, separator.length - (raw.length ? 2 : 1) - suppressed)
+      const newlines = separator.match(/\r?\n/g) ?? [];
+      const explicitBoundary =
+        !indexOnly &&
+        context?.paragraphSeams?.some(
+          (seam) => seam.kind === 'split' && seam.from === base + raw.length,
+        );
+      const emptyParagraphs = /^(?:\r?\n){2,}$/.test(separator)
+        ? Math.max(0, newlines.length - (raw.length && !explicitBoundary ? 2 : 1) - suppressed)
         : 0;
       const firstSeparator = emptyParagraphs
-        ? separator.slice(0, (raw.length ? 2 : 1) + suppressed)
+        ? newlines.slice(0, (raw.length && !explicitBoundary ? 2 : 1) + suppressed).join('')
         : separator;
       if (!indexOnly) this.paragraphs.push({ end: pm, next: pm + 2, separator: firstSeparator });
       if (!indexOnly) this.content.content!.push({ type: 'paragraph', content: nodes });
@@ -386,13 +422,23 @@ export class SourceProjection {
       for (let empty = 0; empty < emptyParagraphs; empty++) {
         if (!indexOnly) {
           this.positions.set(pm + 1, boundary);
-          this.paragraphs.push({ end: pm + 1, next: pm + 3, separator: '\n' });
+          this.paragraphs.push({ end: pm + 1, next: pm + 3, separator: newlines.at(-1)! });
           this.content.content!.push({ type: 'paragraph' });
-          this.boundaries.set(pm + 2, ++boundary);
+          this.boundaries.set(pm + 2, (boundary += newlines.at(-1)!.length));
         }
         pm += 2;
-        this.trailing = '\n';
+        this.trailing = newlines.at(-1)!;
       }
+    }
+    if (
+      !indexOnly &&
+      context?.paragraphSeams?.some(
+        (seam) => seam.kind === 'terminal' && seam.to === this.start + this.source.length,
+      )
+    ) {
+      this.positions.set(pm + 1, this.start + this.source.length);
+      this.content.content!.push({ type: 'paragraph' });
+      this.trailing = '';
     }
     if (!this.content.content!.length) {
       this.content.content!.push({ type: 'paragraph' });
@@ -453,7 +499,8 @@ export class SourceProjection {
         );
       }
     }
-    let source = '';
+    let source = this.leading;
+    this.addedParagraphSeams.length = 0;
     const nextFences: Fence[] = [];
     after.forEach((paragraph, offset, index) => {
       if (paragraph.type.name === 'codeBlock') {
@@ -519,9 +566,20 @@ export class SourceProjection {
       transition(index === after.childCount - 1 ? (this.context?.after ?? []) : []);
       const end = offset + paragraph.nodeSize - 1;
       const separator = separators.get(end);
+      const retainSingle =
+        this.context?.paragraphSeams?.length &&
+        paragraph.content.size &&
+        /^(?:\r?\n)$/.test(separator ?? '') &&
+        index < after.childCount - 1;
+      if (retainSingle)
+        this.addedParagraphSeams.push({
+          from: this.start + source.length,
+          to: this.start + source.length + separator!.length,
+          kind: 'split',
+        });
       source +=
         index < after.childCount - 1
-          ? paragraph.content.size && separator === '\n'
+          ? paragraph.content.size && separator === '\n' && !retainSingle
             ? '\n\n'
             : separator || (paragraph.content.size ? '\n\n' : '\n')
           : this.trailing;
@@ -539,9 +597,10 @@ export class SourceProjection {
       to: this.start + oldEnd,
       insert: source.slice(from, newEnd),
     };
-    const paragraphSeams = this.context?.paragraphSeams
-      ?.filter((seam) => !touchesParagraphSeam(seam, splice))
-      .map((seam) => mapParagraphSeam(seam, splice));
+    const paragraphSeams = (this.context?.paragraphSeams ?? [])
+      .filter((seam) => !touchesParagraphSeam(seam, splice))
+      .map((seam) => mapParagraphSeam(seam, splice))
+      .concat(this.addedParagraphSeams);
     // Verify the entire bounded projection BEFORE admitting a source/journal mutation.
     const projected = before.type.schema.nodeFromJSON(
       new SourceProjection(

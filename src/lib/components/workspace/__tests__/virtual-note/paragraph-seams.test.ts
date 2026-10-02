@@ -146,3 +146,50 @@ it('keeps the boundary when remote text is inserted after its newline', () => {
   expect(s.region(0)).toBe('before\n\n\nREMOTEafter');
   expect(seams(s)).toEqual([{ from: 8, to: 9 }]);
 });
+
+for (const kind of ['leading', 'terminal', 'split'] as const)
+  for (const newline of ['\n', '\r\n'])
+    it(`retains ${kind} ${JSON.stringify(newline)} boundaries through remote mapping and rollback`, () => {
+      const source = `before${newline}after`;
+      const s = new SourceJournal(() => source, 1);
+      const seam = { from: 6, to: 6 + newline.length, kind };
+      s.beginChanges();
+      s.setParagraphSeam(seam);
+      record(s);
+      const remote = { from: 0, to: 0, insert: 'REMOTE' };
+      s.atomic(() => {
+        s.apply(remote);
+        s.rebase(remote);
+      });
+      const moved = { ...seam, from: seam.from + 6, to: seam.to + 6 };
+      expect(seams(s)).toEqual([moved]);
+      const revision = s.revision;
+      expect(() =>
+        s.atomic(() => {
+          s.beginChanges();
+          s.stage({ from: moved.from, to: moved.to, insert: 'X' });
+          record(s);
+          throw Error('write fault');
+        }),
+      ).toThrow('write fault');
+      expect(s.revision).toBe(revision);
+      expect(seams(s)).toEqual([moved]);
+      expect(s.region(0)).toBe('REMOTE' + source);
+      s.atomic(() => {
+        for (const change of s.changes(0, true)) s.replay(change, false);
+      });
+      expect(seams(s)).toEqual([]);
+      s.atomic(() => {
+        for (const change of s.changes(0)) s.replay(change, true);
+      });
+      expect(seams(s)).toEqual([moved]);
+      const conflict = { from: moved.from, to: moved.to, insert: '' };
+      expect(() =>
+        s.atomic(() => {
+          s.apply(conflict);
+          s.rebase(conflict);
+        }),
+      ).toThrow('retained paragraph seam');
+      expect(s.region(0)).toBe('REMOTE' + source);
+      expect(s.stats.maxJournalRead).toBeLessThanOrEqual(4096);
+    });
