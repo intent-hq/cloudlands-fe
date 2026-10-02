@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createPreviewLoaderIndex,
   installPreviewBrowserApi,
@@ -45,15 +45,31 @@ describe('preview discovery', () => {
     expect(ids).toEqual([...ids].sort());
   });
 
-  it('loads a valid preview definition from every discovered file', async () => {
-    const ids = listPreviewIds();
-    const loadedIds: string[] = [];
-    for (const id of ids) {
-      loadedIds.push((await loadPreview(id))?.definition.id ?? '');
-    }
-
+  const ids = listPreviewIds();
+  const loadedIds: string[] = [];
+  const assertCompleteSet = () => {
+    expect(listPreviewIds()).toEqual(ids);
     expect(loadedIds).toEqual(ids);
-  }, 60_000);
+  };
+
+  // Even a filter selecting only an older case must not certify a partial set.
+  afterAll(assertCompleteSet);
+
+  describe.sequential('discovered preview definitions', () => {
+    // This validates each import, not whole-catalog latency: the original 60s
+    // timeout now bounds each preview rather than their cumulative import time.
+    it.each(ids)(
+      'loads a valid preview definition: %s',
+      async (id) => {
+        const loadedId = (await loadPreview(id))?.definition.id ?? '';
+        loadedIds.push(loadedId);
+        expect(loadedId).toBe(id);
+      },
+      60_000,
+    );
+
+    it('completes the full discovered set in sorted order', assertCompleteSet);
+  });
 
   it('rejects duplicate filenames instead of silently replacing a preview', () => {
     expect(() =>
