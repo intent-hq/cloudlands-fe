@@ -2,8 +2,8 @@
  * Claude Code IPC Handlers
  *
  * IPC handlers for Claude Code ACP adapter integration. Availability and
- * model listing are both daemon-owned: binaries resolve through
- * `host.findBinary` (PROTOCOL §5.14) and models through the per-provider
+ * model listing are both daemon-owned: availability comes from
+ * `host.providerDiscovery` (PROTOCOL §5.14) and models through the per-provider
  * catalog (`models.list { providerId }`, PROTOCOL §6.7).
  */
 
@@ -11,35 +11,28 @@ import { ipcMain } from 'electron';
 import { CLAUDE_CODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { getProviderModelsEnvelope } from '../../../main/utils/daemon-model-catalog';
-import { findBinary, getCommonNpmPaths } from '../../../shared/main/find-binary';
+import { getBackendClient } from '../../backend/main/backend.ipc';
+import type { NpxStatus } from '../../../shared/types/provider-availability';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../shared/constants/claude-code';
 
 const logger = new Logger('ClaudeCodeIPC');
 
 export function setupClaudeCodeIPC() {
-  // Check if the claude-agent-acp adapter can run (claude CLI + npx present
-  // on the daemon host). intentd spawns the pinned adapter via npx.
+  // The daemon resolves the bundled adapter runtime or a configured override.
   ipcMain.handle(CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
       logger.debug('Checking claude-agent-acp availability');
-      const claudePath = await findBinary('claude', {
-        commonPaths: getCommonNpmPaths('claude'),
-      });
-      if (!claudePath) {
-        logger.info('Claude Code availability check', { isAvailable: false });
-        return { success: true, available: false };
+      const discovery = await getBackendClient().request<{
+        providers: Array<{ id: string; installed: boolean; gatedOff?: string | null }>;
+        npx?: NpxStatus;
+      }>('host.providerDiscovery', {});
+      const row = discovery.providers.find((provider) => provider.id === 'claude-code');
+      const available = row?.installed === true && !row.gatedOff;
+      logger.info('Claude Code availability check', { isAvailable: available });
+      if (row && !row.installed && !row.gatedOff && discovery.npx?.resolvedPath === null) {
+        return { success: true, available, warning: CLAUDE_CODE_NPX_MISSING_WARNING };
       }
-      const npxPath = await findBinary('npx', {
-        commonPaths: getCommonNpmPaths('npx'),
-      });
-      logger.info('Claude Code availability check', {
-        isAvailable: npxPath !== null,
-        command: claudePath,
-      });
-      if (npxPath) {
-        return { success: true, available: true };
-      }
-      return { success: true, available: false, warning: CLAUDE_CODE_NPX_MISSING_WARNING };
+      return { success: true, available };
     } catch (error) {
       logger.info('Claude Code not available', { error: (error as Error).message });
       return { success: true, available: false };
