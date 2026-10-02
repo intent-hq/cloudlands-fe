@@ -805,6 +805,7 @@
   "settings_collaboration_identity_unavailable_description": "この接続の準備ができるまで、IDは表示できません。",
   "settings_collaboration_identity_empty_description": "このインスタンスではコラボレーションIDが選択されていません。サインインしてアカウントを選択してください。",
   "settings_collaboration_identity_remoteEmpty_description": "このインスタンスのあなたのユーザーには、コラボレーションIDが紐付けられていません。",
+  "settings_collaboration_profileUnavailable_label": "プロフィールを利用できません",
   "settings_collaboration_sharing_title": "このインスタンスを共有",
   "settings_collaboration_sharing_description": "このインスタンスにアクセスできるメンバーを管理します。",
   "settings_collaboration_workspaces_title": "共有ワークスペース",

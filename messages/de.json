@@ -805,6 +805,7 @@
   "settings_collaboration_identity_unavailable_description": "Deine Identität ist verfügbar, sobald diese Verbindung bereit ist.",
   "settings_collaboration_identity_empty_description": "Auf dieser Instanz ist keine Identität für die Zusammenarbeit ausgewählt. Melde dich an, um ein Konto auszuwählen.",
   "settings_collaboration_identity_remoteEmpty_description": "Mit deinem Benutzer auf dieser Instanz ist keine Identität für die Zusammenarbeit verknüpft.",
+  "settings_collaboration_profileUnavailable_label": "Profil nicht verfügbar",
   "settings_collaboration_sharing_title": "Diese Instanz teilen",
   "settings_collaboration_sharing_description": "Verwalte, wer auf diese Instanz zugreifen kann.",
   "settings_collaboration_workspaces_title": "Geteilte Arbeitsbereiche",

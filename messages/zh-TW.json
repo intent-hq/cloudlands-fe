@@ -805,6 +805,7 @@
   "settings_collaboration_identity_unavailable_description": "此連線就緒後才能顯示你的身分。",
   "settings_collaboration_identity_empty_description": "此執行個體尚未選擇協作身分。請登入以選擇帳號。",
   "settings_collaboration_identity_remoteEmpty_description": "你在此執行個體上的使用者尚未連結協作身分。",
+  "settings_collaboration_profileUnavailable_label": "個人資料無法使用",
   "settings_collaboration_sharing_title": "共用此執行個體",
   "settings_collaboration_sharing_description": "管理可以存取此執行個體的人員。",
   "settings_collaboration_workspaces_title": "共用的工作區",

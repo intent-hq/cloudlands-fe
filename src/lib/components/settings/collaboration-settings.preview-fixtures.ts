@@ -38,8 +38,11 @@ export function setupCollaborationSettingsPreview(
     {
       principalId: 'preview-owner',
       hostRole: 'owner',
-      login: null,
-      displayName: 'Instance owner',
+      login: populated ? 'casey' : null,
+      displayName: populated ? 'Casey Morgan' : 'Instance owner',
+      ...(populated
+        ? { identity: { provider: 'github' as const, host: 'github.com', externalUserId: '142' } }
+        : {}),
       avatarUrl: null,
       addedAt: '2026-10-01T00:00:00Z',
     },
@@ -51,7 +54,7 @@ export function setupCollaborationSettingsPreview(
       hostRole: 'member',
       login: 'sam',
       displayName: 'Sam Rivera',
-      identity: { ...identity, externalUserId: '84' },
+      identity: { provider: 'gitlab', host: 'gitlab.team.example', externalUserId: '84' },
     });
   const invites: HostInvite[] = populated
     ? [

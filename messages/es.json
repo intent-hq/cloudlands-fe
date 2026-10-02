@@ -805,6 +805,7 @@
   "settings_collaboration_identity_unavailable_description": "Tu identidad estará disponible cuando esta conexión esté lista.",
   "settings_collaboration_identity_empty_description": "No hay una identidad de colaboración seleccionada en esta instancia. Inicia sesión para elegir una cuenta.",
   "settings_collaboration_identity_remoteEmpty_description": "Tu usuario en esta instancia no tiene vinculada ninguna identidad de colaboración.",
+  "settings_collaboration_profileUnavailable_label": "Perfil no disponible",
   "settings_collaboration_sharing_title": "Compartir esta instancia",
   "settings_collaboration_sharing_description": "Gestiona quién puede acceder a esta instancia.",
   "settings_collaboration_workspaces_title": "Espacios de trabajo compartidos",

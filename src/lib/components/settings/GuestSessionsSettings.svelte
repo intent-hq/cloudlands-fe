@@ -300,7 +300,7 @@
           <p class="type-body font-medium break-words text-foreground">
             {$principal$?.principal.displayName ||
               $principal$?.principal.login ||
-              currentIdentity.externalUserId}
+              m.settings_collaboration_profileUnavailable_label()}
           </p>
           <p class="type-caption break-words text-muted-foreground">
             {#if $principal$?.principal.login}@{$principal$.principal.login} ·
@@ -308,8 +308,6 @@
             {currentIdentity.provider === 'github'
               ? m.workspace_share_pinProvider_github_label()
               : m.workspace_share_pinProvider_gitlab_label({ host: currentIdentity.host })}
-            {#if currentIdentity.provider === 'github'}
-              · {currentIdentity.host}{/if}
           </p>
         {:else}
           <p class="type-body text-muted-foreground">
@@ -461,12 +459,18 @@
                         </span>
                         ·
                       {/if}
-                      {session.login ? `@${session.login}` : session.principalId}
+                      {session.login
+                        ? `@${session.login}`
+                        : m.settings_collaboration_profileUnavailable_label()}
                       {#if $currentSession$?.id === session.id && $hostRole$ === 'member'}
                         · {m.collaboration_host_member_label()}{/if}
                       {#if session.identity}
-                        · {session.identity.provider}@{session.identity.host} · {session.identity
-                          .externalUserId}{/if}
+                        ·
+                        {session.identity.provider === 'github'
+                          ? m.workspace_share_pinProvider_github_label()
+                          : m.workspace_share_pinProvider_gitlab_label({
+                              host: session.identity.host,
+                            })}{/if}
                     </p>
                   </div>
                   <div class="flex shrink-0 items-center gap-2">

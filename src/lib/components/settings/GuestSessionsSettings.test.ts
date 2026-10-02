@@ -377,6 +377,48 @@ describe('GuestSessionsSettings', () => {
     ).toBe('true');
   });
 
+  it('uses each joined account profile and provider without exposing identity keys', () => {
+    mocks.sessions = [
+      {
+        ...guest,
+        login: 'joined-person',
+        identity: { provider: 'github', host: 'github.com', externalUserId: '900101' },
+      },
+      {
+        ...guest,
+        id: 'guest-2',
+        login: 'other-person',
+        identity: { provider: 'gitlab', host: 'gitlab.team.example', externalUserId: '900102' },
+      },
+      {
+        ...guest,
+        id: 'guest-3',
+        login: null,
+        principalId: 'missing-profile-stable',
+        identity: { provider: 'github', host: 'github.com', externalUserId: '900103' },
+      },
+    ];
+    render(GuestSessionsSettings);
+    const rows = Array.from(
+      screen.getByTestId('guest-sessions-joined').querySelectorAll('[data-session-id]'),
+    );
+    expect(rows[0].textContent).toContain('@joined-person');
+    expect(rows[0].textContent).toContain('GitHub');
+    expect(rows[1].textContent).toContain('@other-person');
+    expect(rows[1].textContent).toContain('GitLab (gitlab.team.example)');
+    expect(rows[2].textContent).toContain('Profile unavailable');
+    expect(rows[2].textContent).not.toContain('@joined-person');
+    for (const key of [
+      'github@',
+      'gitlab@',
+      '900101',
+      '900102',
+      '900103',
+      'missing-profile-stable',
+    ])
+      expect(rows.map((r) => r.textContent).join('')).not.toContain(key);
+  });
+
   it('labels a joined host by its captured hostname and keeps the dialled address as secondary text', () => {
     mocks.sessions = [
       { ...guest, label: 'tc.example.ts.net', hostname: 'Clement’s Mac Studio' },
@@ -1692,6 +1734,34 @@ describe('GuestSessionsSettings', () => {
     expect(summary.textContent).not.toContain('different-joined-account');
     expect(summary.textContent).not.toContain('Host Person');
     expect(screen.getByRole('button', { name: 'Sign in or change account' })).toBeTruthy();
+  });
+
+  it('shows provider context without inventing a profile or exposing its numeric identity key', () => {
+    const current = appStore.state.principal;
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        {
+          ...current.snapshot!,
+          principal: {
+            ...current.snapshot!.principal,
+            login: null,
+            displayName: null,
+            identity: { provider: 'github', host: 'github.com', externalUserId: '900104' },
+          },
+        },
+      ),
+    );
+    render(GuestSessionsSettings);
+    const summary = screen.getByTestId('collaboration-current-identity');
+    expect(summary.textContent).toContain('Profile unavailable');
+    expect(summary.textContent).toContain('GitHub');
+    expect(summary.textContent).not.toContain('900104');
+    expect(summary.textContent).not.toContain('@');
   });
 
   it('does not infer identity from joined accounts and withholds owner controls for unknown authority', async () => {

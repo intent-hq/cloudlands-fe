@@ -51,10 +51,11 @@
   function confirm(command: HostMembershipCommand) {
     confirmationLabel =
       command.kind === 'create'
-        ? `${command.input.pinLogin} · ${command.input.pinProvider}@${command.input.pinHost}`
+        ? `@${command.input.pinLogin} · ${command.input.pinProvider === 'github' ? m.workspace_share_pinProvider_github_label() : m.workspace_share_pinProvider_gitlab_label({ host: command.input.pinHost! })}`
         : command.kind === 'remove'
-          ? ($members$.find((item) => item.principalId === command.principalId)?.displayName ??
-            command.principalId)
+          ? $members$.find((item) => item.principalId === command.principalId)?.displayName ||
+            $members$.find((item) => item.principalId === command.principalId)?.login ||
+            command.principalId
           : command.kind === 'revoke'
             ? ($invites$.find((item) => item.id === command.inviteId)?.pinLogin ?? command.inviteId)
             : '';
@@ -205,14 +206,20 @@
           <ListRow
             class="flex-col sm:flex-row [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words"
           >
-            {#snippet title()}{item.displayName ?? item.login ?? item.principalId}{/snippet}
+            {#snippet title()}{item.displayName ||
+                (item.login
+                  ? `@${item.login}`
+                  : m.settings_collaboration_profileUnavailable_label())}{/snippet}
             {#snippet description()}
               {item.hostRole === 'owner'
                 ? m.workspace_share_role_owner_label()
                 : m.collaboration_host_member_label()}
+              {#if item.login}
+                · @{item.login}{/if}
               {#if item.identity}
-                · {item.identity.provider}@{item.identity.host} · {item.identity
-                  .externalUserId}{/if}
+                · {item.identity.provider === 'github'
+                  ? m.workspace_share_pinProvider_github_label()
+                  : m.workspace_share_pinProvider_gitlab_label({ host: item.identity.host })}{/if}
             {/snippet}
             {#snippet trailing()}{#if item.hostRole === 'member'}<Button
                   variant="ghost"
@@ -241,8 +248,11 @@
           <ListRow
             class="flex-col sm:flex-row [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words"
           >
-            {#snippet title()}@{item.pinLogin} · {item.pinIdentity.provider}@{item.pinIdentity
-                .host}{/snippet}
+            {#snippet title()}@{item.pinLogin} · {item.pinIdentity.provider === 'github'
+                ? m.workspace_share_pinProvider_github_label()
+                : m.workspace_share_pinProvider_gitlab_label({
+                    host: item.pinIdentity.host,
+                  })}{/snippet}
             {#snippet description()}{m.collaboration_host_expires_label({
                 date: formatDateTime(item.expiresAt),
               })}{/snippet}

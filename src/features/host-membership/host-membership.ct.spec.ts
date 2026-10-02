@@ -16,6 +16,7 @@ const member = {
   principalId: 'member',
   hostRole: 'member',
   displayName: 'Sam',
+  login: 'sam',
   identity: { provider: 'gitlab', host: 'forge.example:8443', externalUserId: '42' },
 };
 const mockBackend = {
@@ -32,7 +33,11 @@ for (const width of [390, 960]) {
     await mount(Harness, { hooksConfig: { mockBackend } });
     await expect(page.getByText('Local owner', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(1);
-    await expect(page.getByText(/forge.example:8443.*42/)).toBeVisible();
+    const roster = page.getByRole('list', { name: 'Host members', exact: true });
+    await expect(roster).toContainText('Sam');
+    await expect(roster).toContainText('Host member · @sam · GitLab (forge.example:8443)');
+    await expect(roster).not.toContainText('gitlab@');
+    await expect(roster).not.toContainText('42');
     await expect(page.getByRole('textbox', { name: 'Account username' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Invite a host member', exact: true }).click();
     const account = page.getByRole('textbox', { name: 'Account username' });
