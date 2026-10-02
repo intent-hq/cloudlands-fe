@@ -1,7 +1,15 @@
 // @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,6 +36,8 @@ const directories: string[] = [];
 function fixture() {
   return {
     pin: PIN,
+    noPr: false,
+    paginateCommits: false,
     pins: {} as Record<string, string>,
     feTag: 'v3.0.0',
     feTagDate: '2026-09-26T05:50:00Z',
@@ -106,7 +116,6 @@ function runCut(
   stepName = 'Merge the Release PR when green',
   throttleTag = '',
   dryRun = true,
-  pinAdvance = '',
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'intentd-readiness-'));
   directories.push(directory);
@@ -171,7 +180,7 @@ appendFileSync(process.env.READINESS_CALLS, JSON.stringify(a) + '\\n');
 const endpoint = a[0] === 'api' ? a.slice(1).find(x => !x.startsWith('--')) : '';
 if (f.fail && endpoint.includes(f.fail)) process.exit(1);
 let value;
-if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : [f.pr];
+if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : [f.pr];
 else if (a[0] === 'pr' && a[1] === 'view') value = f.detail;
 else if (a[0] === 'pr' && a[1] === 'merge') {
   const expected = a[a.indexOf('--match-head-commit') + 1];
@@ -198,12 +207,17 @@ else if (endpoint === 'repos/${BE}/actions/runs/100') value = f.proof.run;
 else if (endpoint.includes('/actions/runs/100/attempts/1/jobs?')) value = {total_count: f.proof.jobs.length, jobs: f.proof.jobs};
 else if (endpoint.includes('/pulls?')) value = f.proof.prs;
 else { process.stderr.write('Unexpected gh: ' + JSON.stringify(a)); process.exit(2); }
+let payload = JSON.stringify(value);
+if (endpoint.startsWith('repos/${FE}/compare/') && f.paginateCommits) {
+  payload = (a.includes('--paginate') ? f.commits : f.commits.slice(0, 1))
+    .map(commit => JSON.stringify({commits: [commit]})).join('\\n');
+}
 const projection = a.indexOf('--jq');
 if (projection >= 0) {
-  const r = spawnSync('jq', ['-r', a[projection + 1]], {input: JSON.stringify(value), encoding: 'utf8'});
+  const r = spawnSync('jq', ['-r', a[projection + 1]], {input: payload, encoding: 'utf8'});
   process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exit(r.status);
 }
-process.stdout.write(JSON.stringify(value));
+process.stdout.write(payload);
 `,
     { mode: 0o755 },
   );
@@ -226,7 +240,6 @@ process.stdout.write(JSON.stringify(value));
     'github.event.before': data.before,
     'github.sha': data.after,
     'steps.throttle.outputs.tag': throttleTag,
-    'steps.throttle.outputs.pin_advance': pinAdvance,
   };
   const stepEnv = Object.fromEntries(
     Object.entries(step.env ?? {}).map(([key, value]) => [
@@ -261,6 +274,7 @@ process.stdout.write(JSON.stringify(value));
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as string[]),
+    slept: existsSync(join(directory, 'slept')),
     headRefOid,
     cut: result.stdout.includes('DRY RUN: would squash-merge'),
     output: result.stdout,
@@ -441,6 +455,7 @@ describe('auto-cut direct release merge', () => {
 function pinFixture() {
   return {
     ...fixture(),
+    feTagDate: '2026-09-26T05:00:00Z',
     pins: { [BASE]: '0.9.109', [HEAD]: PIN, 'heads/main': PIN, 'tags/v3.0.0': '0.9.109' },
     beTag: `v${PIN}`,
   };
@@ -457,23 +472,24 @@ function outputValue(outputs: string, key: string) {
 
 // Execute each guarded workflow step with the preceding step's real outputs.
 function runPinChain(data = pinFixture(), event = 'push', mergeData = data, dryRun = true) {
-  const throttle = runCut(data, event, 'Throttle to one cut per hour');
-  if (outputValue(throttle.outputs, 'defer') === 'true') return { ...throttle, cut: false };
+  const throttle =
+    event === 'workflow_dispatch' ? null : runCut(data, event, 'Throttle to one cut per hour');
+  if (throttle && outputValue(throttle.outputs, 'defer') === 'true')
+    return { ...throttle, cut: false };
   const inflight = runCut(data, event, 'Check for an in-flight intentd release build');
   if (outputValue(inflight.outputs, 'defer') === 'true') return { ...inflight, cut: false };
   return runCut(
     mergeData,
     event,
     'Merge the Release PR when green',
-    outputValue(throttle.outputs, 'tag'),
+    throttle ? outputValue(throttle.outputs, 'tag') : '',
     dryRun,
-    outputValue(throttle.outputs, 'pin_advance'),
   );
 }
 
-describe('prompt pin-driven alpha cut', () => {
+describe('single-pass alpha cut', () => {
   it.each(['metadata', 'source', 'pin', 'mode'])(
-    'preserves the verified merge route for an exempt pin push with a %s PR diff',
+    'preserves the verified merge route for an eligible pin push with a %s PR diff',
     (shape) => {
       const data = { ...pinFixture(), shape };
       const result = runPinChain(data, 'push', data, false);
@@ -493,7 +509,7 @@ describe('prompt pin-driven alpha cut', () => {
   );
 
   it.each(['CHANGES_REQUESTED', 'REVIEW_REQUIRED'])(
-    'never merges an exempt pin push with review decision %s',
+    'never merges an eligible pin push with review decision %s',
     (reviewDecision) => {
       const data = pinFixture();
       data.detail.reviewDecision = reviewDecision;
@@ -503,7 +519,7 @@ describe('prompt pin-driven alpha cut', () => {
     },
   );
 
-  it('binds an exempt pin merge to the tested head when release-please refreshes it', () => {
+  it('binds an eligible pin merge to the tested head when release-please refreshes it', () => {
     const data = { ...pinFixture(), liveHead: 'c'.repeat(40) };
     const result = runPinChain(data, 'push', data, false);
     const merge = result.calls.find((args) => args[0] === 'pr' && args[1] === 'merge')!;
@@ -522,71 +538,21 @@ describe('prompt pin-driven alpha cut', () => {
     expect(result.output).toContain('retaining the ordinary merge queue');
   });
 
-  it('preserves the pending pin push when an ordinary push arrives while another cut polls', () => {
-    // A entered readiness polling before B advanced the pin. Once B lands,
-    // A's Release PR pin check must prevent A from cutting its stale pin.
-    const polling = pinFixture();
-    polling.before = 'd'.repeat(40);
-    polling.after = BASE;
-    polling.pins[polling.before] = '0.9.108';
-    const active = runCut(
-      polling,
-      'push',
-      'Merge the Release PR when green',
-      'v3.0.0',
-      true,
-      'true',
-    );
-    expect(active.cut, active.output).toBe(false);
-    expect(active.output).toContain('head does not carry the pushed intentd pin');
-
-    const pinPush = pinFixture();
-    const ordinaryPush = pinFixture();
-    ordinaryPush.before = HEAD;
-    ordinaryPush.after = 'c'.repeat(40);
-    ordinaryPush.pins[ordinaryPush.after] = PIN;
-
-    // Mock GitHub's scheduler boundary using the actual workflow setting:
-    // single (default) replaces pending B with C; max retains B then C.
-    // https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
-    const pending: { name: string; data: ReturnType<typeof pinFixture> }[] = [];
-    for (const run of [
-      { name: 'B', data: pinPush },
-      { name: 'C', data: ordinaryPush },
-    ]) {
-      if (workflow.concurrency.queue !== 'max') pending.splice(0);
-      pending.push(run);
-    }
-    const cuts: string[] = [];
-    for (const run of pending) {
-      // Finish each real workflow chain before starting the next: merges
-      // stay serialized, and C observes B's release if B was retained.
-      if (cuts.length) {
-        run.data.feTag = 'v3.0.1';
-        run.data.pins['tags/v3.0.1'] = PIN;
-      }
-      if (runPinChain(run.data).cut) cuts.push(run.name);
-    }
-    expect(cuts).toEqual(['B']);
-  });
-
-  it('wires helpers before throttling and keeps the existing trigger and guard chain', () => {
+  it('runs on every tenth minute and preserves serialization and step guards', () => {
     const checkout = steps.find((s) => s.name === 'Checkout trusted release helpers')!;
     const throttle = steps.find((s) => s.name === 'Throttle to one cut per hour')!;
     const inflight = steps.find((s) => s.name === 'Check for an in-flight intentd release build')!;
     const merge = steps.find((s) => s.name === 'Merge the Release PR when green')!;
     expect(steps.indexOf(checkout)).toBeLessThan(steps.indexOf(throttle));
-    expect(checkout.with?.['sparse-checkout']).toContain('/scripts/intentd-pin-advance.sh');
     expect(checkout.with?.['sparse-checkout']).toContain('/scripts/intentd-release-readiness.mjs');
     expect(checkout.with?.['sparse-checkout']).toContain('/scripts/release-pr-fast-path.mjs');
     expect(checkout.if).toBe("steps.token.outputs.enabled == 'true'");
-    expect(steps.filter((s) => s.name.startsWith('Checkout'))).toHaveLength(1);
     expect(throttle.if).toContain("github.event_name != 'workflow_dispatch'");
     expect(inflight.if).toContain("steps.throttle.outputs.defer != 'true'");
     expect(merge.if).toContain("steps.throttle.outputs.defer != 'true'");
     expect(merge.if).toContain("steps.inflight.outputs.defer != 'true'");
     expect(workflow.on.push.branches).toEqual(['main']);
-    expect(workflow.on.schedule).toEqual([{ cron: '30 * * * *' }]);
+    expect(workflow.on.schedule).toEqual([{ cron: '*/10 * * * *' }]);
     expect(workflow.concurrency).toEqual({
       group: 'auto-cut-alpha',
       'cancel-in-progress': false,
@@ -600,102 +566,148 @@ describe('prompt pin-driven alpha cut', () => {
     expect(runPinChain(data).cut).toBe(true);
   });
 
-  it('keeps ordinary pushes eligible after the hour', () => {
-    const data = pinFixture();
-    data.pins[BASE] = PIN;
-    data.feTagDate = '2026-09-26T04:00:00Z';
-    expect(runPinChain(data).cut).toBe(true);
-  });
-
-  it('allows the new pin if a recent old-pin tag appeared after an unthrottled start', () => {
-    const before = pinFixture();
-    before.feTagDate = '2026-09-26T04:00:00Z';
-    const after = pinFixture();
-    after.feTag = 'v3.0.1';
-    after.pins['tags/v3.0.1'] = '0.9.109';
-    expect(runPinChain(before, 'push', after).cut).toBe(true);
-  });
-
-  it('still defers an ordinary push after a concurrent tag appears', () => {
-    const before = pinFixture();
-    before.pins[BASE] = PIN;
-    before.feTagDate = '2026-09-26T04:00:00Z';
-    const after = structuredClone(before);
-    after.feTag = 'v3.0.1';
-    after.pins['tags/v3.0.1'] = '0.9.109';
-    expect(runPinChain(before, 'push', after).cut).toBe(false);
-  });
-
-  it('treats promotion from a prerelease to the stable pin as an advance', () => {
-    const data = pinFixture();
-    data.pins[BASE] = `${PIN}-alpha.1`;
-    data.pins['tags/v3.0.0'] = `${PIN}-alpha.1`;
-    expect(runPinChain(data).cut).toBe(true);
-  });
-
-  it('cuts a proven new pin within the hour through the existing push chain', () => {
-    const result = runPinChain();
-    expect(result.cut, result.output).toBe(true);
-  });
-
-  it.each([
-    'unchanged',
-    'comment-only',
-    'rollback',
-    'already carried',
-    'newer carried',
-    'superseded',
-    'malformed',
-    'missing before',
-  ])('does not exempt a %s pin push', (kind) => {
-    const data = pinFixture();
-    if (kind === 'unchanged') data.pins[BASE] = PIN;
-    if (kind === 'comment-only') data.pins[BASE] = `# Old comment\n${PIN}\n`;
-    if (kind === 'rollback') data.pins[BASE] = '0.9.111';
-    if (kind === 'already carried') data.pins['tags/v3.0.0'] = PIN;
-    if (kind === 'newer carried') data.pins['tags/v3.0.0'] = '0.9.111';
-    if (kind === 'superseded') data.pins['heads/main'] = '0.9.111';
-    if (kind === 'malformed') data.pins[HEAD] = 'garbage';
-    if (kind === 'missing before') data.before = '0'.repeat(40);
-    expect(runPinChain(data).cut).toBe(false);
-  });
-
-  it('keeps the schedule throttle even with an unshipped pin', () => {
-    expect(runPinChain(pinFixture(), 'schedule').cut).toBe(false);
-  });
-
-  it.each([BASE, HEAD, 'heads/main', 'tags/v3.0.0'])(
-    'retains the throttle when pin evidence at %s is unreadable',
-    (ref) => {
+  describe.each(['push', 'schedule'])('%s hourly floor', (event) => {
+    it.each(['ordinary', 'pin advance'])('defers a %s at 59 minutes 59 seconds', (kind) => {
       const data = pinFixture();
-      data.fail = `/contents/intentd.version?ref=${ref}`;
-      expect(runPinChain(data).cut).toBe(false);
-    },
-  );
+      data.feTagDate = '2026-09-26T05:00:01Z';
+      if (kind === 'ordinary') data.pins[BASE] = PIN;
+      const result = runPinChain(data, event);
+      expect(result.cut, result.output).toBe(false);
+      expect(result.output).toContain('throttling this cut');
+      expect(result.slept).toBe(false);
+    });
 
-  it('can pass a concurrent cut that still carries the old pin', () => {
-    const before = pinFixture();
-    const after = pinFixture();
-    after.feTag = 'v3.0.1';
-    after.pins['tags/v3.0.1'] = '0.9.109';
-    const result = runPinChain(before, 'push', after);
-    expect(result.cut, result.output).toBe(true);
+    it.each(['ordinary', 'pin advance'])('cuts a ready %s at exactly 60 minutes', (kind) => {
+      const data = pinFixture();
+      if (kind === 'ordinary') data.pins[BASE] = PIN;
+      const result = runPinChain(data, event);
+      expect(result.cut, result.output).toBe(true);
+      expect(result.slept).toBe(false);
+    });
   });
 
-  it.each(['carried', 'superseded', 'proof unreadable'])(
-    'rechecks before merging when the pin becomes %s',
+  describe('scheduled freshness', () => {
+    it.each(['pin', 'release metadata'])(
+      'keeps a deferred push blocked on stale %s until a scheduled retry sees the refresh',
+      (kind) => {
+        const data = pinFixture();
+        if (kind === 'pin') data.pins[data.pr.headRefName] = '0.9.109';
+        else data.prDate = '2026-09-26T05:00:00Z';
+        for (const event of ['push', 'schedule']) {
+          const result = runPinChain(data, event);
+          expect(result.cut, `${event}: ${result.output}`).toBe(false);
+          expect(result.slept).toBe(false);
+        }
+        data.pins[data.pr.headRefName] = PIN;
+        data.prDate = '2026-09-26T06:00:00Z';
+        const refreshed = runPinChain(data, 'schedule');
+        expect(refreshed.cut, refreshed.output).toBe(true);
+        expect(refreshed.slept).toBe(false);
+      },
+    );
+
+    it.each([
+      'fix: shipped behavior',
+      'feat(api)!: change contract',
+      'perf: improve startup',
+      'chore: change API\n\n' + 'BREAKING' + ' CHANGE: new contract',
+    ])('finds an unrefreshed %s before trailing docs/ci commits across pages', (message) => {
+      const data = pinFixture();
+      data.prDate = '2026-09-26T05:30:00Z';
+      data.paginateCommits = true;
+      data.commits = [
+        {
+          commit: { committer: { date: '2026-09-26T05:10:00Z' }, message: 'docs: earlier change' },
+        },
+        { commit: { committer: { date: '2026-09-26T05:40:00Z' }, message } },
+        { commit: { committer: { date: '2026-09-26T05:50:00Z' }, message: 'ci: update check' } },
+      ];
+      const stale = runPinChain(data, 'schedule');
+      expect(stale.cut, stale.output).toBe(false);
+      expect(stale.slept).toBe(false);
+      data.prDate = '2026-09-26T05:40:00Z';
+      expect(runPinChain(data, 'schedule').cut).toBe(true);
+    });
+
+    it('does not require a refresh for docs/ci-only changes', () => {
+      const data = pinFixture();
+      data.prDate = '2026-09-26T05:00:00Z';
+      data.commits[0].commit.message = 'docs: improve release guidance';
+      expect(runPinChain(data, 'schedule').cut).toBe(true);
+    });
+
+    it('keeps the explicit manual override for stale pin and release metadata', () => {
+      const data = pinFixture();
+      data.pins[data.pr.headRefName] = '0.9.109';
+      data.prDate = '2026-09-26T05:00:00Z';
+      expect(runPinChain(data, 'workflow_dispatch').cut).toBe(true);
+    });
+
+    it.each(['comparison', 'head date', 'main pin'])(
+      'retains the fail-open policy on unreadable %s',
+      (lookup) => {
+        const data = pinFixture();
+        data.fail = {
+          comparison: `repos/${FE}/compare/`,
+          'head date': `repos/${FE}/commits/${data.pr.headRefName}`,
+          'main pin': `repos/${FE}/contents/intentd.version?ref=heads/main`,
+        }[lookup]!;
+        if (lookup === 'main pin') data.pins[data.pr.headRefName] = '0.9.109';
+        else data.prDate = '2026-09-26T05:00:00Z';
+        expect(runPinChain(data, 'schedule').cut).toBe(true);
+      },
+    );
+  });
+
+  it('retains the explicit manual throttle and dependency override', () => {
+    const data = pinFixture();
+    data.feTagDate = '2026-09-26T05:59:00Z';
+    data.proof.jobs = [];
+    const result = runPinChain(data, 'workflow_dispatch');
+    expect(result.cut, result.output).toBe(true);
+    expect(result.slept).toBe(false);
+  });
+
+  it.each(['ordinary', 'pin advance'])(
+    'defers a %s if another tag appears after the initial throttle check',
     (kind) => {
       const before = pinFixture();
-      const after = pinFixture();
-      if (kind === 'carried') {
-        after.feTag = 'v3.0.1';
-        after.pins['tags/v3.0.1'] = PIN;
-      }
-      if (kind === 'superseded') after.pins['heads/main'] = '0.9.111';
-      if (kind === 'proof unreadable') after.fail = `/contents/intentd.version?ref=${BASE}`;
-      expect(runPinChain(before, 'push', after).cut).toBe(false);
+      if (kind === 'ordinary') before.pins[BASE] = PIN;
+      const after = structuredClone(before);
+      after.feTag = 'v3.0.1';
+      after.feTagDate = '2026-09-26T05:59:00Z';
+      after.pins['tags/v3.0.1'] = '0.9.109';
+      const result = runPinChain(before, 'push', after);
+      expect(result.cut, result.output).toBe(false);
+      expect(result.output).toContain('deferring');
     },
   );
+
+  describe.each(['push', 'schedule', 'workflow_dispatch'])('%s single readiness check', (event) => {
+    it.each(['no PR', 'pending CI', 'unknown mergeability'])(
+      'exits immediately for %s without retrying or sleeping',
+      (guard) => {
+        const data = pinFixture();
+        if (guard === 'no PR') {
+          data.noPr = true;
+          data.commits = [];
+        }
+        if (guard === 'pending CI') data.detail.statusCheckRollup = [];
+        if (guard === 'unknown mergeability') data.detail.mergeable = 'UNKNOWN';
+        const result = runPinChain(data, event);
+        expect(result.cut, result.output).toBe(false);
+        expect(result.slept).toBe(false);
+        expect(
+          result.calls.filter(
+            (args) => args[0] === 'pr' && args[1] === 'list' && !args.includes('--head'),
+          ),
+        ).toHaveLength(1);
+        expect(result.calls.filter((args) => args[0] === 'pr' && args[1] === 'view')).toHaveLength(
+          guard === 'no PR' ? 0 : 1,
+        );
+      },
+    );
+  });
 
   it.each([
     'hold',
@@ -711,7 +723,7 @@ describe('prompt pin-driven alpha cut', () => {
     'stale head',
     'BE dependency',
     'inflight',
-  ])('keeps the %s guard for exempt pin pushes', (guard) => {
+  ])('keeps the %s guard for eligible pin pushes without sleeping', (guard) => {
     const data = pinFixture();
     if (guard === 'hold') data.pr.labels = [{ name: 'hold-release' }];
     if (guard === 'pin PR') data.pinPr = [{ number: 7, isCrossRepository: false }];
@@ -728,6 +740,7 @@ describe('prompt pin-driven alpha cut', () => {
     if (guard === 'inflight') data.beTag = 'v0.9.111';
     const result = runPinChain(data);
     expect(result.cut, result.output).toBe(false);
+    expect(result.slept).toBe(false);
     expect(result.output).not.toContain('throttling this cut');
   });
 });

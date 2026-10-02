@@ -145,6 +145,9 @@ export interface UnifiedAgentConfig {
    */
   nameExplicitlySet?: boolean;
 
+  /** Remember this successful manual specialist choice for the workspace. */
+  rememberSpecialist?: boolean;
+
   // Optional
   id?: string; // Allow passing in a pre-generated agent ID
   // Bare model id on new paths (see ModelTriple in $shared/types/model-triple);
