@@ -33,6 +33,8 @@ for (const width of [390, 960]) {
     await expect(page.getByText('Local owner', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(1);
     await expect(page.getByText(/forge.example:8443.*42/)).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Account username' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Invite a host member', exact: true }).click();
     const account = page.getByRole('textbox', { name: 'Account username' });
     await account.focus();
     await page.keyboard.type('sam');

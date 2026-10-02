@@ -1540,4 +1540,57 @@ describe('GuestSessionsSettings', () => {
       expect(mocks.signIn).toHaveBeenCalledOnce();
     });
   });
+  it('summarizes only the current principal identity, not another joined account or roster owner', async () => {
+    const { principalReceived } = await import('$store/renderer/slices/principal/principal-slice');
+    const current = appStore.state.principal;
+    mocks.sessions = [{ ...guest, login: 'different-joined-account' }];
+    mocks.hosted = [hostedWorkspace];
+    mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        {
+          ...current.snapshot!,
+          principal: {
+            ...current.snapshot!.principal,
+            login: 'my-account',
+            displayName: 'Current Person',
+            identity: { provider: 'gitlab', host: 'gitlab.example', externalUserId: '42' },
+          },
+        },
+      ),
+    );
+    render(GuestSessionsSettings);
+    const summary = screen.getByTestId('collaboration-current-identity');
+    expect(summary.textContent).toContain('Current Person');
+    expect(summary.textContent).toContain('@my-account');
+    expect(summary.textContent).toContain('gitlab.example');
+    expect(summary.textContent).not.toContain('different-joined-account');
+    expect(summary.textContent).not.toContain('Host Person');
+    expect(screen.getByRole('button', { name: 'Sign in or change account' })).toBeTruthy();
+  });
+
+  it('does not infer identity from joined accounts and withholds owner controls for unknown authority', async () => {
+    mocks.sessions = [guest];
+    render(GuestSessionsSettings);
+    expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+      'No collaboration identity selected',
+    );
+    const { principalContextChanged } =
+      await import('$store/renderer/slices/principal/principal-slice');
+    appStore.dispatch(principalContextChanged(null));
+    await waitFor(() =>
+      expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+        'unavailable until this connection is ready',
+      ),
+    );
+    expect(screen.queryByTestId('host-membership-settings')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Sign in for collaboration' }).hasAttribute('disabled'),
+    ).toBe(true);
+  });
 });

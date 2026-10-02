@@ -38,6 +38,8 @@ it('renders truthful host scope and submits a confirmed account pin without exte
   render(HostMembershipSettings, {
     props: { context: selectPrincipalActionContext.select(mocks.state)! },
   });
+  expect(screen.queryByLabelText('Account username')).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Invite a host member' }));
   expect(screen.getByText(/expires after seven days/)).toBeTruthy();
   expect(
     screen.getByText(/Members can create and fully manage all current and future/),
@@ -92,6 +94,22 @@ it('keeps the owner non-removable and rejects an old removal confirmation after 
   mocks.state = withHostPrincipal(mocks.state, 'member');
   mocks.dispatch.mockClear();
   await fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+  expect(mocks.dispatch).not.toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'hostMembership/requested' }),
+  );
+});
+
+it('closes the invitation without creating one and returns focus to the invite action', async () => {
+  render(HostMembershipSettings, {
+    props: { context: selectPrincipalActionContext.select(mocks.state)! },
+  });
+  const invite = screen.getByRole('button', { name: 'Invite a host member' });
+  await fireEvent.click(invite);
+  await fireEvent.input(screen.getByLabelText('Account username'), { target: { value: 'sam' } });
+  mocks.dispatch.mockClear();
+  await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByLabelText('Account username')).toBeNull();
+  expect(document.activeElement).toBe(invite);
   expect(mocks.dispatch).not.toHaveBeenCalledWith(
     expect.objectContaining({ type: 'hostMembership/requested' }),
   );

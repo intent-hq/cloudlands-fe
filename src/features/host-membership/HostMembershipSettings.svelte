@@ -29,6 +29,12 @@
   const members$ = selectHostMembers();
   const invites$ = selectHostInvites();
   const gitlab$ = selectLabsGitLabEnabled();
+  let invitationOpen = $state(false);
+  let inviteButton = $state<HTMLButtonElement | undefined>();
+  function closeInvitation() {
+    invitationOpen = false;
+    inviteButton?.focus();
+  }
   let provider = $state<'github' | 'gitlab'>('github');
   let account = $state('');
   let host = $state('gitlab.com');
@@ -137,83 +143,129 @@
   });
 </script>
 
-<div class="space-y-6" data-testid="host-membership-settings">
-  <SettingsForm {schema} />
-  {#if $state$.error}
-    <p role="alert" class="type-body text-danger">{$state$.error}</p>
-    <Button disabled={$state$.busy || $state$.withheld} onclick={() => send({ kind: 'load' })}
-      >{m.collaboration_host_refresh_label()}</Button
+<SettingsSection
+  id="collaboration-sharing"
+  title={m.settings_collaboration_sharing_title()}
+  description={m.settings_collaboration_sharing_description()}
+  busy={$state$.busy || $state$.withheld}
+>
+  {#snippet actions()}
+    <Button
+      bind:ref={inviteButton}
+      aria-expanded={invitationOpen}
+      aria-controls="host-invitation-form"
+      disabled={$state$.busy || $state$.withheld}
+      onclick={() => {
+        invitationOpen = !invitationOpen;
+      }}>{m.collaboration_host_invite_title()}</Button
     >
-  {/if}
-  <SettingsSection
-    id="host-members"
-    title={m.collaboration_host_members_title()}
-    busy={$state$.busy || $state$.withheld}
-  >
-    {#snippet actions()}<Button
-        variant="ghost"
-        disabled={$state$.busy || $state$.withheld}
-        onclick={() => send({ kind: 'load' })}>{m.collaboration_host_refresh_label()}</Button
-      >{/snippet}
-    <ListView
-      items={$members$}
-      getKey={(item) => item.principalId}
-      virtualize={false}
-      ariaLabel={m.collaboration_host_members_title()}
-    >
-      {#snippet row({ item })}
-        <ListRow>
-          {#snippet title()}{item.displayName ?? item.login ?? item.principalId}{/snippet}
-          {#snippet description()}
-            {item.hostRole === 'owner'
-              ? m.workspace_share_role_owner_label()
-              : m.collaboration_host_member_label()}
-            {#if item.identity}
-              · {item.identity.provider}@{item.identity.host} · {item.identity.externalUserId}{/if}
-          {/snippet}
-          {#snippet trailing()}{#if item.hostRole === 'member'}<Button
+  {/snippet}
+  <div class="space-y-4 p-4" data-testid="host-membership-settings">
+    {#if invitationOpen}
+      <div id="host-invitation-form" class="space-y-3">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <p class="max-w-2xl type-body text-muted-foreground">
+            {m.collaboration_host_invite_description()}
+          </p>
+          <Button variant="ghost" onclick={closeInvitation}
+            >{m.settings_connections_cancel()}</Button
+          >
+        </div>
+        <SettingsForm {schema} embedded />
+      </div>
+    {/if}
+    {#if $state$.error}
+      <p role="alert" class="type-body text-danger">{$state$.error}</p>
+      <Button disabled={$state$.busy || $state$.withheld} onclick={() => send({ kind: 'load' })}
+        >{m.collaboration_host_refresh_label()}</Button
+      >
+    {/if}
+    <div>
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <h3 class="type-body font-medium text-foreground">
+          {m.collaboration_host_members_title()}
+        </h3>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={$state$.busy || $state$.withheld}
+          onclick={() => send({ kind: 'load' })}>{m.collaboration_host_refresh_label()}</Button
+        >
+      </div>
+      <ListView
+        items={$members$}
+        getKey={(item) => item.principalId}
+        virtualize={false}
+        ariaLabel={m.collaboration_host_members_title()}
+      >
+        {#snippet empty()}<p class="type-body text-muted-foreground">
+            {m.settings_collaboration_members_empty_description()}
+          </p>{/snippet}
+        {#snippet row({ item })}
+          <ListRow
+            class="flex-col sm:flex-row [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words"
+          >
+            {#snippet title()}{item.displayName ?? item.login ?? item.principalId}{/snippet}
+            {#snippet description()}
+              {item.hostRole === 'owner'
+                ? m.workspace_share_role_owner_label()
+                : m.collaboration_host_member_label()}
+              {#if item.identity}
+                · {item.identity.provider}@{item.identity.host} · {item.identity
+                  .externalUserId}{/if}
+            {/snippet}
+            {#snippet trailing()}{#if item.hostRole === 'member'}<Button
+                  variant="ghost"
+                  disabled={$state$.busy || $state$.withheld}
+                  onclick={() => confirm({ kind: 'remove', principalId: item.principalId })}
+                  >{m.settings_guestSessions_remove_label()}</Button
+                >{/if}{/snippet}
+          </ListRow>
+        {/snippet}
+      </ListView>
+    </div>
+    <div>
+      <h3 class="mb-2 type-body font-medium text-foreground">
+        {m.workspace_share_openInvites_label()}
+      </h3>
+      <ListView
+        items={$invites$}
+        getKey={(item) => item.id}
+        virtualize={false}
+        ariaLabel={m.workspace_share_openInvites_label()}
+      >
+        {#snippet empty()}<p class="type-body text-muted-foreground">
+            {m.settings_collaboration_invites_empty_description()}
+          </p>{/snippet}
+        {#snippet row({ item })}
+          <ListRow
+            class="flex-col sm:flex-row [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words"
+          >
+            {#snippet title()}@{item.pinLogin} · {item.pinIdentity.provider}@{item.pinIdentity
+                .host}{/snippet}
+            {#snippet description()}{m.collaboration_host_expires_label({
+                date: formatDateTime(item.expiresAt),
+              })}{/snippet}
+            {#snippet trailing()}
+              <Button
                 variant="ghost"
                 disabled={$state$.busy || $state$.withheld}
-                onclick={() => confirm({ kind: 'remove', principalId: item.principalId })}
-                >{m.settings_guestSessions_remove_label()}</Button
-              >{/if}{/snippet}
-        </ListRow>
-      {/snippet}
-    </ListView>
-  </SettingsSection>
-  <SettingsSection id="host-invites" title={m.workspace_share_openInvites_label()}>
-    <ListView
-      items={$invites$}
-      getKey={(item) => item.id}
-      virtualize={false}
-      ariaLabel={m.workspace_share_openInvites_label()}
-    >
-      {#snippet row({ item })}
-        <ListRow>
-          {#snippet title()}@{item.pinLogin} · {item.pinIdentity.provider}@{item.pinIdentity
-              .host}{/snippet}
-          {#snippet description()}{m.collaboration_host_expires_label({
-              date: formatDateTime(item.expiresAt),
-            })}{/snippet}
-          {#snippet trailing()}
-            <Button
-              variant="ghost"
-              disabled={$state$.busy || $state$.withheld}
-              onclick={() => send({ kind: 'copy', inviteId: item.id })}
-              >{m.workspace_share_copyLink_label()}</Button
-            >
-            <Button
-              variant="ghost"
-              disabled={$state$.busy || $state$.withheld}
-              onclick={() => confirm({ kind: 'revoke', inviteId: item.id })}
-              >{m.workspace_share_revoke_label()}</Button
-            >
-          {/snippet}
-        </ListRow>
-      {/snippet}
-    </ListView>
-  </SettingsSection>
-</div>
+                onclick={() => send({ kind: 'copy', inviteId: item.id })}
+                >{m.workspace_share_copyLink_label()}</Button
+              >
+              <Button
+                variant="ghost"
+                disabled={$state$.busy || $state$.withheld}
+                onclick={() => confirm({ kind: 'revoke', inviteId: item.id })}
+                >{m.workspace_share_revoke_label()}</Button
+              >
+            {/snippet}
+          </ListRow>
+        {/snippet}
+      </ListView>
+    </div>
+  </div>
+</SettingsSection>
 <BulkActionConfirmDialog
   bind:open={confirmOpen}
   title={confirmation?.kind === 'create'
