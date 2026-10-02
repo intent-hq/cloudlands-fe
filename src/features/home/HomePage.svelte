@@ -579,23 +579,24 @@
         >
       {/snippet}
       {#snippet repoButton(repo: (typeof repositoryGroups)[number])}
-        <Button
-          variant="ghost"
-          active={repoKey === repo.key && destination === 'workspaces'}
-          class="w-full justify-start px-2"
-          tooltip={repo.label}
-          aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
-            ? m.fileTracking_startNew_noRepository_label()
-            : repo.label}
-          onclick={() => chooseRepo(repo.key)}
-        >
-          <span class="flex-1 truncate text-left font-normal"
-            >{repo.key === m.workspace_grouping_unknownRepository_label()
+        <Tooltip.Tooltip content={repo.label} class="flex w-full">
+          <Button
+            variant="ghost"
+            active={repoKey === repo.key && destination === 'workspaces'}
+            class="w-full justify-start px-2"
+            aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
               ? m.fileTracking_startNew_noRepository_label()
-              : repo.name || repo.label}</span
+              : repo.label}
+            onclick={() => chooseRepo(repo.key)}
           >
-          {@render sidebarCounts(repo.workspaces)}
-        </Button>
+            <span class="flex-1 truncate text-left font-normal"
+              >{repo.key === m.workspace_grouping_unknownRepository_label()
+                ? m.fileTracking_startNew_noRepository_label()
+                : repo.name || repo.label}</span
+            >
+            {@render sidebarCounts(repo.workspaces)}
+          </Button>
+        </Tooltip.Tooltip>
       {/snippet}
       <Button
         variant="ghost"
