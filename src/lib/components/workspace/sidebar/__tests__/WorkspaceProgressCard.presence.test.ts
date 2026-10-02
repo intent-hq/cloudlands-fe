@@ -82,6 +82,7 @@ vi.mock('$lib/utils/workspace-navigation', async (importOriginal) => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectCanSetWorkspacePrimaryClient: mocks.selector(() => true),
   selectCanShareWorkspace: mocks.selector(
     () =>
       mocks.state.userPreferences?.labsMultiplayerEnabled === true &&

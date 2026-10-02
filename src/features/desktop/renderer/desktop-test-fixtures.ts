@@ -8,6 +8,7 @@ export const request: DesktopPermissionRequest = {
   workspaceId: 'workspace',
   agentId: 'agent',
   agentName: 'Implementor',
+  claimsPrimary: false,
   requestId: 'request',
   computerId: permission.computerId,
   computerName: permission.computerName,

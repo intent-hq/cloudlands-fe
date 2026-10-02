@@ -15,6 +15,19 @@ describe('desktop consent card', () => {
     await fireEvent.click(screen.getByRole('button', { name: label }));
     expect(onDecision).toHaveBeenCalledWith(decision);
   });
+  it('explains that Allow selects this computer only for an unassigned workspace', () => {
+    render(DesktopConsentCard, {
+      request: { ...request, claimsPrimary: true },
+      onDecision: vi.fn(),
+    });
+    expect(
+      screen.getByText(/Allowing control sets Windows workstation as this workspace/),
+    ).not.toBeNull();
+  });
+  it('does not suggest changing an assigned primary', () => {
+    render(DesktopConsentCard, { request, onDecision: vi.fn() });
+    expect(screen.queryByText(/Allowing control sets/)).toBeNull();
+  });
   it('disables all choices while a decision awaits the outcome', () => {
     render(DesktopConsentCard, { request, pending: true, onDecision: vi.fn() });
     expect(screen.getByRole('status').textContent).toContain('Waiting for the desktop to confirm');

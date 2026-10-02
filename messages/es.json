@@ -6664,15 +6664,15 @@
   "antigravity_setup_customPath_error": "La ruta personalizada al puente no es válida. Corrígela en el menú del proveedor e inténtalo de nuevo.",
   "antigravity_setup_cancelled_description": "Configuración cancelada. Puedes volver a conectar cuando quieras.",
   "antigravity_setup_cancel_label": "Cancelar configuración",
-  "workspace_drivingClient_here_label": "Uso del navegador en este cliente",
-  "workspace_drivingClient_elsewhere_label": "Navegador en {host}",
+  "workspace_drivingClient_here_label": "Principal: {host}",
+  "workspace_drivingClient_elsewhere_label": "Principal: {host}",
   "workspace_drivingClient_offline_label": "Navegador en {host} (sin conexión)",
   "workspace_drivingClient_here_description": "Las pestañas de navegador y túneles de agentes de este espacio de trabajo se ejecutan en esta aplicación.",
   "workspace_drivingClient_elsewhere_description": "Las pestañas de navegador y túneles de agentes de este espacio de trabajo se ejecutan en {host}. Al establecer esta aplicación como principal, las pestañas de los agentes se mueven aquí; las pestañas que abrió usted mismo permanecen donde están y el estado de la página no se conserva.",
   "workspace_drivingClient_offline_description": "{host} está desconectado. Las pestañas de navegador y túneles de agentes de este espacio de trabajo fallarán hasta que se reconecte o establezca esta aplicación como principal, lo que mueve aquí las pestañas de los agentes sin conservar el estado de la página.",
-  "workspace_drivingClient_setPrimary_label": "Establecer el cliente actual como principal",
+  "workspace_drivingClient_setPrimary_label": "Establecer cliente principal",
   "workspace_drivingClient_setPrimaryDialog_title": "¿Establecer este cliente como principal?",
-  "workspace_drivingClient_setPrimaryDialog_description": "El navegador de este espacio de trabajo lo controla actualmente {host}. Se fijará a este cliente y todas las pestañas de los agentes se moverán aquí. El estado de la página no se conserva; las pestañas que abrió usted mismo no se ven afectadas.",
+  "workspace_drivingClient_setPrimaryDialog_description": "El ordenador principal de este espacio es {host}. Cambiarlo finaliza el control activo y mueve aquí las pestañas de los agentes. No se conserva el estado de las páginas; tus propias pestañas permanecen donde están.",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Cerrar",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Cancelar",
   "workspace_drivingClient_setPrimaryDialog_confirm_label": "Establecer como principal",
@@ -7052,5 +7052,7 @@
   "desktop_stopReportFailed_title": "Control del escritorio detenido",
   "desktop_stopReportFailed_description": "Intent detuvo el control, pero no pudo guardar la notificación para tu agente. Mantén Intent abierto y vuelve a conectarte para reintentar.",
   "settings_agentFeatures_desktopControl_label": "Control del escritorio",
-  "settings_agentFeatures_desktopControl_description": "Habilitar herramientas de control del escritorio para nuevas sesiones del agente. Tu permiso sigue siendo necesario. Esto no cambia los permisos guardados ni detiene el control activo."
+  "settings_agentFeatures_desktopControl_description": "Habilitar herramientas de control del escritorio para nuevas sesiones del agente. Tu permiso sigue siendo necesario. Esto no cambia los permisos guardados ni detiene el control activo.",
+  "desktop_consent_claimPrimary": "Permitir el control establece {computer} como ordenador principal de este espacio de trabajo.",
+  "desktop_primary_active_description": "Un agente controla {computer}. Detener el control mantiene la selección principal."
 }

@@ -4,12 +4,19 @@
   import { notify } from '$lib/components/patterns/notify';
   import DesktopConsentCard from './DesktopConsentCard.svelte';
   import { request } from './desktop-test-fixtures';
+  interface Props {
+    claimsPrimary?: boolean;
+  }
+  let { claimsPrimary = false }: Props = $props();
   let decision = $state('');
   onMount(() => {
     const id = notify.custom(DesktopConsentCard, {
       duration: Infinity,
       dismissible: false,
-      componentProps: { request, onDecision: (value: string) => (decision = value) },
+      componentProps: {
+        request: { ...request, claimsPrimary },
+        onDecision: (value: string) => (decision = value),
+      },
     });
     return () => {
       notify.dismiss(id);

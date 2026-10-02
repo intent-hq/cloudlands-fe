@@ -6664,15 +6664,15 @@
   "antigravity_setup_customPath_error": "ブリッジのカスタムパスが無効です。プロバイダーメニューで修正して再試行してください。",
   "antigravity_setup_cancelled_description": "設定をキャンセルしました。準備ができたら再度接続できます。",
   "antigravity_setup_cancel_label": "設定をキャンセル",
-  "workspace_drivingClient_here_label": "このクライアントでブラウザを使用",
-  "workspace_drivingClient_elsewhere_label": "{host} のブラウザ",
+  "workspace_drivingClient_here_label": "プライマリ: {host}",
+  "workspace_drivingClient_elsewhere_label": "プライマリ: {host}",
   "workspace_drivingClient_offline_label": "{host} のブラウザ（オフライン）",
   "workspace_drivingClient_here_description": "このワークスペースのエージェントのブラウザタブとトンネルは、このアプリで実行されます。",
   "workspace_drivingClient_elsewhere_description": "このワークスペースのエージェントのブラウザタブとトンネルは {host} で実行されます。このアプリをプライマリに設定すると、エージェントのタブがここに移動します。自分で開いたタブはそのまま残り、ページの状態は保持されません。",
   "workspace_drivingClient_offline_description": "{host} は切断されています。再接続するか、このアプリをプライマリに設定するまで、このワークスペースのエージェントのブラウザタブとトンネルは失敗します。プライマリに設定すると、エージェントのタブはページの状態を保持せずにここに移動します。",
-  "workspace_drivingClient_setPrimary_label": "現在のクライアントをプライマリに設定",
+  "workspace_drivingClient_setPrimary_label": "プライマリクライアントを設定",
   "workspace_drivingClient_setPrimaryDialog_title": "このクライアントをプライマリに設定しますか？",
-  "workspace_drivingClient_setPrimaryDialog_description": "このワークスペースのブラウザは現在 {host} が制御しています。このクライアントに固定され、エージェントのタブはすべてここに移動します。ページの状態は保持されません。自分で開いたタブは影響を受けません。",
+  "workspace_drivingClient_setPrimaryDialog_description": "このワークスペースのプライマリコンピューターは {host} です。切り替えると操作が停止し、エージェントのブラウザータブがここに移動します。ページの状態は保持されません。自分で開いたタブは移動しません。",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "閉じる",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "キャンセル",
   "workspace_drivingClient_setPrimaryDialog_confirm_label": "プライマリに設定",
@@ -7052,5 +7052,7 @@
   "desktop_stopReportFailed_title": "デスクトップ操作を停止しました",
   "desktop_stopReportFailed_description": "Intent は操作を停止しましたが、エージェントへの通知を保存できませんでした。Intent を開いたまま再接続して、再試行してください。",
   "settings_agentFeatures_desktopControl_label": "デスクトップ操作",
-  "settings_agentFeatures_desktopControl_description": "新しいエージェントセッションでデスクトップ操作ツールを利用できるようにします。引き続き許可が必要です。記憶された許可は変更されず、実行中の操作も停止しません。"
+  "settings_agentFeatures_desktopControl_description": "新しいエージェントセッションでデスクトップ操作ツールを利用できるようにします。引き続き許可が必要です。記憶された許可は変更されず、実行中の操作も停止しません。",
+  "desktop_consent_claimPrimary": "操作を許可すると、{computer} がこのワークスペースのプライマリコンピューターになります。",
+  "desktop_primary_active_description": "エージェントが {computer} を操作しています。操作を停止してもプライマリの選択は維持されます。"
 }

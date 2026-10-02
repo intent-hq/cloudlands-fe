@@ -18,6 +18,11 @@
     {m.desktop_consent_request({ agent: request.agentName, computer: request.computerName })}
   </p>
   <p class="text-sm text-muted-foreground">{m.desktop_consent_description()}</p>
+  {#if request.claimsPrimary}
+    <p class="text-sm text-muted-foreground">
+      {m.desktop_consent_claimPrimary({ computer: request.computerName })}
+    </p>
+  {/if}
   {#if pending}
     <p role="status" class="text-sm">{m.desktop_consent_pending()}</p>
   {/if}

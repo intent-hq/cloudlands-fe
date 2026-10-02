@@ -12,7 +12,7 @@ const scope = { workspaceId: id, agentId: id };
 const permission = z.object({ computerId: id, computerName: id, allowed: z.boolean() });
 const state = z.discriminatedUnion('status', [
   z.object({ status: z.literal('inactive') }),
-  z.object({ status: z.literal('pending_permission'), requestId: id, computerName: id }),
+  z.object({ status: z.literal('pending_permission'), requestId: id, computerName: id.optional() }),
   z.object({ status: z.literal('active'), sessionId: id, computerName: id, hint: z.string() }),
 ]);
 const decision = z.enum(['allow_once', 'allow_future', 'deny']);
@@ -20,6 +20,7 @@ const request = z.object({
   ...scope,
   requestId: id,
   agentName: id,
+  claimsPrimary: z.boolean(),
   computerId: id,
   computerName: id,
   expiresAt: z.string().datetime(),

@@ -89,6 +89,59 @@ describe('desktop consent wire lifecycle', () => {
       expect(mocks.start).not.toHaveBeenCalled();
     },
   );
+  it.each(['allow_once', 'allow_future', 'deny'] as const)(
+    'sends unassigned %s only as a consent decision, never a separate pin mutation',
+    async (decision) => {
+      const h = start();
+      h.dispatch(
+        desktopEventReceived({
+          id: 'candidate',
+          type: 'desktop:permission-requested',
+          data: { ...request, claimsPrimary: true },
+        }),
+      );
+      await settle();
+      mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+      h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, decision));
+      await settle();
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('desktop.respondPermission', {
+        workspaceId: 'workspace',
+        requestId: request.requestId,
+        decision,
+      });
+      expect(mocks.start).not.toHaveBeenCalled();
+    },
+  );
+  it('dismisses a losing claim and never replays a late Allow', async () => {
+    const h = start();
+    h.dispatch(
+      desktopEventReceived({
+        id: 'candidate',
+        type: 'desktop:permission-requested',
+        data: { ...request, claimsPrimary: true },
+      }),
+    );
+    await settle();
+    h.dispatch(
+      desktopEventReceived({
+        id: 'winner-elsewhere',
+        type: 'desktop:permission-resolved',
+        data: {
+          workspaceId: 'workspace',
+          agentId: 'agent',
+          requestId: request.requestId,
+          outcome: 'invalidated',
+          state: { status: 'inactive' },
+        },
+      }),
+    );
+    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_future'));
+    await settle();
+    expect(h.entry()?.pending).toBeUndefined();
+    expect(mocks.dismiss).toHaveBeenCalledWith(request.requestId);
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
   it('subscribes before reading and hydrates remembered permission without starting control', async () => {
     const h = start(false);
     h.dispatch(desktopReadRequested('workspace', 'agent'));

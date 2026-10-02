@@ -23,6 +23,26 @@ describe('desktop wire validation', () => {
       agentId: 'agent',
     });
   });
+  it('accepts candidate-specific claims with an unnamed shared pending state', async () => {
+    const response = {
+      state: { status: 'pending_permission', requestId: request.requestId },
+      permission,
+      pending: { ...request, claimsPrimary: true },
+    };
+    backendRequest
+      .mockResolvedValueOnce({ server: { capabilities: { desktopControl: 1 } } })
+      .mockResolvedValueOnce(response);
+    expect(await desktopClient.getState('workspace', 'agent')).toEqual(response);
+  });
+  it('requires explicit claim semantics on permission events', () => {
+    expect(
+      parseDesktopEvent({
+        id: 'missing-claim',
+        type: 'desktop:permission-requested',
+        data: { ...request, claimsPrimary: undefined },
+      }),
+    ).toBeUndefined();
+  });
   it('rejects mismatched decision acknowledgements', async () => {
     backendRequest.mockResolvedValue({ accepted: true, requestId: 'other' });
     await expect(desktopClient.respond('workspace', 'request', 'allow_once')).rejects.toThrow(
