@@ -1,6 +1,6 @@
 import { DOMSerializer, Fragment, Slice, type Schema, type Node as PMNode } from '@tiptap/pm/model';
 import { removeColSpan } from '@tiptap/pm/tables';
-import type { JSONContent } from '@tiptap/core';
+import { getTextBetween, getTextSerializersFromSchema, type JSONContent } from '@tiptap/core';
 import { bytes } from './bounded-note-service';
 import { tableCellAt, tableRuns, type TableIndex } from './table-source';
 import type { Selection } from './source-journal';
@@ -55,7 +55,9 @@ export function serializeTableClipboard(
   const left = Math.min(anchor.column, head.column),
     right = Math.max(anchor.column + (anchor.span ?? 1), head.column + (head.span ?? 1));
   const seen = new Set<number>(),
-    rows: PMNode[] = [];
+    rows: PMNode[] = [],
+    text: string[] = [];
+  const textSerializers = getTextSerializersFromSchema(schema);
   let selectedSourceBytes = 0;
   for (let r = top; r < bottom; r++) {
     const contents: PMNode[] = [];
@@ -81,10 +83,15 @@ export function serializeTableClipboard(
           ],
         },
       );
+      // Native clipboard text visits selection ranges, not the clipped HTML slice.
+      // Owners above/left of the rectangle contribute empty HTML continuation cells
+      // but are absent from CellSelection.ranges and therefore from plain text.
+      if (entry.row >= top && entry.column >= left)
+        text.push(getTextBetween(cell, { from: 0, to: cell.content.size }, { textSerializers }));
       const extraLeft = left - entry.column,
         extraRight = entry.column + Number(cell.attrs.colspan) - right;
       if (extraLeft > 0 || extraRight > 0) {
-        let attrs = cell.attrs;
+        let attrs = cell.attrs as Parameters<typeof removeColSpan>[0];
         if (extraLeft > 0) attrs = removeColSpan(attrs, 0, extraLeft);
         if (extraRight > 0) attrs = removeColSpan(attrs, attrs.colspan - extraRight, extraRight);
         cell =
@@ -128,7 +135,7 @@ export function serializeTableClipboard(
   });
   return {
     value: {
-      'text/plain': slice.content.textBetween(0, slice.content.size, '\n\n'),
+      'text/plain': text.join('\n\n'),
       'text/html': wrap.innerHTML,
     },
     costs: {
