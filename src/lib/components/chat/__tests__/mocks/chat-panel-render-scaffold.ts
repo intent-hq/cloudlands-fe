@@ -11,6 +11,7 @@ import type { AgentMessage } from '$shared/types';
 
 export const scaffold = {
   dispatch: vi.fn(),
+  authorityState: {} as object,
   agentMessages: [] as AgentMessage[],
   agentSession: { id: 'agent-1', workspaceId: 'ws-1', status: 'active', messages: [] } as unknown,
   dividerAnchorId: null as string | null,
@@ -19,6 +20,7 @@ export const scaffold = {
 
 export function resetScaffold() {
   scaffold.dispatch.mockReset();
+  scaffold.authorityState = {};
   scaffold.agentMessages = [];
   scaffold.agentSession = { id: 'agent-1', workspaceId: 'ws-1', status: 'active', messages: [] };
   scaffold.dividerAnchorId = null;
@@ -43,7 +45,7 @@ export async function appStore() {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ browser: { byWorkspaceId: {} } }),
+    state: () => ({ browser: { byWorkspaceId: {} }, ...scaffold.authorityState }),
     dispatch: scaffold.dispatch,
   });
 }

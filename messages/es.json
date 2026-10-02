@@ -7032,5 +7032,7 @@
   "devConsole_payload_collapse_label": "Contraer todo",
   "devConsole_payload_expand_label": "Expandir todo",
   "devConsole_payload_load_error": "No se pudo cargar el visor. El texto capturado se muestra a continuación.",
-  "devConsole_payload_large_description": "Carga útil grande. El resaltado de sintaxis y el plegado no están disponibles; la búsqueda y la copia siguen funcionando."
+  "devConsole_payload_large_description": "Carga útil grande. El resaltado de sintaxis y el plegado no están disponibles; la búsqueda y la copia siguen funcionando.",
+  "chat_queuedMessages_draftConflict_description": "Este mensaje en cola se combinó, cambió o eliminó. Tu borrador se conserva aquí. Cópialo para volver a usarlo o descártalo.",
+  "chat_queuedMessages_discardDraft_label": "Descartar borrador"
 }

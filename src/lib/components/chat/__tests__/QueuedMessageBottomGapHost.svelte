@@ -33,6 +33,7 @@
     const next = Array.from({ length: queueCount }, (_, position) => ({
       id: `queue-${position}`,
       content: `Queued message ${position + 1}`,
+      messageMetadata: { fromPrincipalId: 'preview-author' },
       queuedAt: `2026-08-17T00:00:0${position}.000Z`,
       position,
     }));
@@ -90,6 +91,7 @@
         {#if messages.length > 0}
           <div class="relative z-20 mt-6 w-full" data-testid="queued-message-utility-area">
             <QueuedMessageList
+              ownPrincipalId="preview-author"
               {messages}
               onedit={editMessage}
               onremove={(id) => (removedIds = [...removedIds, id])}

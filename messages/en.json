@@ -7032,5 +7032,7 @@
   "devConsole_payload_collapse_label": "Collapse all",
   "devConsole_payload_expand_label": "Expand all",
   "devConsole_payload_load_error": "Could not load the viewer. The captured text is shown below.",
-  "devConsole_payload_large_description": "Large payload. Syntax highlighting and folding are unavailable; search and copy still work."
+  "devConsole_payload_large_description": "Large payload. Syntax highlighting and folding are unavailable; search and copy still work.",
+  "chat_queuedMessages_draftConflict_description": "This queued message was combined, changed, or removed. Your draft is kept here. Copy it to reapply it, or discard it.",
+  "chat_queuedMessages_discardDraft_label": "Discard draft"
 }

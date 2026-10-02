@@ -7032,5 +7032,7 @@
   "devConsole_payload_collapse_label": "Tout replier",
   "devConsole_payload_expand_label": "Tout déplier",
   "devConsole_payload_load_error": "Impossible de charger la visionneuse. Le texte capturé est affiché ci-dessous.",
-  "devConsole_payload_large_description": "Contenu volumineux. La coloration syntaxique et le repliage sont indisponibles ; la recherche et la copie restent disponibles."
+  "devConsole_payload_large_description": "Contenu volumineux. La coloration syntaxique et le repliage sont indisponibles ; la recherche et la copie restent disponibles.",
+  "chat_queuedMessages_draftConflict_description": "Ce message en attente a été combiné, modifié ou supprimé. Votre brouillon est conservé ici. Copiez-le pour le réutiliser ou abandonnez-le.",
+  "chat_queuedMessages_discardDraft_label": "Abandonner le brouillon"
 }
