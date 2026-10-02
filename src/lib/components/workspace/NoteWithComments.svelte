@@ -626,6 +626,28 @@
   });
 
   $effect(() => {
+    const currentNoteId = noteId;
+    const workspaceId = workspace.id;
+    if (isNoteLoading || !currentNoteId) return;
+    const newlyCreated = untrack(() => {
+      if (selectNewlyCreatedNoteId.select(appStore.state, workspaceId) !== currentNoteId)
+        return false;
+      appStore.dispatch(clearNewlyCreatedNoteId(workspaceId));
+      return true;
+    });
+    if (!newlyCreated || isTooLargeForRichEditor || shouldShowRawNoteView) return;
+
+    isStreamingIn = true;
+    const timer = setTimeout(() => {
+      isStreamingIn = false;
+    }, 900);
+    return () => {
+      clearTimeout(timer);
+      isStreamingIn = false;
+    };
+  });
+
+  $effect(() => {
     const target = editorToFocus;
     if (!target || isNoteLoading || isTooLargeForRichEditor || shouldShowRawNoteView) return;
     editorToFocus = null;
@@ -2032,20 +2054,6 @@
           requestAnimationFrame(() => {
             isInitializing = false;
             isInitialized = true;
-
-            // Trigger streaming-in animation when a note was just created
-            if (
-              noteId &&
-              selectNewlyCreatedNoteId.select(appStore.state, workspace.id) === noteId
-            ) {
-              isStreamingIn = true;
-              // Clear the store flag so it doesn't re-trigger
-              appStore.dispatch(clearNewlyCreatedNoteId(workspace.id));
-              // Clear the animation flag after the animation completes
-              setTimeout(() => {
-                isStreamingIn = false;
-              }, 900);
-            }
 
             // Check for pending scroll position after editor is fully ready
             checkAndRestoreScrollPosition();

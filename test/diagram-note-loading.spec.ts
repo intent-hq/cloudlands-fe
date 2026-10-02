@@ -56,6 +56,8 @@ type DiagramFrame = {
 type LoadFrame = {
   diagrams: DiagramFrame[];
   noteVisible: boolean;
+  noteLoading: boolean;
+  streaming: boolean;
   followingY: number | null;
   followingX: number | null;
 };
@@ -71,14 +73,14 @@ async function mountNote(
   page: Page,
   width: number,
   blocks: string[],
-  { holdFont = false, hidden = false, shouldFocus = false } = {},
+  { holdFont = false, hidden = false, shouldFocus = false, newlyCreated = false } = {},
 ) {
   await page.goto(`${baseUrl}/sandbox/button?state=default&motion=full`, {
     waitUntil: 'domcontentloaded',
   });
   await expect(page.locator('[data-preview-ready=true]')).toBeVisible({ timeout: 60_000 });
   await page.evaluate(
-    async ({ width, blocks, holdFont, hidden, shouldFocus }) => {
+    async ({ width, blocks, holdFont, hidden, shouldFocus, newlyCreated }) => {
       const [{ mount }, { writable, fromStore }, { default: NoteWithComments }] = await Promise.all(
         [
           import('/@id/svelte'),
@@ -139,9 +141,12 @@ async function mountNote(
           },
         );
         const following = host.querySelector('.tiptap-editor > p:last-child');
+        const wrapper = host.querySelector('.tiptap-editor-wrapper');
         w.diagramLoadFrames.push({
           diagrams,
           noteVisible: !!following && visible(following),
+          noteLoading: wrapper?.getAttribute('aria-busy') === 'true',
+          streaming: wrapper?.classList.contains('streaming-in') ?? false,
           followingY: following?.getBoundingClientRect().top ?? null,
           followingX: following?.getBoundingClientRect().left ?? null,
         });
@@ -150,9 +155,31 @@ async function mountNote(
       requestAnimationFrame(sample);
       const noteContent = (blocks: string[]) =>
         `## Diagram loading\n\nText before the diagram.\n\n${blocks.join('\n\n')}\n\nText after the diagram.`;
+      const initialNoteId = newlyCreated ? 'created-note' : undefined;
+      if (newlyCreated) {
+        const [{ store }, { addOptimisticNote }] = await Promise.all([
+          import('/src/store/renderer/store.ts'),
+          import('/src/store/renderer/slices/workspace-notes/workspace-notes-slice.ts'),
+        ]);
+        store.dispatch(
+          addOptimisticNote('diagram-loading-test', {
+            id: initialNoteId!,
+            workspaceId: 'diagram-loading-test',
+            title: 'Diagram loading',
+            content: noteContent(blocks),
+            contentType: 'markdown',
+            tags: [],
+            isPinned: false,
+            isArchived: false,
+            visibility: 'workspace',
+            createdAt: '2026-10-02T00:00:00.000Z',
+            updatedAt: '2026-10-02T00:00:00.000Z',
+          }),
+        );
+      }
       const note = writable({
         content: noteContent(blocks),
-        noteId: undefined as string | undefined,
+        noteId: initialNoteId as string | undefined,
       });
       const currentNote = fromStore(note);
       w.switchDiagramNote = (blocks) => {
@@ -188,7 +215,7 @@ async function mountNote(
         },
       });
     },
-    { width, blocks, holdFont, hidden, shouldFocus },
+    { width, blocks, holdFont, hidden, shouldFocus, newlyCreated },
   );
 }
 
@@ -322,6 +349,75 @@ test('requested editor focus waits for slow diagrams to finish loading', async (
   await expect(editor).toBeFocused();
   await page.keyboard.type('Typing after loading.');
   await expect(editor).toContainText('Typing after loading.');
+});
+
+for (const withDiagram of [false, true]) {
+  test(`new notes ${withDiagram ? 'with slow diagrams' : 'without diagrams'} animate only after loading`, async ({
+    page,
+  }, info) => {
+    await mountNote(
+      page,
+      712,
+      withDiagram
+        ? [mermaid(MERMAID_WORKBENCH_CASES['mermaid-sequence-note'].source)]
+        : ['A new plain note.'],
+      { newlyCreated: true, holdFont: withDiagram },
+    );
+    if (withDiagram) {
+      await expect
+        .poll(() => page.evaluate(() => (window as LoadingWindow).diagramFontHeld))
+        .toBe(true);
+      // Cover the entire old animation window while layout is still blocked.
+      await page.waitForTimeout(1_100);
+      await page.evaluate(() => (window as LoadingWindow).releaseDiagramFont());
+    }
+    const frames = await finishCapture(page, info, withDiagram ? 1 : 0);
+    expect(
+      frames
+        .filter((frame) => frame.noteLoading)
+        .every(
+          (frame) =>
+            !frame.noteVisible &&
+            !frame.streaming &&
+            frame.diagrams.every((diagram) => !diagram.visible),
+        ),
+    ).toBe(true);
+    expect(frames.some((frame) => frame.streaming && frame.noteVisible)).toBe(true);
+    const firstVisible = frames.findIndex((frame) => frame.noteVisible);
+    expect(firstVisible).toBeGreaterThanOrEqual(0);
+    expect(frames.slice(firstVisible).every((frame) => frame.noteVisible)).toBe(true);
+    if (withDiagram) {
+      const visible = frames.map((frame) => frame.diagrams[0]).filter((frame) => frame?.visible);
+      expect(visible.length).toBeGreaterThan(1);
+      expect(visible.every((frame) => frame.settled)).toBe(true);
+      for (const axis of ['width', 'height'] as const) {
+        const sizes = visible.map((frame) => frame[axis]);
+        expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+      }
+    }
+    await expect(page.locator('#diagram-loading-note .tiptap-editor-wrapper')).not.toHaveClass(
+      /streaming-in/,
+    );
+  });
+}
+
+test('switching notes during the new-note animation cancels its reveal', async ({ page }, info) => {
+  await mountNote(page, 712, ['A new plain note.'], { newlyCreated: true, holdFont: true });
+  await expect(page.locator('#diagram-loading-note .tiptap-editor-wrapper')).toHaveClass(
+    /streaming-in/,
+  );
+  await page.evaluate(
+    (blocks) => (window as LoadingWindow).switchDiagramNote(blocks),
+    [mermaid(MERMAID_WORKBENCH_CASES['mermaid-sequence-note'].source)],
+  );
+  await expect
+    .poll(() => page.evaluate(() => (window as LoadingWindow).diagramFontHeld))
+    .toBe(true);
+  await page.waitForTimeout(1_100);
+  await page.evaluate(() => (window as LoadingWindow).releaseDiagramFont());
+  const frames = await finishCapture(page, info);
+  expectStableReveal(frames);
+  expect(frames.filter((frame) => frame.noteLoading).every((frame) => !frame.streaming)).toBe(true);
 });
 
 test('multiple diagram types reveal together and walkthrough steps stay visible', async ({
