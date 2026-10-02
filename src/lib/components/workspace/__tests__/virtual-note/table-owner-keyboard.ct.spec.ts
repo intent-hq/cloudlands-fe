@@ -164,6 +164,8 @@ for (const key of [
                 anchor: selection.$anchorCell?.nodeAfter?.textContent,
                 head: selection.$headCell?.nodeAfter?.textContent,
                 logical: p?.selection.table,
+                rectangle: p?.projection?.table?.window.selected,
+                mountedRows: p?.projection?.table?.entries.map((entry) => entry.cell.row),
                 error: p?.error ?? '',
                 stats: p?.snapshot(),
                 source: p?.service.region(0),

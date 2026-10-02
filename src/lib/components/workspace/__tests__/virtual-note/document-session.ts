@@ -413,7 +413,7 @@ export class DocumentSession {
         }
         // show rejects revision changes, so this bounded record is still current.
         const current = input;
-        if (current.selection) {
+        if (current.selection && !neighbor) {
           this.selection = { ...current.selection };
           this.suppress = true;
           this.renderSelection();
@@ -860,8 +860,9 @@ export class DocumentSession {
             editor.state.doc.content.size,
             editor.schema.nodeFromJSON(next.content).content,
           );
+          const restored = requestedSelection ?? this.selection;
           tr.setSelection(
-            next.table?.restoreSelection(tr.doc, this.selection) ??
+            next.table?.restoreSelection(tr.doc, restored) ??
               TextSelection.create(
                 tr.doc,
                 next.table?.pointPM(this.selection.table?.anchor) ??
@@ -873,6 +874,9 @@ export class DocumentSession {
           if (this.pointerSelecting && next.table && tr.selection instanceof CellSelection)
             tr.setMeta(tableEditingKey, tr.selection.$anchorCell.pos);
           editor.view.dispatch(tr.setMeta('addToHistory', false));
+          // Anchor layout to the requested logical endpoint, not the old
+          // selection's fallback position in a newly admitted rectangle.
+          if (requestedSelection) this.selection = requestedSelection;
         } finally {
           this.suppress = false;
         }
