@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { DesktopAction, DesktopDisplay } from '../../../shared/types/desktop';
 import type { DesktopNative } from './desktop-executor';
 import { desktopFailure } from './desktop-validation';
+import { ReverseRpcHandlerError } from '../../backend/main/json-rpc-client';
 
 const displaySchema = z
   .object({
@@ -190,15 +191,17 @@ export class DesktopNativeAdapter implements DesktopNative {
   async input(
     action: DesktopAction,
     display: DesktopDisplay | undefined,
-    check: () => void,
+    check: (executed?: boolean) => void,
     signal: AbortSignal,
   ): Promise<void> {
+    let completedInput = false;
     const step = async (operation: string, params: Record<string, unknown> = {}) => {
       signal.throwIfAborted();
       check();
       await this.request(operation, params);
+      if (operation !== 'validateKey') completedInput = true;
+      check(completedInput);
       signal.throwIfAborted();
-      check();
     };
     // Native helpers perform the mapping against current display geometry again;
     // Mac image pixels -> per-display points, Windows -> physical virtual pixels.
@@ -241,6 +244,13 @@ export class DesktopNativeAdapter implements DesktopNative {
         case 'screenshot':
           throw desktopFailure('invalid-params', 'Capture is not an input step', 'not_started');
       }
+    } catch (error) {
+      if (completedInput && error instanceof ReverseRpcHandlerError) {
+        const data = error.data as { code: string; detail: string; execution?: string };
+        if (data?.execution === 'not_started')
+          throw desktopFailure(data.code, data.detail, 'partial');
+      }
+      throw error;
     } finally {
       // Release is cleanup, deliberately allowed after cancellation/deadline.
       await this.request('releaseInput');

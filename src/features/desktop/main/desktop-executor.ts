@@ -41,7 +41,7 @@ export interface DesktopNative {
   input(
     action: DesktopAction,
     display: DesktopDisplay | undefined,
-    check: () => void,
+    check: (executed?: boolean) => void,
     signal: AbortSignal,
   ): Promise<void>;
 }
@@ -345,9 +345,9 @@ export class DesktopExecutor {
         await this.native.input(
           action,
           display,
-          () => {
+          (executed = false) => {
+            if (executed) started = true;
             guard();
-            started = true;
           },
           s.abort.signal,
         );

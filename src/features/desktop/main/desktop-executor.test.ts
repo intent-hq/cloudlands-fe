@@ -7,7 +7,7 @@ import {
   type DesktopStopReports,
 } from './desktop-executor';
 import { DesktopNativeAdapter } from './desktop-native';
-import { parseDesktopRequest } from './desktop-validation';
+import { desktopFailure, parseDesktopRequest } from './desktop-validation';
 import type { DesktopAction } from '../../../shared/types/desktop';
 
 const binding = {
@@ -57,7 +57,7 @@ function setup() {
     layout: vi.fn(async () => [{ ...display }]),
     capture: vi.fn(async () => [{ ...display, data: 'png' }]),
     input: vi.fn(async (_a, _d, check) => {
-      check();
+      check(true);
     }),
   };
   const overlay: DesktopOverlay = {
@@ -334,7 +334,7 @@ describe('desktop executor authority and command tickets', () => {
     const t = setup();
     await t.activate();
     vi.mocked(t.native.input).mockImplementation(async (_a, _d, check) => {
-      check();
+      check(true);
       t.advance(10000);
       check();
     });
@@ -369,6 +369,22 @@ describe('strict desktop validation', () => {
 });
 
 describe('native adapter observable step behavior', () => {
+  it('reports partial execution when a later native step is refused', async () => {
+    const request = vi.fn(async (op: string) => {
+      if (op === 'button')
+        throw desktopFailure('desktop-os-permission-required', 'Elevated target', 'not_started');
+      return {};
+    });
+    await expect(
+      new DesktopNativeAdapter(request).input(
+        { kind: 'click', displayId: 'screen', layoutId: 'layout', x: 12, y: 24 },
+        display,
+        () => {},
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject(error('desktop-os-permission-required', 'partial'));
+    expect(request.mock.calls.map((c) => c[0])).toEqual(['move', 'button', 'releaseInput']);
+  });
   it('emits a right double click at display-local image coordinates', async () => {
     const request = vi.fn(async () => ({}));
     const adapter = new DesktopNativeAdapter(request);
