@@ -164,9 +164,9 @@ export const scriptOutputSnapshotReceived = createAction<
   [wsId: string, scriptId: string, viewerId: string, text: string]
 >('scripts/outputSnapshotReceived');
 
-/** Recover only a requested viewer's definition, never populate a history list. */
+/** Apply a fenced viewer read, including deletion, without populating unopened history. */
 export const scriptOutputDefinitionReceived = createAction<
-  [wsId: string, script: ScriptWithState, viewerId: string]
+  [wsId: string, scriptId: string, script: ScriptWithState | undefined, viewerId: string]
 >('scripts/outputDefinitionReceived');
 
 /** Append one raw output chunk for a script */
@@ -378,15 +378,20 @@ scriptsReducer.with(scriptOutputRequested, (state, { payload: [wsId, scriptId, v
 });
 scriptsReducer.with(
   scriptOutputDefinitionReceived,
-  (state, { payload: [wsId, script, viewerId] }) => {
+  (state, { payload: [wsId, scriptId, script, viewerId] }) => {
     const ws = getWorkspaceState(state, wsId);
-    if (ws.scripts[script.id] || ws.retainedOutputs?.[viewerId]?.scriptId !== script.id)
-      return state;
+    if (ws.retainedOutputs?.[viewerId]?.scriptId !== scriptId) return state;
+    const { [scriptId]: _previous, ...otherScripts } = ws.scripts;
+    const activeScriptIds = ws.activeScriptIds ?? Object.keys(ws.scripts);
     return setWorkspaceState(state, wsId, {
       ...ws,
-      scripts: { ...ws.scripts, [script.id]: script },
-      // A viewer's recovered definition is not an authoritative list member.
-      activeScriptIds: ws.activeScriptIds ?? Object.keys(ws.scripts),
+      scripts: script ? { ...otherScripts, [scriptId]: script } : otherScripts,
+      // Reconcile an existing member, but never add membership from a viewer read.
+      // Keep its output/selection even when the retained definition has disappeared.
+      activeScriptIds:
+        !script || script.archivedAt
+          ? activeScriptIds.filter((id) => id !== scriptId)
+          : activeScriptIds,
     });
   },
 );

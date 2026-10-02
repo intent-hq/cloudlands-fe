@@ -385,9 +385,14 @@ describe('script list and retained output read fences', () => {
   });
 });
 
-it.each([true, false])(
-  'keeps a newer all-list reply when an older active-list reply finishes last (row exists: %s)',
-  async (exists) => {
+it.each([
+  [true, true],
+  [false, true],
+  [true, false],
+  [false, false],
+])(
+  'keeps a newer all-list reply (row exists: %s, older active reply finishes last: %s)',
+  async (exists, activeFinishesLast) => {
     const active = deferred<{ scripts: ScriptWithState[] }>();
     const all = deferred<{ scripts: ScriptWithState[] }>();
     transport.request.mockImplementation(async (method, params) => {
@@ -406,11 +411,18 @@ it.each([true, false])(
       lastRun: { outcome: 'succeeded', stoppedAt: 'now' },
       runtime: { status: 'exited', exitCode: 0, restartCount: 0 },
     });
-    all.resolve({ scripts: exists ? [completed] : [] });
+    const finishActive = async () => {
+      active.resolve({ scripts: [row()] });
+      await settle();
+    };
+    if (!activeFinishesLast) await finishActive();
+    all.resolve({
+      scripts: [...(exists ? [completed] : []), row({ id: 'unopened', archivedAt: 'now' })],
+    });
     await settle();
-    active.resolve({ scripts: [row()] });
-    await settle();
+    if (activeFinishesLast) await finishActive();
     expect(run.scripts().scripts[ID]).toEqual(exists ? completed : undefined);
+    expect(run.scripts().scripts.unopened).toBeUndefined();
     expect(run.active()).toEqual([]);
     expect(run.scripts().retainedOutputs?.viewer.text).toBe('new output');
     expect(listCalls()).toHaveLength(2);

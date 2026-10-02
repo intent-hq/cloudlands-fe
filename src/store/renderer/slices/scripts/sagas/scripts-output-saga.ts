@@ -110,8 +110,8 @@ function* readOutput(
         scriptReadReconciled(workspaceId, pending.context.requestId, reconciled.scripts, true),
       );
       const definition = reconciled.scripts.find((entry) => entry.id === scriptId);
+      yield* put(scriptOutputDefinitionReceived(workspaceId, scriptId, definition, viewerId));
       if (definition) {
-        yield* put(scriptOutputDefinitionReceived(workspaceId, definition, viewerId));
         script = yield* selectScriptById.effect(workspaceId, scriptId);
         run = runtimeKey(script);
       }
