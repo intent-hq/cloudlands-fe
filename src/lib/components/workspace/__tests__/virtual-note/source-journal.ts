@@ -1109,6 +1109,29 @@ export class SourceJournal {
         }
     throw new Error('Table cell identity is stale');
   }
+  /** Native TableMap.nextCell geometry, resolved in mock backing without sending
+   * a table-wide owner map or offscreen cells to the renderer. */
+  tableAdjacent(from: number, axis: 'vert' | 'horiz', direction: number) {
+    const { id, start } = this.locate(from);
+    const table = this.tableIndex(this.region(id), start).find(
+      (t) => from - start >= t.from && from - start < t.to,
+    );
+    const cell = table?.rows.flatMap((r) => r.cells).find((c) => c.from + start === from);
+    if (!table || !cell) throw new Error('Table cell identity is stale');
+    const row = axis === 'vert' ? cell.row + (direction < 0 ? -1 : (cell.rowSpan ?? 1)) : cell.row;
+    const column =
+      axis === 'horiz' ? cell.column + (direction < 0 ? -1 : (cell.span ?? 1)) : cell.column;
+    if (row < 0 || column < 0 || row >= table.rows.length || column >= table.columns)
+      return undefined;
+    const next = tableCellAt(table, row, column);
+    const result = {
+      source: next.body + start,
+      point: { cell: next.from + start, block: 0, offset: 0 },
+      revision: this.revision,
+    };
+    this.log('table-adjacent', from, bytes(JSON.stringify(result)));
+    return result;
+  }
   readonly tableHeights = new TableHeights(() => this.revision);
   private tableIndexes = new Map<
     number,

@@ -376,12 +376,18 @@ export class DocumentSession {
         this.maxResidentInputBytes = Math.max(this.maxResidentInputBytes, this.residentInputBytes);
         const logical = input.selection ?? this.selection;
         const neighbor =
-          input.command.startsWith('tableTab') && logical.table
-            ? this.service.tableNeighbor(
+          input.command.startsWith('tableArrow') && logical.table
+            ? this.service.tableAdjacent(
                 logical.table.head.cell,
-                input.command.endsWith('Backward') ? -1 : 1,
+                'vert',
+                input.command.endsWith('Up') ? -1 : 1,
               )
-            : undefined;
+            : input.command.startsWith('tableTab') && logical.table
+              ? this.service.tableNeighbor(
+                  logical.table.head.cell,
+                  input.command.endsWith('Backward') ? -1 : 1,
+                )
+              : undefined;
         const target = neighbor?.source ?? input.selection?.head ?? this.selection.head;
         // Share the outstanding fetch, but retain the input if navigation becomes stale.
         if (!(await this.show(this.active, true, target, true))) {
@@ -1095,6 +1101,54 @@ export class DocumentSession {
             },
           },
           handleKeyDown: (_view, event) => {
+            const table = this.projection!.table;
+            if (
+              table &&
+              !this.replayingInput &&
+              this.selection.table &&
+              !event.shiftKey &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey &&
+              (event.key === 'ArrowDown' || event.key === 'ArrowUp')
+            ) {
+              const selection = _view.state.selection;
+              const direction = event.key === 'ArrowUp' ? -1 : 1;
+              // Match native atEndOfCell, including real browser line geometry.
+              // An artificial row edge must not become an exit from the table.
+              if (selection instanceof TextSelection && selection.empty) {
+                let atCellEdge = false;
+                const $head = selection.$head;
+                for (let d = $head.depth - 1; d >= 0; d--) {
+                  const parent = $head.node(d);
+                  if (
+                    (direction < 0 ? $head.index(d) : $head.indexAfter(d)) !==
+                    (direction < 0 ? 0 : parent.childCount)
+                  )
+                    break;
+                  if (
+                    parent.type.spec.tableRole === 'cell' ||
+                    parent.type.spec.tableRole === 'header_cell'
+                  ) {
+                    atCellEdge = _view.endOfTextblock(direction < 0 ? 'up' : 'down');
+                    break;
+                  }
+                }
+                if (atCellEdge) {
+                  const next = this.service.tableAdjacent(
+                    this.selection.table.head.cell,
+                    'vert',
+                    direction,
+                  );
+                  const entry = next && table.entries.find((e) => e.cell.from === next.point.cell);
+                  if (next && (!entry || this.pendingFetch || this.service.pendingInputs)) {
+                    event.preventDefault();
+                    this.deferInput(direction < 0 ? 'tableArrowUp' : 'tableArrowDown');
+                    return true;
+                  }
+                }
+              }
+            }
             if (
               this.projection!.table &&
               !this.replayingInput &&
