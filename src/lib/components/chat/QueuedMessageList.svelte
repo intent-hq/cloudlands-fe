@@ -18,7 +18,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import PencilSimpleLineIcon from 'phosphor-svelte/lib/PencilSimpleLineIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
-  import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
   import { tick } from 'svelte';
   import { Spring } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
@@ -746,7 +745,7 @@
             onpointerdown={(event) => event.preventDefault()}
             onclick={() => handleBulkAction('clear')}
           >
-            <TrashIcon size={14} aria-hidden="true" />
+            <XIcon size={13} weight="regular" aria-hidden="true" />
           </Button>
         {/if}
         {#if onsendall}
