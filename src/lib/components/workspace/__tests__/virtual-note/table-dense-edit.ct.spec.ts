@@ -99,7 +99,12 @@ test('dense table typing and destroyed-view history preserve native text, marks 
   });
   expect(edited.error).toBe('');
   expect(edited.source).toBe(source.slice(0, target.source) + 'Z' + source.slice(target.source));
-  expect(edited.parsed).toEqual(native.doc);
+  // The canonical parser contains source-backed nodes only. The actual native
+  // editor additionally maintains its source-less terminal paragraph.
+  expect(native.doc.content).toHaveLength(2);
+  expect(native.doc.content![1]).toEqual({ type: 'paragraph' });
+  const canonical = { type: 'doc', content: [native.doc.content![0]] };
+  expect(edited.parsed).toEqual(canonical);
   expect(edited.point.offset).toBe(native.offset);
   expect(edited.marks).toEqual(native.marks);
   const destroyed = await root.evaluate(async (el) => {
@@ -137,7 +142,7 @@ test('dense table typing and destroyed-view history preserve native text, marks 
   });
   expect(restored.error).toBe('');
   expect(restored.source).toBe(edited.source);
-  expect(restored.parsed).toEqual(native.doc);
+  expect(restored.parsed).toEqual(canonical);
   expect(restored.point).toEqual(edited.point);
   for (const snapshot of [edited.stats, restored.stats]) {
     expect(snapshot.maxSourceContextBytes).toBeLessThanOrEqual(16384);
@@ -148,6 +153,21 @@ test('dense table typing and destroyed-view history preserve native text, marks 
   }
   await info.attach('dense-native-history.json', {
     body: JSON.stringify(restored),
+    contentType: 'application/json',
+  });
+  await component.unmount();
+  await mount(Harness, { props: { sourceOverride: restored.source, oracle: true } });
+  await expect(root.locator('.tiptap')).toHaveCount(1);
+  await root.evaluate((el) => {
+    const editor = (el as Host).native;
+    editor.view.focus();
+    editor.commands.setTextSelection(4);
+  });
+  await settled(page);
+  const reloaded = await root.evaluate((el) => (el as Host).native.getJSON());
+  expect(reloaded).toEqual(native.doc);
+  await info.attach('dense-native-reload.json', {
+    body: JSON.stringify(reloaded),
     contentType: 'application/json',
   });
 });
