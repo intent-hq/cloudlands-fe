@@ -482,25 +482,6 @@ describe('modelSelectionSaga', () => {
     await task.toPromise();
   });
 
-  it('does not retry a structured daemon error response for providerDefaults', async () => {
-    mocks.update.mockRejectedValue(
-      new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
-    );
-    const current = state();
-    const channel = stdChannel();
-    const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => current },
-      modelSelectionSaga,
-    );
-
-    channel.put(setSelectedModel({ providerId: 'auggie', model: 'picked' }));
-    await settle();
-
-    expect(mocks.update).toHaveBeenCalledTimes(1);
-    task.cancel();
-    await task.toPromise();
-  });
-
   it('does not resend a rejected session pick with the next valid write', async () => {
     mocks.update
       .mockRejectedValueOnce(

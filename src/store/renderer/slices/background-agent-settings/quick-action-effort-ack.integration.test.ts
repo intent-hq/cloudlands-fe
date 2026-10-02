@@ -789,7 +789,6 @@ for (const path of ['quickActions.defaultModel', 'quickActions.typeOverrides']) 
         const changes = (params as { changes: AppSettingChange[] }).changes;
         assertBareModels(changes);
         writes.push(changes);
-        assertBareModels(changes);
         for (const { path, value } of changes) persisted[path] = structuredClone(value);
         return { applied: changes, revision: ++revision };
       });

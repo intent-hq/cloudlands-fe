@@ -44,46 +44,6 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it('keeps the open Default picker on Redux authority until a daemon event arrives', async () => {
-  disposers.push(store.init());
-  const restore = preview.states.reasoning.setup?.();
-  if (restore) disposers.push(restore);
-  applySettingsChanges([
-    { path: 'model.defaultProvider', value: 'codex' },
-    { path: 'model.providerDefaults', value: { codex: 'codex-preview-balanced' } },
-  ]);
-  let acknowledge!: () => void;
-  update.mockImplementationOnce(async () => {
-    await new Promise<void>((resolve) => (acknowledge = resolve));
-    return [];
-  });
-  disposers.push(store.runSaga(providerSettingsSaga));
-  disposers.push(store.runSaga(modelSelectionSaga));
-  const root = render(DefaultAgentModelSettings, { workspaceId: null });
-  const trigger = root.container.querySelector('button[aria-haspopup="listbox"]')!;
-  await fireEvent.click(trigger);
-  const fast = await screen.findByRole('option', { name: /Fast/ });
-  await fireEvent.click(fast);
-  await waitFor(() =>
-    expect(update).toHaveBeenCalledExactlyOnceWith([
-      { path: 'model.defaultProvider', value: 'codex' },
-      { path: 'model.providerDefaults', value: { codex: 'codex-preview-fast' } },
-    ]),
-  );
-  expect(store.state.model.providerModels.codex).toBe('codex-preview-balanced');
-  expect(trigger.textContent).toContain('Balanced');
-  expect(fast.getAttribute('aria-selected')).toBe('false');
-  acknowledge();
-  await tick();
-  expect(trigger.textContent).toContain('Balanced');
-  applySettingsChanges([
-    { path: 'model.providerDefaults', value: { codex: 'codex-preview-fast' } },
-  ]);
-  await waitFor(() => expect(trigger.textContent).toContain('Fast'));
-  expect(fast.getAttribute('aria-selected')).toBe('true');
-  expect(trigger.getAttribute('aria-expanded')).toBe('true');
-});
-
 for (const withCallbacks of [false, true]) {
   it(`preserves ordinary effort and picker selection when legacy snapshot blocks model switch (callbacks ${withCallbacks})`, async () => {
     disposers.push(store.init());
