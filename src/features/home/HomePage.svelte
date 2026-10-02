@@ -947,7 +947,7 @@
                                 >{/if}
                               <HomeWorkspaceStatus workspace={item} />
                               <span
-                                class="inline-flex w-16 shrink-0 justify-end type-caption tabular-nums"
+                                class="inline-flex w-8 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
                                 data-home-row-time
                               >
                                 <HomeActivityTime workspace={item} />
