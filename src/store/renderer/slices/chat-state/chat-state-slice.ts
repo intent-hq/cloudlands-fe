@@ -993,6 +993,11 @@ export const scrollbackSeekSettled = createAction<
   ]
 >('chatState/scrollbackSeekSettled');
 
+/** Latch daemon capability without settling another request's active window. */
+export const historySeekUnsupportedDetected = createAction<[agentId: string]>(
+  'chatState/historySeekUnsupportedDetected',
+);
+
 /**
  * Drop the agent's scrollback continuation state (both cursors + fetching
  * flags). Dispatched by the scrollback saga whenever the history segment is
@@ -1478,7 +1483,14 @@ chatStateReducer.with(scrollbackFetchStarted, (state, { payload: [agentId, direc
       ? { fetchingOlderHistory: true }
       : direction === 'gap'
         ? { fetchingGapFill: true }
-        : { fetchingHistorySeek: true }),
+        : {
+            fetchingHistorySeek: true,
+            fetchingOlderHistory: false,
+            fetchingGapFill: false,
+            // Every seek owns a new window; late pages from the prior
+            // window must not merge or overwrite its continuation cursors.
+            scrollbackDiscardEpoch: getAgent(state, agentId).scrollbackDiscardEpoch + 1,
+          }),
   }),
 );
 chatStateReducer.with(
@@ -1513,6 +1525,9 @@ chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens
     scrollbackGapToken: tokens.prevToken,
     ...(unsupported ? { historySeekUnsupported: true } : {}),
   }),
+);
+chatStateReducer.with(historySeekUnsupportedDetected, (state, { payload: [agentId] }) =>
+  updateAgent(state, agentId, { historySeekUnsupported: true }),
 );
 chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];

@@ -46,6 +46,7 @@ import {
   pendingProposalRecoveryPruned,
   pendingProposalRecoveryRequested,
   pendingQuestionRecoveryRequested,
+  scrollbackSeekSettled,
 } from '../chat-state-slice';
 import { chatScrollbackSaga } from './chat-scrollback-saga';
 
@@ -367,6 +368,57 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
       await run.task.toPromise();
     }
   });
+
+  it.each(['error', 'stalled'] as const)(
+    'allows a requested forward retry after %s while keeping concurrent requests serialized',
+    async (failure) => {
+      const run = harness();
+      try {
+        const rows = Array.from({ length: 12 }, (_, i) => message(`m-${i}`, i));
+        run.dispatch(bulkUpsertSessions([session({ messages: rows.slice(7) })]));
+        run.dispatch(seedHistoryAround(AGENT, rows.slice(0, 5), 0));
+        run.dispatch(
+          scrollbackSeekSettled(AGENT, { nextToken: null, prevToken: 'after-4' }, false),
+        );
+        if (failure === 'error')
+          mocks.getConversation.mockRejectedValueOnce(new Error('Temporary failure'));
+        else mocks.getConversation.mockResolvedValueOnce(page([], { prevToken: 'after-4' }));
+        run.dispatch(historyGapFillRequested(WS, AGENT));
+        await settle();
+        expect(run.chat()?.scrollbackGapBlocked).toBe(true);
+        expect(run.chat()?.fetchingGapFill).toBe(false);
+        expect(run.history()?.gapToTail).toBe(true);
+        let resolvePage!: (value: ReturnType<typeof page>) => void;
+        mocks.getConversation.mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolvePage = resolve;
+          }),
+        );
+        run.dispatch(historyGapFillRequested(WS, AGENT));
+        run.dispatch(historyGapFillRequested(WS, AGENT));
+        expect(mocks.getConversation).toHaveBeenCalledTimes(2);
+        expect(mocks.getConversation.mock.calls[1]).toEqual([
+          AGENT,
+          5,
+          failure === 'stalled' ? 'after-4' : undefined,
+          failure === 'error' ? 'm-4' : undefined,
+          undefined,
+          WS,
+        ]);
+        resolvePage(page(rows.slice(5, 10), { prevToken: 'after-9' }));
+        await settle();
+        expect(run.history()?.gapToTail).toBe(false);
+        expect(run.history()?.messages.map((row) => row.id)).toEqual(
+          rows.slice(0, 7).map((row) => row.id),
+        );
+        expect(run.chat()?.fetchingGapFill).toBe(false);
+        expect(run.chat()?.scrollbackGapBlocked).toBe(false);
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
 
   it('uses one five-message seek window for a distant jump', async () => {
     const run = harness();

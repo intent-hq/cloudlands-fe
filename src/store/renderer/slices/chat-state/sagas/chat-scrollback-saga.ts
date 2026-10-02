@@ -94,6 +94,7 @@ import {
   scrollbackGapPageSettled,
   scrollbackOlderPageSettled,
   scrollbackSeekSettled,
+  historySeekUnsupportedDetected,
 } from '../chat-state-slice';
 import { selectChatAgentIds, selectChatAgentState } from '../chat-state-selectors';
 
@@ -333,8 +334,8 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
   // segment. The panel re-classifies once the in-flight fetch settles.
   if (chat.fetchingOlderHistory || chat.fetchingGapFill) return;
   const target = Math.max(0, Math.round(targetOrdinal));
-  const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'seek'));
+  const epoch = (yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch;
   let tokens: { nextToken: string | null; prevToken: string | null } = {
     nextToken: null,
     prevToken: null,
@@ -400,7 +401,7 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
       yield* put(scrollbackSeekSettled(agentId, tokens, unsupported));
       yield* dropContinuationIfSegmentGone(agentId);
     } else if (unsupported) {
-      yield* put(scrollbackSeekSettled(agentId, { nextToken: null, prevToken: null }, true));
+      yield* put(historySeekUnsupportedDetected(agentId));
     }
   }
 }
@@ -633,7 +634,7 @@ function* recoverPendingProposalWorker(
 }
 
 /**
- * True when a §7.1 `resumed: false` discard landed after the caller captured
+ * True when a seek or §7.1 `resumed: false` discard landed after the caller captured
  * `epoch` (before its wire call). The discard reducer already reset the
  * fetching flags + cursors atomically with the snapshot, so a worker
  * observing a bumped epoch must drop its result wholesale — no page

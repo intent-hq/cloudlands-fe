@@ -1167,7 +1167,7 @@ describe('agentMutationSaga', () => {
     await conversationStarted.promise;
     expect(mocks.getConversation).toHaveBeenCalledWith(
       agentId,
-      50,
+      5,
       undefined,
       undefined,
       undefined,

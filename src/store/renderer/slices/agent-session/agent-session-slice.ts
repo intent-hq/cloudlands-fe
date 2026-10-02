@@ -1714,7 +1714,7 @@ export const setHistoryOldestReached = createAction<[agentId: string, oldestReac
  * newest end ⇒ contiguous, mirroring the append overlap rule).
  */
 export const seedHistoryAround = createAction<
-  [agentId: string, messages: AgentMessage[], startOrdinalEstimate: number]
+  [agentId: string, messages: AgentMessage[], startOrdinalEstimate?: number]
 >('agentSessions/seedHistoryAround');
 
 /** Drop an agent's scrollback history segment entirely. */
@@ -2252,7 +2252,9 @@ agentSessionReducer.with(
       // An estimated 0 start is still an estimate — exact only via the
       // walk's nextToken === null (setHistoryOldestReached).
       oldestReached: false,
-      startOrdinalEstimate: Math.max(0, Math.round(startOrdinalEstimate)),
+      ...(startOrdinalEstimate === undefined
+        ? {}
+        : { startOrdinalEstimate: Math.max(0, Math.round(startOrdinalEstimate)) }),
     });
   },
 );

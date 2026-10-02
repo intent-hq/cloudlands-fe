@@ -299,9 +299,8 @@ export interface ChatAgentState {
   /** True while an `aroundIndex` far-flick seek fetch is in flight. */
   fetchingHistorySeek: boolean;
   /**
-   * Monotonic §7.1 discard counter: bumped atomically by the
-   * `resumed: false` snapshot reducer (the same write that resets the walk
-   * cursors + fetching flags). Scrollback workers capture it before their
+   * Monotonic window ownership counter: bumped atomically by a seek start
+   * or a §7.1 `resumed: false` snapshot (along with the fetching flags). Scrollback workers capture it before their
    * wire call and drop the result when it changed mid-flight — a page that
    * resolves after the discard was fetched against the discarded transcript
    * and must not recreate a segment or persist a cursor.

@@ -3301,10 +3301,17 @@
     });
   });
 
-  function requestHistoryGapFill() {
+  function requestHistoryGapFill(trigger: 'automatic' | 'explicit' = 'automatic') {
     if (!isActive || !workspace?.id || !agentId) return;
     if ($fetchingGapFill$ || $fetchingOlderHistory$ || !$historySegmentMeta$.gapToTail) return;
-    if (selectChatAgentState.select(appStore.state, agentId).scrollbackGapBlocked) return;
+    // A failed or stalled page stops automatic continuation, but the visible
+    // load button must still allow a deliberate retry. Keep the latch until
+    // that request settles so observers cannot restart the stopped chain.
+    if (
+      trigger === 'automatic' &&
+      selectChatAgentState.select(appStore.state, agentId).scrollbackGapBlocked
+    )
+      return;
     // Never race a settling seek (mirror of maybeRequestOlderHistory): the
     // seek REPLACES the segment, so a gap page anchored at the pre-seek
     // segment must not go to the wire. The saga carries the same guard;
@@ -4643,7 +4650,9 @@
       handledOpenMessageRequestIds.add(detail.requestId);
       const match = detail.query
         ? findChatSearchMatches(
-            $agentMessages$.filter((message) => message.id === detail.messageId),
+            [...$agentHistoryMessages$, ...$agentMessages$].filter(
+              (message) => message.id === detail.messageId,
+            ),
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
@@ -4789,7 +4798,7 @@
     const getContainer = beginScrollNavigation();
     const originAgentId = agentId;
     const originWorkspaceId = workspace.id;
-    const epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
+    let epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
     let cancelled = false;
     let ownsSeek = false;
     let tokens = { nextToken: null as string | null, prevToken: null as string | null };
@@ -4839,6 +4848,7 @@
         ownsSeek = true;
         seekLandingPending = true;
         appStore.dispatch(scrollbackFetchStarted(originAgentId, 'seek'));
+        epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
         const historyIndex = $agentHistoryMessages$.findIndex(
           (message) => message.id === currentMessageId,
         );
@@ -5827,8 +5837,8 @@
     const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
-    // both). Seek the page containing it (§5.5 aroundMessageId) and replace
-    // the session, same as the deep-open helper; on failure (message deleted
+    // both). Seek the page containing it (§5.5 aroundMessageId) into the
+    // history segment, same as the deep-open helper; on failure (message deleted
     // / seek rejected) the helper logs and we bail, leaving the conversation
     // where it is. Resident rows scroll directly, keeping the tail intact.
     if (agentId && !messageIdToTurnKey.has(messageId)) {
@@ -6651,7 +6661,7 @@
                         size="sm"
                         class="text-xs text-muted-foreground"
                         data-testid="chat-history-gap-load-button"
-                        onclick={requestHistoryGapFill}
+                        onclick={() => requestHistoryGapFill('explicit')}
                       >
                         {m.chat_chatPanel_historyGapLoad_label()}
                       </Button>
