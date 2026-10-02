@@ -9,25 +9,31 @@ import {
 } from 'typed-redux-saga';
 import { store } from '../../../store';
 import { appClient } from '$lib/client';
-import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
+import {
+  type ScriptReadContext,
+  beginScriptRead,
+  isScriptReadCurrent,
+  reconcileScriptRead,
+} from '../utils/script-read-context';
 import {
   workspaceDeleted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import { selectScriptById } from '../scripts-selectors';
+import { selectScriptById, selectScriptRetainedOutput } from '../scripts-selectors';
 import {
   removeScript,
   scriptOutputRequested,
   scriptOutputDefinitionReceived,
   scriptOutputReleased,
   scriptOutputSnapshotReceived,
-  updateRuntimeState,
+  scriptReadFinished,
+  scriptReadReconciled,
 } from '../scripts-slice';
 
 type DefinitionRead = {
   dispatch: typeof store.dispatch;
   promise: Promise<Awaited<ReturnType<typeof appClient.scripts.list>>>;
-  runtimeById: Map<string, ReturnType<typeof updateRuntimeState>['payload']['partial']>;
+  context: ScriptReadContext;
   viewers: Set<symbol>;
 };
 type DefinitionReads = Map<string, DefinitionRead>;
@@ -38,10 +44,14 @@ function* readOutput(
 ): SagaGenerator<void> {
   const [workspaceId, scriptId, viewerId] = action.payload;
   const dispatch = store.dispatch;
-  const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
+  const context = yield* beginScriptRead(workspaceId);
   let script = yield* selectScriptById.effect(workspaceId, scriptId);
-  if (!authority) return;
-  const definitionKey = JSON.stringify([workspaceId, authority]);
+  const viewer = yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId);
+  if (!context.authority) {
+    yield* put(scriptReadFinished(workspaceId, context.requestId));
+    return;
+  }
+  const definitionKey = JSON.stringify([workspaceId, context.authority, context.connection]);
   const runtimeKey = (value: typeof script) =>
     JSON.stringify([
       value?.runtime?.status,
@@ -65,8 +75,8 @@ function* readOutput(
   };
   function* isCurrent(): SagaGenerator<boolean> {
     return (
-      dispatch === store.dispatch &&
-      authority === (yield* selectWorkspaceActionContext.effect(workspaceId)) &&
+      (yield* isScriptReadCurrent(context)) &&
+      viewer === (yield* selectScriptRetainedOutput.effect(workspaceId, scriptId, viewerId)) &&
       (!script || run === runtimeKey(yield* selectScriptById.effect(workspaceId, scriptId)))
     );
   }
@@ -76,9 +86,14 @@ function* readOutput(
       // There is no definition-by-ID endpoint. Only mounted viewers missing a
       // definition read the complete list; concurrent viewers share one request.
       let pending = reads.get(definitionKey);
-      if (!pending || pending.dispatch !== dispatch) {
+      if (
+        !pending ||
+        pending.dispatch !== dispatch ||
+        !(yield* isScriptReadCurrent(pending.context))
+      ) {
+        const definitionContext = yield* beginScriptRead(workspaceId);
         const promise = appClient.scripts.list(workspaceId, { archive: 'all' });
-        pending = { dispatch, promise, runtimeById: new Map(), viewers: new Set() };
+        pending = { dispatch, promise, context: definitionContext, viewers: new Set() };
         reads.set(definitionKey, pending);
         const clear = () => {
           if (reads.get(definitionKey) === pending) reads.delete(definitionKey);
@@ -89,20 +104,14 @@ function* readOutput(
       pending.viewers.add(reader);
       const entries = yield* call(() => pending.promise);
       if (!(yield* isCurrent())) return;
-      const definition = entries.find((entry) => entry.id === scriptId);
+      const reconciled = yield* reconcileScriptRead(pending.context, entries);
+      if (!reconciled) return;
+      yield* put(
+        scriptReadReconciled(workspaceId, pending.context.requestId, reconciled.scripts, true),
+      );
+      const definition = reconciled.scripts.find((entry) => entry.id === scriptId);
+      yield* put(scriptOutputDefinitionReceived(workspaceId, scriptId, definition, viewerId));
       if (definition) {
-        // State events can precede the missing definition. Keep their newer
-        // runtime instead of reviving the run captured by the list snapshot.
-        yield* put(
-          scriptOutputDefinitionReceived(
-            workspaceId,
-            {
-              ...definition,
-              runtime: { ...definition.runtime, ...pending.runtimeById.get(scriptId) },
-            },
-            viewerId,
-          ),
-        );
         script = yield* selectScriptById.effect(workspaceId, scriptId);
         run = runtimeKey(script);
       }
@@ -121,26 +130,10 @@ function* readOutput(
     workspaceUnmounted,
     workspaceDeleted,
     removeScript,
-    updateRuntimeState,
   ]);
   function* waitForCleanup(): SagaGenerator<void> {
     while (true) {
       const event = yield* take(releases);
-      if (event.type === updateRuntimeState.type) {
-        const {
-          wsId,
-          scriptId: id,
-          partial,
-        } = (event as ReturnType<typeof updateRuntimeState>).payload;
-        if (!script && definitionRead && wsId === workspaceId) {
-          // The shared list may serve a later viewer for any script. Its live
-          // events must survive the viewer that first requested the list.
-          definitionRead.runtimeById.set(id, {
-            ...definitionRead.runtimeById.get(id),
-            ...partial,
-          });
-        }
-      }
       if (cleanup(event)) {
         if (event.type !== scriptOutputReleased.type && reads.get(definitionKey) === definitionRead)
           reads.delete(definitionKey);
@@ -157,10 +150,12 @@ function* readOutput(
     }
   } finally {
     releases.close();
+    yield* put(scriptReadFinished(workspaceId, context.requestId));
     if (definitionRead) {
       definitionRead.viewers.delete(reader);
-      if (definitionRead.viewers.size === 0 && reads.get(definitionKey) === definitionRead) {
-        reads.delete(definitionKey);
+      if (definitionRead.viewers.size === 0) {
+        yield* put(scriptReadFinished(workspaceId, definitionRead.context.requestId));
+        if (reads.get(definitionKey) === definitionRead) reads.delete(definitionKey);
       }
     }
   }

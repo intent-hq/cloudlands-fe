@@ -208,6 +208,7 @@
           {@const live = isLiveScriptStatus(script.runtime.status)}
           {@const operation = $operations$[script.id]}
           {@const statusDescription = {
+            starting: m.workspace_devScripts_running_label(),
             running: m.workspace_devScripts_running_label(),
             restarting: m.workspace_devScripts_restarting_label(),
             exited: m.workspace_devScripts_exited_label(),
