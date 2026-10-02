@@ -3,10 +3,17 @@
   import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import type { QueuedMessage } from '$shared/types';
   import QueuedMessageList from './QueuedMessageList.svelte';
+  import { Button } from '$lib/components/ui/button';
 
   interface Props {
     messageCount?: number;
-    scenario?: 'owner' | 'participant' | 'merged' | 'system-interleaved' | 'author-barrier';
+    scenario?:
+      | 'owner'
+      | 'participant'
+      | 'merged'
+      | 'system-interleaved'
+      | 'author-barrier'
+      | 'edit-conflict';
   }
 
   export const preview = definePreview<Props>({
@@ -21,6 +28,7 @@
       merged: { props: { scenario: 'merged' } },
       'system-interleaved': { props: { scenario: 'system-interleaved' } },
       'author-barrier': { props: { scenario: 'author-barrier' } },
+      'edit-conflict': { props: { scenario: 'edit-conflict' } },
     },
   });
 </script>
@@ -60,6 +68,12 @@
         messageMetadata: { fromPrincipalId: 'guest' },
       };
       next = [first, guest, { ...next[2], author: first.author }];
+      if (scenario === 'edit-conflict') {
+        next = [
+          { ...first, editing: true, editingMessageId: first.id },
+          { ...next[2], position: 1, content: 'My unsaved follow-up draft.' },
+        ];
+      }
       if (scenario === 'merged' || scenario === 'system-interleaved') {
         next = [
           { ...first, content: 'Check the empty state too.\n\nAdd a keyboard navigation test.' },
@@ -81,6 +95,24 @@
     messages = messages.filter((message) => message.id !== id);
   }
 </script>
+
+{#if scenario === 'edit-conflict'}
+  <Button
+    onclick={() => {
+      const first = messages[0];
+      messages = [
+        {
+          ...first,
+          content: 'Check the empty state too.\n\nMy unsaved follow-up draft.',
+          editing: true,
+          editingMessageId: first.id,
+        },
+      ];
+    }}
+  >
+    Combine held entries
+  </Button>
+{/if}
 
 <QueuedMessageList
   messages={messages.filter(isUserQueuedMessage)}

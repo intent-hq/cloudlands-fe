@@ -17,3 +17,16 @@ export function queuedMessagePermissions(
   const owner = ownPrincipalId === ownerPrincipalId;
   return { edit: own, remove: own || owner || isHostOwner, sendNow: own || isHostOwner };
 }
+
+/** Resolve only an exact active editor identity, never an author/position guess. */
+export function findQueuedMessageForEdit(
+  messages: readonly QueuedMessage[],
+  messageId: string | null,
+): QueuedMessage | undefined {
+  if (!messageId) return undefined;
+  return messages.find((message) =>
+    message.editing && message.editingMessageId
+      ? message.editingMessageId === messageId
+      : message.id === messageId,
+  );
+}

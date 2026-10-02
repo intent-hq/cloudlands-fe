@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { queuedMessagePermissions } from '$lib/utils/queued-message-permissions';
+  import {
+    findQueuedMessageForEdit,
+    queuedMessagePermissions,
+  } from '$lib/utils/queued-message-permissions';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   import { memberMentionsToText } from '$lib/utils/member-mention-token';
   /**
@@ -27,6 +30,7 @@
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
   import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { Textarea } from '$lib/components/ui/textarea';
   import TipTapEditor from './input/TipTapEditor.svelte';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
@@ -95,8 +99,16 @@
     return queuedMessagePermissions(message, ownPrincipalId, ownerPrincipalId, isHostOwner);
   }
 
+  function canStartEdit(message: QueuedMessage) {
+    return (
+      permissions(message).edit &&
+      !(message.editing && message.editingMessageId && message.editingMessageId !== message.id)
+    );
+  }
+
   // Track which message is being edited
   let editingId = $state<string | null>(null);
+  let conflictedDrafts = $state<Array<{ id: string; content: string }>>([]);
   let editContent = $state('');
   let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
@@ -216,6 +228,22 @@
     return true;
   }
 
+  function preserveConflictedDraft() {
+    if (editingId) {
+      conflictedDrafts = [
+        ...conflictedDrafts.filter((draft) => draft.id !== editingId),
+        { id: editingId, content: editContent },
+      ];
+    }
+    clearEditState();
+  }
+
+  function preserveServerConflict(error: string | undefined, operation: { messageId: string }) {
+    if (!ownsEditOperation(operation) || !error?.includes('queued edit conflict:')) return false;
+    preserveConflictedDraft();
+    return true;
+  }
+
   async function clearOwnedEditState(operation: { messageId: string }) {
     if (!ownsEditOperation(operation)) return false;
     let cleared = false;
@@ -234,7 +262,7 @@
   });
 
   $effect(() => {
-    if (editingId && !messages.some((message) => message.id === editingId)) clearEditState();
+    if (editingId && !findQueuedMessageForEdit(messages, editingId)) preserveConflictedDraft();
   });
 
   $effect.pre(() => {
@@ -400,7 +428,7 @@
 
   async function startEdit(message: QueuedMessage, programmatic = false) {
     if (
-      !permissions(message).edit ||
+      !canStartEdit(message) ||
       disabled ||
       isSending(message.id) ||
       activeEditOperation ||
@@ -423,6 +451,7 @@
       try {
         const result = await onedit(message.id, message.content, true);
         if (!result.success) {
+          if (preserveServerConflict(result.error, operation)) return;
           // Message was already dequeued - clear edit state
           // TODO STAB-27: Drop content into composer as draft instead of losing it
           console.warn('Failed to hold queued message for editing:', result.error);
@@ -443,7 +472,7 @@
     if (
       activeEditOperation ||
       !editingId ||
-      !permissions(messages.find((message) => message.id === editingId)).edit
+      !permissions(findQueuedMessageForEdit(messages, editingId)).edit
     )
       return;
     const wasProgrammatic = editStartedProgrammatically;
@@ -456,6 +485,7 @@
       try {
         const result = await onedit(operation.messageId, originalContent, false);
         if (!result.success) {
+          if (preserveServerConflict(result.error, operation)) return;
           // Release failed - stay in edit mode
           console.error('Failed to release queued message hold on cancel:', result.error);
           finishEditOperation(operation);
@@ -476,10 +506,7 @@
   }
 
   async function saveEdit() {
-    if (
-      activeEditOperation ||
-      !permissions(messages.find((message) => message.id === editingId)).edit
-    )
+    if (activeEditOperation || !permissions(findQueuedMessageForEdit(messages, editingId)).edit)
       return;
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
@@ -492,6 +519,7 @@
         try {
           const result = await onedit(operation.messageId, newContent, false);
           if (!result.success) {
+            if (preserveServerConflict(result.error, operation)) return;
             // Save failed - stay in edit mode
             console.error('Failed to save queued message edit:', result.error);
             finishEditOperation(operation);
@@ -565,7 +593,7 @@
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
-    const last = messages.findLast((message) => permissions(message).edit);
+    const last = messages.findLast(canStartEdit);
     if (!last || disabled || activeEditOperation || editingId === last.id || isSending(last.id))
       return false;
     void startEdit(last, true);
@@ -637,6 +665,31 @@
   {/if}
 {/snippet}
 
+{#each conflictedDrafts as draft (draft.id)}
+  <div
+    class="border-b border-border p-3 space-y-2"
+    data-testid="queued-draft-conflict"
+    data-conflict-message-id={draft.id}
+  >
+    <p class="type-caption text-warning-ink" role="status">
+      {m.chat_queuedMessages_draftConflict_description()}
+    </p>
+    <pre class="type-body whitespace-pre-wrap break-words select-text">{draft.content}</pre>
+    <div class="flex items-center gap-2">
+      <CopyButton text={draft.content} />
+      <Button
+        type="button"
+        variant="plain"
+        onclick={() => {
+          conflictedDrafts = conflictedDrafts.filter((item) => item.id !== draft.id);
+        }}
+      >
+        {m.chat_queuedMessages_discardDraft_label()}
+      </Button>
+    </div>
+  </div>
+{/each}
+
 {#if messages.length > 0}
   <div
     class="queued-messages-surface relative z-20 border-b border-border bg-transparent"
@@ -695,7 +748,7 @@
               transition:queuedMessageRowTransition
               title={message.editing ? m.chat_queuedMessages_heldForEditing_title() : undefined}
             >
-              {#if editingId === message.id}
+              {#if editingId && findQueuedMessageForEdit([message], editingId)}
                 <!-- Edit mode -->
                 <div
                   class="col-span-full row-span-full min-w-0 flex flex-1 gap-2 py-1"
@@ -821,7 +874,7 @@
                           iconOnly
                           class="-my-1"
                           aria-label={m.chat_queuedMessages_edit_tooltip()}
-                          disabled={isSending(message.id)}
+                          disabled={isSending(message.id) || !canStartEdit(message)}
                           onpointerdown={(event) => event.stopPropagation()}
                           onclick={(event) => {
                             event.stopPropagation();

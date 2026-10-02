@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { QueuedMessage } from '$shared/types';
-import { queuedMessagePermissions } from './queued-message-permissions';
+import { findQueuedMessageForEdit, queuedMessagePermissions } from './queued-message-permissions';
 
 const human: QueuedMessage = {
   id: 'q',
@@ -25,6 +25,23 @@ describe('shared queue action authority', () => {
     });
   });
 
+  it.each([{ type: 'custom' }, { source: 'system' }])(
+    'keeps human action authority with semantic metadata %j',
+    (metadata) => {
+      const message = { ...human, messageMetadata: { ...human.messageMetadata, ...metadata } };
+      expect(queuedMessagePermissions(message, 'alice', 'owner')).toEqual({
+        edit: true,
+        remove: true,
+        sendNow: true,
+      });
+      expect(queuedMessagePermissions(message, 'bob', 'owner')).toEqual({
+        edit: false,
+        remove: false,
+        sendNow: false,
+      });
+    },
+  );
+
   it('never treats an unknown or portable author as the viewer', () => {
     for (const message of [
       { ...human, messageMetadata: undefined, author: null },
@@ -48,5 +65,26 @@ describe('shared queue action authority', () => {
         .edit,
     ).toBe(true);
     expect(queuedMessagePermissions({ ...human, author }, 'bob', 'owner').edit).toBe(false);
+  });
+});
+
+describe('active queue edit aliases', () => {
+  const survivor = { ...human, id: 'older', editing: true, editingMessageId: 'newer' };
+  it('resolves only the current mapped identity and applies canonical author permissions', () => {
+    expect(findQueuedMessageForEdit([survivor], 'newer')).toBe(survivor);
+    expect(findQueuedMessageForEdit([survivor], 'older')).toBeUndefined();
+    expect(findQueuedMessageForEdit([survivor], 'unrelated')).toBeUndefined();
+    expect(
+      queuedMessagePermissions(findQueuedMessageForEdit([survivor], 'newer'), 'bob', 'owner').edit,
+    ).toBe(false);
+  });
+  it('does not resurrect the absorbed alias after release or removal', () => {
+    expect(
+      findQueuedMessageForEdit(
+        [{ ...survivor, editing: false, editingMessageId: undefined }],
+        'newer',
+      ),
+    ).toBeUndefined();
+    expect(findQueuedMessageForEdit([{ ...human, id: 'unrelated' }], 'newer')).toBeUndefined();
   });
 });

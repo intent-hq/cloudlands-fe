@@ -7030,5 +7030,7 @@
   "devConsole_payload_collapse_label": "全部折叠",
   "devConsole_payload_expand_label": "全部展开",
   "devConsole_payload_load_error": "无法加载查看器。捕获的文本显示在下方。",
-  "devConsole_payload_large_description": "载荷较大，无法使用语法高亮和折叠功能；搜索和复制仍然可用。"
+  "devConsole_payload_large_description": "载荷较大，无法使用语法高亮和折叠功能；搜索和复制仍然可用。",
+  "chat_queuedMessages_draftConflict_description": "此排队消息已合并、更改或删除。你的草稿保留在此处。请复制后重新使用，或丢弃草稿。",
+  "chat_queuedMessages_discardDraft_label": "丢弃草稿"
 }

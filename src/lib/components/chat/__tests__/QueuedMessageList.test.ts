@@ -229,6 +229,118 @@ describe('QueuedMessageList', () => {
       );
     });
 
+    it.each(['save', 'cancel'])('preserves a migrated held draft through %s', async (action) => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const view = renderQueue({
+        props: { messages: [queued({ id: 'newer', content: 'second' })], onedit },
+      });
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('newer', 'second', true));
+      await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'edited second' } });
+      await view.rerender({
+        messages: [
+          queued({
+            id: 'older',
+            content: 'first\n\nsecond',
+            editing: true,
+            editingMessageId: 'newer',
+          }),
+        ],
+      });
+      expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
+      expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('edited second');
+      await view.rerender({
+        messages: [
+          queued({
+            id: 'older',
+            content: 'first\n\nsecond\n\nthird',
+            editing: true,
+            editingMessageId: 'newer',
+          }),
+        ],
+      });
+      expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('edited second');
+      await fireEvent.keyDown(screen.getByRole('textbox'), {
+        key: action === 'save' ? 'Enter' : 'Escape',
+      });
+      await waitFor(() =>
+        expect(onedit).toHaveBeenLastCalledWith(
+          'newer',
+          action === 'save' ? 'edited second' : 'second',
+          false,
+        ),
+      );
+      await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
+    });
+
+    it('retains a displaced draft without submitting it to the other held row', async () => {
+      const onedit = vi.fn().mockResolvedValue({ success: true });
+      const view = renderQueue({
+        props: {
+          messages: [
+            queued({ id: 'older', content: 'first', editing: true }),
+            queued({ id: 'newer', content: 'second', position: 1 }),
+          ],
+          onedit,
+        },
+      });
+      await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[1]);
+      await waitFor(() => expect(onedit).toHaveBeenCalledWith('newer', 'second', true));
+      await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'unsaved second' } });
+      await view.rerender({
+        messages: [
+          queued({
+            id: 'older',
+            content: 'first\n\nsecond',
+            editing: true,
+            editingMessageId: 'older',
+          }),
+        ],
+      });
+      const conflict = await screen.findByTestId('queued-draft-conflict');
+      expect(conflict.getAttribute('data-conflict-message-id')).toBe('newer');
+      expect(conflict.textContent).toContain('unsaved second');
+      expect(within(conflict).queryByRole('textbox')).toBeNull();
+      await fireEvent.keyDown(conflict, { key: 'Enter' });
+      expect(onedit).toHaveBeenCalledTimes(1);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+      await fireEvent.click(within(conflict).getByRole('button', { name: 'Copy' }));
+      expect(writeText).toHaveBeenCalledWith('unsaved second');
+      await view.rerender({ messages: [queued({ id: 'unrelated', content: 'new input' })] });
+      expect(screen.getByTestId('queued-draft-conflict').textContent).toContain('unsaved second');
+      expect(screen.queryByRole('textbox')).toBeNull();
+      await fireEvent.click(within(conflict).getByRole('button', { name: 'Discard draft' }));
+      expect(screen.queryByTestId('queued-draft-conflict')).toBeNull();
+    });
+
+    it('preserves the draft when a migrated save conflicts after another client releases', async () => {
+      const onedit = vi.fn().mockResolvedValueOnce({ success: true }).mockResolvedValueOnce({
+        success: false,
+        error:
+          'queued edit conflict: this draft was combined into another queued message; refresh before editing',
+      });
+      const view = renderQueue({
+        props: { messages: [queued({ id: 'newer', content: 'second' })], onedit },
+      });
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      await waitFor(() => expect(onedit).toHaveBeenCalledTimes(1));
+      await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'keep me' } });
+      await view.rerender({
+        messages: [
+          queued({
+            id: 'older',
+            content: 'first\n\nsecond',
+            editing: true,
+            editingMessageId: 'newer',
+          }),
+        ],
+      });
+      await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect((await screen.findByTestId('queued-draft-conflict')).textContent).toContain('keep me');
+      expect(screen.queryByRole('textbox')).toBeNull();
+    });
+
     it('edits only the selected row, cancelling drafts or saving without sending or removing', async () => {
       const onedit = vi.fn().mockResolvedValue({ success: true });
       const onsendnow = vi.fn();
@@ -1021,8 +1133,8 @@ describe('QueuedMessageList', () => {
     });
 
     it('omits the author on daemon-origin entries even when a projection is attached', () => {
-      // Agent-to-agent sends and system wakes fall back to the workspace owner
-      // on the daemon side; they are not human-authored and get no attribution.
+      // Legacy projections do not upgrade unstamped automatic metadata to human.
+      // Current automatic ingress strips caller-supplied human stamps.
       renderQueue({
         props: {
           messages: [
@@ -1032,7 +1144,6 @@ describe('QueuedMessageList', () => {
               messageMetadata: {
                 type: 'agent_message',
                 fromAgentId: 'agent-2',
-                fromPrincipalId: owner.principalId,
               },
               author: owner,
             }),
@@ -1040,7 +1151,7 @@ describe('QueuedMessageList', () => {
               id: 'q-system',
               content: 'system wake',
               position: 1,
-              messageMetadata: { source: 'system', fromPrincipalId: owner.principalId },
+              messageMetadata: { source: 'system' },
               author: owner,
             }),
           ],

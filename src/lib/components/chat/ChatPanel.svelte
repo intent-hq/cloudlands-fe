@@ -81,7 +81,10 @@
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
-  import { queuedMessagePermissions } from '$lib/utils/queued-message-permissions';
+  import {
+    findQueuedMessageForEdit,
+    queuedMessagePermissions,
+  } from '$lib/utils/queued-message-permissions';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
@@ -5091,7 +5094,15 @@
   // Handle editing a queued message. The client seam folds transport errors
   // into `{ success: false, error }`, so branching on `result.success` is safe.
   async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
-    if (!queuePermissions(messageId).edit) return { success: false };
+    if (
+      !queuedMessagePermissions(
+        findQueuedMessageForEdit($queuedMessages$, messageId),
+        $presenceOwnPrincipalId$,
+        workspace?.ownerPrincipalId,
+        $isHostOwner$,
+      ).edit
+    )
+      return { success: false };
     const originAgentId = agentId;
     const originWorkspaceId = workspace?.id;
     const result = await appClient.agents.editQueued(
@@ -7297,7 +7308,10 @@
                   providerId={inputProviderId}
                 >
                   {#snippet queueRegion()}
-                    {#if queuedMessagesVisibility.showQueue}
+                    <div
+                      class:hidden={!queuedMessagesVisibility.showQueue &&
+                        visibleQueuedMessages.length > 0}
+                    >
                       <QueuedMessageList
                         bind:this={queuedMessageListRef}
                         messages={visibleQueuedMessages}
@@ -7310,7 +7324,7 @@
                         onsendnow={handleSendQueuedMessageNow}
                         ondone={() => inputComponent?.focus?.()}
                       />
-                    {/if}
+                    </div>
                   {/snippet}
                 </SimpleRichInput>
               {/if}
