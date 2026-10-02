@@ -681,6 +681,16 @@ export class DocumentSession {
       editor.view.setProps({});
     }
     this.tableColumnWidth = layoutTable(editor, table.window, this.tableViewport).width;
+    const fragment =
+      !anchor && this.tableScrollRequest && !this.drainingInput
+        ? table.entries.find((entry) => entry.cell.first > entry.cell.body)
+        : undefined;
+    const fragmentTop = () =>
+      fragment &&
+      (editor.view.nodeDOM(fragment.pm) as HTMLElement).querySelector('p')?.getBoundingClientRect()
+        .top;
+    const beforeFragmentTop = fragmentTop();
+    const beforeFragmentScroll = scroller?.scrollTop ?? 0;
     if (table.window.geometry && !this.pointerSelecting) {
       const rows = Array.from(
         editor.view.dom.querySelectorAll('tr'),
@@ -727,6 +737,24 @@ export class DocumentSession {
       : `${scroller?.clientHeight ?? 0}px`;
     editor.view.dom.style.paddingRight = `${this.tableViewport}px`;
     editor.view.dom.style.width = `${table.window.columns * this.tableColumnWidth + this.tableOriginX + this.tableViewport}px`;
+    const afterFragmentTop = fragmentTop();
+    if (
+      this.tableScrollRequest &&
+      beforeFragmentTop !== undefined &&
+      afterFragmentTop !== undefined
+    ) {
+      // Keep the encountered fragment at the user's requested pixel position as
+      // measured text replaces its estimated height. Retaining the old absolute
+      // scroll offset can otherwise leave the admitted text outside the viewport.
+      this.tableScrollRequest.top = Math.max(
+        0,
+        this.tableScrollRequest.top +
+          afterFragmentTop +
+          (scroller?.scrollTop ?? 0) -
+          beforeFragmentTop -
+          beforeFragmentScroll,
+      );
+    }
     const nativeTable = editor.view.dom.querySelector('table');
     if (
       nativeTable &&
