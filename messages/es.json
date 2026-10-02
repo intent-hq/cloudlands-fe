@@ -6330,7 +6330,7 @@
   "layout_daemonStatus_localConnection_label": "Este equipo (local)",
   "layout_daemonStatus_connectionActive_label": "Activo",
   "layout_daemonStatus_secretUnavailable_error": "No se pudo abrir {label}: su token de acceso almacenado no está disponible. Vuelve a introducirlo en la configuración de dispositivos.",
-  "layout_daemonStatus_guestSecretUnavailable_error": "No se pudo abrir {label}: su token de acceso almacenado no está disponible. Sal del anfitrión en la configuración de sesiones de invitado y vuelve a unirte con una nueva invitación.",
+  "layout_daemonStatus_guestSecretUnavailable_error": "No se pudo abrir {label}: su token de acceso almacenado no está disponible. Sal del anfitrión en la configuración de Colaboración y vuelve a unirte con una nueva invitación.",
   "layout_daemonStatus_open_action": "Abrir",
   "layout_daemonStatus_update_action": "Actualizar",
   "layout_daemonStatus_update_tooltip": "Actualizar el intentd de este backend de v{daemonVersion} a v{pinnedVersion}",
