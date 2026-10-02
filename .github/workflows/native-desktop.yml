@@ -30,6 +30,16 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - run: node scripts/build-desktop-helper.mjs
+      - name: Observe native Windows capture and input
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: dotnet run --project native/desktop/tests/windows/DesktopFunctional.csproj -c Release -- resources/desktop-helper/win32-x64/intent-desktop-helper.exe
+      - uses: actions/upload-artifact@v6
+        if: runner.os == 'Windows' && always()
+        with:
+          name: desktop-native-windows-evidence
+          path: native/desktop/tests/windows/artifacts/
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v6
         with:
           name: desktop-helper-${{ matrix.platform }}
