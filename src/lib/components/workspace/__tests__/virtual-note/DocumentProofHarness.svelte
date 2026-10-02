@@ -144,6 +144,16 @@
 </div>
 
 <style>
+  :global(.proof-table-projection table) {
+    width: var(--proof-table-width) !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+  }
+  :global(.proof-table-projection th),
+  :global(.proof-table-projection td) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   :global(.proof-synthetic-list-item > div > [contenteditable='false']) {
     display: none;
   }

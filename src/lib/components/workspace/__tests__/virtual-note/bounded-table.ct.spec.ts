@@ -110,7 +110,13 @@ test('native table text copy, cut and paste retain clipboard, marks and untouche
   const copies = [];
   for (const side of ['native', 'bounded']) {
     await select(page, side, 'TARGET');
-    for (let n = 0; n < 6; n++) await page.keyboard.press('Shift+ArrowRight');
+    for (let n = 0; n < 6; n++) {
+      await page.keyboard.press('Shift+ArrowRight');
+      await settled(page);
+      expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(
+        'TARGET'.slice(0, n + 1),
+      );
+    }
     await page.keyboard.press('Control+c');
     copies.push(await page.evaluate(() => navigator.clipboard.readText()));
     await page.keyboard.press('Control+x');
@@ -183,7 +189,25 @@ test('table widths remain stable through real horizontal and vertical viewport e
         (cell) => cell.getBoundingClientRect().width,
       ),
       dom: p.editor!.view.dom.querySelectorAll('*').length,
+      viewport: (() => {
+        const scroller = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
+        const rect = scroller.getBoundingClientRect();
+        return {
+          left: rect.left,
+          top: rect.top,
+          width: scroller.clientWidth,
+          height: scroller.clientHeight,
+        };
+      })(),
+      cells: Array.from(p.editor!.view.dom.querySelectorAll('th,td'), (cell) => {
+        const rect = cell.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      }),
     };
+  });
+  await info.attach('table-scroll-geometry.json', {
+    body: JSON.stringify({ before, after }),
+    contentType: 'application/json',
   });
   expect(after.width).toBe(before.width);
   expect(after.stats.destroyed).toBeGreaterThan(0);
