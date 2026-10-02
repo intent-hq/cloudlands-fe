@@ -85,7 +85,7 @@
   {#if reviewsError !== m.home_integrations_read_upgrade() || data?.reviews.length || data?.requestedReviewers.length}
     <section class="space-y-2 border-b border-border pb-4">
       <h3 class="text-sm font-medium">{m.home_integrations_reviewers()}</h3>
-      {#if reviewsLoading}<HomeLoading count={1} />
+      {#if reviewsLoading}<HomeLoading rows="compact" count={1} />
       {:else if reviewsError && reviewsError !== m.home_integrations_read_upgrade()}
         <p role="alert" class="type-caption text-muted-foreground">{reviewsError}</p>
         <Button size="sm" disabled={retryDisabled} onclick={retryReviews}
@@ -120,7 +120,7 @@
   {/if}
   <section class="space-y-2 border-b border-border pb-4">
     <h3 class="text-sm font-medium">{m.home_integrations_checks()}</h3>
-    {#if checksLoading}<HomeLoading count={1} />{/if}
+    {#if checksLoading}<HomeLoading rows="compact" count={1} />{/if}
     {#if checksError === m.home_integrations_read_upgrade() || reviewsError === m.home_integrations_read_upgrade()}
       <p role="status" class="type-caption text-muted-foreground">
         {m.home_integrations_read_upgrade()}

@@ -372,7 +372,7 @@
     </div>
     <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
       {#if (view.status === 'loading' && !view.items.length) || view.status === 'idle'}
-        <HomeLoading />
+        <HomeLoading rows="integration" />
       {:else if view.status === 'disconnected'}
         <div class="space-y-3 p-8 text-center">
           {#if isPr}
@@ -527,7 +527,7 @@
             </ListRow>
           {/snippet}
         </ListView>
-        {#if view.status === 'loading'}<HomeLoading count={2} />{/if}
+        {#if view.status === 'loading'}<HomeLoading rows="integration" count={2} />{/if}
         {#if view.error}<p class="px-5 py-3 text-sm text-muted-foreground" role="alert">
             {view.error}
           </p>{/if}
@@ -724,98 +724,16 @@
               </div>
             </header>
           {:else}
-            <header class="shrink-0 space-y-3 border-b border-border p-6">
-              <div class="flex items-center justify-between gap-2">
-                <span class="type-caption text-muted-foreground"
-                  >{detail?.identifier ?? m.home_integrations_detail()}</span
-                ><Button
-                  data-integration-close
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={m.home_integrations_close()}
-                  tooltip={m.home_integrations_close()}
-                  onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
-                >
-              </div>
-              {#if detail && !view.detailLoading && !view.detailError}
-                <div class="space-y-3">
-                  {#if isPr}<HomePullState state={detail.state} />{:else}<p
-                      class="type-caption text-muted-foreground"
-                    >
-                      {detail.state}
-                    </p>{/if}
-                  <h2 class="break-words text-xl font-medium tracking-tight">{detail.title}</h2>
-                  {#if isPr}<div
-                      class="flex flex-wrap items-center gap-2 type-caption text-muted-foreground"
-                    >
-                      {#if detail.author}<GitHubAvatar
-                          identity={detail.author}
-                          avatarUrl={detail.authorAvatarUrl}
-                          size={20}
-                          class="rounded-full"
-                        /><span>{detail.author}</span><span aria-hidden="true">·</span>{/if}
-                      <span>{detail.owner}/{detail.repo}</span>
-                      {#if detail.updatedAt}<RelativeTime date={detail.updatedAt} compact />{/if}
-                    </div>
-                    {#if detail.headRef}<p
-                        class="break-all font-mono type-caption text-muted-foreground"
-                      >
-                        {detail.headRef} → {detail.baseRef}
-                      </p>{/if}
-                    {#if view.reviewData?.additions !== undefined && view.reviewData.deletions !== undefined}<div
-                        class="flex gap-3 type-caption tabular-nums"
-                      >
-                        <span class="text-success">+{formatInteger(view.reviewData.additions)}</span
-                        ><span class="text-danger">−{formatInteger(view.reviewData.deletions)}</span
-                        >{#if view.reviewData.changedFiles !== undefined}<span
-                            class="text-muted-foreground"
-                            >{m.home_integrations_files({
-                              count: formatInteger(view.reviewData.changedFiles),
-                            })}</span
-                          >{/if}
-                      </div>{/if}
-                  {/if}
-                  <div class="flex flex-wrap gap-2">
-                    {#if detail.url}<Button
-                        size="sm"
-                        onclick={(event) => openLink(detail.url, event)}
-                        >{isPr
-                          ? m.home_integrations_open_github()
-                          : m.home_integrations_open_linear()}</Button
-                      >{/if}
-                    {#if linkedWorkspace}<Button size="sm" variant="primary" onclick={openWorkspace}
-                        >{m.home_integrations_open_workspace()}</Button
-                      >{:else if !$collaborator$}<Button
-                        size="sm"
-                        variant="primary"
-                        disabled={!!preview}
-                        onclick={() => appStore.dispatch(startHomeIntegrationWorkspace())}
-                        >{m.home_integrations_start_workspace()}</Button
-                      >{/if}
-                  </div>
-                </div>
-              {/if}
-              {#if isPr && detail && !view.detailLoading && !view.detailError}
-                <div class="flex flex-wrap items-center gap-2">
-                  <Tabs.List class="gap-5 px-0" aria-label={m.home_integrations_detail()}>
-                    <Tabs.Trigger value="summary" class="px-0"
-                      >{m.home_integrations_summary_tab()}</Tabs.Trigger
-                    >
-                    <Tabs.Trigger value="code" class="px-0"
-                      >{m.home_integrations_code_tab()}</Tabs.Trigger
-                    >
-                  </Tabs.List>
-                  <div class="ml-auto">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onclick={(event) => openLink(`${detail.url}/files`, event)}
-                      >{m.home_integrations_review_on_github()}</Button
-                    >
-                  </div>
-                </div>
-              {/if}
-            </header>
+            <div class="flex shrink-0 justify-end px-5 pt-4">
+              <Button
+                data-integration-close
+                variant="ghost"
+                size="icon-sm"
+                aria-label={m.home_integrations_close()}
+                tooltip={m.home_integrations_close()}
+                onclick={() => selectItem(null)}><Fa icon={faXmark} /></Button
+              >
+            </div>
           {/if}
           <div class="integration-detail-body min-h-0 min-w-0 flex-1 space-y-6 overflow-y-auto p-6">
             {#if view.detailLoading}<HomeLoading detail />
@@ -908,9 +826,7 @@
                         {/if}
                       {/each}
                     </div>
-                    {#if view.commentsLoading}<HomeLoading
-                        count={2}
-                      />{:else if view.commentsError}<p
+                    {#if view.commentsLoading}<HomeLoading detail />{:else if view.commentsError}<p
                         role="alert"
                         class="break-words text-sm text-muted-foreground"
                       >
@@ -933,7 +849,7 @@
                       files={view.files}
                       open={openLink}
                     />{/if}
-                  {#if view.filesLoading}<HomeLoading count={2} />{/if}
+                  {#if view.filesLoading}<HomeLoading rows="compact" count={2} />{/if}
                   {#if view.filesError}<p class="type-caption text-muted-foreground" role="alert">
                       {view.filesError}
                     </p>{/if}

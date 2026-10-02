@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import HomeLoading from './HomeLoading.svelte';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
-  import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
+  import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import { store } from '$store/renderer/store';
   import {
     selectActiveAgentId,
@@ -76,7 +77,7 @@
       />
     {/key}
   {:else if !$loaded$ && !timedOut}
-    <LoadingState label={m.ui_spinner_loading_ariaLabel()} density="compact" />
+    <div class="p-4"><HomeLoading detail /></div>
   {:else if !$loaded$}
     <ErrorState density="compact" retryLabel={m.home_retry()} onRetry={hydrate}>
       {#snippet message()}{m.home_detail_unavailable()}{/snippet}
