@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/mac-update-feed.mjs
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -489,6 +489,13 @@ function manualPlan(dir: string, arch?: string) {
     Object.entries(job.outputs!).map(([key, value]) => [key, render(value, context)]),
   );
 }
+
+it('runs the packaged smoke admission and executable regressions for both native CPUs', () => {
+  const result = spawnSync('python3', ['-B', 'scripts/test_packaged_macos_smoke.py'], {
+    encoding: 'utf8',
+  });
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+});
 
 describe('manual Mac architecture selection', () => {
   const cases = [
