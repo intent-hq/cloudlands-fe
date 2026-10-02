@@ -141,15 +141,9 @@
       data-testid="subscription-clip"
       class="overflow-x-hidden bg-background text-foreground"
       style:--chat-operational-row-inline-padding={width < 640 ? '0.125rem' : '0.5rem'}
-      style:--subscription-card-max-bleed={subscriptionLane === 'regular' ? '1rem' : '0px'}
     >
       <div class={subscriptionLane === 'regular' ? 'px-4' : ''} data-testid="subscription-lane">
-        <div
-          class={subscriptionLane === 'chief-message' ? 'mx-1 sm:mx-2' : ''}
-          style:--subscription-card-max-bleed={subscriptionLane === 'chief-message'
-            ? '0.25rem'
-            : undefined}
-        >
+        <div class={subscriptionLane === 'chief-message' ? 'mx-1 sm:mx-2' : ''}>
           <ChatOperationalRow>
             {#snippet leading()}<Fa icon={faBolt} size={16} />{/snippet}
             {#snippet summary()}Tool row{/snippet}
