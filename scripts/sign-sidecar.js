@@ -544,6 +544,17 @@ async function signSidecar(context) {
     }
 
     // Sign the speech helper when bundled (same seal-ordering constraint)
+    const desktopHelper = path.join(
+      appPath,
+      'Contents',
+      'Resources',
+      'desktop-helper',
+      'intent-desktop-helper',
+    );
+    if (!fs.existsSync(desktopHelper))
+      throw new Error('Native desktop helper is missing from the macOS package');
+    await signBinary(desktopHelper, identity);
+    await verifySignature(desktopHelper);
     if (fs.existsSync(speechHelperPath)) {
       await signBinary(speechHelperPath, identity);
       await verifySignature(speechHelperPath);

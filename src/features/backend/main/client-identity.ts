@@ -47,7 +47,7 @@ export interface ClientHostIdentity {
 export interface MainClientHelloParams extends ClientHostIdentity {
   clientId: string;
   name: string;
-  capabilities: { browserExec: true };
+  capabilities: { browserExec: true; desktopControl?: 1 };
 }
 
 let localHostIdentity: Pick<ClientHostIdentity, 'prettyHostname' | 'deviceKind'> = {};
@@ -85,10 +85,14 @@ export function getClientHostIdentity(): ClientHostIdentity {
  * marks exactly the connection that serves the `browser.exec` reverse handler.
  */
 export async function buildMainClientHelloParams(): Promise<MainClientHelloParams> {
+  const { desktopNativeAvailable } = await import('../../desktop/main/desktop-native');
   return {
     clientId: await getOrCreateClientId(),
     name: DESKTOP_CLIENT_NAME,
-    capabilities: { browserExec: true },
+    capabilities: {
+      browserExec: true,
+      ...(desktopNativeAvailable() ? { desktopControl: 1 as const } : {}),
+    },
     ...getClientHostIdentity(),
   };
 }

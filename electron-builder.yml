@@ -8,7 +8,7 @@ directories:
 # beforePack: Checks staged Mac architectures and compiles the native macOS 26 icon
 # afterPack: Checks copied Mac binaries and signs sidecar BEFORE main app signing
 # afterSign: Submits signed app to Apple for notarization
-beforePack: scripts/build-macos-icon.js
+beforePack: scripts/desktop-before-pack.mjs
 afterPack: scripts/sign-sidecar.js
 afterSign: scripts/notarize.js
 
@@ -29,6 +29,7 @@ files:
   - '!resources/speech-helper/**'
   # Keychain helper ships via mac.extraResources (keychain-helper/), not asar.
   - '!resources/keychain-helper/**'
+  - '!resources/desktop-helper/**'
 
 # Bundle the intentd binary into the packaged app
 # Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
@@ -105,6 +106,8 @@ mac:
   # scripts/build-speech-helper.cjs; signed by the afterPack hook).
   # Runtime path: process.resourcesPath/speech-helper/intent-speech-helper
   extraResources:
+    - from: 'resources/desktop-helper/darwin-${arch}'
+      to: desktop-helper
     - from: build/macos-icon/Assets.car
       to: Assets.car
     # Runtime Dock icon. Finder and Applications continue to use Assets.car/icon.icns.
@@ -165,6 +168,9 @@ dmg:
       path: /Applications
 
 win:
+  extraResources:
+    - from: 'resources/desktop-helper/win32-${arch}'
+      to: desktop-helper
   icon: src/assets/icons/icon.ico
   # Production stays unsigned; the retired hook rejects the old DigiCert flag.
   # Manual builds explicitly select scripts/windows-builder.cjs for unsigned/Azure.

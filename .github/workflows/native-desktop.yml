@@ -1,0 +1,37 @@
+name: Native desktop helpers
+on:
+  pull_request:
+    paths:
+      - 'native/desktop/**'
+      - 'scripts/build-desktop-helper.mjs'
+      - 'scripts/desktop-before-pack.mjs'
+      - '.github/workflows/native-desktop.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: darwin
+          - runner: windows-latest
+            platform: win32
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - uses: actions/setup-dotnet@v5
+        if: runner.os == 'Windows'
+        with:
+          dotnet-version: '8.0.x'
+      - run: node scripts/build-desktop-helper.mjs
+      - uses: actions/upload-artifact@v6
+        with:
+          name: desktop-helper-${{ matrix.platform }}
+          path: resources/desktop-helper/
+          if-no-files-found: error

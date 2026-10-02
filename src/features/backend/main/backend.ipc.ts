@@ -109,6 +109,7 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
+import { registerDesktopExecReverseHandler } from '../../desktop/main/desktop-exec-reverse';
 import {
   LOCAL_CONNECTION_ID,
   isDetectedDeviceKind,
@@ -1429,6 +1430,7 @@ function createAdditionalBackendClient(
     backendId: id,
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
+  registerDesktopExecReverseHandler(instance, id);
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
   captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   instance.start();

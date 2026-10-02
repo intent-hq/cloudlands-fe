@@ -272,6 +272,13 @@ export class JsonRpcClient extends EventEmitter {
     if (this.trafficObservers.size === 0) return;
     try {
       const event = { ...build(), connectionGeneration: this.connectionGeneration };
+      // Desktop authority and user input must never reach diagnostic observers,
+      // which may persist or forward their traffic payloads to renderers.
+      if (
+        event.type === 'request' &&
+        (event.method === 'desktop.control' || event.method === 'desktop.revoke')
+      )
+        event.payload = { redacted: true };
       for (const observer of this.trafficObservers) {
         try {
           void observer(event)?.catch(() => {});
