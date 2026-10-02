@@ -30,8 +30,11 @@ async function scenario(name, action, { width = 1440, motion = 'reduced' } = {})
   const context = await browser.newContext({
     viewport: { width, height: 960 },
     reducedMotion: motion === 'reduced' ? 'reduce' : 'no-preference',
+    ...(name.startsWith('motion-')
+      ? { recordVideo: { dir: output, size: { width: 1440, height: 960 } }, hasTouch: true }
+      : {}),
   });
-  if (name === 'scale-two-hundred') {
+  if (name === 'scale-two-hundred' || name.startsWith('motion-')) {
     await context.addInitScript(() => {
       window.__cityEvidenceDraws = 0;
       for (const type of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
@@ -65,16 +68,23 @@ async function scenario(name, action, { width = 1440, motion = 'reduced' } = {})
     status: 'passed',
     errors,
   };
-  const shot = async (suffix = '') => {
+  const shot = async (suffix = '', waitForRest = true) => {
     const filename = `${name}${suffix}.png`;
-    if (await page.locator('[data-city-ready="true"]').count()) {
+    if (waitForRest && (await page.locator('[data-city-ready="true"]').count())) {
       await expect(page.locator('[data-city]')).toHaveAttribute('data-city-moving', 'false');
     }
     await page.screenshot({ path: path.join(output, filename), fullPage: true });
     (result.screenshots ??= []).push(filename);
   };
-  const open = async (state = 'showcase', scene = 'home-city') => {
-    const url = buildSandboxUrl(baseUrl, { scene, state, width, motion, theme: 'light' });
+  const open = async (state = 'showcase', scene = 'home-city', previewWidth = width) => {
+    await page.setViewportSize({ width: previewWidth, height: 960 });
+    const url = buildSandboxUrl(baseUrl, {
+      scene,
+      state,
+      width: previewWidth,
+      motion,
+      theme: 'light',
+    });
     result.url = url;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120_000 });
     await expect(page.locator('[data-preview-ready="true"]')).toBeVisible({ timeout: 120_000 });
@@ -96,7 +106,12 @@ async function scenario(name, action, { width = 1440, motion = 'reduced' } = {})
     result.finishedAt = new Date().toISOString();
     result.trace = `${name}.zip`;
     await context.tracing.stop({ path: path.join(output, result.trace) });
+    const video = page.video();
     await context.close();
+    if (video) {
+      result.video = `${name}.webm`;
+      await video.saveAs(path.join(output, result.video));
+    }
     results.push(result);
     await writeFile(
       path.join(output, 'results.json'),
@@ -140,6 +155,64 @@ const blur = (page) =>
   page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   });
+
+const cameraAngles = (page) =>
+  page.locator('[data-city]').evaluate((root) => ({
+    yaw: Number(root.getAttribute('data-city-yaw')),
+    elevation: Number(root.getAttribute('data-city-elevation')),
+  }));
+const angleDistance = (actual, expected) =>
+  Math.max(
+    Math.abs(Math.atan2(Math.sin(actual.yaw - expected.yaw), Math.cos(actual.yaw - expected.yaw))),
+    Math.abs(actual.elevation - expected.elevation),
+  );
+const expectAngles = (page, expected) =>
+  expect.poll(async () => angleDistance(await cameraAngles(page), expected)).toBeLessThan(0.0001);
+const clouds = (page) =>
+  page
+    .locator('.city-atmosphere, .city-near-clouds')
+    .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).transform));
+async function idleDraws(page) {
+  await settled(page);
+  const draws = await page.evaluate(async () => {
+    const start = window.__cityEvidenceDraws;
+    for (let index = 0; index < 12; index += 1)
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    return window.__cityEvidenceDraws - start;
+  });
+  assert.equal(draws, 0, 'Camera and clouds stop scheduling GPU draws at rest');
+  return draws;
+}
+async function canvasPoint(page) {
+  const box = await page.locator('canvas[data-city-canvas]').boundingBox();
+  assert.ok(box);
+  return { x: box.x + box.width * 0.5, y: box.y + box.height * 0.45 };
+}
+async function dragCamera(page, { button = 'left', shift = false, release = true } = {}) {
+  const point = await canvasPoint(page);
+  if (shift) await page.keyboard.down('Shift');
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down({ button });
+  await page.mouse.move(point.x + 130, point.y + 45, { steps: 12 });
+  if (release) await page.mouse.up({ button });
+  if (shift) await page.keyboard.up('Shift');
+}
+async function cloudCoverage(page) {
+  const covered = await page.locator('[data-city]').evaluate((root) => {
+    const viewport = root.getBoundingClientRect();
+    return [...root.querySelectorAll('.city-atmosphere, .city-near-clouds')].map((node) => {
+      const box = node.getBoundingClientRect();
+      return (
+        box.left <= viewport.left + 1 &&
+        box.right >= viewport.right - 1 &&
+        box.top <= viewport.top + 1 &&
+        box.bottom >= viewport.bottom - 1
+      );
+    });
+  });
+  assert.equal(covered.length, 2);
+  assert.ok(covered.every(Boolean), 'Both cloud layers cover the viewport at zoom extremes');
+}
 
 try {
   await scenario('before-home-list', async ({ page, open }) => {
@@ -488,6 +561,249 @@ try {
     },
     { motion: 'full' },
   );
+
+  await scenario(
+    'motion-drag-parallax',
+    async ({ page, open, shot, result }) => {
+      await open();
+      await settled(page);
+      const angles = await cameraAngles(page),
+        initialClouds = await clouds(page),
+        initialProjection = await projection(page);
+      await shot('-before');
+      await dragCamera(page, { release: false });
+      await expect.poll(() => cameraAngles(page)).not.toEqual(angles);
+      await expect.poll(() => clouds(page)).not.toEqual(initialClouds);
+      assert.notDeepEqual(await projection(page), initialProjection, 'Plain drag pans the camera');
+      const leaning = await cameraAngles(page);
+      assert.ok(
+        Math.abs(leaning.yaw - angles.yaw) < 0.4 &&
+          Math.abs(leaning.elevation - angles.elevation) < 0.4,
+        'Drag lean stays subtle',
+      );
+      await shot('-during', false);
+      await page.mouse.up();
+      await settled(page);
+      await expectAngles(page, angles);
+      await expect(page.locator('[data-city-selected]')).toHaveCount(0);
+      await expect(page.locator('[data-city-opened]')).toHaveText('');
+      await shot('-after');
+      const label = page.locator('[data-city-building][aria-hidden="false"]').first();
+      const id = await label.getAttribute('data-city-building');
+      await label.click();
+      await expect(page.locator('[data-city-selected]')).toHaveAttribute('data-city-selected', id);
+      result.idleDraws = await idleDraws(page);
+    },
+    { motion: 'full' },
+  );
+  await scenario(
+    'motion-orbit-keyboard',
+    async ({ page, open, shot, result }) => {
+      await open();
+      await settled(page);
+      const original = await cameraAngles(page);
+      await dragCamera(page, { shift: true });
+      await settled(page);
+      const shifted = await cameraAngles(page);
+      assert.notDeepEqual(shifted, original, 'Shift drag persists orbit');
+      await dragCamera(page, { button: 'right' });
+      await settled(page);
+      assert.notDeepEqual(await cameraAngles(page), shifted, 'Right drag persists orbit');
+      await blur(page);
+      for (const key of ['q', 'e', 'Shift+ArrowLeft', 'Shift+ArrowUp']) {
+        const before = await cameraAngles(page);
+        await page.keyboard.press(key);
+        await expect.poll(() => cameraAngles(page)).not.toEqual(before);
+        await settled(page);
+      }
+      const chosen = await cameraAngles(page);
+      for (const key of ['n', 'f']) {
+        await page.keyboard.press(key);
+        await settled(page);
+        await expectAngles(page, chosen);
+      }
+      const beforePan = await projection(page);
+      await page.keyboard.press('ArrowLeft');
+      await expect.poll(() => projection(page)).not.toEqual(beforePan);
+      await expectAngles(page, chosen);
+      await shot('-orbited');
+      const search = page.getByRole('searchbox', { name: 'Search city workspaces' });
+      await search.fill('');
+      await search.pressSequentially('qer');
+      await expect(search).toHaveValue('qer');
+      await expectAngles(page, chosen);
+      await search.fill('');
+      await blur(page);
+      for (let turn = 0; turn < 55; turn += 1) await page.keyboard.press('e');
+      await settled(page);
+      await page.keyboard.press('r');
+      await settled(page);
+      await expectAngles(page, original);
+      await page.keyboard.press('e');
+      await settled(page);
+      await page.keyboard.press('0');
+      await settled(page);
+      await expectAngles(page, original);
+      await expect(page.locator('[data-city]')).toHaveAttribute('data-city-zoom', '1');
+      result.idleDraws = await idleDraws(page);
+      await open('city', 'home');
+      await expect(page.locator('[data-city-ready="true"]')).toBeAttached();
+      await shot('-home');
+    },
+    { motion: 'full' },
+  );
+  await scenario(
+    'motion-touch-cleanup',
+    async ({ page, open, shot, result }) => {
+      await open();
+      await settled(page);
+      const cdp = await page.context().newCDPSession(page);
+      const point = await canvasPoint(page);
+      const touch = (type, points) =>
+        cdp.send('Input.dispatchTouchEvent', {
+          type,
+          touchPoints: points.map(([id, x, y]) => ({ id, x, y, radiusX: 4, radiusY: 4, force: 1 })),
+        });
+      const before = await cameraAngles(page);
+      await touch('touchStart', [[1, point.x - 60, point.y]]);
+      await touch('touchMove', [[1, point.x, point.y + 20]]);
+      await expect.poll(() => cameraAngles(page)).not.toEqual(before);
+      await touch('touchStart', [
+        [1, point.x, point.y + 20],
+        [2, point.x + 80, point.y + 20],
+      ]);
+      await touch('touchEnd', []);
+      await settled(page);
+      await expectAngles(page, before);
+      await shot('-lean-handoff');
+      const zoom = await page.locator('[data-city]').getAttribute('data-city-zoom');
+      await touch('touchStart', [
+        [1, point.x - 60, point.y],
+        [2, point.x + 60, point.y],
+      ]);
+      await touch('touchMove', [
+        [1, point.x - 85, point.y - 35],
+        [2, point.x + 105, point.y + 45],
+      ]);
+      await expect.poll(() => cameraAngles(page)).not.toEqual(before);
+      await expect(page.locator('[data-city]')).not.toHaveAttribute('data-city-zoom', zoom);
+      await shot('-two-fingers', false);
+      await touch('touchMove', [[1, point.x - 85, point.y - 35]]);
+      const handoff = await projection(page);
+      await touch('touchMove', [[1, point.x - 45, point.y - 15]]);
+      await expect.poll(() => projection(page)).not.toEqual(handoff);
+      await touch('touchCancel', []);
+      await settled(page);
+      const released = await projection(page);
+      await page.mouse.move(point.x + 200, point.y + 100);
+      assert.deepEqual(await projection(page), released, 'Cancelled gesture cannot keep panning');
+      await dragCamera(page, { release: false });
+      await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+      await page.mouse.up();
+      await settled(page);
+      await expect(page.locator('[data-city-selected]')).toHaveCount(0);
+      result.idleDraws = await idleDraws(page);
+      await cdp.detach();
+    },
+    { motion: 'full' },
+  );
+  await scenario(
+    'motion-reduced-and-edges',
+    async ({ page, open, shot, result }) => {
+      await open();
+      await settled(page);
+      const original = await cameraAngles(page);
+      await blur(page);
+      for (const elevation of ['Shift+ArrowUp', 'Shift+ArrowDown']) {
+        for (let index = 0; index < 22; index += 1) await page.keyboard.press(elevation);
+        await settled(page);
+        for (const key of ['+', '-']) {
+          for (let index = 0; index < 24; index += 1) await page.keyboard.press(key);
+          await settled(page);
+          await cloudCoverage(page);
+          const transforms = await clouds(page);
+          assert.ok(
+            transforms.some(
+              (value) => value !== 'none' && !/^matrix\(1, 0, 0, 1, 0, 0\)$/.test(value),
+            ),
+            'Full-motion cloud overscan is exercised',
+          );
+          await shot(
+            `-full-${elevation.endsWith('Up') ? 'high' : 'low'}-${key === '+' ? 'near' : 'far'}`,
+          );
+        }
+      }
+      await page.keyboard.press('Home');
+      await settled(page);
+      await dragCamera(page, { release: false });
+      await expect.poll(() => cameraAngles(page)).not.toEqual(original);
+      await page.evaluate(() => {
+        document.documentElement.classList.remove('catalog-full-motion');
+        document.documentElement.classList.add('catalog-reduced-motion');
+      });
+      await expectAngles(page, original);
+      await page.mouse.up();
+      await settled(page);
+      const identities = await page
+        .locator('.city-atmosphere, .city-near-clouds')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const transform = getComputedStyle(node).transform;
+            return transform === 'none' || new window.DOMMatrix(transform).isIdentity;
+          }),
+        );
+      assert.ok(
+        identities.length === 2 && identities.every(Boolean),
+        'Reduced motion freezes cloud transforms',
+      );
+      await blur(page);
+      await page.keyboard.press('e');
+      await settled(page);
+      assert.notDeepEqual(
+        await cameraAngles(page),
+        original,
+        'Reduced motion still allows direct orbit',
+      );
+      for (const key of ['+', '-']) {
+        for (let index = 0; index < 24; index += 1) await page.keyboard.press(key);
+        await settled(page);
+        await cloudCoverage(page);
+        await shot(key === '+' ? '-near' : '-far');
+      }
+      result.idleDraws = await idleDraws(page);
+      await open('showcase', 'home-city', 390);
+      await expect(
+        page.getByRole('button', { name: 'Workspace index', exact: true }),
+      ).toBeVisible();
+      await blur(page);
+      for (let step = 0; step < 5; step += 1) await page.keyboard.press('e');
+      await settled(page);
+      const narrowAngle = await cameraAngles(page);
+      await page.getByRole('button', { name: 'studio · 4 workspaces', exact: true }).click();
+      await settled(page);
+      await expectAngles(page, narrowAngle);
+      const repositoryFits = await page.locator('[data-city]').evaluate((root) => {
+        const viewport = root.querySelector('.city-viewport').getBoundingClientRect();
+        return ['001', '004', '007', '010'].every((suffix) => {
+          const plot = root.querySelector(`[data-city-plot="city-workspace-${suffix}"]`);
+          const x = parseFloat(plot.style.left),
+            y = parseFloat(plot.style.top);
+          return (
+            Number.isFinite(x) &&
+            Number.isFinite(y) &&
+            x >= 0 &&
+            x <= viewport.width &&
+            y >= 0 &&
+            y <= viewport.height
+          );
+        });
+      });
+      assert.ok(repositoryFits, 'Repository focus fits its projected buildings after narrow orbit');
+      await shot('-narrow');
+    },
+    { motion: 'full' },
+  );
+
   await scenario('gpu-context-loss', async ({ page, open, shot }) => {
     await open();
     const lost = await page.locator('canvas[data-city-canvas]').evaluate((canvas) => {

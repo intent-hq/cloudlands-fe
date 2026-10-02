@@ -20,11 +20,28 @@
 }
 .city-atmosphere {
   position: absolute;
-  inset: 0;
+  inset: -8%;
   z-index: -1;
+  pointer-events: none;
+  will-change: transform;
   background:
     linear-gradient(180deg, #e5f0f650, #eaf3f41a 55%, #f6f4ef70),
     var(--city-sky) center / cover;
+}
+.city-near-clouds {
+  position: absolute;
+  inset: -12%;
+  background: var(--city-sky) center / cover;
+  mask-image: linear-gradient(transparent 58%, #0009 92%);
+  opacity: 0.35;
+  pointer-events: none;
+  will-change: transform;
+}
+.city-orbit-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  grid-row: 1 / 4;
 }
 .city-viewport {
   position: absolute;
@@ -355,12 +372,12 @@
   position: absolute;
   right: 22px;
   bottom: 72px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
   gap: 5px;
 }
 .city-camera-divider {
-  height: 3px;
+  display: none;
 }
 .city-footer {
   position: absolute;

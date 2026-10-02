@@ -7083,7 +7083,7 @@
   "home_city_index": "Índice de espacios de trabajo",
   "home_city_close": "Cerrar",
   "home_city_shortcuts": "Atajos de la ciudad",
-  "home_city_drag_hint": "Arrastra para desplazar · desplázate para acercar o alejar",
+  "home_city_drag_hint": "Arrastra para desplazar · Mayús + arrastrar para girar · desplázate para acercar o alejar",
   "home_city_size_legend": "Altura · archivos modificados",
   "home_city_size_description": "2–8 plantas. Una señal simplificada, no una medida del progreso.",
   "home_city_unknown": "Tamaño de los cambios no disponible",
@@ -7113,5 +7113,11 @@
   "home_city_building_label": "{title} — {status}",
   "home_city_repository_label": "{name} · {count} espacios de trabajo",
   "home_city_workspace_number": "Espacio de trabajo {number}",
-  "home_city_list": "Vista de lista"
+  "home_city_list": "Vista de lista",
+  "home_city_rotate_left": "Girar a la izquierda",
+  "home_city_rotate_right": "Girar a la derecha",
+  "home_city_orbit": "Girar e inclinar la ciudad",
+  "home_city_reset_angle": "Restablecer ángulo de visión",
+  "home_city_orbit_gesture": "Mayús + arrastrar / arrastrar con el botón derecho",
+  "home_city_touch_hint": "Con dos dedos: desplaza, junta o separa para ajustar el zoom y gira para rotar."
 }

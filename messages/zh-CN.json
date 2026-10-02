@@ -7083,7 +7083,7 @@
   "home_city_index": "工作区索引",
   "home_city_close": "关闭",
   "home_city_shortcuts": "城市快捷键",
-  "home_city_drag_hint": "拖动平移 · 滚动缩放",
+  "home_city_drag_hint": "拖动平移 · 按住 Shift 拖动旋转 · 滚动缩放",
   "home_city_size_legend": "高度 · 已更改的文件数",
   "home_city_size_description": "2–8 层。仅简要表示规模，不代表进度。",
   "home_city_unknown": "无法获取更改规模",
@@ -7113,5 +7113,11 @@
   "home_city_building_label": "{title}：{status}",
   "home_city_repository_label": "{name} · {count} 个工作区",
   "home_city_workspace_number": "工作区 {number}",
-  "home_city_list": "列表视图"
+  "home_city_list": "列表视图",
+  "home_city_rotate_left": "向左旋转",
+  "home_city_rotate_right": "向右旋转",
+  "home_city_orbit": "旋转和倾斜城市",
+  "home_city_reset_angle": "重置视角",
+  "home_city_orbit_gesture": "按住 Shift 拖动 / 按住右键拖动",
+  "home_city_touch_hint": "双指操作：拖动平移，捏合或张开缩放，扭转旋转。"
 }

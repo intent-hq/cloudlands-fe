@@ -23,6 +23,8 @@
     faCheck,
     faCircle,
     faCloud,
+    faRotateLeft,
+    faRotateRight,
   } from '@fortawesome/free-solid-svg-icons';
   import type { CityBuilding, CityModel } from './home-city-model';
   import {
@@ -75,6 +77,9 @@
     draws: 0,
     triangles: 0,
     moving: false,
+    yaw: 0,
+    elevation: 0,
+    sky: { x: 0, y: 0, scale: 1 },
   });
   const matching = $derived(new Set(matchingIds));
   const buildings = $derived(new Map(model.buildings.map((building) => [building.id, building])));
@@ -257,6 +262,15 @@
       case 'f':
         if (selectedId) scene?.focus(selectedId);
         break;
+      case 'q':
+        scene?.orbit(-Math.PI / 12);
+        break;
+      case 'e':
+        scene?.orbit(Math.PI / 12);
+        break;
+      case 'r':
+        scene?.resetAngle();
+        break;
       case '/':
         void search();
         break;
@@ -282,16 +296,20 @@
         scene?.zoom(1.25);
         break;
       case 'arrowleft':
-        scene?.pan(70, 0);
+        if (event.shiftKey) scene?.orbit(-Math.PI / 12);
+        else scene?.pan(70, 0);
         break;
       case 'arrowright':
-        scene?.pan(-70, 0);
+        if (event.shiftKey) scene?.orbit(Math.PI / 12);
+        else scene?.pan(-70, 0);
         break;
       case 'arrowup':
-        scene?.pan(0, 70);
+        if (event.shiftKey) scene?.orbit(0, Math.PI / 36);
+        else scene?.pan(0, 70);
         break;
       case 'arrowdown':
-        scene?.pan(0, -70);
+        if (event.shiftKey) scene?.orbit(0, -Math.PI / 36);
+        else scene?.pan(0, -70);
         break;
       default:
         handled = false;
@@ -310,6 +328,10 @@
     { key: '0 / Home', label: m.home_city_overview() },
     { key: 'Esc', label: m.home_city_back() },
     { key: '↑ ↓ ← →', label: m.home_city_pan() },
+    { key: 'Q / E', label: m.home_city_rotate_left() + ' / ' + m.home_city_rotate_right() },
+    { key: '⇧ ↑ ↓ ← →', label: m.home_city_orbit() },
+    { key: 'R', label: m.home_city_reset_angle() },
+    { key: m.home_city_orbit_gesture(), label: m.home_city_orbit() },
     { key: '+ / −', label: m.home_city_zoom_in() + ' / ' + m.home_city_zoom_out() },
     { key: '?', label: m.home_city_shortcuts() },
   ]);
@@ -328,12 +350,18 @@
   data-city-zoom={frame.zoom}
   data-city-draws={frame.draws}
   data-city-triangles={frame.triangles}
+  data-city-yaw={frame.yaw}
+  data-city-elevation={frame.elevation}
   aria-label={m.home_city_title()}
   style:--city-sky={`url('${sky}')`}
   in:fade={{ tier: 'slow' }}
   out:fly={{ axis: 'y', distance: -8, tier: 'moderate' }}
 >
-  <div class="city-atmosphere" aria-hidden="true"></div>
+  <div
+    class="city-atmosphere"
+    aria-hidden="true"
+    style:transform={`translate3d(${frame.sky.x}px, ${frame.sky.y}px, 0) scale(${frame.sky.scale})`}
+  ></div>
   <div
     bind:this={viewport}
     class="city-viewport"
@@ -341,6 +369,11 @@
     tabindex="0"
     aria-label={m.home_city_pan()}
     aria-describedby="city-keyboard-hint"
+  ></div>
+  <div
+    class="city-near-clouds"
+    aria-hidden="true"
+    style:transform={`translate3d(${frame.sky.x * 1.8}px, ${frame.sky.y * 1.8}px, 0) scale(${1 + (frame.sky.scale - 1) * 1.8})`}
   ></div>
 
   <header class="city-heading">
@@ -606,6 +639,38 @@
   {/if}
 
   <div class="city-camera-controls">
+    <div class="city-orbit-controls">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="city-tool"
+        disabled={failed}
+        aria-label={m.home_city_rotate_left()}
+        tooltip={m.home_city_rotate_left()}
+        tooltipShortcut="Q"
+        onclick={() => scene?.orbit(-Math.PI / 12)}><Fa icon={faRotateLeft} /></Button
+      >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="city-tool"
+        disabled={failed}
+        aria-label={m.home_city_reset_angle()}
+        tooltip={m.home_city_reset_angle()}
+        tooltipShortcut="R"
+        onclick={() => scene?.resetAngle()}><Fa icon={faCrosshairs} /></Button
+      >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="city-tool"
+        disabled={failed}
+        aria-label={m.home_city_rotate_right()}
+        tooltip={m.home_city_rotate_right()}
+        tooltipShortcut="E"
+        onclick={() => scene?.orbit(Math.PI / 12)}><Fa icon={faRotateRight} /></Button
+      >
+    </div>
     <Button
       variant="ghost"
       size="icon-sm"
@@ -690,5 +755,6 @@
         <dd><kbd>{shortcut.key}</kbd></dd>
       </div>{/each}
   </dl>
+  <p class="mt-5 type-caption text-muted-foreground">{m.home_city_touch_hint()}</p>
   <p class="mt-5 type-caption text-muted-foreground">{m.home_city_size_description()}</p>
 </ContentDialog>

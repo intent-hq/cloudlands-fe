@@ -25,6 +25,9 @@ for (const directory of directories) {
       ...result,
       report: path.relative(output, filename),
       trace: path.relative(output, path.resolve(directory, result.trace)),
+      video: result.video
+        ? path.relative(output, path.resolve(directory, result.video))
+        : undefined,
       screenshots: (result.screenshots ?? []).map((file) =>
         path.relative(output, path.resolve(directory, file)),
       ),
@@ -70,7 +73,7 @@ const rows = scenarios
             `<details><summary>Attempt ${position + 1}: ${escape(attempt.status)} · ${escape(attempt.startedAt)}</summary>${link(
               attempt.report,
               'Original report',
-            )} · ${link(attempt.trace, 'Playwright trace')}<p>${attempt.screenshots
+            )} · ${link(attempt.trace, 'Playwright trace')}${attempt.video ? ` · ${link(attempt.video, 'Motion video')}` : ''}<p>${attempt.screenshots
               .map((file) => link(file, path.basename(file)))
               .join(' · ')}</p>${
               attempt.error ? `<pre>${escape(attempt.error)}</pre>` : ''

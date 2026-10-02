@@ -7083,7 +7083,7 @@
   "home_city_index": "ワークスペース一覧",
   "home_city_close": "閉じる",
   "home_city_shortcuts": "街のショートカット",
-  "home_city_drag_hint": "ドラッグで移動 · スクロールで拡大・縮小",
+  "home_city_drag_hint": "ドラッグで移動 · Shift＋ドラッグで回転 · スクロールで拡大・縮小",
   "home_city_size_legend": "高さ · 変更ファイル数",
   "home_city_size_description": "2〜8階。規模を簡略化した目安で、進捗を示すものではありません。",
   "home_city_unknown": "変更規模を取得できません",
@@ -7113,5 +7113,11 @@
   "home_city_building_label": "{title}：{status}",
   "home_city_repository_label": "{name} · ワークスペース {count} 件",
   "home_city_workspace_number": "ワークスペース {number}",
-  "home_city_list": "リスト表示"
+  "home_city_list": "リスト表示",
+  "home_city_rotate_left": "左に回転",
+  "home_city_rotate_right": "右に回転",
+  "home_city_orbit": "街を回転・傾斜",
+  "home_city_reset_angle": "視点の角度をリセット",
+  "home_city_orbit_gesture": "Shift＋ドラッグ / 右ボタンでドラッグ",
+  "home_city_touch_hint": "2本指で移動、指を開閉して拡大・縮小、ひねって回転。"
 }

@@ -19,13 +19,32 @@ export interface CityFrame {
   draws: number;
   triangles: number;
   moving: boolean;
+  yaw: number;
+  elevation: number;
+  sky: { x: number; y: number; scale: number };
 }
 interface CameraView {
   x: number;
   y: number;
   z: number;
   span: number;
+  yaw: number;
+  elevation: number;
 }
+interface CityPointer {
+  x: number;
+  y: number;
+  startX: number;
+  startY: number;
+  moved: boolean;
+  orbit: boolean;
+}
+const DEFAULT_YAW = Math.atan2(24, 30);
+const DEFAULT_ELEVATION = Math.atan2(31, Math.hypot(24, 30));
+const CAMERA_DISTANCE = Math.hypot(24, 31, 30);
+const MIN_ELEVATION = (28 * Math.PI) / 180;
+const MAX_ELEVATION = (66 * Math.PI) / 180;
+const angleDelta = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
 interface SceneOptions {
   onframe: (frame: CityFrame) => void;
   onselect: (id: string) => void;
@@ -49,7 +68,14 @@ export class CityScene {
   private selected: string | null = null;
   private width = 1;
   private height = 1;
-  private view: CameraView = { x: 0, y: 0.8, z: 0, span: 24 };
+  private view: CameraView = {
+    x: 0,
+    y: 0.8,
+    z: 0,
+    span: 24,
+    yaw: DEFAULT_YAW,
+    elevation: DEFAULT_ELEVATION,
+  };
   private home: CameraView = { ...this.view };
   private motion: { from: CameraView; to: CameraView; start: number } | null = null;
   private history: CameraView[] = [];
@@ -59,8 +85,9 @@ export class CityScene {
   private lost = false;
   private structure = '';
   private bounds = new THREE.Box3();
-  private readonly pointers = new Map<number, { x: number; y: number }>();
-  private press: { x: number; y: number; moved: boolean } | null = null;
+  private readonly pointers = new Map<number, CityPointer>();
+  private lean = { yaw: 0, elevation: 0 };
+  private settling: { from: { yaw: number; elevation: number }; start: number } | null = null;
 
   constructor(
     private readonly host: HTMLElement,
@@ -116,11 +143,13 @@ export class CityScene {
     });
     this.intersection.observe(host);
     this.unsubscribeMotion = onReducedMotionChange((reduced) => {
-      if (reduced && this.motion) {
-        this.view = { ...this.motion.to };
+      if (reduced) {
+        if (this.motion) this.view = { ...this.motion.to };
         this.motion = null;
-        this.invalidate();
+        this.lean = { yaw: 0, elevation: 0 };
+        this.settling = null;
       }
+      this.invalidate();
     });
     const { signal } = this.abort;
     this.canvas.addEventListener(
@@ -128,6 +157,7 @@ export class CityScene {
       (event) => {
         event.preventDefault();
         this.lost = true;
+        this.cancelGesture();
         cancelAnimationFrame(this.frame);
         this.frame = 0;
         options.onlost();
@@ -140,10 +170,13 @@ export class CityScene {
     this.canvas.addEventListener('pointercancel', this.pointerCancel, { signal });
     this.canvas.addEventListener('lostpointercapture', this.pointerCancel, { signal });
     this.canvas.addEventListener('wheel', this.wheel, { passive: false, signal });
+    this.canvas.addEventListener('contextmenu', (event) => event.preventDefault(), { signal });
+    window.addEventListener('blur', this.cancelGesture, { signal });
     document.addEventListener(
       'visibilitychange',
       () => {
         if (document.hidden) {
+          this.cancelGesture();
           cancelAnimationFrame(this.frame);
           this.frame = 0;
         } else this.invalidate();
@@ -199,7 +232,13 @@ export class CityScene {
   focus(id: string) {
     const anchor = this.art?.anchors.get(id);
     if (!anchor) return;
-    this.move({ x: anchor.x, y: anchor.y * 0.4, z: anchor.z, span: Math.max(9, anchor.y + 6) });
+    this.move({
+      ...(this.motion?.to ?? this.view),
+      x: anchor.x,
+      y: anchor.y * 0.4,
+      z: anchor.z,
+      span: Math.max(9, anchor.y + 6),
+    });
   }
 
   focusRepository(id: string) {
@@ -207,17 +246,31 @@ export class CityScene {
     if (!islands.length) return;
     const box = new THREE.Box3();
     for (const island of islands) {
-      box.expandByPoint(new THREE.Vector3(island.x - island.radius, 0, island.z - island.radius));
-      box.expandByPoint(new THREE.Vector3(island.x + island.radius, 5, island.z + island.radius));
+      box.expandByPoint(
+        new THREE.Vector3(island.x - island.radius, -1.5, island.z - island.radius),
+      );
+      box.expandByPoint(new THREE.Vector3(island.x + island.radius, 5.8, island.z + island.radius));
     }
-    const center = box.getCenter(new THREE.Vector3()),
-      size = box.getSize(new THREE.Vector3());
-    this.move({
+    const center = box.getCenter(new THREE.Vector3());
+    const target = {
+      ...(this.motion?.to ?? this.view),
       x: center.x,
-      y: 1.2,
+      y: center.y,
       z: center.z,
-      span: Math.max(12, size.z, size.x / (this.width / this.height)) * 1.25,
-    });
+      span: 20,
+    };
+    this.setCamera(target);
+    let extent = 0;
+    for (const x of [box.min.x, box.max.x]) {
+      for (const y of [box.min.y, box.max.y]) {
+        for (const z of [box.min.z, box.max.z]) {
+          const projected = new THREE.Vector3(x, y, z).project(this.camera);
+          extent = Math.max(extent, Math.abs(projected.x) / 0.8, Math.abs(projected.y) / 0.75);
+        }
+      }
+    }
+    this.setCamera(this.renderedView());
+    this.move({ ...target, span: Math.max(12, 20 * extent) });
   }
 
   overview() {
@@ -239,13 +292,38 @@ export class CityScene {
     );
   }
 
+  orbit(yaw: number, elevation = 0, animate = true) {
+    const view = animate ? (this.motion?.to ?? this.view) : this.view;
+    const next = {
+      ...view,
+      yaw: view.yaw + yaw,
+      elevation: THREE.MathUtils.clamp(view.elevation + elevation, MIN_ELEVATION, MAX_ELEVATION),
+    };
+    if (animate) this.move(next, false);
+    else {
+      this.view = next;
+      this.motion = null;
+      this.invalidate();
+    }
+  }
+
+  resetAngle() {
+    this.move({
+      ...(this.motion?.to ?? this.view),
+      yaw: DEFAULT_YAW,
+      elevation: DEFAULT_ELEVATION,
+    });
+  }
+
   pan(dx: number, dy: number) {
     if (this.bounds.isEmpty()) return;
     const view = this.motion?.to ?? this.view;
     const scale = view.span / this.height;
-    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const right = new THREE.Vector3(Math.cos(view.yaw), 0, -Math.sin(view.yaw));
     const forward = new THREE.Vector3(-right.z, 0, right.x);
-    const offset = right.multiplyScalar(-dx * scale).add(forward.multiplyScalar(-dy * scale * 1.3));
+    const offset = right
+      .multiplyScalar(-dx * scale)
+      .add(forward.multiplyScalar((-dy * scale) / Math.sin(view.elevation)));
     const margin = this.home.span * 0.5;
     this.view = {
       ...view,
@@ -269,20 +347,38 @@ export class CityScene {
       this.history.push({ ...this.view });
       if (this.history.length > 30) this.history.shift();
     }
+    const from = this.renderedView();
+    const destination = { ...to, yaw: from.yaw + angleDelta(to.yaw - from.yaw) };
+    this.lean = { yaw: 0, elevation: 0 };
+    this.settling = null;
     if (prefersReducedMotion()) {
-      this.view = { ...to };
+      this.view = destination;
       this.motion = null;
-    } else this.motion = { from: { ...this.view }, to: { ...to }, start: performance.now() };
+    } else this.motion = { from, to: destination, start: performance.now() };
     this.invalidate();
   }
 
   private fitHome() {
     if (this.bounds.isEmpty()) {
-      this.home = { x: 0, y: 0.8, z: 0, span: 24 };
+      this.home = {
+        x: 0,
+        y: 0.8,
+        z: 0,
+        span: 24,
+        yaw: DEFAULT_YAW,
+        elevation: DEFAULT_ELEVATION,
+      };
       return;
     }
     const center = this.bounds.getCenter(new THREE.Vector3());
-    this.home = { x: center.x, y: 0.8, z: center.z, span: 20 };
+    this.home = {
+      x: center.x,
+      y: 0.8,
+      z: center.z,
+      span: 20,
+      yaw: DEFAULT_YAW,
+      elevation: DEFAULT_ELEVATION,
+    };
     this.setCamera(this.home);
     let minX = Infinity,
       maxX = -Infinity,
@@ -319,7 +415,10 @@ export class CityScene {
       height = Math.max(1, this.host.clientHeight);
     const atHome =
       Math.abs(this.view.span - this.home.span) < 0.05 &&
-      Math.abs(this.view.x - this.home.x) < 0.05;
+      Math.abs(this.view.x - this.home.x) < 0.05 &&
+      Math.abs(this.view.z - this.home.z) < 0.05 &&
+      Math.abs(angleDelta(this.view.yaw - this.home.yaw)) < 0.001 &&
+      Math.abs(this.view.elevation - this.home.elevation) < 0.001;
     this.width = width;
     this.height = height;
     this.renderer.setSize(width, height);
@@ -337,7 +436,12 @@ export class CityScene {
     this.camera.right = (view.span * aspect) / 2;
     this.camera.top = view.span / 2;
     this.camera.bottom = -view.span / 2;
-    this.camera.position.set(view.x + 24, view.y + 31, view.z + 30);
+    const horizontal = CAMERA_DISTANCE * Math.cos(view.elevation);
+    this.camera.position.set(
+      view.x + horizontal * Math.sin(view.yaw),
+      view.y + CAMERA_DISTANCE * Math.sin(view.elevation),
+      view.z + horizontal * Math.cos(view.yaw),
+    );
     this.camera.lookAt(view.x, view.y, view.z);
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
@@ -360,14 +464,57 @@ export class CityScene {
         y: THREE.MathUtils.lerp(from.y, to.y, t),
         z: THREE.MathUtils.lerp(from.z, to.z, t),
         span: THREE.MathUtils.lerp(from.span, to.span, t),
+        yaw: THREE.MathUtils.lerp(from.yaw, to.yaw, t),
+        elevation: THREE.MathUtils.lerp(from.elevation, to.elevation, t),
       };
       if (progress === 1) this.motion = null;
     }
-    this.setCamera(this.view);
+    if (this.settling) {
+      const progress = Math.min(1, (now - this.settling.start) / (spring.moderate.settleMs * 2));
+      const remaining = 1 - spring.moderate.easing(progress);
+      this.lean = {
+        yaw: this.settling.from.yaw * remaining,
+        elevation: this.settling.from.elevation * remaining,
+      };
+      if (progress === 1) this.settling = null;
+    }
+    this.setCamera(this.renderedView());
     this.renderer.render(this.scene, this.camera);
     this.projectLabels();
-    if (this.motion) this.invalidate();
+    if (this.motion || this.settling) this.invalidate();
   };
+
+  private renderedView(): CameraView {
+    return {
+      ...this.view,
+      yaw: this.view.yaw + this.lean.yaw,
+      elevation: THREE.MathUtils.clamp(
+        this.view.elevation + this.lean.elevation,
+        MIN_ELEVATION,
+        MAX_ELEVATION,
+      ),
+    };
+  }
+
+  private skyParallax() {
+    if (prefersReducedMotion()) return { x: 0, y: 0, scale: 1 };
+    const view = this.renderedView();
+    const dx = view.x - this.home.x,
+      dz = view.z - this.home.z;
+    const right = dx * Math.cos(view.yaw) - dz * Math.sin(view.yaw);
+    const forward = dx * Math.sin(view.yaw) + dz * Math.cos(view.yaw);
+    return {
+      x:
+        Math.tanh(-right / this.home.span + Math.sin(view.yaw - DEFAULT_YAW) * 0.6) *
+        this.width *
+        0.025,
+      y:
+        Math.tanh(-forward / this.home.span + (view.elevation - DEFAULT_ELEVATION) * 1.5) *
+        this.height *
+        0.025,
+      scale: 1 + Math.tanh(Math.log(this.home.span / view.span)) * 0.025,
+    };
+  }
 
   private projectLabels() {
     if (!this.art) return;
@@ -425,7 +572,10 @@ export class CityScene {
       zoom: this.home.span / this.view.span,
       draws: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
-      moving: !!this.motion,
+      moving: !!this.motion || !!this.settling,
+      yaw: this.renderedView().yaw,
+      elevation: this.renderedView().elevation,
+      sky: this.skyParallax(),
     });
   }
 
@@ -454,11 +604,24 @@ export class CityScene {
   }
 
   private pointerDown = (event: PointerEvent) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 && event.button !== 2) return;
+    event.preventDefault();
     this.host.focus({ preventScroll: true });
     this.canvas.setPointerCapture(event.pointerId);
-    this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    this.press = { x: event.clientX, y: event.clientY, moved: this.pointers.size > 1 };
+    this.motion = null;
+    this.pointers.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      orbit: event.shiftKey || event.button === 2,
+    });
+    if (this.pointers.size > 1) {
+      for (const pointer of this.pointers.values()) pointer.moved = true;
+      this.settleLean();
+    } else if (event.shiftKey || event.button === 2) this.settleLean();
+    this.invalidate();
   };
   private pointerMove = (event: PointerEvent) => {
     const previous = this.pointers.get(event.pointerId);
@@ -466,31 +629,84 @@ export class CityScene {
       this.canvas.style.cursor = this.pick(event) ? 'pointer' : 'grab';
       return;
     }
+    const dx = event.clientX - previous.x,
+      dy = event.clientY - previous.y;
+    if (Math.hypot(event.clientX - previous.startX, event.clientY - previous.startY) > 4)
+      previous.moved = true;
     if (this.pointers.size > 1) {
       const other = [...this.pointers.entries()].find(([id]) => id !== event.pointerId)?.[1];
       if (other) {
         const before = Math.hypot(previous.x - other.x, previous.y - other.y);
         const after = Math.hypot(event.clientX - other.x, event.clientY - other.y);
-        if (before > 0 && after > 0) this.zoom(before / after);
+        this.pan(dx / 2, dy / 2);
+        if (before > 12 && after > 12) {
+          const turn = angleDelta(
+            Math.atan2(event.clientY - other.y, event.clientX - other.x) -
+              Math.atan2(previous.y - other.y, previous.x - other.x),
+          );
+          this.view.span = THREE.MathUtils.clamp(
+            (this.view.span * before) / after,
+            6,
+            this.home.span * 2,
+          );
+          this.orbit(-turn, 0, false);
+        }
       }
-    } else this.pan(event.clientX - previous.x, event.clientY - previous.y);
-    this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (this.press && Math.hypot(event.clientX - this.press.x, event.clientY - this.press.y) > 4)
-      this.press.moved = true;
-    this.canvas.style.cursor = 'grabbing';
+    } else if (previous.moved) {
+      if (previous.orbit) this.orbit(-dx * 0.004, dy * 0.003, false);
+      else {
+        this.pan(dx, dy);
+        this.settling = null;
+        this.lean = prefersReducedMotion()
+          ? { yaw: 0, elevation: 0 }
+          : {
+              yaw: -Math.tanh((event.clientX - previous.startX) / 160) * 0.065,
+              elevation: Math.tanh((event.clientY - previous.startY) / 180) * 0.032,
+            };
+        this.invalidate();
+      }
+    }
+    previous.x = event.clientX;
+    previous.y = event.clientY;
+    if (previous.moved) this.canvas.style.cursor = 'grabbing';
   };
   private pointerUp = (event: PointerEvent) => {
-    if (this.press && !this.press.moved) {
-      const id = this.pick(event);
-      if (id) this.options.onselect(id);
-    }
+    const pointer = this.pointers.get(event.pointerId);
+    const id =
+      pointer && !pointer.moved && !pointer.orbit && this.pointers.size === 1
+        ? this.pick(event)
+        : null;
     this.pointerCancel(event);
+    if (id) this.options.onselect(id);
   };
   private pointerCancel = (event: PointerEvent) => {
-    this.pointers.delete(event.pointerId);
-    this.press = null;
+    if (!this.pointers.delete(event.pointerId)) return;
     if (this.canvas.hasPointerCapture(event.pointerId))
       this.canvas.releasePointerCapture(event.pointerId);
+    for (const pointer of this.pointers.values()) {
+      pointer.startX = pointer.x;
+      pointer.startY = pointer.y;
+      pointer.moved = true;
+    }
+    if (!this.pointers.size) this.settleLean();
+    this.canvas.style.cursor = 'grab';
+  };
+  private settleLean() {
+    if (prefersReducedMotion()) {
+      this.lean = { yaw: 0, elevation: 0 };
+      this.settling = null;
+    } else if (this.lean.yaw || this.lean.elevation) {
+      this.settling = { from: { ...this.lean }, start: performance.now() };
+    }
+    this.invalidate();
+  }
+  private cancelGesture = () => {
+    const ids = [...this.pointers.keys()];
+    this.pointers.clear();
+    for (const id of ids) {
+      if (this.canvas.hasPointerCapture(id)) this.canvas.releasePointerCapture(id);
+    }
+    this.settleLean();
     this.canvas.style.cursor = 'grab';
   };
   private wheel = (event: WheelEvent) => {
@@ -501,6 +717,7 @@ export class CityScene {
 
   dispose() {
     this.disposed = true;
+    this.cancelGesture();
     cancelAnimationFrame(this.frame);
     this.abort.abort();
     this.unsubscribeMotion();
