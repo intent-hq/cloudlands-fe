@@ -165,6 +165,9 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     async (reasoningEffort) => {
       const initialAgent = {
         name: 'Developer',
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
+        specialist: 'developer',
         model: 'gpt-fixture',
         provider: 'codex',
         prompt: 'Build the thing',

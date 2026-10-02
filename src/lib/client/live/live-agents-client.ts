@@ -428,7 +428,12 @@ export class LiveAgentsClient implements AgentsClient {
     };
     if (request.model !== undefined) params.model = request.model;
     if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
-    if (request.specialist !== undefined && request.specialist !== null) {
+    if (request.rememberSpecialist !== undefined)
+      params.rememberSpecialist = request.rememberSpecialist;
+    if (
+      request.specialist !== undefined &&
+      (request.specialist !== null || request.rememberSpecialist)
+    ) {
       params.specialistId = request.specialist;
     }
     if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
@@ -786,17 +791,35 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult> {
     const changes: Record<string, unknown> = { specialist: params.specialist };
+    if (params.rememberSpecialist !== undefined)
+      changes.rememberSpecialist = params.rememberSpecialist;
     if (params.model !== undefined) changes.model = params.model;
     if (params.systemPrompt !== undefined) changes.systemPrompt = params.systemPrompt;
-    return runMutation('agent.update', {
-      agentId: params.agentId,
-      workspaceId: params.workspaceId,
-      changes,
-    });
+    const request = { agentId: params.agentId, workspaceId: params.workspaceId, changes };
+    try {
+      await backendRequest('agent.update', request);
+      return { success: true };
+    } catch (error) {
+      // Older daemons reject unknown change keys before applying any fields.
+      // Retry only that refusal; all validation/storage failures keep rollback.
+      if (
+        params.rememberSpecialist !== undefined &&
+        (error as { rpcCode?: number })?.rpcCode === -32602 &&
+        mutationErrorMessage(error).includes(
+          'agent.update: unknown field `rememberSpecialist` in `changes`',
+        )
+      ) {
+        const legacyChanges = { ...changes };
+        delete legacyChanges.rememberSpecialist;
+        return runMutation('agent.update', { ...request, changes: legacyChanges });
+      }
+      return { success: false, error: mutationErrorMessage(error) };
+    }
   }
   async rename(
     agentId: string,

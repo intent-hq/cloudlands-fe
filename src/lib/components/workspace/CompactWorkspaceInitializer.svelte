@@ -2131,6 +2131,8 @@
       // attempt fix — with no client id there is nothing to poison retries).
       const initialAgent = {
         name: agentName,
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
         model: resolvedModel,
         // Omission inherits the daemon's defaults; blank explicitly clears.
         // Persist with creation so prompt/attachment turns cannot race an update.

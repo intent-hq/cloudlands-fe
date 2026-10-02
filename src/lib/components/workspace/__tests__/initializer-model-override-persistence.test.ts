@@ -123,7 +123,11 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
       mocks.readable([
         { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
       ]),
-    { select: vi.fn(() => []) },
+    {
+      select: vi.fn(() => [
+        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      ]),
+    },
   ),
   selectCustomSpecialistsLoaded: () => mocks.readable(true),
   selectFileSpecialistsLoaded: () => mocks.readable(true),
@@ -378,6 +382,10 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
 
     // …and be submitted as the initial agent's model.
     expect(submittedInitialAgent()).toMatchObject({
+      name: 'Coordinator',
+      nameExplicitlySet: false,
+      specialist: 'spec-writer',
+      rememberSpecialist: true,
       model: 'opus4.6',
       provider: 'auggie',
     });
