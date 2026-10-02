@@ -126,7 +126,7 @@ describe('renderer app saga registry', () => {
       'agentEventsIpcSaga',
       'gitEventsIpcSaga',
     ]);
-    expect(new Set(sagas).size).toBe(110);
+    expect(new Set(sagas).size).toBe(111);
   });
 
   it('returns one cancellation handler per registered saga', () => {
