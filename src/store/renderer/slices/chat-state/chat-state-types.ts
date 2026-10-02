@@ -219,6 +219,8 @@ export interface ChatAgentState {
   processedQueuedTurn?: {
     turnId: string;
     messages?: QueuedMessage[];
+    /** Exact entry/turn pairs observed across recovery admissions of this operation. */
+    entryTurns?: Record<string, string>;
     attemptGeneration: number;
     record?: LastAttemptedMessage;
   };

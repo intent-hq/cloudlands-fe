@@ -436,6 +436,7 @@ describe('agent-send wire contract (pending agent, first message)', () => {
         'stale-after-processing',
         'legacy-lagged',
         'batch',
+        'recovered-before-ack',
       ].map((order) => [prior, order] as const),
     ),
   )(
@@ -506,7 +507,11 @@ describe('agent-send wire contract (pending agent, first message)', () => {
               chatQueueProcessingReceived(
                 AGENT,
                 first.id,
-                order === 'legacy-lagged' ? undefined : processedRows,
+                order === 'legacy-lagged'
+                  ? undefined
+                  : order === 'recovered-before-ack'
+                    ? [first]
+                    : processedRows,
               ),
             );
           if (
@@ -522,9 +527,18 @@ describe('agent-send wire contract (pending agent, first message)', () => {
               chatQueueProcessingReceived(
                 AGENT,
                 first.id,
-                order === 'legacy-lagged' ? undefined : processedRows,
+                order === 'legacy-lagged'
+                  ? undefined
+                  : order === 'recovered-before-ack'
+                    ? [first]
+                    : processedRows,
               ),
             );
+          if (order === 'recovered-before-ack') {
+            appStore.dispatch(
+              chatQueueProcessingReceived(AGENT, first.id, [{ ...latest, id: 'recovered-id' }]),
+            );
+          }
           if (order === 'stale-after-processing') {
             appStore.dispatch(replaceAgentQueue(AGENT, [first], WS));
             noteAgentQueueEventSnapshotApplied(AGENT, WS);

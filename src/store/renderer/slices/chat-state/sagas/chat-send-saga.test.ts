@@ -769,6 +769,7 @@ describe('chatSendSaga', () => {
         'stale-after-processing',
         'legacy-lagged',
         'batch',
+        'recovered-before-ack',
       ].map((order) => [prior, order] as const),
     ),
   )(
@@ -834,7 +835,11 @@ describe('chatSendSaga', () => {
             chatQueueProcessingReceived(
               AGENT,
               first.id,
-              order === 'legacy-lagged' ? undefined : processedRows,
+              order === 'legacy-lagged'
+                ? undefined
+                : order === 'recovered-before-ack'
+                  ? [first]
+                  : processedRows,
             ),
           );
         if (order !== 'ack-only' && order !== 'lagged-old-snapshot' && order !== 'legacy-lagged') {
@@ -846,9 +851,18 @@ describe('chatSendSaga', () => {
             chatQueueProcessingReceived(
               AGENT,
               first.id,
-              order === 'legacy-lagged' ? undefined : processedRows,
+              order === 'legacy-lagged'
+                ? undefined
+                : order === 'recovered-before-ack'
+                  ? [first]
+                  : processedRows,
             ),
           );
+        if (order === 'recovered-before-ack') {
+          run.dispatch(
+            chatQueueProcessingReceived(AGENT, first.id, [{ ...latest, id: 'recovered-id' }]),
+          );
+        }
         if (order === 'stale-after-processing') {
           run.dispatch(replaceAgentQueue(AGENT, [first], WS));
           noteAgentQueueEventSnapshotApplied(AGENT, WS);

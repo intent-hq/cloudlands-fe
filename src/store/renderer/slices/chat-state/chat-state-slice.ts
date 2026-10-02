@@ -367,6 +367,13 @@ function reduceQueueProcessing(
     consumedTurns.has(agent.queuedRetryRecords[key].turnId),
   );
   const previous = agent.processedQueuedTurn;
+  const entryTurns = messages
+    ? Object.fromEntries(
+        messages.flatMap((message) =>
+          message.turnId === undefined ? [] : [[message.id, message.turnId] as const],
+        ),
+      )
+    : undefined;
   // A recovered entry may start processing again with a richer payload under the
   // same turn. Refresh that operation only, never a subsequent local attempt.
   // Send-now's legacy response must not erase authoritative event data.
@@ -376,14 +383,19 @@ function reduceQueueProcessing(
       ? buildProcessedRecordedAttempt(messages, previous.record)
       : undefined;
     return updateAgent(state, agentId, {
-      processedQueuedTurn: { ...previous, messages, record },
+      processedQueuedTurn: {
+        ...previous,
+        messages,
+        record,
+        entryTurns: { ...previous.entryTurns, ...entryTurns },
+      },
       ...(record && previous.attemptGeneration === (agent.attemptGeneration ?? 0)
         ? { lastAttemptedMessage: record, attemptGeneration: previous.attemptGeneration }
         : {}),
     });
   }
   const attemptGeneration = (agent.attemptGeneration ?? 0) + (keys.length ? 1 : 0);
-  const processedQueuedTurn = { turnId, messages, attemptGeneration };
+  const processedQueuedTurn = { turnId, messages, entryTurns, attemptGeneration };
   if (!keys.length) return updateAgent(state, agentId, { processedQueuedTurn });
   const parked = agent.queuedRetryRecords[keys[0]];
   const remaining = { ...agent.queuedRetryRecords };
@@ -1066,7 +1078,8 @@ chatStateReducer.with(chatQueuedSendStarted, (state, { payload: [agentId] }) =>
 function isProcessedEntry(agent: ChatAgentState, messageId: string, turnId: string) {
   const processed = agent.processedQueuedTurn;
   return processed?.messages
-    ? processed.messages.some((message) => message.id === messageId && message.turnId === turnId)
+    ? processed.entryTurns?.[messageId] === turnId ||
+        processed.messages.some((message) => message.id === messageId && message.turnId === turnId)
     : processed?.turnId === turnId;
 }
 

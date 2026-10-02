@@ -4031,9 +4031,13 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     },
   );
 
-  it.each([false, true])(
-    'refreshes the same recovered turn without overwriting a later identical attempt (%s)',
-    async (newAttempt) => {
+  it.each(
+    ['parked', 'set', 'park'].flatMap((ack) =>
+      [false, true].map((newAttempt) => [ack, newAttempt] as const),
+    ),
+  )(
+    'refreshes the same recovered turn without overwriting a later identical attempt (%s, %s)',
+    async (ack, newAttempt) => {
       appStore.dispatch(chatReset(AGENT));
       await primeBridge();
       const handler = capturedHandlers[0]!;
@@ -4058,9 +4062,10 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
           mergedMessageMetadata: [first.messageMetadata, { answeredQuestionsMessageId: 'two' }],
         },
       };
-      appStore.dispatch(
-        chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.turnId),
-      );
+      if (ack === 'parked')
+        appStore.dispatch(
+          chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.turnId),
+        );
       handler(
         notification('agent:queue:processing', {
           agentId: AGENT,
@@ -4071,7 +4076,7 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
         }),
       );
       const previousAttempt = structuredClone(
-        appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage!,
+        appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage ?? { text: first.content },
       );
       if (newAttempt) appStore.dispatch(chatLastAttemptedMessageSet(AGENT, previousAttempt));
       handler(notification('agent:queue:updated', { agentId: AGENT, queue: [recovered] }));
@@ -4092,6 +4097,20 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
           content: recovered.content,
         }),
       );
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+      if (ack !== 'parked')
+        appStore.dispatch(
+          ack === 'set'
+            ? chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.turnId, true)
+            : chatQueuedRetryRecordParked(
+                AGENT,
+                first.id,
+                { text: first.content },
+                first.turnId,
+                null,
+                true,
+              ),
+        );
       appStore.dispatch(chatSendFailed(AGENT, 'failed again', recovered.turnId));
       expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual(
         newAttempt
