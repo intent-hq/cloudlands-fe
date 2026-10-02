@@ -194,6 +194,7 @@ export function patchTableCell(
   paragraphs.at(-1)!.content = join([...(paragraphs.at(-1)!.content ?? []), ...after]);
   return {
     ...original,
+    type: next.type,
     attrs: next.attrs,
     content: [
       ...original.content!.slice(0, firstBlock),
