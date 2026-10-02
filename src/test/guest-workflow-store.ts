@@ -1,7 +1,5 @@
 import { principalReducer } from '$store/renderer/slices/principal/principal-slice';
-import { initialState as daemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import { initialState as workspaceEvents } from '$store/renderer/slices/workspace-events/workspace-events-slice';
-import type { PrincipalState } from '$store/renderer/slices/principal/principal-types';
+import { createAdmittedLegacyPrincipal } from './fixtures/admitted-legacy-principal';
 import {
   userPreferencesReducer,
   initialState as userPreferences,
@@ -11,10 +9,7 @@ import {
   guestSessionsReducer,
   initialState as guestSessions,
 } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-import {
-  connectionsReducer,
-  initialState as connections,
-} from '$store/renderer/slices/connections/connections-slice';
+import { connectionsReducer } from '$store/renderer/slices/connections/connections-slice';
 import {
   workspaceReducer,
   initialState as workspace,
@@ -24,40 +19,9 @@ import {
 export function createGuestWorkflowTestStore() {
   const freshState = () => ({
     guestSessions,
-    connections: { ...connections, hasReceivedList: true },
+    ...createAdmittedLegacyPrincipal(),
     workspace,
     userPreferences: { ...userPreferences, labsMultiplayerEnabled: true },
-    daemonHealth: { ...daemonHealth, health: 'healthy' as const },
-    workspaceEvents: {
-      ...workspaceEvents,
-      subscriptionPending: false,
-      subscriptionGeneration: 1,
-    },
-    principal: {
-      context: JSON.stringify([connections.windowBackendId, daemonHealth.connectionGeneration, 1]),
-      status: 'ready',
-      boundPrincipalId: 'principal',
-      minimumRevision: 0,
-      invalidation: 0,
-      presentationVersion: 0,
-      refreshedPresentationVersion: 0,
-      error: null,
-      snapshot: {
-        principal: {
-          id: 'principal',
-          login: null,
-          displayName: null,
-          avatarUrl: null,
-          isAdministrator: true,
-        },
-        capabilities: {
-          hostMembership: false,
-          collaborationIdentity: false,
-          authenticatedDevices: false,
-          personalPairing: false,
-        },
-      },
-    } as PrincipalState,
   });
   let state = freshState();
   const channel = stdChannel();
