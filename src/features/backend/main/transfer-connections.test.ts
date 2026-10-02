@@ -549,7 +549,9 @@ describe.each(['file.read', 'file.readChunk'])('registered-root %s transfers', (
     ['11.1', true],
     ['12.0', true],
     ['11.0', false],
-    ['13.0', false],
+    ['13.0', true],
+    ['13.0.1', true],
+    ['14.0', false],
     ['12.0-preview', false],
     [undefined, false],
   ])('negotiates on the dedicated socket with version %s', async (protocolVersion, supported) => {
@@ -578,24 +580,27 @@ describe.each(['file.read', 'file.readChunk'])('registered-root %s transfers', (
     expect(__getActiveTransferCountForTesting()).toBe(0);
   });
 
-  it('does not reuse protocol 12 support if the dedicated socket reconnects after hello', async () => {
-    vi.useFakeTimers();
-    const { sockets } = installFakeFactory();
-    const result = requestOverTransferConnection(wssConfig, method, {
-      workspaceId: 'ws',
-      path: 'same.pdf',
-      gitRootId: 'root-a',
-      ...(method === 'file.readChunk' ? { offset: 0, length: 1024 } : {}),
-    }).catch((error) => error);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(sockets[0].writes.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
-    respondLast(sockets[0], { protocolVersion: '12.0' });
-    sockets[0].emit('close');
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(await result).toBeInstanceOf(Error);
-    expect(sockets).toHaveLength(2);
-    expect(sockets[1].writes).toEqual([]);
-    expect(sockets[1].destroyed).toBe(true);
-    expect(__getActiveTransferCountForTesting()).toBe(0);
-  });
+  it.each(['12.0', '13.0'])(
+    'does not reuse protocol %s support if the dedicated socket reconnects after hello',
+    async (protocolVersion) => {
+      vi.useFakeTimers();
+      const { sockets } = installFakeFactory();
+      const result = requestOverTransferConnection(wssConfig, method, {
+        workspaceId: 'ws',
+        path: 'same.pdf',
+        gitRootId: 'root-a',
+        ...(method === 'file.readChunk' ? { offset: 0, length: 1024 } : {}),
+      }).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sockets[0].writes.map((frame) => JSON.parse(frame).method)).toEqual(['client.hello']);
+      respondLast(sockets[0], { protocolVersion });
+      sockets[0].emit('close');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await result).toBeInstanceOf(Error);
+      expect(sockets).toHaveLength(2);
+      expect(sockets[1].writes).toEqual([]);
+      expect(sockets[1].destroyed).toBe(true);
+      expect(__getActiveTransferCountForTesting()).toBe(0);
+    },
+  );
 });

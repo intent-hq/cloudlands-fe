@@ -851,8 +851,8 @@ describe('BrowserWebSocketTransport', () => {
 describe('root file reads on the sending connection', () => {
   it.each(
     ['file.read', 'file.readChunk'].flatMap((method) =>
-      ['11.1', '12.0'].flatMap((protocolVersion) =>
-        ['11.0', '12.0', '13.0', 'invalid', undefined].map((nextVersion) => ({
+      ['11.1', '12.0', '13.0'].flatMap((protocolVersion) =>
+        ['11.0', '12.0', '13.0', '14.0', 'invalid', undefined].map((nextVersion) => ({
           method,
           protocolVersion,
           nextVersion,
@@ -904,7 +904,7 @@ describe('root file reads on the sending connection', () => {
       }
       const result = await second;
       transport.dispose();
-      if (nextVersion === '12.0') {
+      if (nextVersion === '12.0' || nextVersion === '13.0') {
         expect(result).toEqual(response);
         expect(sockets[1].lastFrame()).toMatchObject({ method, params });
       } else {

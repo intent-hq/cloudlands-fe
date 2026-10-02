@@ -4,9 +4,12 @@ import { m } from './paraglide/messages.js';
 function assertRootFileSupport(protocolVersion: unknown): void {
   const match =
     typeof protocolVersion === 'string' ? protocolVersion.match(/^(\d+)\.(\d+)(?:\.\d+)?$/) : null;
-  // Protocol 12 removes unrelated RPCs and retains the registered-root read contract.
+  // Protocols 12 and 13 remove unrelated RPCs and retain the registered-root read contract.
   const supported =
-    match && ((Number(match[1]) === 11 && Number(match[2]) >= 1) || Number(match[1]) === 12);
+    match &&
+    ((Number(match[1]) === 11 && Number(match[2]) >= 1) ||
+      Number(match[1]) === 12 ||
+      Number(match[1]) === 13);
   if (!supported) {
     throw new Error(m.files_secondaryRoot_unsupported_error());
   }
