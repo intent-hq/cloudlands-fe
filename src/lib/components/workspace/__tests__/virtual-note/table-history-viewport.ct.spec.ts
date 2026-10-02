@@ -211,3 +211,109 @@ for (const tail of [true, false])
           );
       }
     });
+
+for (const tail of [true, false])
+  for (const fraction of [0, 1])
+    test(`history reveals offscreen oversized caret after scrolling ${fraction ? 'down' : 'up'} ${tail ? 'with tail' : 'at end'}`, async ({
+      mount,
+      page,
+    }, info) => {
+      const source =
+        '| H | R |\n| --- | --- |\n| ' +
+        'abcdefghij '.repeat(6000) +
+        ' | neighbor |' +
+        (tail ? '\n| tail | end |' : '');
+      await mount(Pair, { props: { sourceOverride: source } });
+      for (const side of ['native', 'bounded'])
+        await expect(page.getByTestId(side).locator('.tiptap')).toHaveCount(1);
+      const observations = [];
+      for (const side of ['native', 'bounded']) {
+        const root = page.getByTestId(side).getByTestId('proof');
+        if (side === 'native')
+          await root.evaluate((el) => {
+            const dom = (el as Host).native.view.dom;
+            dom.classList.add('proof-table-projection');
+            dom.style.setProperty('--proof-column-width', '275px');
+            dom.style.setProperty('--proof-table-width', '550px');
+            dom.style.width = '550px';
+            Object.assign(dom.querySelector('table')!.parentElement!.style, {
+              position: 'static',
+              left: 'auto',
+              transform: 'none',
+              width: '100%',
+              minWidth: '0',
+              maxWidth: 'none',
+              overflow: 'visible',
+            });
+          });
+        await frame(page, side);
+        await root.evaluate((el) => {
+          const s = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
+          s.scrollTop = (s.scrollHeight - s.clientHeight) / 2;
+        });
+        await frame(page, side);
+        const target = await root.evaluate((el) => {
+          const s = el.querySelector('[data-testid="editor-host"]')!.parentElement!,
+            r = s.getBoundingClientRect();
+          return { x: r.left + 60, y: r.top + s.clientHeight / 2 };
+        });
+        await page.mouse.click(target.x, target.y);
+        const clicked = await frame(page, side);
+        await page.keyboard.press('X');
+        const typed = await frame(page, side);
+        const phases = [];
+        for (let cycle = 0; cycle < 2; cycle++) {
+          await root.evaluate((el, f) => {
+            const s = el.querySelector('[data-testid="editor-host"]')!.parentElement!;
+            s.scrollTop = (s.scrollHeight - s.clientHeight) * f;
+          }, fraction);
+          const away = await frame(page, side);
+          if (side === 'native')
+            expect(
+              away.caret.top < away.viewport.top || away.caret.bottom > away.viewport.bottom,
+            ).toBe(true);
+          else expect(away.source).toBe(typed.source);
+          for (const key of ['Control+z', 'Control+Shift+z']) {
+            await page.keyboard.press(key);
+            const current = await frame(page, side);
+            phases.push({ key, cycle, ...current });
+            if (side === 'bounded') {
+              expect(current.source).toBe(key === 'Control+z' ? source : typed.source);
+              expect(current.actual).toEqual(key === 'Control+z' ? clicked.actual : typed.actual);
+              expect(current.destroyed).toBeGreaterThan(away.destroyed!);
+            } else expect(current.offset).toBe(key === 'Control+z' ? clicked.offset : typed.offset);
+          }
+        }
+        observations.push({ side, clicked, typed, phases });
+      }
+      await info.attach('offscreen-history-viewport.json', {
+        body: JSON.stringify(observations),
+        contentType: 'application/json',
+      });
+      for (const side of observations)
+        for (const phase of side.phases) {
+          expect(phase.error).toBe('');
+          expect(phase.pm).toBe(phase.domPM);
+          expect(phase.caret.top, side.side).toBeGreaterThanOrEqual(phase.viewport.top);
+          expect(phase.caret.bottom, side.side).toBeLessThanOrEqual(phase.viewport.bottom);
+          expect(phase.visible.some((s) => s.includes('abcdefghij'))).toBe(true);
+          if (phase.stats) {
+            expect(phase.actual).toEqual(phase.selection!.table!.head);
+            expect(phase.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
+            expect(phase.stats.maxTableTransferPageBytes).toBeLessThanOrEqual(4096);
+            expect(phase.stats.cachePages).toBeLessThanOrEqual(4);
+            expect(phase.stats.cacheBytes).toBeLessThanOrEqual(16384);
+            expect(phase.stats.pmNodes).toBeLessThanOrEqual(4096);
+          }
+        }
+      for (let i = 0; i < observations[0].phases.length; i++) {
+        const native = observations[0].phases[i],
+          bounded = observations[1].phases[i];
+        // Native scrolling reveals the caret at the edge in its travel direction.
+        expect(
+          Math.abs(
+            bounded.caret.top - bounded.viewport.top - (native.caret.top - native.viewport.top),
+          ),
+        ).toBeLessThanOrEqual(1);
+      }
+    });
