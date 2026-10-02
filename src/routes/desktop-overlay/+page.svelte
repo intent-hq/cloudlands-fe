@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import DesktopControlOverlay from '$features/desktop/components/DesktopControlOverlay.svelte';
+  import { Screen } from '$lib/components/patterns/screen';
   import type { DesktopOverlayBridge } from '$shared/desktop-overlay';
   const bridge =
     typeof window !== 'undefined'
@@ -33,13 +34,15 @@
   });
 </script>
 
-<DesktopControlOverlay
-  {kind}
-  {pulse}
-  onStop={() => bridge?.stop()}
-  onOpenAgent={() => bridge?.openAgent()}
-  onInteractive={(interactive) => bridge?.setInteractive(interactive)}
-/>
+<Screen class="h-full bg-transparent">
+  <DesktopControlOverlay
+    {kind}
+    {pulse}
+    onStop={() => bridge?.stop()}
+    onOpenAgent={() => bridge?.openAgent()}
+    onInteractive={(interactive) => bridge?.setInteractive(interactive)}
+  />
+</Screen>
 
 <style>
   :global(html),
