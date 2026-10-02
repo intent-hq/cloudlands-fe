@@ -55,6 +55,11 @@ for (const [height, width] of [
         }),
       );
       map = TableMap.get(native.state.doc.firstChild!);
+      for (const [pos, from] of positions) for (const direction of [-1, 1]) {
+        const expected = map.nextCell(pos - 1, 'vert', direction);
+        const next = service.tableAdjacent(from, 'vert', direction);
+        expect(next?.point.cell).toBe(expected === null ? undefined : positions.get(expected + 1));
+      }
       for (let r = 0; r < map.height; r++)
         for (let c = 0; c < map.width; c++) {
           expect(service.tableAddress(0, r, c).point.cell).toBe(
