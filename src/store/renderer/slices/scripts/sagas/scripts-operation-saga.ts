@@ -4,6 +4,9 @@ import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { scriptsClient } from '$features/scripts/scripts.client';
+import { scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
+import { beginScriptRead, isScriptReadCurrent } from '../utils/script-read-context';
+import { selectScriptById } from '../scripts-selectors';
 import { takeLeadingInContext } from '../../../utils/context-saga-effects';
 import {
   workspaceDeleted,
@@ -14,8 +17,10 @@ import {
   restartScriptRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,
+  scriptReadFinished,
   startScriptRequested,
   stopScriptRequested,
+  updateRuntimeState,
 } from '../scripts-slice';
 import type { ScriptQuickAction } from '../scripts-types';
 
@@ -48,6 +53,13 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
   const operation = operationFor(action);
   const authority = yield* selectWorkspaceActionContext.effect(workspaceId);
   if (!authority) return;
+  const before = yield* selectScriptById.effect(workspaceId, scriptId);
+  // Older daemons reset finished scripts silently. A changed row proves that
+  // an event/read already supplied authority; otherwise reconcile runtime only.
+  const stoppedRead =
+    operation === 'stop' && before?.runtime.status === 'exited'
+      ? yield* beginScriptRead(workspaceId)
+      : undefined;
   try {
     const outcome = yield* race({
       result: call([scriptsClient, scriptsClient[operation]], workspaceId, scriptId),
@@ -66,10 +78,33 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       );
       return;
     }
+    if (
+      stoppedRead &&
+      (yield* isScriptReadCurrent(stoppedRead)) &&
+      before === (yield* selectScriptById.effect(workspaceId, scriptId))
+    ) {
+      try {
+        const result = yield* call([scriptsClient, scriptsClient.getStatus], workspaceId, scriptId);
+        const runtime = result.success ? scriptRuntimeSnapshot(result.status) : undefined;
+        if (
+          runtime &&
+          (yield* isScriptReadCurrent(stoppedRead)) &&
+          before === (yield* selectScriptById.effect(workspaceId, scriptId))
+        ) {
+          yield* put(updateRuntimeState(workspaceId, scriptId, runtime, true));
+        }
+      } catch {
+        // The stop succeeded; a failed compatibility read must not report that
+        // the mutation failed. Reconnect still reconciles the authoritative row.
+      }
+    }
+    if (stoppedRead && !(yield* isScriptReadCurrent(stoppedRead))) return;
     yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
   } catch (error) {
     if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
     yield* put(scriptOperationFailed(workspaceId, scriptId, operation, errorMessage(error)));
+  } finally {
+    if (stoppedRead) yield* put(scriptReadFinished(workspaceId, stoppedRead.requestId));
   }
 }
 

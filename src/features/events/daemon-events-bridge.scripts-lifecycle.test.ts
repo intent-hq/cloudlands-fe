@@ -212,6 +212,80 @@ describe('script lifecycle event to transport', () => {
     await settle();
     expect(listCalls()).toHaveLength(2);
   });
+
+  it('reconciles a legacy silent finished-stop with status only', async () => {
+    const run = start();
+    const completed = row({
+      archivedAt: 'now',
+      lastRun: { outcome: 'succeeded', stoppedAt: 'now' },
+      runtime: { status: 'exited', exitCode: 0, restartCount: 0 },
+    });
+    run.dispatch(setScriptsData(WS, [completed]));
+    transport.request.mockImplementation(async (method) =>
+      method === 'script.status' ? { status: 'idle', exitCode: 0, restartCount: 0 } : { ok: true },
+    );
+    run.dispatch(stopScriptRequested(WS, ID));
+    await settle();
+    expect(run.scripts().scripts[ID].runtime.status).toBe('idle');
+    expect(run.scripts().scripts[ID].lastRun).toEqual(completed.lastRun);
+    expect(run.scripts().scripts[ID].archivedAt).toBe('now');
+    expect(transport.request.mock.calls.map(([method]) => method)).toEqual([
+      'script.stop',
+      'script.status',
+    ]);
+  });
+
+  it('uses the authoritative finished-stop event without a status or list read', async () => {
+    const run = start();
+    run.dispatch(
+      setScriptsData(WS, [row({ runtime: { status: 'exited', exitCode: 0, restartCount: 0 } })]),
+    );
+    transport.request.mockImplementation(async (method) => {
+      if (method === 'script.stop')
+        emit('script:state', { scriptId: ID, status: 'idle', exitCode: 0, restartCount: 0 });
+      return { ok: true };
+    });
+    run.dispatch(stopScriptRequested(WS, ID));
+    await settle();
+    expect(run.scripts().scripts[ID].runtime.status).toBe('idle');
+    expect(transport.request.mock.calls.map(([method]) => method)).toEqual(['script.stop']);
+  });
+
+  it.each(['rerun', 'removed', 'connection', 'authority', 'workspace'] as const)(
+    'rejects a delayed legacy stop status after %s',
+    async (change) => {
+      const status = deferred<unknown>();
+      const run = start();
+      run.dispatch(
+        setScriptsData(WS, [row({ runtime: { status: 'exited', exitCode: 0, restartCount: 0 } })]),
+      );
+      transport.request.mockImplementation(async (method) =>
+        method === 'script.status' ? status.promise : { ok: true },
+      );
+      run.dispatch(stopScriptRequested(WS, ID));
+      await settle();
+      expect(transport.request).toHaveBeenCalledWith('script.status', {
+        workspaceId: WS,
+        scriptId: ID,
+      });
+      if (change === 'rerun')
+        emit('script:state', {
+          scriptId: ID,
+          status: 'running',
+          restartCount: 0,
+          startedAt: 'new run',
+        });
+      if (change === 'removed') emit('script:changed', { scriptId: ID, action: 'removed' });
+      if (change === 'connection') run.dispatch(backendReconnected());
+      if (change === 'authority') run.state.workspace.workspaces.map[WS].myRole = 'collaborator';
+      if (change === 'workspace') run.dispatch(workspaceUnmounted(WS));
+      const before = run.scripts()?.scripts[ID];
+      status.resolve({ status: 'idle', restartCount: 0 });
+      await settle();
+      expect(run.scripts()?.scripts[ID]).toEqual(before);
+      expect(listCalls()).toHaveLength(0);
+    },
+  );
 });
 
 describe('script list and retained output read fences', () => {
