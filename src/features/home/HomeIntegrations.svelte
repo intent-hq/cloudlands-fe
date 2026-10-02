@@ -34,7 +34,11 @@
   import { ListView, ListRow } from '$lib/components/patterns/collection';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
-  import { describeHomeIntegrationScope } from './home-integrations-model';
+  import {
+    describeHomeIntegrationScope,
+    collectHomeLinkedPulls,
+    showHomePullRepository,
+  } from './home-integrations-model';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -50,6 +54,7 @@
   } from './home-integrations-selectors';
   import {
     mountHomeIntegrations,
+    updateHomeLinkedPulls,
     unmountHomeIntegrations,
     searchHomeIntegrations,
     refreshHomeIntegrations,
@@ -70,6 +75,7 @@
   let {
     kind,
     repositories,
+    scopedWorkspaceIds,
     organization,
     workspaceId,
     preview,
@@ -77,6 +83,7 @@
   }: {
     kind: HomeIntegrationKind;
     repositories: IntegrationRepository[];
+    scopedWorkspaceIds?: string[];
     organization?: string;
     workspaceId?: string;
     preview?: HomeIntegrationsState;
@@ -84,6 +91,11 @@
   } = $props();
   const collaborator$ = selectIsCollaboratorOnlyClient();
   const workspaces$ = selectWorkspaceItems();
+  const linkedPulls = $derived(
+    kind === 'prs'
+      ? collectHomeLinkedPulls($workspaces$, repositories, organization, scopedWorkspaceIds)
+      : [],
+  );
   let workspacePreviewId = $state<string | null>(null);
   const workspacePreview = $derived(
     $workspaces$.find((workspace) => workspace.id === workspacePreviewId),
@@ -184,9 +196,20 @@
         return;
       mountedSettingsScope = key;
       appStore.dispatch(
-        mountHomeIntegrations({ kind, repositories, organization, workspaceId }, settings),
+        mountHomeIntegrations(
+          { kind, repositories, organization, workspaceId, linkedPulls },
+          settings,
+        ),
       );
     });
+  });
+  $effect(() => {
+    const pulls = linkedPulls;
+    if (!preview && kind === 'prs')
+      untrack(() => {
+        if (JSON.stringify(view.scope?.linkedPulls ?? []) !== JSON.stringify(pulls))
+          appStore.dispatch(updateHomeLinkedPulls(pulls));
+      });
   });
   onDestroy(() => {
     if (!preview) appStore.dispatch(unmountHomeIntegrations());
@@ -446,7 +469,7 @@
                     class="type-caption flex min-w-0 max-w-[45%] items-center gap-2 text-muted-foreground"
                   >
                     <span class="shrink-0">{item.identifier}</span>
-                    {#if isPr && repositories.length !== 1}<Tooltip.Provider
+                    {#if isPr && showHomePullRepository(item, repositories)}<Tooltip.Provider
                         ><Tooltip.Root
                           ><Tooltip.Trigger
                             >{#snippet child({ props: homeTooltipProps })}<span

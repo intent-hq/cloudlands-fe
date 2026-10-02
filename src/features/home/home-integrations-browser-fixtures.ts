@@ -142,6 +142,7 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
             htmlUrl: `https://github.com/${params.owner}/${params.repo}/pull/${number}`,
             owner: params.owner,
             repo: params.repo,
+            state: params.state === 'closed' ? 'closed' : 'open',
             title: params.query
               ? 'Latest query result'
               : params.nextToken
@@ -166,9 +167,18 @@ export function setupHomeIntegrationsFixtures(appStore: Pick<typeof rendererStor
     },
     'github.pulls.get': (raw) => {
       const params = raw as { owner: string; repo: string; number: number };
+      if (params.number === 904) throw new Error('Fixture linked PR unavailable');
+      if (params.number === 905 || params.number === 999) return { pull: null };
       return {
         pull: {
           ...pull,
+          ...(params.number >= 900
+            ? {
+                title: params.number === 903 ? 'Merged linked fix' : 'Linked service fix',
+                state: params.number === 903 ? 'closed' : 'open',
+                merged: params.number === 903,
+              }
+            : {}),
           number: params.number,
           htmlUrl: `https://github.com/${params.owner}/${params.repo}/pull/${params.number}`,
         },

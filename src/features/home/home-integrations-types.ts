@@ -5,12 +5,18 @@ export interface IntegrationRepository {
   owner?: string;
   path?: string;
 }
+export interface HomeLinkedPull {
+  owner: string;
+  repo: string;
+  number: number;
+}
 export interface HomeIntegrationScope {
   kind: HomeIntegrationKind;
   repositories: IntegrationRepository[];
   /** Explicit GitHub organization scope, independent of repositories loaded in Home. */
   organization?: string;
   workspaceId?: string;
+  linkedPulls?: HomeLinkedPull[];
 }
 export interface HomeIntegrationItem {
   id: string;
@@ -57,6 +63,7 @@ export interface HomeIntegrationsState {
   status: 'idle' | 'loading' | 'ready' | 'disconnected' | 'error';
   error: string | null;
   items: HomeIntegrationItem[];
+  linkedItems?: Record<string, HomeIntegrationItem>;
   cursors: (string | null)[];
   loadingMore: boolean;
   selectedId: string | null;

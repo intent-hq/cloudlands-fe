@@ -4,7 +4,11 @@ import {
 } from './home-workspaces-persistence';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import type { HomeIntegrationScope, HomeIntegrationsState } from './home-integrations-types';
+import type {
+  HomeIntegrationScope,
+  HomeIntegrationsState,
+  HomeLinkedPull,
+} from './home-integrations-types';
 
 export const emptyHomeIntegrations: HomeIntegrationsState = {
   scope: null,
@@ -42,6 +46,10 @@ export const mountHomeIntegrations =
   createAction<[scope: HomeIntegrationScope, settings?: HomeIntegrationViewConfiguration]>(
     'homeIntegrations/mount',
   );
+export const updateHomeLinkedPulls = createAction<[pulls: HomeLinkedPull[]]>(
+  'homeIntegrations/linkedPulls',
+);
+export const loadHomeLinkedPulls = createAction('homeIntegrations/loadLinkedPulls');
 export const unmountHomeIntegrations = createAction('homeIntegrations/unmount');
 export const searchHomeIntegrations =
   createAction<[query: string, filter: string, closed: boolean]>('homeIntegrations/search');
@@ -73,6 +81,15 @@ homeIntegrationsReducer.with(mountHomeIntegrations, (state, { payload: [scope, s
     scope.kind
   ],
   status: 'loading',
+}));
+homeIntegrationsReducer.with(updateHomeLinkedPulls, (state, { payload: [linkedPulls] }) => ({
+  ...state,
+  scope: state.scope ? { ...state.scope, linkedPulls } : null,
+  linkedItems: Object.fromEntries(
+    Object.entries(state.linkedItems ?? {}).filter(([id]) =>
+      linkedPulls.some((pull) => id === `${pull.owner}/${pull.repo}#${pull.number}`),
+    ),
+  ),
 }));
 homeIntegrationsReducer.with(unmountHomeIntegrations, (state) => ({
   ...emptyHomeIntegrations,

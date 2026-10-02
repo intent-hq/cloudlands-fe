@@ -1066,6 +1066,7 @@
                   <HomeIntegrations
                     header={homeHeader}
                     kind="prs"
+                    scopedWorkspaceIds={scopedWorkspaces.map((workspace) => workspace.id)}
                     organization={selectedOrg?.owner}
                     preview={integrationPreview?.prs}
                     {repositories}

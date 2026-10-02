@@ -23,7 +23,9 @@
   const dispose = startHomePreview(() => [setupHomeIntegrationsFixtures(store)]);
   admitLegacyPrincipal();
   store.dispatch(guestSessionsListUnavailable());
-  store.dispatch(replaceWorkspaceList(workspaces));
+  $effect(() => {
+    store.dispatch(replaceWorkspaceList(workspaces));
+  });
   const repositories = $derived(
     Array.from({ length: repoCount }, (_, index) => ({
       key: `repo-${index}`,

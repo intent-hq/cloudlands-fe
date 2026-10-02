@@ -30,9 +30,14 @@ import type {
   HomePullCheck,
 } from './home-integrations-types';
 import { selectHomeWorkspaceView } from './home-workspaces-selectors';
-import { selectHomeIntegrations } from './home-integrations-selectors';
+import {
+  selectHomeIntegrations,
+  selectHomeIntegrationSearchState,
+} from './home-integrations-selectors';
 import {
   mountHomeIntegrations,
+  updateHomeLinkedPulls,
+  loadHomeLinkedPulls,
   unmountHomeIntegrations,
   suspendHomeIntegrations,
   searchHomeIntegrations,
@@ -70,7 +75,7 @@ interface PullWire {
 function pullItem(pull: PullWire, owner: string, repo: string): HomeIntegrationItem {
   const address = { owner: pull.owner ?? owner, repo: pull.repo ?? repo };
   return {
-    id: `${address.owner}/${address.repo}#${pull.number}`,
+    id: `${address.owner}/${address.repo}#${pull.number}`.toLowerCase(),
     ...address,
     number: pull.number,
     identifier: `#${pull.number}`,
@@ -248,7 +253,7 @@ const listCache = new Map<
 function* listWorker(action: { type: string }): SagaGenerator<void> {
   if (action.type === unmountHomeIntegrations.type || action.type === suspendHomeIntegrations.type)
     return;
-  const state = yield* select(selectHomeIntegrations.select);
+  const state = yield* select(selectHomeIntegrationSearchState.select);
   if (!state.scope) return;
   const generation = state.generation;
   yield* call(integrationReconnectSettled);
@@ -278,6 +283,7 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
         error: null,
       }),
     );
+    yield* put(loadHomeLinkedPulls());
     return;
   }
 
@@ -289,7 +295,8 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
     if (
       state.scope.kind === 'prs' &&
       !state.scope.organization?.trim() &&
-      !repositories(state).length
+      !repositories(state).length &&
+      !state.scope.linkedPulls?.length
     ) {
       yield* put(
         patchHomeIntegrations(generation, {
@@ -299,6 +306,7 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
           loadingMore: false,
         }),
       );
+      yield* put(loadHomeLinkedPulls());
       return;
     }
     const auth = yield* call(
@@ -348,6 +356,7 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
         error: null,
       }),
     );
+    yield* put(loadHomeLinkedPulls());
   } catch (error) {
     if (context.isCurrent() && state.scope.kind === 'linear' && isLinearNotConfigured(error)) {
       yield* put(
@@ -378,6 +387,58 @@ function* listWorker(action: { type: string }): SagaGenerator<void> {
   } finally {
     active = false;
   }
+}
+/** Explicit workspace links supplement person-filtered search without owning its cursors. */
+function* linkedPullsWorker(action: { type: string }): SagaGenerator<void> {
+  if (action.type !== updateHomeLinkedPulls.type && action.type !== loadHomeLinkedPulls.type)
+    return;
+  const state = yield* select(selectHomeIntegrationSearchState.select);
+  if (state.scope?.kind !== 'prs' || state.status !== 'ready') return;
+  const context = captureIntegrationContext(state.scope.workspaceId);
+  const loaded = new Map(
+    [...Object.values(state.linkedItems ?? {}), ...state.items].map((item) => [item.id, item]),
+  );
+  const items: HomeIntegrationItem[] = [];
+  const pulls = state.scope.linkedPulls ?? [];
+  // Bound concurrent targeted reads; one unavailable link never fails the search page.
+  for (let index = 0; index < pulls.length; index += 6) {
+    const batch = yield* all(
+      pulls.slice(index, index + 6).map((pull) =>
+        call(async () => {
+          const id = `${pull.owner}/${pull.repo}#${pull.number}`;
+          const existing = loaded.get(id);
+          if (existing) return existing;
+          try {
+            const response = await backendRequest<{ pull: PullWire | null }>('github.pulls.get', {
+              ...pull,
+              workspaceId: state.scope?.workspaceId,
+            });
+            return response.pull ? pullItem(response.pull, pull.owner, pull.repo) : null;
+          } catch {
+            return null;
+          }
+        }),
+      ),
+    );
+    if (!context.isCurrent()) return;
+    items.push(...batch.filter((item): item is HomeIntegrationItem => item !== null));
+  }
+  const query = state.query.trim().toLowerCase();
+  yield* put(
+    patchHomeIntegrations(state.generation, {
+      linkedItems: Object.fromEntries(
+        items
+          .filter(
+            (item) =>
+              (state.closed
+                ? item.state === 'closed' || item.state === 'merged'
+                : item.state !== 'closed' && item.state !== 'merged') &&
+              (!query || `${item.title} ${item.identifier}`.toLowerCase().includes(query)),
+          )
+          .map((item) => [item.id, item]),
+      ),
+    }),
+  );
 }
 function* commentsWorker(): SagaGenerator<void> {
   const state = yield* select(selectHomeIntegrations.select);
@@ -607,7 +668,7 @@ function* filesWorker(): SagaGenerator<void> {
         filesTruncated: response.truncated,
         filesLoading: false,
         reviewData: { ...(current.reviewData ?? emptyReviewData), ...totals },
-        items: current.items.map((item) =>
+        items: (yield* select(selectHomeIntegrationSearchState.select)).items.map((item) =>
           item.id === state.selectedId ? { ...item, ...totals } : item,
         ),
       }),
@@ -722,6 +783,7 @@ export function* homeIntegrationsSaga(): SagaGenerator<void> {
   ];
   yield* all([
     takeLatest([...resets, loadMoreHomeIntegrations], listWorker),
+    takeLatest([...resets, updateHomeLinkedPulls, loadHomeLinkedPulls], linkedPullsWorker),
     takeLatest([...resets, selectHomeIntegration], selectionWorker),
     takeLatest(
       [backendReconnected, setGitHubAuthState, logoutGitHub, setLinearAuthState, logoutLinear],

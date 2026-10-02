@@ -1,6 +1,7 @@
 import { createMockWorkspace } from '../../test/factories/workspace.factory';
 import { expect, test } from '../../test/ct-test';
 import Harness from './home-integrations-harness.svelte';
+import Preview from './home-integrations.preview.svelte';
 
 // Failure contracts: wrong request envelope/field casing; lost workspace routing; repo
 // truncation; stale search overwriting current results; failed pagination deleting rows;
@@ -559,4 +560,130 @@ test('organization enumeration refuses incomplete scope instead of sidebar fallb
   const calls = await page.evaluate(() => window.__homeIntegrationBrowser!.calls);
   expect(calls.filter((call) => call.method === 'github.pulls.search')).toHaveLength(1);
   expect(calls.filter((call) => call.method === 'github.repos.search')).toHaveLength(2);
+});
+
+// Explicit links must survive person filters, use bounded reads, and never broaden repo search.
+test('cross-repository linked PRs follow workspace scope and retain live selection and pages', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const workspace = createMockWorkspace({
+    repositoryOwner: 'acme',
+    repositoryName: 'studio',
+    title: 'Linked work',
+    prUrl: 'https://github.com/OTHER/service/pull/901/?tab=files#discussion',
+  });
+  const unrelated = createMockWorkspace({
+    repositoryOwner: 'elsewhere',
+    repositoryName: 'repo',
+    prUrl: 'https://github.com/other/service/pull/999',
+  });
+  const component = await mount(Harness, { props: { workspaces: [workspace, unrelated] } });
+  const list = component.getByRole('listbox', { name: 'Pull requests' });
+  const calls = () => page.evaluate(() => window.__homeIntegrationBrowser!.calls);
+  await expect(list.getByRole('option')).toHaveCount(2);
+  await expect(list).toContainText('Linked service fix');
+  expect(
+    (await calls()).filter((c) => c.method === 'github.pulls.get').map((c) => c.params),
+  ).toEqual([{ owner: 'other', repo: 'service', number: 901, workspaceId: 'home-route' }]);
+  await testInfo.attach('linked-open', {
+    body: await page.screenshot({ path: testInfo.outputPath('linked-open.png') }),
+    contentType: 'image/png',
+  });
+  await component.getByRole('button', { name: 'Load more', exact: true }).click();
+  await component.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(list.getByRole('option')).toHaveCount(3);
+  await list.getByRole('option').filter({ hasText: 'Linked service fix' }).click();
+  await expect(component.getByRole('heading', { name: 'Reconnect recovery' })).toBeVisible();
+  await component.update({
+    props: {
+      workspaces: [
+        workspace,
+        unrelated,
+        { ...workspace, id: unrelated.id, prUrl: 'https://github.com/other/service/pull/902' },
+      ],
+    },
+  });
+  await expect(list.getByRole('option')).toHaveCount(4);
+  await expect(component.getByRole('heading', { name: 'Reconnect recovery' })).toBeVisible();
+  await expect(list).toContainText('Second page pull request');
+  await component.update({ props: { workspaces: [workspace, unrelated] } });
+  await expect(list.getByRole('option')).toHaveCount(3);
+  await component.getByRole('searchbox').fill('no-linked-match');
+  await expect(list).not.toContainText('Linked service fix');
+  await component.getByRole('searchbox').fill('');
+  await expect(list).toContainText('Linked service fix');
+  await component.update({
+    props: { organization: 'elsewhere', workspaces: [workspace, unrelated] },
+  });
+  await expect(list).not.toContainText('Linked service fix');
+  await expect
+    .poll(async () =>
+      (await calls()).some((c) => c.method === 'github.pulls.get' && c.params.number === 999),
+    )
+    .toBe(true);
+  expect(
+    (await calls())
+      .filter((c) => c.method === 'github.pulls.search')
+      .every((c) => c.params.owner !== 'other'),
+  ).toBe(true);
+  await testInfo.attach('linked-pr-wire', {
+    body: JSON.stringify(await calls(), null, 2),
+    contentType: 'application/json',
+  });
+});
+
+test('linked PRs deduplicate URL forms and omit unavailable or wrong-state pulls', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const link = (number: number) =>
+    createMockWorkspace({
+      repositoryOwner: 'acme',
+      repositoryName: 'studio',
+      prUrl: `https://github.com/other/service/pull/${number}`,
+    });
+  const duplicate = { ...link(901), prUrl: 'https://github.com/OTHER/SERVICE/pull/901/files?x=1' };
+  const component = await mount(Harness, {
+    props: { workspaces: [link(901), duplicate, link(903), link(904), link(905)] },
+  });
+  const list = component.getByRole('listbox', { name: 'Pull requests' });
+  await expect(list.getByRole('option')).toHaveCount(2);
+  await expect(component.getByRole('alert')).toHaveCount(0);
+  const filter = component.getByRole('combobox', { name: 'Home views', exact: true });
+  await filter.click();
+  await page.getByRole('option', { name: 'Created by me', exact: true }).click();
+  await expect(list).toContainText('Linked service fix');
+  const status = component.getByRole('combobox', { name: 'Status', exact: true });
+  await status.click();
+  await page.getByRole('option', { name: 'Closed / merged', exact: true }).click();
+  await expect(list).toContainText('Merged linked fix');
+  await expect(list).not.toContainText('Linked service fix');
+  await testInfo.attach('linked-closed', {
+    body: await page.screenshot({ path: testInfo.outputPath('linked-closed.png') }),
+    contentType: 'image/png',
+  });
+  const calls = await page.evaluate(() => window.__homeIntegrationBrowser!.calls);
+  expect(
+    calls.filter((c) => c.method === 'github.pulls.get' && c.params.number === 901),
+  ).toHaveLength(3);
+  await testInfo.attach('linked-state-wire', {
+    body: JSON.stringify(calls, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+test('linked PR preview demonstrates a cross-repository workspace link', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(Preview, { props: { scenario: 'linked-prs' } });
+  const list = component.getByRole('listbox', { name: 'Pull requests' });
+  await expect(list.getByRole('option')).toHaveCount(2);
+  await expect(list).toContainText('Linked service fix');
+  await expect(list).toContainText('Service integration');
+  await testInfo.attach('linked-pr-preview', {
+    body: await page.screenshot({ path: testInfo.outputPath('linked-pr-preview.png') }),
+    contentType: 'image/png',
+  });
 });
