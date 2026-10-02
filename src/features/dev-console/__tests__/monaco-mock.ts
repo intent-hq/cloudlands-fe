@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import type { editor as MonacoEditor } from 'monaco-editor';
 
 export const models: ReturnType<typeof createModel>[] = [];
 export const editors: ReturnType<typeof createEditor>[] = [];
@@ -28,16 +29,18 @@ function createModel(text: string, language: string) {
 
 function createEditor(host: HTMLElement, options: { model: ReturnType<typeof createModel> }) {
   options.model.attach(host);
-  const actions = new Map<string, { run: ReturnType<typeof vi.fn> }>();
+  const actions = new Map<string, { label: string; run: ReturnType<typeof vi.fn> }>();
   const instance = {
     focus: vi.fn(),
+    addAction: vi.fn((_descriptor: MonacoEditor.IActionDescriptor) => ({ dispose: vi.fn() })),
     updateOptions: vi.fn(),
     setModel: vi.fn((model: ReturnType<typeof createModel>) => {
       host.replaceChildren();
       model.attach(host);
     }),
     getAction: (id: string) => {
-      if (!actions.has(id)) actions.set(id, { run: vi.fn().mockResolvedValue(undefined) });
+      if (!actions.has(id))
+        actions.set(id, { label: id, run: vi.fn().mockResolvedValue(undefined) });
       return actions.get(id)!;
     },
     dispose: vi.fn(() => host.replaceChildren()),
@@ -47,6 +50,8 @@ function createEditor(host: HTMLElement, options: { model: ReturnType<typeof cre
 
 export const configureMonacoWorkers = vi.fn().mockResolvedValue(undefined);
 export const monaco = {
+  KeyCode: { Enter: 3 },
+  KeyMod: { Shift: 1024 },
   editor: {
     createModel: vi.fn((...args: Parameters<typeof createModel>) => {
       const model = createModel(...args);

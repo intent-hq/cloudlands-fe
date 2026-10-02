@@ -373,6 +373,50 @@ test('Dev Console searches the end of an oversized payload with an explained fol
   await expect(page.locator('footer')).toBeInViewport({ ratio: 1 });
 });
 
+test('Dev Console routes Find navigation to its input during a same-turn focus handoff', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 640, height: 400 });
+  await mount(Fixture, { props: { scenario: 'nested' } });
+  await page.locator('[data-index]').filter({ hasText: 'fixture.inspect' }).click();
+  const labels = ['Request', 'Response / error'];
+  for (const label of labels) {
+    const region = viewer(page, label);
+    await ready(region);
+    await region.getByRole('button', { name: 'Search', exact: true }).click();
+    await region.getByRole('textbox', { name: 'Find', exact: true }).fill('needle');
+    await expect(region.locator('.matchesCount')).toHaveText('1 of 2');
+  }
+  for (const previous of [false, true]) {
+    for (const label of labels) {
+      const region = viewer(page, label);
+      const other = viewer(page, label === 'Request' ? 'Response / error' : 'Request');
+      const otherCount = await other.locator('.matchesCount').innerText();
+      // Keep focus and keydown in one browser task to exercise Monaco's deferred blur.
+      // Real click + keyboard input also reproduced this overlap in retained traces.
+      await region
+        .getByRole('textbox', { name: 'Find', exact: true })
+        .evaluate((input, shiftKey) => {
+          input.focus();
+          input.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              bubbles: true,
+              cancelable: true,
+              shiftKey,
+            }),
+          );
+        }, previous);
+      await expect(region.locator('.matchesCount')).toHaveText(previous ? '1 of 2' : '2 of 2');
+      await expect(other.locator('.matchesCount')).toHaveText(otherCount);
+      await expect(region.locator('.currentFindMatch')).toBeInViewport({ ratio: 1 });
+    }
+  }
+});
+
 for (const scenario of ['nested', 'oversized'] as const) {
   test(`Dev Console keeps ${scenario} payloads usable while resizing between compact and split views`, async ({
     mount,
