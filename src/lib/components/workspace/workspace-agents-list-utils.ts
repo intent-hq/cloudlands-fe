@@ -145,7 +145,8 @@ function isParkedWaiting(agent: AgentSession): boolean {
     agent.isWaitingForOtherAgents === true ||
     (Array.isArray(agent.waitingForAgentIds) && agent.waitingForAgentIds.length > 0) ||
     (Array.isArray(agent.waitingOnHooks) && agent.waitingOnHooks.length > 0) ||
-    (Array.isArray(agent.waitingOnPrMonitors) && agent.waitingOnPrMonitors.length > 0);
+    (Array.isArray(agent.waitingOnPrMonitors) && agent.waitingOnPrMonitors.length > 0) ||
+    (Array.isArray(agent.waitingOnScriptMonitors) && agent.waitingOnScriptMonitors.length > 0);
   if (!parked) return false;
   return (
     agent.turnInFlight !== true &&
