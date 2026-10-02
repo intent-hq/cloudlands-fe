@@ -14,6 +14,18 @@ describe('workspace initial agent provenance', () => {
     expect(WorkspaceCreateSchema.parse({ initialAgent }).initialAgent).toEqual(initialAgent);
   });
 
+  it.each([undefined, 'エージェント', 'Agente'])(
+    'preserves General name omission or explicit custom name %j through IPC',
+    (name) => {
+      const initialAgent = {
+        ...(name !== undefined ? { name } : {}),
+        nameExplicitlySet: name !== undefined,
+        rememberSpecialist: true,
+      };
+      expect(WorkspaceCreateSchema.parse({ initialAgent }).initialAgent).toEqual(initialAgent);
+    },
+  );
+
   it('keeps explicit custom name provenance and legacy omissions intact', () => {
     const initialAgent = { name: 'My review', nameExplicitlySet: true };
     expect(WorkspaceCreateSchema.parse({ initialAgent }).initialAgent).toEqual(initialAgent);

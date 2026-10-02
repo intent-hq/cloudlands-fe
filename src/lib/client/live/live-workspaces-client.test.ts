@@ -204,6 +204,35 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     },
   );
 
+  it.each([undefined, 'エージェント', 'Agente'])(
+    'preserves General name omission or explicit custom name %j on the wire',
+    async (name) => {
+      const initialAgent = {
+        ...(name !== undefined ? { name } : {}),
+        nameExplicitlySet: name !== undefined,
+        rememberSpecialist: true,
+        provider: 'codex',
+      };
+      const agent = {
+        id: 'agent-general',
+        workspaceId: 'ws-general',
+        name: name ?? 'Agent',
+        provider: 'codex',
+        status: 'idle',
+      };
+      mockedRequest.mockResolvedValueOnce({
+        workspace: { id: 'ws-general', title: 'General', branch: 'general', status: 'Active' },
+        initialAgent: agent,
+      });
+      const request = { repositoryPath: '/repo', initialAgent };
+      const result = await new LiveWorkspacesClient().create(request);
+      expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.create', request, {
+        timeoutMs: 120_000,
+      });
+      expect(result).toMatchObject({ success: true, initialAgent: agent });
+    },
+  );
+
   it('create surfaces the daemon-assigned initialAgent on the result', async () => {
     // When the request carries an `initialAgent`, the daemon assigns the
     // agent id and returns the created projection as `initialAgent` — the
