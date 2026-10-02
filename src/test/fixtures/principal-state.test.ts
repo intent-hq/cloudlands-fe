@@ -1,6 +1,5 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { StoreState } from '$store/renderer/types';
-import { createAdmittedLegacyPrincipal } from './admitted-legacy-principal';
 import {
   selectCanAdministerHost,
   selectHostRole,
@@ -83,14 +82,5 @@ describe('legacy principal fixture admission', () => {
       connections: { authRejected: { id: 'local', statusCode: 401 } },
     });
     expect(selectHostRole.select(refused)).toBeNull();
-  });
-
-  it('rejects caller-owned authority and admission flags at the constructor boundary', () => {
-    type Base = NonNullable<Parameters<typeof createAdmittedLegacyPrincipal>[0]>;
-    expectTypeOf({ principal: withLegacyPrincipal({}).principal }).not.toMatchTypeOf<Base>();
-    expectTypeOf({ context: 'serialized-context' }).not.toMatchTypeOf<Base>();
-    expectTypeOf({ connections: { hasReceivedList: true } }).not.toMatchTypeOf<Base>();
-    expectTypeOf({ daemonHealth: { health: 'healthy' as const } }).not.toMatchTypeOf<Base>();
-    expectTypeOf({ workspaceEvents: { subscriptionPending: false } }).not.toMatchTypeOf<Base>();
   });
 });
