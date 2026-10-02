@@ -40,6 +40,8 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 import { setupSystemIPC } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { getWindowBackgroundColor } from '../../../../shared/main/window-appearance';
+import { registerDesktopOverlayWindow } from '../../../../shared/main/desktop-overlay-window';
+import type { BrowserWindow } from 'electron';
 
 function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find(([registered]) => registered === channel);
@@ -107,5 +109,18 @@ describe('WINDOW_CHANNELS.SET_THEME', () => {
         getWindowBackgroundColor(true, process.platform),
       );
     }
+  });
+
+  it('preserves desktop overlay transparency when the system theme changes', () => {
+    const overlay = { setBackgroundColor: vi.fn() };
+    const ordinary = { setBackgroundColor: vi.fn() };
+    registerDesktopOverlayWindow(overlay as unknown as BrowserWindow);
+    electronMocks.getAllWindows.mockReturnValue([overlay, ordinary]);
+    const listener = electronMocks.nativeTheme.on.mock.calls.find(
+      ([event]) => event === 'updated',
+    )?.[1];
+    listener();
+    expect(overlay.setBackgroundColor).not.toHaveBeenCalled();
+    expect(ordinary.setBackgroundColor).toHaveBeenCalledOnce();
   });
 });
