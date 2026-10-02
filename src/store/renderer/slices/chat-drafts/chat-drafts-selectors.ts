@@ -2,10 +2,6 @@ import { getItem, getItems } from '@themislib/themis/utils/collections/collectio
 import { store } from '../../store';
 import type { ChatDraftOwnerView } from './chat-drafts-types';
 
-export const selectChatDraftOwner = store.createSelector((state, ownerId: string) =>
-  getItem(state.chatDrafts.owners, ownerId),
-);
-
 /** Restore outcome plus every save outcome the owner has not acknowledged yet. */
 export const selectChatDraftOwnerView = store.createSelector(
   (state, ownerId: string): ChatDraftOwnerView | undefined => {

@@ -7,7 +7,7 @@ export interface ChatDraftSnapshot {
   attachments: DraftAttachment[];
 }
 
-export type ChatDraftRestoreStatus = 'pending' | 'restored' | 'failed';
+type ChatDraftRestoreStatus = 'pending' | 'restored' | 'failed';
 
 /** Correlated `drafts.get` outcome for one draft owner (a mounted composer). */
 export interface ChatDraftRestore {
@@ -19,7 +19,7 @@ export interface ChatDraftRestore {
   error?: string;
 }
 
-export type ChatDraftSaveStatus = 'pending' | 'saved' | 'failed';
+type ChatDraftSaveStatus = 'pending' | 'saved' | 'failed';
 
 /** Correlated `drafts.set` outcome, kept until the owner acknowledges it. */
 export interface ChatDraftSaveOutcome {
