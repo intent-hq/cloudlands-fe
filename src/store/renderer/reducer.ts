@@ -1,3 +1,4 @@
+import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
@@ -27,6 +28,7 @@ import { systemStatusReducer } from './slices/system-status/system-status-slice'
 import { transientUiReducer } from './slices/transient-ui/transient-ui-slice';
 import { workspaceOperationsReducer } from './slices/workspace-operations/workspace-operations-slice';
 import { workspaceAgentsReducer } from './slices/workspace-agents/workspace-agents-slice';
+import { agentMutationUiReducer } from './slices/agent-mutation-ui/agent-mutation-ui-slice';
 import { workspaceNavigationReducer } from './slices/workspace-navigation/workspace-navigation-slice';
 import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-slice';
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
@@ -65,6 +67,9 @@ import { backgroundHooksReducer } from './slices/background-hooks/background-hoo
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
+import { gitWriteReducer } from './slices/git/git-write-slice';
+import { acceptWorkflowReducer } from './slices/accept-workflow/accept-workflow-slice';
+import { prWorkflowReducer } from './slices/pr-workflow/pr-workflow-slice';
 import { gitRootsReducer } from './slices/git-roots/git-roots-slice';
 import { fileTrackingReducer } from './slices/changes/changes-slice';
 import { agentLockReducer } from './slices/agent-lock/agent-lock-slice';
@@ -134,6 +139,7 @@ export const reducers = {
   transientUi: transientUiReducer,
   userPreferences: userPreferencesReducer,
   workspaceAgents: workspaceAgentsReducer,
+  agentMutationUi: agentMutationUiReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
   workspaceTasks: workspaceTasksReducer,
@@ -174,6 +180,9 @@ export const reducers = {
   prMonitor: prMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
+  gitWrite: gitWriteReducer,
+  acceptWorkflow: acceptWorkflowReducer,
+  prWorkflow: prWorkflowReducer,
   gitRoots: gitRootsReducer,
   changes: fileTrackingReducer,
   agentLock: agentLockReducer,
@@ -216,4 +225,5 @@ export const reducers = {
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
+  hostMembership: hostMembershipReducer,
 } as const;

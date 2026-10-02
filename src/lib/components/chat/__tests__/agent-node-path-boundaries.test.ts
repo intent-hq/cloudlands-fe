@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { cleanup, render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
+import { chatChangesSaga } from '$store/renderer/slices/chat-changes/sagas/chat-changes-saga';
+import { gitConsumerReadSaga } from '$store/renderer/slices/git/sagas/git-consumer-read-saga';
 import {
   bulkUpsertSessions,
   removeSession,
@@ -36,6 +38,7 @@ import {
 import TrackedChangeDiffViewer from '$features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte';
 import { ChangeStage } from '$features/file-tracking/types';
 let backend: MockBackendHandle;
+let stopOwners: (() => void)[];
 
 const id = 'remote-review';
 const workspaceId = 'preview-chat-changes';
@@ -99,12 +102,14 @@ beforeEach(() => {
     },
   }));
   appStore.init();
+  stopOwners = [appStore.runSaga(chatChangesSaga), appStore.runSaga(gitConsumerReadSaga)];
   appStore.dispatch(bulkUpsertSessions([agent()]));
   restoreExternal = overrideMockIpcHandler('shell:openExternal', openExternal);
   openExternal.mockClear();
 });
 afterEach(() => {
   cleanup();
+  for (const stop of stopOwners) stop();
   restoreExternal();
   appStore.dispatch(removeSession(id));
   vi.restoreAllMocks();

@@ -160,9 +160,11 @@ async function expectContinuingLiveness({ sidebar, local, deliveries }: HarnessV
 }
 
 describe('WorkspaceTabStrip reactive-parent liveness', () => {
+  let frameDelayMs = 16;
   const originalGetAnimations = Object.getOwnPropertyDescriptor(Element.prototype, 'getAnimations');
 
   beforeEach(() => {
+    frameDelayMs = 16;
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: HTMLElement,
     ) {
@@ -194,7 +196,7 @@ describe('WorkspaceTabStrip reactive-parent liveness', () => {
       },
     );
     vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) =>
-      setTimeout(() => fn(performance.now()), 16),
+      setTimeout(() => fn(performance.now()), frameDelayMs),
     );
     vi.stubGlobal('cancelAnimationFrame', (id: ReturnType<typeof setTimeout>) => clearTimeout(id));
     vi.spyOn(window, 'matchMedia').mockReturnValue({
@@ -217,11 +219,15 @@ describe('WorkspaceTabStrip reactive-parent liveness', () => {
   });
 
   it.each([
-    ['read/write sibling', true],
-    ['write-only sibling control', false],
+    ['read/write sibling', true, 16],
+    ['write-only sibling control', false, 16],
+    // Exercise selector delivery after the old 30ms assumption without flushing.
+    ['read/write sibling with delayed frames', true, 48],
+    ['write-only sibling control with delayed frames', false, 48],
   ] as const)(
     'keeps selector and local DOM live after null-to-active selection with a %s',
-    async (_name, readBeforeWrite) => {
+    async (_name, readBeforeWrite, frameDelay) => {
+      frameDelayMs = frameDelay;
       await withHarness(async ({ target, sidebar, local, bounds, deliveries }) => {
         expect(tab('b').getAttribute('aria-selected')).toBe('false');
         expect(target.querySelector('[data-mask]')).toBeNull();
@@ -233,9 +239,19 @@ describe('WorkspaceTabStrip reactive-parent liveness', () => {
           click(local);
           await settle();
           click(sidebar);
-          await settle(30);
           expect(fixture().store.state.shell.current).toBe(id);
-          expect(deliveries.at(-1)).toBe(cycle % 2 === 0 ? 'all-workspaces' : null);
+          // Themis may schedule a cadence timer followed by an animation frame.
+          // Observe delivery and DOM progress without tick/flushSync rescuing a
+          // stalled root. Use the same bounded real-timer wait as DOM removals.
+          await vi.waitFor(
+            () => {
+              expect(deliveries.at(-1)).toBe(cycle % 2 === 0 ? 'all-workspaces' : null);
+              expect(tab(id).getAttribute('aria-selected')).toBe('true');
+              expect(sidebar.getAttribute('aria-pressed')).toBe(String(cycle % 2 === 0));
+              expect(local.textContent).toBe(String(cycle + 1));
+            },
+            { interval: 16, timeout: 2000 },
+          );
           samples.push({
             selected: tab(id).getAttribute('aria-selected'),
             pressed: sidebar.getAttribute('aria-pressed'),

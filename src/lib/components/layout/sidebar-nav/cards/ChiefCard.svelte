@@ -12,7 +12,7 @@
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
-  import { notify } from '$lib/components/patterns/notify';
+  import { v4 as uuidv4 } from 'uuid';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Select } from '$lib/components/ui/select';
   import { store as appStore } from '$store/renderer/store';
@@ -33,12 +33,18 @@
     workspaceMounted,
     workspaceUnmounted,
   } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-  import { agentSessionLaunchAgentRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
+    clearAgentCreationOutcome,
+    createAgentFromConfigRequested,
     deleteAgentWithUndoRequested,
     setActiveAgentId,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { selectAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import {
+    selectAgentCreationOutcome,
+    selectAgentsLoaded,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { selectContextSelectedModel } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
+  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectHasResolvableProvider } from '$store/renderer/slices/model/model-selectors';
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { createAgentTypeId } from '$shared/types/agent.types';
@@ -50,7 +56,6 @@
   } from '$shared/chief-agent-config';
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import { formatChiefThreadName } from './chief-thread-name';
-  import { ensureChiefThreadCreation } from './chief-thread-creation';
   import { resolveChiefThreadOnExpansion } from './chief-thread-selection';
   import {
     selectEffectiveBehaviorPrompt,
@@ -62,6 +67,12 @@
   const currentChiefThread$ = selectCurrentChiefThread();
   const chiefActiveAgentId$ = selectChiefActiveAgentId();
   const chiefAgentsLoaded$ = selectAgentsLoaded(CHIEF_WORKSPACE_ID);
+  const creationConsumer = { id: uuidv4(), resourceId: 'chief-thread' };
+  const creationOutcome$ = selectAgentCreationOutcome(
+    creationConsumer.id,
+    CHIEF_WORKSPACE_ID,
+    creationConsumer.resourceId,
+  );
   const hasResolvableProvider$ = selectHasResolvableProvider();
   // Chief threads are agents: creating / deleting one is refused (-32003) for
   // a collaborator connection, so the affordances (and the auto-start) are
@@ -102,7 +113,7 @@
   };
 
   let selectedAgentId = $state<string | null>(null);
-  let isCreatingThread = $state(false);
+  const isCreatingThread = $derived($creationOutcome$?.status === 'pending');
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
   let hasActivatedChat = $state(false);
@@ -197,6 +208,7 @@
   });
 
   onDestroy(() => {
+    appStore.dispatch(clearAgentCreationOutcome(creationConsumer.id));
     if (!isWorkspaceRegistered) return;
     chiefMountCount = Math.max(0, chiefMountCount - 1);
     if (chiefMountCount === 0) {
@@ -238,7 +250,7 @@
     appStore.dispatch(deleteAgentWithUndoRequested(CHIEF_WORKSPACE_ID, agentId, threadTitle));
   }
 
-  async function createNewThread() {
+  function createNewThread() {
     if (isCreatingThread) return;
     ensureChiefWorkspaceRegistered();
 
@@ -255,22 +267,22 @@
       return;
     }
 
-    isCreatingThread = true;
-    let ownsCreation = false;
-    const creation = ensureChiefThreadCreation(() => {
-      ownsCreation = true;
-      const chiefSpecialist = selectSpecialists
-        .select(reduxState)
-        .find((s) => s.id === CHIEF_SPECIALIST_ID);
-      const chiefBehaviorPrompt = buildChiefBehaviorPrompt(
-        selectEffectiveBehaviorPrompt.select(reduxState, CHIEF_SPECIALIST_ID),
-      );
-      const action = agentSessionLaunchAgentRequested(
+    const chiefSpecialist = selectSpecialists
+      .select(reduxState)
+      .find((s) => s.id === CHIEF_SPECIALIST_ID);
+    const chiefBehaviorPrompt = buildChiefBehaviorPrompt(
+      selectEffectiveBehaviorPrompt.select(reduxState, CHIEF_SPECIALIST_ID),
+    );
+    appStore.dispatch(
+      createAgentFromConfigRequested(
         CHIEF_WORKSPACE_ID,
         {
+          workspaceId: CHIEF_WORKSPACE_ID,
           name: formatChiefThreadName(new Date()),
           // Generated timestamp name — keep the session self-renameable.
           nameExplicitlySet: false,
+          model: selectContextSelectedModel.select(reduxState, CHIEF_WORKSPACE_ID),
+          provider: selectEffectiveDefaultProviderId.select(reduxState, CHIEF_WORKSPACE_ID),
           agentType: createAgentTypeId('workspace'),
           source: 'chief-card',
           behaviorPrompt: chiefBehaviorPrompt,
@@ -284,25 +296,9 @@
             behaviorPrompt: chiefBehaviorPrompt,
           },
         },
-        { openAgent: false },
-      );
-
-      return appStore.dispatch(action).then((session) => String(session.id));
-    });
-
-    try {
-      const agentId = await creation;
-      selectedAgentId = agentId;
-      appStore.dispatch(setChiefActiveAgentId(agentId));
-      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
-    } catch (error) {
-      if (ownsCreation) {
-        const message = error instanceof Error ? error.message : String(error);
-        notify.error(m.layout_chiefCard_startFailed_error({ message }));
-      }
-    } finally {
-      isCreatingThread = false;
-    }
+        { openAgent: false, consumer: creationConsumer },
+      ),
+    );
   }
 </script>
 

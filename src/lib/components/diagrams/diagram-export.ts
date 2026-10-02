@@ -147,6 +147,7 @@ function findSvg(container: HTMLElement): SVGSVGElement {
   const renderer = svg?.closest('.mermaid-renderer, .diagram-renderer');
   if (
     !svg ||
+    svg.closest('[data-diagram-presentation-settled="false"]') ||
     renderer?.getAttribute('data-render-settled') === 'false' ||
     renderer?.getAttribute('data-diagram-settled') === 'false'
   ) {

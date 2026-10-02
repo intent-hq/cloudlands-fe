@@ -10,6 +10,7 @@ export const checkboxMetadata = {
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/dev-console/PayloadDetails.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ProposalCatalogPreview.svelte',

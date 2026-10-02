@@ -135,11 +135,11 @@ const expectedListActions = (ids: string[]) => [
 type WriteAction = ReturnType<typeof saveFileSpecialist> | ReturnType<typeof deleteFileSpecialist>;
 const successAction = (action: WriteAction) => ({
   type: `${action.type}_SUCCESS`,
-  payload: { request: action.payload, response: undefined },
+  payload: { request: action.payload, response: undefined, seq: action.seq },
 });
 const failureAction = (action: WriteAction) => ({
   type: `${action.type}_FAILURE`,
-  payload: { request: action.payload, error: expect.any(Error) },
+  payload: { request: action.payload, error: expect.any(Error), seq: action.seq },
 });
 
 describe('specialistsSaga', () => {

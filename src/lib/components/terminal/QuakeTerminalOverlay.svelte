@@ -79,6 +79,7 @@
 
   import {
     selectWorkspaceScriptEntries,
+    selectAllWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { refreshScripts, removeScript } from '$store/renderer/slices/scripts/scripts-slice';
@@ -116,6 +117,7 @@
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
   const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
+  const allScriptEntries$ = selectAllWorkspaceScriptEntries(workspaceIdStore);
   const scriptEntries$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
 
@@ -391,7 +393,7 @@
 
   const selectedScript = $derived(
     selectedScriptId
-      ? ($scriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
+      ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);

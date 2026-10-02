@@ -23,6 +23,8 @@ import {
   COMPLETED_DISPLAY_DURATION_MS,
 } from './agent-subscription-read-saga';
 
+import { initialState as workspaceEventsInitialState } from '../../workspace-events/workspace-events-slice';
+
 const WS = 'ws-subscriptions';
 const AGENT = 'agent-parent';
 const CHILD = 'agent-child';
@@ -69,11 +71,27 @@ const settle = async () => {
 function harness(seed = initialState, extraState: Record<string, unknown> = {}) {
   const channel = stdChannel();
   let state = seed;
+  const listeners = new Set<() => void>();
+  const getState = () => ({
+    agentSubscriptionUI: state,
+    workspaceEvents: workspaceEventsInitialState,
+    ...extraState,
+  });
   const dispatch = vi.fn((action) => {
     state = agentSubscriptionUIReducer(state, action);
+    listeners.forEach((listener) => listener());
   });
+  const reduxStore = {
+    getState,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ agentSubscriptionUI: state, ...extraState }) },
+    { channel, dispatch, getState, context: { reduxStore } },
     agentSubscriptionReadSaga,
   );
   return { channel, dispatch, task, state: () => state };

@@ -10,6 +10,8 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { commentsClient } from './comments.client';
+import { loadComments } from './comment-loader';
+import { convertBackendCommentToV2 } from './comment-types-v2';
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -188,5 +190,70 @@ describe('commentsClient (daemon comment.* seam, fake transport)', () => {
       resolved: false,
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('qualified creator through the real legacy read chain', () => {
+  afterEach(() => vi.clearAllMocks());
+  const identity = { provider: 'gitlab', host: 'gitlab.example:8443', externalUserId: '42' };
+
+  it('preserves imported identity-only and local author fields through client, loader and V2 conversion', async () => {
+    const original = listResponse.threads[0].comments[0];
+    mockedRequest.mockResolvedValueOnce({
+      threads: [
+        {
+          comments: [
+            { ...original, authorPrincipalId: 'local-creator', authorIdentity: identity },
+            { ...original, id: 'imported', authorIdentity: { ...identity, host: 'other.example' } },
+            { ...original, id: 'legacy' },
+          ],
+        },
+      ],
+    });
+    const loaded = await loadComments({ workspaceId: 'ws-1', noteId: 'note-1' });
+    const converted = loaded.map((c) => convertBackendCommentToV2(c, undefined, 'note-1', 'ws-1'));
+    expect(converted[0]).toMatchObject({
+      author: 'alice',
+      authorPrincipalId: 'local-creator',
+      authorIdentity: identity,
+    });
+    expect(converted[1]).toMatchObject({ authorIdentity: { ...identity, host: 'other.example' } });
+    expect(converted[1]).not.toHaveProperty('authorPrincipalId');
+    expect(converted[2]).not.toHaveProperty('authorIdentity');
+    expect(converted[2]).not.toHaveProperty('authorPrincipalId');
+  });
+
+  it('takes a canonical respond.comment creator instead of the editor request, without sending attribution fields', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      comment: {
+        ...listResponse.threads[0].comments[0],
+        id: 'canonical',
+        author: 'creator',
+        authorPrincipalId: 'creator-id',
+        authorIdentity: identity,
+      },
+    });
+    const params = {
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      parentId: 'root',
+      content: 'reply',
+      type: 'comment' as const,
+      author: 'editor',
+      authorType: 'user' as const,
+      authorPrincipalId: 'spoof',
+      authorIdentity: identity,
+    };
+    const result = await commentsClient.add(params);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('canonical reply unavailable');
+    expect(result.data).toMatchObject({
+      id: 'canonical',
+      author: 'creator',
+      authorPrincipalId: 'creator-id',
+      authorIdentity: identity,
+    });
+    expect(mockedRequest.mock.calls[0][1]).not.toHaveProperty('authorPrincipalId');
+    expect(mockedRequest.mock.calls[0][1]).not.toHaveProperty('authorIdentity');
   });
 });

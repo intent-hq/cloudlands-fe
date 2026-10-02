@@ -11,7 +11,10 @@
    * owner is not listed (`workspace.members.remove` refuses the owner); only
    * the displayed rows are filtered — the sweep still receives the full roster.
    */
-  import { onMount } from 'svelte';
+  import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
+  import { formatInteger } from '$lib/i18n/format';
+  import { onMount, untrack } from 'svelte';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import { ListView } from '$lib/components/patterns/collection';
   import { Button, PrincipalAvatar } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
@@ -38,12 +41,14 @@
 
   let { workspace, onRemoveAll }: Props = $props();
 
-  const roster$ = selectHostedRoster(workspace.id);
-  const removingIds$ = selectHostedRemovingPrincipalIds(workspace.id);
-  const clearing$ = selectIsHostedWorkspaceClearing(workspace.id);
-  const failedRemovals$ = selectHostedFailedRemovals(workspace.id);
+  const workspaceId = untrack(() => workspace.id);
+  const context = selectPrincipalActionContext.select(appStore.state);
+  const roster$ = selectHostedRoster(workspaceId);
+  const removingIds$ = selectHostedRemovingPrincipalIds(workspaceId);
+  const clearing$ = selectIsHostedWorkspaceClearing(workspaceId);
+  const failedRemovals$ = selectHostedFailedRemovals(workspaceId);
 
-  const collaborators = $derived($roster$.members.filter((member) => member.role !== 'owner'));
+  const collaborators = $derived($roster$.members.filter(isWorkspaceGuest));
 
   /** What the *Remove* confirm dialog shows — never what a retry acts on. */
   let removeTarget = $state<WorkspaceMember | null>(null);
@@ -56,7 +61,7 @@
   }
 
   function removeAllGuests() {
-    if ($clearing$) return;
+    if ($clearing$ || context !== selectPrincipalActionContext.select(appStore.state)) return;
     onRemoveAll();
   }
 
@@ -66,7 +71,7 @@
   }
 
   function removeMember(member: WorkspaceMember | null) {
-    if (!member) return;
+    if (!member || context !== selectPrincipalActionContext.select(appStore.state)) return;
     appStore.dispatch(removeHostedMemberRequested(workspace.id, member.principalId));
   }
 
@@ -93,6 +98,14 @@
       </Button>
     {/if}
   </div>
+  {#if $roster$.guestCount != null && $roster$.guestLimit != null}
+    <p class="type-caption text-muted-foreground" data-testid="hosted-guest-seats">
+      {m.workspace_share_guests_label({
+        count: formatInteger($roster$.guestCount),
+        limit: formatInteger($roster$.guestLimit),
+      })}
+    </p>
+  {/if}
   {#if $roster$.status === 'loading' && $roster$.members.length === 0}
     <p class="mt-2 type-body text-muted-foreground" role="status">
       {m.settings_guestSessions_roster_loading_label()}
@@ -140,7 +153,8 @@
           <Button
             variant="ghost"
             size="sm"
-            disabled={$removingIds$.includes(member.principalId)}
+            disabled={$removingIds$.includes(member.principalId) ||
+              $roster$.inheritedPrincipalIds?.includes(member.principalId)}
             onclick={() => requestRemove(member)}
           >
             {m.settings_guestSessions_remove_label()}
@@ -148,6 +162,11 @@
         </div>
       {/snippet}
     </ListView>
+  {/if}
+  {#if $roster$.inheritedPrincipalIds?.length}
+    <p role="alert" class="mt-3 type-body text-muted-foreground">
+      {m.collaboration_workspace_inherited_error()}
+    </p>
   {/if}
   {#each $failedRemovals$ as failedRemove (failedRemove.principalId)}
     <div

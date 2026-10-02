@@ -1,9 +1,14 @@
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), restart: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  start: vi.fn(),
+  stop: vi.fn(),
+  restart: vi.fn(),
+}));
+vi.mock('$lib/client', () => ({ appClient: { scripts: mocks } }));
 
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: mocks }));
 
@@ -12,6 +17,7 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  scriptsReducer,
   clearScriptOperations,
   refreshScripts,
   restartScriptRequested,
@@ -21,6 +27,14 @@ import {
   stopScriptRequested,
 } from '../scripts-slice';
 import { scriptsOperationSaga } from './scripts-operation-saga';
+
+import { store as appStore } from '../../../store';
+
+beforeEach(() => {
+  appStore.dispose();
+  appStore.init();
+});
+afterEach(() => appStore.dispose());
 
 const WS = 'ws-1';
 const settle = async () => {
@@ -39,6 +53,7 @@ function start() {
   const channel = stdChannel();
   const actions: any[] = [];
   const state = withLegacyPrincipal({
+    scripts: scriptsReducer(undefined, { type: '@@init' }),
     workspace: {
       workspaces: createCollection('id', [
         { id: WS, myRole: 'owner' },
@@ -46,15 +61,21 @@ function start() {
       ]),
     },
   });
+  const dispatch = (action: { type: string }) => {
+    state.scripts = scriptsReducer(state.scripts, action);
+    actions.push(action);
+    channel.put(action);
+    return action;
+  };
   const task = runSaga(
     {
       channel,
       getState: () => state,
-      dispatch: (action) => (actions.push(action), channel.put(action), action),
+      dispatch,
     },
     scriptsOperationSaga,
   );
-  return { actions, channel, task, state };
+  return { actions, channel, task, state, dispatch };
 }
 
 async function stop(task: Task) {

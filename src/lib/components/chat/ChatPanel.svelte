@@ -265,7 +265,9 @@
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import ChatFileChangesSummary from './ChatFileChangesSummary.svelte';
   import { isAggregateFileChangesRedundant } from '$lib/utils/get-file-changes-from-messages';
-  import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
+  import AutoCommitStatus from './AutoCommitStatus.svelte';
+  import { gitReadRequested, releaseGitRead } from '$store/renderer/slices/git/git-slice';
+  import { selectGitRead } from '$store/renderer/slices/git/git-selectors';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
   import {
@@ -356,7 +358,6 @@
     CHAT_TRANSCRIPT_OVERFLOW_CLASS,
     chatTranscriptBottomInsetClass,
   } from './chat-queue-edge-layout';
-  import { invoke, listenSync } from '$lib/electron-bridge';
   import {
     selectContextSpecialists,
     selectContextQuotaRetryProviderIds,
@@ -3786,57 +3787,23 @@
     };
   });
 
-  // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
-  let autoCommitStatuses = $state<CommitStatus[]>([]);
-
-  function refreshAutoCommitStatuses() {
-    const requestedAgentId = agentId;
-    if (!isActive || !requestedAgentId) return;
-    invoke<{ success: boolean; data: CommitStatus[] }>('git:get-auto-commit-status', {
-      agentId: requestedAgentId,
-    })
-      .then((response) => {
-        if (isActive && requestedAgentId === agentId && response?.success && response.data) {
-          autoCommitStatuses = response.data;
-        }
-      })
-      .catch(() => {
-        // Silently ignore — component degrades gracefully
-      });
-  }
-
-  // Fetch on mount / when agentId changes
+  const autoCommitConsumerId = `auto-commit:${crypto.randomUUID()}`;
+  const autoCommitRead$ = selectGitRead(workspaceIdStore, autoCommitConsumerId);
+  const autoCommitStatuses = $derived(
+    $autoCommitRead$?.result?.kind === 'autoCommitStatus' ? $autoCommitRead$.result.statuses : [],
+  );
   $effect(() => {
-    void agentId;
-    if (!isActive) return;
-    refreshAutoCommitStatuses();
-  });
-
-  // Listen for real-time auto-commit events (3 listeners total, not per-turn)
-  $effect(() => {
-    if (!isActive) return;
-    const cleanupStarted = listenSync<{ agentId: string }>('git:auto-commit-started', (event) => {
-      const data = event.payload || event;
-      if (data.agentId === agentId) refreshAutoCommitStatuses();
-    });
-    const cleanupSucceeded = listenSync<{ agentId: string }>(
-      'git:auto-commit-succeeded',
-      (event) => {
-        const data = event.payload || event;
-        if (data.agentId === agentId) refreshAutoCommitStatuses();
-      },
-    );
-    const cleanupHookFailure = listenSync<{ agentId: string }>(
-      'git:auto-commit-hook-failure',
-      (event) => {
-        const data = event.payload || event;
-        if (data.agentId === agentId) refreshAutoCommitStatuses();
-      },
+    if (!isActive || !workspace?.id || !agentId) return;
+    const wsId = workspace.id;
+    const requestId = crypto.randomUUID();
+    appStore.dispatch(
+      gitReadRequested(wsId, autoCommitConsumerId, requestId, {
+        kind: 'autoCommitStatus',
+        agentId,
+      }),
     );
     return () => {
-      cleanupStarted();
-      cleanupSucceeded();
-      cleanupHookFailure();
+      appStore.dispatch(releaseGitRead(wsId, autoCommitConsumerId, requestId));
     };
   });
 

@@ -1,3 +1,4 @@
+import { scriptsOutputSaga } from './scripts-output-saga';
 import { selectWorkspaceActionContext } from '../../workspace/workspace-selectors';
 import type { SagaGenerator } from 'typed-redux-saga';
 import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
@@ -82,6 +83,7 @@ function* clearWorkspaceOperations(
 
 export function* scriptsOperationSaga(): SagaGenerator<void> {
   yield* all([
+    call(scriptsOutputSaga),
     takeLeadingInContext(
       [startScriptRequested, stopScriptRequested, restartScriptRequested],
       operationContext,

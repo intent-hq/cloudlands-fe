@@ -85,6 +85,16 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectAllWorkspaceScriptEntries: Object.assign(
+    () => ({
+      subscribe(listener: (scripts: ScriptWithState[]) => void) {
+        listener(scriptSelectorState.scripts);
+        scriptSelectorState.subscribers.add(listener);
+        return () => scriptSelectorState.subscribers.delete(listener);
+      },
+    }),
+    { select: () => scriptSelectorState.scripts },
+  ),
   selectWorkspaceScriptEntries: Object.assign(
     () => ({
       subscribe(listener: (scripts: ScriptWithState[]) => void) {

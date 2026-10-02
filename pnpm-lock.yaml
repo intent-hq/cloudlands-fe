@@ -31,8 +31,8 @@ importers:
   .:
     dependencies:
       '@themislib/themis':
-        specifier: 0.3.2
-        version: 0.3.2(react@19.2.6)(svelte@5.56.10(@typescript-eslint/types@8.68.0))
+        specifier: 0.3.3
+        version: 0.3.3(react@19.2.6)(svelte@5.56.10(@typescript-eslint/types@8.68.0))
       body-parser:
         specifier: ^2.3.0
         version: 2.3.0
@@ -334,6 +334,9 @@ importers:
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
+      js-yaml:
+        specifier: 4.3.0
+        version: 4.3.0
       jsdom:
         specifier: ^30.0.1
         version: 30.0.1(@noble/hashes@2.2.0)
@@ -2079,8 +2082,8 @@ packages:
       vitest:
         optional: true
 
-  '@themislib/themis@0.3.2':
-    resolution: {integrity: sha512-G7qlWwRe+EtUEVjnB/CEprzN+2ENS2zTKgTfydfq1KfbNUZ5CKlE0pPAiIJIwwVdlWkBlzRZ1wnwXpYGS0ZvDA==}
+  '@themislib/themis@0.3.3':
+    resolution: {integrity: sha512-65YcEWNy+Nwr2IvbXndZ9di4BoX4F2n7jbAaEUemjl61QDjNsV5IkJnzEPds9QP5WMfb61x/dEGJ+btV7V8H+w==}
     hasBin: true
     peerDependencies:
       '@preact/signals-react': ^3.10.1
@@ -7055,7 +7058,7 @@ snapshots:
       vite: 6.4.3(@types/node@26.4.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.12)(yaml@2.9.0)
       vitest: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.4.0)(@vitest/ui@4.1.11)(happy-dom@20.9.0)(jsdom@30.0.1(@noble/hashes@2.2.0))(vite@6.4.3(@types/node@26.4.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.12)(yaml@2.9.0))
 
-  '@themislib/themis@0.3.2(react@19.2.6)(svelte@5.56.10(@typescript-eslint/types@8.68.0))':
+  '@themislib/themis@0.3.3(react@19.2.6)(svelte@5.56.10(@typescript-eslint/types@8.68.0))':
     dependencies:
       fast-equals: 6.0.2
       kefir: 3.8.8

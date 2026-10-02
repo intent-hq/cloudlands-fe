@@ -52,7 +52,7 @@
       {m.guestSessions_emptyState_description({ host: formatGuestSessionLabel(session) })}
     </p>
     <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
-      <Button variant="outline" onclick={() => void navigateToSettings({ tab: 'guest-sessions' })}>
+      <Button variant="outline" onclick={() => void navigateToSettings({ tab: 'collaboration' })}>
         {m.layout_daemonStatus_manageGuestSessions_action()}
       </Button>
       <Button

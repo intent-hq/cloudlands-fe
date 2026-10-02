@@ -52,11 +52,19 @@ vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { agentMutationUiReducer } =
+    await import('$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice');
+  let mutationState = agentMutationUiReducer.initialState;
 
-  return createAppStoreMockModule({
-    state: () => ({ agents: mockState.agents.get() }),
-    dispatch: mockState.dispatch,
+  const module = createAppStoreMockModule({
+    state: () => ({ agents: mockState.agents.get(), agentMutationUi: mutationState }),
+    dispatch: (action) => {
+      mockState.dispatch(action);
+      mutationState = agentMutationUiReducer(mutationState, action);
+      module.store.emitState();
+    },
   });
+  return module;
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
@@ -148,10 +156,12 @@ vi.mock('$lib/utils/client-logger', () => ({
 
 import AgentTabType from '../AgentTabType.svelte';
 import MockTabTypeHeaderHarness from './mocks/MockTabTypeHeaderHarness.svelte';
+import { setAgentNotificationsMutedRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { store as appStore } from '$store/renderer/store';
 import {
-  retireAgentRequested,
-  setAgentNotificationsMutedRequested,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  agentMutationUiRequested,
+  agentMutationUiFinished,
+} from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
 
 function seedSession(overrides: Record<string, unknown> = {}) {
   mockState.agents.set({
@@ -436,12 +446,9 @@ describe('AgentTabType retirement', () => {
   const mutations = () =>
     mockState.dispatch.mock.calls
       .map(([a]) => a)
-      .filter((a) => a.type !== 'workspaceAgents/agentRetirementSupportRequested');
+      .filter((a) => a.type === agentMutationUiRequested.type);
   beforeEach(() => {
     mockState.dispatch.mockReset();
-    mockState.dispatch.mockImplementation((action) => {
-      if (action.type === retireAgentRequested.type) action.success(undefined);
-    });
     mockState.hidesAgentLifecycleActions.set(false);
     mockState.retirementSupported.set(true);
     seedSession({ harnessFeatures: { peerAgents: false } });
@@ -456,12 +463,15 @@ describe('AgentTabType retirement', () => {
     await screen.findByRole('dialog');
     expect(mutations()).toEqual([]);
     await fireEvent.click(screen.getByRole('button', { name: 'Retire Agent' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(mutations()).toHaveLength(1);
     expect(mutations()[0]).toMatchObject({
-      type: retireAgentRequested.type,
-      payload: ['ws-1', 'agent-1'],
+      type: agentMutationUiRequested.type,
+      payload: ['ws-1', expect.any(String), expect.any(String), 'agent-1', { kind: 'retire' }],
     });
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+    const [workspaceId, consumerId, requestId] = mutations()[0].payload;
+    appStore.dispatch(agentMutationUiFinished(workspaceId, consumerId, requestId, 'succeeded'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('cancels without dispatching', async () => {

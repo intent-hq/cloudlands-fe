@@ -11,6 +11,12 @@
  * pass through verbatim.
  */
 import type {
+  ScriptArchiveFilter,
+  ScriptArchiveResult,
+  ScriptRestoreResult,
+} from '$features/scripts/types';
+import { m } from '$shared/paraglide/messages.js';
+import type {
   ScriptRuntimeState,
   ScriptWithState,
   WorkspaceScript,
@@ -28,15 +34,54 @@ import { backendRequest } from './backend-transport';
 import { runMutation } from './live-support';
 
 export class LiveScriptsClient implements ScriptsClient {
-  async list(workspaceId: string): Promise<ScriptWithState[]> {
-    try {
-      const result = await backendRequest<{ scripts?: unknown[] }>('script.list', {
-        workspaceId,
-      });
-      return Array.isArray(result?.scripts) ? (result.scripts as ScriptWithState[]) : [];
-    } catch {
-      return [];
+  async supportsLifecycle(): Promise<boolean> {
+    const result = await backendRequest<{
+      server?: { capabilities?: { scriptLifecycle?: number } };
+    }>('client.hello', {});
+    return result?.server?.capabilities?.scriptLifecycle === 1;
+  }
+
+  async list(
+    workspaceId: string,
+    options?: { archive?: ScriptArchiveFilter },
+  ): Promise<ScriptWithState[]> {
+    const supported = await this.supportsLifecycle();
+    // An explicit partition must never become a successful unfiltered snapshot.
+    // Missing capability is legacy fallback only for default/all-list callers;
+    // failed negotiation remains a retryable error rather than cached history.
+    if (!supported && options?.archive && options.archive !== 'all') {
+      throw new Error(m.scripts_history_unsupported_error());
     }
+    const result = await backendRequest<{ scripts: ScriptWithState[] }>('script.list', {
+      workspaceId,
+      ...(supported ? { archive: options?.archive ?? 'active' } : {}),
+    });
+    if (!Array.isArray(result?.scripts)) throw new Error(m.scripts_history_load_error());
+    return result.scripts;
+  }
+
+  async archive(
+    workspaceId: string,
+    scriptIds: string[],
+    options?: { capabilityVerified: true },
+  ): Promise<ScriptArchiveResult> {
+    // The saga checks current workspace/connection authority after its one
+    // negotiation. No further await may separate that check from wire dispatch.
+    if (!options?.capabilityVerified && !(await this.supportsLifecycle()))
+      throw new Error(m.scripts_history_unsupported_error());
+    return backendRequest('script.archive', { workspaceId, scriptIds });
+  }
+
+  async restore(
+    workspaceId: string,
+    scriptIds: string[],
+    options?: { capabilityVerified: true },
+  ): Promise<ScriptRestoreResult> {
+    // The saga checks current workspace/connection authority after its one
+    // negotiation. No further await may separate that check from wire dispatch.
+    if (!options?.capabilityVerified && !(await this.supportsLifecycle()))
+      throw new Error(m.scripts_history_unsupported_error());
+    return backendRequest('script.restore', { workspaceId, scriptIds });
   }
 
   async create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult> {
@@ -46,6 +91,7 @@ export class LiveScriptsClient implements ScriptsClient {
         name: input.name,
         command: input.command,
         mode: input.mode,
+        ...(input.purpose !== undefined ? { purpose: input.purpose } : {}),
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
         ...(input.env !== undefined ? { env: input.env } : {}),
         ...(input.category !== undefined ? { category: input.category } : {}),

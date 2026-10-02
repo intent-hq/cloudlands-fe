@@ -1,5 +1,10 @@
+import { terminalsReducer, selectScript, openTerminalOverlay } from '../terminals/terminals-slice';
+import { setScriptListState } from './scripts-slice';
+import { selectAllWorkspaceScriptEntries } from './scripts-selectors';
 import { describe, expect, it } from 'vitest';
 import {
+  setActiveScriptsData,
+  removeScript,
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
   clearScriptOperations,
@@ -276,5 +281,72 @@ describe('scripts selectors', () => {
     };
     expect(selectScriptsInitialized.select(noWsState, WS)).toBe(false);
     expect(selectWorkspaceScriptsInitialized.select(noWsState, WS)).toBe(false);
+  });
+});
+
+describe('archive lifecycle reconciliation', () => {
+  it('keeps selected output and direct row handles, without reviving archived rows on runtime events', () => {
+    const active = makeScriptEntry({ mode: 'command', purpose: 'oneOff' });
+    let scripts = scriptsReducer(undefined, setScriptsData(WS, [active]));
+    scripts = scriptsReducer(scripts, setScriptListState(WS, false, undefined, true));
+    scripts = scriptsReducer(
+      scripts,
+      appendScriptOutput(WS, active.id, { text: 'retained output', timestamp: 'now' }),
+    );
+    let terminals = terminalsReducer(undefined, selectScript(WS, active.id));
+    terminals = terminalsReducer(terminals, openTerminalOverlay(WS));
+    const archived = {
+      ...active,
+      archivedAt: '2026-09-30T12:00:00Z',
+      lastRun: { outcome: 'failed' as const, exitCode: 2, stoppedAt: '2026-09-30T12:00:00Z' },
+    };
+    const activeRefresh = setActiveScriptsData(WS, []);
+    scripts = scriptsReducer(scripts, activeRefresh);
+    terminals = terminalsReducer(terminals, activeRefresh);
+    expect(selectWorkspaceScriptEntries.select({ scripts } as never, WS)).toEqual([]);
+    expect(selectAllWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(1);
+    scripts = scriptsReducer(
+      scripts,
+      updateRuntimeState(WS, active.id, { status: 'exited', exitCode: 2 }),
+    );
+    const root = { scripts } as never;
+    expect(selectWorkspaceScriptEntries.select(root, WS)).toEqual([]);
+    const legacy = scriptsReducer(scripts, setScriptListState(WS, false, undefined, false));
+    expect(selectWorkspaceScriptEntries.select({ scripts: legacy } as never, WS)).toEqual([]);
+    const legacyList = scriptsReducer(legacy, setScriptsData(WS, [active]));
+    expect(selectWorkspaceScriptEntries.select({ scripts: legacyList } as never, WS)).toEqual([
+      active,
+    ]);
+    expect(selectAllWorkspaceScriptEntries.select(root, WS)[0].runtime.exitCode).toBe(2);
+    expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks[0].text).toBe(
+      'retained output',
+    );
+    expect(terminals.workspaces[WS].selectedScriptId).toBe(active.id);
+    expect(terminals.workspaces[WS].isOpen).toBe(true);
+    scripts = scriptsReducer(
+      scripts,
+      setActiveScriptsData(WS, [{ ...archived, archivedAt: undefined }]),
+    );
+    expect(selectWorkspaceScriptEntries.select({ scripts } as never, WS)).toHaveLength(1);
+    expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks).toHaveLength(1);
+    const remove = removeScript(WS, active.id);
+    scripts = scriptsReducer(scripts, remove);
+    terminals = terminalsReducer(terminals, remove);
+    expect(terminals.workspaces[WS].selectedScriptId).toBeNull();
+    expect(selectAllWorkspaceScriptEntries.select({ scripts } as never, WS)).toEqual([]);
+  });
+  it('preserves records and isolates list errors by workspace', () => {
+    const script = makeScriptEntry();
+    let state = scriptsReducer(undefined, setScriptsData(WS, [script]));
+    state = scriptsReducer(state, setScriptListState(WS, true, undefined, true));
+    state = scriptsReducer(state, setScriptListState(WS, false, 'offline'));
+    state = scriptsReducer(state, setScriptListState('other', true));
+    expect(state.byWorkspaceId[WS]).toMatchObject({
+      loadError: 'offline',
+      loading: false,
+      lifecycleSupported: true,
+    });
+    expect(state.byWorkspaceId[WS].scripts[script.id]).toEqual(script);
+    expect(state.byWorkspaceId.other).toMatchObject({ loading: true, loadError: undefined });
   });
 });

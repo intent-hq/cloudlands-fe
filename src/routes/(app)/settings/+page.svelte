@@ -42,7 +42,10 @@
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectHostAdministrationDenied } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectPrincipalActionContext,
+    selectHostAdministrationDenied,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -98,6 +101,7 @@
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const collaborationContext$ = selectPrincipalActionContext();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
 
@@ -118,7 +122,7 @@
     'providers',
     'connections',
     'devices',
-    'guest-sessions',
+    'collaboration',
     'setup',
     'advanced',
     'input',
@@ -145,8 +149,9 @@
     'backend-sync': 'devices',
     'websocket-api': 'devices',
     'remote-access': 'devices',
-    'guest-sessions': 'guest-sessions',
-    sharing: 'guest-sessions',
+    collaboration: 'collaboration',
+    'guest-sessions': 'collaboration',
+    sharing: 'collaboration',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -188,6 +193,7 @@
   }
 
   function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
+    if (tabParam === 'guest-sessions' || tabParam === 'sharing') return 'collaboration';
     if (tabParam === 'accounts') return 'providers';
     if (
       tabParam === 'general' ||
@@ -248,13 +254,13 @@
   // administrator (intent-hq/intent#5514).
   const hiddenTabs = $derived.by(() => {
     const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
-    if (!$labsMultiplayerEnabled$) tabs.push('guest-sessions');
+    if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
     return tabs;
   });
   $effect(() => {
     if (
       hiddenTabs.includes(activeTab) &&
-      (activeTab === 'guest-sessions' || $hostAdministrationDenied$)
+      (activeTab === 'collaboration' || $hostAdministrationDenied$)
     ) {
       setActiveTab('display');
     }
@@ -511,6 +517,7 @@
 
 {#snippet agentsNavigation()}
   <AIBehaviorSidebar
+    workspaceId={settingsWorkspaceId ?? undefined}
     activeView={aiBehaviorView}
     onSelect={selectAiBehaviorView}
     isActive={activeTab === 'specialists'}
@@ -598,9 +605,9 @@
         {/if}
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
-        {#if activeTab === 'guest-sessions' && $labsMultiplayerEnabled$}
-          <div id="guest-sessions" class="scroll-mt-20">
-            <GuestSessionsSettings />
+        {#if activeTab === 'collaboration' && $labsMultiplayerEnabled$}
+          <div id="collaboration" class="scroll-mt-20">
+            {#key $collaborationContext$}<GuestSessionsSettings />{/key}
           </div>
         {/if}
 
