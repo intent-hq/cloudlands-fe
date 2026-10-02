@@ -1794,6 +1794,62 @@ export function processHTMLToMarkdown(
       // Convert HTML table to markdown table
       const rows: string[][] = [];
       const alignments: string[] = [];
+      const cellContent = (cell: Element): string => {
+        const children = Array.from(cell.childNodes).filter(
+          (node) => node.nodeType !== Node.TEXT_NODE || node.textContent?.trim(),
+        );
+        const paragraphs = Array.from(cell.children).filter((node) => node.tagName === 'P');
+        if (paragraphs.length && (paragraphs.length !== 1 || children.length !== 1)) {
+          // Multiple native blocks have no lossless GFM pipe-cell representation.
+          // Keep that legacy path separate from single-paragraph roundtrips.
+          logger.warn('[markdown-processor] Table cell contains unsupported multiple blocks');
+          return processInlineContent(cell).trim();
+        }
+        const content = (paragraphs[0] ?? cell).cloneNode(true) as Element;
+        const escapeText = (value: string) =>
+          value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            // Backslash-bracket pairs are TeX delimiters in our parser.
+            .replace(/\[/g, '&#91;')
+            .replace(/\]/g, '&#93;')
+            .replace(/[\\`*_~]/g, '\\$&');
+        const prepare = (parent: Element) => {
+          for (const node of Array.from(parent.childNodes)) {
+            if (node.parentNode !== parent) continue;
+            if (node.nodeType === Node.TEXT_NODE)
+              node.textContent = escapeText(node.textContent ?? '');
+            else if (node instanceof Element) {
+              if (node.tagName === 'CODE') {
+                while (node.nextSibling instanceof Element && node.nextSibling.tagName === 'CODE') {
+                  const next = node.nextSibling;
+                  node.textContent = (node.textContent ?? '') + (next.textContent ?? '');
+                  next.remove();
+                }
+                const value = node.textContent ?? '';
+                // A backslash immediately before a pipe cannot survive GFM's
+                // cell splitter in one code span. Separate adjacent code spans
+                // with an inert comment; native parsing merges their code marks.
+                const code = value
+                  .split(/(?<=\\)(?=\|)/)
+                  .map((part) => {
+                    let longest = 0;
+                    for (const run of part.matchAll(/`+/g))
+                      longest = Math.max(longest, run[0].length);
+                    const fence = '`'.repeat(longest + 1);
+                    const pad = /^`|`$/.test(part) || (/^ .* $/.test(part) && /[^ ]/.test(part));
+                    return `${fence}${pad ? ' ' : ''}${part}${pad ? ' ' : ''}${fence}`;
+                  })
+                  .join('<!-- -->');
+                node.replaceWith(document.createTextNode(code));
+              } else prepare(node);
+            }
+          }
+        };
+        prepare(content);
+        return processInlineContent(content).trim().replace(/\|/g, '\\|');
+      };
       const cellAlignment = (cell: Element): string => {
         const value = ((cell as HTMLElement).style.textAlign || cell.getAttribute('align') || '')
           .trim()
@@ -1807,7 +1863,7 @@ export function processHTMLToMarkdown(
         const headerRow = thead.querySelector('tr');
         if (headerRow) {
           const headerCells = Array.from(headerRow.querySelectorAll('th, td'));
-          const headerTexts = headerCells.map((cell) => processInlineContent(cell).trim());
+          const headerTexts = headerCells.map(cellContent);
           rows.push(headerTexts);
 
           // Extract alignments from th elements
@@ -1825,7 +1881,7 @@ export function processHTMLToMarkdown(
         if (thead && tr.parentElement === thead) return;
 
         const cells = Array.from(tr.querySelectorAll('td, th'));
-        const cellTexts = cells.map((cell) => processInlineContent(cell).trim());
+        const cellTexts = cells.map(cellContent);
         rows.push(cellTexts);
 
         // If no header, get alignments from first row

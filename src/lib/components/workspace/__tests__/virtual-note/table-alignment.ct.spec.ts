@@ -79,3 +79,54 @@ for (const input of ['markdown', 'native HTML'] as const) {
       expect(cell.attrs).toMatchObject({ colwidth: null, colspan: 1, rowspan: 1 });
   });
 }
+
+test('native table paragraph marks and escaped literals survive editing, save and view destruction', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(Harness, { props: { oracle: true, sourceOverride: '| H |\n| --- |\n| body |' } });
+  const host = page.getByTestId('proof');
+  await expect.poll(() => host.evaluate((el) => !!(el as Host).native)).toBe(true);
+  const html =
+    '<strong>bold</strong> <em>italic</em> <a href="https://example.com/path">link</a> <code>a`b</code> <code>a\\|b</code> literal *stars* [brackets] | slash \\ adjacent \\|';
+  const inline =
+    '**bold** *italic* [link](https://example.com/path) ``a`b`` `a\\`<!-- -->`\\|b` literal \\*stars\\* &#91;brackets&#93; \\| slash \\\\ adjacent \\\\\\|';
+  const expected = `| ${inline} |  |\n| :---: | --- |\n| ${inline} | plain! |`;
+  const result = await host.evaluate(async (el, html) => {
+    const h = el as Host & {
+      nativeMarkdown: () => string;
+      reloadNative: (source: string) => Promise<void>;
+    };
+    h.native.commands.setContent(
+      `<table><tr><th align="center"><p>${html}</p></th><th><p></p></th></tr><tr><td align="center"><p>${html}</p></td><td><p>plain</p></td></tr></table>`,
+    );
+    let caret = -1;
+    h.native.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'paragraph' && node.textContent === 'plain')
+        caret = pos + 1 + node.textContent.length;
+    });
+    if (caret < 0) throw new Error('Missing native plain cell');
+    h.native.commands.setTextSelection(caret);
+    h.native.commands.insertContent('!');
+    const before = h.native.state.doc.firstChild!.toJSON();
+    const markdown = h.nativeMarkdown().trim();
+    const canonical = await h.parseSource(markdown);
+    const old = h.native;
+    await h.reloadNative(markdown);
+    return {
+      before,
+      markdown,
+      canonical,
+      destroyed: old.isDestroyed,
+      after: h.native.state.doc.firstChild!.toJSON(),
+    };
+  }, html);
+  await testInfo.attach('table-paragraph-roundtrip.json', {
+    body: JSON.stringify(result),
+    contentType: 'application/json',
+  });
+  expect(result.markdown).toBe(expected);
+  expect(result.destroyed).toBe(true);
+  expect(result.after).toEqual(result.before);
+  expect(result.canonical.doc.content?.[0]).toEqual(result.before);
+});
