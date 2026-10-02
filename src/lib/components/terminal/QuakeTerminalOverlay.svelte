@@ -570,11 +570,10 @@
   async function dismissPreviouslyRunningTab(scriptId: string, event: MouseEvent) {
     event.stopPropagation();
     if (!workspaceId) return;
-    const succeeded = await runScriptMutation(
+    await runScriptMutation(
       () => scriptsClient.stop(workspaceId, scriptId),
       m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
     );
-    if (succeeded) appStore.dispatch(refreshScripts(workspaceId));
   }
 
   // Constants

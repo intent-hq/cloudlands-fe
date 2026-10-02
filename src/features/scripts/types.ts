@@ -46,7 +46,7 @@ export type ScriptSource = 'auto-detected' | 'user';
 /**
  * Runtime status of a script process.
  */
-export type ScriptStatus = 'idle' | 'running' | 'restarting' | 'exited';
+export type ScriptStatus = 'idle' | 'starting' | 'running' | 'restarting' | 'exited';
 
 /**
  * A workspace script definition — persisted by the intentd daemon.
@@ -59,8 +59,9 @@ export interface WorkspaceScript {
   cwd?: string; // Relative to workspace repo root
   env?: Record<string, string>;
   mode: ScriptMode;
-  category?: ScriptCategory;
-  source: ScriptSource;
+  // Daemon fields are open strings; creation UI uses the known aliases above.
+  category?: string;
+  source: string;
   autoStart?: boolean; // Start when workspace opens (services only)
   createdAt: string;
   updatedAt?: string;

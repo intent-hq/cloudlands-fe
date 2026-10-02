@@ -11,7 +11,6 @@ import {
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   clearScriptOperations,
-  refreshScripts,
   restartScriptRequested,
   scriptOperationFailed,
   scriptOperationSucceeded,
@@ -68,7 +67,6 @@ function* runScriptOperation(action: ScriptOperationRequest): SagaGenerator<void
       return;
     }
     yield* put(scriptOperationSucceeded(workspaceId, scriptId, operation));
-    yield* put(refreshScripts(workspaceId));
   } catch (error) {
     if (authority !== (yield* selectWorkspaceActionContext.effect(workspaceId))) return;
     yield* put(scriptOperationFailed(workspaceId, scriptId, operation, errorMessage(error)));

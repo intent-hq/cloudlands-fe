@@ -4878,8 +4878,8 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     });
   });
 
-  it.each(['created', 'updated', 'removed'] as const)(
-    'refreshes script.list after a script definition is %s',
+  it.each(['created', 'updated'] as const)(
+    'refreshes script.list after a legacy script definition is %s',
     async (action) => {
       await primeBridge();
       const refreshScripts = await import('$store/renderer/slices/scripts/scripts-slice').then(
@@ -4971,7 +4971,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
       }),
     );
 
-    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(false);
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBeUndefined();
     expect(readScriptsState().scripts[SCRIPT_ID].runtime.status).toBe('running');
   });
 });

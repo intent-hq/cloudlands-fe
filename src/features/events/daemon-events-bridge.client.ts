@@ -1,3 +1,4 @@
+import { scriptChangeSnapshot, scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
@@ -283,9 +284,9 @@ import {
   appendScriptOutput,
   removeScript,
   refreshScripts,
+  scriptSnapshotReceived,
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
-import type { ScriptRuntimeState } from '$store/renderer/slices/scripts/scripts-types';
 import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import {
   clearServerErrorMessage,
@@ -3182,11 +3183,10 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   if (typeof scriptId !== 'string') return;
   // PTY stream ended — drop the streaming decoder so a later run starts fresh.
   if (rest.status !== 'running') scriptOutputDecoders.delete(`${workspaceId}:${scriptId}`);
-  // The event is a full ScriptRuntimeState snapshot, but the reducer shallow-merges:
-  // make the presence-detected marker explicit so an absent key clears a stale
-  // `previouslyRunning` from an earlier `script.list` hydration.
-  rest.previouslyRunning = rest.previouslyRunning === true;
-  appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
+  // Runtime events are complete snapshots too: omitted optionals clear the
+  // prior run, including future additive fields the renderer passes through.
+  const runtime = scriptRuntimeSnapshot(rest);
+  if (runtime) appStore.dispatch(updateRuntimeState(workspaceId, scriptId, runtime, true));
 }
 
 /** Remove an exited PTY from the transient terminal strip and release any live adapter. */
@@ -4148,15 +4148,25 @@ export function routeDaemonEventsNotification(
     // fall through to the storage dispatch below so the activity timeline
     // records the attention request alongside the sticky toast.
   }
-  // Script definition/output/state (§6.5) — definition mutations trigger a
-  // canonical list refetch, output feeds the live buffer, and state mirrors
-  // the recomputed runtime into the scripts slice.
+  if ((type === 'script:changed' || type === 'script:state') && typeof event.id === 'string') {
+    if (seenScriptEventIds.has(event.id)) return;
+    seenScriptEventIds.add(event.id);
+  }
+
+  // Complete changes apply directly; legacy invalidations still reconcile.
+  // Output feeds the live buffer and state replaces only the runtime.
   if (type === 'script:changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (data?.action === 'removed' && typeof data.scriptId === 'string') {
       appStore.dispatch(removeScript(workspaceId, data.scriptId));
+    } else {
+      const script =
+        data?.action === 'created' || data?.action === 'updated'
+          ? scriptChangeSnapshot(data.script, workspaceId, data.scriptId)
+          : undefined;
+      if (script) appStore.dispatch(scriptSnapshotReceived(workspaceId, script));
+      else appStore.dispatch(refreshScripts(workspaceId));
     }
-    appStore.dispatch(refreshScripts(workspaceId));
     // fall through so the activity timeline records the mutation
   }
   if (type === 'script:output') {
@@ -4507,7 +4517,10 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
   );
 }
 
+const seenScriptEventIds = new Set<string>();
+
 export function disposeDaemonEventsRoutingState(): void {
+  seenScriptEventIds.clear();
   agentRefreshGeneration += 1;
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
