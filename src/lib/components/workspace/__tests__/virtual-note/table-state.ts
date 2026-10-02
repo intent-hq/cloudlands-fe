@@ -1,6 +1,19 @@
 import type { JSONContent } from '@tiptap/core';
 import { tableRuns, type TableFragment } from './table-source';
 
+export type TableInlineWrite = {
+  revision: number;
+  cell: number;
+  body: number;
+  end: number;
+  nodeType: string;
+  attrs: JSONContent['attrs'];
+  block: number;
+  from: number;
+  to: number;
+  content: JSONContent[];
+};
+
 const length = (node: JSONContent) => (node.type === 'hardBreak' ? 1 : (node.text?.length ?? 0));
 function slice(nodes: JSONContent[], from: number, to: number) {
   let cursor = 0;
@@ -33,6 +46,52 @@ function join(nodes: JSONContent[]) {
     else result.push(structuredClone(node));
   }
   return result;
+}
+
+/** Mock backing only. The renderer sends native inline changes, never the full cell. */
+export function patchTableInline(
+  source: string,
+  existing: JSONContent | undefined,
+  edit: TableInlineWrite,
+) {
+  const original: JSONContent = existing ?? {
+    type: edit.nodeType,
+    attrs: edit.attrs,
+    content: [
+      {
+        type: 'paragraph',
+        content: tableRuns(source, edit.body).map((run) => ({
+          type: run.hardBreak ? 'hardBreak' : 'text',
+          ...(run.hardBreak ? {} : { text: run.text }),
+          marks: run.marks,
+        })),
+      },
+    ],
+  };
+  const paragraph = original.content?.[edit.block];
+  const nodes = paragraph?.content ?? [];
+  if (
+    !paragraph ||
+    edit.from < 0 ||
+    edit.to < edit.from ||
+    edit.to > nodes.reduce((n, node) => n + length(node), 0)
+  )
+    throw new Error('Invalid native table inline range');
+  return {
+    ...original,
+    content: original.content!.map((node, index) =>
+      index === edit.block
+        ? {
+            ...node,
+            content: join([
+              ...slice(nodes, 0, edit.from),
+              ...edit.content,
+              ...slice(nodes, edit.to, Infinity),
+            ]),
+          }
+        : node,
+    ),
+  };
 }
 
 /** Mock backing only: splice an admitted native fragment into its backing cell record. */

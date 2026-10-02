@@ -8,6 +8,7 @@ import type { SourceProjection } from './source-projection';
 import type { Splice, TablePoint, Selection } from './source-journal';
 import { scanTables, type TableWindow, type TableFragment } from './table-source';
 import type { TableCodeEdit } from './table-code';
+import type { TableInlineWrite } from './table-state';
 
 const size = (node: JSONContent): number =>
   node.type === 'text'
@@ -46,7 +47,11 @@ export class TableProjection {
   }> = [];
   structural?: TableStructure;
   readonly codeChanges: TableCodeEdit[] = [];
-  readonly changedCells: Array<{ cell: TableFragment; node: JSONContent }> = [];
+  readonly changedCells: Array<{
+    cell: TableFragment;
+    node: JSONContent;
+    inline?: TableInlineWrite;
+  }> = [];
   constructor(readonly window: TableWindow) {
     const table: JSONContent = { type: 'table', content: [] };
     this.content.content!.push(table);
@@ -305,7 +310,31 @@ export class TableProjection {
         return [];
       }
       if (before.eq(after)) continue;
-      this.changedCells.push({ cell: entry.cell, node: after.toJSON() });
+      const step = tr.steps.length === 1 ? tr.steps[0] : undefined;
+      const paragraph =
+        step instanceof ReplaceStep && !step.slice.openStart && !step.slice.openEnd
+          ? this.paragraphs.find(
+              (p) => p.cell.from === entry.cell.from && step.from >= p.pm && step.to <= p.end,
+            )
+          : undefined;
+      const inline: TableInlineWrite | undefined =
+        paragraph &&
+        step instanceof ReplaceStep &&
+        step.slice.content.content.every((n) => n.isText)
+          ? {
+              revision: this.window.revision,
+              cell: entry.cell.from,
+              body: entry.cell.body,
+              end: entry.cell.end,
+              nodeType: after.type.name,
+              attrs: after.attrs,
+              block: paragraph.block,
+              from: paragraph.offset + step.from - paragraph.pm,
+              to: paragraph.offset + step.to - paragraph.pm,
+              content: step.slice.content.content.map((n) => n.toJSON()),
+            }
+          : undefined;
+      this.changedCells.push({ cell: entry.cell, node: after.toJSON(), inline });
       if (
         tr.steps.length === 1 &&
         tr.steps[0] instanceof ReplaceStep &&

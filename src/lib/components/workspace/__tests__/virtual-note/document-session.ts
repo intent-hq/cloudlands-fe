@@ -1236,7 +1236,8 @@ export class DocumentSession {
                 throw new Error('Stale table transaction');
               if (tableBatch)
                 for (const changed of tableBatch.changedCells)
-                  this.service.stageTableCell(changed.cell, changed.node, history);
+                  if (changed.inline) this.service.stageTableInline(changed.inline, history);
+                  else this.service.stageTableCell(changed.cell, changed.node, history);
               this.service.stageProjection(
                 splices,
                 fences,

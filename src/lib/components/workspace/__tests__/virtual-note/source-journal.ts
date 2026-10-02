@@ -15,7 +15,7 @@ import {
   type TableRectangle,
 } from './table-source';
 import type { JSONContent } from '@tiptap/core';
-import { patchTableCell } from './table-state';
+import { patchTableCell, patchTableInline, type TableInlineWrite } from './table-state';
 import type { TableStructure } from './table-projection';
 import { tableCodeChanges, type TableCodeEdit } from './table-code';
 export const LIMITS = {
@@ -110,6 +110,24 @@ export class SourceJournal {
     }
   }
   maxTableWriteBytes = 0;
+  stageTableInline(edit: TableInlineWrite, history = true) {
+    if (edit.revision !== this.revision) throw new Error('Stale table inline write');
+    const encoded = JSON.stringify(edit),
+      payload = bytes(encoded);
+    if (payload > LIMITS.request) throw new Error('Table inline write exceeds budget');
+    this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, payload);
+    // Decode the actual request at the mock backing boundary. Full cell reconstruction
+    // below belongs to the backing store, not renderer or transport residency.
+    const received: TableInlineWrite = JSON.parse(encoded);
+    const prior = this.tableStates.get(`cell:${received.cell}`);
+    const merged = patchTableInline(
+      this.slice(received.body, received.end),
+      prior ? JSON.parse(prior) : undefined,
+      received,
+    );
+    this.stageTableState(`cell:${received.cell}`, JSON.stringify(merged), history);
+    this.log('table-inline-write', received.cell, payload);
+  }
   stageTableCell(fragment: TableFragment, node: JSONContent, history = true) {
     const payload = bytes(JSON.stringify({ fragment, node }));
     if (payload > LIMITS.request) throw new Error('Table fragment write exceeds budget');
