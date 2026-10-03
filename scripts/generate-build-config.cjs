@@ -86,7 +86,17 @@ try {
 const CONFIG = {
   // Git commit hash for version identification
   GIT_COMMIT_HASH: gitCommitHash,
+  ISOLATED_TEST_BUILD_ID: process.env.INTENT_ISOLATED_TEST_BUILD_ID || '',
+  ISOLATED_TEST_BACKEND_SHA: process.env.INTENT_ISOLATED_TEST_BACKEND_SHA || '',
 };
+
+if (
+  (CONFIG.ISOLATED_TEST_BUILD_ID !== '' || CONFIG.ISOLATED_TEST_BACKEND_SHA !== '') &&
+  (!/^manual-[1-9][0-9]{0,19}-[1-9][0-9]{0,2}$/.test(CONFIG.ISOLATED_TEST_BUILD_ID) ||
+    !/^[a-f0-9]{40}$/.test(CONFIG.ISOLATED_TEST_BACKEND_SHA))
+) {
+  throw new Error('Isolated test builds require an exact manual build ID and backend commit');
+}
 
 // Generate the TypeScript file
 const content = `/**
@@ -113,6 +123,8 @@ export const BUILD_CONFIG = {
    * Used for version identification in About dialog
    */
   GIT_COMMIT_HASH: ${JSON.stringify(CONFIG.GIT_COMMIT_HASH)},
+  ISOLATED_TEST_BUILD_ID: ${JSON.stringify(CONFIG.ISOLATED_TEST_BUILD_ID)},
+  ISOLATED_TEST_BACKEND_SHA: ${JSON.stringify(CONFIG.ISOLATED_TEST_BACKEND_SHA)},
 } as const;
 
 export type BuildConfig = typeof BUILD_CONFIG;

@@ -21,6 +21,7 @@
  */
 
 import { app } from 'electron';
+import { isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { Logger } from '../../../shared/logger';
 import { getLocalPref } from '../../../main/local-prefs';
 import {
@@ -58,7 +59,7 @@ const FOCUS_MIN_INTERVAL_MS = 60_000;
 export async function isKeychainSyncEnabled(
   platform: NodeJS.Platform = process.platform,
 ): Promise<boolean> {
-  if (platform !== 'darwin') return false;
+  if (isIsolatedTestBuild() || platform !== 'darwin') return false;
   return (await getLocalPref<boolean>(KEYCHAIN_SYNC_ENABLED_KEY)) !== false;
 }
 

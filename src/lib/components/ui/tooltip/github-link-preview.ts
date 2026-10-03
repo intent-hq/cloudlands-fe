@@ -19,12 +19,136 @@ import type { GitHubIssueDetails, GitHubPullRequestDetails, IntegrationsClient }
 import { parseGitHubIssueOrPrUrl } from '$shared/utils/link-helpers';
 import { captureIntegrationContext } from '$features/integrations-request-context';
 import type { GitHubIssueOrPrRef } from '$shared/utils/link-helpers';
+import {
+  isGitLabResourceCandidate,
+  parseGitLabResourceLink,
+} from '$shared/utils/gitlab-resource-link';
+import type {
+  RepositoryResourceFailure,
+  RepositoryResourceSession,
+  RepositoryResourceTarget,
+} from '$shared/types/repository-resource-read';
 
 /** Discriminated details for one hovered GitHub link. */
 export type GitHubLinkPreview =
   ({ kind: 'pr' } & GitHubPullRequestDetails) | ({ kind: 'issue' } & GitHubIssueDetails);
 
 export type GitHubLinkPreviewFailure = 'rate-limited' | 'unavailable';
+
+interface GitLabLinkPreview {
+  provider: 'gitlab';
+  resource: RepositoryResourceTarget;
+  kind: 'pr' | 'issue';
+  number: number;
+  title: string;
+  state: string;
+  author: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  url: string;
+  headRef: string | null;
+  baseRef: string | null;
+}
+export type GitLabPreviewUpdate =
+  | { status: 'idle' }
+  | { status: 'loading'; resource: RepositoryResourceTarget }
+  | { status: 'ready'; data: GitLabLinkPreview }
+  | { status: 'error'; resource: RepositoryResourceTarget; reason: RepositoryResourceFailure };
+
+/** One mounted hover owns its original read lifetime, including settled display. */
+export function observeGitLabLinkPreview(
+  url: string,
+  workspaceId: string | undefined,
+  handler: (update: GitLabPreviewUpdate) => void,
+  injected?: Pick<IntegrationsClient, 'captureRepositoryResource'>,
+): () => void {
+  let active = true;
+  let session: RepositoryResourceSession | undefined;
+  let stop: (() => void) | undefined;
+  let resource: RepositoryResourceTarget | null = null;
+  const close = () => {
+    if (!active) return;
+    active = false;
+    stop?.();
+    void session?.release();
+  };
+  if (!workspaceId || !isGitLabResourceCandidate(url)) {
+    handler({ status: 'idle' });
+    return close;
+  }
+  void (async () => {
+    const client = injected ?? (await import('$lib/client')).appClient.integrations;
+    if (!active) return;
+    session = await client.captureRepositoryResource(workspaceId);
+    if (!active) {
+      await session.release();
+      return;
+    }
+    stop = session.onRetired(() => {
+      if (!active) return;
+      handler({ status: 'idle' });
+      close();
+    });
+    if (!active) {
+      stop();
+      return;
+    }
+    resource = parseGitLabResourceLink(url, session.capture.instances);
+    if (!resource) {
+      handler({ status: 'idle' });
+      close();
+      return;
+    }
+    handler({ status: 'loading', resource });
+    const result = await session.detail(resource);
+    if (!active) return;
+    const outcome = result.outcome;
+    if (outcome.kind === 'failure') {
+      handler({ status: 'error', resource, reason: outcome.code });
+      return;
+    }
+    if (outcome.kind === 'issue') {
+      handler({
+        status: 'ready',
+        data: {
+          ...outcome.issue,
+          provider: 'gitlab',
+          resource,
+          kind: 'issue',
+          headRef: null,
+          baseRef: null,
+        },
+      });
+      return;
+    }
+    const details = outcome.snapshot.details;
+    handler({
+      status: 'ready',
+      data: {
+        provider: 'gitlab',
+        resource,
+        kind: 'pr',
+        number: resource.number,
+        title: details.title,
+        url: details.url,
+        state:
+          details.state === 'open' && details.draft === true
+            ? 'draft'
+            : (details.state ?? 'unknown'),
+        author: details.author,
+        createdAt: details.createdAt,
+        updatedAt: details.updatedAt,
+        headRef: details.sourceBranch,
+        baseRef: details.targetBranch,
+      },
+    });
+  })().catch(() => {
+    if (!active) return;
+    handler(resource ? { status: 'error', resource, reason: 'unavailable' } : { status: 'idle' });
+    close();
+  });
+  return close;
+}
 
 /** Use the daemon's structured discriminator, never its raw error prose. */
 export function classifyGitHubLinkPreviewError(error: unknown): GitHubLinkPreviewFailure {
