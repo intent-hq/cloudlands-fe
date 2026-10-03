@@ -1,52 +1,168 @@
 name: Nightly Browser Tests
-
-on:
-  schedule:
-    - cron: '17 2 * * *'
-  # Always rerun the complete suites; no test/shard filters.
+'on':
   workflow_dispatch:
-
+    inputs:
+      expected_recipe_sha:
+        description: Reviewed immutable recipe commit SHA
+        required: true
+        type: string
 permissions:
   contents: read
-
-# A manual run should not cancel a nightly run and discard its evidence.
+  actions: read
 concurrency:
-  group: nightly-browser-tests-${{ github.ref }}
+  group: reserved-mixed-211ddbb5
   cancel-in-progress: false
-
 jobs:
-  manifest:
-    name: Expected browser reports
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  mixed-proof:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/validation/mixed-211ddbb5' && github.run_attempt == 1 }}
+    runs-on: gh-linux-8x
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: bash
+        working-directory: subject
+    env:
+      EXPECTED_RECIPE_SHA: ${{ inputs.expected_recipe_sha }}
+      RECIPE_EVENT_SHA: ${{ github.sha }}
+      CI: 'true'
+      CT_PORT: '18784'
+      DD_TRACE_ENABLED: 'false'
+      DD_PROFILING_ENABLED: 'false'
+      DD_INSTRUMENTATION_TELEMETRY_ENABLED: 'false'
+      PLAYWRIGHT_HTML_OPEN: never
+      GIT_TERMINAL_PROMPT: '0'
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - name: Record expected artifacts
-        run: node scripts/browser-test-artifacts.mjs manifest
-      - name: Upload expected artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: browser-test-manifest
-          path: browser-test-manifest.json
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 7
-
-  test-ct:
-    uses: ./.github/workflows/browser-tests.yml
-    with:
-      suite: ct
-
-  test-playwright:
-    uses: ./.github/workflows/browser-tests.yml
-    with:
-      suite: root
-
-  test-electron:
-    uses: ./.github/workflows/browser-tests.yml
-    with:
-      suite: electron
+    - name: Checkout recipe branch
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ github.sha }}
+        path: recipe
+        persist-credentials: false
+    - name: Checkout immutable test commit
+      uses: actions/checkout@v7
+      with:
+        ref: 211ddbb5bd9cea402e54e9a873cc57d945a09e1f
+        path: subject
+        persist-credentials: false
+    - name: Check hosted runner and runtime capacity
+      env:
+        PROOF_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: |-
+        mkdir -p "$GITHUB_WORKSPACE/evidence"
+        python3 "$GITHUB_WORKSPACE/recipe/.github/mixed-validation/audit.py" capacity
+        python3 -u "$GITHUB_WORKSPACE/recipe/.github/mixed-validation/telemetry.py" > "$GITHUB_WORKSPACE/evidence/telemetry.jsonl" 2>&1 &
+        echo $! > "$GITHUB_WORKSPACE/evidence/telemetry.pid"
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v6
+      with:
+        version: 10.30.3
+        run_install: false
+        dest: ~/setup-pnpm-${{ runner.name }}
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: '24'
+        cache: pnpm
+        cache-dependency-path: subject/pnpm-lock.yaml
+    - name: Frozen dependencies and generated inputs
+      run: |-
+        pnpm install --frozen-lockfile
+        pnpm run deps:check
+        node -e 'require("node-pty")'
+        pnpm run generate:i18n
+    - name: Capture browser plan
+      run: node scripts/run-ct-tests.mjs --print-browser-plan > "$GITHUB_WORKSPACE/evidence/browser-plan.json"
+    - name: Harden apt against mirror stalls
+      run: "set -euo pipefail\nif [ -f /etc/apt/apt-mirrors.txt ]; then\n  sudo sed -i '/azure\\.archive\\.ubuntu\\.com/d' /etc/apt/apt-mirrors.txt\n\
+        \  echo \"apt-mirrors.txt now:\" && cat /etc/apt/apt-mirrors.txt\nfi\nfor f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources\
+        \ /etc/apt/sources.list.d/*.list; do\n  [ -e \"$f\" ] || continue\n  sudo sed -i 's/azure\\.archive\\.ubuntu\\.com/archive.ubuntu.com/g'\
+        \ \"$f\"\ndone\nif grep -Rq 'azure\\.archive\\.ubuntu\\.com' /etc/apt; then\n  echo \"::warning::azure.archive.ubuntu.com still referenced\
+        \ under /etc/apt \u2014 mirror swap ineffective (Acquire bounds still apply)\"\nfi\nprintf '%s\\n' \\\n  'Acquire::Retries \"3\";' \\\n\
+        \  'Acquire::http::Timeout \"30\";' \\\n  'Acquire::https::Timeout \"30\";' \\\n  | sudo tee /etc/apt/apt.conf.d/99-bounded-acquire >/dev/null\n"
+    - name: Install Playwright browsers
+      timeout-minutes: 8
+      run: |
+        set -euo pipefail
+        node scripts/run-ct-tests.mjs --install-browsers chromium
+        if ! pkgs="$(node scripts/run-ct-tests.mjs --print-os-deps chromium)"; then
+          echo "::error::Could not derive the non-font Chromium OS dependency list from install-deps --dry-run"
+          exit 1
+        fi
+        echo "Non-font Chromium OS deps: $pkgs"
+        missing=""
+        for p in $pkgs; do
+          status="$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)"
+          case "$status" in
+            *"install ok installed"*) ;;
+            *) missing="$missing $p" ;;
+          esac
+        done
+        if [ -z "$missing" ]; then
+          echo "All non-font Chromium OS deps already installed; skipping apt."
+          exit 0
+        fi
+        echo "Missing Chromium OS deps:$missing"
+        for i in 1 2; do
+          # The validated package list intentionally supplies separate apt arguments.
+          # shellcheck disable=SC2086
+          if sudo apt-get update && sudo apt-get install -y --no-install-recommends $missing; then
+            exit 0
+          fi
+          [ "$i" -eq 2 ] || sleep 15
+        done
+        echo "::error::Failed to install missing Chromium OS deps:$missing"
+        exit 1
+    - name: Verify immutable source and installed dependency bytes
+      run: python3 "$GITHUB_WORKSPACE/recipe/.github/mixed-validation/audit.py" source
+    - name: Discover all expected cases including quarantine matches
+      env:
+        PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/evidence/discovery.json
+        NODE_OPTIONS: --max-old-space-size=4096
+      run: |-
+        pnpm run test:ct src/lib/components/workspace/__tests__/virtual-note --workers=1 --retries=0 --list --reporter=json
+        python3 "$GITHUB_WORKSPACE/recipe/.github/mixed-validation/audit.py" discovery
+    - name: Build unchanged bundle without executing tests
+      env:
+        PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/evidence/build-results.json
+        NODE_OPTIONS: --max-old-space-size=8192
+      run: |-
+        pnpm run test:ct src/lib/components/workspace/__tests__/virtual-note --workers=1 --retries=0 --only-changed=HEAD --pass-with-no-tests --reporter=list,json
+        python3 "$GITHUB_WORKSPACE/recipe/.github/mixed-validation/audit.py" build
+    - name: One complete immutable gate
+      id: gate
+      env:
+        NODE_OPTIONS: --max-old-space-size=4096
+        PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/evidence/results.json
+      run: |-
+        set +e
+        pnpm run test:ct src/lib/components/workspace/__tests__/virtual-note --workers=1 --retries=0 --reporter=list,json,html 2>&1 | tee "$GITHUB_WORKSPACE/evidence/browser.log"
+        proof_status=${PIPESTATUS[0]}
+        echo "$proof_status" > "$GITHUB_WORKSPACE/evidence/gate-exit.txt"
+        exit "$proof_status"
+    - name: Audit result and preserve failures
+      if: ${{ always() }}
+      run: python3 "$GITHUB_WORKSPACE/recipe/.github/mixed-validation/audit.py" final
+    - name: Stop telemetry and capture job metadata
+      if: ${{ always() }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |-
+        if [ -f "$GITHUB_WORKSPACE/evidence/telemetry.pid" ]; then
+          kill "$(cat "$GITHUB_WORKSPACE/evidence/telemetry.pid")" 2>/dev/null || true
+        fi
+        gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > "$GITHUB_WORKSPACE/evidence/jobs.json"
+    - name: Always upload complete evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: mixed-211ddbb5-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |-
+          evidence/
+          subject/test-results/
+          subject/playwright-report/
+          subject/playwright/.cache-18784/
+          recipe/.github/mixed-validation/
+          recipe/.github/workflows/nightly-browser-tests.yml
+        if-no-files-found: error
+        include-hidden-files: true
+        retention-days: 14
