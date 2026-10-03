@@ -5,12 +5,23 @@ import { createAdmittedLegacyPrincipal } from '../../../../test/fixtures/admitte
 import { reducers } from '../../reducer';
 import { admitAgentSubmission } from './pending-submissions-admission';
 import { selectPendingSubmissionDisplay } from './pending-submissions-selectors';
-import { removeWorkspaceEntity, setWorkspaceEntity } from '../workspace/workspace-slice';
-import { pendingSubmissionSettled } from './pending-submissions-slice';
+import {
+  bulkUpdateWorkspaceEntities,
+  updateWorkspaceEntity,
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '../workspace/workspace-slice';
+import {
+  pendingReadStarted,
+  pendingReadCompleted,
+  pendingSubmissionSettled,
+} from './pending-submissions-slice';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   onBackendReconnected: () => () => undefined,
 }));
+import { submissionReadIsCurrent } from './pending-submissions-model';
+
 const disposers: (() => void)[] = [];
 afterEach(() => {
   disposers.splice(0).forEach((dispose) => dispose());
@@ -23,6 +34,86 @@ function fixture() {
 }
 
 describe('pending submissions with the production renderer store', () => {
+  it.each(['upsert', 'bulk'] as const)(
+    'clears capability-only participation loss via %s and never revives old scope, reads or callbacks',
+    (kind) => {
+      const store = fixture();
+      store.dispatch(
+        setWorkspaceEntity({ id: 'workspace', myRole: null, canManage: true } as Workspace),
+      );
+      const old = admitAgentSubmission(store, `capability-${kind}`, 'workspace', 1, {
+        content: 'old private text',
+        destination: 'conversation',
+      })!;
+      const token = { scope: old.scope, id: 'same-read-id', kind: 'queue' as const, generation: 0 };
+      store.dispatch(pendingReadStarted(token));
+      const change = (canManage: boolean) =>
+        store.dispatch(
+          kind === 'bulk'
+            ? bulkUpdateWorkspaceEntities([updateWorkspaceEntity('workspace', { canManage })])
+            : setWorkspaceEntity({ id: 'workspace', canManage } as Workspace),
+        );
+      change(false);
+      expect(old.isCurrent()).toBe(false);
+      expect(selectPendingSubmissionDisplay.select(store.state, old.scope).conversation).toEqual(
+        [],
+      );
+      expect(store.state.pendingSubmissions.byAgentId[old.scope.agentId]).toBeUndefined();
+      change(true);
+      expect(old.isCurrent()).toBe(false);
+      const fresh = admitAgentSubmission(store, old.scope.agentId, 'workspace', 1, {
+        content: 'new participation',
+        destination: 'conversation',
+      })!;
+      expect(fresh).not.toBeNull();
+      expect(fresh.scope).not.toEqual(old.scope);
+      store.dispatch(pendingReadStarted({ ...token, scope: fresh.scope }));
+      expect(
+        submissionReadIsCurrent(store.state.pendingSubmissions.byAgentId[old.scope.agentId], token),
+      ).toBe(false);
+      store.dispatch(pendingReadCompleted(token, [], 9));
+      store.dispatch(pendingSubmissionSettled(old.scope, old.submission.id, 'accepted', 10));
+      expect(old.isCurrent()).toBe(false);
+      expect(selectPendingSubmissionDisplay.select(store.state, old.scope).conversation).toEqual(
+        [],
+      );
+      expect(
+        selectPendingSubmissionDisplay
+          .select(store.state, fresh.scope)
+          .conversation.map((row) => row.content),
+      ).toEqual(['new participation']);
+    },
+  );
+
+  it.each(['upsert', 'bulk'] as const)(
+    'preserves collaborator participation when only management is removed via %s',
+    (kind) => {
+      const store = fixture();
+      store.dispatch(
+        setWorkspaceEntity({
+          id: 'workspace',
+          myRole: 'collaborator',
+          canManage: true,
+        } as Workspace),
+      );
+      const accepted = admitAgentSubmission(store, `collaborator-${kind}`, 'workspace', 1, {
+        content: 'collaborator text',
+        destination: 'conversation',
+      })!;
+      store.dispatch(
+        kind === 'bulk'
+          ? bulkUpdateWorkspaceEntities([updateWorkspaceEntity('workspace', { canManage: false })])
+          : setWorkspaceEntity({ id: 'workspace', canManage: false } as Workspace),
+      );
+      expect(accepted.isCurrent()).toBe(true);
+      expect(
+        selectPendingSubmissionDisplay
+          .select(store.state, accepted.scope)
+          .conversation.map((row) => row.content),
+      ).toEqual(['collaborator text']);
+    },
+  );
+
   it('shows early pending text without modifying transcript, counts, unread or confirmed queue', async () => {
     const store = fixture();
     const before = {

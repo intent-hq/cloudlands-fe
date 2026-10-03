@@ -109,6 +109,83 @@ function fixture(capability: unknown = 1) {
 }
 
 describe('shared pending submission state', () => {
+  it.each(['queue', 'history'] as const)(
+    'fences both pre-ACK reads when %s completes first and retains unaccounted acceptance',
+    (first) => {
+      const f = fixture();
+      f.accept('a');
+      const q = f.read('queue');
+      const h = f.read('history');
+      f.settle('a', 'accepted', queued('a'));
+      for (const token of first === 'queue' ? [q, h] : [h, q]) {
+        expect(submissionReadIsCurrent(f.entry(), token)).toBe(false);
+        f.store.dispatch(pendingReadCompleted(token, [], 5));
+        expect(f.display().queue.map((row) => row.content)).toEqual(['a']);
+        expect(f.entry().refreshNeeded).toBe(true);
+      }
+      // Even a later empty snapshot is not correlated delivery evidence.
+      f.fresh([]);
+      expect(f.display().queue.map((row) => row.content)).toEqual(['a']);
+      expect(f.entry().refreshNeeded).toBe(true);
+      f.event([queued('a')], 'history');
+      expect(f.display().queue).toEqual([]);
+    },
+  );
+
+  it.each(['ttl', 'count'] as const)(
+    'retains trusted processing after queue dwell evicts its %s tombstone',
+    (eviction) => {
+      const f = fixture();
+      f.accept('a');
+      f.event([queued('a')]);
+      f.settle('a', 'accepted', queued('a'));
+      if (eviction === 'ttl') {
+        f.store.dispatch(pendingRetentionPruned(scope, SUBMISSION_TOMBSTONE_TTL + 4));
+      } else {
+        for (let i = 0; i < SUBMISSION_TOMBSTONE_LIMIT; i++) {
+          const id = `done-${i}`;
+          f.accept(id);
+          f.event([queued(id)], 'history');
+          f.settle(id, 'accepted');
+        }
+      }
+      expect(getItems(f.entry().tombstones).some((t) => t.id === 'a')).toBe(false);
+      f.event([queued('a')], 'processing');
+      f.event([]);
+      expect(f.display().processing.map((row) => row.content)).toEqual(['a']);
+      expect(getItems(f.entry().tombstones).some((t) => t.id === 'a')).toBe(false);
+      expect(getItems(f.entry().tombstones).length).toBeLessThanOrEqual(SUBMISSION_TOMBSTONE_LIMIT);
+      f.settle('a', 'accepted', queued('a', 'stale ACK'));
+      expect(f.display().queue).toEqual([]);
+      f.event([queued('a')], 'history');
+      expect(f.display().processing).toEqual([]);
+    },
+  );
+
+  it('processing evidence uses trusted source authors without requiring retained local callbacks', () => {
+    const f = fixture();
+    f.event(
+      [
+        queued('other', 'foreign', { author: bob }),
+        queued('anonymous', 'unknown', { author: null }),
+      ],
+      'processing',
+    );
+    expect(f.display().processing).toEqual([]);
+    const retry = queued('retry', 'trusted retry', {
+      author: bob,
+      submissionIds: undefined,
+      recoverySources: [{ messageId: 'a', submissionIds: ['a'], author: alice, origin: 'user' }],
+    });
+    f.event([retry], 'processing');
+    f.event([]);
+    expect(f.display().processing.map((row) => row.content)).toEqual(['trusted retry']);
+    f.store.dispatch(pendingLifecycleObserved(scope, false));
+    f.event([retry]);
+    expect(f.display().processing).toEqual([]);
+    expect(f.display().queue.map((row) => row.content)).toEqual(['trusted retry']);
+  });
+
   it('admits distinct IDs synchronously before a deferred preparation, and snapshots individual metadata', async () => {
     const f = fixture();
     let resolve!: () => void;
