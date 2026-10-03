@@ -1,3 +1,4 @@
+import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentNodeFields } from '$shared/types/agent-node';
 /**
  * Type definitions for the Workspace Event System
@@ -287,7 +288,7 @@ export interface AgentToolCallEvent extends WorkspaceEventBase {
  */
 export interface AgentMessageEvent extends WorkspaceEventBase {
   type: 'agent:message';
-  data: {
+  data: SubmissionCorrelation & {
     messageId: string;
     turnNumber: number;
     content: string;

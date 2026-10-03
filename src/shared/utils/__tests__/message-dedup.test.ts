@@ -543,3 +543,103 @@ describe('message-dedup utility', () => {
     expect(result).toMatchObject({ accepted: false, reason: 'streaming-fewer-content-blocks' });
   });
 });
+
+// Captured from authenticated history after a queue drain followed by a direct
+// send: equal text 176ms apart, separate submission identities, one app ID.
+const rapidAuthoritativeMessages: AgentMessage[] = [
+  {
+    id: 'user-msg-8cfd9022-80bf-4c00-9d37-7b72cefc3cce',
+    role: 'user',
+    contentBlocks: [
+      {
+        type: 'text',
+        text: 'Rapid identical',
+        messageMetadata: {
+          queueInfo: {
+            queuedMessageId: 'a788872d-865e-40d6-8552-6d1a4d6c440f',
+          },
+        },
+        id: 'user-msg-8cfd9022-80bf-4c00-9d37-7b72cefc3cce:0',
+      },
+    ],
+    metadata: {
+      fromPrincipalId: '8c621e89-4327-431d-b16e-81ffc7c3f7c7',
+      submissionIds: ['a788872d-865e-40d6-8552-6d1a4d6c440f'],
+      queueInfo: {
+        queuedMessageId: 'a788872d-865e-40d6-8552-6d1a4d6c440f',
+      },
+    },
+    author: {
+      principalId: '8c621e89-4327-431d-b16e-81ffc7c3f7c7',
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+    },
+    timestamp: '2026-10-03T13:59:18.905612589Z',
+  },
+  {
+    id: '5c8c3576-fa3b-4b97-a9f4-56e09072af14',
+    role: 'user',
+    contentBlocks: [
+      {
+        type: 'text',
+        text: 'Rapid identical',
+        id: '5c8c3576-fa3b-4b97-a9f4-56e09072af14:0',
+      },
+    ],
+    metadata: {
+      userAppMessageId: 'app_msg_a073ad5b-ebec-4586-a876-c198e6c4d216',
+      fromPrincipalId: '8c621e89-4327-431d-b16e-81ffc7c3f7c7',
+      submissionIds: ['5c8c3576-fa3b-4b97-a9f4-56e09072af14'],
+    },
+    appMessageId: 'app_msg_a073ad5b-ebec-4586-a876-c198e6c4d216',
+    author: {
+      principalId: '8c621e89-4327-431d-b16e-81ffc7c3f7c7',
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+    },
+    timestamp: '2026-10-03T13:59:19.081686875Z',
+  },
+];
+
+describe('authoritative rapid submission identities', () => {
+  it.each([false, true])(
+    'retains both history rows regardless of arrival order (reverse=%s)',
+    (reverse) => {
+      const rows = reverse ? [...rapidAuthoritativeMessages].reverse() : rapidAuthoritativeMessages;
+      expect(deduplicateAgentMessages(rows).map((row) => row.id)).toEqual(
+        rows.map((row) => row.id),
+      );
+      expect(insertAgentMessageWithDedup([rows[0]], rows[1]).map((row) => row.id)).toEqual(
+        rows.map((row) => row.id),
+      );
+    },
+  );
+
+  it('retains both rows when replacing an earlier projection with authoritative history', () => {
+    const [queued, direct] = rapidAuthoritativeMessages;
+    expect(
+      replaceAgentMessageByIdWithDedup(
+        [queued, { ...direct, id: 'pending-direct' }],
+        'pending-direct',
+        direct,
+      ).map((row) => row.id),
+    ).toEqual([queued.id, direct.id]);
+  });
+
+  it('still collapses repeated deliveries of the same authoritative row', () => {
+    const [queued, direct] = rapidAuthoritativeMessages;
+    expect(deduplicateAgentMessages([queued, queued, direct, direct]).map((row) => row.id)).toEqual(
+      [queued.id, direct.id],
+    );
+    expect(insertAgentMessageWithDedup([queued], queued)).toEqual([queued]);
+  });
+
+  it('still merges the matching app identity without consuming an identical sibling', () => {
+    const [queued, direct] = rapidAuthoritativeMessages;
+    const optimistic = { ...direct, id: 'optimistic-direct', metadata: undefined };
+    const rows = insertAgentMessageWithDedup([queued, optimistic], direct);
+    expect(rows.map((row) => row.id)).toEqual([queued.id, direct.id]);
+  });
+});

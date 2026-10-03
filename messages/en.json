@@ -7116,5 +7116,7 @@
   "collaboration_lists_noJoinedInstances_title": "No joined instances",
   "collaboration_lists_noJoinedInstances_description": "Instances you join will appear here.",
   "collaboration_lists_sharingLoading_label": "Loading workspace sharing…",
-  "collaboration_lists_sharingLoad_error": "Workspace sharing could not be loaded."
+  "collaboration_lists_sharingLoad_error": "Workspace sharing could not be loaded.",
+  "agent_chatSend_uncertainRetry_description": "Delivery is unconfirmed. Sending again may deliver this message twice.",
+  "agent_chatSend_resend_label": "Send again"
 }
