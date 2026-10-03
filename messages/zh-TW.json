@@ -7096,5 +7096,7 @@
   "chat_scriptMonitor_expired_description": "監控已到期；指令碼繼續執行",
   "chat_scriptMonitor_matched_description": "行已符合；監控結束",
   "chat_scriptMonitor_counted_description": "已達到行數門檻；監控結束",
-  "chat_scriptMonitor_untrusted_description": "符合的行（不可信的指令碼輸出）"
+  "chat_scriptMonitor_untrusted_description": "符合的行（不可信的指令碼輸出）",
+  "agent_chatSend_uncertainRetry_description": "尚未確認訊息是否已送達。再次傳送可能導致此訊息重複送達。",
+  "agent_chatSend_resend_label": "再次傳送"
 }

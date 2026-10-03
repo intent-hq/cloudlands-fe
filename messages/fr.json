@@ -7096,5 +7096,7 @@
   "chat_scriptMonitor_expired_description": "Surveillance expirée ; le script continue",
   "chat_scriptMonitor_matched_description": "Ligne correspondante ; surveillance terminée",
   "chat_scriptMonitor_counted_description": "Seuil de lignes atteint ; surveillance terminée",
-  "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)"
+  "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)",
+  "agent_chatSend_uncertainRetry_description": "La réception du message n’est pas confirmée. Un nouvel envoi pourrait le livrer deux fois.",
+  "agent_chatSend_resend_label": "Envoyer à nouveau"
 }

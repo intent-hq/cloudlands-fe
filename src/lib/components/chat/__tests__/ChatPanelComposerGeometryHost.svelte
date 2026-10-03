@@ -22,6 +22,11 @@
     initializeLayout,
     setRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+  import {
+    chatLastAttemptedMessageSet,
+    chatSendFailed,
+  } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { selectAgentSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
@@ -67,7 +72,7 @@
     responseDelivered?: boolean;
     initializeStore?: boolean;
     submissionSupport?: boolean;
-    settleSubmission?: 'history' | 'queue';
+    settleSubmission?: 'history' | 'queue' | 'rejected';
     followUp?: 'blocker' | 'discussion';
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
   } = $props();
@@ -344,7 +349,16 @@
       displayName: null,
       avatarUrl: null,
     };
-    if (settleSubmission === 'queue') {
+    if (settleSubmission === 'rejected') {
+      store.dispatch(
+        chatLastAttemptedMessageSet(
+          agentId,
+          buildRecordedAttempt(pending.content, { submission: { scope, id: pending.id } }),
+        ),
+      );
+      store.dispatch(pendingSubmissionSettled(scope, pending.id, 'rejected', Date.now()));
+      store.dispatch(chatSendFailed(agentId, 'Request rejected'));
+    } else if (settleSubmission === 'queue') {
       store.dispatch(
         pendingSubmissionSettled(scope, pending.id, 'accepted', Date.now(), undefined, true),
       );

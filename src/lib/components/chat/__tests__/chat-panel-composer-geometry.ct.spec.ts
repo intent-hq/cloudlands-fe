@@ -220,3 +220,26 @@ test('moves the same visible submission into a queue fallback while preserving a
   await expect(editor).toContainText('Keep this newer draft');
   await expect(editor).toBeFocused();
 });
+
+test('retries a rejected submission before preparation while preserving the newer draft', async ({
+  mount,
+}) => {
+  const props = {
+    width: 520,
+    height: 480,
+    submissionSupport: true,
+    followUp: 'discussion' as const,
+  };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  await editor.click();
+  await editor.pressSequentially('Retry the earlier submission');
+  await editor.press('Enter');
+  await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(1);
+  await editor.pressSequentially('Keep the newer draft');
+  await component.update({ props: { ...props, settleSubmission: 'rejected' } });
+  await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(0);
+  await component.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(1);
+  await expect(editor).toContainText('Keep the newer draft');
+});

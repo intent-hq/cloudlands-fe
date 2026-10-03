@@ -1,5 +1,6 @@
 <script lang="ts">
   import { submitChatMessage } from '$features/agent/chat-submission';
+  import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
   import { selectAgentSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
   import {
     pendingSubmissionMessage,
@@ -66,8 +67,6 @@
     agentSessionEditAndRegenerateRequested,
     agentSessionRegenerateFromMessageRequested,
     agentSessionRetryFromStalledRequested,
-    agentSessionRetryLastMessageRequested,
-    agentSessionRetryWithModelRequested,
     agentSessionRetryWithProviderRequested,
     agentSessionStopChatRequested,
     clearHistorySegment,
@@ -5545,7 +5544,7 @@
         // Retry was rejected - surface the error or fall back to prior error
         const errorToShow = result.error || priorError;
         appStore.dispatch(chatSendFailed(agentId, errorToShow));
-        appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
+        void requestChatMessageRetry(agentId, workspace.id);
         return;
       }
 
@@ -5570,13 +5569,13 @@
     }
 
     // Normal retry path for non-error statuses
-    appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
+    void requestChatMessageRetry(agentId, workspace.id);
   }
 
   // Handle retrying with a specific model (when current model is unavailable)
   function handleRetryWithModel(model: string) {
     if (!workspace) return;
-    appStore.dispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
+    void requestChatMessageRetry(agentId, workspace.id, model);
   }
 
   // Handle retrying the quota-failed turn on a different provider (#4455).

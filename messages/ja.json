@@ -7096,5 +7096,7 @@
   "chat_scriptMonitor_expired_description": "監視期限切れ・スクリプトは続行",
   "chat_scriptMonitor_matched_description": "行が一致・監視終了",
   "chat_scriptMonitor_counted_description": "行数のしきい値に到達・監視終了",
-  "chat_scriptMonitor_untrusted_description": "一致した行（信頼できないスクリプト出力）"
+  "chat_scriptMonitor_untrusted_description": "一致した行（信頼できないスクリプト出力）",
+  "agent_chatSend_uncertainRetry_description": "配信は確認できていません。再送すると、このメッセージが重複して届く可能性があります。",
+  "agent_chatSend_resend_label": "再送する"
 }

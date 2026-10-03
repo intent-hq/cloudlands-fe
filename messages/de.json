@@ -7096,5 +7096,7 @@
   "chat_scriptMonitor_expired_description": "Überwachung abgelaufen; Skript läuft weiter",
   "chat_scriptMonitor_matched_description": "Zeile stimmt überein; Überwachung beendet",
   "chat_scriptMonitor_counted_description": "Zeilenschwelle erreicht; Überwachung beendet",
-  "chat_scriptMonitor_untrusted_description": "Passende Zeile (nicht vertrauenswürdige Skriptausgabe)"
+  "chat_scriptMonitor_untrusted_description": "Passende Zeile (nicht vertrauenswürdige Skriptausgabe)",
+  "agent_chatSend_uncertainRetry_description": "Die Zustellung ist nicht bestätigt. Erneutes Senden könnte diese Nachricht doppelt zustellen.",
+  "agent_chatSend_resend_label": "Erneut senden"
 }

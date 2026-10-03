@@ -7096,5 +7096,7 @@
   "chat_scriptMonitor_expired_description": "모니터링 만료, 스크립트 계속 실행",
   "chat_scriptMonitor_matched_description": "줄 일치, 모니터링 종료",
   "chat_scriptMonitor_counted_description": "줄 수 기준 도달, 모니터링 종료",
-  "chat_scriptMonitor_untrusted_description": "일치하는 줄 (신뢰할 수 없는 스크립트 출력)"
+  "chat_scriptMonitor_untrusted_description": "일치하는 줄 (신뢰할 수 없는 스크립트 출력)",
+  "agent_chatSend_uncertainRetry_description": "전달 여부가 확인되지 않았습니다. 다시 보내면 이 메시지가 두 번 전달될 수 있습니다.",
+  "agent_chatSend_resend_label": "다시 보내기"
 }

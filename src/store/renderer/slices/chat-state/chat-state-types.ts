@@ -25,6 +25,11 @@ export interface StreamStatusContext {
 }
 
 export interface LastAttemptedMessage {
+  /** Prior local delivery provenance only; a retry must capture fresh admission. */
+  submission?: {
+    reference: import('../pending-submissions/pending-submissions-types').SubmissionReference;
+    outcome: 'accepted' | 'rejected' | 'uncertain';
+  };
   text: string;
   options?: SendMessageOptions;
 }
@@ -348,6 +353,8 @@ export interface ChatAgentState {
  * DOM-derived context may be raw; the saga owns serialization before IPC.
  */
 export interface SendMessagePayload {
+  /** Explicit retry model override, distinct from the displayed agent model. */
+  model?: string;
   submission?: import('../pending-submissions/pending-submissions-types').SubmissionReference;
   text: string;
   /** Stable identity shared by the optimistic row and its composer transition. */

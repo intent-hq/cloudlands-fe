@@ -11,14 +11,14 @@ type SubmissionStore = Parameters<typeof admitAgentSubmission>[0] & {
   dispatch: (action: ReturnType<typeof sendMessage>) => unknown;
 };
 
-/** Synchronous admission belongs before both preparation and the per-agent FIFO. */
-export function submitChatMessage(
+/** Synchronous admission shared by composer submission and explicit retry. */
+export function admitChatMessage(
   store: SubmissionStore,
   agentId: string,
   payload: SendMessagePayload & { wsId: string },
-): boolean {
+) {
   if (!payload.text.trim() && !payload.imageBlocks?.length && !payload.fileBlocks?.length)
-    return false;
+    return null;
   const appMessageId = payload.userAppMessageId ?? createAppMessageId();
   const admitted = admitAgentSubmission(
     store,
@@ -38,11 +38,21 @@ export function submitChatMessage(
       messageMetadata: payload.messageMetadata,
     },
   );
+  return admitted;
+}
+
+/** Synchronous admission belongs before both preparation and the per-agent FIFO. */
+export function submitChatMessage(
+  store: SubmissionStore,
+  agentId: string,
+  payload: SendMessagePayload & { wsId: string },
+): boolean {
+  const admitted = admitChatMessage(store, agentId, payload);
   if (!admitted) return false;
   store.dispatch(
     sendMessage(agentId, {
       ...payload,
-      userAppMessageId: appMessageId,
+      userAppMessageId: admitted.submission.appMessageId,
       submission: { scope: admitted.scope, id: admitted.submission.id },
     }),
   );

@@ -7096,5 +7096,7 @@
   "chat_scriptMonitor_expired_description": "Supervisión caducada; el script sigue ejecutándose",
   "chat_scriptMonitor_matched_description": "Línea coincidente; supervisión terminada",
   "chat_scriptMonitor_counted_description": "Umbral de líneas alcanzado; supervisión terminada",
-  "chat_scriptMonitor_untrusted_description": "Línea coincidente (salida de script no confiable)"
+  "chat_scriptMonitor_untrusted_description": "Línea coincidente (salida de script no confiable)",
+  "agent_chatSend_uncertainRetry_description": "La entrega no está confirmada. Si lo envías de nuevo, el mensaje podría entregarse dos veces.",
+  "agent_chatSend_resend_label": "Enviar de nuevo"
 }

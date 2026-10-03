@@ -7096,5 +7096,7 @@
   "chat_scriptMonitor_expired_description": "Monitoring expired; script left running",
   "chat_scriptMonitor_matched_description": "Line matched; monitoring ended",
   "chat_scriptMonitor_counted_description": "Line threshold reached; monitoring ended",
-  "chat_scriptMonitor_untrusted_description": "Matched line (untrusted script output)"
+  "chat_scriptMonitor_untrusted_description": "Matched line (untrusted script output)",
+  "agent_chatSend_uncertainRetry_description": "Delivery is unconfirmed. Sending again may deliver this message twice.",
+  "agent_chatSend_resend_label": "Send again"
 }

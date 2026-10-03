@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const wire = vi.hoisted(() => ({ request: vi.fn() }));
+const wire = vi.hoisted(() => ({ request: vi.fn(), warning: vi.fn() }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { warning: wire.warning, info: vi.fn(), error: vi.fn() },
+}));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: wire.request,
   backendSubscribe: vi.fn(async () => ({})),
@@ -10,7 +13,10 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   isBackendAvailable: () => true,
   BackendError: class BackendError extends Error {},
 }));
-vi.mock('svelte', async (original) => ({ ...(await original()), getContext: () => undefined }));
+vi.mock('svelte', async (original) => ({
+  ...(await original<typeof import('svelte')>()),
+  getContext: () => undefined,
+}));
 import { store } from '$store/renderer/store';
 import { createAdmittedLegacyPrincipal } from '../../test/fixtures/admitted-legacy-principal';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -20,6 +26,9 @@ import {
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
+import { requestChatMessageRetry } from './chat-submission-retry';
+import { chatLastAttemptedMessageSet } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { pendingScopeReleased } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 import { submitChatMessage } from '$features/agent/chat-submission';
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
 import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
@@ -74,6 +83,7 @@ beforeEach(() => {
     bulkUpsertSessions([{ ...shell(), backendSessionId: agent, messages: [previous] } as any]),
   );
   wire.request.mockReset().mockImplementation(baseReply);
+  wire.warning.mockReset();
 });
 afterEach(() => {
   cleanups.reverse().forEach((f) => f());
@@ -221,4 +231,232 @@ describe('conversation retry and evidence integration', () => {
     await store.dispatch(agentSessionRetryLastMessageRequested(agent, ws));
     expect(selectChatDraft.select(store.state, ws, agent)).toBe('keep this newer draft');
   });
+});
+
+const sends = () => wire.request.mock.calls.filter(([method]) => method === 'agent.sendMessage');
+async function failFirstSend(outcome: 'rejected' | 'uncertain') {
+  startSending();
+  let count = 0;
+  wire.request.mockImplementation(async (method, params) => {
+    if (method === 'agent.sendMessage' && ++count === 1) {
+      if (outcome === 'uncertain') throw new Error('connection lost after write');
+      return { success: false, error: 'request rejected' };
+    }
+    return baseReply(method, params);
+  });
+  submitChatMessage(store, agent, {
+    wsId: ws,
+    text: 'retry payload',
+    fileBlocks: [{ type: 'file', attachmentId: 'original-file', fileName: 'original.txt' }],
+  });
+  await vi.waitFor(() => expect(store.state.chatState.byAgentId[agent]?.error).toBeTruthy());
+  return store.state.chatState.byAgentId[agent].lastAttemptedMessage!;
+}
+function warningChoice() {
+  expect(wire.warning).toHaveBeenCalledOnce();
+  expect(wire.warning.mock.calls[0][0]).toContain('twice');
+  return wire.warning.mock.calls[0][1] as {
+    action: { onClick(): void };
+    cancel: { onClick(): void };
+    onDismiss(): void;
+  };
+}
+
+describe('explicit retry choices', () => {
+  it('stages a fresh UI retry synchronously before a deferred send and preserves a newer draft', async () => {
+    const attempt = await failFirstSend('rejected');
+    const originalId = sends()[0][1].messageId;
+    store.dispatch(setChatDraft(ws, agent, 'new draft'));
+    let reply!: (value: unknown) => void;
+    wire.request.mockImplementation((method, params) => {
+      if (method === 'agent.sendMessage')
+        return new Promise((resolve) => {
+          reply = resolve;
+        });
+      return baseReply(method, params);
+    });
+    const retry = requestChatMessageRetry(agent, ws, 'retry-model');
+    expect(display().conversation).toHaveLength(1);
+    expect(display().conversation[0].id).not.toBe(originalId);
+    expect(display().conversation[0].fileBlocks).toEqual(attempt.options?.fileBlocks);
+    expect(store.state.agentSessions.byAgentId[agent].messages.map((m) => m.id)).toEqual([
+      'previous',
+    ]);
+    expect(selectChatDraft.select(store.state, ws, agent)).toBe('new draft');
+    await vi.waitFor(() => expect(reply).toBeTypeOf('function'));
+    expect(sends()[1][1]).toMatchObject({
+      messageId: display().conversation[0].id,
+      model: 'retry-model',
+    });
+    wire.request.mockImplementation(baseReply);
+    reply({ success: true, queued: false });
+    await retry;
+    await vi.waitFor(() => expect(display().conversation[0].status).toBe('accepted'));
+    expect(selectChatDraft.select(store.state, ws, agent)).toBe('new draft');
+    expect(store.state.agentSessions.byAgentId[agent].messages.map((m) => m.id)).toEqual([
+      'previous',
+    ]);
+  });
+
+  it('cancels an unconfirmed resend without dropping its content or changing the newer draft', async () => {
+    await failFirstSend('uncertain');
+    store.dispatch(setChatDraft(ws, agent, 'keep draft'));
+    await store.dispatch(agentSessionRetryLastMessageRequested(agent, ws));
+    const choice = warningChoice();
+    expect(sends()).toHaveLength(1);
+    choice.cancel.onClick();
+    choice.action.onClick();
+    expect(sends()).toHaveLength(1);
+    expect(display().conversation[0].status).toBe('uncertain');
+    expect(selectChatDraft.select(store.state, ws, agent)).toBe('keep draft');
+  });
+
+  it('uses a fresh ID only after the warned choice and never automatically retries that new send', async () => {
+    await failFirstSend('uncertain');
+    const originalId = sends()[0][1].messageId;
+    await store.dispatch(agentSessionRetryLastMessageRequested(agent, ws));
+    const choice = warningChoice();
+    wire.request.mockImplementation(async (method, params) => {
+      if (method === 'agent.sendMessage') throw new Error('another lost acknowledgement');
+      return baseReply(method, params);
+    });
+    choice.action.onClick();
+    choice.action.onClick();
+    expect(display().conversation).toHaveLength(2);
+    await vi.waitFor(() => expect(sends()).toHaveLength(2));
+    await vi.waitFor(() =>
+      expect(display().conversation.every((s) => s.status === 'uncertain')).toBe(true),
+    );
+    expect(sends()[1][1].messageId).toEqual(expect.any(String));
+    expect(sends()[1][1].messageId).not.toBe(originalId);
+    expect(store.state.agentSessions.byAgentId[agent].messages.map((m) => m.id)).toEqual([
+      'previous',
+    ]);
+  });
+
+  it.each([
+    'delivery',
+    'queue',
+    'release',
+    'access-regrant',
+    'new-attempt',
+    'new-admission',
+    'dismiss',
+  ] as const)('rejects a late warning action after %s', async (change) => {
+    const attempt = await failFirstSend('uncertain');
+    const reference = attempt.submission!.reference;
+    await store.dispatch(agentSessionRetryLastMessageRequested(agent, ws));
+    const choice = warningChoice();
+    const evidence = {
+      id: reference.id,
+      content: attempt.text,
+      position: 0,
+      queuedAt: '2026-10-03T00:00:00Z',
+      submissionIds: [reference.id],
+      author: { principalId: reference.scope.principalId },
+    };
+    if (change === 'delivery') emit('agent:message', { ...evidence, role: 'user' });
+    if (change === 'queue') emit('agent:queue:updated', { queue: [evidence] });
+    if (change === 'release') store.dispatch(pendingScopeReleased(reference.scope));
+    if (change === 'access-regrant') {
+      store.dispatch(setWorkspaceEntity({ id: ws, myRole: 'viewer', canManage: false } as any));
+      store.dispatch(setWorkspaceEntity({ id: ws, myRole: 'owner' } as any));
+    }
+    if (change === 'new-attempt')
+      store.dispatch(chatLastAttemptedMessageSet(agent, { text: 'newer attempt' }));
+    if (change === 'new-admission') admit('newer staged message');
+    if (change === 'dismiss') choice.onDismiss();
+    choice.action.onClick();
+    await Promise.resolve();
+    expect(sends()).toHaveLength(1);
+  });
+
+  it('does not let a rejection reply override earlier authoritative delivery', async () => {
+    startSending();
+    let reject!: (value: unknown) => void;
+    wire.request.mockImplementation((method, params) =>
+      method === 'agent.sendMessage'
+        ? new Promise((resolve) => {
+            reject = resolve;
+          })
+        : baseReply(method, params),
+    );
+    submitChatMessage(store, agent, { wsId: ws, text: 'already delivered' });
+    await vi.waitFor(() => expect(reject).toBeTypeOf('function'));
+    const id = sends()[0][1].messageId;
+    const scope = store.state.pendingSubmissions.byAgentId[agent].scope;
+    emit('agent:message', {
+      id,
+      role: 'user',
+      content: 'already delivered',
+      submissionIds: [id],
+      author: { principalId: scope.principalId },
+    });
+    reject({ success: false, error: 'late rejection' });
+    await vi.waitFor(() => expect(store.state.chatState.byAgentId[agent]?.error).toBeTruthy());
+    await requestChatMessageRetry(agent, ws);
+    expect(sends()).toHaveLength(1);
+    expect(wire.warning).not.toHaveBeenCalled();
+  });
+
+  it('does not offer another send when reconciliation confirms the original in the queue', async () => {
+    const attempt = await failFirstSend('uncertain');
+    const ref = attempt.submission!.reference;
+    wire.request.mockImplementation((method, params) =>
+      method === 'agent.getQueue'
+        ? Promise.resolve({
+            queue: [
+              {
+                id: ref.id,
+                content: attempt.text,
+                position: 0,
+                queuedAt: '2026-10-03T00:00:00Z',
+                submissionIds: [ref.id],
+                author: { principalId: ref.scope.principalId },
+              },
+            ],
+          })
+        : baseReply(method, params),
+    );
+    await store.dispatch(agentSessionRetryLastMessageRequested(agent, ws));
+    expect(wire.warning).not.toHaveBeenCalled();
+    expect(sends()).toHaveLength(1);
+    expect(display().queue).toHaveLength(1);
+  });
+});
+
+describe('daemon-owned and legacy retries', () => {
+  it('retains compatibility for previously recorded legacy retries', async () => {
+    startSending();
+    store.dispatch(chatLastAttemptedMessageSet(agent, { text: 'legacy retry' }));
+    await requestChatMessageRetry(agent, ws);
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0][1].messageId).toBeUndefined();
+    expect(wire.warning).not.toHaveBeenCalled();
+  });
+
+  it.each(['queued', 'processed'] as const)(
+    'retries actual %s daemon work without local delivery provenance',
+    async (kind) => {
+      const { buildQueuedRecordedAttempt, buildProcessedRecordedAttempt } =
+        await import('./utils/build-recorded-attempt');
+      const attempt = await failFirstSend('uncertain');
+      const message = {
+        id: 'daemon-owned',
+        content: 'daemon payload',
+        queuedAt: '2026-10-03T00:00:00Z',
+        position: 0,
+      };
+      const recorded =
+        kind === 'queued'
+          ? buildQueuedRecordedAttempt(message, attempt)
+          : buildProcessedRecordedAttempt([message], attempt);
+      expect(recorded.submission).toBeUndefined();
+      store.dispatch(chatLastAttemptedMessageSet(agent, recorded));
+      await requestChatMessageRetry(agent, ws);
+      expect(sends()).toHaveLength(2);
+      expect(sends()[1][1].messageId).toBeUndefined();
+      expect(wire.warning).not.toHaveBeenCalled();
+    },
+  );
 });

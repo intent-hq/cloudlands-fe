@@ -1,3 +1,4 @@
+import { prepareSubmissionRetry } from '$features/agent/chat-submission-retry';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import {
   selectSubmissionIsCurrent,
@@ -418,8 +419,8 @@ function* dispatchToLifecycle(
       );
       if (!(yield* current())) return;
       if (!result.success) {
-        yield* settle('rejected');
         yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
+        yield* settle('rejected');
         yield* put(chatSendFailed(agentId, result.error ?? m.agent_chatSend_queueRejected_error()));
         return;
       }
@@ -495,9 +496,9 @@ function* dispatchToLifecycle(
       yield* settle('rejected');
     } catch (error) {
       if (!(yield* current())) return;
-      yield* settle('uncertain');
       const message = error instanceof Error ? error.message : String(error);
       yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
+      yield* settle('uncertain');
       yield* put(chatSendFailed(agentId, m.agent_chatSend_queueFailed_error({ error: message })));
     }
     return;
@@ -542,6 +543,7 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
     payload.workspaceContextStr,
     {
       submission: payload.submission,
+      ...(payload.model !== undefined ? { model: payload.model } : {}),
       imageBlocks: payload.imageBlocks,
       fileBlocks: payload.fileBlocks,
       noteIds: payload.noteIds,
@@ -643,6 +645,14 @@ function* retryLastMessage(
       settled = true;
       return;
     }
+    const retry = lastAttempted.submission
+      ? yield* call(prepareSubmissionRetry, agentId, wsId, lastAttempted, model)
+      : 'legacy';
+    if (!retry) {
+      yield* put(action.success(undefined as void));
+      settled = true;
+      return;
+    }
     yield* call(
       dispatchToLifecycle,
       agentId,
@@ -650,6 +660,12 @@ function* retryLastMessage(
       lastAttempted.text,
       undefined,
       {
+        ...(retry !== 'legacy'
+          ? {
+              submission: { scope: retry.scope, id: retry.submission.id },
+              userAppMessageId: retry.submission.appMessageId,
+            }
+          : {}),
         imageBlocks: lastAttempted.options?.imageBlocks,
         fileBlocks: lastAttempted.options?.fileBlocks,
         noteIds: lastAttempted.options?.noteIds,
