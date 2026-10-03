@@ -261,23 +261,33 @@ describe('collectMessageAuthors / getQueuedMessageAuthor', () => {
           messageMetadata: {
             type: 'agent_message',
             fromAgentId: 'agent-2',
-            fromPrincipalId: guest.principalId,
           },
         },
         authors,
       ),
     ).toBeNull();
-    expect(
-      getQueuedMessageAuthor(
-        { messageMetadata: { source: 'system', fromPrincipalId: guest.principalId } },
-        authors,
-      ),
-    ).toBeNull();
+    expect(getQueuedMessageAuthor({ messageMetadata: { source: 'system' } }, authors)).toBeNull();
     // Not gated on (single-member workspace passes no map).
     expect(
       getQueuedMessageAuthor({ messageMetadata: { fromPrincipalId: guest.principalId } }, null),
     ).toBeNull();
     expect(getQueuedMessageAuthor(null, authors)).toBeNull();
+  });
+
+  it('attributes a foreign authenticated human despite semantic system labels', () => {
+    const authors = collectMessageAuthors(transcript);
+    expect(
+      getQueuedMessageAuthor(
+        {
+          messageMetadata: {
+            source: 'system',
+            type: 'custom',
+            fromPrincipalId: guest.principalId,
+          },
+        },
+        authors,
+      ),
+    ).toBe(guest);
   });
 
   it("prefers the entry's own author projection, with no transcript history", () => {

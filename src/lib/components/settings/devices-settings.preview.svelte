@@ -8,7 +8,15 @@
   import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
   import { setupApiSettingsPreview } from '../../../test/api-rtk-settings-preview';
 
-  function setup(remote = false) {
+  import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
+  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+
+  function setup(remote = false, multiplayer = false) {
+    const previousMultiplayer = appStore.state.userPreferences.labsMultiplayerEnabled;
     const state = appStore.state.connections;
     const previous: ConnectionsListResult = {
       connections: selectConnections.select(appStore.state),
@@ -74,9 +82,24 @@
         ],
       }),
     );
+    if (multiplayer) {
+      admitLegacyPrincipal();
+      appStore.dispatch(setLabsMultiplayerEnabled(true));
+      const { context, invalidation, presentationVersion } = appStore.state.principal;
+      appStore.dispatch(
+        principalReceived(
+          { context: context!, invalidation, presentationVersion },
+          withHostPrincipal(appStore.state).principal.snapshot!,
+        ),
+      );
+    }
     const stopPublication = setupUnavailablePublicationPreview();
     const stopApi = setupApiSettingsPreview();
     return () => {
+      if (multiplayer) {
+        appStore.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
+        appStore.dispatch(principalContextChanged(null));
+      }
       stopApi();
       stopPublication();
       appStore.dispatch(connectionsListReceived(previous));
@@ -89,6 +112,7 @@
     defaultState: 'versions',
     states: {
       versions: { props: {}, setup: () => setup() },
+      'multiplayer-enabled': { props: {}, setup: () => setup(false, true) },
       'local-expanded': { props: { expanded: true }, setup: () => setup() },
       'remote-window': { props: {}, setup: () => setup(true) },
       'remote-expanded': { props: { expanded: true }, setup: () => setup(true) },

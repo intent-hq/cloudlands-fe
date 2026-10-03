@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
-vi.mock('$lib/client', () => ({ appClient: { settings: { get: vi.fn(), update: vi.fn() } } }));
+const { list, update } = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn() }));
+vi.mock('$lib/client', () => ({ appClient: { settings: { get: vi.fn(), list, update } } }));
+import type { AppSettingChange } from '$lib/client/app-client';
 import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { modelSelectionSaga } from '../model/sagas/model-selection-saga';
 import { backgroundAgentSettingsSaga } from './sagas/background-agent-settings-saga';
@@ -22,11 +24,27 @@ afterEach(() => {
 for (const initial of [{}, { walkthrough: 'low' }]) {
   it(`applies the complete free-form effort map for a settings proposal from ${JSON.stringify(initial)}`, async () => {
     dispose = store.init();
-    stopBackground = store.runSaga(backgroundAgentSettingsSaga);
-    applySettingsChanges([
+    const snapshot: AppSettingChange[] = [
       { path: 'model.defaultProvider', value: 'codex' },
+      { path: 'quickActions.defaultModel', value: 'balanced' },
+      {
+        path: 'quickActions.typeOverrides',
+        value: { commit: '', pr: '', review: '', fast: '' },
+      },
+      { path: 'quickActions.defaultReasoningEffort', value: 'medium' },
       { path: 'quickActions.typeReasoningEffortOverrides', value: initial },
-    ]);
+      { path: 'quickActions.providerSettings', value: {} },
+    ];
+    const saved = new Map(snapshot.map(({ path, value }) => [path, structuredClone(value)]));
+    list.mockImplementation(async () =>
+      [...saved].map(([path, value]) => ({ path, value: structuredClone(value) })),
+    );
+    update.mockImplementation(async (changes: AppSettingChange[]) => {
+      for (const { path, value } of changes) saved.set(path, structuredClone(value));
+      return structuredClone(changes);
+    });
+    stopBackground = store.runSaga(backgroundAgentSettingsSaga);
+    applySettingsChanges(snapshot);
     const desired = Object.keys(initial).length ? {} : { walkthrough: 'high' };
     const result = await applySettingsProposalWork({
       proposal: {
@@ -40,8 +58,28 @@ for (const initial of [{}, { walkthrough: 'low' }]) {
       editedFields: {},
       selectedBulkItemIds: [],
     });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false);
+    });
+    expect(update).toHaveBeenNthCalledWith(
+      1,
+      snapshot.map((change) =>
+        change.path === 'quickActions.typeReasoningEffortOverrides'
+          ? { path: change.path, value: desired }
+          : change,
+      ),
+    );
+    expect(saved.get('quickActions.typeReasoningEffortOverrides')).toEqual(desired);
     expect(store.state.backgroundAgentSettings.typeReasoningEffortOverrides).toEqual(desired);
     await undoSettingsProposalWork(result.reverseChanges);
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalledTimes(2);
+      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false);
+    });
+    expect(update).toHaveBeenNthCalledWith(2, snapshot);
+    expect(list.mock.calls).toEqual([[], []]);
+    expect(saved.get('quickActions.typeReasoningEffortOverrides')).toEqual(initial);
     expect(store.state.backgroundAgentSettings.typeReasoningEffortOverrides).toEqual(initial);
   });
 }

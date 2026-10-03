@@ -1,9 +1,13 @@
 import type { DevConsoleRecord, DevConsoleRow } from '$shared/types/dev-console';
-export type TrafficTab = 'outbound' | 'inbound' | 'events';
+export type TrafficTab = 'all' | 'outbound' | 'inbound' | 'events';
 export type TrafficColumn =
   'timestamp' | 'method' | 'kind' | 'requestId' | 'status' | 'durationMs' | 'bytes' | 'backendId';
+export function trafficStream(row: DevConsoleRow): Exclude<TrafficTab, 'all'> | null {
+  if (row.kind === 'request') return row.direction;
+  return row.direction === 'inbound' ? 'events' : null;
+}
 export function trafficBytes(row: DevConsoleRow) {
-  return (row.payload.originalBytes ?? 0) + (row.response?.originalBytes ?? 0);
+  return row.totalBytes ?? (row.payload.originalBytes ?? 0) + (row.response?.originalBytes ?? 0);
 }
 export function orderTraffic(
   rows: DevConsoleRow[],
@@ -18,9 +22,7 @@ export function orderTraffic(
   return rows
     .filter(
       (r) =>
-        (tab === 'events'
-          ? r.direction === 'inbound' && r.kind === 'notification'
-          : r.direction === tab && r.kind === 'request') &&
+        (tab === 'all' ? trafficStream(r) !== null : trafficStream(r) === tab) &&
         r.method.toLocaleLowerCase().includes(needle),
     )
     .sort((a, b) => {
@@ -59,7 +61,9 @@ export function selectedPayloadReader(
         if (!row) return;
         const result = await read(row.id);
         if (stopped || token.version !== version) return;
-        if (!token.dirty) change(result);
+        // Publish progress even if another frame arrived during this read.
+        // Waiting for a quiet interval can starve a continuously active stream.
+        change(result);
       } while (token.dirty);
     } catch (error) {
       if (!stopped && token.version === version) fail(String(error));

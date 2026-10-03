@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/mac-update-feed.mjs
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -25,6 +25,7 @@ const updaterRequire = createRequire(createRequire(import.meta.url).resolve('ele
 const { load, dump } = updaterRequire('js-yaml');
 interface Step {
   name: string;
+  id?: string;
   run?: string;
   if?: string;
   env?: Record<string, string>;
@@ -39,11 +40,16 @@ interface Matrix {
 }
 interface Job {
   steps: Step[];
+  if?: string;
+  needs?: string[];
+  'runs-on'?: string;
+  outputs?: Record<string, string>;
   strategy?: { matrix: { include: Matrix[] } | string };
   env?: Record<string, string>;
 }
 interface Workflow {
   jobs: Record<string, Job>;
+  on: { workflow_dispatch: { inputs: Record<string, unknown> } };
 }
 const workflow = (name: string): Workflow =>
   load(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
@@ -213,6 +219,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
         ? JSON.parse(
             render(configured, {
               'fromJSON(needs.resolve.outputs.macos_matrix)': releasePlan(temp()).matrix,
+              'fromJSON(needs.select-macos.outputs.matrix)': manualPlan(temp()).matrix,
             }),
           )
         : configured
@@ -457,43 +464,173 @@ it.each(['empty', 'symlink'])('rejects an %s blockmap beside the native archive'
   expect(assemble(dir).status).not.toBe(0);
 });
 
-describe('manual Mac summary reports verified and uploaded results', () => {
-  it.each([
-    ['failure', 'skipped', false],
-    ['success', 'failure', false],
-    ['success', 'success', true],
-  ])(
-    'verification=%s and upload=%s yields download availability=%s',
-    (verification, upload, available) => {
-      const dir = temp();
-      mkdirSync(join(dir, 'dist-electron'));
-      writeFileSync(join(dir, 'dist-electron/Intent-1.2.3-x64.dmg'), 'installer');
-      writeFileSync(join(dir, 'intentd.version'), '0.9.124');
-      const code = render(step('manual-signed-build', 'build-macos', 'Post summary').run!, {
-        'matrix.label': 'Intel',
-        'matrix.arch': 'x64',
-        'inputs.sign': 'true',
-        'steps.build.outcome': 'success',
-        'steps.verify.outcome': String(verification),
-        'steps.upload.outcome': String(upload),
-        'steps.upload.outputs.artifact-url': 'https://example.test/artifact',
-      });
+function manualPlan(dir: string, arch?: string) {
+  const job = workflow('manual-signed-build').jobs['select-macos'];
+  const select = step('manual-signed-build', 'select-macos', 'Select manual Mac targets');
+  const output = join(dir, 'manual-plan');
+  const env = Object.fromEntries(
+    Object.entries(select.env!).map(([key, value]) => [
+      key,
+      render(value, { 'inputs.macos_arch': arch ?? '' }),
+    ]),
+  );
+  const result = shell(dir, select.run!, { ...env, GITHUB_OUTPUT: output });
+  if (result.status !== 0) throw new Error(result.stdout + result.stderr);
+  const context = Object.fromEntries(
+    readFileSync(output, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const split = line.indexOf('=');
+        return [`steps.${select.id}.outputs.${line.slice(0, split)}`, line.slice(split + 1)];
+      }),
+  );
+  return Object.fromEntries(
+    Object.entries(job.outputs!).map(([key, value]) => [key, render(value, context)]),
+  );
+}
+
+it('runs the packaged smoke admission and executable regressions for both native CPUs', () => {
+  const result = spawnSync('python3', ['-B', 'scripts/test_packaged_macos_smoke.py'], {
+    encoding: 'utf8',
+  });
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+});
+
+describe('manual Mac architecture selection', () => {
+  const cases = [
+    { choice: 'both', arches: ['arm64', 'x64'] },
+    { choice: 'arm64', arches: ['arm64'] },
+    { choice: 'x64', arches: ['x64'] },
+    { choice: '', arches: ['arm64', 'x64'] },
+    { choice: undefined, arches: ['arm64', 'x64'] },
+  ];
+
+  it('offers an optional architecture choice while keeping the platform opt-in', () => {
+    const inputs = workflow('manual-signed-build').on.workflow_dispatch.inputs;
+    expect(inputs.macos_arch).toMatchObject({
+      required: false,
+      type: 'choice',
+      default: 'both',
+      options: ['both', 'arm64', 'x64'],
+    });
+    expect(inputs.build_macos).toMatchObject({ type: 'boolean', default: false });
+  });
+
+  it.each(cases)('builds only the selected native targets for "$choice"', ({ choice, arches }) => {
+    const jobs = workflow('manual-signed-build').jobs;
+    const build = jobs['build-macos'];
+    expect(build.needs).toContain('select-macos');
+    const plan = manualPlan(temp(), choice);
+    const matrix: { include: Matrix[] } = JSON.parse(
+      render(String(build.strategy!.matrix), {
+        'fromJSON(needs.select-macos.outputs.matrix)': plan.matrix,
+      }),
+    );
+    expect(matrix.include.map((row) => row.arch)).toEqual(arches);
+    for (const row of matrix.include) {
+      expect(render(build['runs-on']!, { 'matrix.runner': row.runner })).toBe(
+        row.arch === 'arm64' ? 'macos-15-xlarge' : 'macos-15-large',
+      );
       expect(
-        shell(dir, code, { INTENTD_REF: '', GITHUB_STEP_SUMMARY: join(dir, 'summary') }).status,
-      ).toBe(0);
-      const summary = readFileSync(join(dir, 'summary'), 'utf8');
-      if (available) {
-        expect(summary).toContain('Signed build completed');
-        expect(summary).toContain('https://example.test/artifact');
-        expect(summary).toContain('Intent-1.2.3-x64.dmg');
-      } else {
-        expect(summary).not.toContain('Signed build completed');
-        expect(summary).not.toContain('Intent-1.2.3-x64.dmg');
-        expect(summary).not.toContain('https://example.test/artifact');
+        render(build.env!.INTENTD_TARGET, { 'matrix.intentd_target': row.intentd_target }),
+      ).toBe(row.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin');
+    }
+    // Job-level conditions are evaluated before matrix expansion in Actions.
+    for (const enabled of [true, false]) {
+      for (const name of ['select-macos', 'build-macos']) {
+        expect(JSON.parse(render(jobs[name].if!, { 'inputs.build_macos': String(enabled) }))).toBe(
+          enabled,
+        );
       }
+    }
+  });
+
+  it.each(cases)(
+    'smokes a selected artifact on its native runner for "$choice"',
+    ({ choice, arches }) => {
+      const jobs = workflow('manual-signed-build').jobs;
+      const plan = manualPlan(temp(), choice);
+      const context = Object.fromEntries(
+        Object.entries(plan).map(([key, value]) => [`needs.select-macos.outputs.${key}`, value]),
+      );
+      const smoke = jobs['smoke-macos'];
+      expect(smoke.needs).toEqual(['select-macos', 'build-macos', 'smoke-inputs']);
+      expect(smoke.if).toBe('${{ inputs.smoke_macos }}');
+      const row = (JSON.parse(plan.matrix).include as Matrix[]).find((m) => m.arch === arches[0])!;
+      const upload = step('manual-signed-build', 'build-macos', 'Upload macOS DMG artifact');
+      const download = smoke.steps.find((s) => s.uses?.startsWith('actions/download-artifact@'))!;
+      expect(render(smoke['runs-on']!, context)).toBe(row.runner);
+      expect(render(String(download.with?.name), context)).toBe(
+        render(String(upload.with?.name), { 'matrix.arch': row.arch }),
+      );
     },
   );
+
+  it.each([
+    [true, true, true],
+    [true, false, false],
+    [false, true, false],
+    [false, false, false],
+  ])('requires a built and signed smoke artifact: build=%s sign=%s', (build, sign, valid) => {
+    const gate = workflow('manual-signed-build').jobs['smoke-inputs'];
+    expect(gate.if).toBe('${{ inputs.smoke_macos }}');
+    const check = step('manual-signed-build', 'smoke-inputs', 'Require a signed macOS artifact');
+    const env = Object.fromEntries(
+      Object.entries(check.env!).map(([key, value]) => [
+        key,
+        render(value, { 'inputs.build_macos': String(build), 'inputs.sign': String(sign) }),
+      ]),
+    );
+    expect(shell(temp(), check.run!, env).status === 0).toBe(valid);
+  });
+
+  it('rejects unsupported architecture values instead of scheduling unintended builds', () => {
+    expect(() => manualPlan(temp(), 'universal')).toThrow('macos_arch must be both, arm64, or x64');
+  });
 });
+
+describe.each(['arm64', 'x64'])(
+  'manual %s summary reports verified and uploaded results',
+  (arch) => {
+    it.each([
+      ['failure', 'skipped', false],
+      ['success', 'failure', false],
+      ['success', 'success', true],
+    ])(
+      'verification=%s and upload=%s yields download availability=%s',
+      (verification, upload, available) => {
+        const dir = temp();
+        mkdirSync(join(dir, 'dist-electron'));
+        writeFileSync(join(dir, `dist-electron/Intent-1.2.3-${arch}.dmg`), 'installer');
+        writeFileSync(join(dir, 'intentd.version'), '0.9.124');
+        const code = render(step('manual-signed-build', 'build-macos', 'Post summary').run!, {
+          'matrix.label': arch === 'arm64' ? 'Apple Silicon' : 'Intel',
+          'matrix.arch': arch,
+          'inputs.sign': 'true',
+          'steps.build.outcome': 'success',
+          'steps.verify.outcome': String(verification),
+          'steps.upload.outcome': String(upload),
+          'steps.upload.outputs.artifact-url': 'https://example.test/artifact',
+        });
+        expect(
+          shell(dir, code, { INTENTD_REF: '', GITHUB_STEP_SUMMARY: join(dir, 'summary') }).status,
+        ).toBe(0);
+        const summary = readFileSync(join(dir, 'summary'), 'utf8');
+        if (available) {
+          expect(summary).toContain('Signed build completed');
+          expect(summary).toContain('https://example.test/artifact');
+          expect(summary).toContain(`Intent-1.2.3-${arch}.dmg`);
+          expect(summary).toContain(`manual-macos-dmg-${arch}`);
+        } else {
+          expect(summary).not.toContain('Signed build completed');
+          expect(summary).not.toContain(`Intent-1.2.3-${arch}.dmg`);
+          expect(summary).not.toContain('https://example.test/artifact');
+        }
+      },
+    );
+  },
+);
 
 // Historical v2.191.0 has neither the native wrapper nor the verifier/assembler.
 // Read the current workflow's actual conditions against that checkout capability.

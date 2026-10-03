@@ -16,6 +16,7 @@
     {
       id: 'queued-message-one',
       content: 'Review the updated visual hierarchy and spacing.',
+      messageMetadata: { fromPrincipalId: 'preview-author' },
       queuedAt: timestamp,
       position: 0,
     },
@@ -23,6 +24,7 @@
       id: 'queued-message-two',
       content:
         'Then verify the full interaction flow at narrow widths and document any remaining visual differences.',
+      messageMetadata: { fromPrincipalId: 'preview-author' },
       queuedAt: timestamp,
       position: 1,
     },
@@ -55,6 +57,15 @@
     aria-label="Chat composer preview"
     data-testid="chat-composer-showcase"
   >
+    <div class="pb-2">
+      <QueuedMessageList
+        ownPrincipalId="preview-author"
+        {messages}
+        onedit={editMessage}
+        onremove={removeMessage}
+        onsendnow={removeMessage}
+      />
+    </div>
     <SimpleRichInput
       bind:value
       bind:contextItems
@@ -69,16 +80,7 @@
       onsubmit={() => {}}
       onforcesubmit={() => {}}
       onstop={() => {}}
-    >
-      {#snippet queueRegion()}
-        <QueuedMessageList
-          {messages}
-          onedit={editMessage}
-          onremove={removeMessage}
-          onsendnow={removeMessage}
-        />
-      {/snippet}
-    </SimpleRichInput>
+    />
   </section>
 </article>
 

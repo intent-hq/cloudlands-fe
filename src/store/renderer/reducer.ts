@@ -5,6 +5,7 @@ import { settingsEventsReducer } from './slices/settings-events/settings-events-
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
+import { agentModelReducer } from './slices/agent-model/agent-model-slice';
 import { backgroundAgentSettingsReducer } from './slices/background-agent-settings/background-agent-settings-slice';
 import { externalEditorsReducer } from './slices/external-editors/external-editors-slice';
 import { uiLayoutReducer } from './slices/ui-layout/ui-layout-slice';
@@ -64,6 +65,7 @@ import { sidebarNavReducer } from './slices/sidebar-nav/sidebar-nav-slice';
 import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
+import { scriptMonitorReducer } from './slices/script-monitor/script-monitor-slice';
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
@@ -132,6 +134,7 @@ export const reducers = {
   knownRepos: knownReposReducer,
   deepLinks: deepLinksReducer,
   model: modelReducer,
+  agentModel: agentModelReducer,
   pip: pipReducer,
   power: powerReducer,
   specialists: specialistsReducer,
@@ -178,6 +181,7 @@ export const reducers = {
   stats: statsReducer,
   backgroundHooks: backgroundHooksReducer,
   prMonitor: prMonitorReducer,
+  scriptMonitor: scriptMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   gitWrite: gitWriteReducer,

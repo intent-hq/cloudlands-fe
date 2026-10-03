@@ -1,9 +1,18 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  backendReconnected,
+  workspaceUnmounted,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import { terminalsReducer, selectScript, openTerminalOverlay } from '../terminals/terminals-slice';
 import { setScriptListState } from './scripts-slice';
 import { selectAllWorkspaceScriptEntries } from './scripts-selectors';
 import { describe, expect, it } from 'vitest';
 import {
   setActiveScriptsData,
+  scriptSnapshotReceived,
+  scriptReadStarted,
+  scriptReadFinished,
+  scriptReadReconciled,
   removeScript,
   MAX_OUTPUT_CHARS,
   appendScriptOutput,
@@ -348,5 +357,69 @@ describe('archive lifecycle reconciliation', () => {
     });
     expect(state.byWorkspaceId[WS].scripts[script.id]).toEqual(script);
     expect(state.byWorkspaceId.other).toMatchObject({ loading: true, loadError: undefined });
+  });
+});
+
+describe('authoritative script changes', () => {
+  it('archives without clearing selected output, then replaces every optional on restore', () => {
+    const active = makeScriptEntry(
+      { cwd: 'old', purpose: 'oneOff' },
+      makeRuntime({ status: 'running', pid: 44 }),
+    );
+    let scripts = scriptsReducer(undefined, setScriptsData(WS, [active]));
+    let terminals = terminalsReducer(undefined, selectScript(WS, active.id));
+    terminals = terminalsReducer(terminals, openTerminalOverlay(WS));
+    scripts = scriptsReducer(scripts, appendScriptOutput(WS, active.id, makeChunk(0, 'result')));
+    const archived = {
+      ...active,
+      archivedAt: 'now',
+      lastRun: { outcome: 'failed' as const, stoppedAt: 'now' },
+      runtime: makeRuntime({ status: 'exited', exitCode: 1 }),
+    };
+    const event = scriptSnapshotReceived(WS, archived);
+    scripts = scriptsReducer(scripts, event);
+    terminals = terminalsReducer(terminals, event);
+    expect(selectScriptEntries.select({ scripts } as never, WS)).toEqual([]);
+    expect(terminals.workspaces[WS].selectedScriptId).toBe(active.id);
+    expect(terminals.workspaces[WS].isOpen).toBe(true);
+    expect(scripts.byWorkspaceId[WS].outputBuffers[active.id].chunks[0].text).toBe('result');
+    const replacement = makeScriptEntry({ purpose: 'saved' }, makeRuntime({ status: 'starting' }));
+    scripts = scriptsReducer(scripts, scriptSnapshotReceived(WS, replacement));
+    expect(selectScriptEntries.select({ scripts } as never, WS)).toEqual([replacement]);
+    expect(scripts.byWorkspaceId[WS].scripts[active.id]).toEqual(replacement);
+  });
+
+  it('records unknown runtime and deletion only for pending reads and clears journals on invalidation', () => {
+    let state = scriptsReducer(undefined, scriptReadStarted(WS, 'first'));
+    state = scriptsReducer(
+      state,
+      updateRuntimeState(WS, 'missing', { status: 'exited', restartCount: 0 }, true),
+    );
+    state = scriptsReducer(state, removeScript(WS, 'removed'));
+    expect(state.byWorkspaceId[WS].scripts).toEqual({});
+    expect(
+      getItems(state.byWorkspaceId[WS].pendingReads!.first).map((change) => change.kind),
+    ).toEqual(['runtime', 'removed']);
+    state = scriptsReducer(state, scriptReadFinished(WS, 'first'));
+    expect(state.byWorkspaceId[WS].pendingReads).toEqual({});
+    state = scriptsReducer(state, scriptReadStarted(WS, 'second'));
+    state = scriptsReducer(state, workspaceUnmounted(WS));
+    expect(state.byWorkspaceId[WS].pendingReads).toEqual({});
+    state = scriptsReducer(state, scriptReadStarted(WS, 'third'));
+    state = scriptsReducer(state, backendReconnected());
+    expect(state.byWorkspaceId[WS].pendingReads).toEqual({});
+  });
+
+  it('replays accepted reads only into older requests', () => {
+    let state = scriptsReducer(undefined, scriptReadStarted(WS, 'older'));
+    state = scriptsReducer(state, scriptReadStarted(WS, 'accepted'));
+    state = scriptsReducer(state, scriptReadStarted(WS, 'newer'));
+    const script = makeScriptEntry();
+    state = scriptsReducer(state, scriptReadReconciled(WS, 'accepted', [script]));
+    expect(getItems(state.byWorkspaceId[WS].pendingReads!.older)).toEqual([
+      { kind: 'read', script, sequence: '0' },
+    ]);
+    expect(getItems(state.byWorkspaceId[WS].pendingReads!.newer)).toEqual([]);
+    expect(getItems(state.byWorkspaceId[WS].pendingReads!.accepted)).toEqual([]);
   });
 });

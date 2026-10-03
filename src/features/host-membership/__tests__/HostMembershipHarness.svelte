@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { hostMembershipChanged } from '$store/renderer/slices/principal/principal-slice';
+  import { hostMembershipListsChanged } from '$store/renderer/slices/host-membership/host-membership-slice';
   import { store } from '$store/renderer/store';
   import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
   import {
@@ -10,10 +12,10 @@
     setLabsMultiplayerEnabled,
     setLabsGitLabEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import { selectHostMembershipContext } from '$store/renderer/slices/host-membership/host-membership-selectors';
   import { hostMembershipSaga } from '$store/renderer/slices/host-membership/sagas/host-membership-saga';
-  import HostMembershipSettings from '../HostMembershipSettings.svelte';
+  import HostMembershipSettingsHost from '../HostMembershipSettingsHost.svelte';
 
+  const { confirmationRevalidation = false }: { confirmationRevalidation?: boolean } = $props();
   const previous = store.state.principal;
   const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
   const previousGitLab = store.state.userPreferences.labsGitLabEnabled;
@@ -35,7 +37,31 @@
     );
   }
   admit('owner');
-  const context$ = selectHostMembershipContext();
+  const admitted = store.state.principal.snapshot!;
+  function suspendAuthority() {
+    store.dispatch(
+      hostMembershipChanged({
+        revision: 2,
+        principalId: 'other-member',
+        hostRole: 'member',
+        action: 'added',
+      }),
+    );
+    store.dispatch(hostMembershipListsChanged());
+  }
+
+  function restoreAuthority() {
+    store.dispatch(
+      principalReceived(
+        {
+          context: store.state.principal.context!,
+          invalidation: store.state.principal.invalidation,
+          presentationVersion: store.state.principal.presentationVersion,
+        },
+        { ...admitted, principal: { ...admitted.principal, hostMembershipRevision: 2 } },
+      ),
+    );
+  }
   const stop = store.runSaga(hostMembershipSaga);
   onDestroy(() => {
     stop();
@@ -64,5 +90,9 @@
   <button onclick={() => store.dispatch(setLabsMultiplayerEnabled(false))}
     >Disable Multiplayer</button
   >
-  {#if $context$}{#key $context$}<HostMembershipSettings context={$context$} />{/key}{/if}
+  {#if confirmationRevalidation}
+    <button data-testid="suspend-authority" onclick={suspendAuthority}>Suspend authority</button>
+    <button data-testid="restore-authority" onclick={restoreAuthority}>Restore authority</button>
+  {/if}
+  <HostMembershipSettingsHost />
 </section>

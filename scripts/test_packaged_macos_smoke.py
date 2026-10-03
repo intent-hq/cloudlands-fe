@@ -213,14 +213,38 @@ class Admission(unittest.TestCase):
             self.assertNotIn(key, env)
 
     def test_refuses_local_or_wrong_arch_host_before_commands(self):
-        for environment, arch in [('self-hosted', 'arm64'), ('github-hosted', 'x86_64')]:
-            with self.subTest(environment=environment, arch=arch), patch.dict(os.environ, {
-                'RUNNER_ENVIRONMENT': environment, 'RUNNER_OS': 'macOS', 'RUNNER_ARCH': 'ARM64'}, clear=True), \
-                patch.object(smoke.platform, 'system', return_value='Darwin'), \
-                patch.object(smoke.platform, 'machine', return_value=arch), patch.object(smoke, 'command') as cmd:
+        cases = [
+            ('self-hosted', 'macOS', 'ARM64', 'Darwin', 'arm64'),
+            ('self-hosted', 'macOS', 'X64', 'Darwin', 'x86_64'),
+            ('github-hosted', 'macOS', 'ARM64', 'Darwin', 'x86_64'),
+            ('github-hosted', 'macOS', 'X64', 'Darwin', 'arm64'),
+            ('github-hosted', 'macOS', 'unknown', 'Darwin', 'arm64'),
+            ('github-hosted', 'Linux', 'X64', 'Darwin', 'x86_64'),
+            ('github-hosted', 'macOS', 'X64', 'Linux', 'x86_64'),
+        ]
+        for environment, runner_os, runner_arch, system, arch in cases:
+            with self.subTest(environment=environment, runner_os=runner_os, runner_arch=runner_arch, system=system, arch=arch), patch.dict(os.environ, {
+                'RUNNER_ENVIRONMENT': environment, 'RUNNER_OS': runner_os, 'RUNNER_ARCH': runner_arch}, clear=True), \
+                patch.object(smoke.platform, 'system', return_value=system), \
+                patch.object(smoke.platform, 'machine', return_value=arch), patch.object(smoke, 'command') as cmd, \
+                patch.object(smoke.tempfile, 'mkdtemp') as create:
                 with self.assertRaisesRegex(RuntimeError, 'fresh GitHub-hosted'):
                     smoke.main()
                 cmd.assert_not_called()
+                create.assert_not_called()
+
+    def test_native_arm_and_intel_runners_launch_matching_artifacts(self):
+        for arch in ('arm64', 'x86_64'):
+            with self.subTest(arch=arch):
+                commands = self.exercise(None, arch=arch)
+                self.assertEqual(sum(command[0] == 'lipo' for command in commands), 3)
+
+    def test_each_executable_must_include_the_native_runner_architecture(self):
+        for arch in ('arm64', 'x86_64'):
+            for target in range(3):
+                with self.subTest(arch=arch, target=target):
+                    commands = self.exercise('architecture', arch=arch, wrong_target=target)
+                    self.assertEqual(sum(command[0] == 'lipo' for command in commands), target + 1)
 
     def test_unknown_scope_refuses_before_fixture_or_commands(self):
         with patch.dict(os.environ, {'BUILD_SMOKE_MACOS_SCOPE': 'arbitrary'}, clear=True), \
@@ -246,7 +270,7 @@ class Admission(unittest.TestCase):
             self.assertIn('--retries=0', args)
             self.assertEqual(json.loads((root / 'fixture-correction.json').read_text())['argv'], args)
 
-    def exercise(self, failure, scope='full'):
+    def exercise(self, failure, scope='full', arch='arm64', wrong_target=0):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / 'only.dmg').write_bytes(b'fixture-only')
@@ -259,22 +283,25 @@ class Admission(unittest.TestCase):
                     mount = args[args.index('-mountpoint') + 1]
                     return plistlib.dumps({'system-entities': [{'mount-point': mount, 'dev-entry': '/dev/fake'}]})
                 if args[0] == 'lipo':
-                    return b'x86_64' if failure == 'architecture' else b'arm64'
+                    wrong = failure == 'architecture' and sum(cmd[0] == 'lipo' for cmd in commands) == wrong_target + 1
+                    return ('x86_64' if arch == 'arm64' else 'arm64').encode() if wrong else arch.encode()
                 return b''
             with patch.dict(os.environ, {'RUNNER_ENVIRONMENT': 'github-hosted', 'RUNNER_OS': 'macOS',
-                'RUNNER_ARCH': 'ARM64', 'RUNNER_TEMP': temp, 'RUNNER_NAME': 'fixture',
+                'RUNNER_ARCH': 'ARM64' if arch == 'arm64' else 'X64', 'RUNNER_TEMP': temp, 'RUNNER_NAME': 'fixture',
                 'GITHUB_SHA': 'source', 'GITHUB_RUN_ID': '1', 'GITHUB_RUN_ATTEMPT': '1',
                 'BUILD_SMOKE_MACOS_SCOPE': scope}, clear=True), \
                 patch.object(smoke.platform, 'system', return_value='Darwin'), \
-                patch.object(smoke.platform, 'machine', return_value='arm64'), \
+                patch.object(smoke.platform, 'machine', return_value=arch), \
                 patch.object(smoke, 'REPORT_TREE', root / 'report'), patch.object(smoke, 'REPORT', root / 'report'), patch.object(smoke.sys, 'argv', ['runner', temp]), \
                 patch.object(smoke, 'command', side_effect=command), patch.object(smoke, 'run_tests') as run:
                 if failure:
-                    with self.assertRaises(RuntimeError): smoke.main()
+                    with self.assertRaisesRegex(RuntimeError, f'Actual executable lacks {arch}' if failure == 'architecture' else 'injected ' + failure): smoke.main()
                     run.assert_not_called()
                 else:
                     smoke.main()
                     self.assertEqual(json.loads((root / 'report/admission.json').read_text())['scope'], scope)
+                    architectures = json.loads((root / 'report/executables.json').read_text())
+                    self.assertEqual(list(architectures.values()), [[arch]] * 3)
                     if scope == 'fixture-correction':
                         run.assert_called_once()
                         self.assertEqual(run.call_args.args[:2], ('fixture-correction',

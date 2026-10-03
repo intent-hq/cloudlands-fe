@@ -1,3 +1,4 @@
+import { reconcileQueuedMessage } from '$features/agent/utils/reconcile-queued-message';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 import {
@@ -17,7 +18,10 @@ import {
   getAgentQueueEventSnapshotSeq,
   hydrateAgentQueue,
 } from '$features/agent/agent-queue-read-service';
-import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+import {
+  buildRecordedAttempt,
+  buildQueuedRecordedAttempt,
+} from '$features/agent/utils/build-recorded-attempt';
 import {
   imageRetryBlocks,
   toImageReferenceBlocks,
@@ -28,7 +32,7 @@ import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { AgentSession } from '$shared/types';
+import type { AgentSession, QueuedMessage } from '$shared/types';
 import { takeEveryByContextFIFO } from '../../../utils/context-saga-effects';
 import {
   agentSessionRetryFromStalledRequested,
@@ -64,6 +68,7 @@ import {
   chatModelUnavailableCleared,
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
+  chatQueuedSendStarted,
   chatSendFailed,
   chatSendStarted,
   chatStopCompleted,
@@ -71,6 +76,8 @@ import {
   refreshChatTranscriptRequested,
   sendMessage,
   sendQueuedMessageNowRequested,
+  sendQueuedMessagesNowRequested,
+  clearQueuedMessagesRequested,
   transcriptHydrationSettled,
 } from '../chat-state-slice';
 import {
@@ -86,6 +93,8 @@ const CANCELLED_ERROR = 'Chat send operation cancelled';
 
 type SendAction = ReturnType<typeof sendMessage>;
 type SendQueuedNowAction = ReturnType<typeof sendQueuedMessageNowRequested>;
+type SendQueuedBatchAction = ReturnType<typeof sendQueuedMessagesNowRequested>;
+type ClearQueuedAction = ReturnType<typeof clearQueuedMessagesRequested>;
 type RemoveAction = ReturnType<typeof removeQueuedMessageRequested>;
 type StopAction = ReturnType<typeof agentSessionStopChatRequested>;
 type RetryAction = ReturnType<typeof agentSessionRetryLastMessageRequested>;
@@ -95,6 +104,8 @@ type RetryFromStalledAction = ReturnType<typeof agentSessionRetryFromStalledRequ
 type ChatCommand =
   | SendAction
   | SendQueuedNowAction
+  | SendQueuedBatchAction
+  | ClearQueuedAction
   | RemoveAction
   | StopAction
   | RetryAction
@@ -105,6 +116,8 @@ type ChatCommand =
 const ORDINARY_CHAT_COMMANDS = [
   sendMessage,
   sendQueuedMessageNowRequested,
+  sendQueuedMessagesNowRequested,
+  clearQueuedMessagesRequested,
   removeQueuedMessageRequested,
   agentSessionRetryLastMessageRequested,
   agentSessionRetryWithModelRequested,
@@ -222,6 +235,62 @@ function* handleSendQueuedNow(action: SendQueuedNowAction): SagaGenerator<void> 
   }
 }
 
+function* handleSendQueuedBatch(action: SendQueuedBatchAction): SagaGenerator<void> {
+  const [agentId, wsId, messageIds] = action.payload;
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
+  let settled = false;
+  try {
+    if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
+    const result = yield* call([appClient.agents, appClient.agents.sendQueuedMessagesNow], {
+      agentId,
+      workspaceId: wsId,
+      messageIds,
+    });
+    if (!result.success) throw new Error(result.error ?? m.agent_chatSend_sendNowRejected_error());
+    const outcome: QueuedMessageSendOutcome = result.quarantined
+      ? 'quarantined'
+      : result.queued
+        ? 'queued'
+        : 'delivered';
+    // The batch RPC emits queue:processing itself; events own turn promotion.
+    yield* put(action.success(outcome));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) yield* put(action.failure(new Error(CANCELLED_ERROR)));
+  }
+}
+
+function* handleClearQueued(action: ClearQueuedAction): SagaGenerator<void> {
+  const [agentId, wsId, messageIds] = action.payload;
+  const ownership = captureAgentMutationOwnership(agentId, wsId);
+  let settled = false;
+  try {
+    for (const messageId of new Set(messageIds)) {
+      if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
+      const result = yield* call(
+        [appClient.agents, appClient.agents.removeQueued],
+        agentId,
+        messageId,
+        wsId,
+      );
+      if (!result.success)
+        throw new Error(result.error ?? m.agent_chatSend_sendNowRejected_error());
+      if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
+      yield* put(removeQueuedMessageFromAgentQueue(agentId, messageId));
+    }
+    yield* put(action.success(undefined as void));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) yield* put(action.failure(new Error(CANCELLED_ERROR)));
+  }
+}
+
 function* mutationIsCurrent(
   agentId: string,
   ownership: ReturnType<typeof captureAgentMutationOwnership>,
@@ -304,6 +373,7 @@ function* dispatchToLifecycle(
       // (monorepo#2481) or a hydrate-reconciled fold (monorepo#2486) —
       // advances this seq, and the queue-on-send seed below must then yield
       // to it.
+      yield* put(chatQueuedSendStarted(agentId));
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
       const result = yield* call(
         [appClient.agents, appClient.agents.queue],
@@ -322,9 +392,7 @@ function* dispatchToLifecycle(
       const queuedMessage = result.queuedMessage;
       if (queuedMessage) {
         const turnId = result.turnId ?? queuedMessage.turnId;
-        if (typeof turnId === 'string') {
-          yield* put(chatQueuedRetryRecordSet(agentId, queuedMessage.id, recordedAttempt, turnId));
-        }
+        let retryMessage: QueuedMessage | undefined = queuedMessage;
         // Seed only when no authoritative snapshot — live agent:queue:updated
         // fold or hydrate-reconciled fold — landed since the send started: a
         // snapshot (including the shrunk-after-drain one) is at least as
@@ -335,9 +403,8 @@ function* dispatchToLifecycle(
           getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend
         ) {
           const existing = yield* selectAgentQueueMessages.effect(agentId, wsId);
-          if (!existing.some((message) => message.id === queuedMessage.id)) {
-            yield* put(replaceAgentQueue(agentId, [...existing, queuedMessage], wsId));
-          }
+          const next = reconcileQueuedMessage(existing, queuedMessage);
+          yield* put(replaceAgentQueue(agentId, next, wsId));
         } else if (yield* mutationIsCurrent(agentId, ownership)) {
           logger.debug(
             'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
@@ -353,6 +420,17 @@ function* dispatchToLifecycle(
           // error must not surface as chatSendFailed; the service leaves the
           // prior mirror intact on error.
           yield* call(() => hydrateAgentQueue(agentId, wsId).catch(() => undefined));
+          retryMessage = (yield* selectAgentQueueMessages.effect(agentId, wsId)).find(
+            (message) => message.id === queuedMessage.id || message.turnId === turnId,
+          );
+        }
+        if (typeof turnId === 'string' && (yield* mutationIsCurrent(agentId, ownership))) {
+          const record = buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt);
+          yield* put(
+            retryMessage
+              ? chatQueuedRetryRecordSet(agentId, retryMessage.id, record, turnId)
+              : chatQueuedRetryRecordSet(agentId, queuedMessage.id, record, turnId, true),
+          );
         }
       }
       if (wsId === CHIEF_WORKSPACE_ID) {
@@ -784,6 +862,8 @@ function getCommandAgentId(action: ChatCommand): string {
     : (
         action as
           | SendQueuedNowAction
+          | SendQueuedBatchAction
+          | ClearQueuedAction
           | RemoveAction
           | StopAction
           | RetryAction
@@ -796,6 +876,10 @@ function getCommandAgentId(action: ChatCommand): string {
 function* rejectCommand(action: ChatCommand, error: Error): SagaGenerator<void> {
   if (action.type === sendQueuedMessageNowRequested.type) {
     yield* put((action as SendQueuedNowAction).failure(error));
+  } else if (action.type === sendQueuedMessagesNowRequested.type) {
+    yield* put((action as SendQueuedBatchAction).failure(error));
+  } else if (action.type === clearQueuedMessagesRequested.type) {
+    yield* put((action as ClearQueuedAction).failure(error));
   } else if (action.type === agentSessionStopChatRequested.type) {
     yield* put((action as StopAction).failure(error));
   } else if (action.type === agentSessionRetryLastMessageRequested.type) {
@@ -815,6 +899,10 @@ function* runChatCommand(action: ChatCommand): SagaGenerator<void> {
       yield* call(handleSend, action as SendAction);
     } else if (action.type === sendQueuedMessageNowRequested.type) {
       yield* call(handleSendQueuedNow, action as SendQueuedNowAction);
+    } else if (action.type === sendQueuedMessagesNowRequested.type) {
+      yield* call(handleSendQueuedBatch, action as SendQueuedBatchAction);
+    } else if (action.type === clearQueuedMessagesRequested.type) {
+      yield* call(handleClearQueued, action as ClearQueuedAction);
     } else if (action.type === removeQueuedMessageRequested.type) {
       yield* call(handleRemove, action as RemoveAction);
     } else if (action.type === agentSessionStopChatRequested.type) {

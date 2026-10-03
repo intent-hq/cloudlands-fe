@@ -377,6 +377,20 @@ describe('notification sagas', () => {
       throw new Error(`unexpected ${method}`);
     });
     emitMockIpcEvent('agent:idle', idle({ workspaceArchived: true }));
+    emitMockIpcEvent(
+      'agent:idle',
+      idle({
+        waitingOnScriptMonitors: [
+          {
+            monitorId: 's1',
+            scriptId: 'checks',
+            runId: 'r1',
+            scriptName: 'Checks',
+            expiresAt: '2026-10-02T10:10:00Z',
+          },
+        ],
+      }),
+    );
     emitMockIpcEvent('agent:idle', idle({ waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }] }));
     emitMockIpcEvent(
       'agent:idle',

@@ -3155,6 +3155,36 @@ describe('LiveChatClient.subscribe resume (sinceMessageId, §7.1)', () => {
     off();
   });
 
+  it('hands the five-message snapshot cursor to history consumers unchanged', async () => {
+    mockChatSubscribe();
+    const client = new LiveChatClient();
+    const seen: unknown[] = [];
+    const off = client.subscribe('agent-1', (value) => seen.push(value));
+    try {
+      await flush();
+      snapshotPush('sub-1', 0, {
+        ...SEEDED_SNAPSHOT,
+        messages: Array.from({ length: 5 }, (_, index) => ({
+          ...SEEDED_SNAPSHOT.messages[0],
+          id: `newest-${index}`,
+          seq: 115 + index,
+        })),
+        totalMessages: 120,
+        truncated: true,
+        nextToken: 'opaque-before-newest-five',
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({
+        fromSnapshot: true,
+        totalMessages: 120,
+        truncated: true,
+        nextToken: 'opaque-before-newest-five',
+      });
+    } finally {
+      off();
+    }
+  });
+
   it('stamps resumed: false when the daemon falls back to the full newest page', async () => {
     mockChatSubscribe();
     const client = new LiveChatClient();

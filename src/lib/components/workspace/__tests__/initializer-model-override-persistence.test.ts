@@ -123,7 +123,11 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
       mocks.readable([
         { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
       ]),
-    { select: vi.fn(() => []) },
+    {
+      select: vi.fn(() => [
+        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      ]),
+    },
   ),
   selectCustomSpecialistsLoaded: () => mocks.readable(true),
   selectFileSpecialistsLoaded: () => mocks.readable(true),
@@ -287,6 +291,10 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
+import { getLocale, overwriteGetLocale } from '$shared/paraglide/runtime.js';
+import { m } from '$shared/paraglide/messages.js';
+
+const originalGetLocale = getLocale;
 import { warmImport } from '../../../../test/warm-import';
 
 const PREFILL_KEY = 'workspace-prefill';
@@ -347,6 +355,7 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
   });
 
   afterEach(() => {
+    overwriteGetLocale(originalGetLocale);
     cleanup();
     sessionStorage.clear();
   });
@@ -378,8 +387,47 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
 
     // …and be submitted as the initial agent's model.
     expect(submittedInitialAgent()).toMatchObject({
+      name: 'Coordinator',
+      nameExplicitlySet: false,
+      specialist: 'spec-writer',
+      rememberSpecialist: true,
       model: 'opus4.6',
       provider: 'auggie',
+    });
+  });
+
+  it.each([
+    ['ja', 'エージェント'],
+    ['es', 'Agente'],
+  ] as const)('omits the generated General name in %s', async (locale, label) => {
+    overwriteGetLocale(() => locale);
+    expect(m.workspace_fileChanges_agent_label()).toBe(label);
+    mockCreateSuccess();
+    mocks.compactFormState$.set({
+      ...SAVED_AGENT_STATE,
+      selectedSpecialist: null,
+      isTeamMode: false,
+    });
+    mocks.hydrated$.set(true);
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+        prompt: 'Build the thing',
+        autoCreate: true,
+      }),
+    );
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(submittedInitialAgent()).not.toHaveProperty('name');
+    expect(submittedInitialAgent()).toMatchObject({
+      nameExplicitlySet: false,
+      rememberSpecialist: true,
+      specialist: undefined,
+      provider: 'auggie',
+      model: 'opus4.6',
     });
   });
 

@@ -1,16 +1,8 @@
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
-import { backgroundSettingsSaveSettled } from '../background-agent-settings/background-agent-settings-slice';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import { providerCatalogLoaded } from '../provider-catalog/provider-catalog-slice';
-import {
-  activeProviderPersistRejected,
-  atomicDefaultModelAccepted,
-  activeProviderAccepted,
-} from '../provider-settings/provider-settings-slice';
-import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { toBareProviderModels } from './model-selection-utils';
 import type {
   ModelFallbackInfo,
@@ -73,13 +65,11 @@ export const initialState: ModelState = {
   availableModelsProviderId: '',
   loadingState: {},
   providerModels: {},
-  pendingProviderModels: {},
+  selectionConnection: null,
   modelPickerCollapsedGroups: [],
   fallbackInfoByAgentId: {},
   defaultReasoningEffort: '',
   defaultProviderId: '',
-  pendingDefaultProviderId: null,
-  catalogProviderIds: [],
 };
 
 // ============================================================================
@@ -110,10 +100,6 @@ export const loadProviderModelsFromStorage = createAction<[models: Record<string
   'model/loadProviderModelsFromStorage',
 );
 
-export const providerModelsPersistRejected = createAction<[models: Record<string, string>]>(
-  'model/providerModelsPersistRejected',
-);
-
 /**
  * User pick of the default reasoning-effort level ('' clears it). Persisted to
  * `model.defaultReasoningEffort` by the model-selection saga's persistence
@@ -133,9 +119,7 @@ export const loadDefaultReasoningEffortFromStorage = createAction<[effort: strin
 
 /**
  * Hydration echo of `model.defaultProvider` (boot snapshot or
- * `settings:changed`). Guarded: a value conflicting with a still-pending
- * local pick is an older snapshot/echo and is ignored until the pick is
- * confirmed or its persistence write is rejected.
+ * `settings:changed`). User intents and RPC acknowledgements never update it.
  */
 export const hydrateDefaultProvider = createAction<[providerId: string]>(
   'model/hydrateDefaultProvider',
@@ -165,109 +149,10 @@ export const reloadModelsForProvider = createAction('model/reloadModelsForProvid
 // Reducer
 // ============================================================================
 
-/**
- * Adopt a mirrored default provider id only when it is a known catalog row
- * (or when the catalog has not hydrated yet — pre-hydration ids are
- * re-validated at `providerCatalogLoaded`). Unknown/stale ids keep the
- * fallback so model-id normalization never treats an unknown provider as
- * the default.
- */
-function validatedDefaultProviderId(
-  candidate: string,
-  catalogProviderIds: string[],
-  fallback: string,
-): string {
-  if (!candidate) return fallback;
-  if (catalogProviderIds.length === 0 || catalogProviderIds.includes(candidate)) {
-    return candidate;
-  }
-  return fallback;
-}
-
 export const modelReducer = createReducer<ModelState>(initialState);
-modelReducer.with(providerCatalogLoaded, (state, { payload: [catalog] }) => {
-  const catalogProviderIds = catalog.providers.map((provider) => provider.id);
-  const firstRowId = catalogProviderIds[0] ?? '';
-  const defaultProviderId = validatedDefaultProviderId(
-    state.defaultProviderId,
-    catalogProviderIds,
-    firstRowId,
-  );
-  return {
-    ...state,
-    catalogProviderIds,
-    defaultProviderId,
-  };
-});
-modelReducer.with(activeProviderAccepted, (state, { payload: [providerId] }) => {
-  const defaultProviderId = validatedDefaultProviderId(
-    providerId,
-    state.catalogProviderIds,
-    state.defaultProviderId,
-  );
-  return {
-    ...state,
-    defaultProviderId,
-    // The pending guard tracks the raw pick — the value the persistence saga
-    // writes and the daemon echoes back — not the catalog-validated one.
-    pendingDefaultProviderId: providerId || null,
-  };
-});
-modelReducer.with(hydrateDefaultProvider, (state, { payload: [providerId] }) => {
-  // Hydration never clobbers a newer local pick: a conflicting value is an
-  // older snapshot/echo, ignored until the pick is confirmed (matching echo)
-  // or its persistence write is rejected.
-  if (state.pendingDefaultProviderId && providerId !== state.pendingDefaultProviderId) {
-    return state;
-  }
-  // An empty payload (unset model.defaultProvider) must not clobber the
-  // first-row fallback installed at catalog hydration.
-  if (!providerId && state.catalogProviderIds.length > 0) return state;
-  const defaultProviderId = validatedDefaultProviderId(
-    providerId,
-    state.catalogProviderIds,
-    state.defaultProviderId,
-  );
-  return {
-    ...state,
-    defaultProviderId: providerId ? defaultProviderId : '',
-    pendingDefaultProviderId: null,
-  };
-});
-modelReducer.with(backgroundSettingsSaveSettled, (state, { payload: [ack] }) => {
-  if (!ack.authoritativeProviderId) return state;
-  return {
-    ...state,
-    defaultProviderId: validatedDefaultProviderId(
-      ack.authoritativeProviderId,
-      state.catalogProviderIds,
-      state.defaultProviderId,
-    ),
-    pendingDefaultProviderId: null,
-  };
-});
-modelReducer.with(activeProviderPersistRejected, (state, { payload: [providerId] }) => {
-  if (state.pendingDefaultProviderId !== providerId) return state;
-  return { ...state, pendingDefaultProviderId: null };
-});
-modelReducer.with(setSelectedModel, (state, { payload: [{ providerId, model }] }) => {
-  const bareModel = splitLegacyCompoundId(model).modelId;
-  return {
-    ...state,
-    providerModels: { ...state.providerModels, [providerId]: bareModel },
-    pendingProviderModels: { ...state.pendingProviderModels, [providerId]: bareModel },
-  };
-});
-modelReducer.with(atomicDefaultModelAccepted, (state, { payload: [{ providerId, model }] }) => {
-  const bareModel = splitLegacyCompoundId(model).modelId;
-  return {
-    ...state,
-    defaultProviderId: providerId,
-    pendingDefaultProviderId: providerId,
-    providerModels: { ...state.providerModels, [providerId]: bareModel },
-    pendingProviderModels: { ...state.pendingProviderModels, [providerId]: bareModel },
-  };
-});
+modelReducer.with(hydrateDefaultProvider, (state, { payload: [defaultProviderId] }) =>
+  state.defaultProviderId === defaultProviderId ? state : { ...state, defaultProviderId },
+);
 modelReducer.with(setAvailableModels, (state, { payload: [models, providerId] }) => ({
   ...state,
   availableModels: createCollection<AuggieModel, 'value'>('value', models),
@@ -289,32 +174,9 @@ modelReducer.with(
     },
   }),
 );
-modelReducer.with(loadProviderModelsFromStorage, (state, { payload: [models] }) => {
-  // Rehydrate boundary: legacy persisted values may be compound — split to
-  // bare ids here so nothing compound ever enters the store.
-  const bare = toBareProviderModels(models);
-  const pending: Record<string, string> = {};
-  for (const [providerId, model] of Object.entries(state.pendingProviderModels)) {
-    if (bare[providerId] !== model) pending[providerId] = model;
-  }
-  return {
-    ...state,
-    providerModels: { ...bare, ...pending },
-    pendingProviderModels: pending,
-  };
-});
-modelReducer.with(providerModelsPersistRejected, (state, { payload: [models] }) => {
-  const pending = { ...state.pendingProviderModels };
-  for (const [providerId, model] of Object.entries(models)) {
-    if (pending[providerId] === splitLegacyCompoundId(model).modelId) {
-      delete pending[providerId];
-    }
-  }
-  return { ...state, pendingProviderModels: pending };
-});
-modelReducer.with(setDefaultReasoningEffort, (state, { payload: [effort] }) => ({
+modelReducer.with(loadProviderModelsFromStorage, (state, { payload: [models] }) => ({
   ...state,
-  defaultReasoningEffort: effort,
+  providerModels: toBareProviderModels(models),
 }));
 modelReducer.with(loadDefaultReasoningEffortFromStorage, (state, { payload: [effort] }) => ({
   ...state,
@@ -339,4 +201,7 @@ modelReducer.with(clearModelFallbackInfo, (state, { payload: [agentId] }) => {
   return { ...state, fallbackInfoByAgentId };
 });
 
-modelReducer.with(hostExecutionConnectionChanged, () => initialState);
+modelReducer.with(hostExecutionConnectionChanged, (_state, { payload: [connection] }) => ({
+  ...initialState,
+  selectionConnection: connection,
+}));

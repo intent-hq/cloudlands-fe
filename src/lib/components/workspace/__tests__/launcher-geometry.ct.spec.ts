@@ -262,3 +262,34 @@ test('preserves hover, focus, and click behavior without open-panel markers', as
     'agents',
   );
 });
+
+test('opening an agent hover uses wire summaries without fetching its transcript', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(LauncherGeometryHost, {
+    props: { width: 480, itemCount: 2 },
+    hooksConfig: { mockBackend: {} },
+  });
+  await page.evaluate(() => {
+    const api = window.electronAPI!;
+    const invoke = api.invoke.bind(api);
+    (window as unknown as { transcriptReads: string[] }).transcriptReads = [];
+    api.invoke = ((channel: string, payload?: unknown) => {
+      const method = (payload as { method?: string } | undefined)?.method;
+      if (method === 'agent.getConversation' || method === 'chat.subscribe')
+        (window as unknown as { transcriptReads: string[] }).transcriptReads.push(method);
+      return invoke(channel as never, payload as never);
+    }) as typeof api.invoke;
+  });
+  await component.locator('[data-sidebar-agent]').first().hover();
+  const preview = page.locator('[data-sidebar-hover-card="agent"]');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('Review the latest work');
+  await expect(preview).toContainText('The summary is ready');
+  expect(
+    await page.evaluate(() => (window as unknown as { transcriptReads: string[] }).transcriptReads),
+  ).toEqual([]);
+  await page.mouse.move(1000, 800);
+  await expect(preview).not.toBeVisible();
+});

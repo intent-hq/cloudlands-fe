@@ -111,6 +111,23 @@ afterEach(() => {
 });
 
 describe('Dev Console native lifecycle', () => {
+  it('blocks renderer title updates on load and reload only for console windows', async () => {
+    const window = manager.open('one');
+    const onLoad = { preventDefault: vi.fn() };
+    window.emit('page-title-updated', onLoad, 'Intent', true);
+    expect(onLoad.preventDefault).toHaveBeenCalledOnce();
+
+    await window.loadURL(url);
+    const onReload = { preventDefault: vi.fn() };
+    window.emit('page-title-updated', onReload, 'Intent', true);
+    expect(onReload.preventDefault).toHaveBeenCalledOnce();
+
+    const appWindow = new BrowserWindow();
+    const appTitle = { preventDefault: vi.fn() };
+    appWindow.emit('page-title-updated', appTitle, 'Intent', true);
+    expect(appTitle.preventDefault).not.toHaveBeenCalled();
+  });
+
   it('opens one window per native backend, focuses duplicates, and observes pooled replacements', async () => {
     const initial = source();
     const opener = new BrowserWindow();

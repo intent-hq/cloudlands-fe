@@ -15,6 +15,14 @@ for (const consumer of ['specialist', 'default'] as const) {
     const effort = page.getByTestId('effort-picker-trigger');
     await expect(effort).toHaveText('High');
     await page.getByRole('option', { name: 'Second model', exact: true }).click();
+    await expect(page.getByRole('listbox')).toBeVisible();
+    await expect(
+      page.getByTestId('settings-consumer').getByRole('button', { name: /Second model/ }),
+    ).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Second model', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     await expect(effort).toHaveText('High');
     const selection = page.getByTestId('settings-selection');
     if (consumer === 'specialist') {

@@ -1,9 +1,11 @@
-import { selectScriptById, selectViewedScriptEntries } from '../../scripts/scripts-selectors';
-import { buffers } from 'redux-saga';
+import { selectAllWorkspaceScriptEntries } from '../../scripts/scripts-selectors';
 import {
-  selectPrincipalActionContext,
-  selectPrincipalConnectionContext,
-} from '../../principal/principal-selectors';
+  beginScriptRead,
+  isScriptReadCurrent,
+  reconcileScriptRead,
+} from '../../scripts/utils/script-read-context';
+import { buffers } from 'redux-saga';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { store } from '../../../store';
 import { refreshIntegrationAuthAfterReconnect } from '../../workspace-share/sagas/workspace-share-saga';
 import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -75,7 +77,9 @@ import {
   setScriptsInitialized,
   setScriptListState,
   setActiveScriptsData,
-  updateRuntimeState,
+  scriptReadFinished,
+  scriptReadReconciled,
+  removeScript,
 } from '../../scripts/scripts-slice';
 import { loadSkillsFailed, loadSkillsRequested, setSkills } from '../../skills/skills-slice';
 import {
@@ -150,6 +154,8 @@ import {
   olderEventsLoadFailed,
 } from '../../workspace-events/workspace-events-slice';
 import {
+  acquireWorkspaceTasksDemand,
+  clearWorkspaceTasks,
   ensureWorkspaceTasksLoaded,
   workspaceTasksReadStarted,
   loadWorkspaceTasksFailed,
@@ -157,8 +163,8 @@ import {
   loadWorkspaceTasksSucceeded,
 } from '../../workspace-tasks/workspace-tasks-slice';
 import {
-  selectWorkspaceTasksInitialized,
-  selectWorkspaceTasksLoading,
+  selectDemandedTaskWorkspaceIds,
+  selectWorkspaceTasksShouldLoad,
 } from '../../workspace-tasks/workspace-tasks-selectors';
 import {
   bulkUpdateWorkspaceEntities,
@@ -302,12 +308,8 @@ function* refreshWorkspaces(): SagaGenerator<void> {
   }
 }
 
-function* refreshTasks(workspaceId: string, guarded: boolean): SagaGenerator<void> {
-  if (guarded) {
-    const loading = yield* selectWorkspaceTasksLoading.effect(workspaceId);
-    const initialized = yield* selectWorkspaceTasksInitialized.effect(workspaceId);
-    if (loading || initialized) return;
-  }
+function* refreshTasks(workspaceId: string): SagaGenerator<void> {
+  if (!(yield* selectWorkspaceTasksShouldLoad.effect(workspaceId))) return;
   yield* put(workspaceTasksReadStarted(workspaceId));
   try {
     const result: Awaited<ReturnType<typeof appClient.tasks.list>> = yield* call(
@@ -1152,15 +1154,10 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
  * instead of logging an error on every refresh.
  */
 function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
-  const connection = yield* selectPrincipalConnectionContext.effect();
-  const backendId = yield* selectActiveBackendId();
-  const dispatch = store.dispatch;
+  const retainedBeforeRead = yield* selectAllWorkspaceScriptEntries.effect(workspaceId);
+  let context = yield* beginScriptRead(workspaceId);
   function* isCurrent(): SagaGenerator<boolean> {
-    return (
-      dispatch === store.dispatch &&
-      connection === (yield* selectPrincipalConnectionContext.effect()) &&
-      backendId === (yield* selectActiveBackendId())
-    );
+    return yield* isScriptReadCurrent(context);
   }
   let scripts: Awaited<ReturnType<typeof appClient.scripts.list>>;
   yield* put(setScriptListState(workspaceId, true));
@@ -1177,25 +1174,44 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
           archive: 'active' as const,
         })
       : yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
-    if (!(yield* isCurrent())) return;
+    const reconciled = yield* reconcileScriptRead(context, scripts);
+    if (!reconciled) return;
+    const changedIds = reconciled.definitionChanges;
+    scripts = reconciled.scripts;
+    yield* put(scriptReadReconciled(workspaceId, context.requestId, scripts));
     yield* put(setScriptListState(workspaceId, false, undefined, supported));
     if (supported) {
       yield* put(setActiveScriptsData(workspaceId, scripts));
-      // Reconnect can miss the final state of a retired command. Refresh only
-      // mounted output viewers absent from the active response, not all history.
-      const activeIds = new Set(scripts.map((script) => script.id));
-      for (const viewed of yield* selectViewedScriptEntries.effect(workspaceId)) {
-        if (activeIds.has(viewed.id)) continue;
-        const runtime = yield* call(
-          [appClient.scripts, appClient.scripts.status],
-          workspaceId,
-          viewed.id,
+      // Active omission cannot prove archive metadata or deletion. Reconcile
+      // retained rows with one all-list read, without populating unopened history.
+      const activeIds = new Set(
+        scripts.filter((script) => !script.archivedAt).map((script) => script.id),
+      );
+      const retained = retainedBeforeRead.filter(
+        (script) => !activeIds.has(script.id) && !changedIds.has(script.id),
+      );
+      if (retained.length) {
+        yield* put(scriptReadFinished(workspaceId, context.requestId));
+        context = yield* beginScriptRead(workspaceId);
+        const all = yield* call([appClient.scripts, appClient.scripts.list], workspaceId, {
+          archive: 'all' as const,
+        });
+        const current = yield* reconcileScriptRead(context, all);
+        if (!current) return;
+        yield* put(scriptReadReconciled(workspaceId, context.requestId, current.scripts, true));
+        const known = new Set(
+          (yield* selectAllWorkspaceScriptEntries.effect(workspaceId)).map((script) => script.id),
         );
-        if (!(yield* isCurrent())) return;
-        const current = yield* selectScriptById.effect(workspaceId, viewed.id);
-        if (runtime && current?.runtime === viewed.runtime) {
-          yield* put(updateRuntimeState(workspaceId, viewed.id, runtime));
+        const incoming = new Set(current.scripts.map((script) => script.id));
+        for (const script of retained) {
+          if (!incoming.has(script.id)) yield* put(removeScript(workspaceId, script.id));
         }
+        yield* put(
+          setActiveScriptsData(
+            workspaceId,
+            current.scripts.filter((script) => !script.archivedAt || known.has(script.id)),
+          ),
+        );
       }
     } else {
       yield* put(setScriptsData(workspaceId, scripts));
@@ -1212,6 +1228,8 @@ function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
     if (!isForbiddenErrorResponse(error)) throw error;
     logger.debug(`Scripts are owner-only for ${workspaceId}; treating as empty`);
     yield* put(setScriptsData(workspaceId, []));
+  } finally {
+    yield* put(scriptReadFinished(workspaceId, context.requestId));
   }
   yield* put(setScriptsInitialized(workspaceId, true));
 }
@@ -1286,48 +1304,41 @@ function* loadWorkspacesWorker() {
 function* backendReconnectWorkspacesWatcher(): SagaGenerator<void> {
   while (true) {
     yield* take(backendReconnected);
+    for (const workspaceId of yield* selectDemandedTaskWorkspaceIds.effect()) {
+      yield* put(ensureWorkspaceTasksLoaded(workspaceId));
+    }
     yield* put(loadWorkspacesRequested());
     yield* call(refreshIntegrationAuthAfterReconnect);
   }
 }
 
 type TasksReadAction = ReturnType<
-  typeof ensureWorkspaceTasksLoaded | typeof loadWorkspaceTasksRequested | typeof workspaceUnmounted
+  | typeof acquireWorkspaceTasksDemand
+  | typeof ensureWorkspaceTasksLoaded
+  | typeof loadWorkspaceTasksRequested
+  | typeof workspaceUnmounted
+  | typeof clearWorkspaceTasks
+  | typeof removeWorkspaceEntity
 >;
 
 type EventsReadAction = ReturnType<
   typeof loadEventsRequested | typeof loadOlderEventsRequested | typeof workspaceUnmounted
 >;
 
-function tasksReadContext(pendingForcedReads: Set<string>, action: TasksReadAction) {
+function tasksReadContext(action: TasksReadAction) {
   const workspaceId = action.payload[0];
-  if (isWorkspaceCleanupAction(action)) {
-    pendingForcedReads.delete(workspaceId);
+  if (
+    isWorkspaceCleanupAction(action) ||
+    action.type === clearWorkspaceTasks.type ||
+    action.type === removeWorkspaceEntity.type
+  ) {
     return { context: workspaceId, cancel: true as const };
-  }
-  if (workspaceId && action.type === loadWorkspaceTasksRequested.type) {
-    pendingForcedReads.add(workspaceId);
   }
   return workspaceId;
 }
 
-function* tasksWorker(
-  scheduler: WorkspaceReadScheduler,
-  pendingForcedReads: Set<string>,
-  action: TasksReadAction,
-) {
-  if (isWorkspaceCleanupAction(action)) return;
-  const workspaceId = action.payload[0];
-  const force = pendingForcedReads.delete(workspaceId);
-  yield* runWorkspaceRead(
-    scheduler,
-    'tasks',
-    workspaceId,
-    function* (id) {
-      yield* refreshTasks(id, !force);
-    },
-    false,
-  );
+function* tasksWorker(scheduler: WorkspaceReadScheduler, action: TasksReadAction) {
+  yield* runWorkspaceRead(scheduler, 'tasks', action.payload[0], refreshTasks, false);
 }
 
 function eventsReadContext(pendingInitialReads: Set<string>, action: EventsReadAction) {
@@ -1546,7 +1557,6 @@ function* clearUnmountedInitializedContext(
 export function* lifecycleReadSaga(): SagaGenerator<void> {
   const membershipRevisions = new Map<string, symbol>();
   const initializedContexts = new Set<string>();
-  const pendingForcedTaskReads = new Set<string>();
   const pendingInitialEventReads = new Set<string>();
   // One scheduler per saga run: it dies with the saga, so a restart can never
   // inherit slots held by reads that were cancelled with the previous run.
@@ -1563,11 +1573,17 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // events on transport recovery, not focus or console ownership changes.
       fork(backendReconnectWorkspacesWatcher),
       takeSingleFlightInContext(
-        [ensureWorkspaceTasksLoaded, loadWorkspaceTasksRequested, workspaceUnmounted],
-        (action) => tasksReadContext(pendingForcedTaskReads, action),
+        [
+          acquireWorkspaceTasksDemand,
+          ensureWorkspaceTasksLoaded,
+          loadWorkspaceTasksRequested,
+          workspaceUnmounted,
+          clearWorkspaceTasks,
+          removeWorkspaceEntity,
+        ],
+        tasksReadContext,
         tasksWorker,
         scheduler,
-        pendingForcedTaskReads,
       ),
       takeSingleFlightInContext(
         [loadEventsRequested, loadOlderEventsRequested, workspaceUnmounted],
@@ -1653,7 +1669,6 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
     ]);
   } finally {
     initializedContexts.clear();
-    pendingForcedTaskReads.clear();
     pendingInitialEventReads.clear();
   }
 }

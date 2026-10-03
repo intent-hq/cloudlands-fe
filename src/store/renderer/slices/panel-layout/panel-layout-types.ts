@@ -48,6 +48,8 @@ export interface PanelTab {
   icon?: PanelTabIcon;
   closable: boolean;
   hasUnsavedChanges?: boolean;
+  /** Source pane to reactivate on close, if it remains in the same panel. */
+  openerTabId?: string;
 
   // Type-specific identifiers
   workspaceId?: string;

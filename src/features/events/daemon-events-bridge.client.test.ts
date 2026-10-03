@@ -1,3 +1,4 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -239,6 +240,8 @@ import { selectContextItems } from '$store/renderer/slices/context/context-selec
 import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
 import {
   chatQueuedRetryRecordSet,
+  chatQueuedRetryRecordParked,
+  chatLastAttemptedMessageSet,
   chatReset,
   chatSendFailed,
   chatSendStarted,
@@ -898,6 +901,42 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     };
     expect(state.providerSettings.enabledProviders).toEqual({ auggie: true, codex: true });
     expect(selectEnabledProviderIds.select(appStore.state)).toContain('codex');
+  });
+
+  it('invalidates existing model catalogs on host settings invalidation without another reader', async () => {
+    const { providerModelsLoaded, providerModelsObserved, providerModelsReleased } =
+      await import('$store/renderer/slices/provider-models/provider-models-slice');
+    const { selectProviderModelsCacheEntry } =
+      await import('$store/renderer/slices/provider-models/provider-models-selectors');
+    const epoch = appStore.state.providerModels.clearEpoch;
+    appStore.dispatch(providerModelsObserved('settings-picker', ['codex']));
+    appStore.dispatch(providerModelsObserved('composer-picker', ['codex']));
+    appStore.dispatch(
+      providerModelsLoaded('codex', { models: [{ value: 'old', label: 'Old' }] }, epoch),
+    );
+    const observers = appStore.state.providerModels.observers;
+    try {
+      await primeBridge();
+      expect(selectProviderModelsCacheEntry.select(appStore.state, 'codex')).toBeDefined();
+      capturedHandlers[0]!({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-host-settings',
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'host:execution-context-changed',
+            actor: { type: 'system' },
+            data: {},
+          },
+        },
+      });
+      expect(selectProviderModelsCacheEntry.select(appStore.state, 'codex')).toBeUndefined();
+      expect(appStore.state.providerModels.clearEpoch).toBe(epoch + 1);
+      expect(appStore.state.providerModels.observers).toBe(observers);
+    } finally {
+      appStore.dispatch(providerModelsReleased('settings-picker'));
+      appStore.dispatch(providerModelsReleased('composer-picker'));
+    }
   });
 });
 
@@ -3938,6 +3977,214 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     ]);
   });
 
+  it.each(['set', 'parked'] as const)(
+    'keeps every admitted batch row through stale snapshots and %s acknowledgements',
+    async (ack) => {
+      appStore.dispatch(chatReset(AGENT));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      const first = {
+        id: 'a',
+        turnId: 'turn-a',
+        content: 'first',
+        queuedAt: '2026-10-02T00:00:00Z',
+        position: 0,
+        messageMetadata: { fromPrincipalId: 'alice', answeredQuestionsMessageId: 'one' },
+      };
+      const a = {
+        ...first,
+        content: 'first\n\nsecond',
+        fileBlocks: [{ type: 'file', attachmentId: 'file-a', fileName: 'a.txt' }],
+        imageBlocks: [{ type: 'image', attachmentId: 'image-a' }],
+      };
+      const b = {
+        ...first,
+        id: 'b',
+        turnId: 'turn-b',
+        content: 'Bob input',
+        position: 1,
+        fileBlocks: [{ type: 'file', attachmentId: 'file-b', fileName: 'b.txt' }],
+        messageMetadata: { fromPrincipalId: 'bob', answeredQuestionsMessageId: 'two' },
+      };
+      appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'a', { text: 'first' }, 'turn-a'));
+      appStore.dispatch(chatQueuedRetryRecordSet(AGENT, 'b', { text: 'Bob input' }, 'turn-b'));
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [first] }));
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: 'a',
+          turnId: 'provider-turn',
+          content: a.content,
+          queuedMessages: [a, b],
+        }),
+      );
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [first] }));
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+      const expected = {
+        text: 'first\n\nsecond\n\nBob input',
+        options: {
+          imageBlocks: a.imageBlocks,
+          fileBlocks: [...a.fileBlocks, ...b.fileBlocks],
+          messageMetadata: { mergedMessageMetadata: [a.messageMetadata, b.messageMetadata] },
+        },
+      };
+      const acknowledge = () =>
+        appStore.dispatch(
+          ack === 'set'
+            ? chatQueuedRetryRecordSet(AGENT, 'b', { text: 'Bob input' }, 'turn-b', true)
+            : chatQueuedRetryRecordParked(
+                AGENT,
+                'b',
+                { text: 'Bob input' },
+                'turn-b',
+                { text: 'Bob input' },
+                true,
+              ),
+        );
+      acknowledge();
+      appStore.dispatch(chatSendFailed(AGENT, 'failed', 'provider-turn'));
+      expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual(expected);
+      expect(appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+      expect(
+        getItems(appStore.state.chatState.byAgentId[AGENT].processedQueuedTurn!.messages!),
+      ).toEqual([a, b]);
+      // A separate send with identical payload is still a different attempt.
+      const next = structuredClone(expected);
+      appStore.dispatch(chatLastAttemptedMessageSet(AGENT, next));
+      const generation = appStore.state.chatState.byAgentId[AGENT].attemptGeneration;
+      acknowledge();
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: 'a',
+          turnId: 'provider-turn',
+          content: a.content,
+          queuedMessages: [a, b],
+        }),
+      );
+      expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toBe(next);
+      expect(appStore.state.chatState.byAgentId[AGENT].attemptGeneration).toBe(generation);
+    },
+  );
+
+  it.each(
+    ['parked', 'set', 'park'].flatMap((ack) =>
+      [false, true].map((newAttempt) => [ack, newAttempt] as const),
+    ),
+  )(
+    'refreshes the same recovered turn without overwriting a later identical attempt (%s, %s)',
+    async (ack, newAttempt) => {
+      appStore.dispatch(chatReset(AGENT));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      const first = {
+        id: 'old-id',
+        turnId: 'same-turn',
+        content: 'first',
+        position: 0,
+        queuedAt: '2026-10-02T00:00:00Z',
+        fileBlocks: [{ type: 'file', attachmentId: 'one', fileName: 'one.txt' }],
+        messageMetadata: { answeredQuestionsMessageId: 'one' },
+      };
+      const recovered = {
+        ...first,
+        id: 'recovered-id',
+        content: 'first\n\nsecond',
+        fileBlocks: [
+          ...first.fileBlocks,
+          { type: 'file', attachmentId: 'two', fileName: 'two.txt' },
+        ],
+        messageMetadata: {
+          mergedMessageMetadata: [first.messageMetadata, { answeredQuestionsMessageId: 'two' }],
+        },
+      };
+      if (ack === 'parked')
+        appStore.dispatch(
+          chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.turnId),
+        );
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: first.id,
+          turnId: first.turnId,
+          content: first.content,
+          queuedMessages: [first],
+        }),
+      );
+      const previousAttempt = structuredClone(
+        appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage ?? { text: first.content },
+      );
+      if (newAttempt) appStore.dispatch(chatLastAttemptedMessageSet(AGENT, previousAttempt));
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [recovered] }));
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: recovered.id,
+          turnId: recovered.turnId,
+          content: recovered.content,
+          queuedMessages: [recovered],
+        }),
+      );
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: recovered.id,
+          turnId: recovered.turnId,
+          content: recovered.content,
+        }),
+      );
+      handler(notification('agent:queue:updated', { agentId: AGENT, queue: [] }));
+      if (ack !== 'parked')
+        appStore.dispatch(
+          ack === 'set'
+            ? chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.turnId, true)
+            : chatQueuedRetryRecordParked(
+                AGENT,
+                first.id,
+                { text: first.content },
+                first.turnId,
+                null,
+                true,
+              ),
+        );
+      appStore.dispatch(chatSendFailed(AGENT, 'failed again', recovered.turnId));
+      expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual(
+        newAttempt
+          ? previousAttempt
+          : {
+              text: recovered.content,
+              options: {
+                fileBlocks: recovered.fileBlocks,
+                messageMetadata: recovered.messageMetadata,
+              },
+            },
+      );
+      if (newAttempt)
+        expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toBe(
+          previousAttempt,
+        );
+    },
+  );
+
+  it.each([{ queuedMessages: [] }, { queuedMessages: [{ id: 'wrong' }] }])(
+    'rejects malformed processing authority %j without promoting retry data',
+    async ({ queuedMessages }) => {
+      appStore.dispatch(chatReset(AGENT));
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      wrapDispatch();
+      handler(
+        notification('agent:queue:processing', {
+          agentId: AGENT,
+          messageId: 'q',
+          turnId: 'turn',
+          queuedMessages,
+        }),
+      );
+      expect(queueProcessingCalls()).toHaveLength(0);
+    },
+  );
+
   it('dispatches with turnId undefined when the payload omits it (legacy pre-#1022 entry)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -4878,8 +5125,8 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
     });
   });
 
-  it.each(['created', 'updated', 'removed'] as const)(
-    'refreshes script.list after a script definition is %s',
+  it.each(['created', 'updated'] as const)(
+    'refreshes script.list after a legacy script definition is %s',
     async (action) => {
       await primeBridge();
       const refreshScripts = await import('$store/renderer/slices/scripts/scripts-slice').then(
@@ -4971,7 +5218,7 @@ describe('daemonEventsBridge (script wire contract — script:output/state → s
       }),
     );
 
-    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBe(false);
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.previouslyRunning).toBeUndefined();
     expect(readScriptsState().scripts[SCRIPT_ID].runtime.status).toBe('running');
   });
 });
@@ -6812,9 +7059,28 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     );
   }
 
+  it('invalidates a previously loaded hidden list without reading it', async () => {
+    const workspaceId = 'ws-hidden-loaded-regression';
+    const { loadWorkspaceTasksSucceeded } =
+      await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(workspaceId, [], {
+        total: 0,
+        completed: 0,
+        inProgress: 0,
+      }),
+    );
+    await primeBridge();
+    vi.useFakeTimers();
+    capturedHandlers[0]!(noteEnvelope(workspaceId, 'note:created', 'new-task'));
+    vi.advanceTimersByTime(2000);
+    expect(taskListCalls(workspaceId)).toHaveLength(0);
+    expect(appStore.state.workspaceTasks.byWorkspaceId[workspaceId].stale).toBe(true);
+  });
+
   it('note:created on an initialized workspace triggers a debounced task.list refetch and stores the fresh BE stats', async () => {
     const TASKS_WS = 'ws-bridge-tasks-init';
-    const { loadWorkspaceTasksSucceeded } =
+    const { loadWorkspaceTasksSucceeded, acquireWorkspaceTasksDemand } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
     // Seed an initialized workspace whose stats show completed === total —
     // the stale-"Complete" precondition (a new task note arrives without any
@@ -6826,6 +7092,7 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
         { total: 1, completed: 1, inProgress: 0 },
       ),
     );
+    appStore.dispatch(acquireWorkspaceTasksDemand(TASKS_WS, 'visible-chat'));
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -6880,20 +7147,57 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
     vi.advanceTimersByTime(2000);
 
     expect(taskListCalls(UNINIT_WS)).toHaveLength(0);
-    // The slice stays untouched — no eager load for a workspace nobody viewed.
+    // Events record stale state without eagerly loading a hidden workspace.
     const wsState = (
       appStore.state as { workspaceTasks: { byWorkspaceId: Record<string, unknown> } }
     ).workspaceTasks.byWorkspaceId[UNINIT_WS];
-    expect(wsState).toBeUndefined();
+    expect(wsState).toMatchObject({ initialized: false, stale: true, loading: false });
+  });
+
+  it('drops a pending event refresh after the last visible consumer releases demand', async () => {
+    const workspaceId = 'ws-bridge-demand-release';
+    const {
+      loadWorkspaceTasksSucceeded,
+      acquireWorkspaceTasksDemand,
+      releaseWorkspaceTasksDemand,
+    } = await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(workspaceId, [], { total: 0, completed: 0, inProgress: 0 }),
+    );
+    appStore.dispatch(acquireWorkspaceTasksDemand(workspaceId, 'chat'));
+    await primeBridge();
+    vi.useFakeTimers();
+    capturedHandlers[0]!(noteEnvelope(workspaceId, 'note:updated', 'task'));
+    expect(appStore.state.workspaceTasks.byWorkspaceId[workspaceId].stale).toBe(true);
+    appStore.dispatch(releaseWorkspaceTasksDemand(workspaceId, 'chat'));
+    vi.advanceTimersByTime(2000);
+    expect(taskListCalls(workspaceId)).toHaveLength(0);
+    backendRequestSpy.mockImplementation((method: string) =>
+      method === 'task.list'
+        ? Promise.resolve({
+            tasks: [{ id: 'task', title: 'Changed task', status: 'not_started' }],
+            stats: { total: 1, completed: 0, inProgress: 0 },
+          })
+        : undefined,
+    );
+    appStore.dispatch(acquireWorkspaceTasksDemand(workspaceId, 'return'));
+    expect(taskListCalls(workspaceId)).toEqual([['task.list', { workspaceId }]]);
+    vi.useRealTimers();
+    await flush();
+    expect(appStore.state.workspaceTasks.byWorkspaceId[workspaceId]).toMatchObject({
+      stale: false,
+      stats: { total: 1, completed: 0, inProgress: 0 },
+    });
   });
 
   it('a burst of note events for the same workspace coalesces into a single task.list refetch', async () => {
     const BURST_WS = 'ws-bridge-tasks-burst';
-    const { loadWorkspaceTasksSucceeded } =
+    const { loadWorkspaceTasksSucceeded, acquireWorkspaceTasksDemand } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
     appStore.dispatch(
       loadWorkspaceTasksSucceeded(BURST_WS, [], { total: 0, completed: 0, inProgress: 0 }),
     );
+    appStore.dispatch(acquireWorkspaceTasksDemand(BURST_WS, 'visible-chat'));
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -6925,11 +7229,12 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
   // payload no longer refreshed the BE-owned task.list rollup.
   it('task:created on an initialized workspace triggers the debounced task.list refetch', async () => {
     const CREATED_WS = 'ws-bridge-task-created';
-    const { loadWorkspaceTasksSucceeded } =
+    const { loadWorkspaceTasksSucceeded, acquireWorkspaceTasksDemand } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
     appStore.dispatch(
       loadWorkspaceTasksSucceeded(CREATED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
     );
+    appStore.dispatch(acquireWorkspaceTasksDemand(CREATED_WS, 'visible-chat'));
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -7011,11 +7316,12 @@ describe('daemonEventsBridge (note:* → debounced workspace-tasks refetch)', ()
 
   it('a pending refetch is dropped if the tasks slice is cleared during the debounce window', async () => {
     const CLEARED_WS = 'ws-bridge-tasks-cleared';
-    const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks } =
+    const { loadWorkspaceTasksSucceeded, clearWorkspaceTasks, acquireWorkspaceTasksDemand } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
     appStore.dispatch(
       loadWorkspaceTasksSucceeded(CLEARED_WS, [], { total: 0, completed: 0, inProgress: 0 }),
     );
+    appStore.dispatch(acquireWorkspaceTasksDemand(CLEARED_WS, 'visible-chat'));
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -11179,17 +11485,18 @@ describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
   afterEach(() => vi.clearAllMocks());
 
   it('task:status-changed debounces the initialized workspace task-list refetch', async () => {
-    const { loadWorkspaceTasksSucceeded, emptyWorkspaceTaskStats } =
+    const { loadWorkspaceTasksSucceeded, emptyWorkspaceTaskStats, acquireWorkspaceTasksDemand } =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice');
     appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [], emptyWorkspaceTaskStats));
+    appStore.dispatch(acquireWorkspaceTasksDemand(WS, 'status-chat'));
     await primeBridge();
     const handler = capturedHandlers[0]!;
     vi.useFakeTimers();
 
-    // Get loadWorkspaceTasksRequested before creating spy to avoid import timing issues
-    const loadWorkspaceTasksRequested =
+    // Get ensureWorkspaceTasksLoaded before creating spy to avoid import timing issues
+    const ensureWorkspaceTasksLoaded =
       await import('$store/renderer/slices/workspace-tasks/workspace-tasks-slice').then(
-        (m) => m.loadWorkspaceTasksRequested,
+        (m) => m.ensureWorkspaceTasksLoaded,
       );
 
     // Capture the dispatch function directly to preserve this binding
@@ -11204,9 +11511,9 @@ describe('daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
       }),
     );
 
-    expect(dispatchSpy).not.toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
+    expect(dispatchSpy).not.toHaveBeenCalledWith(ensureWorkspaceTasksLoaded(WS));
     await vi.advanceTimersByTimeAsync(2000);
-    expect(dispatchSpy).toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
+    expect(dispatchSpy).toHaveBeenCalledWith(ensureWorkspaceTasksLoaded(WS));
     vi.useRealTimers();
 
     // Restore the getter to prevent leakage

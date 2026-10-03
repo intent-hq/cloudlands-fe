@@ -91,7 +91,7 @@ describe('scriptsOperationSaga', () => {
     mocks.restart.mockResolvedValue({ success: true });
   });
 
-  it('runs start, stop, and restart then refreshes canonical state', async () => {
+  it('runs start, stop, and restart without redundant list refreshes', async () => {
     const run = start();
     run.channel.put(startScriptRequested(WS, 'start-me'));
     await settle();
@@ -105,11 +105,8 @@ describe('scriptsOperationSaga', () => {
     expect(mocks.restart).toHaveBeenCalledWith(WS, 'restart-me');
     expect(run.actions).toEqual([
       scriptOperationSucceeded(WS, 'start-me', 'start'),
-      refreshScripts(WS),
       scriptOperationSucceeded(WS, 'stop-me', 'stop'),
-      refreshScripts(WS),
       scriptOperationSucceeded(WS, 'restart-me', 'restart'),
-      refreshScripts(WS),
     ]);
     await stop(run.task);
   });
