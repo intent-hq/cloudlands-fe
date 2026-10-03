@@ -810,7 +810,7 @@
                 </h4>
                 {#if selectedAgentRow && previewAgentRow}
                   <div
-                    class={`navigator-row grid min-w-0 ${messageOnlyAgentRows.length ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'} items-center gap-x-1.5 gap-y-3`}
+                    class={`navigator-row grid min-w-0 ${messageOnlyAgentRows.length > 0 && messageOnlyAgentRows.length <= 2 ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'} items-center gap-x-1.5 gap-y-3`}
                     role="radiogroup"
                     aria-labelledby={`${detailsId}-agents`}
                   >
@@ -878,7 +878,7 @@
                     {/if}
                     {#if messageOnlyAgentRows.length > 0}
                       <ul
-                        class="message-only-options col-start-2 row-start-1 flex max-w-16 flex-wrap justify-end gap-1"
+                        class={`message-only-options relative flex flex-wrap gap-1 ${messageOnlyAgentRows.length > 2 ? 'col-span-full max-h-24 min-w-0 overflow-y-auto overscroll-contain p-0.5' : 'col-start-2 row-start-1 max-w-16 justify-end'}`}
                       >
                         {#each messageOnlyAgentRows as row, index (row.id)}
                           <li class="min-w-0 max-w-full">
@@ -946,7 +946,7 @@
                 </h4>
                 {#if selectedModelRow && previewModelRow}
                   <div
-                    class={`navigator-row grid min-w-0 ${messageOnlyModelRows.length ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'} items-center gap-x-1.5 gap-y-3`}
+                    class={`navigator-row grid min-w-0 ${messageOnlyModelRows.length > 0 && messageOnlyModelRows.length <= 2 ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1'} items-center gap-x-1.5 gap-y-3`}
                     role="radiogroup"
                     aria-labelledby={`${detailsId}-models`}
                   >
@@ -1014,7 +1014,7 @@
                     {/if}
                     {#if messageOnlyModelRows.length > 0}
                       <ul
-                        class="message-only-options col-start-2 row-start-1 flex max-w-16 flex-wrap justify-end gap-1"
+                        class={`message-only-options relative flex flex-wrap gap-1 ${messageOnlyModelRows.length > 2 ? 'col-span-full max-h-24 min-w-0 overflow-y-auto overscroll-contain p-0.5' : 'col-start-2 row-start-1 max-w-16 justify-end'}`}
                       >
                         {#each messageOnlyModelRows as row, index (row.id)}
                           <li class="min-w-0 max-w-full">
