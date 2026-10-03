@@ -456,6 +456,7 @@ export class UnifiedAgentFactory {
           provider,
           normalized.skipInitialPrompt,
           normalized.nameExplicitlySet,
+          normalized.placement,
           normalized.rememberSpecialist,
         );
         metrics.backendCreationTime = Date.now() - backendStart;
@@ -714,6 +715,7 @@ export class UnifiedAgentFactory {
 
     return {
       name: normalizedName,
+      placement: config.placement,
       rememberSpecialist: config.rememberSpecialist,
       nameExplicitlySet: config.nameExplicitlySet, // Wire `nameExplicitlySet` — false marks a generated placeholder name
       workspaceId: config.workspaceId || (workspace.id as BrandedWorkspaceId),
@@ -769,6 +771,7 @@ export class UnifiedAgentFactory {
     provider?: string,
     _skipInitialPrompt?: boolean,
     nameExplicitlySet?: boolean,
+    placement?: import('$shared/types/agent-node').AgentPlacement,
     rememberSpecialist?: boolean,
   ): Promise<{
     success: boolean;
@@ -781,6 +784,7 @@ export class UnifiedAgentFactory {
   }> {
     try {
       const request = {
+        ...(placement ? { placement } : {}),
         workspaceId: String(agent.workspaceId),
         workspacePath,
         name: agent.name,

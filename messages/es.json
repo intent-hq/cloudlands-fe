@@ -7116,5 +7116,18 @@
   "collaboration_lists_noJoinedInstances_title": "No hay instancias unidas",
   "collaboration_lists_noJoinedInstances_description": "Las instancias a las que te unas aparecerán aquí.",
   "collaboration_lists_sharingLoading_label": "Cargando los espacios de trabajo compartidos…",
-  "collaboration_lists_sharingLoad_error": "No se pudieron cargar los espacios de trabajo compartidos."
+  "collaboration_lists_sharingLoad_error": "No se pudieron cargar los espacios de trabajo compartidos.",
+  "agent_hub_checkpointRequired": "Se necesita un punto de control correcto antes de fusionar.",
+  "agent_placement_backendChanged": "El backend cambió mientras se preparaba la solicitud. Inténtalo de nuevo.",
+  "agent_hub_discardDescription": "¿Detener este agente y descartar su copia aislada y referencias de recuperación?",
+  "agent_placement_specialistUnavailable": "El especialista seleccionado no está disponible. Vuelve a seleccionar un especialista.",
+  "agent_hub_merge": "Fusionar punto de control",
+  "agent_placement_retiredIsolation": "El aislamiento CoW por agente ya no está disponible.",
+  "agent_placement_unavailable": "La ejecución en nodos no está disponible en este daemon.",
+  "agent_hub_discard": "Descartar trabajo aislado",
+  "agent_hub_merged": "Punto de control fusionado.",
+  "agent_hub_discarded": "Trabajo aislado descartado.",
+  "agent_placement_incompatibleIsolation": "La ubicación no se puede combinar con el aislamiento anterior.",
+  "agent_hub_blocked": "La fusión requiere atención: {detail}",
+  "agent_placement_labsRequired": "Activa los agentes remotos en Labs antes de iniciar trabajo remoto."
 }

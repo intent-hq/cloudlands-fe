@@ -1,3 +1,4 @@
+import type { AgentPlacement } from './agent-node';
 /**
  * Agent System Type Definitions
  *
@@ -131,6 +132,7 @@ import type { AgentSession } from './agent-session';
  * - Otherwise, a default name is generated based on workspace title
  */
 export interface UnifiedAgentConfig {
+  placement?: AgentPlacement;
   // Required
   workspaceId: BrandedWorkspaceId;
 

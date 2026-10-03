@@ -1,3 +1,4 @@
+import { AgentPlacementRequestSchema } from '$shared/types/agent-node';
 /**
  * Type Contracts System
  *
@@ -42,6 +43,7 @@ const WorkspaceSchema = z.object({
   cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout. `direct` = standalone local clone. */
   checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
+  defaultAgentPlacement: AgentPlacementRequestSchema.optional(),
 });
 
 /**

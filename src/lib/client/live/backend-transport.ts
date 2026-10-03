@@ -9,6 +9,12 @@ import { BackendError } from './backend-transport-types';
  * (`electron-ipc-transport.ts`) when `window.electronAPI` exists. See
  * `backend-transport-types.ts` for the transport interface.
  */
+import { m } from '$shared/paraglide/messages.js';
+import {
+  assertRemoteRequestEnabled,
+  needsPlacementPolicy,
+  prepareNodeRequest,
+} from './node-placement-policy';
 import { resolveBackendTransport } from './backend-transport-factory';
 import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
 
@@ -29,7 +35,31 @@ export async function backendRequest<T = unknown>(
   options?: BackendRequestOptions,
 ): Promise<T> {
   try {
-    return await resolveBackendTransport().request<T>(method, params, options);
+    const transport = resolveBackendTransport();
+    if (needsPlacementPolicy(method, params)) {
+      const { store } = await import('$store/renderer/store');
+      // Read the strict boolean afresh without importing renderer selector declarations
+      // into the main-process compilation graph shared by this client boundary.
+      const remoteEnabled = () => store.state.userPreferences?.labsRemoteAgentsEnabled === true;
+      const generation = store.state.daemonHealth.connectionGeneration;
+      const checkConnection = () => {
+        if (
+          transport !== resolveBackendTransport() ||
+          generation !== store.state.daemonHealth.connectionGeneration
+        )
+          throw new Error(m.agent_placement_backendChanged());
+      };
+      const request = async (name: string, data?: unknown): Promise<unknown> => {
+        checkConnection();
+        const result = await transport.request(name, data);
+        checkConnection();
+        return result;
+      };
+      params = await prepareNodeRequest(method, params, request, remoteEnabled);
+      checkConnection();
+      assertRemoteRequestEnabled(method, params, remoteEnabled());
+    }
+    return await transport.request<T>(method, params, options);
   } catch (error) {
     if (error instanceof BackendError) {
       const message = hostExecutionAuthorizationMessage(

@@ -7116,5 +7116,18 @@
   "collaboration_lists_noJoinedInstances_title": "Keine beigetretenen Instanzen",
   "collaboration_lists_noJoinedInstances_description": "Instanzen, denen du beitrittst, erscheinen hier.",
   "collaboration_lists_sharingLoading_label": "Workspace-Freigaben werden geladen…",
-  "collaboration_lists_sharingLoad_error": "Workspace-Freigaben konnten nicht geladen werden."
+  "collaboration_lists_sharingLoad_error": "Workspace-Freigaben konnten nicht geladen werden.",
+  "agent_hub_checkpointRequired": "Vor dem Zusammenführen ist ein erfolgreicher Prüfpunkt erforderlich.",
+  "agent_placement_backendChanged": "Das Backend hat sich während der Vorbereitung der Anfrage geändert. Versuche es erneut.",
+  "agent_hub_discardDescription": "Diesen Agenten stoppen und seine isolierte Arbeitskopie und Wiederherstellungsreferenzen verwerfen?",
+  "agent_placement_specialistUnavailable": "Der ausgewählte Spezialist ist nicht verfügbar. Wähle erneut einen Spezialisten aus.",
+  "agent_hub_merge": "Prüfpunkt zusammenführen",
+  "agent_placement_retiredIsolation": "CoW-Isolation für einzelne Agenten wird nicht mehr unterstützt.",
+  "agent_placement_unavailable": "Knotenausführung ist auf diesem Daemon nicht verfügbar.",
+  "agent_hub_discard": "Isolierte Arbeit verwerfen",
+  "agent_hub_merged": "Prüfpunkt zusammengeführt.",
+  "agent_hub_discarded": "Isolierte Arbeit verworfen.",
+  "agent_placement_incompatibleIsolation": "Die Platzierung kann nicht mit der bisherigen Isolation kombiniert werden.",
+  "agent_hub_blocked": "Zusammenführung erfordert Aufmerksamkeit: {detail}",
+  "agent_placement_labsRequired": "Aktivieren Sie entfernte Agenten in Labs, bevor Sie entfernte Arbeit starten."
 }
