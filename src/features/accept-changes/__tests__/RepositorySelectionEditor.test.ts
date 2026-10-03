@@ -122,7 +122,7 @@ describe('visible selection through real Store, saga, live client and controlled
     'uses the existing %s management affordance',
     async (role) => {
       await mount({ role });
-      const allowed = role === 'owner' || role === 'member' || role === 'guest-owner';
+      const allowed = role === 'owner' || role === 'member';
       expect(!!screen.queryByRole('button', { name: 'Edit review repository' })).toBe(allowed);
       if (allowed) {
         await edit();
@@ -265,25 +265,23 @@ describe('visible selection through real Store, saga, live client and controlled
     expect(fixture.selectionCaptures).toHaveLength(2);
   });
 
-  it('retains a completed original failed+committed result after retirement and Labs visibility loss', async () => {
+  it('retains the original failed+committed result after retirement, then clears public access on Labs visibility loss', async () => {
     const result = observed(
       { kind: 'failed', code: 'admission-retired' },
       { kind: 'committed', selectionRevision: '2' },
     );
-    await mount({ role: 'guest-owner', delayCommand: true });
+    await mount({ role: 'member', delayCommand: true });
     await edit();
     await named('draft');
     await confirmSave();
     await waitFor(() => expect(commands()).toHaveLength(1));
     fixture.retireSelection();
-    store.dispatch(setLabsMultiplayerEnabled(false));
     commands()[0].finish(result);
     await screen.findByText('The operation failed.');
     expect(screen.getByText('The change was committed to storage.')).toBeTruthy();
     expect(
       screen.getByText('This is an earlier edit, not the current repository state.'),
     ).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Start a new edit' })).toBeNull();
     expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('draft');
     expect(
       (screen.getByRole('button', { name: 'Save choice' }) as HTMLButtonElement).disabled,
@@ -295,6 +293,11 @@ describe('visible selection through real Store, saga, live client and controlled
       id: commands()[0].id,
       root: primary,
     });
+    expect(commands()).toHaveLength(1);
+    store.dispatch(setLabsMultiplayerEnabled(false));
+    await waitFor(() => expect(screen.queryByText('The operation failed.')).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Start a new edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Check result' })).toBeNull();
     expect(commands()).toHaveLength(1);
   });
 

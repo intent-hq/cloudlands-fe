@@ -7208,5 +7208,7 @@
   "ui_linkTooltip_resourceRateLimited_description": "Das Anfragelimit von {provider} wurde erreicht. Versuche es später erneut.",
   "ui_linkTooltip_resourceRestricted_description": "Der Zugriff auf diese {provider}-Ressource ist eingeschränkt.",
   "ui_linkTooltip_resourceUnavailable_description": "Details von {provider} konnten nicht geladen werden.",
-  "ui_linkTooltip_resourceUnknown_label": "Unbekannt"
+  "ui_linkTooltip_resourceUnknown_label": "Unbekannt",
+  "isolatedTest_invitationUnavailable_description": "Diese Testversion verbindet sich nur mit ihrem eigenen gebündelten Daemon. Öffne Einladungen in deiner normalen Intent-App.",
+  "isolatedTest_invitationUnavailable_title": "Einladungen sind in dieser Test-App nicht verfügbar"
 }

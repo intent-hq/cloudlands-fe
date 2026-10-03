@@ -24,6 +24,7 @@ import type { RepositoryRootIdentity } from '$shared/types/repository-context';
 import { store } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import { prWorkflowSaga } from '$store/renderer/slices/pr-workflow/sagas/pr-workflow-saga';
 
 export type NativeScene =
   'created' | 'reused' | 'uncertain' | 'failed' | 'pending' | 'not-attempted';
@@ -154,6 +155,7 @@ export function installNativeFixture(options: NativeFixtureOptions = {}) {
   const base = installSummaryFixture(options.context ?? 'self-managed', options.delayRead, {
     role: options.role ?? 'owner',
   });
+  const stopLegacyWorkflow = store.runSaga(prWorkflowSaga);
   if (options.baseRef !== undefined) {
     const workspace = selectWorkspaceById.select(store.state, nativeRoot.workspaceId);
     if (!workspace) throw new Error('Expected admitted fixture workspace');
@@ -271,8 +273,15 @@ export function installNativeFixture(options: NativeFixtureOptions = {}) {
       return { ok: true, result: { released: true } };
     }),
     overrideMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (raw) => {
-      const query = raw as { method: string };
+      const query = raw as { method: string; params: { workspaceId: string } };
       legacyRequests.push(query);
+      if (query.params.workspaceId !== nativeRoot.workspaceId)
+        throw new Error('Unexpected legacy preview workspace');
+      if (query.method === 'workspace.get')
+        return {
+          ok: true,
+          result: { workspace: selectWorkspaceById.select(store.state, nativeRoot.workspaceId) },
+        };
       if (query.method === 'accept-changes.prepare')
         return {
           ok: true,
@@ -288,10 +297,12 @@ export function installNativeFixture(options: NativeFixtureOptions = {}) {
             files: [],
           },
         };
-      return {
-        ok: true,
-        result: { success: false, steps: [], error: 'Controlled legacy failure' },
-      };
+      if (query.method === 'accept-changes.execute')
+        return {
+          ok: true,
+          result: { success: false, steps: [], error: 'Controlled legacy failure' },
+        };
+      throw new Error('Unexpected legacy preview request: ' + query.method);
     }),
   ];
   return {
@@ -302,6 +313,7 @@ export function installNativeFixture(options: NativeFixtureOptions = {}) {
     legacyRequests,
     retire,
     dispose() {
+      stopLegacyWorkflow();
       cleanups.reverse().forEach((stop) => stop());
       if (window.electronAPI === bridge) window.electronAPI = previousBridge;
       base.dispose();

@@ -22,6 +22,13 @@ import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Backend state is reloaded per case, but the generated translation catalog is
+// immutable for this suite. Keep its real exports shared: recompiling every
+// locale on each reset retains enough VM code to exhaust the worker heap.
+vi.mock('../../../../shared/paraglide/messages.js', async (importOriginal) =>
+  importOriginal<typeof import('../../../../shared/paraglide/messages.js')>(),
+);
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------

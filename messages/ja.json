@@ -7208,5 +7208,7 @@
   "ui_linkTooltip_resourceRateLimited_description": "{provider} のリクエスト上限に達しました。後でもう一度お試しください。",
   "ui_linkTooltip_resourceRestricted_description": "この {provider} リソースへのアクセスは制限されています。",
   "ui_linkTooltip_resourceUnavailable_description": "{provider} から詳細を読み込めませんでした。",
-  "ui_linkTooltip_resourceUnknown_label": "不明"
+  "ui_linkTooltip_resourceUnknown_label": "不明",
+  "isolatedTest_invitationUnavailable_description": "このテスト版は、専用の同梱デーモンにのみ接続します。招待は通常の Intent アプリで開いてください。",
+  "isolatedTest_invitationUnavailable_title": "このテストアプリでは招待を利用できません"
 }

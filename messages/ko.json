@@ -7208,5 +7208,7 @@
   "ui_linkTooltip_resourceRateLimited_description": "{provider} 요청 한도에 도달했습니다. 나중에 다시 시도하세요.",
   "ui_linkTooltip_resourceRestricted_description": "이 {provider} 리소스에 대한 접근이 제한되어 있습니다.",
   "ui_linkTooltip_resourceUnavailable_description": "{provider}에서 세부 정보를 불러오지 못했습니다.",
-  "ui_linkTooltip_resourceUnknown_label": "알 수 없음"
+  "ui_linkTooltip_resourceUnknown_label": "알 수 없음",
+  "isolatedTest_invitationUnavailable_description": "이 테스트 빌드는 전용으로 포함된 데몬에만 연결됩니다. 초대는 일반 Intent 앱에서 여세요.",
+  "isolatedTest_invitationUnavailable_title": "이 테스트 앱에서는 초대를 사용할 수 없습니다"
 }

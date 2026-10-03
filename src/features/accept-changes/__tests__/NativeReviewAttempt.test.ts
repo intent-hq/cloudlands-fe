@@ -11,7 +11,11 @@ import {
 import { selectNativeReviewForOwner } from '$store/renderer/slices/repository-context/repository-context-selectors';
 import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
-import { updateWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+import {
+  updateWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { summaryContext } from '../components/repository-context-summary.preview-fixtures';
@@ -722,11 +726,19 @@ describe('native review through rendered Store, root saga, Live client and contr
   it('preserves the Labs-off legacy form without acquiring repository/native state', async () => {
     await mount({}, nativeRoot, true);
     store.dispatch(setLabsMultiplayerEnabled(false));
+    store.dispatch(
+      setWorkspaceHasLoaded(
+        true,
+        store.state.connections.windowBackendId,
+        selectPrincipalActionContext.select(store.state),
+      ),
+    );
     await fireEvent.click(await screen.findByRole('button', { name: 'Auto-fill & Create' }));
     await screen.findByText('Controlled legacy failure');
     expect(fixture.legacyRequests.map((r) => r.method)).toEqual([
       'accept-changes.prepare',
       'accept-changes.execute',
+      'workspace.get',
     ]);
     expect(fixture.base.captures).toHaveLength(0);
     expect(fixture.captures).toHaveLength(0);
@@ -739,6 +751,7 @@ describe('native review through rendered Store, root saga, Live client and contr
     expect(fixture.legacyRequests.map((r) => r.method)).toEqual([
       'accept-changes.prepare',
       'accept-changes.execute',
+      'workspace.get',
     ]);
     expect(fixture.captures).toHaveLength(0);
   });

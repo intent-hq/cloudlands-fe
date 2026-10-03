@@ -2,6 +2,8 @@ import { initialState as workspaceShareInitialState } from '../../workspace-shar
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 
 const mocks = vi.hoisted(() => ({
   workspaces: {
@@ -4226,9 +4228,10 @@ describe('M current workspace read admission', () => {
     value.principal.snapshot = {
       ...snapshot,
       capabilities: { ...snapshot.capabilities, hostMembership: true },
-      principal: { ...snapshot.principal, hostRole: role },
+      principal: { ...snapshot.principal, hostRole: role, isAdministrator: role === 'owner' },
     };
     value.userPreferences.labsMultiplayerEnabled = false;
+    value.workspace.capabilityContext = selectPrincipalActionContext.select(value);
     return value;
   }
   it.each(['owner', 'member'] as const)(
@@ -4293,7 +4296,7 @@ describe('M current workspace read admission', () => {
     );
     const run = start(value);
     for (let i = 0; i < MAX_CONCURRENT_WORKSPACE_READS; i++)
-      run.channel.put(loadWorkspaceTasksRequested('held-' + i));
+      run.channel.put(acquireWorkspaceTasksDemand('held-' + i, 'visible-consumer'));
     await settle();
     expect(release).toHaveLength(MAX_CONCURRENT_WORKSPACE_READS);
     run.channel.put(refreshRequested(WS));

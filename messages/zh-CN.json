@@ -7208,5 +7208,7 @@
   "ui_linkTooltip_resourceRateLimited_description": "已达到 {provider} 请求速率上限。请稍后重试。",
   "ui_linkTooltip_resourceRestricted_description": "对此 {provider} 资源的访问受到限制。",
   "ui_linkTooltip_resourceUnavailable_description": "无法从 {provider} 加载详情。",
-  "ui_linkTooltip_resourceUnknown_label": "未知"
+  "ui_linkTooltip_resourceUnknown_label": "未知",
+  "isolatedTest_invitationUnavailable_description": "此测试版本仅连接其专用的内置守护进程。请在常规 Intent 应用中打开邀请。",
+  "isolatedTest_invitationUnavailable_title": "此测试应用不支持邀请"
 }

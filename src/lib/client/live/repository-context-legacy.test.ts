@@ -1,16 +1,50 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { WorkspaceId } from '$shared/types/branded-ids';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { store } from '$store/renderer/store';
+import { initialState as guestInitialState } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { acceptWorkflowSaga } from '$store/renderer/slices/accept-workflow/sagas/accept-workflow-saga';
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
 import { LiveIntegrationsClient } from './live-integrations-client';
 import { backendRequest } from './backend-transport';
 
 vi.mock('./backend-transport', () => ({ backendRequest: vi.fn() }));
+vi.mock('$lib/client', () => ({ appClient: {} }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: {} }));
 
 const request = vi.mocked(backendRequest);
 
 describe('repository context integration preserves legacy GitHub adapters', () => {
+  let task: Task;
   beforeEach(() => {
     request.mockReset();
+    const channel = stdChannel();
+    const state = withLegacyPrincipal({
+      workspace: {
+        workspaces: createCollection('id', [{ id: 'workspace-original', myRole: 'owner' }]),
+      },
+      connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+      guestSessions: { ...guestInitialState, hasReceivedList: true },
+    });
+    task = runSaga(
+      { channel, dispatch: (action) => channel.put(action), getState: () => state },
+      acceptWorkflowSaga,
+    );
+    vi.spyOn(store, 'dispatch', 'get').mockReturnValue(((action: {
+      promise: Promise<unknown>;
+      type: string;
+    }) => {
+      channel.put(action);
+      return action.promise;
+    }) as typeof store.dispatch);
+  });
+  afterEach(async () => {
+    task.cancel();
+    await task.toPromise();
+    vi.restoreAllMocks();
   });
 
   it.each([

@@ -7208,5 +7208,7 @@
   "ui_linkTooltip_resourceRateLimited_description": "La limite de requêtes de {provider} est atteinte. Réessayez plus tard.",
   "ui_linkTooltip_resourceRestricted_description": "L’accès à cette ressource {provider} est restreint.",
   "ui_linkTooltip_resourceUnavailable_description": "Impossible de charger les détails de {provider}.",
-  "ui_linkTooltip_resourceUnknown_label": "Inconnu"
+  "ui_linkTooltip_resourceUnknown_label": "Inconnu",
+  "isolatedTest_invitationUnavailable_description": "Cette version de test se connecte uniquement à son propre daemon intégré. Ouvrez les invitations dans votre application Intent habituelle.",
+  "isolatedTest_invitationUnavailable_title": "Les invitations ne sont pas disponibles dans cette application de test"
 }

@@ -79,6 +79,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/sidebar/BranchDisplay.svelte',
     'src/lib/components/workspace/sidebar/CommitsTimeline.svelte',
     'src/lib/components/workspace/sidebar/NotesPanel.svelte',
+    'src/lib/components/workspace/sidebar/PRSection.svelte',
     'src/lib/components/workspace/sidebar/SidebarExpandableSearch.svelte',
     'src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte',
     'src/lib/components/workspace/sidebar/context-picker/BrowserUrlPicker.svelte',

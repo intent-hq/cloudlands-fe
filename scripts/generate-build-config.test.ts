@@ -1,4 +1,5 @@
-// @verify-changed-triggers: scripts/generate-build-config.cjs, package.json, scripts/pnpm-run.mjs, scripts/pnpm-launcher.mjs, scripts/type-check.ts
+// @verify-changed-triggers: scripts/generate-build-config.cjs, package.json, scripts/pnpm-run.mjs, scripts/pnpm-launcher.mjs, scripts/type-check.ts, vitest.config.ts
+// @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
 import {
@@ -16,6 +17,7 @@ import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { generatedBuildConfigPlugin } from '../vitest.config';
 
 const SCRIPT = 'generate-build-config.cjs';
 const SCRIPTS_DIR = resolve(process.cwd(), 'scripts');
@@ -114,6 +116,107 @@ describe('generate-build-config --if-missing', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Generated build config');
     expect(readFileSync(outputPath(root), 'utf8')).not.toBe(before);
+  });
+});
+
+describe('cold unit configuration', () => {
+  it('generates the actual main-process input before unit imports and preserves an existing identity', () => {
+    const root = fixtureRoot();
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', 'a'.repeat(40));
+    const plugin = generatedBuildConfigPlugin({ rootDir: root });
+    expect(existsSync(outputPath(root))).toBe(false);
+    plugin.buildStart();
+    const original = readFileSync(outputPath(root), 'utf8');
+    expect(original).toContain('manual-123-1');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-456-1');
+    plugin.buildStart();
+    expect(readFileSync(outputPath(root), 'utf8')).toBe(original);
+  });
+
+  it('fails unit preparation when the original build identity cannot be generated', () => {
+    const root = fixtureRoot();
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', '');
+    expect(() => generatedBuildConfigPlugin({ rootDir: root }).buildStart()).toThrow();
+    expect(existsSync(outputPath(root))).toBe(false);
+  });
+});
+
+describe.each([
+  ['lint:dead-code', 'check-dead-code.mjs'],
+  ['check', 'run-svelte-check.mjs'],
+])('cold %s gate', (command, scanner) => {
+  function scannerRoot() {
+    const root = fixtureRoot();
+    symlinkSync(resolve(process.cwd(), 'node_modules'), join(root, 'node_modules'), 'junction');
+    const { scripts } = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'));
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({
+        name: 'cold-check-fixture',
+        private: true,
+        type: 'module',
+        scripts: { [command]: scripts[command] },
+      }),
+    );
+    // The scanners are independent of this prerequisite: require their generated
+    // input at the scanner boundary and record whether scanning was reached.
+    writeFileSync(join(root, 'scripts', 'paraglide-inputs-hash.mjs'), '');
+    writeFileSync(join(root, 'scripts', 'check-deps-fresh.mjs'), '');
+    writeFileSync(
+      join(root, 'scripts', scanner),
+      "import { readFileSync, writeFileSync } from 'node:fs';\n" +
+        "import { runInNewContext } from 'node:vm';\n" +
+        "import ts from 'typescript';\n" +
+        "writeFileSync('scanner-started', '1');\n" +
+        "const input = readFileSync('src/main/build-config.generated.ts', 'utf8');\n" +
+        'const emitted = ts.transpileModule(input, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;\n' +
+        'const exports = {};\n' +
+        'runInNewContext(emitted, { exports });\n' +
+        "writeFileSync('scanner-result.json', JSON.stringify(exports.BUILD_CONFIG));\n",
+    );
+    return root;
+  }
+
+  it('prepares the cold check and preserves the baked identity on another scan', () => {
+    const root = scannerRoot();
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', 'a'.repeat(40));
+    const scan = () =>
+      spawnSync('pnpm', ['run', command], {
+        cwd: root,
+        encoding: 'utf8',
+        env: { ...process.env, NODE_COMPILE_CACHE: join(root, 'node-compile-cache') },
+      });
+    expect(existsSync(outputPath(root))).toBe(false);
+    const cold = scan();
+    expect(cold.status, cold.stdout + cold.stderr).toBe(0);
+    const observed = () => JSON.parse(readFileSync(join(root, 'scanner-result.json'), 'utf8'));
+    const expectedIdentity = {
+      ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+      ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+    };
+    expect(observed()).toMatchObject(expectedIdentity);
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-456-1');
+    const warm = scan();
+    expect(warm.status, warm.stdout + warm.stderr).toBe(0);
+    expect(observed()).toMatchObject(expectedIdentity);
+  });
+
+  it('rejects an incomplete identity before running the scanner', () => {
+    const root = scannerRoot();
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', '');
+    const result = spawnSync('pnpm', ['run', command], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_COMPILE_CACHE: join(root, 'node-compile-cache') },
+    });
+    expect(result.status).not.toBe(0);
+    expect(existsSync(outputPath(root))).toBe(false);
+    expect(existsSync(join(root, 'scanner-started'))).toBe(false);
+    expect(existsSync(join(root, 'scanner-result.json'))).toBe(false);
   });
 });
 

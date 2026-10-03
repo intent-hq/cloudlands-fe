@@ -7208,5 +7208,7 @@
   "ui_linkTooltip_resourceRateLimited_description": "已達到 {provider} 請求速率上限。請稍後再試。",
   "ui_linkTooltip_resourceRestricted_description": "此 {provider} 資源的存取受到限制。",
   "ui_linkTooltip_resourceUnavailable_description": "無法從 {provider} 載入詳細資料。",
-  "ui_linkTooltip_resourceUnknown_label": "未知"
+  "ui_linkTooltip_resourceUnknown_label": "未知",
+  "isolatedTest_invitationUnavailable_description": "此測試版本僅連線至其專用的內建常駐程式。請在一般 Intent 應用程式中開啟邀請。",
+  "isolatedTest_invitationUnavailable_title": "此測試應用程式不支援邀請"
 }
