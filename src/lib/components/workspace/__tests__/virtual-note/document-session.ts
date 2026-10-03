@@ -1,3 +1,4 @@
+import { Mapping } from '@tiptap/pm/transform';
 import { MixedProjection } from './mixed-projection';
 import {
   relayClipboard,
@@ -289,7 +290,14 @@ export class DocumentSession {
       const ranges = this.service.mixedTableRanges(start, start + source.length);
       if (ranges.length)
         context.tables = ranges.map((range) => {
-          const part = this.receiveTable(this.service.tableWindowPages(range.from))!;
+          const part = this.receiveTable(
+            this.service.tableWindowPages(range.from, undefined, undefined, {
+              row: 0,
+              column: 0,
+              rowCount: range.rows,
+              columnCount: range.columns,
+            }),
+          )!;
           if (
             part.cells.some((cell) => cell.partial) ||
             part.cells.length !== part.rows * part.columns
@@ -1856,6 +1864,35 @@ export class DocumentSession {
       }
       return;
     }
+    let mixedAppended = 0;
+    if (this.projection?.mixed && transactions.length > 1 && transactions[0].docChanged) {
+      // Reuse the actual immutable native documents and steps. Table fixups may
+      // temporarily remove a cell; only the final appended result is admissible.
+      const root = transactions[0],
+        last = transactions.at(-1)!;
+      const mapping = new Mapping();
+      for (const tr of transactions) mapping.appendMapping(tr.mapping);
+      const fields: Record<string, unknown> = {
+        before: root.before,
+        doc: last.doc,
+        mapping,
+        docs: transactions.flatMap((tr) => tr.docs),
+        steps: transactions.flatMap((tr) => tr.steps),
+        selection: last.selection,
+        selectionSet: transactions.some((tr) => tr.selectionSet),
+        docChanged: true,
+      };
+      mixedAppended = transactions.slice(1).filter((tr) => tr.docChanged).length;
+      transactions = [
+        new Proxy(root, {
+          get(target, key) {
+            if (typeof key === 'string' && key in fields) return fields[key];
+            const value = Reflect.get(target, key, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        }),
+      ];
+    }
     const old = {
       projection: this.projection,
       windowEnd: this.windowEnd,
@@ -1868,6 +1905,7 @@ export class DocumentSession {
     };
     try {
       this.service.atomic(() => {
+        this.acceptedAppended += mixedAppended;
         for (let index = 0; index < transactions.length; index++) {
           const tr = transactions[index];
           if (!tr.docChanged) {

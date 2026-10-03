@@ -4,6 +4,8 @@ import type { Fence } from './fence-context';
 import { LIMITS, type Splice, type Selection } from './source-journal';
 import { TABLE_NODE_LIMIT } from './table-transfer';
 import { SourceProjection, type InlineContext } from './source-projection';
+import type { TableProjection } from './table-projection';
+import type { ListProjection } from './list-projection';
 import type { TableWindow } from './table-source';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
@@ -75,7 +77,7 @@ export class MixedProjection {
       });
     });
     const part = this.parts.find((entry) => from >= entry.pm && to <= entry.end);
-    if (!part) throw new Error('Mixed transaction crosses adapter boundary');
+    if (!part) return this.translateAcross(tr);
     const projection = part.projection;
     const local = new Transform(
       tr.before.type.create(null, tr.before.content.cut(part.pm, part.end)),
@@ -103,6 +105,70 @@ export class MixedProjection {
       });
     }
     return { splices, fences, table: projection.table, list: projection.list };
+  }
+  private translateAcross(tr: Transform) {
+    // Match structural table ordinals, never repeated source substrings. A native
+    // replacement may delete a table boundary while retaining that table's cells.
+    const tables: Array<{ from: number; to: number }> = [];
+    tr.doc.forEach((node, offset) => {
+      if (node.type.name === 'table') tables.push({ from: offset, to: offset + node.nodeSize });
+    });
+    if (tables.length !== this.parts.filter((part) => part.projection.table).length)
+      throw new Error('Mixed table insertion/removal requires structural admission');
+    const result: {
+      splices: Splice[];
+      fences: Fence[];
+      table?: TableProjection;
+      list?: ListProjection;
+    } = {
+      splices: [],
+      fences: [],
+    };
+    let index = 0;
+    for (const part of this.parts) {
+      const projection = part.projection;
+      const range = projection.table
+        ? tables[index++]
+        : {
+            from: index ? tables[index - 1].to : 0,
+            to: tables[index]?.from ?? tr.doc.content.size,
+          };
+      const before = tr.before.type.create(null, tr.before.content.cut(part.pm, part.end));
+      const after = tr.doc.type.create(null, tr.doc.content.cut(range.from, range.to));
+      const first = before.content.findDiffStart(after.content);
+      if (first === null) continue;
+      const last = before.content.findDiffEnd(after.content)!;
+      const overlap = first - Math.min(last.a, last.b);
+      if (overlap > 0) {
+        last.a += overlap;
+        last.b += overlap;
+      }
+      const local = new Transform(before).replace(first, last.a, after.slice(first, last.b));
+      if (!local.doc.eq(after)) throw new Error('Mixed child fit differs from native result');
+      if (projection.table) {
+        if (result.table) throw new Error('Mixed multi-table change requires atomic admission');
+        result.table = projection.table;
+        result.splices.push(
+          ...projection.table.translateTransaction(local, (pm, affinity) =>
+            projection.sourceAt(pm, affinity),
+          ),
+        );
+      } else if (projection.list) {
+        if (result.list) throw new Error('Mixed multi-list change requires atomic admission');
+        result.list = projection.list;
+        result.splices.push(...projection.list.translateTransaction(local));
+        result.fences.push(...projection.list.fences);
+      } else {
+        if (local.steps.length !== 1) throw new Error('Mixed child fit requires a batch adapter');
+        result.splices.push(
+          ...projection.translate(local.steps[0], local.before, (fences) =>
+            result.fences.push(...fences),
+          ),
+        );
+      }
+    }
+    result.splices.sort((a, b) => b.from - a.from);
+    return result;
   }
   constructor(source: string, start: number, context: InlineContext, tables: TableWindow[]) {
     let cursor = start,
@@ -149,7 +215,10 @@ export class MixedProjection {
           to: table.to,
           before: [],
           after: [],
-          table: { ...table, trailing: false },
+          table: {
+            ...table,
+            trailing: !source.slice(table.to - start).trim() && table.trailing !== false,
+          },
         }),
       );
       cursor = table.to;

@@ -458,7 +458,10 @@ export class ListProjection {
       if (node.type.name === 'paragraph') {
         if (index === doc.childCount - 1 && !node.content.size && this.context.documentEnd) return;
         const old = this.prose.find((p) => mapping.map(p.pm, -1) === pm);
-        output += (old?.prefix ?? '\n') + text(node, pm) + (old?.suffix ?? '\n\n');
+        output +=
+          (old?.prefix ?? (output.endsWith('\n\n') ? '' : '\n')) +
+          text(node, pm) +
+          (old?.suffix ?? '\n\n');
       } else if (node.type.name === 'codeBlock') {
         const old = this.prose.find((p) => mapping.map(p.pm, -1) === pm);
         if (!old) throw new Error('Missing mixed code source provenance');

@@ -1253,11 +1253,16 @@ export class SourceJournal {
     return window && this.transferTable(window);
   }
   mixedTableRanges(from: number, to: number) {
-    const ranges: Array<{ from: number; to: number }> = [];
+    const ranges: Array<{ from: number; to: number; rows: number; columns: number }> = [];
     for (let id = this.locate(from).id; id <= this.locate(to).id && id < this.count; id++) {
       const start = this.start(id);
       for (const table of this.tableIndex(this.region(id), start)) {
-        const range = { from: table.from + start, to: table.to + start };
+        const range = {
+          from: table.from + start,
+          to: table.to + start,
+          rows: table.rows.length,
+          columns: table.columns,
+        };
         if (
           range.from >= from &&
           range.to <= to &&
