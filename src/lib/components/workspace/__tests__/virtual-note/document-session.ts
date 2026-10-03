@@ -127,7 +127,17 @@ export class DocumentSession {
     });
   }
   editor?: Editor;
-  projection?: SourceProjection;
+  #projection?: SourceProjection;
+  get projection() {
+    return this.#projection;
+  }
+  set projection(next: SourceProjection | undefined) {
+    // Old projections may still belong to rollback or an annotation response.
+    // Drop their measurement before exposing the replacement: no scalar overlap
+    // or extra lifetime, including Object.assign rollback and view destruction.
+    if (next !== this.#projection) this.#projection?.list?.clearMeasurement();
+    this.#projection = next;
+  }
   selection: Selection = { anchor: 0, head: 0, affinity: 1, revision: 1 };
   active = -1;
   error = '';
@@ -2990,6 +3000,15 @@ export class DocumentSession {
     } else void this.seek(this.selection.head);
   }
   snapshot() {
+    // Reuse only synchronous numeric results within this publication. Annotation,
+    // plugin and backing-service state remain fresh on every publication phase.
+    const activeBytes = bytes(this.projection?.source ?? '');
+    const inlineContextBytes = bytes(JSON.stringify(this.projection?.context ?? {}));
+    const codeMetadataBytes = bytes(JSON.stringify(this.projection?.code ?? []));
+    const projectionJsonBytes = bytes(JSON.stringify(this.projection?.content ?? {}));
+    const pmBytes = bytes(JSON.stringify(this.editor?.getJSON() ?? {}));
+    const editorContentOptionBytes = bytes(JSON.stringify(this.editor?.options.content ?? {}));
+    const cacheBytes = [...this.cache.values()].reduce((n, page) => n + bytes(page), 0);
     let nodes = 0;
     this.editor?.state.doc.descendants(() => {
       nodes++;
@@ -3112,29 +3131,11 @@ export class DocumentSession {
       nestedCodeMetadataBytes: bytes(JSON.stringify(this.projection?.context?.listCodes ?? [])),
       listMetadataBytes: bytes(JSON.stringify(this.projection?.context?.lists ?? [])),
       syntheticListParents: this.projection?.list?.synthetic.length ?? 0,
-      listProjectionPayloadBytes: bytes(
-        JSON.stringify({
-          positions: [...(this.projection?.list?.positions ?? [])],
-          ends: [...(this.projection?.list?.ends ?? [])],
-          boundaries: [...(this.projection?.list?.boundaries ?? [])],
-          tokens: this.projection?.list?.tokens,
-          indentation: this.projection?.list?.indentation,
-          nestedCode: this.projection?.list?.codeParts,
-          nestedCodeAdmission: this.projection?.list?.codes,
-          parts: [
-            ...(this.projection?.list?.entries.map((e) => e.part) ?? []),
-            ...(this.projection?.list?.prose.map((e) => e.part) ?? []),
-          ].map((part) => ({
-            source: part?.source,
-            content: part?.content,
-            positions: [...(part?.positions ?? [])],
-            ends: [...(part?.ends ?? [])],
-            boundaries: [...(part?.boundaries ?? [])],
-            tokens: part?.tokens,
-            marks: part?.marks,
-          })),
-        }),
-      ),
+      listProjectionPayloadBytes:
+        this.projection?.list?.measurePayload() ??
+        bytes(JSON.stringify({ positions: [], ends: [], boundaries: [], parts: [] })),
+      listMeasurementScalars: this.projection?.list?.measurementScalars ?? 0,
+      listMeasurementPayloadBytes: this.projection?.list?.measurementPayloadBytes ?? 0,
       maxHighlightBytes: this.maxHighlightBytes,
       highlightCalls: this.highlightCalls,
       mixedProjectionPayloadBytes: bytes(
@@ -3160,13 +3161,13 @@ export class DocumentSession {
           })) ?? [],
         ),
       ),
-      codeMetadataBytes: bytes(JSON.stringify(this.projection?.code ?? [])),
+      codeMetadataBytes,
       residentInputBytes: this.residentInputBytes,
       maxResidentInputBytes: this.maxResidentInputBytes,
       continuation: this.continuation,
       windowFrom: this.projection?.start,
       windowTo: this.windowEnd,
-      inlineContextBytes: bytes(JSON.stringify(this.projection?.context ?? {})),
+      inlineContextBytes,
       maxProjectionInputBytes: this.maxProjectionInputBytes,
       continuationMetadataBytes: bytes(
         JSON.stringify({
@@ -3193,31 +3194,31 @@ export class DocumentSession {
       // Count duplicated source/text representations explicitly; these are serialized payload
       // counts, not a heap measurement. Mock backing source and oracle live elsewhere.
       sourceReplicaPayloadBytes:
-        bytes(this.projection?.source ?? '') +
+        activeBytes +
         (this.projection?.list?.entries.reduce((n, e) => n + bytes(e.part?.source ?? ''), 0) ?? 0) +
         (this.projection?.list?.prose.reduce((n, e) => n + bytes(e.part.source), 0) ?? 0) +
-        bytes(JSON.stringify(this.projection?.context ?? {})) +
-        bytes(JSON.stringify(this.projection?.code ?? [])) +
-        [...this.cache.values()].reduce((n, page) => n + bytes(page), 0) +
+        inlineContextBytes +
+        codeMetadataBytes +
+        cacheBytes +
         this.inFlightBytes +
         (this.projection?.tokens.reduce((n, t) => n + bytes(t.raw) + bytes(t.text), 0) ?? 0) +
-        bytes(JSON.stringify(this.projection?.content ?? {})) +
-        bytes(JSON.stringify(this.editor?.getJSON() ?? {})) +
-        bytes(JSON.stringify(this.editor?.options.content ?? {})),
+        projectionJsonBytes +
+        pmBytes +
+        editorContentOptionBytes,
       calls: this.service.logs,
       created: this.created,
       maxDOMBoundaryIntentBytes: this.maxDOMBoundaryIntentBytes,
       destroyed: this.destroyed,
       mounted: this.created - this.destroyed,
       pmNodes: nodes + Number(!!this.projection?.table),
-      pmBytes: bytes(JSON.stringify(this.editor?.getJSON() ?? {})),
+      pmBytes,
       pluginCount: this.editor?.state.plugins.length ?? 0,
       nativeHistoryPlugins:
         this.editor?.state.plugins.filter((p) =>
           String((p as unknown as { key: string }).key).startsWith('history$'),
         ).length ?? 0,
-      projectionJsonBytes: bytes(JSON.stringify(this.projection?.content ?? {})),
-      editorContentOptionBytes: bytes(JSON.stringify(this.editor?.options.content ?? {})),
+      projectionJsonBytes,
+      editorContentOptionBytes,
       provenanceEntries:
         (this.projection?.positions.size ?? 0) +
         (this.projection?.ends.size ?? 0) +
@@ -3241,9 +3242,9 @@ export class DocumentSession {
       mountedAnnotations: this.annotationPage?.items.length ?? 0,
       moreAnnotations: !!this.annotationPage?.next,
       rendererJournalPages: 0,
-      activeBytes: bytes(this.projection?.source ?? ''),
+      activeBytes,
       cachePages: this.cache.size,
-      cacheBytes: [...this.cache.values()].reduce((n, p) => n + bytes(p), 0),
+      cacheBytes,
       inFlightBytes: this.inFlightBytes,
       maxInFlightBytes: this.maxInFlightBytes,
       parsedBytes: this.parsedBytes,

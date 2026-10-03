@@ -1,4 +1,5 @@
 import type { ListCode } from './list-code';
+import { bytes } from './bounded-note-service';
 import type { JSONContent } from '@tiptap/core';
 import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
 import { Mapping, ReplaceStep, type Step } from '@tiptap/pm/transform';
@@ -31,6 +32,52 @@ const size = (node: JSONContent): number =>
 
 /** Structural ancestors contain no invented text. Only loaded source tokens receive caret provenance. */
 export class ListProjection {
+  // Only a numeric measurement survives a publication, never the encoded payload.
+  // Private slots must not enter mixedProjectionPayloadBytes via JSON.stringify(list).
+  #payloadSubtotal?: number;
+  clearMeasurement() {
+    this.#payloadSubtotal = undefined;
+  }
+  get measurementScalars() {
+    return Number(this.#payloadSubtotal !== undefined);
+  }
+  get measurementPayloadBytes() {
+    // Serialized numeric payload, not a JavaScript heap-size claim.
+    return this.#payloadSubtotal === undefined ? 0 : bytes(JSON.stringify(this.#payloadSubtotal));
+  }
+  measurePayload() {
+    // Maps, tokens and measured child fields are constructor-owned. Any future
+    // in-place mutation of those inputs must clear this subtotal first.
+    this.#payloadSubtotal ??= bytes(
+      JSON.stringify({
+        positions: [...this.positions],
+        ends: [...this.ends],
+        boundaries: [...this.boundaries],
+        tokens: this.tokens,
+        indentation: [],
+        nestedCode: this.codeParts,
+        nestedCodeAdmission: [],
+        parts: [...this.entries.map((e) => e.part), ...this.prose.map((e) => e.part)].map(
+          (part) => ({
+            source: part?.source,
+            content: part?.content,
+            positions: [...(part?.positions ?? [])],
+            ends: [...(part?.ends ?? [])],
+            boundaries: [...(part?.boundaries ?? [])],
+            tokens: part?.tokens,
+            marks: part?.marks,
+          }),
+        ),
+      }),
+    );
+    // Replace the two empty arrays with their current native JSON byte lengths.
+    return (
+      this.#payloadSubtotal -
+      4 +
+      bytes(JSON.stringify(this.indentation)) +
+      bytes(JSON.stringify(this.codes))
+    );
+  }
   readonly seams: ListSeam[] = [];
   readonly literalNewlines: Array<{ item: number; from: number; to: number }> = [];
   readonly codes: ListCode[] = [];
@@ -358,6 +405,7 @@ export class ListProjection {
     mapping: Mapping,
     moved?: Map<number, SourceProjection['tokens'][number]>,
   ) {
+    this.clearMeasurement();
     this.seams.length = 0;
     this.literalNewlines.length = 0;
     this.fences.length = 0;
