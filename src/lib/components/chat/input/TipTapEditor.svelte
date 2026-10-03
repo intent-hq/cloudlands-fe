@@ -350,7 +350,29 @@
     if (inputLocked) return false;
     if (editor && editor.view) {
       try {
-        editor.chain().focus().run();
+        if (editor.view.hasFocus()) return true;
+        const focusEditor = editor;
+        const focusOwner = document.activeElement;
+        // Tiptap's focus command queues an unguarded animation frame. Apply
+        // focus here instead so a newer Find/editor interaction wins even
+        // when it happens after the parent's reveal check (#6395).
+        requestAnimationFrame(() => {
+          if (editor !== focusEditor || focusEditor.isDestroyed || inputLocked) return;
+          // Native caret movement can precede ProseMirror's selectionchange.
+          // Re-focusing an editor the user already entered would restore stale selection.
+          if (focusEditor.view.hasFocus()) return;
+          const activeElement = document.activeElement;
+          if (
+            activeElement !== focusOwner &&
+            activeElement instanceof HTMLElement &&
+            activeElement.closest('input, textarea, select, [contenteditable="true"]') &&
+            !focusEditor.view.dom.contains(activeElement)
+          ) {
+            return;
+          }
+          focusEditor.view.focus();
+          focusEditor.commands.scrollIntoView();
+        });
         if (typeof editor.view.hasFocus === 'function') {
           return editor.view.hasFocus();
         }

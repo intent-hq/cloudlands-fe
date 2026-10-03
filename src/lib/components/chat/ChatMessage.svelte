@@ -57,6 +57,7 @@
     resolveFinishReasonNotice,
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
@@ -65,11 +66,12 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import { getCollaboratorSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
   import {
-    getCollaboratorSenderAttribution,
-    singleLineName,
-  } from '$lib/utils/collaborator-sender-attribution';
-  import { getHumanMessageAuthor, getMessageAuthorLabel } from '$lib/utils/message-authorship';
+    getHumanMessageAuthor,
+    getMessageAuthorLabel,
+    getMessageAuthorTooltip,
+  } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -459,24 +461,7 @@
         ? projectedHumanAuthor
         : null,
   );
-  let humanAuthorLabel = $derived.by(() => {
-    if (!humanAuthor) return null;
-    if (!collaboratorSender) return getMessageAuthorLabel(humanAuthor);
-    // Same shape and sanitizer as the stripped preamble: `@login (Display
-    // Name)`, then `@login`, then the display name alone — control characters
-    // and whitespace runs collapse exactly as the daemon's `single_line_name`.
-    const cleanLogin = singleLineName(humanAuthor.login);
-    const login = cleanLogin ? `@${cleanLogin}` : null;
-    const name = singleLineName(humanAuthor.displayName);
-    // i18n-ignore (handle + name composition, mirrors the daemon preamble)
-    const who = login && name ? `${login} (${name})` : (login ?? name);
-    if (collaboratorSender.role === 'member') {
-      // i18n-ignore (principal fallback mirrors the accepted daemon preamble)
-      const label = who ?? `principal ${singleLineName(humanAuthor.principalId) ?? ''}`;
-      return getMessageAuthorLabel({ ...humanAuthor, login: null, displayName: label });
-    }
-    return who;
-  });
+  let humanAuthorLabel = $derived(humanAuthor ? getMessageAuthorLabel(humanAuthor) : null);
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -1590,14 +1575,21 @@
                       name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
                     })}
             >
-              <PrincipalAvatar
-                avatarUrl={humanAuthor.avatarUrl}
-                label={humanAuthorLabel ?? ''}
-                size={16}
-                class="font-medium leading-none text-muted-foreground"
-                referrerpolicy="no-referrer"
-                testid="user-message-author-avatar"
-              />
+              <Tooltip content={getMessageAuthorTooltip(humanAuthor)} class="shrink-0">
+                <span
+                  role="img"
+                  aria-label={humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}
+                >
+                  <PrincipalAvatar
+                    avatarUrl={humanAuthor.avatarUrl}
+                    label={humanAuthor.displayName?.trim() || humanAuthor.login?.trim() || ''}
+                    size={16}
+                    class="font-medium leading-none text-muted-foreground"
+                    referrerpolicy="no-referrer"
+                    testid="user-message-author-avatar"
+                  />
+                </span>
+              </Tooltip>
               <span class="truncate" data-testid="user-message-author-name"
                 >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
               >
