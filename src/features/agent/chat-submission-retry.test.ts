@@ -501,10 +501,10 @@ describe('live queue transport uncertainty', () => {
     expect(serverRows).toHaveLength(1);
     expect.soft(attempt.submission!.outcome).toBe('uncertain');
     expect.soft(display().queue).toHaveLength(1);
-    expect.soft(display().queue[0]?.status).toBe('uncertain');
+    expect.soft(display().queue[0]?.contributions[0]?.status).toBe('uncertain');
   });
   it('reconciles a real lost queue acknowledgement before retry can send duplicate work', async () => {
-    const { attempt, serverRows } = await loseQueuedAcknowledgement();
+    const { serverRows } = await loseQueuedAcknowledgement();
     store.dispatch(setChatDraft(ws, agent, 'keep queue-time draft'));
     await requestChatMessageRetry(agent, ws);
     await vi.waitFor(() =>
@@ -517,5 +517,45 @@ describe('live queue transport uncertainty', () => {
     expect(store.state.agentSessions.byAgentId[agent].messages.map((m) => m.id)).toEqual([
       'previous',
     ]);
+  });
+  it('requires the warned fresh-ID choice when queue and history cannot confirm delivery', async () => {
+    const { attempt, serverRows } = await loseQueuedAcknowledgement();
+    serverRows.length = 0;
+    store.dispatch(setChatDraft(ws, agent, 'new draft after queue loss'));
+    await requestChatMessageRetry(agent, ws);
+    const choice = warningChoice();
+    expect([...queues(), ...sends()]).toHaveLength(1);
+    expect(wire.request.mock.calls.some(([method]) => method === 'agent.getConversation')).toBe(
+      true,
+    );
+    choice.action.onClick();
+    await vi.waitFor(() => expect([...queues(), ...sends()]).toHaveLength(2));
+    const retried = [...queues(), ...sends()].at(-1)![1];
+    expect(retried.messageId).not.toBe(attempt.submission!.reference.id);
+    expect(retried.fileBlocks).toEqual(attempt.options?.fileBlocks);
+    expect(selectChatDraft.select(store.state, ws, agent)).toBe('new draft after queue loss');
+  });
+
+  it('retains proven live queue rejection and retries it with a fresh ID without discarding the newer draft', async () => {
+    startSending();
+    store.dispatch(updateAgentSessionFields(agent, { isResponding: true }));
+    wire.request.mockImplementation((method, params) =>
+      method === 'agent.queueMessage'
+        ? Promise.resolve({ success: false, error: 'queue rejected' })
+        : baseReply(method, params),
+    );
+    submitChatMessage(store, agent, { wsId: ws, text: 'proven rejection' });
+    await vi.waitFor(() => expect(store.state.chatState.byAgentId[agent]?.error).toBeTruthy());
+    const attempt = store.state.chatState.byAgentId[agent].lastAttemptedMessage!;
+    expect(attempt.submission!.outcome).toBe('rejected');
+    expect(display().queue).toHaveLength(0);
+    store.dispatch(setChatDraft(ws, agent, 'newer draft'));
+    await requestChatMessageRetry(agent, ws);
+    await vi.waitFor(() => expect([...queues(), ...sends()]).toHaveLength(2));
+    expect([...queues(), ...sends()].at(-1)![1].messageId).not.toBe(
+      attempt.submission!.reference.id,
+    );
+    expect(wire.warning).not.toHaveBeenCalled();
+    expect(selectChatDraft.select(store.state, ws, agent)).toBe('newer draft');
   });
 });

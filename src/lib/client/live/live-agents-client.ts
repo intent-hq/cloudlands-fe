@@ -543,8 +543,10 @@ export class LiveAgentsClient implements AgentsClient {
       if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
       if (options?.messageMetadata !== undefined) params.messageMetadata = options.messageMetadata;
       const result = await backendRequest<
-        { queuedMessage?: QueuedMessage; turnId?: unknown } | undefined
+        | { success?: boolean; error?: string; queuedMessage?: QueuedMessage; turnId?: unknown }
+        | undefined
       >('agent.queueMessage', params);
+      if (result?.success === false) return { success: false, error: result.error };
       const queuedMessage = result?.queuedMessage;
       const turnId =
         typeof result?.turnId === 'string'
@@ -557,6 +559,17 @@ export class LiveAgentsClient implements AgentsClient {
       if (turnId !== undefined) mutation.turnId = turnId;
       return mutation;
     } catch (error) {
+      // Correlated callers retain recoverable content in their catch path and
+      // reconcile before retrying. Only request/method/parameter validation or
+      // access refusal proves rejection; a generic server error can follow enqueue.
+      const rpcCode =
+        error && typeof error === 'object' ? (error as { rpcCode?: unknown }).rpcCode : undefined;
+      const rejected =
+        rpcCode === -32600 ||
+        rpcCode === -32601 ||
+        rpcCode === -32602 ||
+        isForbiddenErrorResponse(error);
+      if (options?.messageId !== undefined && !rejected) throw error;
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }

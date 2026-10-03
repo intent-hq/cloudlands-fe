@@ -32,21 +32,25 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
 
   it.each([
     new Error('connection lost after enqueue'),
-    new BackendError(buildErrorPayload(-32603, 'unclassified server failure')),
+    new BackendError(
+      buildErrorPayload('INTERNAL_ERROR', 'unclassified server failure', { rpcCode: -32603 }),
+    ),
   ])('keeps correlated queue ambiguity throwable for reconciliation: %s', async (failure) => {
     backend.onRequest('agent.queueMessage', () => {
       throw failure;
     });
     await expect(
       new LiveAgentsClient().queue('agent-1', 'later', { messageId: 'submission' }),
-    ).rejects.toBe(failure);
+    ).rejects.toThrow(failure.message);
   });
 
   it.each([-32600, -32601, -32602, -32003])(
     'retains proven queue rejection %s for correlated callers',
     async (code) => {
       backend.onRequest('agent.queueMessage', () => {
-        throw new BackendError(buildErrorPayload(code, 'request rejected'));
+        throw new BackendError(
+          buildErrorPayload('REJECTED', 'request rejected', { rpcCode: code }),
+        );
       });
       expect(
         await new LiveAgentsClient().queue('agent-1', 'later', { messageId: 'submission' }),
