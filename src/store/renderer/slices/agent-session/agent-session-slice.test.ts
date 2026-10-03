@@ -6902,6 +6902,26 @@ describe('history segment (scrollback)', () => {
       expect(getHistory(state, 'a1')).toBeUndefined();
     });
 
+    it('local discard replay preserves loaded history before the next page', () => {
+      let state = withSession();
+      const loaded = [histMsg(10), histMsg(11), histMsg(12), histMsg(13), histMsg(14)];
+      state = agentSessionReducer(state, prependHistoryMessages('a1', loaded));
+      const before = state;
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied(
+          'a1',
+          { truncated: true, totalMessages: 20, resumed: false },
+          true,
+        ),
+      );
+      expect.soft(getHistory(state, 'a1')?.messages).toEqual(loaded);
+      const older = [histMsg(5), histMsg(6), histMsg(7), histMsg(8), histMsg(9)];
+      const next = agentSessionReducer(state, prependHistoryMessages('a1', older));
+      expect(getHistory(next, 'a1')?.messages).toEqual([...older, ...loaded]);
+      expect(state).toBe(before);
+    });
+
     it('a resumed:true or plain snapshot keeps the segment', () => {
       let state = withSession();
       state = agentSessionReducer(state, prependHistoryMessages('a1', [histMsg(0)]));
@@ -7164,6 +7184,18 @@ describe('tailCapPruned latch (live tail growth past the client cap)', () => {
       upsertSession(makeSession('a1', 'ws-1', { messages: state.byAgentId['a1'].messages })),
     );
     expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+
+    // Local replay must retain the latch belonging to the current transcript.
+    const afterReplay = agentSessionReducer(
+      state,
+      chatTranscriptSnapshotApplied(
+        'a1',
+        { resumed: false, truncated: false, totalMessages: 1 },
+        true,
+      ),
+    );
+    expect(afterReplay.byAgentId['a1'].tailCapPruned).toBe(true);
+    expect(afterReplay).toBe(state);
 
     // chatReset clears it (full transcript reset).
     const afterReset = agentSessionReducer(state, chatReset('a1'));

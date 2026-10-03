@@ -15,13 +15,15 @@
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
   import type { InviteProgressShowPayload } from '$shared/ipc/invite-progress';
-  import { closePalette, openPalette } from '$store/renderer/slices/palette/palette-slice';
+  import { closePalette } from '$store/renderer/slices/palette/palette-slice';
 
   interface InviteJoinPromptsProps {
     consent?: InviteConsentShowPayload;
     notice?: InviteNoticeShowPayload;
     progress?: InviteProgressShowPayload;
-    onRetry?: () => void;
+    onEnable?: () => void;
+    busy?: boolean;
+    failed?: boolean;
   }
 
   function enableGitLab() {
@@ -140,7 +142,7 @@
     selectPaletteQuery,
   } from '$store/renderer/slices/palette/palette-selectors';
 
-  let { consent, notice, progress, onRetry }: InviteJoinPromptsProps = $props();
+  let { consent, notice, progress, onEnable, busy, failed }: InviteJoinPromptsProps = $props();
   let progressOpen = $state(true);
   const isPaletteOpen$ = selectIsPaletteOpen();
   const paletteQuery$ = selectPaletteQuery();
@@ -154,13 +156,7 @@
     <InviteNoticeModal open payload={notice} />
   {/if}
   {#if progress}
-    <InviteProgressModal
-      bind:open={progressOpen}
-      payload={progress}
-      recoveryHidden={$isPaletteOpen$}
-      onFindMultiplayer={() => appStore.dispatch(openPalette('Multiplayer'))}
-      {onRetry}
-    />
+    <InviteProgressModal bind:open={progressOpen} payload={progress} {onEnable} {busy} {failed} />
   {/if}
   <CommandPalette
     isOpen={$isPaletteOpen$}

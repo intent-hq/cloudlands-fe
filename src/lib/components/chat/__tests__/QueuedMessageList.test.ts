@@ -1180,8 +1180,8 @@ describe('QueuedMessageList', () => {
     renderQueue({ props: { messages, authors: null, ownPrincipalId: 'self' } });
     const chips = screen.getAllByTestId('queued-message-author');
     expect(chips).toHaveLength(3);
-    expect(chips[0].getAttribute('aria-label')).toContain('gitlab@one.example');
-    expect(chips[1].getAttribute('aria-label')).toContain('gitlab@two.example');
+    expect(chips[0].getAttribute('aria-label')).toContain('Same Person · @same');
+    expect(chips[1].getAttribute('aria-label')).toContain('Same Person · @same');
     expect(chips[2].textContent?.trim()).not.toBe('');
     expect(chips.every((chip) => !chip.hasAttribute('data-principal-id'))).toBe(true);
     expect(JSON.stringify(messages)).toBe(before);

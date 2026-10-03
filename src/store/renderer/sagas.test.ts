@@ -60,6 +60,7 @@ describe('renderer app saga registry', () => {
       'workspaceTransferSaga',
       'workspaceShareSaga',
       'hostMembershipSaga',
+      'hostUserPresenceSaga',
       'workspaceImportSaga',
       'scriptsOperationSaga',
       'lifecycleReadSaga',

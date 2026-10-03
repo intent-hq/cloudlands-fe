@@ -24,7 +24,7 @@
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
   import type { MessageAuthor, QueuedMessage } from '$shared/types';
   import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
-  import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
+  import * as authorship from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -1007,20 +1007,20 @@
                       </div>
                     {/each}
                   {:else}
-                    {@const queuedAuthor = getQueuedMessageAuthor(
+                    {@const queuedAuthor = authorship.getQueuedMessageAuthor(
                       message,
                       authors,
                       presentationPrincipalId,
                     )}
                     {@const queuedAuthorLabel = queuedAuthor
-                      ? getMessageAuthorLabel(queuedAuthor)
+                      ? authorship.getMessageAuthorLabel(queuedAuthor)
                       : null}
                     <!-- Display mode -->
                     <div class="queued-message-display flex min-w-0 flex-1 items-start gap-2">
                       {#if queuedAuthor}
                         <Tooltip
                           class="first-line-icon"
-                          content={queuedAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}
+                          content={authorship.getMessageAuthorTooltip(queuedAuthor)}
                         >
                           <span
                             role="img"
@@ -1032,7 +1032,9 @@
                           >
                             <PrincipalAvatar
                               avatarUrl={queuedAuthor.avatarUrl}
-                              label={queuedAuthorLabel ?? ''}
+                              label={queuedAuthor.displayName?.trim() ||
+                                queuedAuthor.login?.trim() ||
+                                ''}
                               size={16}
                               class="font-medium leading-none text-muted-foreground"
                               referrerpolicy="no-referrer"

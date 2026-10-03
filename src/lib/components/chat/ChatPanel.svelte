@@ -2835,7 +2835,8 @@
   // phantom spacer over an empty store. Zero it all and re-anchor to the
   // fresh tail. Keyed on the snapshot's OBJECT IDENTITY (every
   // chatTranscriptSnapshotApplied mints a fresh meta object) so only a NEW
-  // discarded snapshot fires; the first observation per agent only records
+  // daemon discard fires; local hydration replays retain the current walk.
+  // The first observation per agent only records
   // the baseline (a mount over an already-discarded snapshot has nothing to
   // reset). Identity — not seq — because the restart sequence clears the
   // snapshot first (phase→null resets seq), and effect batching can flush
@@ -2874,7 +2875,7 @@
         return;
       }
       if (meta === discardBaselineMeta) return;
-      const isNewDiscard = meta?.resumed === false;
+      const isNewDiscard = meta?.resumed === false && !meta.replayed;
       discardBaselineMeta = meta;
       if (!isNewDiscard) return;
       cancelPreviousMessageLoad?.();

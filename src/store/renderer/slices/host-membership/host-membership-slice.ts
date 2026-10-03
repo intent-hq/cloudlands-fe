@@ -4,6 +4,7 @@ import {
   createCollection,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
+import { refreshLiveClientsRequested } from '../browser-clients/browser-clients-slice';
 import { hostMembershipChanged } from '../principal/principal-slice';
 import type { HostInvite, HostInviteInput, HostMember } from '$features/host-membership/types';
 
@@ -19,6 +20,12 @@ export type HostMembershipCommand =
   | { kind: 'revoke'; inviteId: string };
 export interface HostMembershipState {
   target: HostMembershipTarget | null;
+  presence: {
+    session: string | null;
+    epoch: number;
+    status: 'unknown' | 'loading' | 'ready' | 'error';
+    onlinePrincipalIds: string[];
+  };
   members: Collection<HostMember, 'principalId'>;
   invites: Collection<HostInvite, 'id'>;
   loaded: boolean;
@@ -33,6 +40,7 @@ export interface HostMembershipState {
 }
 export const initialState: HostMembershipState = {
   target: null,
+  presence: { session: null, epoch: 0, status: 'unknown', onlinePrincipalIds: [] },
   members: createCollection('principalId'),
   invites: createCollection('id'),
   loaded: false,
@@ -145,3 +153,49 @@ const invalidateLists = (state: HostMembershipState) =>
   state.target && !state.withheld ? { ...state, reloadPending: true } : state;
 hostMembershipReducer.with(hostMembershipListsChanged, invalidateLists);
 hostMembershipReducer.with(hostMembershipChanged, invalidateLists);
+
+export const hostUserPresenceStarted = createAction<[session: string]>(
+  'hostMembership/presenceStarted',
+);
+export const hostUserPresenceSettled = createAction<
+  [session: string, epoch: number, onlinePrincipalIds: string[] | null]
+>('hostMembership/presenceSettled');
+export const hostUserPresenceCleared = createAction<[session: string]>(
+  'hostMembership/presenceCleared',
+);
+hostMembershipReducer.with(hostUserPresenceStarted, (state, { payload: [session] }) => ({
+  ...state,
+  presence: { session, epoch: state.presence.epoch + 1, status: 'loading', onlinePrincipalIds: [] },
+}));
+hostMembershipReducer.with(refreshLiveClientsRequested, (state, { payload: [workspaceId] }) =>
+  state.presence.session && !workspaceId
+    ? {
+        ...state,
+        presence: {
+          ...state.presence,
+          epoch: state.presence.epoch + 1,
+          status: 'loading',
+          onlinePrincipalIds: [],
+        },
+      }
+    : state,
+);
+hostMembershipReducer.with(
+  hostUserPresenceSettled,
+  (state, { payload: [session, epoch, onlinePrincipalIds] }) =>
+    state.presence.session === session && state.presence.epoch === epoch
+      ? {
+          ...state,
+          presence: {
+            ...state.presence,
+            status: onlinePrincipalIds === null ? 'error' : 'ready',
+            onlinePrincipalIds: onlinePrincipalIds ?? [],
+          },
+        }
+      : state,
+);
+hostMembershipReducer.with(hostUserPresenceCleared, (state, { payload: [session] }) =>
+  state.presence.session === session
+    ? { ...state, presence: { ...initialState.presence, epoch: state.presence.epoch + 1 } }
+    : state,
+);

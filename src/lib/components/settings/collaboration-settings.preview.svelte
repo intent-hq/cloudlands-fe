@@ -8,6 +8,11 @@
     defaultState: 'owner-empty',
     states: {
       'owner-empty': { props: {}, setup: () => setup('owner') },
+      'owner-status-loading': {
+        props: {},
+        setup: () => setup('owner', true, true, false, 'loading'),
+      },
+      'owner-status-error': { props: {}, setup: () => setup('owner', true, true, false, 'error') },
       'owner-populated': { props: {}, setup: () => setup('owner', true) },
       'remote-member': { props: {}, setup: () => setup('member', true, true, true) },
       'remote-empty': { props: {}, setup: () => setup('member', false, true, true) },

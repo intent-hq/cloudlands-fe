@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { flushSync } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import TipTapEditor from '../TipTapEditor.svelte';
 import TipTapEditorDeactivateHarness from './TipTapEditorDeactivateHarness.svelte';
 import { processHTMLToMarkdown, processMarkdownToHTML } from '$lib/utils/markdown-processor';
@@ -89,6 +89,144 @@ describe('TipTapEditor programmatic content updates', () => {
 
     expect(view.container.querySelector('.ProseMirror')?.textContent).toBe('external update');
   });
+});
+
+describe('TipTapEditor deferred focus ownership', () => {
+  const rangeDescriptors = Object.getOwnPropertyDescriptors(Range.prototype);
+  beforeAll(() => {
+    // jsdom lacks Range geometry; ProseMirror reads it when scrolling the
+    // selection after a genuine deferred focus callback.
+    Object.defineProperties(Range.prototype, {
+      getClientRects: { configurable: true, value: () => [new DOMRect(0, 0, 1, 1)] },
+      getBoundingClientRect: { configurable: true, value: () => new DOMRect(0, 0, 1, 1) },
+    });
+  });
+  afterAll(() => {
+    for (const key of ['getClientRects', 'getBoundingClientRect']) {
+      if (rangeDescriptors[key]) Object.defineProperty(Range.prototype, key, rangeDescriptors[key]);
+      else Reflect.deleteProperty(Range.prototype, key);
+    }
+  });
+  it.each(['before request', 'before callback'] as const)(
+    'preserves the native caret when the user focuses the editor %s',
+    async (when) => {
+      const view = render(TipTapEditor, { value: 'draft' });
+      const editor = await waitFor(() => {
+        const element = view.container.querySelector('.ProseMirror') as HTMLElement | null;
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      const frames: FrameRequestCallback[] = [];
+      const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      try {
+        if (when === 'before request') editor.focus();
+        view.component.focus();
+        if (when === 'before callback') editor.focus();
+        const text = editor.querySelector('p')!.firstChild!;
+        // Native mouse/End navigation updates the DOM selection before the
+        // asynchronous selectionchange event synchronizes ProseMirror's state.
+        const selection = window.getSelection()!;
+        selection.setBaseAndExtent(text, 5, text, 5);
+        for (const callback of frames.splice(0)) callback(performance.now());
+        expect(document.activeElement).toBe(editor);
+        expect(selection.anchorNode).toBe(text);
+        expect(selection.anchorOffset).toBe(5);
+        expect(selection.focusOffset).toBe(5);
+      } finally {
+        raf.mockRestore();
+      }
+    },
+  );
+
+  it.each(['input', 'textarea', 'select', 'contenteditable'] as const)(
+    'does not steal %s focus acquired after the composer focus request',
+    async (kind) => {
+      const view = render(TipTapEditor, { value: 'draft' });
+      await waitFor(() => expect(view.container.querySelector('.ProseMirror')).toBeTruthy());
+      const outside = document.createElement(kind === 'contenteditable' ? 'div' : kind);
+      if (kind === 'contenteditable') {
+        outside.setAttribute('contenteditable', 'true');
+        outside.tabIndex = 0;
+      }
+      document.body.append(outside);
+      const frames: FrameRequestCallback[] = [];
+      const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      try {
+        view.component.focus();
+        expect(frames.length).toBeGreaterThan(0);
+        outside.focus();
+        for (const callback of frames.splice(0)) callback(performance.now());
+        expect(document.activeElement).toBe(outside);
+      } finally {
+        raf.mockRestore();
+        outside.remove();
+      }
+    },
+  );
+
+  it.each(['locked', 'unmounted'] as const)(
+    'discards requested focus when the editor becomes %s before the callback',
+    async (state) => {
+      const view = render(TipTapEditor, { value: 'draft' });
+      const editor = await waitFor(() => {
+        const element = view.container.querySelector('.ProseMirror') as HTMLElement | null;
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      const frames: FrameRequestCallback[] = [];
+      const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      const nativeFocus = vi.spyOn(editor, 'focus');
+      try {
+        view.component.focus();
+        expect(frames.length).toBeGreaterThan(0);
+        if (state === 'locked') await view.rerender({ inputLocked: true });
+        else view.unmount();
+        for (const callback of frames.splice(0)) callback(performance.now());
+        expect(nativeFocus).not.toHaveBeenCalled();
+        expect(document.activeElement).not.toBe(editor);
+      } finally {
+        nativeFocus.mockRestore();
+        raf.mockRestore();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'still applies requested focus when ownership has not changed (editable=%s)',
+    async (editable) => {
+      const view = render(TipTapEditor, { value: 'draft' });
+      const editor = await waitFor(() => {
+        const element = view.container.querySelector('.ProseMirror');
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      const outside = document.createElement('input');
+      document.body.append(outside);
+      if (editable) outside.focus();
+      const frames: FrameRequestCallback[] = [];
+      const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      try {
+        view.component.focus();
+        for (const callback of frames.splice(0)) callback(performance.now());
+        expect(document.activeElement).toBe(editor);
+      } finally {
+        raf.mockRestore();
+        outside.remove();
+      }
+    },
+  );
 });
 
 describe('TipTapEditor synchronous blur reentry', () => {
