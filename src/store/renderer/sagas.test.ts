@@ -12,6 +12,7 @@ import { sagas, startAllAppSagas } from './sagas';
 describe('renderer app saga registry', () => {
   function getAuditedSagaNames() {
     return [
+      'pendingRetentionSaga',
       'daemonEventsSaga',
       'daemonHealthSaga',
       'connectionsSaga',
