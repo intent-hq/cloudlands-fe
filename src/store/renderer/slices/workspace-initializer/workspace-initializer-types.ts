@@ -109,6 +109,9 @@ export interface WorkspaceInitializerHydrationState {
 }
 
 export interface WorkspaceInitializerState {
+  /** Transient probe lifetime; never part of the persisted form bag. */
+  gitCheckRequest: number;
+  gitCheck: { context: string; available: boolean | 'unknown' } | null;
   hydrated: boolean;
   compactFormState: CompactWorkspaceInitializerFormState | null;
   onboardingFormState: WorkspaceInitializerOnboardingFormState | null;

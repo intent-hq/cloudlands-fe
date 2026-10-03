@@ -25,6 +25,8 @@ export const DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH = '~/Developer';
 const MAX_RECENT_REPOS = 9;
 
 export const initialState: WorkspaceInitializerState = {
+  gitCheckRequest: 0,
+  gitCheck: null,
   hydrated: false,
   compactFormState: null,
   onboardingFormState: null,
@@ -38,6 +40,13 @@ export const initialState: WorkspaceInitializerState = {
   lastSubmittedAgent: null,
   pendingGitHubPrefill: null,
 };
+
+export const workspaceInitializerGitCheckRequested = createAction(
+  'workspaceInitializer/gitCheckRequested',
+);
+export const workspaceInitializerGitCheckResolved = createAction<
+  [context: string, available: boolean | 'unknown']
+>('workspaceInitializer/gitCheckResolved');
 
 export const hydrateWorkspaceInitializer = createAction<
   [state: WorkspaceInitializerHydrationState]
@@ -114,6 +123,15 @@ function recentReposCollection(
 }
 
 export const workspaceInitializerReducer = createReducer<WorkspaceInitializerState>(initialState);
+workspaceInitializerReducer.with(workspaceInitializerGitCheckRequested, (state) => ({
+  ...state,
+  gitCheckRequest: state.gitCheckRequest + 1,
+  gitCheck: null,
+}));
+workspaceInitializerReducer.with(
+  workspaceInitializerGitCheckResolved,
+  (state, { payload: [context, available] }) => ({ ...state, gitCheck: { context, available } }),
+);
 workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload: [hydration] }) => {
   const dismissedRecentRepoKeys = {
     ...(hydration.dismissedRecentRepoKeys ?? state.dismissedRecentRepoKeys),
@@ -255,4 +273,7 @@ workspaceInitializerReducer.with(clearWorkspaceInitializerPendingGitHubPrefill, 
   pendingGitHubPrefill: null,
 }));
 
-workspaceInitializerReducer.with(hostExecutionConnectionChanged, () => initialState);
+workspaceInitializerReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...initialState,
+  gitCheckRequest: state.gitCheckRequest ? state.gitCheckRequest + 1 : 0,
+}));

@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => {
     placement: vi.fn(),
     settled: vi.fn(),
     send: vi.fn(),
+    gitCheck: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     getBranches: vi.fn(),
@@ -81,16 +82,22 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
-  selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-  selectWorkspaceInitializerBranchByRepo: () => mocks.readable(() => ({})),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (original) => ({
+    ...(await original<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
+    selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+    selectWorkspaceInitializerBranchByRepo: () => mocks.readable(() => ({})),
+    selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  }),
+);
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable(() => []),
@@ -193,7 +200,7 @@ vi.mock('$lib/electron-bridge', () => ({
   isElectron: vi.fn(() => true),
   invoke: vi.fn(async (channel: string) => {
     if (channel === 'system:check-git') {
-      return { success: true, data: { available: true, version: '2.44.0' } };
+      return mocks.gitCheck();
     }
     return { success: true, data: null };
   }),
@@ -237,14 +244,22 @@ vi.mock('$lib/utils/workspace-validation', async (importOriginal) => ({
 }));
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
 import { store } from '$store/renderer/store';
-import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { admitLegacyPrincipal, withHostPrincipal } from '../../../../test/fixtures/principal-state';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
 let dispose: () => void;
+let stopGit: () => void;
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
+  mocks.gitCheck.mockResolvedValue({ success: true, data: { available: true } });
   dispose = store.init();
+  stopGit = store.runSaga(workspaceInitializerGitSaga);
   admitLegacyPrincipal();
   store.dispatch(setLabsMultiplayerEnabled(false));
   mocks.hydrated$.set(true);
@@ -273,6 +288,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  stopGit();
   dispose();
   sessionStorage.clear();
 });
@@ -382,4 +398,27 @@ it('does not create after validation completes on an unmounted initializer', asy
   await new Promise((r) => setTimeout(r, 20));
   expect(mocks.create).not.toHaveBeenCalled();
   expect(store.state.workspaceInitializer.branchByRepo['/owned/test/repo']).toBeUndefined();
+});
+
+function admitHostMember() {
+  store.dispatch(setLabsMultiplayerEnabled(true));
+  const { principal } = withHostPrincipal(store.state, 'member');
+  store.dispatch(principalContextChanged(principal.context));
+  store.dispatch(
+    principalReceived(
+      {
+        context: principal.context!,
+        invalidation: 0,
+        presentationVersion: store.state.principal.presentationVersion,
+      },
+      principal.snapshot!,
+    ),
+  );
+}
+
+it('verifies Git for an admitted shared-instance member without a phantom connection warning', async () => {
+  admitHostMember();
+  render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+  await waitFor(() => expect(mocks.gitCheck).toHaveBeenCalledOnce());
+  expect(screen.queryByText('Unable to verify Git (connection issue)')).toBeNull();
 });

@@ -33,6 +33,7 @@
     recordLastUsedSetupScript,
   } from '$features/setup-scripts/last-used';
   import {
+    workspaceInitializerGitCheckRequested,
     setCompactWorkspaceInitializerFormState,
     clearWorkspaceInitializerPendingGitHubPrefill,
     setWorkspaceInitializerBranchForRepo,
@@ -43,6 +44,7 @@
     clearWorkspaceCreateProgress,
   } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import {
+    selectWorkspaceInitializerGitAvailability,
     selectCompactWorkspaceInitializerFormState,
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerLastSelectedRepo,
@@ -611,7 +613,8 @@
 
   // Git availability state: null = checking, true = found, false = not found,
   // 'unknown' = the probe couldn't run (transport failure / daemon unreachable)
-  let gitAvailable: boolean | 'unknown' | null = $state(null);
+  const gitAvailability$ = selectWorkspaceInitializerGitAvailability();
+  const gitAvailable = $derived($gitAvailability$);
 
   // GitHub auth state - tracks if user needs to authenticate for private repos
   let githubAuthNeeded = $state<'none' | 'not-authenticated' | 'no-access'>('none');
@@ -878,31 +881,7 @@
     logger.debug('Preloading issues on mount');
     preloadIssues();
 
-    // Check git availability
-    (async () => {
-      try {
-        const result =
-          $currentHostRole$ === 'owner' && typeof window !== 'undefined' && window.electronAPI
-            ? await invoke<any>('system:check-git')
-            : undefined;
-        if (result?.success && result.data) {
-          gitAvailable = result.data.available;
-          if (result.data.available === true) {
-            logger.debug('Git available', { version: result.data.version });
-          } else if (result.data.available === 'unknown') {
-            logger.warn('Git availability could not be verified (transport failure)');
-          } else {
-            logger.warn('Git is not available on this system');
-          }
-        } else {
-          // No probe answer at all — treat as unverifiable, not missing.
-          gitAvailable = 'unknown';
-        }
-      } catch (err) {
-        logger.error('Failed to check git availability', err);
-        gitAvailable = 'unknown';
-      }
-    })();
+    appStore.dispatch(workspaceInitializerGitCheckRequested());
 
     // First check for prefill data from sessionStorage (takes priority over persisted Redux state)
     // This is set when:

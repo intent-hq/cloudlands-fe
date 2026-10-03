@@ -4506,6 +4506,8 @@ describe('per-window backend IPC routing', () => {
     ['pairing.getSelfInfo', undefined],
     ['client.list', undefined],
     ['host.executionContext', {}],
+    ['host.toolAvailability', { tools: ['git'] }],
+    ['host.checkGit', undefined],
     ['providers.catalog', {}],
     ['models.list', { providerId: 'claude-code' }],
     ['agent.getModels', { agentId: 'agent-reviewer', workspaceId: 'host-workspace' }],
