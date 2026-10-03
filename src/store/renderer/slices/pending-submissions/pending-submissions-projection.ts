@@ -109,3 +109,18 @@ export function projectPendingSubmissions(
   }
   return { conversation, processing, queue };
 }
+
+/** Unanchored contributions may still be merged by the daemon; never target their local keys. */
+export function queueDisplayBlocksMutation(
+  rows: readonly PendingQueueDisplayRow[],
+  messageId?: string,
+): boolean {
+  return rows.some(
+    (row) =>
+      row.blocksMutations &&
+      (!row.confirmedId ||
+        messageId === undefined ||
+        messageId === row.confirmedId ||
+        (!!row.confirmed?.editingMessageId && messageId === row.confirmed.editingMessageId)),
+  );
+}

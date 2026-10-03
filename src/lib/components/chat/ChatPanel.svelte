@@ -1,7 +1,10 @@
 <script lang="ts">
   import { submitChatMessage } from '$features/agent/chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
-  import { selectAgentSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+  import {
+    selectQueueMutationBlocked,
+    selectAgentSubmissionDisplay,
+  } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
   import {
     pendingSubmissionMessage,
     processingSubmissionMessage,
@@ -534,9 +537,6 @@
             (pending.appMessageId && confirmed.appMessageId === pending.appMessageId),
         ),
     ),
-  );
-  const provisionalQueueRows = $derived(
-    $submissionDisplay$.queue.filter((row) => !row.confirmedId || row.contributions.length > 0),
   );
   // Scrollback history segment (older rows hydrated on demand) + paging state.
   const agentHistoryMessages$ = selectAgentHistoryMessages(agentIdStore);
@@ -1142,11 +1142,19 @@
   // `questions_dismissed`, `source: 'system'`, unknown types) stay hidden —
   // the list, its count, and the up-arrow edit path all use this filtered
   // view (display-only; the daemon queue and drain order are untouched).
-  // Entries already drained into the transcript (row stamped with
-  // `queueInfo.queuedMessageId`) are omitted while the shrunk queue snapshot
-  // is still in flight, so an answer never renders twice.
+  // Legacy queues omit transcript-stamped drains. Correlated full snapshots
+  // remain authoritative: a restored retry may legitimately share history aliases.
   const visibleQueuedMessages = $derived(
-    omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
+    $admittedPrincipal$?.capabilities.submissionCorrelation === 1
+      ? $queuedMessages$.filter(isUserQueuedMessage)
+      : omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
+  );
+
+  const visibleQueueRows = $derived(
+    $submissionDisplay$.queue.filter(
+      (row) =>
+        !row.confirmedId || visibleQueuedMessages.some((message) => message.id === row.confirmedId),
+    ),
   );
 
   // Queue-surface attribution (multiplayer w2): on only once the workspace
@@ -1166,7 +1174,7 @@
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
     deriveQueuedMessagesVisibility({
-      queueLength: visibleQueuedMessages.length,
+      queueLength: visibleQueueRows.length,
       hasPendingQuestions: !!pendingQuestions,
       questionWizardCollapsed,
     }),
@@ -5170,6 +5178,13 @@
     });
   });
 
+  function queueMutationBlocked(messageId?: string) {
+    return (
+      !workspace ||
+      selectQueueMutationBlocked.select(appStore.state, agentId, workspace.id, messageId)
+    );
+  }
+
   function queuePermissions(messageId: string) {
     return queuedMessagePermissions(
       $queuedMessages$.find((message) => message.id === messageId),
@@ -5183,6 +5198,7 @@
   // into `{ success: false, error }`, so branching on `result.success` is safe.
   async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
     if (
+      queueMutationBlocked(messageId) ||
       !queuedMessagePermissions(
         findQueuedMessageForEdit($queuedMessages$, messageId),
         queuePrincipalId,
@@ -5217,7 +5233,7 @@
   // Handle removing a queued message — the saga removes it optimistically from
   // Redux (immediate UI update) and restores it if the backend removal fails.
   function handleRemoveQueuedMessage(messageId: string) {
-    if (!queuePermissions(messageId).remove) return;
+    if (queueMutationBlocked(messageId) || !queuePermissions(messageId).remove) return;
     appStore.dispatch(removeQueuedMessageRequested(agentId, messageId));
   }
 
@@ -5226,7 +5242,7 @@
   // saga needs only agentId/wsId/queuedMessageId — the daemon owns
   // the entry's content/attachments and dequeues + delivers transactionally.
   async function handleSendQueuedMessageNow(messageId: string) {
-    if (!workspace || !queuePermissions(messageId).sendNow)
+    if (!workspace || queueMutationBlocked(messageId) || !queuePermissions(messageId).sendNow)
       throw new Error(m.agent_chatSend_sendNowRejected_error());
     logger.info('Send queued message now triggered', { messageId, agentId });
     const outcome = await appStore.dispatch(
@@ -5239,7 +5255,8 @@
   }
 
   async function handleSendAllQueuedMessages(messageIds: string[]) {
-    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
+    if (!workspace || queueMutationBlocked())
+      throw new Error(m.agent_chatSend_sendNowRejected_error());
     const originAgentId = agentId;
     const originWorkspaceId = workspace.id;
     const outcome = await appStore.dispatch(
@@ -5256,7 +5273,8 @@
   }
 
   async function handleClearAllQueuedMessages(messageIds: string[]) {
-    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
+    if (!workspace || queueMutationBlocked())
+      throw new Error(m.agent_chatSend_sendNowRejected_error());
     await appStore.dispatch(clearQueuedMessagesRequested(agentId, workspace.id, [...messageIds]));
   }
 
@@ -7264,9 +7282,8 @@
             >
               <QueuedMessageList
                 bind:this={queuedMessageListRef}
-                messages={visibleQueuedMessages.filter(
-                  (message) => !provisionalQueueRows.some((row) => row.confirmedId === message.id),
-                )}
+                messages={visibleQueuedMessages}
+                displayRows={visibleQueueRows}
                 authors={queuedMessageAuthors}
                 ownPrincipalId={queuePrincipalId}
                 presentationPrincipalId={$presenceOwnPrincipalId$}
@@ -7281,28 +7298,6 @@
               />
             </div>
           {/key}
-          {#if provisionalQueueRows.length > 0}
-            <div
-              class="w-full"
-              role="region"
-              aria-label={m.chat_queuedMessages_sendingWhenIdle_label()}
-            >
-              <div class="text-xs text-muted-foreground">
-                {m.chat_queuedMessages_sendingWhenIdle_label()}
-              </div>
-              {#each provisionalQueueRows as row (row.key)}
-                <ChatMessage
-                  {agentId}
-                  {workspace}
-                  message={pendingSubmissionMessage({
-                    ...row,
-                    id: row.key,
-                    createdAt: row.contributions[0]?.createdAt,
-                  })}
-                />
-              {/each}
-            </div>
-          {/if}
           <!-- {#key} forces a full remount when workspace or agent changes,
              preventing stale utility UI from leaking across switches.
              Hidden until transcript hydration settles; the workspace-task

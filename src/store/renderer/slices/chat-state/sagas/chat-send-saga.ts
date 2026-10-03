@@ -1,3 +1,4 @@
+import { selectQueueMutationBlocked } from '../../pending-submissions/pending-submissions-selectors';
 import { prepareSubmissionRetry } from '$features/agent/chat-submission-retry';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import {
@@ -210,6 +211,8 @@ function* sendQueuedNow(
   wsId: string,
   messageId: string,
 ): SagaGenerator<QueuedMessageSendOutcome> {
+  if (yield* selectQueueMutationBlocked.effect(agentId, wsId, messageId))
+    throw new Error(m.agent_chatSend_sendNowRejected_error());
   const ownership = captureAgentMutationOwnership(agentId, wsId);
   const result = yield* call([appClient.agents, appClient.agents.sendQueuedNow], {
     agentId,
@@ -253,6 +256,8 @@ function* handleSendQueuedBatch(action: SendQueuedBatchAction): SagaGenerator<vo
   let settled = false;
   try {
     if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
+    if (yield* selectQueueMutationBlocked.effect(agentId, wsId))
+      throw new Error(m.agent_chatSend_sendNowRejected_error());
     const result = yield* call([appClient.agents, appClient.agents.sendQueuedMessagesNow], {
       agentId,
       workspaceId: wsId,
@@ -281,6 +286,8 @@ function* handleClearQueued(action: ClearQueuedAction): SagaGenerator<void> {
   let settled = false;
   try {
     for (const messageId of new Set(messageIds)) {
+      if (yield* selectQueueMutationBlocked.effect(agentId, wsId))
+        throw new Error(m.agent_chatSend_sendNowRejected_error());
       if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
       const result = yield* call(
         [appClient.agents, appClient.agents.removeQueued],
@@ -558,6 +565,9 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
 function* handleRemove(action: RemoveAction): SagaGenerator<void> {
   const [agentId, messageId] = action.payload;
   if (!agentId || !messageId) return;
+  const workspaceId = yield* selectAgentSessionWorkspaceId.effect(agentId);
+  if (workspaceId && (yield* selectQueueMutationBlocked.effect(agentId, workspaceId, messageId)))
+    return;
   yield* put(removeQueuedMessageFromAgentQueue(agentId, messageId));
   try {
     const result = yield* call(

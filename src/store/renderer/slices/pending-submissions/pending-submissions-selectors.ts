@@ -5,7 +5,10 @@ import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
 import { selectWorkspaceParticipationContext } from '../workspace/workspace-selectors';
 import { selectPrincipalSnapshot } from '../principal/principal-selectors';
 import { sameSubmissionScope } from './pending-submissions-model';
-import { projectPendingSubmissions } from './pending-submissions-projection';
+import {
+  projectPendingSubmissions,
+  queueDisplayBlocksMutation,
+} from './pending-submissions-projection';
 import type {
   PendingSubmissionEntry,
   PendingSubmissionsState,
@@ -61,7 +64,10 @@ export const selectAgentSubmissionDisplay = store.createSelector(
     const scope = state.pendingSubmissions?.byAgentId[agentId]?.scope;
     return scope?.workspaceId === workspaceId
       ? selectPendingSubmissionDisplay.select(state, scope)
-      : projectPendingSubmissions(undefined, []);
+      : projectPendingSubmissions(
+          undefined,
+          selectAgentQueueMessages.select(state, agentId, workspaceId),
+        );
   },
 );
 
@@ -70,4 +76,13 @@ export const selectSubmissionObserved = store.createSelector(
     const entry = selectPendingSubmissionEntry.select(state, reference.scope);
     return !!entry && getItem(entry.operations, reference.id)?.observed === true;
   },
+);
+
+/** Recheck at execution time too: a command can wait behind a queue submission. */
+export const selectQueueMutationBlocked = store.createSelector(
+  (state, agentId: string, workspaceId: string, messageId?: string) =>
+    queueDisplayBlocksMutation(
+      selectAgentSubmissionDisplay.select(state, agentId, workspaceId).queue,
+      messageId,
+    ),
 );

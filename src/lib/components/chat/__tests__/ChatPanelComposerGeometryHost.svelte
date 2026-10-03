@@ -22,6 +22,8 @@
     initializeLayout,
     setRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
+  import { beginSubmissionRead } from '$features/agent/submission-evidence';
   import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
   import {
     chatLastAttemptedMessageSet,
@@ -54,6 +56,7 @@
     initializeStore = true,
     submissionSupport = false,
     settleSubmission,
+    queuePhase,
     followUp,
     historyNotice,
   }: {
@@ -73,6 +76,7 @@
     initializeStore?: boolean;
     submissionSupport?: boolean;
     settleSubmission?: 'history' | 'queue' | 'rejected';
+    queuePhase?: 'ready' | 'foreign' | 'restored';
     followUp?: 'blocker' | 'discussion';
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
   } = $props();
@@ -383,6 +387,85 @@
       store.dispatch(updateSession(agentId, { messages: [...session.messages, message] }));
     }
   });
+  $effect(() => {
+    if (!queuePhase) return;
+    const author = {
+      principalId: store.state.principal.snapshot!.principal.id,
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+    };
+    const base = {
+      id: 'queue-a',
+      content: 'Confirmed A',
+      queuedAt: timestamp,
+      position: 0,
+      author,
+      submissionIds: ['queue-a'],
+      mergeEligible: true,
+    };
+    if (queuePhase === 'ready' && !store.state.pendingSubmissions.byAgentId[agentId]) {
+      const setup = admitAgentSubmission(store, agentId, workspaceId, 1, {
+        content: 'setup',
+        destination: 'queue',
+      })!;
+      store.dispatch(
+        pendingSubmissionSettled(setup.scope, setup.submission.id, 'rejected', Date.now()),
+      );
+    }
+    const pending = selectAgentSubmissionDisplay
+      .select(store.state, agentId, workspaceId)
+      .queue.flatMap((row) => row.contributions);
+    const queue =
+      queuePhase === 'foreign' && pending.length > 0
+        ? [
+            { ...base, mergeEligible: false },
+            {
+              ...base,
+              id: 'queue-foreign',
+              content: 'Other participant',
+              position: 1,
+              author: { ...author, principalId: 'other' },
+              submissionIds: ['queue-foreign'],
+              mergeEligible: false,
+            },
+            {
+              ...base,
+              id: pending[0].id,
+              content: pending[0].content,
+              position: 2,
+              submissionIds: [pending[0].id],
+            },
+          ]
+        : [
+            {
+              ...base,
+              requeuedAfterFailure: queuePhase === 'restored',
+              mergeEligible: queuePhase !== 'restored',
+            },
+          ];
+    store.dispatch(replaceAgentQueue(agentId, queue, workspaceId));
+    const scope = store.state.pendingSubmissions.byAgentId[agentId]?.scope;
+    if (scope) store.dispatch(pendingEvidenceObserved(scope, 'queue', queue, Date.now()));
+    beginSubmissionRead(agentId, workspaceId, 'queue').complete(queue);
+    beginSubmissionRead(agentId, workspaceId, 'history').complete([]);
+    if (queuePhase === 'restored')
+      store.dispatch(
+        updateSession(agentId, {
+          messages: [
+            ...session.messages,
+            {
+              id: 'persisted-queue-a',
+              role: 'user',
+              timestamp,
+              contentBlocks: [{ type: 'text', text: 'Persisted A' }],
+              author,
+              metadata: { submissionIds: ['queue-a'], queueInfo: { queuedMessageId: 'queue-a' } },
+            },
+          ],
+        }),
+      );
+  });
   if (fixture.draft) store.dispatch(setChatDraft(workspaceId, agentId, fixture.draft));
   $effect(() => {
     const kind = attention ?? followUp;
@@ -399,6 +482,7 @@
     );
   });
   $effect(() => {
+    if (queuePhase) return;
     store.dispatch(
       replaceAgentQueue(
         agentId,

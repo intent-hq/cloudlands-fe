@@ -213,7 +213,7 @@ test('moves the same visible submission into a queue fallback while preserving a
   await component.update({ props: { ...props, settleSubmission: 'queue' } });
   await expect(
     component
-      .getByRole('region', { name: 'Queued to send when idle' })
+      .getByTestId('queued-messages-container')
       .getByText('Queue this after admission', { exact: true }),
   ).toBeVisible();
   await expect(component.getByText('Queue this after admission', { exact: true })).toHaveCount(1);
@@ -242,4 +242,72 @@ test('retries a rejected submission before preparation while preserving the newe
   await component.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(component.getByText('Retry the earlier submission', { exact: true })).toHaveCount(1);
   await expect(editor).toContainText('Keep the newer draft');
+});
+
+test('shows and splits a queued append while preserving keyboard focus and deferring mutation controls', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const props = {
+    width: 520,
+    height: 560,
+    streaming: true,
+    submissionSupport: true,
+    queuePhase: 'ready' as const,
+  };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const queue = component.getByTestId('queued-messages-container');
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  await expect(queue.getByTestId('queued-message-text')).toHaveText('Confirmed A');
+  await editor.click();
+  await editor.pressSequentially('Pending B');
+  await editor.press('Enter');
+  await expect(queue.getByTestId('queued-message-text')).toHaveText('Confirmed A\n\nPending B');
+  await expect(queue.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
+  await expect(queue.getByRole('button', { name: 'Remove', exact: true })).toBeDisabled();
+  await expect(queue.getByRole('button', { name: 'Send immediately', exact: true })).toBeDisabled();
+  await expect(queue.getByRole('button', { name: 'Send all ready messages now' })).toBeDisabled();
+  await expect(queue.getByRole('button', { name: 'Clear all queued messages' })).toBeDisabled();
+  await expect(editor).toBeFocused();
+  await editor.pressSequentially('Keep newer draft');
+  await page.screenshot({ path: testInfo.outputPath('queue-pending.png') });
+  await component.update({ props: { ...props, queuePhase: 'foreign' } });
+  await expect(queue.getByTestId('queued-message-text')).toHaveText([
+    'Confirmed A',
+    'Other participant',
+    'Pending B',
+  ]);
+  await expect(
+    queue
+      .getByTestId('queued-message-row')
+      .nth(1)
+      .getByRole('button', { name: 'Edit', exact: true }),
+  ).toHaveCount(0);
+  await expect(editor).toContainText('Keep newer draft');
+  await expect(editor).toBeFocused();
+  await expect
+    .poll(async () => {
+      const pending = await queue.getByTestId('queued-message-row').nth(2).boundingBox();
+      const viewport = await queue.getByTestId('queued-messages-viewport').boundingBox();
+      return (
+        !!pending &&
+        !!viewport &&
+        pending.y >= viewport.y - 1 &&
+        pending.y + pending.height <= viewport.y + viewport.height + 1
+      );
+    })
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('queue-foreign.png') });
+});
+
+test('shows authoritative restored queue work alongside its already persisted history', async ({
+  mount,
+}) => {
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { submissionSupport: true, queuePhase: 'restored' },
+  });
+  await expect(component.getByTestId('queued-message-text')).toHaveText('Confirmed A');
+  await expect(component.getByText('Persisted A', { exact: true })).toBeVisible();
+  await expect(component.getByTestId('queued-message-retry-status')).toBeVisible();
 });
