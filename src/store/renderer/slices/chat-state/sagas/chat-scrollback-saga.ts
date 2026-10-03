@@ -699,8 +699,8 @@ function* bulkContinuationResetWorker(): SagaGenerator<void> {
 function* snapshotResetWorker(
   action: ReturnType<typeof chatTranscriptSnapshotApplied>,
 ): SagaGenerator<void> {
-  const [agentId, meta] = action.payload;
-  if (meta.resumed !== false) return;
+  const [agentId, meta, replayed] = action.payload;
+  if (replayed || meta.resumed !== false) return;
   yield* put(clearHistorySegment(agentId));
   if (meta.nextToken !== undefined) {
     yield* put(scrollbackOlderPageSettled(agentId, meta.nextToken));

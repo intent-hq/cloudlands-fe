@@ -13,6 +13,7 @@
     setLabsGitLabEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { invitationAccountSearchSaga } from '$store/renderer/slices/invitation-account-search/sagas/invitation-account-search-saga';
+  import { hostUserPresenceSaga } from '$store/renderer/slices/host-membership/sagas/host-user-presence-saga';
   import { hostMembershipSaga } from '$store/renderer/slices/host-membership/sagas/host-membership-saga';
   import HostMembershipSettingsHost from '../HostMembershipSettingsHost.svelte';
 
@@ -69,9 +70,11 @@
   }
   const stop = store.runSaga(hostMembershipSaga);
   const stopSearch = store.runSaga(invitationAccountSearchSaga);
+  const stopPresence = store.runSaga(hostUserPresenceSaga);
   onDestroy(() => {
     stop();
     stopSearch();
+    stopPresence();
     store.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
     store.dispatch(setLabsGitLabEnabled(previousGitLab));
     store.dispatch(principalContextChanged(previous.context));

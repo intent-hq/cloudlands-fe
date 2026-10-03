@@ -37,7 +37,7 @@ for (const provider of ['github', 'gitlab'] as const) {
           },
         },
       });
-      const invite = page.getByRole('button', { name: 'Invite a host member', exact: true });
+      const invite = page.getByRole('button', { name: 'Invite user', exact: true });
       await invite.click();
       const dialog = page.getByRole('dialog', { name: 'Invite to this instance' });
       if (provider === 'gitlab') {
