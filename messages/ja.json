@@ -7096,5 +7096,10 @@
   "chat_scriptMonitor_expired_description": "監視期限切れ・スクリプトは続行",
   "chat_scriptMonitor_matched_description": "行が一致・監視終了",
   "chat_scriptMonitor_counted_description": "行数のしきい値に到達・監視終了",
-  "chat_scriptMonitor_untrusted_description": "一致した行（信頼できないスクリプト出力）"
+  "chat_scriptMonitor_untrusted_description": "一致した行（信頼できないスクリプト出力）",
+  "collaboration_accountSearch_manual": "正確なユーザー名を入力してください。このインスタンスではアカウント候補を利用できません。",
+  "collaboration_accountSearch_failed": "アカウント検索に失敗しました。正確なユーザー名を入力して続行してください。",
+  "collaboration_accountSearch_empty": "一致するアカウントはありません。正確なユーザー名を入力できます。",
+  "collaboration_accountSearch_suggestions": "アカウント候補",
+  "collaboration_accountSearch_loading": "検索中…"
 }

@@ -7096,5 +7096,10 @@
   "chat_scriptMonitor_expired_description": "Monitoring expired; script left running",
   "chat_scriptMonitor_matched_description": "Line matched; monitoring ended",
   "chat_scriptMonitor_counted_description": "Line threshold reached; monitoring ended",
-  "chat_scriptMonitor_untrusted_description": "Matched line (untrusted script output)"
+  "chat_scriptMonitor_untrusted_description": "Matched line (untrusted script output)",
+  "collaboration_accountSearch_manual": "Enter an exact account username. Account suggestions are unavailable on this instance.",
+  "collaboration_accountSearch_failed": "Account search failed. Enter an exact account username to continue.",
+  "collaboration_accountSearch_empty": "No matching accounts. You can enter an exact account username.",
+  "collaboration_accountSearch_suggestions": "Account suggestions",
+  "collaboration_accountSearch_loading": "Searching…"
 }

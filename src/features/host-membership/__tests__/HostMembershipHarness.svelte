@@ -12,10 +12,14 @@
     setLabsMultiplayerEnabled,
     setLabsGitLabEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { invitationAccountSearchSaga } from '$store/renderer/slices/invitation-account-search/sagas/invitation-account-search-saga';
   import { hostMembershipSaga } from '$store/renderer/slices/host-membership/sagas/host-membership-saga';
   import HostMembershipSettingsHost from '../HostMembershipSettingsHost.svelte';
 
-  const { confirmationRevalidation = false }: { confirmationRevalidation?: boolean } = $props();
+  const {
+    confirmationRevalidation = false,
+    autocomplete = false,
+  }: { confirmationRevalidation?: boolean; autocomplete?: boolean } = $props();
   const previous = store.state.principal;
   const previousMultiplayer = store.state.userPreferences.labsMultiplayerEnabled;
   const previousGitLab = store.state.userPreferences.labsGitLabEnabled;
@@ -24,6 +28,7 @@
   admitLegacyPrincipal();
   function admit(role: 'owner' | 'member') {
     const { principal } = withHostPrincipal(store.state, role);
+    principal.snapshot!.capabilities.invitationAccountSearch = autocomplete;
     store.dispatch(principalContextChanged(principal.context));
     store.dispatch(
       principalReceived(
@@ -63,8 +68,10 @@
     );
   }
   const stop = store.runSaga(hostMembershipSaga);
+  const stopSearch = store.runSaga(invitationAccountSearchSaga);
   onDestroy(() => {
     stop();
+    stopSearch();
     store.dispatch(setLabsMultiplayerEnabled(previousMultiplayer));
     store.dispatch(setLabsGitLabEnabled(previousGitLab));
     store.dispatch(principalContextChanged(previous.context));

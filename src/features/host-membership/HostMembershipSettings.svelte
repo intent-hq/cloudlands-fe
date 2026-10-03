@@ -22,7 +22,7 @@
     hostMembershipInviteCleared,
     type HostMembershipCommand,
   } from '$store/renderer/slices/host-membership/host-membership-slice';
-  import HostInvitationDialog from './HostInvitationDialog.svelte';
+  import HostInvitationDialog from './HostInvitationDialogHost.svelte';
   import { readHostInviteLink } from './invite-links';
 
   const { context, suspended = false }: { context: string; suspended?: boolean } = $props();

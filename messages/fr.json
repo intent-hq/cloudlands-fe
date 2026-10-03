@@ -7096,5 +7096,10 @@
   "chat_scriptMonitor_expired_description": "Surveillance expirée ; le script continue",
   "chat_scriptMonitor_matched_description": "Ligne correspondante ; surveillance terminée",
   "chat_scriptMonitor_counted_description": "Seuil de lignes atteint ; surveillance terminée",
-  "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)"
+  "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)",
+  "collaboration_accountSearch_manual": "Saisissez un nom d’utilisateur exact. Les suggestions de comptes sont indisponibles sur cette instance.",
+  "collaboration_accountSearch_failed": "La recherche de comptes a échoué. Saisissez un nom d’utilisateur exact pour continuer.",
+  "collaboration_accountSearch_empty": "Aucun compte correspondant. Vous pouvez saisir un nom d’utilisateur exact.",
+  "collaboration_accountSearch_suggestions": "Suggestions de comptes",
+  "collaboration_accountSearch_loading": "Recherche…"
 }
