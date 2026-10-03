@@ -21,18 +21,18 @@
     payload?: InviteProgressShowPayload | null;
     /** Called exactly once per open when the user cancels the join. */
     onCancel?: () => void;
-    onRetry?: () => void;
-    onFindMultiplayer?: () => void;
-    recoveryHidden?: boolean;
+    onEnable?: () => void;
+    busy?: boolean;
+    failed?: boolean;
   }
 
   let {
     open = $bindable(false),
     payload = null,
     onCancel,
-    onRetry,
-    onFindMultiplayer,
-    recoveryHidden = false,
+    onEnable,
+    busy = false,
+    failed = false,
   }: Props = $props();
 
   const dialogTitleId = 'invite-progress-dialog-title';
@@ -42,7 +42,7 @@
 
   const opening = $derived(payload?.phase === 'opening');
   const admission = $derived(payload?.phase === 'admission');
-  const visible = $derived(open && !(admission && recoveryHidden));
+  const visible = $derived(open);
   const title = $derived(
     admission
       ? m.inviteProgress_admission_title()
@@ -103,7 +103,7 @@
         onclick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
-        aria-busy={!admission}
+        aria-busy={!admission || busy}
         aria-labelledby={dialogTitleId}
         aria-describedby={dialogDescriptionId}
         tabindex="-1"
@@ -135,6 +135,12 @@
           </Button>
         </div>
 
+        {#if admission && failed}
+          <p role="alert" class="px-6 pt-4 text-sm text-danger">
+            {m.inviteProgress_admission_enable_error()}
+          </p>
+        {/if}
+
         <div
           class="mt-5 flex flex-col-reverse gap-2 border-t border-border bg-muted/20 px-6 py-4 sm:flex-row sm:justify-end"
         >
@@ -142,10 +148,9 @@
             {m.inviteProgress_modal_cancelButton_label()}
           </Button>
           {#if admission}
-            <Button variant="outline" onclick={onFindMultiplayer}
-              >{m.inviteProgress_admission_findButton()}</Button
+            <Button disabled={busy} onclick={onEnable}
+              >{m.inviteProgress_admission_enableButton()}</Button
             >
-            <Button onclick={onRetry}>{m.inviteProgress_admission_retryButton()}</Button>
           {/if}
         </div>
       </div>

@@ -6888,9 +6888,7 @@
   "settings_providers_fastMode_description": "Se aplica a partir del próximo turno. Puede aumentar el uso y el coste; la disponibilidad depende del modelo y la cuenta.",
   "settings_providers_fastMode_error": "No se pudo guardar el modo rápido. Se ha restaurado la preferencia guardada.",
   "inviteProgress_admission_title": "Activa Multijugador para unirte",
-  "inviteProgress_admission_message": "Activa Multijugador en el menú de comandos y vuelve a intentarlo en esta ventana. Esta invitación estará disponible durante cinco minutos.",
-  "inviteProgress_admission_findButton": "Buscar Multijugador",
-  "inviteProgress_admission_retryButton": "Reintentar invitación",
+  "inviteProgress_admission_message": "Activa Multiplayer aquí para continuar con esta invitación. Estará disponible en esta ventana durante cinco minutos.",
   "hostExecution_missingAuthorization_description": "El host conectado necesita autorización de {resource}. Pide a su propietario que la configure y vuelve a intentarlo.",
   "hostExecution_rejectedAuthorization_description": "Se rechazó la autorización de {resource} del host conectado. Pide a su propietario que la renueve o revise y vuelve a intentarlo.",
   "hostExecution_insufficientScope_description": "La autorización de {resource} del host conectado no tiene el acceso necesario. Pide a su propietario que revise los permisos y vuelve a intentarlo.",
@@ -7099,5 +7097,7 @@
   "chat_scriptMonitor_untrusted_description": "Línea coincidente (salida de script no confiable)",
   "collaboration_instanceUsers_invited_label": "Invitado",
   "collaboration_instanceUsers_loading_label": "Comprobando estado…",
-  "collaboration_instanceUsers_unavailable_label": "Estado no disponible"
+  "collaboration_instanceUsers_unavailable_label": "Estado no disponible",
+  "inviteProgress_admission_enableButton": "Activar Multiplayer",
+  "inviteProgress_admission_enable_error": "No se pudo activar Multiplayer o confirmar que está listo. Selecciona Activar Multiplayer para intentarlo de nuevo."
 }

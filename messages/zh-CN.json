@@ -6888,9 +6888,7 @@
   "settings_providers_fastMode_description": "从下一轮开始生效。用量和费用可能增加；是否可用取决于模型和账户。",
   "settings_providers_fastMode_error": "无法保存快速模式。已恢复之前保存的偏好设置。",
   "inviteProgress_admission_title": "启用多人协作以加入",
-  "inviteProgress_admission_message": "在命令菜单中启用多人协作，然后在此窗口重试。此邀请会保留五分钟。",
-  "inviteProgress_admission_findButton": "查找多人协作",
-  "inviteProgress_admission_retryButton": "重试邀请",
+  "inviteProgress_admission_message": "在此启用 Multiplayer 以继续此邀请。邀请将在此窗口中保留五分钟。",
   "hostExecution_missingAuthorization_description": "连接的主机需要 {resource} 授权。请让其所有者配置后重试。",
   "hostExecution_rejectedAuthorization_description": "连接的主机的 {resource} 授权被拒绝。请让其所有者续期或检查后重试。",
   "hostExecution_insufficientScope_description": "连接的主机的 {resource} 授权缺少所需访问权限。请让其所有者检查权限范围后重试。",
@@ -7099,5 +7097,7 @@
   "chat_scriptMonitor_untrusted_description": "匹配行（不可信的脚本输出）",
   "collaboration_instanceUsers_invited_label": "已邀请",
   "collaboration_instanceUsers_loading_label": "正在检查状态…",
-  "collaboration_instanceUsers_unavailable_label": "状态不可用"
+  "collaboration_instanceUsers_unavailable_label": "状态不可用",
+  "inviteProgress_admission_enableButton": "启用 Multiplayer",
+  "inviteProgress_admission_enable_error": "无法启用 Multiplayer 或确认就绪状态。请选择“启用 Multiplayer”重试。"
 }

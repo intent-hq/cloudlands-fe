@@ -6888,9 +6888,7 @@
   "settings_providers_fastMode_description": "S’applique dès le prochain tour. L’utilisation et les coûts peuvent augmenter ; la disponibilité dépend de votre modèle et de votre compte.",
   "settings_providers_fastMode_error": "Impossible d’enregistrer le mode rapide. Votre préférence enregistrée a été restaurée.",
   "inviteProgress_admission_title": "Activez le multijoueur pour rejoindre",
-  "inviteProgress_admission_message": "Activez le multijoueur dans le menu de commandes, puis réessayez dans cette fenêtre. Cette invitation reste disponible pendant cinq minutes.",
-  "inviteProgress_admission_findButton": "Trouver le multijoueur",
-  "inviteProgress_admission_retryButton": "Réessayer l’invitation",
+  "inviteProgress_admission_message": "Activez Multiplayer ici pour poursuivre cette invitation. Elle reste disponible dans cette fenêtre pendant cinq minutes.",
   "hostExecution_missingAuthorization_description": "L’hôte connecté a besoin d’une autorisation {resource}. Demandez à son propriétaire de la configurer, puis réessayez.",
   "hostExecution_rejectedAuthorization_description": "L’autorisation {resource} de l’hôte connecté a été refusée. Demandez à son propriétaire de la renouveler ou de la vérifier, puis réessayez.",
   "hostExecution_insufficientScope_description": "L’autorisation {resource} de l’hôte connecté n’a pas les accès nécessaires. Demandez à son propriétaire de vérifier les permissions, puis réessayez.",
@@ -7099,5 +7097,7 @@
   "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)",
   "collaboration_instanceUsers_invited_label": "Invité",
   "collaboration_instanceUsers_loading_label": "Vérification du statut…",
-  "collaboration_instanceUsers_unavailable_label": "Statut indisponible"
+  "collaboration_instanceUsers_unavailable_label": "Statut indisponible",
+  "inviteProgress_admission_enableButton": "Activer Multiplayer",
+  "inviteProgress_admission_enable_error": "Impossible d’activer Multiplayer ou de confirmer sa disponibilité. Sélectionnez Activer Multiplayer pour réessayer."
 }

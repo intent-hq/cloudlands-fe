@@ -6888,9 +6888,7 @@
   "settings_providers_fastMode_description": "다음 턴부터 적용됩니다. 사용량과 비용이 늘어날 수 있으며, 이용 가능 여부는 모델과 계정에 따라 다릅니다.",
   "settings_providers_fastMode_error": "고속 모드를 저장하지 못했습니다. 저장된 설정으로 복원했습니다.",
   "inviteProgress_admission_title": "참여하려면 멀티플레이어를 켜세요",
-  "inviteProgress_admission_message": "명령 메뉴에서 멀티플레이어를 켠 다음 이 창에서 다시 시도하세요. 이 초대는 5분 동안 유지됩니다.",
-  "inviteProgress_admission_findButton": "멀티플레이어 찾기",
-  "inviteProgress_admission_retryButton": "초대 다시 시도",
+  "inviteProgress_admission_message": "여기서 Multiplayer를 활성화하여 이 초대를 계속 진행하세요. 초대는 이 창에서 5분 동안 유효합니다.",
   "hostExecution_missingAuthorization_description": "연결된 호스트에 {resource} 인증이 필요합니다. 소유자에게 설정을 요청한 후 다시 시도하세요.",
   "hostExecution_rejectedAuthorization_description": "연결된 호스트의 {resource} 인증이 거부되었습니다. 소유자에게 갱신 또는 확인을 요청한 후 다시 시도하세요.",
   "hostExecution_insufficientScope_description": "연결된 호스트의 {resource} 인증에 필요한 접근 권한이 없습니다. 소유자에게 권한 확인을 요청한 후 다시 시도하세요.",
@@ -7099,5 +7097,7 @@
   "chat_scriptMonitor_untrusted_description": "일치하는 줄 (신뢰할 수 없는 스크립트 출력)",
   "collaboration_instanceUsers_invited_label": "초대됨",
   "collaboration_instanceUsers_loading_label": "상태 확인 중…",
-  "collaboration_instanceUsers_unavailable_label": "상태를 확인할 수 없음"
+  "collaboration_instanceUsers_unavailable_label": "상태를 확인할 수 없음",
+  "inviteProgress_admission_enableButton": "Multiplayer 활성화",
+  "inviteProgress_admission_enable_error": "Multiplayer를 활성화하거나 준비 상태를 확인할 수 없습니다. 다시 시도하려면 Multiplayer 활성화를 선택하세요."
 }
