@@ -9,6 +9,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
+    selectHostUserPresence,
     selectHostMembers,
     selectHostInvites,
     selectHostMembershipState,
@@ -22,6 +23,8 @@
     hostMembershipInviteCleared,
     type HostMembershipCommand,
   } from '$store/renderer/slices/host-membership/host-membership-slice';
+  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import { instanceUserRows } from './instance-users';
   import HostInvitationDialog from './HostInvitationDialog.svelte';
   import { readHostInviteLink } from './invite-links';
 
@@ -40,6 +43,19 @@
   const invites$ = selectHostInvites();
   const context$ = selectHostMembershipContext();
   const gitlab$ = selectLabsGitLabEnabled();
+  const presence$ = selectHostUserPresence();
+  const users = $derived(
+    instanceUserRows(
+      $members$,
+      $invites$,
+      $presence$?.status === 'ready' ? $presence$.onlinePrincipalIds : null,
+    ),
+  );
+  const unknownStatus = $derived(
+    $presence$?.status === 'loading'
+      ? m.collaboration_instanceUsers_loading_label()
+      : m.collaboration_instanceUsers_unavailable_label(),
+  );
   let invitationOpen = $state(false);
   let inviteButton = $state<HTMLButtonElement | undefined>();
   function closeInvitation() {
@@ -50,6 +66,22 @@
   let confirmation = $state<HostMembershipCommand | null>(null);
   let confirmationLabel = $state('');
   let confirmOpen = $state(false);
+  const confirmationCurrent = $derived.by(() => {
+    const command = confirmation;
+    if (command?.kind === 'remove')
+      return $members$.some(
+        (member) => member.principalId === command.principalId && member.hostRole === 'member',
+      );
+    if (command?.kind === 'revoke')
+      return $invites$.some((invite) => invite.id === command.inviteId);
+    return false;
+  });
+  $effect(() => {
+    if (confirmOpen && !confirmationCurrent) {
+      confirmOpen = false;
+      confirmation = null;
+    }
+  });
   const allowed = $derived(
     $context$ === target.context && context === target.context && !$state$.withheld,
   );
@@ -72,6 +104,20 @@
       current.target.context !== target.context ||
       current.busy ||
       current.withheld
+    )
+      return;
+    if (
+      command.kind === 'remove' &&
+      !selectHostMembers
+        .select(appStore.state)
+        .some(
+          (member) => member.principalId === command.principalId && member.hostRole === 'member',
+        )
+    )
+      return;
+    if (
+      command.kind === 'revoke' &&
+      !selectHostInvites.select(appStore.state).some((invite) => invite.id === command.inviteId)
     )
       return;
     appStore.dispatch(hostMembershipRequested(target, command));
@@ -137,87 +183,113 @@
       <p role="alert" class="type-body text-danger">{$state$.error}</p>
     {/if}
     <div>
-      <div class="mb-2 flex flex-wrap items-center justify-between gap-3">
-        <h3 class="type-body font-medium text-foreground">
-          {m.collaboration_host_members_title()}
-        </h3>
-      </div>
+      <h3 class="mb-2 type-body font-medium text-foreground">
+        {m.collaboration_host_members_title()}
+      </h3>
       <ListView
-        items={$members$}
-        getKey={(item) => item.principalId}
+        items={users}
+        getKey={(row) => row.key}
         virtualize={false}
         ariaLabel={m.collaboration_host_members_title()}
       >
         {#snippet empty()}<p class="type-body text-muted-foreground">
             {m.settings_collaboration_members_empty_description()}
           </p>{/snippet}
-        {#snippet row({ item })}
+        {#snippet row({ item: row })}
           <ListRow
-            class="flex-col sm:flex-row [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words"
+            class="flex-wrap [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words [&_[data-slot=list-row-trailing]]:basis-full sm:[&_[data-slot=list-row-trailing]]:basis-auto"
           >
-            {#snippet title()}{item.displayName ||
-                (item.login
-                  ? `@${item.login}`
-                  : m.settings_collaboration_profileUnavailable_label())}{/snippet}
-            {#snippet description()}
-              {item.hostRole === 'owner'
-                ? m.workspace_share_role_owner_label()
-                : m.collaboration_host_member_label()}
-              {#if item.login}
-                · @{item.login}{/if}
-              {#if item.identity}
-                · {item.identity.provider === 'github'
-                  ? m.workspace_share_pinProvider_github_label()
-                  : m.workspace_share_pinProvider_gitlab_label({ host: item.identity.host })}{/if}
+            {#snippet leading()}
+              <span aria-hidden="true">
+                {#if row.kind === 'member'}
+                  <PresenceAvatarStack
+                    decorative
+                    size={24}
+                    people={[{ ...row.member, online: row.online }]}
+                  />
+                {:else}
+                  <PresenceAvatarStack
+                    decorative
+                    size={24}
+                    people={[
+                      {
+                        principalId: row.key,
+                        login: row.invite.pinLogin,
+                        displayName: null,
+                        avatarUrl: null,
+                        identity: row.invite.pinIdentity,
+                        online: false,
+                      },
+                    ]}
+                  />
+                {/if}
+              </span>
             {/snippet}
-            {#snippet trailing()}{#if item.hostRole === 'member'}<Button
+            {#snippet title()}
+              {#if row.kind === 'member'}
+                {row.member.displayName ||
+                  (row.member.login
+                    ? `@${row.member.login}`
+                    : m.settings_collaboration_profileUnavailable_label())}
+              {:else}@{row.invite.pinLogin}{/if}
+            {/snippet}
+            {#snippet description()}
+              {#if row.kind === 'member'}
+                {row.member.hostRole === 'owner'
+                  ? m.workspace_share_role_owner_label()
+                  : m.collaboration_host_member_label()}
+                {#if row.member.login}
+                  · @{row.member.login}{/if}
+                {#if row.member.identity}
+                  · {row.member.identity.provider === 'github'
+                    ? m.workspace_share_pinProvider_github_label()
+                    : m.workspace_share_pinProvider_gitlab_label({
+                        host: row.member.identity.host,
+                      })}{/if}
+                <span class="block"
+                  >{row.online === undefined
+                    ? unknownStatus
+                    : row.online
+                      ? m.presence_status_online()
+                      : m.presence_status_offline()}</span
+                >
+              {:else}
+                {row.invite.pinIdentity.provider === 'github'
+                  ? m.workspace_share_pinProvider_github_label()
+                  : m.workspace_share_pinProvider_gitlab_label({
+                      host: row.invite.pinIdentity.host,
+                    })}
+                <span class="block"
+                  >{m.collaboration_instanceUsers_invited_label()} · {m.collaboration_host_expires_label(
+                    { date: formatDateTime(row.invite.expiresAt) },
+                  )}</span
+                >
+              {/if}
+            {/snippet}
+            {#snippet trailing()}
+              {#if row.kind === 'member'}
+                {#if row.member.hostRole === 'member'}
+                  <Button
+                    variant="ghost"
+                    disabled={!allowed || $state$.busy}
+                    onclick={() => confirm({ kind: 'remove', principalId: row.member.principalId })}
+                    >{m.settings_guestSessions_remove_label()}</Button
+                  >
+                {/if}
+              {:else}
+                <Button
                   variant="ghost"
                   disabled={!allowed || $state$.busy}
-                  onclick={() => confirm({ kind: 'remove', principalId: item.principalId })}
-                  >{m.settings_guestSessions_remove_label()}</Button
-                >{/if}{/snippet}
-          </ListRow>
-        {/snippet}
-      </ListView>
-    </div>
-    <div>
-      <h3 class="mb-2 type-body font-medium text-foreground">
-        {m.workspace_share_openInvites_label()}
-      </h3>
-      <ListView
-        items={$invites$}
-        getKey={(item) => item.id}
-        virtualize={false}
-        ariaLabel={m.workspace_share_openInvites_label()}
-      >
-        {#snippet empty()}<p class="type-body text-muted-foreground">
-            {m.settings_collaboration_invites_empty_description()}
-          </p>{/snippet}
-        {#snippet row({ item })}
-          <ListRow
-            class="flex-col sm:flex-row [&_[data-slot=list-row-title]]:whitespace-normal [&_[data-slot=list-row-title]]:break-words"
-          >
-            {#snippet title()}@{item.pinLogin} · {item.pinIdentity.provider === 'github'
-                ? m.workspace_share_pinProvider_github_label()
-                : m.workspace_share_pinProvider_gitlab_label({
-                    host: item.pinIdentity.host,
-                  })}{/snippet}
-            {#snippet description()}{m.collaboration_host_expires_label({
-                date: formatDateTime(item.expiresAt),
-              })}{/snippet}
-            {#snippet trailing()}
-              <Button
-                variant="ghost"
-                disabled={!allowed || $state$.busy}
-                onclick={() => send({ kind: 'copy', inviteId: item.id })}
-                >{m.workspace_share_copyLink_label()}</Button
-              >
-              <Button
-                variant="ghost"
-                disabled={!allowed || $state$.busy}
-                onclick={() => confirm({ kind: 'revoke', inviteId: item.id })}
-                >{m.workspace_share_revoke_label()}</Button
-              >
+                  onclick={() => send({ kind: 'copy', inviteId: row.invite.id })}
+                  >{m.workspace_share_copyLink_label()}</Button
+                >
+                <Button
+                  variant="ghost"
+                  disabled={!allowed || $state$.busy}
+                  onclick={() => confirm({ kind: 'revoke', inviteId: row.invite.id })}
+                  >{m.workspace_share_revoke_label()}</Button
+                >
+              {/if}
             {/snippet}
           </ListRow>
         {/snippet}
@@ -228,7 +300,8 @@
 
 <BulkActionConfirmDialog
   bind:open={confirmOpen}
-  preflightReady={allowed &&
+  preflightReady={confirmationCurrent &&
+    allowed &&
     !suspended &&
     !$state$.busy &&
     $state$.target?.session === target.session &&

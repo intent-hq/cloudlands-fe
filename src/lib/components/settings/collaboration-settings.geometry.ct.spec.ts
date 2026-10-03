@@ -18,9 +18,7 @@ for (const state of ['member', 'unknown', 'disabled']) {
     await mount(Preview, {
       hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state } },
     });
-    await expect(
-      page.getByRole('button', { name: 'Invite a host member', exact: true }),
-    ).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Invite user', exact: true })).toHaveCount(0);
     await expect(
       page.getByRole('region', { name: 'Share this instance', exact: true }),
     ).toHaveCount(0);
@@ -43,7 +41,7 @@ test('unlinked owner opens and cancels invitation using the keyboard without los
   await mount(Preview, {
     hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state: 'owner-empty' } },
   });
-  const invite = page.getByRole('button', { name: 'Invite a host member', exact: true });
+  const invite = page.getByRole('button', { name: 'Invite user', exact: true });
   const account = page.getByRole('textbox', { name: 'Account username' });
   await expect(account).toHaveCount(0);
   await invite.focus();
