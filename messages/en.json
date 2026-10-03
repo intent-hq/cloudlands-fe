@@ -6888,9 +6888,7 @@
   "settings_providers_fastMode_description": "Applies from the next turn. Higher usage and costs may apply; availability depends on your model and account.",
   "settings_providers_fastMode_error": "Could not save Fast mode. Your saved preference was restored.",
   "inviteProgress_admission_title": "Enable Multiplayer to join",
-  "inviteProgress_admission_message": "Turn on Multiplayer in the command menu, then retry in this window. This invitation stays available for five minutes.",
-  "inviteProgress_admission_findButton": "Find Multiplayer",
-  "inviteProgress_admission_retryButton": "Retry invitation",
+  "inviteProgress_admission_message": "Enable Multiplayer here to continue this invitation. It stays available in this window for five minutes.",
   "hostExecution_missingAuthorization_description": "The connected host needs {resource} authorization. Ask its owner to configure it, then retry.",
   "hostExecution_rejectedAuthorization_description": "The connected host's {resource} authorization was rejected. Ask its owner to renew or check it, then retry.",
   "hostExecution_insufficientScope_description": "The connected host's {resource} authorization lacks the required access. Ask its owner to check the scopes, then retry.",
@@ -7210,5 +7208,7 @@
   "ui_linkTooltip_resourceRateLimited_description": "{provider} rate limit reached. Try again later.",
   "ui_linkTooltip_resourceRestricted_description": "Access to this {provider} resource is restricted.",
   "ui_linkTooltip_resourceUnavailable_description": "Couldn’t load details from {provider}.",
-  "ui_linkTooltip_resourceUnknown_label": "Unknown"
+  "ui_linkTooltip_resourceUnknown_label": "Unknown",
+  "inviteProgress_admission_enableButton": "Enable Multiplayer",
+  "inviteProgress_admission_enable_error": "Could not enable Multiplayer or confirm readiness. Select Enable Multiplayer to try again."
 }

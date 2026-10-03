@@ -6888,9 +6888,7 @@
   "settings_providers_fastMode_description": "Gilt ab dem nächsten Dialogschritt. Nutzung und Kosten können steigen; die Verfügbarkeit hängt von Modell und Konto ab.",
   "settings_providers_fastMode_error": "Schnellmodus konnte nicht gespeichert werden. Die gespeicherte Einstellung wurde wiederhergestellt.",
   "inviteProgress_admission_title": "Multiplayer zum Beitreten aktivieren",
-  "inviteProgress_admission_message": "Aktiviere Multiplayer im Befehlsmenü und versuche es dann in diesem Fenster erneut. Diese Einladung bleibt fünf Minuten verfügbar.",
-  "inviteProgress_admission_findButton": "Multiplayer finden",
-  "inviteProgress_admission_retryButton": "Einladung erneut versuchen",
+  "inviteProgress_admission_message": "Aktiviere Multiplayer hier, um diese Einladung fortzusetzen. Sie bleibt in diesem Fenster fünf Minuten verfügbar.",
   "hostExecution_missingAuthorization_description": "Der verbundene Host benötigt eine {resource}-Autorisierung. Bitte seinen Eigentümer, sie einzurichten, und versuche es erneut.",
   "hostExecution_rejectedAuthorization_description": "Die {resource}-Autorisierung des verbundenen Hosts wurde abgelehnt. Bitte seinen Eigentümer, sie zu erneuern oder zu prüfen, und versuche es erneut.",
   "hostExecution_insufficientScope_description": "Der {resource}-Autorisierung des verbundenen Hosts fehlen die nötigen Rechte. Bitte seinen Eigentümer, die Berechtigungen zu prüfen, und versuche es erneut.",
@@ -7210,5 +7208,7 @@
   "ui_linkTooltip_resourceUnavailable_description": "Details von {provider} konnten nicht geladen werden.",
   "ui_linkTooltip_resourceUnknown_label": "Unbekannt",
   "isolatedTest_invitationUnavailable_description": "Diese Testversion verbindet sich nur mit ihrem eigenen gebündelten Daemon. Öffne Einladungen in deiner normalen Intent-App.",
-  "isolatedTest_invitationUnavailable_title": "Einladungen sind in dieser Test-App nicht verfügbar"
+  "isolatedTest_invitationUnavailable_title": "Einladungen sind in dieser Test-App nicht verfügbar",
+  "inviteProgress_admission_enableButton": "Multiplayer aktivieren",
+  "inviteProgress_admission_enable_error": "Multiplayer konnte nicht aktiviert oder die Bereitschaft nicht bestätigt werden. Wähle „Multiplayer aktivieren“, um es erneut zu versuchen."
 }

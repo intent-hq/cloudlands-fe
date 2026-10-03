@@ -6888,9 +6888,7 @@
   "settings_providers_fastMode_description": "次のターンから適用されます。使用量や料金が増える場合があります。利用可否はモデルとアカウントによって異なります。",
   "settings_providers_fastMode_error": "高速モードを保存できませんでした。保存済みの設定に戻しました。",
   "inviteProgress_admission_title": "参加するにはマルチプレイヤーを有効にしてください",
-  "inviteProgress_admission_message": "コマンドメニューでマルチプレイヤーを有効にしてから、このウィンドウで再試行してください。この招待は5分間利用できます。",
-  "inviteProgress_admission_findButton": "マルチプレイヤーを探す",
-  "inviteProgress_admission_retryButton": "招待を再試行",
+  "inviteProgress_admission_message": "ここでMultiplayerを有効にして、この招待を続行します。招待はこのウィンドウで5分間有効です。",
   "hostExecution_missingAuthorization_description": "接続先ホストには {resource} の認証が必要です。所有者に設定を依頼してから再試行してください。",
   "hostExecution_rejectedAuthorization_description": "接続先ホストの {resource} 認証が拒否されました。所有者に更新または確認を依頼してから再試行してください。",
   "hostExecution_insufficientScope_description": "接続先ホストの {resource} 認証には必要なアクセス権がありません。所有者に権限の確認を依頼してから再試行してください。",
@@ -7210,5 +7208,7 @@
   "ui_linkTooltip_resourceUnavailable_description": "{provider} から詳細を読み込めませんでした。",
   "ui_linkTooltip_resourceUnknown_label": "不明",
   "isolatedTest_invitationUnavailable_description": "このテスト版は、専用の同梱デーモンにのみ接続します。招待は通常の Intent アプリで開いてください。",
-  "isolatedTest_invitationUnavailable_title": "このテストアプリでは招待を利用できません"
+  "isolatedTest_invitationUnavailable_title": "このテストアプリでは招待を利用できません",
+  "inviteProgress_admission_enableButton": "Multiplayerを有効にする",
+  "inviteProgress_admission_enable_error": "Multiplayerを有効にできないか、準備状況を確認できませんでした。「Multiplayerを有効にする」を選択して再試行してください。"
 }

@@ -58,7 +58,14 @@ function harness(request: CollaborationRequest = { scope: 'workspace', pinIdenti
       case 'identity.select':
         return { principal: { identity: { ...target, externalUserId: id } } };
       case 'sourceControl.identityProof.create':
-        return { ...target, externalUserId: id, proofId: 'proof-1', login: 'person' };
+        return {
+          ...target,
+          externalUserId: target.provider === 'github' ? null : id,
+          avatarUrl: null,
+          proofId: 'proof-1',
+          ...(target.provider === 'github' ? { gistId: 'proof-1' } : {}),
+          login: 'person',
+        };
       case 'sourceControl.identityProof.delete':
         return { ok: true };
       default:
@@ -472,36 +479,54 @@ describe('local collaboration sign-in', () => {
     expect(JSON.stringify(h.views)).not.toContain('PAT-secret');
     expect(h.flow.snapshot().error).toBe('sign-in-failed');
   });
-  it('prepares and deletes proof through the captured local purpose and exact stable identity', async () => {
-    const h = harness();
-    const client = new CollaborationIdentityClient(h.local);
-    const prepared = {
-      attempt: h.attempt,
-      identity: github,
-      login: 'person',
-      invitation: { scope: 'workspace' as const },
-      local: h.local,
-      allowed: () => true,
-    };
-    await client.createProof(prepared, 'challenge', 'shared A');
-    await client.deleteProof(github, 'proof-1');
-    expect(h.ledger.mock.calls).toEqual([
-      [
-        'sourceControl.identityProof.create',
-        {
-          provider: 'github',
-          purpose: 'collaboration',
-          expectedIdentity: github,
-          nonce: 'challenge',
-          hostLabel: 'shared A',
-        },
-      ],
-      [
-        'sourceControl.identityProof.delete',
-        { provider: 'github', purpose: 'collaboration', proofId: 'proof-1' },
-      ],
-    ]);
-  });
+  it.each([github, gitlab])(
+    'preserves the %j proof wire response and exact expected identity',
+    async (identity) => {
+      const h = harness();
+      const client = new CollaborationIdentityClient(h.local);
+      const prepared = {
+        attempt: h.attempt,
+        identity,
+        login: 'person',
+        invitation: { scope: 'workspace' as const },
+        local: h.local,
+        allowed: () => true,
+      };
+      const proof = await client.createProof(prepared, 'challenge', 'shared A');
+      expect(proof).toEqual({
+        provider: identity.provider,
+        host: identity.host,
+        externalUserId: identity.provider === 'github' ? null : identity.externalUserId,
+        avatarUrl: null,
+        proofId: 'proof-1',
+        login: 'person',
+        ...(identity.provider === 'github' ? { gistId: 'proof-1' } : {}),
+      });
+      await client.deleteProof(identity, proof.proofId);
+      expect(h.ledger.mock.calls).toEqual([
+        [
+          'sourceControl.identityProof.create',
+          {
+            provider: identity.provider,
+            ...(identity.provider === 'gitlab' ? { host: identity.host } : {}),
+            purpose: 'collaboration',
+            expectedIdentity: identity,
+            nonce: 'challenge',
+            hostLabel: 'shared A',
+          },
+        ],
+        [
+          'sourceControl.identityProof.delete',
+          {
+            provider: identity.provider,
+            ...(identity.provider === 'gitlab' ? { host: identity.host } : {}),
+            purpose: 'collaboration',
+            proofId: 'proof-1',
+          },
+        ],
+      ]);
+    },
+  );
   it('stale selection cannot resume after the invitation target or metadata changes', async () => {
     const h = harness();
     h.setConfigured(true);

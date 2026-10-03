@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.201.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.201.0...v2.201.1) (2026-10-03)
+
+
+### 🐛 Bug Fixes
+
+* accept nullable GitHub invitation proofs ([#3137](https://github.com/intent-hq/cloudlands-fe/issues/3137)) ([1be2942](https://github.com/intent-hq/cloudlands-fe/commit/1be2942783a53553ef9c7ee709c72895d0c9289d))
+* bump intentd sidecar to v0.10.6 ([#3145](https://github.com/intent-hq/cloudlands-fe/issues/3145)) ([f84b0a0](https://github.com/intent-hq/cloudlands-fe/commit/f84b0a08e397d3da6b3fac19b8de0714890d502e))
+* enable multiplayer directly from invitation recovery ([#3140](https://github.com/intent-hq/cloudlands-fe/issues/3140)) ([19758ed](https://github.com/intent-hq/cloudlands-fe/commit/19758ed29efc8ea4503fb5e569bb4ad4a06d5bee))
+
 ## [2.201.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.200.1...v2.201.0) (2026-10-03)
 
 
