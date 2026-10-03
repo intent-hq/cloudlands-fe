@@ -901,3 +901,198 @@ it('observes the first deferred snapshot and still restores its in-flight transc
   expect(sends()).toEqual([]);
   expect(queues()).toEqual([]);
 });
+
+// Both production sagas are required: a reducer-only fixture cannot detect read feedback.
+const count = (method: string) =>
+  wire.request.mock.calls.filter(([name]) => name === method).length;
+const turn = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const noMutations = () =>
+  expect(
+    wire.request.mock.calls.filter(([name]) =>
+      [
+        'agent.sendMessage',
+        'agent.queueMessage',
+        'agent.sendQueuedMessageNow',
+        'agent.sendQueuedMessagesNow',
+        'agent.removeQueuedMessage',
+        'agent.editQueuedMessage',
+      ].includes(name),
+    ),
+  ).toEqual([]);
+const history = (text: string) => ({
+  messages: [{ ...previous, id: text, contentBlocks: [{ type: 'text', text }] }],
+  totalMessages: 1,
+  truncated: false,
+});
+const quiet = async () => {
+  for (let n = 0; n < 20; n++) await turn();
+};
+async function standing() {
+  const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
+  const original = row(a, { mergeEligible: true });
+  emit('agent:queue:updated', { queue: [original] });
+  let handler: any;
+  const subscription = vi
+    .spyOn(appClient.chat, 'subscribe')
+    .mockImplementation((_id: any, callback: any) => {
+      handler = callback;
+      return () => {};
+    });
+  acquireChatInterestLease(agent, 'optimistic-subscription-races');
+  const stop = store.runSaga(chatSubscribeSaga);
+  cleanups.push(() => {
+    stop();
+    subscription.mockRestore();
+    releaseChatInterestLease(agent, 'optimistic-subscription-races');
+  });
+  store.dispatch(initializeChatRequested(agent, { wsId: ws }));
+  await vi.waitFor(() => expect(handler).toBeTypeOf('function'));
+  const snapshot = {
+    messages: [previous],
+    truncated: false,
+    totalMessages: 1,
+    isStreaming: false,
+    fromSnapshot: true,
+  };
+  handler(snapshot);
+  await turn();
+  await turn();
+  beginSubmissionRead(agent, ws, 'queue').complete([original]);
+  beginSubmissionRead(agent, ws, 'history').complete([]);
+  expect(display().queue[0].blocksMutations).toBe(false);
+  wire.request.mockClear();
+  return { a, original, handler, snapshot };
+}
+
+it('coalesces live subscription bursts during reads, rejects stale publication and restores live rows after partial history', async () => {
+  const { original, handler } = await standing();
+  const qs: ((v: any) => void)[] = [],
+    hs: ((v: any) => void)[] = [];
+  wire.request.mockImplementation((m, p) =>
+    m === 'agent.getQueue'
+      ? new Promise((r) => qs.push(r))
+      : m === 'agent.getConversation'
+        ? new Promise((r) => hs.push(r))
+        : baseReply(m, p),
+  );
+  cleanups.push(store.runSaga(chatReadSaga));
+  emit('agent:queue:updated', { queue: [original] });
+  await vi.waitFor(() => {
+    expect(qs).toHaveLength(1);
+    expect(hs).toHaveLength(1);
+  });
+  const live = {
+    id: 'live-race',
+    role: 'assistant',
+    timestamp: '2026-10-03T00:00:00Z',
+    contentBlocks: [{ type: 'text', text: 'newest live text' }],
+    isStreaming: true,
+    streamingComplete: false,
+  };
+  const transcript = {
+    messages: [previous, live],
+    truncated: false,
+    totalMessages: 2,
+    isStreaming: true,
+    fromSnapshot: false,
+  };
+  for (let n = 0; n < 10; n++) handler(transcript);
+  await vi.waitFor(() =>
+    expect(store.state.agentSessions.byAgentId[agent].messages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'live-race' })]),
+    ),
+  );
+  expect(display().queue[0].blocksMutations).toBe(true);
+  qs[0]({ queue: [{ ...original, content: 'obsolete queue' }] });
+  hs[0](history('obsolete history'));
+  await vi.waitFor(() => {
+    expect(qs).toHaveLength(2);
+    expect(hs).toHaveLength(2);
+  });
+  expect(display().queue.map((r) => r.content)).toEqual(['A']);
+  expect(store.state.agentSessions.byAgentId[agent].messages.map((m) => m.id)).toEqual([
+    'previous',
+    'live-race',
+  ]);
+  qs[1]({ queue: [{ ...original, content: 'fresh confirmed queue' }] });
+  await turn();
+  expect(display().queue[0].blocksMutations).toBe(true);
+  hs[1]({ messages: [previous], totalMessages: 1, truncated: false });
+  await vi.waitFor(() => expect(display().queue[0].blocksMutations).toBe(false));
+  await quiet();
+  expect(qs).toHaveLength(2);
+  expect(hs).toHaveLength(2);
+  expect(display().queue.map((r) => r.content)).toEqual(['fresh confirmed queue']);
+  expect(store.state.agentSessions.byAgentId[agent].messages).toEqual(
+    expect.arrayContaining([expect.objectContaining(live)]),
+  );
+  noMutations();
+});
+
+it.each(['send', 'send-all', 'clear', 'remove'])(
+  'bounds queue-read errors and recovers the actual %s handler after a genuine delivery',
+  async (kind) => {
+    const { a, original, handler, snapshot } = await standing();
+    let failQueue = true;
+    wire.request.mockImplementation((m, p) => {
+      if (m === 'agent.getQueue')
+        return failQueue
+          ? Promise.reject(new Error('independent queue failure'))
+          : Promise.resolve({ queue: [original] });
+      if (
+        [
+          'agent.sendQueuedMessageNow',
+          'agent.sendQueuedMessagesNow',
+          'agent.removeQueuedMessage',
+        ].includes(m)
+      )
+        return Promise.resolve({ success: true, queued: true, messageIds: [a.submission.id] });
+      return baseReply(m, p);
+    });
+    cleanups.push(store.runSaga(chatReadSaga));
+    startSending();
+    store.dispatch(setChatDraft(ws, agent, 'keep newer draft'));
+    const dispatch = () =>
+      kind === 'send'
+        ? store.dispatch(sendQueuedMessageNowRequested(agent, ws, a.submission.id))
+        : kind === 'send-all'
+          ? store.dispatch(sendQueuedMessagesNowRequested(agent, ws, [a.submission.id]))
+          : kind === 'clear'
+            ? store.dispatch(clearQueuedMessagesRequested(agent, ws, [a.submission.id]))
+            : store.dispatch(removeQueuedMessageRequested(agent, a.submission.id));
+    emit('agent:queue:updated', { queue: [original] });
+    await quiet();
+    expect(count('agent.getQueue')).toBe(1);
+    expect(count('agent.getConversation')).toBe(1);
+    expect(display().queue[0].blocksMutations).toBe(true);
+    const blocked = dispatch();
+    if (kind !== 'remove') await expect(blocked).rejects.toThrow();
+    await turn();
+    noMutations();
+    expect(display().queue[0].confirmedId).toBe(a.submission.id);
+    failQueue = false;
+    handler(snapshot);
+    await vi.waitFor(() => expect(display().queue[0].blocksMutations).toBe(false));
+    await quiet();
+    expect(count('agent.getQueue')).toBe(2);
+    expect(count('agent.getConversation')).toBe(2);
+    noMutations();
+    const allowed = dispatch();
+    if (kind !== 'remove') await allowed;
+    const method =
+      kind === 'send'
+        ? 'agent.sendQueuedMessageNow'
+        : kind === 'send-all'
+          ? 'agent.sendQueuedMessagesNow'
+          : 'agent.removeQueuedMessage';
+    await vi.waitFor(() => expect(count(method)).toBe(1));
+    expect(wire.request.mock.calls.find(([m]) => m === method)?.[1]).toEqual({
+      agentId: agent,
+      workspaceId: ws,
+      ...(kind === 'send-all' ? { messageIds: [a.submission.id] } : { messageId: a.submission.id }),
+    });
+    expect(selectChatDraft.select(store.state, ws, agent)).toBe('keep newer draft');
+    expect(count('agent.sendMessage')).toBe(0);
+    expect(count('agent.queueMessage')).toBe(0);
+  },
+);
