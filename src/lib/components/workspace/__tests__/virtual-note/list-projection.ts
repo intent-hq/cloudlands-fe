@@ -98,7 +98,18 @@ export class ListProjection {
       const prefix = raw.match(/^\n*/)?.[0] ?? '',
         suffix = raw.match(/\n*$/)?.[0] ?? '';
       const body = raw.slice(prefix.length, raw.length - suffix.length);
-      const part = new SourceProjection(body, from + prefix.length);
+      const bodyFrom = from + prefix.length,
+        bodyTo = to - suffix.length;
+      const part = new SourceProjection(body, bodyFrom, {
+        revision: context.revision,
+        from: bodyFrom,
+        to: bodyTo,
+        before: [],
+        after: [],
+        paragraphSeams: context.paragraphSeams?.filter(
+          (seam) => seam.from < bodyTo && seam.to > bodyFrom,
+        ),
+      });
       const total = part.content.content!.reduce((n, child) => n + size(child), 0);
       let offset = 0;
       for (const node of part.content.content!) {
@@ -114,6 +125,9 @@ export class ListProjection {
             before: [],
             after: [],
             fences: part.code.filter((code) => code.pm === offset).map((code) => code.fence),
+            paragraphSeams: context.paragraphSeams?.filter(
+              (seam) => seam.from < nodeTo && seam.to > nodeFrom,
+            ),
           },
         );
         this.content.content!.push(node);

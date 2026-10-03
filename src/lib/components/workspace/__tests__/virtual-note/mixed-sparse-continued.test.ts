@@ -141,3 +141,38 @@ it('accounts for the table child resources in a sparse mixed projection', async 
     session.destroy();
   }
 });
+
+for (const prefix of ['```text\nfenced\n```\n\n', '- sibling\n\n```text\nfenced\n```\n\n'])
+  it(`preserves the native deletion seam after ${prefix.startsWith('-') ? 'list and fence' : 'fence'}`, async () => {
+    const table =
+      '| H | R |\n| --- | --- |\n' +
+      Array.from({ length: 800 }, (_, i) => `| row${i} | value${i} |\n`).join('');
+    const source = prefix + table + '\nafter';
+    const oracle = await native(source),
+      backing = new SourceJournal(() => source, 1),
+      session = new DocumentSession(backing, document.createElement('div'));
+    try {
+      await session.seek(0);
+      for (const editor of [oracle, session.editor!]) {
+        let pos = -1;
+        editor.state.doc.forEach((node, at) => {
+          if (node.type.name === 'table') pos = at;
+        });
+        editor.view.dispatch(
+          editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)),
+        );
+        expect(editor.commands.deleteTable()).toBe(true);
+      }
+      await session.seek(session.selection.head);
+      expect(session.error).toBe('');
+      expect(session.editor!.getJSON()).toEqual(oracle.getJSON());
+      expect(backing.region(0)).toBe(prefix + '\nafter');
+      await session.history();
+      expect(backing.region(0)).toBe(source);
+      await session.history(true);
+      expect(session.editor!.getJSON()).toEqual(oracle.getJSON());
+    } finally {
+      session.destroy();
+      oracle.destroy();
+    }
+  });

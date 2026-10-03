@@ -304,3 +304,113 @@ for (const edge of ['before', 'after'] as const)
     expect(redone[1].doc).toEqual(redone[0].doc);
     expect(redone[1].logical).toEqual(redone[0].logical);
   });
+
+for (const backward of [false, true])
+  test(`sparse mixed Chromium partial cell clear ${backward ? 'backward' : 'forward'}`, async ({
+    mount,
+    page,
+  }, info) => {
+    const source =
+      'before\n\n| A | B | <!--anchor:keep:start-->KEEP<!--anchor:keep:end--> |\n| --- | --- | --- |\n' +
+      Array.from({ length: 800 }, (_, i) => `| row${i} | value${i} | untouched${i} |\n`).join('') +
+      '\nafter';
+    await mount(Harness, { props: { sourceOverride: source, anchors: true } });
+    const results = [];
+    for (const side of ['native', 'bounded']) {
+      await page
+        .getByTestId(side)
+        .getByTestId('proof')
+        .evaluate(async (el, backward) => {
+          const h = el as Host;
+          if (h.proof) {
+            const p = h.proof,
+              from = p.service.region(0).indexOf('| A');
+            const first = p.service.tableAddress(from, 0, 0),
+              last = p.service.tableAddress(from, 800, 1);
+            const anchor = backward ? last : first,
+              head = backward ? first : last;
+            p.selection = {
+              anchor: anchor.source,
+              head: head.source,
+              affinity: backward ? -1 : 1,
+              revision: p.service.revision,
+              table: { kind: 'cell', anchor: anchor.point, head: head.point },
+            };
+            await p.seek(backward ? 0 : p.service.length - 1);
+          } else {
+            const e = h.native,
+              positions: number[] = [];
+            e.state.doc.descendants((node, pos) => {
+              if (node.type.name === 'tableCell' || node.type.name === 'tableHeader')
+                positions.push(pos);
+            });
+            e.commands.setCellSelection({
+              anchorCell: positions[backward ? 800 * 3 + 1 : 0],
+              headCell: positions[backward ? 0 : 800 * 3 + 1],
+            });
+          }
+        }, backward);
+      await focus(page, side);
+      await page.keyboard.press(backward ? 'Backspace' : 'Delete');
+      results.push(await capture(page, side));
+    }
+    await info.attach('partial-clear-native.json', {
+      body: JSON.stringify(results),
+      contentType: 'application/json',
+    });
+    const [native, bounded] = results;
+    expect(bounded.error).toBe('');
+    expect(bounded.logical).toEqual(native.logical);
+    for (const result of results) expect(result.dom).toEqual(result.pm);
+    const tableIndex = native.doc.content!.findIndex((n) => n.type === 'table');
+    expect(bounded.doc).toEqual({
+      type: 'doc',
+      content: native.doc.content!.flatMap((node, i) =>
+        node.type === 'table'
+          ? [
+              {
+                ...node,
+                content: [...new Set(bounded.cells!.map((c) => c.row))].map((row) => ({
+                  ...node.content![row],
+                  content: bounded
+                    .cells!.filter((c) => c.row === row)
+                    .map((c) => node.content![row].content![c.column]),
+                })),
+              },
+            ]
+          : (i < tableIndex ? bounded.proseBefore : bounded.proseAfter)
+            ? [node]
+            : [],
+      ),
+    });
+    const saved = await page
+      .getByTestId('bounded')
+      .getByTestId('proof')
+      .evaluate(async (el) => {
+        const p = (el as Host).proof,
+          old = p.editor!;
+        p.save();
+        await p.seek(p.selection.head);
+        return { source: p.service.region(0), destroyed: old.isDestroyed };
+      });
+    expect(saved.destroyed).toBe(true);
+    expect(saved.source).toContain('<!--anchor:keep:start-->KEEP<!--anchor:keep:end-->');
+    expect(saved.source).toContain('untouched400');
+    await focus(page, 'bounded');
+    await page.keyboard.press('Control+z');
+    await settled(page);
+    expect(
+      await page
+        .getByTestId('bounded')
+        .getByTestId('proof')
+        .evaluate((el) => (el as Host).proof.service.region(0)),
+    ).toBe(source);
+    await page.keyboard.press('Control+Shift+z');
+    await settled(page);
+    expect(
+      await page
+        .getByTestId('bounded')
+        .getByTestId('proof')
+        .evaluate((el) => (el as Host).proof.service.region(0)),
+    ).toBe(saved.source);
+  });

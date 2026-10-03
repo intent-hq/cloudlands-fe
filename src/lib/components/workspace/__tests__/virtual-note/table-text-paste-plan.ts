@@ -8,7 +8,7 @@ import {
   type ClipboardValue,
   type CellSerializationWork,
 } from './table-clipboard';
-import { tableRuns, type TableIndex, type TableCellSource } from './table-source';
+import { tableRuns, tableRunNode, type TableIndex, type TableCellSource } from './table-source';
 import type { TablePoint } from './source-journal';
 import { applyNativeTableCommand, type TableCommandName } from './table-native-command';
 import { CellSelection } from '@tiptap/pm/tables';
@@ -43,11 +43,7 @@ export function planTableTextPaste(
           content: [
             {
               type: 'paragraph',
-              content: tableRuns(source.slice(entry.body, entry.end), entry.body).map((run) => ({
-                type: run.hardBreak ? 'hardBreak' : 'text',
-                ...(run.hardBreak ? {} : { text: run.text }),
-                marks: run.marks,
-              })),
+              content: tableRuns(source.slice(entry.body, entry.end), entry.body).map(tableRunNode),
             },
           ],
         },
@@ -86,7 +82,11 @@ export function planTableTextPaste(
     : fitNativeTextPaste(doc, position(anchor), position(head), value, editor, [tableEditing()]);
   const result = fitted.state.doc.firstChild!;
   if (result.type.name !== 'table') {
-    if (command?.name !== 'deleteTable' || result.type.name !== 'paragraph' || result.content.size)
+    if (
+      !['deleteTable', 'deleteSelection'].includes(command?.name ?? '') ||
+      result.type.name !== 'paragraph' ||
+      result.content.size
+    )
       throw new Error('Cross-cell replacement removed the table');
     return {
       accepted: 'accepted' in fitted ? fitted.accepted : true,

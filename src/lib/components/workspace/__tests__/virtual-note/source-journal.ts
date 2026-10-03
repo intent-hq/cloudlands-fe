@@ -860,7 +860,7 @@ export class SourceJournal {
       size * 3,
     );
     if (!plan.accepted) return false;
-    const deleting = received.command === 'deleteTable' && !plan.text;
+    const deleting = ['deleteTable', 'deleteSelection'].includes(received.command) && !plan.text;
     const left = source.slice(0, table.from),
       right = source.slice(table.to);
     const rightNewline = right.match(/^\r?\n/)?.[0];

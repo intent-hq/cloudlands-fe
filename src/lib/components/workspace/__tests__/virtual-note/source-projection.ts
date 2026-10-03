@@ -170,9 +170,13 @@ export class SourceProjection {
             before: cursor === start ? (context?.before ?? []) : [],
             after: to === end ? (context?.after ?? []) : [],
             fences: [],
-            paragraphSeams: context?.paragraphSeams?.filter(
-              (seam) => seam.from < to && seam.to > cursor,
-            ),
+            paragraphSeams: context?.paragraphSeams
+              ?.filter((seam) => seam.from < to && seam.to > cursor)
+              .map((seam) =>
+                !seam.kind && seam.from === cursor && cursor > start
+                  ? { ...seam, kind: 'leading' as const }
+                  : seam,
+              ),
           },
           indexOnly,
         );

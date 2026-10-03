@@ -2,7 +2,7 @@ import type { CommandProps, Editor } from '@tiptap/core';
 import { Table } from '@tiptap/extension-table';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state';
-import { CellSelection, tableEditing } from '@tiptap/pm/tables';
+import { CellSelection, tableEditing, deleteCellSelection } from '@tiptap/pm/tables';
 import { bytes } from './bounded-note-service';
 
 export const tableCommands = [
@@ -20,7 +20,8 @@ export const tableCommands = [
   'toggleHeaderCell',
   'mergeOrSplit',
 ] as const;
-export type TableCommandName = (typeof tableCommands)[number];
+export type TableCommandName =
+  (typeof tableCommands)[number] | 'deleteSelection' | 'deleteCellSelection';
 
 /** External mock backing computation, never a mounted editor or renderer reply.
  * Invoke the locked native command, including Tiptap's cursor retention wrappers.
@@ -70,7 +71,29 @@ export function applyNativeTableCommand(
       },
     },
   ) as CommandProps;
-  const accepted = commands[name]!()(props);
+  const clear = () => deleteCellSelection(state, props.dispatch);
+  const runDelete = () => {
+    // Reuse the locked native shortcut's whole-table decision with only this
+    // backing state and its existing deleteTable command capability.
+    const backingEditor = new Proxy(
+      { state, commands: { deleteTable: () => commands.deleteTable!()(props) } },
+      {
+        get(target, key) {
+          if (!(key in target))
+            throw new Error(`Backing table shortcut requested renderer capability ${String(key)}`);
+          return Reflect.get(target, key);
+        },
+      },
+    ) as unknown as Editor;
+    const shortcuts = Table.config.addKeyboardShortcuts!.call({ editor: backingEditor } as never);
+    return shortcuts.Delete!({ editor: backingEditor }) || clear();
+  };
+  const accepted =
+    name === 'deleteCellSelection'
+      ? clear()
+      : name === 'deleteSelection'
+        ? runDelete()
+        : commands[name]!()(props);
   const result = transaction ? state.applyTransaction(transaction).state : state;
   let nodes = 0;
   doc.descendants(() => {

@@ -1488,6 +1488,37 @@ export class DocumentSession {
             },
           },
           handleKeyDown: (_view, event) => {
+            if (
+              this.selection.table?.kind === 'cell' &&
+              _view.state.selection instanceof CellSelection &&
+              !event.altKey &&
+              !event.shiftKey &&
+              !event.isComposing &&
+              ['Delete', 'Backspace'].includes(event.key)
+            ) {
+              const logical = this.selection.table;
+              const table =
+                this.projection?.table ??
+                this.projection?.mixed?.parts.find((part) => {
+                  const window = part.projection.table?.window;
+                  return (
+                    window && logical.anchor.cell >= window.from && logical.anchor.cell < window.to
+                  );
+                })?.projection.table;
+              if (table) {
+                const intent = {
+                  revision: this.service.revision,
+                  table: table.window.from,
+                  command: 'deleteSelection' as const,
+                  selection: structuredClone(this.selection),
+                };
+                if (!this.service.stageLogicalTableCommand(intent, this.editor!, false))
+                  return false;
+                event.preventDefault();
+                _view.dispatch(_view.state.tr.setMeta('proofLogicalTableCommand', intent));
+                return true;
+              }
+            }
             const table = this.projection!.table;
             if (
               table &&
