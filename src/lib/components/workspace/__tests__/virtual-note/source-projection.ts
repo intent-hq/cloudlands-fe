@@ -82,6 +82,7 @@ export class SourceProjection {
   readonly ends = new Map<number, number>();
   readonly boundaries = new Map<number, number>();
   readonly tokens: Token[] = [];
+  readonly anchorRanges: Array<{ from: number; to: number }> = [];
   readonly marks: Array<{
     type: string;
     pmFrom: number;
@@ -162,6 +163,7 @@ export class SourceProjection {
         for (const [pos, src] of part.ends) this.ends.set(pm + pos, src);
         for (const [pos, src] of part.boundaries) this.boundaries.set(pm + pos, src);
         this.tokens.push(...part.tokens.map((t) => ({ ...t, pm: t.pm + pm })));
+        this.anchorRanges.push(...part.anchorRanges);
         this.marks.push(
           ...part.marks.map((m) => ({ ...m, pmFrom: m.pmFrom + pm, pmTo: m.pmTo + pm })),
         );
@@ -272,7 +274,7 @@ export class SourceProjection {
           return;
         }
         const previous = nodes.at(-1);
-        if (previous && JSON.stringify(previous.marks) === JSON.stringify(stack))
+        if (previous?.type === 'text' && JSON.stringify(previous.marks) === JSON.stringify(stack))
           previous.text += value;
         else nodes.push({ type: 'text', text: value, marks: stack });
         this.tokens.push({
@@ -336,6 +338,37 @@ export class SourceProjection {
       }
       const parse = (from: number, to: number, stack: Mark[]) => {
         for (let i = from; i < to;) {
+          const anchor = raw.startsWith('<!--anchor:', i)
+            ? raw.slice(i, to).match(/^<!--anchor:([^:]+):(start|end|point)-->/)
+            : null;
+          if (anchor) {
+            this.anchorRanges.push({ from: base + i, to: base + i + anchor[0].length });
+            if (!indexOnly) {
+              nodes.push({
+                type: 'commentAnchor',
+                attrs: {
+                  id: `${anchor[1]}:${anchor[2]}`,
+                  type: anchor[2],
+                  commentId: anchor[1],
+                },
+                marks: stack,
+              });
+              this.positions.set(pm, base + i);
+              this.ends.set(pm + 1, base + i + anchor[0].length);
+              this.tokens.push({
+                pm,
+                from: base + i,
+                to: base + i + anchor[0].length,
+                raw: anchor[0],
+                text: '\ufffc',
+                marks: stack,
+              });
+              this.positions.set(pm + 1, base + i + anchor[0].length);
+            }
+            pm++;
+            i += anchor[0].length;
+            continue;
+          }
           if (
             raw[i] === '\\' &&
             i + 1 < to &&
@@ -548,6 +581,13 @@ export class SourceProjection {
         active = next;
       };
       paragraph.forEach((node, inner) => {
+        if (node.type.name === 'commentAnchor') {
+          const token = survivors.get(offset + 1 + inner);
+          transition(node.marks.map((m) => ({ type: m.type.name, attrs: m.attrs })));
+          const marker = `<!--anchor:${node.attrs.commentId}:${node.attrs.type}-->`;
+          source += token?.raw === marker ? token.raw : marker;
+          return;
+        }
         if (!node.isText) throw new Error(`Unsupported proof inline ${node.type.name}`);
         const desired = node.marks.map((m) => ({ type: m.type.name, attrs: m.attrs }));
         if (desired.some((m) => !['bold', 'italic', 'link'].includes(m.type)))

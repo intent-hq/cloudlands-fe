@@ -21,9 +21,11 @@ type Entry = {
   paragraphPM: number;
 };
 const size = (node: JSONContent): number =>
-  node.type === 'text'
-    ? node.text!.length
-    : 2 + (node.content ?? []).reduce((n, c) => n + size(c), 0);
+  node.type === 'commentAnchor'
+    ? 1
+    : node.type === 'text'
+      ? node.text!.length
+      : 2 + (node.content ?? []).reduce((n, c) => n + size(c), 0);
 
 /** Structural ancestors contain no invented text. Only loaded source tokens receive caret provenance. */
 export class ListProjection {

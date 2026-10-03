@@ -79,7 +79,32 @@ export type Change = Splice & {
   tableState?: string;
   paragraphSeam?: { before: ParagraphSeam | null; after: ParagraphSeam | null };
 };
-export type Anchor = { id: string; from: number; to: number; alive: boolean };
+export type Anchor = {
+  id: string;
+  from: number;
+  to: number;
+  alive: boolean;
+  kind?: 'comment' | 'attribution';
+  sourceRevision?: number;
+  authorId?: string;
+};
+export type AnnotationCursor = {
+  owner: number;
+  from: number;
+  to: number;
+  revision: number;
+  generation: number;
+  commentRevision: number;
+  offset: number;
+};
+export type AnnotationPage = {
+  revision: number;
+  generation: number;
+  commentRevision: number;
+  items: Anchor[];
+  next?: AnnotationCursor;
+};
+let annotationOwner = 0;
 export type Event = {
   changes: Change[];
   before: Selection;
@@ -1419,6 +1444,109 @@ export class SourceJournal {
   revision = 1;
   generation = 1;
   commentRevision = 1;
+  private markerIds = new Set<string>();
+  private commentDrafts = new Map<string, { text: string; baseRevision: number }>();
+  private commentBodies = new Map<string, string>();
+  maxCommentDraftPageBytes = 0;
+  backingMarkerScannedBytes = 0;
+  registerComment(id: string) {
+    this.markerIds.add(id);
+    this.reindexCommentMarkers();
+  }
+  private reindexCommentMarkers() {
+    if (!this.markerIds.size) return;
+    // Existing canonical IDs remain authoritative. These offsets are a derived
+    // mock backing index, never an alternate persisted comment format.
+    const source = this.slice(0, this.length);
+    this.backingMarkerScannedBytes += bytes(source);
+    for (const id of this.markerIds) {
+      const opening = `<!--anchor:${id}:start-->`,
+        closing = `<!--anchor:${id}:end-->`;
+      const start = source.indexOf(opening),
+        end = source.indexOf(closing);
+      const previous = this.anchors.find((a) => a.id === id);
+      const alive = start >= 0 && end > start;
+      const anchor: Anchor = {
+        id,
+        kind: 'comment',
+        alive,
+        from: alive ? start + opening.length : (previous?.from ?? 0),
+        to: alive ? end : (previous?.to ?? 0),
+      };
+      this.anchors = this.anchors.filter((a) => a.id !== id).concat(anchor);
+    }
+  }
+  replaceAttribution(revision: number, generation: number, anchors: Anchor[]) {
+    if (revision !== this.revision || generation !== this.generation)
+      throw new Error('Stale attribution');
+    this.anchors = this.anchors
+      .filter((a) => a.kind !== 'attribution')
+      .concat(
+        anchors.map((a) => ({ ...a, kind: 'attribution' as const, sourceRevision: revision })),
+      );
+    this.generation++;
+  }
+  stageCommentDraft(id: string, from: number, to: number, insert: string) {
+    const draft = this.commentDrafts.get(id) ?? {
+      text: this.commentBodies.get(id) ?? '',
+      baseRevision: this.commentRevision,
+    };
+    if (
+      from < 0 ||
+      to < from ||
+      to > draft.text.length ||
+      !Number.isSafeInteger(from) ||
+      !Number.isSafeInteger(to)
+    )
+      throw new Error('Invalid comment draft range');
+    const size = bytes(JSON.stringify({ id, from, to, insert }));
+    if (size > LIMITS.request) throw new Error('Comment draft write exceeds page budget');
+    this.maxCommentDraftPageBytes = Math.max(this.maxCommentDraftPageBytes, size);
+    this.commentDrafts.set(id, {
+      ...draft,
+      text: draft.text.slice(0, from) + insert + draft.text.slice(to),
+    });
+  }
+  commentDraftPage(id: string, from = 0) {
+    const draft = this.commentDrafts.get(id);
+    if (!draft) return undefined;
+    if (!Number.isSafeInteger(from) || from < 0 || from > draft.text.length)
+      throw new Error('Invalid comment draft offset');
+    let to = Math.min(draft.text.length, from + LIMITS.request);
+    const result = () => ({
+      id,
+      from,
+      to,
+      text: draft.text.slice(from, to),
+      next: to < draft.text.length ? to : undefined,
+      baseRevision: draft.baseRevision,
+    });
+    while (bytes(JSON.stringify(result())) > LIMITS.request && to > from) to--;
+    if (to < draft.text.length && /[\uD800-\uDBFF]/.test(draft.text[to - 1])) to--;
+    if (to === from && from < draft.text.length)
+      throw new Error('Comment draft envelope exceeds page budget');
+    const page = result();
+    this.maxCommentDraftPageBytes = Math.max(
+      this.maxCommentDraftPageBytes,
+      bytes(JSON.stringify(page)),
+    );
+    return page;
+  }
+  publishCommentDraft(id: string, revision: number) {
+    const draft = this.commentDrafts.get(id);
+    if (!draft) return false;
+    if (revision !== this.commentRevision || revision !== draft.baseRevision)
+      throw new Error('Comment draft conflict');
+    this.commentBodies.set(id, draft.text);
+    this.commentDrafts.delete(id);
+    this.commentRevision++;
+    return true;
+  }
+  private readonly annotationOwner = ++annotationOwner;
+  private editAnchorsBefore: Anchor[] = [];
+  annotationPayloadBytes = 0;
+  maxAnnotationPageBytes = 0;
+  annotationReads = 0;
   private regions = new Map<number, string>();
   // Mock backing session state. Seam journal entries occupy individual bounded pages.
   private seams = new Map<number, ListSeam>();
@@ -1596,7 +1724,13 @@ export class SourceJournal {
   // Mock backing index only. Rebuilt lazily per revision; no full projection/token map retained.
   private inlineIndex = new Map<
     number,
-    { source: string; spans: SourceProjection['marks']; fences: Fence[]; lists: ListItem[] }
+    {
+      source: string;
+      spans: SourceProjection['marks'];
+      fences: Fence[];
+      lists: ListItem[];
+      anchors: SourceProjection['anchorRanges'];
+    }
   >();
   backingIndexBuilds = 0;
   backingIndexScannedBytes = 0;
@@ -1622,6 +1756,7 @@ export class SourceJournal {
       index = {
         source,
         spans: projection.marks.sort((a, b) => a.openFrom - b.openFrom),
+        anchors: projection.anchorRanges,
         fences,
         lists: scanLists(source).filter(
           (i) => !fences.some((f) => i.from >= f.from && i.from < f.to),
@@ -1680,6 +1815,8 @@ export class SourceJournal {
     const { id, start } = this.locate(position);
     let local = position - start;
     const spans = this.spans(id);
+    for (const anchor of this.inlineIndex.get(id)!.anchors)
+      if (local > anchor.from && local < anchor.to) local = direction > 0 ? anchor.to : anchor.from;
     for (const f of this.inlineIndex.get(id)!.fences) {
       if (local > f.from && local < f.bodyFrom) local = direction > 0 ? f.bodyFrom : f.from;
       if (local > f.bodyTo && local < f.to) local = direction > 0 ? f.to : f.bodyTo;
@@ -1959,6 +2096,7 @@ export class SourceJournal {
       to: mapPoint(a.to, splice, -1),
       alive: a.alive && !(splice.from <= a.from && splice.to >= a.to && splice.to > splice.from),
     }));
+    this.reindexCommentMarkers();
     this.seams = nextSeams;
     this.paragraphSeams = nextParagraphSeams;
     this.tableStates = new Map(
@@ -2004,20 +2142,103 @@ export class SourceJournal {
       .filter(([id, source]) => source !== (this.persisted.get(id) ?? this.generate(id)))
       .map(([id]) => id);
   }
-  annotations(from: number, to: number, revision: number, generation: number) {
-    if (revision !== this.revision || generation !== this.generation)
+  annotations(
+    from: number,
+    to: number,
+    revision: number,
+    generation: number,
+    options: { commentRevision?: number; cursor?: AnnotationCursor; limit?: number } = {},
+  ): AnnotationPage {
+    const commentRevision = options.commentRevision ?? this.commentRevision;
+    if (
+      revision !== this.revision ||
+      generation !== this.generation ||
+      commentRevision !== this.commentRevision
+    )
       throw new Error('Stale annotations');
-    const items = this.anchors
-      .filter((a) => a.alive && a.from < to && a.to > from)
-      .slice(0, 8)
-      .map((a) => ({ ...a }));
-    const result = { revision, generation, commentRevision: this.commentRevision, items };
-    this.log('annotations', from, bytes(JSON.stringify(result)));
+    const limit = options.limit ?? 8;
+    if (
+      !Number.isSafeInteger(from) ||
+      !Number.isSafeInteger(to) ||
+      from < 0 ||
+      to < from ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 8
+    )
+      throw new Error('Invalid annotation range or limit');
+    const binding = {
+      owner: this.annotationOwner,
+      from,
+      to,
+      revision,
+      generation,
+      commentRevision,
+    };
+    const cursor = options.cursor;
+    if (
+      cursor &&
+      (Object.entries(binding).some(
+        ([key, value]) => cursor[key as keyof AnnotationCursor] !== value,
+      ) ||
+        !Number.isSafeInteger(cursor.offset) ||
+        cursor.offset < 0 ||
+        cursor.offset > this.anchors.length)
+    )
+      throw new Error('Stale annotations cursor');
+    const result: AnnotationPage = { revision, generation, commentRevision, items: [] };
+    // This scan is explicitly mock BACKING work. Only one bounded page crosses
+    // the adapter; even dense overlap does not create an intermediate full list.
+    for (let offset = cursor?.offset ?? 0; offset < this.anchors.length; offset++) {
+      const a = this.anchors[offset];
+      if (
+        !a.alive ||
+        a.from >= to ||
+        a.to <= from ||
+        (a.kind === 'attribution' && a.sourceRevision !== revision)
+      )
+        continue;
+      const next = { ...binding, offset };
+      if (
+        result.items.length === limit ||
+        bytes(JSON.stringify({ ...result, items: [...result.items, a], next })) > LIMITS.request
+      ) {
+        if (!result.items.length) throw new Error('Annotation item exceeds page budget');
+        result.next = next;
+        break;
+      }
+      result.items.push({ ...a });
+    }
+    this.annotationPayloadBytes = bytes(JSON.stringify(result));
+    this.maxAnnotationPageBytes = Math.max(
+      this.maxAnnotationPageBytes,
+      this.annotationPayloadBytes,
+    );
+    this.annotationReads++;
+    this.log('annotations', from, this.annotationPayloadBytes);
     return result;
   }
   /** One change per disk page; grouping never rehydrates preceding changes. */
   event(index: number) {
-    return structuredClone(this.events[index].meta);
+    const { before, after } = this.events[index].meta;
+    return structuredClone({ before, after });
+  }
+  restoreEventAnchors(index: number, redo: boolean) {
+    const event = this.events[index].meta;
+    this.anchors = structuredClone(redo ? event.anchorsAfter : event.anchorsBefore);
+    this.reindexCommentMarkers();
+  }
+  recordEdit(before: Selection, after: Selection, group: boolean) {
+    this.record(
+      {
+        changes: [],
+        before,
+        after,
+        anchorsBefore: this.editAnchorsBefore,
+        anchorsAfter: structuredClone(this.anchors),
+      },
+      group,
+    );
   }
   bookmark(index: number, key: 'before' | 'after', selection: Selection) {
     const event = this.events[index];
@@ -2040,6 +2261,7 @@ export class SourceJournal {
       revision: this.revision,
       cursor: this.cursor,
       anchors: this.anchors,
+      editAnchorsBefore: this.editAnchorsBefore,
       draftWrites: this.draftWrites,
       maxSpliceBytes: this.maxSpliceBytes,
       logs: this.logs.slice(),
@@ -2080,6 +2302,7 @@ export class SourceJournal {
       this.revision = state.revision;
       this.cursor = state.cursor;
       this.anchors = state.anchors;
+      this.editAnchorsBefore = state.editAnchorsBefore;
       this.draftWrites = state.draftWrites;
       this.maxSpliceBytes = state.maxSpliceBytes;
       this.logs.splice(0, this.logs.length, ...state.logs);
@@ -2131,6 +2354,7 @@ export class SourceJournal {
   }
   beginChanges() {
     this.stagedPages = [];
+    this.editAnchorsBefore = structuredClone(this.anchors);
   }
   /** Mock backing admission: literal code and its framing form one atomic edit.
    * Full body scans are backing work, never renderer reads or parser inputs.
@@ -2393,6 +2617,15 @@ export class SourceJournal {
   }
   get stats() {
     return {
+      annotationReads: this.annotationReads,
+      backingMarkerScannedBytes: this.backingMarkerScannedBytes,
+      maxCommentDraftPageBytes: this.maxCommentDraftPageBytes,
+      backingCommentDraftBytes: [...this.commentDrafts.values()].reduce(
+        (n, draft) => n + bytes(draft.text),
+        0,
+      ),
+      maxAnnotationPageBytes: this.maxAnnotationPageBytes,
+      backingAnnotationBytes: bytes(JSON.stringify(this.anchors)),
       backingSeamScannedBytes: this.backingSeamScannedBytes,
       maxBackingSeamSourceBytes: this.maxBackingSeamSourceBytes,
       backingSeamCount: this.seams.size,

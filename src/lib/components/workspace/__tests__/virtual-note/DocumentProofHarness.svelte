@@ -4,6 +4,7 @@
   import { DOMParser } from '@tiptap/pm/model';
   import { Plugin } from '@tiptap/pm/state';
   import { createEditorConfig } from '$lib/utils/editor-config';
+  import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
   import { DocumentSession } from './document-session';
   import { SourceJournal, fixture } from './source-journal';
   import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
@@ -12,11 +13,13 @@
     small = false,
     paragraphRepeats = 0,
     sourceOverride,
+    anchors = false,
   }: {
     oracle?: boolean;
     small?: boolean;
     paragraphRepeats?: number;
     sourceOverride?: string;
+    anchors?: boolean;
   } = $props();
   let host: HTMLDivElement;
   let root: HTMLDivElement;
@@ -47,7 +50,12 @@
       });
       void processMarkdownToHTML(custom ? paragraph() : fixture(0) + fixture(1)).then((content) => {
         if (disposed) return;
-        native = new Editor({ ...config, content, onUpdate: () => {} });
+        native = new Editor({
+          ...config,
+          content,
+          extensions: anchors ? [...config.extensions!, CommentAnchor] : config.extensions,
+          onUpdate: () => {},
+        });
         Object.assign(root, { native });
         native.view.focus();
       });
@@ -82,17 +90,19 @@
       reloadNative: async (source: string) => {
         const content = await processMarkdownToHTML(source);
         native.destroy();
-        native = new Editor(
-          createEditorConfig({
-            element: host,
-            content,
-            editable: true,
-            useMarkdown: true,
-            enableComments: false,
-            enableMentions: false,
-            onUpdate: () => {},
-          }),
-        );
+        const config = createEditorConfig({
+          element: host,
+          content,
+          editable: true,
+          useMarkdown: true,
+          enableComments: false,
+          enableMentions: false,
+          onUpdate: () => {},
+        });
+        native = new Editor({
+          ...config,
+          extensions: anchors ? [...config.extensions!, CommentAnchor] : config.extensions,
+        });
         Object.assign(root, { native });
       },
       appendProbe: () => {

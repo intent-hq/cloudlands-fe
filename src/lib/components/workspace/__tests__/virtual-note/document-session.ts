@@ -18,6 +18,7 @@ import { Editor, Extension, type CommandProps } from '@tiptap/core';
 import { Plugin, TextSelection, EditorState, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { createEditorConfig } from '$lib/utils/editor-config';
+import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { bytes } from './bounded-note-service';
 import {
   LIMITS,
@@ -27,6 +28,8 @@ import {
   type Selection,
   type TablePoint,
   type Splice,
+  type AnnotationPage,
+  type AnnotationCursor,
 } from './source-journal';
 import { SourceProjection, openMark, closeMark, type InlineContext } from './source-projection';
 import { continuationWindow, CONTINUATION } from './continuation-window';
@@ -52,18 +55,8 @@ export class DocumentSession {
       if (generation !== this.selectionGeneration) throw new Error('Stale paste selection');
       const after = this.service.atomic(() => {
         this.service.beginChanges();
-        const anchorsBefore = structuredClone(this.service.anchors);
         const after = this.service.stageTablePaste(before, manifest.id, this.editor!);
-        this.service.record(
-          {
-            changes: [],
-            before,
-            after,
-            anchorsBefore,
-            anchorsAfter: structuredClone(this.service.anchors),
-          },
-          false,
-        );
+        this.service.recordEdit(before, after, false);
         return after;
       });
       this.selection = after;
@@ -108,18 +101,8 @@ export class DocumentSession {
     if (generation !== this.selectionGeneration) throw new Error('Stale clipboard selection');
     const after = this.service.atomic(() => {
       this.service.beginChanges();
-      const anchorsBefore = structuredClone(this.service.anchors);
       const after = this.service.stageTableCut(before, publication.id, this.editor!.schema);
-      this.service.record(
-        {
-          changes: [],
-          before,
-          after,
-          anchorsBefore,
-          anchorsAfter: structuredClone(this.service.anchors),
-        },
-        false,
-      );
+      this.service.recordEdit(before, after, false);
       return after;
     });
     this.selection = after;
@@ -200,6 +183,75 @@ export class DocumentSession {
   private pendingNavigation?: (accepted: boolean) => void;
   private rollbackState?: EditorState;
   delayFetch?: () => Promise<void>;
+  delayAnnotationResponse?: () => Promise<void>;
+  annotationPage?: AnnotationPage;
+  private annotationTicket = 0;
+  private annotationFlight?: Promise<void>;
+  private annotationRange = '';
+  annotationInFlightBytes = 0;
+  maxAnnotationInFlightBytes = 0;
+  maxAnnotationCacheBytes = 0;
+  /** A visible page, not a note-wide anchor map. Superseded replies cannot repaint. */
+  async loadAnnotations(cursor?: AnnotationCursor) {
+    const p = this.projection;
+    if (!p) return false;
+    const ticket = ++this.annotationTicket;
+    if (this.annotationFlight) await this.annotationFlight;
+    if (ticket !== this.annotationTicket || p !== this.projection) return false;
+    let release!: () => void;
+    const flight = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.annotationFlight = flight;
+    try {
+      const { revision, generation, commentRevision } = this.service;
+      const range = { from: p.start, to: p.start + p.source.length };
+      const page = this.service.annotations(range.from, range.to, revision, generation, {
+        commentRevision,
+        cursor,
+      });
+      this.annotationInFlightBytes = bytes(JSON.stringify(page));
+      this.maxAnnotationInFlightBytes = Math.max(
+        this.maxAnnotationInFlightBytes,
+        this.annotationInFlightBytes,
+      );
+      if (this.delayAnnotationResponse) await this.delayAnnotationResponse();
+      if (
+        ticket !== this.annotationTicket ||
+        p !== this.projection ||
+        revision !== this.service.revision ||
+        generation !== this.service.generation ||
+        commentRevision !== this.service.commentRevision
+      )
+        return false;
+      const prefix = `annotations:${revision}:${generation}:${commentRevision}:`;
+      for (const key of this.cache.keys())
+        if (key.startsWith('annotations:') && !key.startsWith(prefix)) this.cache.delete(key);
+      const key = `${prefix}${range.from}:${range.to}:${cursor?.offset ?? 0}`;
+      this.cache.delete(key);
+      this.cache.set(key, JSON.stringify(page));
+      while (
+        this.cache.size > LIMITS.cachePages ||
+        [...this.cache.values()].reduce((n, value) => n + bytes(value), 0) > LIMITS.active
+      )
+        this.cache.delete(this.cache.keys().next().value!);
+      this.maxAnnotationCacheBytes = Math.max(
+        this.maxAnnotationCacheBytes,
+        [...this.cache]
+          .filter(([key]) => key.startsWith('annotations:'))
+          .reduce((n, [, value]) => n + bytes(value), 0),
+      );
+      this.annotationPage = page;
+      this.annotationRange = `${p.start}:${p.source.length}`;
+      if (this.editor && !this.editor.isDestroyed) this.editor.view.setProps({});
+      this.changed();
+      return true;
+    } finally {
+      this.annotationInFlightBytes = 0;
+      if (this.annotationFlight === flight) this.annotationFlight = undefined;
+      release();
+    }
+  }
   constructor(
     readonly service: SourceJournal,
     private host: HTMLElement,
@@ -930,6 +982,7 @@ export class DocumentSession {
         const before = scroller ? editor.view.coordsAtPos(editor.state.selection.head) : undefined;
         this.projection = next;
         this.windowEnd = window.to;
+        void this.loadAnnotations();
         this.suppress = true;
         try {
           const tr = editor.state.tr.replaceWith(
@@ -1015,14 +1068,18 @@ export class DocumentSession {
       this.windowEnd = window.to;
       this.continuation = window.continuation;
       this.projection = next;
+      void this.loadAnnotations();
       const decorations = (state: EditorState) => {
         const p = this.projection!;
-        const result = this.service.annotations(
-          p.start,
-          p.start + p.source.length,
-          this.service.revision,
-          this.service.generation,
-        );
+        const page = this.annotationPage;
+        const result =
+          page &&
+          this.annotationRange === `${p.start}:${p.source.length}` &&
+          page.revision === this.service.revision &&
+          page.generation === this.service.generation &&
+          page.commentRevision === this.service.commentRevision
+            ? page
+            : { items: [] };
         const rows: Decoration[] = [];
         if (p.table?.window.geometry && state.doc.firstChild?.type.name === 'table') {
           const heights = p.table.window.geometry.heights;
@@ -1061,7 +1118,17 @@ export class DocumentSession {
           ...result.items.flatMap((a) => {
             const from = p.pmAt(Math.max(a.from, p.start)),
               to = p.pmAt(Math.min(a.to, p.start + p.source.length), -1);
-            return from < to ? [Decoration.inline(from, to, { 'data-proof-comment': a.id })] : [];
+            return from < to
+              ? [
+                  Decoration.inline(
+                    from,
+                    to,
+                    a.kind === 'attribution'
+                      ? { 'data-proof-attribution': a.id }
+                      : { 'data-proof-comment': a.id },
+                  ),
+                ]
+              : [];
           }),
         ]);
       };
@@ -1177,7 +1244,7 @@ export class DocumentSession {
       this.editor = new Editor({
         ...config,
         content: this.projection.content,
-        extensions: [...extensions, annotations],
+        extensions: [...extensions, CommentAnchor, annotations],
         onUpdate: () => {},
         onSelectionUpdate: () => {},
         onTransaction: ({ transaction, appendedTransactions }) =>
@@ -1676,7 +1743,6 @@ export class DocumentSession {
       try {
         const after = this.service.atomic(() => {
           this.service.beginChanges();
-          const anchorsBefore = structuredClone(this.service.anchors);
           const after = this.service.stageLogicalTableCommand(
             command.getMeta('proofLogicalTableCommand'),
             this.editor!,
@@ -1692,16 +1758,7 @@ export class DocumentSession {
             after.affinity = 1;
             after.table = { anchor: next.point, head: next.point, kind: 'text' };
           }
-          this.service.record(
-            {
-              changes: [],
-              before,
-              after,
-              anchorsBefore,
-              anchorsAfter: structuredClone(this.service.anchors),
-            },
-            false,
-          );
+          this.service.recordEdit(before, after, false);
           return after;
         });
         this.tableTabAtEnd = false;
@@ -1729,7 +1786,6 @@ export class DocumentSession {
       try {
         const after = this.service.atomic(() => {
           this.service.beginChanges();
-          const anchorsBefore = structuredClone(this.service.anchors);
           const result = this.service.stageLogicalTableSplit(
             logicalSplit.getMeta('proofLogicalTableSplit'),
           );
@@ -1738,16 +1794,7 @@ export class DocumentSession {
             after.table = { ...after.table, head: { cell: result.last, block: 0, offset: 0 } };
             after.head = result.lastSource;
           }
-          this.service.record(
-            {
-              changes: [],
-              before,
-              after,
-              anchorsBefore,
-              anchorsAfter: structuredClone(this.service.anchors),
-            },
-            false,
-          );
+          this.service.recordEdit(before, after, false);
           return after;
         });
         this.selection = after;
@@ -1813,7 +1860,6 @@ export class DocumentSession {
             if (this.prevRange && start <= this.prevRange[1] && end >= this.prevRange[0])
               adjacent = true;
           });
-          const anchorsBefore = structuredClone(this.service.anchors);
           const history =
             tr.getMeta('addToHistory') !== false &&
             transactions[0].getMeta('addToHistory') !== false;
@@ -2003,17 +2049,7 @@ export class DocumentSession {
             (index > 0 ||
               (composition !== undefined && composition === this.prevComposition) ||
               (tr.time - this.prevTime <= 500 && !!adjacent));
-          if (history)
-            this.service.record(
-              {
-                changes: [],
-                before,
-                after,
-                anchorsBefore,
-                anchorsAfter: structuredClone(this.service.anchors),
-              },
-              group,
-            );
+          if (history) this.service.recordEdit(before, after, group);
           if (history) {
             this.prevRange = undefined;
             for (let m = tr.mapping.maps.length - 1; m >= 0 && !this.prevRange; m--) {
@@ -2044,7 +2080,7 @@ export class DocumentSession {
       this.error = '';
       // Only source changes invalidate anchors. Refreshing during a selectionchange can
       // race the browser's next native selection update.
-      if (transactions.some((tr) => tr.docChanged)) this.editor?.view.setProps({});
+      if (transactions.some((tr) => tr.docChanged)) void this.loadAnnotations();
       this.changed();
       this.continueNearEdge();
     } catch (error) {
@@ -2066,7 +2102,7 @@ export class DocumentSession {
     this.service.atomic(() => {
       this.service.bookmark(index, redo ? 'before' : 'after', this.selection);
       for (const change of this.service.changes(index, !redo)) this.service.replay(change, redo);
-      this.service.anchors = structuredClone(redo ? event.anchorsAfter : event.anchorsBefore);
+      this.service.restoreEventAnchors(index, redo);
       this.service.cursor += redo ? 1 : -1;
     });
     this.selection = { ...(redo ? event.after : event.before), revision: this.service.revision };
@@ -2087,8 +2123,7 @@ export class DocumentSession {
   }
   /** Source-level adapters exercise ranges larger than the mounted document without hydration. */
   async replaceSelection(insert: string) {
-    const before = { ...this.selection },
-      anchorsBefore = structuredClone(this.service.anchors);
+    const before = { ...this.selection };
     const from = Math.min(before.anchor, before.head),
       to = Math.max(before.anchor, before.head);
     const after = this.service.atomic(() => {
@@ -2100,16 +2135,7 @@ export class DocumentSession {
         affinity: 1,
         revision: this.service.revision,
       };
-      this.service.record(
-        {
-          changes: [],
-          before,
-          after,
-          anchorsBefore,
-          anchorsAfter: structuredClone(this.service.anchors),
-        },
-        false,
-      );
+      this.service.recordEdit(before, after, false);
       return after;
     });
     this.selection = after;
@@ -2160,6 +2186,7 @@ export class DocumentSession {
         }
       }
       this.editor?.view.setProps({});
+      void this.loadAnnotations();
       this.changed();
     } else void this.seek(this.selection.head);
   }
@@ -2344,7 +2371,17 @@ export class DocumentSession {
           ...(this.projection?.boundaries ?? []),
         ]),
       ),
-      annotationPayloadBytes: bytes(JSON.stringify(this.service.anchors)),
+      annotationPayloadBytes: this.service.annotationPayloadBytes,
+      annotationCachePages: [...this.cache.keys()].filter((key) => key.startsWith('annotations:'))
+        .length,
+      annotationCacheBytes: [...this.cache]
+        .filter(([key]) => key.startsWith('annotations:'))
+        .reduce((n, [, value]) => n + bytes(value), 0),
+      maxAnnotationCacheBytes: this.maxAnnotationCacheBytes,
+      annotationInFlightBytes: this.annotationInFlightBytes,
+      maxAnnotationInFlightBytes: this.maxAnnotationInFlightBytes,
+      mountedAnnotations: this.annotationPage?.items.length ?? 0,
+      moreAnnotations: !!this.annotationPage?.next,
       rendererJournalPages: 0,
       activeBytes: bytes(this.projection?.source ?? ''),
       cachePages: this.cache.size,
@@ -2361,6 +2398,8 @@ export class DocumentSession {
     };
   }
   destroy() {
+    this.annotationTicket++;
+    this.annotationPage = undefined;
     this.tableResize?.disconnect();
     this.tableMeasurements?.disconnect();
     this.tableFontObserver?.disconnect();
