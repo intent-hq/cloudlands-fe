@@ -143,12 +143,16 @@ test('previous-message action leaves bottom and stays at successive user message
         node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
       await scroll.elementHandle(),
     );
+    const position = await scroll.evaluate((node) => ({
+      scrollTop: node.scrollTop,
+      bottomDistance: node.scrollHeight - node.clientHeight - node.scrollTop,
+    }));
     await testInfo.attach(`previous-${current - 1}`, {
-      body: JSON.stringify({ offset, scrollTop: await scroll.evaluate((node) => node.scrollTop) }),
+      body: JSON.stringify({ offset, ...position }),
       contentType: 'application/json',
     });
     expect(Math.abs(offset)).toBeLessThanOrEqual(3);
-    await down.expectAtBottom(false);
+    expect(position.bottomDistance).toBeGreaterThan(2);
   }
   const readingPosition = await scroll.evaluate((node) => node.scrollTop);
   await component
@@ -291,11 +295,14 @@ test('keyboard message navigation releases follow and can return to bottom', asy
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(ChatMessageNavigatorIntegrationHost);
+  await expect(component.locator('.tiptap-editor')).toBeEditable();
+  await component.evaluate(() => document.fonts.ready);
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   const down = bottomArrow(component);
   await down.expectAtBottom(true);
   const bottom = await scroll.evaluate((node) => node.scrollTop);
-  for (let step = 0; step < 3; step++) {
+  const navigationSteps = 6;
+  for (let step = 0; step < navigationSteps; step++) {
     await page.evaluate(() =>
       window.dispatchEvent(
         new CustomEvent('navigate-message', { detail: { direction: 'previous' } }),
@@ -304,9 +311,23 @@ test('keyboard message navigation releases follow and can return to bottom', asy
     await page.waitForTimeout(200);
   }
   await page.waitForTimeout(500);
+  const target = component.locator('[data-message-id="user-23"]');
   const readingPosition = await scroll.evaluate((node) => node.scrollTop);
-  expect(readingPosition).toBeLessThan(bottom - 20);
-  for (let step = 0; step < 3; step++) {
+  await testInfo.attach('keyboard-reading-position', {
+    body: JSON.stringify({
+      bottom,
+      readingPosition,
+      bottomDistance: await scroll.evaluate(
+        (node) => node.scrollHeight - node.clientHeight - node.scrollTop,
+      ),
+    }),
+    contentType: 'application/json',
+  });
+  expect(readingPosition).toBeLessThan(bottom);
+  await expect(target).toBeInViewport({ ratio: 1 });
+  await down.expectAtBottom(false);
+  await component.screenshot({ path: testInfo.outputPath('keyboard-reading-position.png') });
+  for (let step = 0; step < navigationSteps; step++) {
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent('navigate-message', { detail: { direction: 'next' } })),
     );
@@ -761,7 +782,7 @@ for (const input of ['PageUp', 'PageDown', 'Home', 'End', 'scrollbar'] as const)
         historyStartLoaded: false,
         // One unloaded page keeps real scrolling without invoking the ordinal
         // seek saga, which this focused navigation host does not start.
-        totalMessages: 200,
+        totalMessages: automatedTail.length + 5,
         deferPages: true,
         conversationPages: [
           conversationPage([

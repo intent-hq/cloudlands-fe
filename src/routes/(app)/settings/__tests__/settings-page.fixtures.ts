@@ -187,22 +187,6 @@ export const SETTINGS_PROTOCOL_FIXTURES = {
       },
     },
   },
-  flushQueuedMessages: {
-    request: { method: 'settings.get', params: { path: 'agents.flushQueuedMessages' } },
-    response: {
-      path: 'agents.flushQueuedMessages',
-      value: 'systemOnly',
-      definition: {
-        path: 'agents.flushQueuedMessages',
-        label: 'Flush queued messages',
-        description: '',
-        category: 'agents',
-        type: 'enum',
-        enumValues: ['all', 'systemOnly', 'off'],
-        defaultValue: 'all',
-      },
-    },
-  },
   // The budget's `max` is the daemon's detected total physical memory, so it
   // varies per machine; the fixture pins the shape, not a constant the FE is
   // allowed to assume (48 GB here — deliberately not a value worth hardcoding).

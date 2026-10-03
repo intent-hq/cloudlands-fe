@@ -4,9 +4,13 @@ import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  signIn: vi.fn(async () => {}),
   request: vi.fn<(method: string, params?: unknown) => Promise<unknown>>(),
   closeAndNavigate: vi.fn<(workspaceId: string) => Promise<void>>(async () => {}),
   bridgeInvoke: vi.fn<(channel: string, params?: unknown) => Promise<unknown>>(async () => ({})),
+}));
+vi.mock('$features/collaboration-auth/renderer/collaboration-auth.client', () => ({
+  openCollaborationSignIn: mocks.signIn,
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.bridgeInvoke }));
@@ -23,6 +27,7 @@ import { GUEST_SESSIONS_CHANGED_EVENT } from '$shared/types/guest-sessions';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import {
   authRejectedReceived,
+  connectionsListReceived,
   connectionsReducer,
   initialState as connectionsInitialState,
 } from '../../connections/connections-slice';
@@ -42,6 +47,7 @@ import {
 } from '../../workspace/workspace-slice';
 import { workspaceDeleted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  collaborationSignInRequested,
   guestSessionsListReceived,
   guestSessionsReducer,
   initialState,
@@ -211,6 +217,7 @@ async function stop(task: Task): Promise<void> {
 describe('guestSessionsSaga', () => {
   beforeEach(() => {
     callbacks = {};
+    mocks.signIn.mockClear();
     mocks.request.mockReset();
     mocks.closeAndNavigate.mockClear();
     mocks.bridgeInvoke.mockReset();
@@ -239,6 +246,85 @@ describe('guestSessionsSaga', () => {
   });
 
   afterEach(() => vi.unstubAllGlobals());
+
+  it('direct settings sign-in dispatch uses the hydrated window binding, never activeId', async () => {
+    const run = start();
+    const bind = (windowBackendId: string) =>
+      run.dispatch(
+        connectionsListReceived({
+          connections: [
+            {
+              id: 'local',
+              label: 'Local',
+              isLocal: true,
+              host: null,
+              port: null,
+              fingerprint: null,
+            },
+            {
+              id: 'remote-host',
+              label: 'Remote',
+              isLocal: false,
+              host: 'studio.example',
+              port: 8443,
+              fingerprint: 'AB:CD',
+            },
+          ],
+          activeId: 'local',
+          windowBackendId,
+        }),
+      );
+    try {
+      await settle();
+      bind('local');
+      run.dispatch(collaborationSignInRequested());
+      await settle();
+      expect(mocks.signIn).toHaveBeenCalledTimes(1);
+      mocks.signIn.mockClear();
+      // A request created locally cannot act after the window has rebound remotely.
+      const staleRequest = collaborationSignInRequested();
+      bind('remote-host');
+      run.dispatch(staleRequest);
+      run.dispatch(collaborationSignInRequested());
+      await settle();
+      expect(mocks.signIn).not.toHaveBeenCalled();
+      bind('local');
+      run.dispatch(collaborationSignInRequested());
+      await settle();
+      expect(mocks.signIn).toHaveBeenCalledTimes(1);
+    } finally {
+      await stop(run.task);
+    }
+  });
+
+  it.each(['pending', 'unready', 'disabled'] as const)(
+    'rejects direct settings sign-in when %s',
+    async (condition) => {
+      const run = start({
+        project: (state) => ({
+          ...state,
+          connections:
+            condition === 'pending'
+              ? { ...state.connections, hasReceivedList: false }
+              : state.connections,
+          principal:
+            condition === 'unready' ? { ...state.principal, status: 'loading' } : state.principal,
+          userPreferences:
+            condition === 'disabled'
+              ? { ...state.userPreferences, labsMultiplayerEnabled: false }
+              : state.userPreferences,
+        }),
+      });
+      try {
+        await settle();
+        run.dispatch(collaborationSignInRequested());
+        await settle();
+        expect(mocks.signIn).not.toHaveBeenCalled();
+      } finally {
+        await stop(run.task);
+      }
+    },
+  );
 
   it('hydrates the token-free list on boot and mirrors guest-sessions:changed pushes', async () => {
     const run = start();

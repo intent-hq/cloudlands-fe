@@ -1,3 +1,4 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Live agents domain backed by the intentd daemon.
  *
@@ -270,7 +271,7 @@ export class LiveAgentsClient implements AgentsClient {
   // agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 50,
+    limit = CHAT_PAGE_SIZE,
     pageToken?: string,
     aroundMessageId?: string,
     aroundIndex?: number,
@@ -625,6 +626,36 @@ export class LiveAgentsClient implements AgentsClient {
       // Same error shaping as `runMutation` (which this method bypassed to
       // extract `turnId`): fold JSON-RPC "Internal error" + `data.detail`
       // into an actionable message.
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+  async sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
+  }): Promise<MutationResult> {
+    try {
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        messageIds: string[];
+        turnId?: string;
+      }>('agent.sendQueuedMessagesNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageIds: params.messageIds,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        messageIds: result.messageIds,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(!result.queued && !result.quarantined && result.turnId
+          ? { turnId: result.turnId }
+          : {}),
+      };
+    } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
   }

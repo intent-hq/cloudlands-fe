@@ -43,6 +43,11 @@ export const settingsChangesReceived = createAction<
   [changes: AppliedSettingChange[], revision?: number]
 >('settings/changesReceived');
 
+/** Recover only rejected fields from the daemon; never replay local intent. */
+export const settingsFieldsRefreshRequested = createAction<
+  [paths: string[], connection: string | null]
+>('settings/fieldsRefreshRequested');
+
 export const settingsFormOpened =
   createAction<[identity: SettingsFormIdentity, kind: SettingsFormKind]>('settings/formOpened');
 export const settingsFormClosed =

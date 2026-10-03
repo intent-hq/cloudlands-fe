@@ -913,6 +913,7 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
     selectContextAvailableProviderIds: () => enabledProviderIds$,
     selectContextModelProviderIds: () => enabledProviderIds$,
     selectContextReadinessLoaded: () => readable(true),
+    selectWorkspaceCatalogEpoch: () => readable(0),
     selectContextProviderWarnings: () => providerWarnings$,
     selectContextProviderStaleFlags: () => readable({}),
   };

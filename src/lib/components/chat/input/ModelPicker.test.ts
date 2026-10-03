@@ -7,6 +7,7 @@ import { tick } from 'svelte';
 import { derived, get, readable, writable } from 'svelte/store';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import type { ProviderModelsState } from '$store/renderer/slices/provider-models/provider-models-types';
+import type { ProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-types';
 
 const mockModelState = vi.hoisted(() => ({
   defaultProviderId: 'auggie',
@@ -137,6 +138,21 @@ vi.mock('$store/renderer/store', async () => {
       model: { defaultProviderId: mockModelState.defaultProviderId },
       // Selector-channel memoization needs immutable snapshots like real Redux.
       providerModels: { ...mockProviderModelsState },
+      agentModel: mutationState,
+      agentSessions: {
+        byAgentId: {
+          'agent-1': {
+            id: 'agent-1',
+            workspaceId: 'ws-1',
+            model: mockModelState.selectedModel,
+            provider: mockModelState.defaultProviderId,
+            ...get(mockAgentSession$),
+            reasoningEffort: get(reasoningEffort$),
+            ...mutationSession,
+          },
+        },
+      },
+      daemonHealth: {},
       ...mockRoleState.current,
     }),
     dispatch: mockSvelteDispatch,
@@ -166,6 +182,19 @@ const applyReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const mockSvelteDispatch = vi.hoisted(() =>
   vi.fn((action: { type?: string; payload?: unknown }) => {
+    if (action.type?.startsWith('agentModel/')) {
+      mutationState = agentModelReducer(
+        mutationState,
+        action as Parameters<typeof agentModelReducer>[1],
+      );
+      (mockAppStore as unknown as { emitState: () => void }).emitState();
+    }
+    if (action.type === 'agentSession/updateSession') {
+      Object.assign(
+        mutationSession,
+        (action.payload as { fields: Record<string, unknown> }).fields,
+      );
+    }
     if (action.type?.startsWith('providerModels/') || action.type === 'hostExecution/invalidated') {
       Object.assign(
         mockProviderModelsState,
@@ -215,12 +244,27 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
   selectAgentSession.select = vi.fn(() => undefined);
   const selectAgentReasoningEffort = vi.fn(() => reasoningEffort$);
   selectAgentReasoningEffort.select = vi.fn(() => get(reasoningEffort$));
-  return { selectAgentSession, selectAgentReasoningEffort };
+  return {
+    selectAgentSession,
+    selectAgentReasoningEffort,
+    selectAgentProvider: {
+      select: (
+        state: { agentSessions: { byAgentId: Record<string, { provider: string }> } },
+        id: string,
+      ) => state.agentSessions.byAgentId[id]?.provider,
+    },
+  };
 });
 
 vi.mock('$features/agent/reasoning-effort', () => ({
   applyReasoningEffort: applyReasoningEffortMock,
   reconcileAgentReasoningEffort: reconcileAgentReasoningEffortMock,
+  markReasoningEffortIntent: vi.fn(() => ++effortIntent),
+}));
+let effortIntent = 0;
+const setReasoningEffortMock = vi.hoisted(() => vi.fn(async () => ({ success: true })));
+vi.mock('$lib/client', () => ({
+  appClient: { agents: { setReasoningEffort: setReasoningEffortMock } },
 }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
@@ -247,10 +291,14 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => readable(mockModelState.loadError),
   selectAllProviderWarnings: () => providerWarnings$,
   selectAllProviderStaleFlags: () => providerStaleFlags$,
-  selectAgentModelEffortLevels: () => agentModelEffortLevels$,
+  selectAgentModelEffortLevels: Object.assign(() => agentModelEffortLevels$, {
+    select: () => get(agentModelEffortLevels$),
+  }),
 }));
 
 const hasCheckedOnce$ = writable(true);
+const workspaceCatalogEpoch$ = writable(0);
+const providerEntriesOverride$ = writable<ProviderCatalogEntry[] | null>(null);
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
   selectHasCheckedOnce: () => hasCheckedOnce$,
 }));
@@ -328,6 +376,8 @@ import {
   initialState as providerModelsInitialState,
 } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
+import { agentModelReducer } from '$store/renderer/slices/agent-model/agent-model-slice';
 import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
 import ModelPicker from './ModelPicker.svelte';
 import { warmImport } from '../../../../test/warm-import';
@@ -339,7 +389,12 @@ warmImport(() => import('../../ui/__tests__/mocks/button.svelte'));
 
 let catalogChannel: ReturnType<typeof stdChannel> | undefined;
 let catalogTask: Task;
+let mutationTask: Task;
+let mutationState = agentModelReducer(undefined, { type: 'init' });
+let mutationSession: Record<string, unknown> = {};
 beforeEach(() => {
+  mutationState = agentModelReducer(undefined, { type: 'init' });
+  mutationSession = {};
   mockRoleState.current = withLegacyPrincipal(
     mockRoleState.reset(),
   ) as unknown as typeof mockRoleState.current;
@@ -349,6 +404,10 @@ beforeEach(() => {
     map: { 'ws-1': { id: 'ws-1', myRole: 'owner' } },
   };
   catalogChannel = stdChannel();
+  mutationTask = runSaga(
+    { channel: catalogChannel, dispatch: mockSvelteDispatch, getState: () => mockAppStore.state },
+    agentModelSaga,
+  );
   catalogTask = runSaga(
     {
       channel: catalogChannel,
@@ -368,6 +427,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   catalogTask.cancel();
+  mutationTask.cancel();
   catalogChannel = undefined;
   Object.assign(mockProviderModelsState, providerModelsInitialState);
   availableProviderOverride$.set(null);
@@ -381,6 +441,8 @@ afterEach(() => {
   mockRoleState.current = mockRoleState.reset();
   reasoningEffort$.set(undefined);
   agentModelEffortLevels$.set(undefined);
+  workspaceCatalogEpoch$.set(0);
+  providerEntriesOverride$.set(null);
 });
 
 describe('ModelPicker locked state', () => {
@@ -494,8 +556,9 @@ describe('ModelPicker guest / collaborator lock', () => {
     };
   };
 
-  const renderAgentPicker = (selectedModel = 'auggie:sonnet4.6') =>
-    render(ModelPicker, {
+  const renderAgentPicker = (selectedModel = 'auggie:sonnet4.6') => {
+    mockAgentSession$.update((session) => session && { ...session, model: selectedModel });
+    return render(ModelPicker, {
       props: {
         selectedModel,
         agentId: 'agent-1',
@@ -504,6 +567,7 @@ describe('ModelPicker guest / collaborator lock', () => {
         portal: false,
       },
     });
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -746,6 +810,7 @@ describe('ModelPicker guest / collaborator lock', () => {
     withWorkspaceRole('owner');
     twoModelCatalog();
     mockModelState.availableModels = hostCatalog;
+    mockAgentSession$.update((session) => session && { ...session, model: 'auggie:sonnet4.6' });
     let resolveConfirm!: (confirmed: boolean) => void;
     const confirmModelChange = vi.fn(
       () => new Promise<boolean>((resolve) => (resolveConfirm = resolve)),
@@ -2926,6 +2991,63 @@ describe('ModelPicker availability gating', () => {
     daemonHealth$.set('healthy');
   });
 
+  it('preserves a cached agent model while its workspace registry refreshes', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const onModelChange = vi.fn();
+    const onReasoningChange = vi.fn();
+    vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({
+      models: [{ value: 'sonnet4.6', label: 'Sonnet 4.6' }],
+    });
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'sonnet4.6',
+        providerId: 'auggie',
+        workspaceId: 'ws-1',
+        agentId: 'test-agent',
+        reasoningEffort: 'high',
+        onModelChange,
+        onReasoningChange,
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+    const trigger = await screen.findByRole('button');
+    await waitFor(() => expect(trigger.textContent).toContain('Sonnet 4.6'));
+
+    // Registry invalidation clears readiness before its replacement arrives,
+    // while the last successful models.list result is still cached.
+    hasCheckedOnce$.set(false);
+    providerEntriesOverride$.set([]);
+    workspaceCatalogEpoch$.update((epoch) => epoch + 1);
+    await tick();
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    await fireEvent.click(trigger);
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    providerEntriesOverride$.set(null);
+    hasCheckedOnce$.set(true);
+    await waitFor(() => expect(screen.getByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy());
+    expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(agentClient.setModel).not.toHaveBeenCalled();
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(onReasoningChange).not.toHaveBeenCalled();
+  });
+
+  it('requests its own workspace catalog again after invalidation while still mounted', async () => {
+    render(ModelPicker, {
+      props: { workspaceId: 'ws-1', providerId: 'auggie', portal: false },
+    });
+    await tick();
+    const requests = () =>
+      mockSvelteDispatch.mock.calls
+        .filter(([action]) => action.type === 'providerCatalog/ensureWorkspaceCatalogRequested')
+        .map(([action]) => action.payload);
+    expect(requests()).toEqual([['ws-1']]);
+    workspaceCatalogEpoch$.update((epoch) => epoch + 1);
+    await tick();
+    expect(requests()).toEqual([['ws-1'], ['ws-1']]);
+  });
+
   it('does not show the no-provider failure notice or toast while availability has not been checked yet', async () => {
     const { notify } = await import('$lib/components/patterns/notify');
     hasCheckedOnce$.set(false);
@@ -3962,7 +4084,7 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     });
   });
 
-  it('holds the announcement and the auto-fallback until the bare re-homed model arrives', async () => {
+  it('announces the authoritative re-homed model without waiting for the parent prop', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     const { notify } = await import('$lib/components/patterns/notify');
     enabledProvidersMap$.set({ auggie: true, codex: false });
@@ -4011,7 +4133,8 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     await tick();
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(vi.mocked(notify.info)).not.toHaveBeenCalled();
+    expect(vi.mocked(notify.info)).toHaveBeenCalledTimes(1);
+    expect(trigger.textContent).toContain('Sonnet 4.6');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
 
@@ -4272,14 +4395,67 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await pickModelOne();
 
     await waitFor(() => {
-      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith(
-        'agent-1',
-        'ws-1',
-        'xhigh',
-        ['low', 'high'],
-        { canMutate: expect.any(Function), canSend: expect.any(Function) },
-      );
+      expect(setReasoningEffortMock).toHaveBeenCalledWith({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        reasoningEffort: 'high',
+      });
     });
+  });
+
+  it('renders a saga-accepted selection in an open observer before its parent prop catches up', async () => {
+    const { createAgentModelMutator } = await import('./agent-model-mutator');
+    const { agentClient } = await import('$features/agent/agent.client');
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'auggie',
+      model: 'gpt5.4',
+    });
+    const models = [
+      { value: 'gpt5.4', label: 'GPT 5.4' },
+      { value: 'model-1', label: 'Model 1' },
+    ];
+    mockModelState.availableModels = models;
+    vi.mocked(getModelsForProvider).mockResolvedValue(models);
+    const onModelChange = vi.fn();
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        showReasoning: true,
+        portal: false,
+        onModelChange,
+      },
+    });
+    const trigger = screen.getByRole('button');
+    await fireEvent.click(trigger);
+    await screen.findByRole('option', { name: 'Model 1' });
+
+    const observer = mockAppStore.getReadableState().subscribe(() => {
+      const session = mockAppStore.state.agentSessions.byAgentId['agent-1'];
+      if (session) mockAgentSession$.set(session);
+    });
+    try {
+      const writer = createAgentModelMutator({ isLocked: () => false });
+      await writer.selectModel('agent-1', 'model-1', 'ws-1', 'auggie');
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'model-1',
+        'ws-1',
+        'auggie',
+      );
+      await waitFor(() => expect(trigger.textContent).toContain('Model 1'));
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByRole('option', { name: 'Model 1' }).getAttribute('aria-selected')).toBe(
+        'true',
+      );
+      expect(onModelChange).not.toHaveBeenCalled();
+    } finally {
+      observer();
+    }
   });
 
   it('cross-provider pick (intent-hq/monorepo#1657): session on claude-code, bare default-provider model → explicit providerId on the wire', async () => {
@@ -5369,7 +5545,12 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
   const { selectProviderCatalogEntries } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
   return {
-    selectContextProviderEntries: selectProviderCatalogEntries,
+    selectContextProviderEntries: () =>
+      derived(
+        [selectProviderCatalogEntries(), providerEntriesOverride$],
+        ([entries, override]) => override ?? entries,
+      ),
+    selectWorkspaceCatalogEpoch: () => workspaceCatalogEpoch$,
     selectContextDefaultProvider: () => readable(mockModelState.defaultProviderId),
     selectContextSelectedModel: () => readable(mockModelState.selectedModel),
     selectContextEnabledProviders: () => enabledProvidersMap$,

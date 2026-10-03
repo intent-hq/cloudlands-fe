@@ -127,8 +127,11 @@ export class CollaborationIdentityClient {
     return this.call<{
       provider: string;
       host: string;
-      externalUserId: string;
+      // GitHub resolves the stable ID on the receiving host during invite.prove.
+      externalUserId: string | null;
+      avatarUrl: string | null;
       proofId: string;
+      gistId?: string;
       login: string;
     }>('sourceControl.identityProof.create', {
       ...identityParams(prepared.identity),

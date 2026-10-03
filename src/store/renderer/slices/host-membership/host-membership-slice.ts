@@ -4,6 +4,7 @@ import {
   createCollection,
   type Collection,
 } from '@themislib/themis/utils/collections/collection-utils';
+import { hostMembershipChanged } from '../principal/principal-slice';
 import type { HostInvite, HostInviteInput, HostMember } from '$features/host-membership/types';
 
 export interface HostMembershipTarget {
@@ -23,8 +24,12 @@ export interface HostMembershipState {
   loaded: boolean;
   withheld: boolean;
   busy: boolean;
+  creating: boolean;
+  reloadPending: boolean;
   error: string | null;
+  refreshError: string | null;
   revision: number | null;
+  createdInviteId: string | null;
 }
 export const initialState: HostMembershipState = {
   target: null,
@@ -33,28 +38,42 @@ export const initialState: HostMembershipState = {
   loaded: false,
   withheld: false,
   busy: false,
+  creating: false,
+  reloadPending: false,
   error: null,
+  refreshError: null,
   revision: null,
+  createdInviteId: null,
 };
 export const hostMembershipOpened =
   createAction<[target: HostMembershipTarget]>('hostMembership/opened');
+export const hostMembershipRebound =
+  createAction<[target: HostMembershipTarget]>('hostMembership/rebound');
+export const hostMembershipListsChanged = createAction('hostMembership/listsChanged');
 export const hostMembershipClosed =
   createAction<[target: HostMembershipTarget]>('hostMembership/closed');
 export const hostMembershipRequested = createAction<
   [target: HostMembershipTarget, command: HostMembershipCommand]
 >('hostMembership/requested');
 export const hostMembershipStarted =
-  createAction<[target: HostMembershipTarget]>('hostMembership/started');
+  createAction<[target: HostMembershipTarget, creating?: boolean]>('hostMembership/started');
 export const hostMembershipLoaded =
   createAction<
     [target: HostMembershipTarget, members: HostMember[], invites: HostInvite[], revision: number]
   >('hostMembership/loaded');
+export const hostMembershipInviteCleared = createAction<[target: HostMembershipTarget]>(
+  'hostMembership/inviteCleared',
+);
+export const hostMembershipCreated =
+  createAction<[target: HostMembershipTarget, inviteId: string]>('hostMembership/created');
 export const hostMembershipDenied =
   createAction<[target: HostMembershipTarget, error: string]>('hostMembership/denied');
 export const hostMembershipFinished =
   createAction<[target: HostMembershipTarget]>('hostMembership/finished');
 export const hostMembershipFailed =
-  createAction<[target: HostMembershipTarget, error: string]>('hostMembership/failed');
+  createAction<[target: HostMembershipTarget, error: string, refresh?: boolean]>(
+    'hostMembership/failed',
+  );
 export const hostMembershipReducer = createReducer(initialState);
 const matches = (state: HostMembershipState, target: HostMembershipTarget) =>
   state.target?.session === target.session && state.target.context === target.context;
@@ -65,8 +84,12 @@ hostMembershipReducer.with(hostMembershipOpened, (_state, { payload: [target] })
 hostMembershipReducer.with(hostMembershipClosed, (state, { payload: [target] }) =>
   matches(state, target) ? initialState : state,
 );
-hostMembershipReducer.with(hostMembershipStarted, (state, { payload: [target] }) =>
-  matches(state, target) ? { ...state, busy: true, error: null } : state,
+hostMembershipReducer.with(
+  hostMembershipStarted,
+  (state, { payload: [target, creating = false] }) =>
+    matches(state, target)
+      ? { ...state, busy: true, creating, reloadPending: false, error: state.refreshError }
+      : state,
 );
 hostMembershipReducer.with(
   hostMembershipLoaded,
@@ -75,22 +98,50 @@ hostMembershipReducer.with(
       ? {
           ...state,
           busy: false,
+          creating: false,
           loaded: true,
           error: null,
+          refreshError: null,
           revision,
           members: createCollection('principalId', members),
           invites: createCollection('id', invites),
         }
       : state,
 );
-hostMembershipReducer.with(hostMembershipFailed, (state, { payload: [target, error] }) =>
-  matches(state, target) ? { ...state, busy: false, error } : state,
+hostMembershipReducer.with(hostMembershipFailed, (state, { payload: [target, error, refresh] }) =>
+  matches(state, target)
+    ? {
+        ...state,
+        busy: false,
+        creating: false,
+        error,
+        refreshError: refresh ? error : state.refreshError,
+      }
+    : state,
 );
 
 hostMembershipReducer.with(hostMembershipFinished, (state, { payload: [target] }) =>
-  matches(state, target) ? { ...state, busy: false, error: null } : state,
+  matches(state, target)
+    ? { ...state, busy: false, creating: false, error: state.refreshError }
+    : state,
 );
 
 hostMembershipReducer.with(hostMembershipDenied, (state, { payload: [target, error] }) =>
   matches(state, target) ? { ...initialState, target, withheld: true, error } : state,
 );
+
+hostMembershipReducer.with(hostMembershipCreated, (state, { payload: [target, inviteId] }) =>
+  matches(state, target) ? { ...state, createdInviteId: inviteId } : state,
+);
+
+hostMembershipReducer.with(hostMembershipInviteCleared, (state, { payload: [target] }) =>
+  matches(state, target) && !state.busy ? { ...state, createdInviteId: null } : state,
+);
+
+hostMembershipReducer.with(hostMembershipRebound, (state, { payload: [target] }) =>
+  state.target?.session === target.session ? { ...state, target, reloadPending: true } : state,
+);
+const invalidateLists = (state: HostMembershipState) =>
+  state.target && !state.withheld ? { ...state, reloadPending: true } : state;
+hostMembershipReducer.with(hostMembershipListsChanged, invalidateLists);
+hostMembershipReducer.with(hostMembershipChanged, invalidateLists);

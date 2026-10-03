@@ -6,7 +6,6 @@
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
-  import PersonalDevices from '$features/devices/PersonalDevices.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -90,7 +89,6 @@
 </script>
 
 <div class="space-y-5">
-  <PersonalDevices />
   <div>
     <h2 class="type-caption font-medium text-muted-foreground mb-3">
       {m.settings_devices_title()}

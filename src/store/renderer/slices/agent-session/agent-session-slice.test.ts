@@ -6783,6 +6783,15 @@ describe('history segment (scrollback)', () => {
       expect(segment.startOrdinalEstimate).toBe(500);
     });
 
+    it('message-ID landings retain both sides without inventing an ordinal', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, seedHistoryAround('a1', [histMsg(500), histMsg(501)]));
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages.map((m) => m.id)).toEqual(['hist-500', 'hist-501']);
+      expect(segment.gapToTail).toBe(true);
+      expect(segment.startOrdinalEstimate).toBeUndefined();
+    });
+
     it('landing rows overlapping the tail keep the segment contiguous (no gap)', () => {
       const tailRow = makeUniqueMessage('tail-1', 'user', ts(1000));
       let state = withSession('a1', [tailRow]);

@@ -77,6 +77,12 @@ vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOri
   };
 });
 
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { getPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-context';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
 import GuestSessionsSettings from './GuestSessionsSettings.svelte';
 import { store as appStore } from '$store/renderer/store';
 import * as guestActions from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
@@ -369,6 +375,48 @@ describe('GuestSessionsSettings', () => {
     expect(
       rows[1].querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
     ).toBe('true');
+  });
+
+  it('uses each joined account profile and provider without exposing identity keys', () => {
+    mocks.sessions = [
+      {
+        ...guest,
+        login: 'joined-person',
+        identity: { provider: 'github', host: 'github.com', externalUserId: '900101' },
+      },
+      {
+        ...guest,
+        id: 'guest-2',
+        login: 'other-person',
+        identity: { provider: 'gitlab', host: 'gitlab.team.example', externalUserId: '900102' },
+      },
+      {
+        ...guest,
+        id: 'guest-3',
+        login: null,
+        principalId: 'missing-profile-stable',
+        identity: { provider: 'github', host: 'github.com', externalUserId: '900103' },
+      },
+    ];
+    render(GuestSessionsSettings);
+    const rows = Array.from(
+      screen.getByTestId('guest-sessions-joined').querySelectorAll('[data-session-id]'),
+    );
+    expect(rows[0].textContent).toContain('@joined-person');
+    expect(rows[0].textContent).toContain('GitHub');
+    expect(rows[1].textContent).toContain('@other-person');
+    expect(rows[1].textContent).toContain('GitLab (gitlab.team.example)');
+    expect(rows[2].textContent).toContain('Profile unavailable');
+    expect(rows[2].textContent).not.toContain('@joined-person');
+    for (const key of [
+      'github@',
+      'gitlab@',
+      '900101',
+      '900102',
+      '900103',
+      'missing-profile-stable',
+    ])
+      expect(rows.map((r) => r.textContent).join('')).not.toContain(key);
   });
 
   it('labels a joined host by its captured hostname and keeps the dialled address as secondary text', () => {
@@ -1539,5 +1587,200 @@ describe('GuestSessionsSettings', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Sign in for collaboration' }));
       expect(mocks.signIn).toHaveBeenCalledOnce();
     });
+  });
+  describe('instance-bound identity action', () => {
+    function admitInstance(remote: boolean, linked = true) {
+      const snapshot = appStore.state.principal.snapshot!;
+      appStore.dispatch(
+        connectionsListReceived({
+          connections: [
+            {
+              id: 'local',
+              label: 'Local machine',
+              isLocal: true,
+              host: null,
+              port: null,
+              fingerprint: null,
+            },
+            {
+              id: 'remote-host',
+              label: 'Remote host',
+              isLocal: false,
+              host: 'studio.example',
+              port: 8443,
+              fingerprint: 'AB:CD',
+            },
+          ],
+          // The active backend is not necessarily the backend bound to this window.
+          activeId: 'local',
+          windowBackendId: remote ? 'remote-host' : 'local',
+        }),
+      );
+      const context = getPrincipalConnectionContext(appStore.state)!;
+      appStore.dispatch(principalContextChanged(context));
+      const current = appStore.state.principal;
+      appStore.dispatch(
+        principalReceived(
+          {
+            context,
+            invalidation: current.invalidation,
+            presentationVersion: current.presentationVersion,
+          },
+          {
+            ...snapshot,
+            principal: {
+              ...snapshot.principal,
+              id: remote ? 'remote-member' : 'local-owner',
+              displayName: remote ? 'Remote Person' : 'Local Person',
+              login: remote ? 'remote-account' : 'local-account',
+              isAdministrator: !remote,
+              identity: linked
+                ? {
+                    provider: remote ? 'gitlab' : 'github',
+                    host: remote ? 'gitlab.example' : 'github.com',
+                    externalUserId: remote ? '84' : '42',
+                  }
+                : undefined,
+            },
+          },
+        ),
+      );
+    }
+
+    it('keeps remote identity truthful and blocks even a stale local action after a window rebind', async () => {
+      admitInstance(false);
+      render(GuestSessionsSettings);
+      const localAction = screen.getByRole('button', { name: 'Sign in or change account' });
+      expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+        'Local Person',
+      );
+      await fireEvent.click(localAction);
+      expect(mocks.signIn).toHaveBeenCalledOnce();
+      mocks.signIn.mockClear();
+      admitInstance(true);
+      await fireEvent.click(localAction);
+      await waitFor(() =>
+        expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+          'Remote Person',
+        ),
+      );
+      expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+        'gitlab.example',
+      );
+      expect(screen.getByTestId('collaboration-current-identity').textContent).not.toContain(
+        'Local Person',
+      );
+      expect(screen.queryByRole('button', { name: /Sign in/ })).toBeNull();
+      expect(mocks.signIn).not.toHaveBeenCalled();
+      admitInstance(false);
+      await fireEvent.click(
+        await screen.findByRole('button', { name: 'Sign in or change account' }),
+      );
+      expect(mocks.signIn).toHaveBeenCalledOnce();
+    });
+
+    it('does not tell an unlinked or unavailable remote user to sign in locally', async () => {
+      admitInstance(true, false);
+      render(GuestSessionsSettings);
+      expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+        'No collaboration identity is linked to your user',
+      );
+      expect(screen.getByTestId('collaboration-current-identity').textContent).not.toContain(
+        'Sign in',
+      );
+      expect(screen.queryByRole('button', { name: /Sign in/ })).toBeNull();
+      const { principalContextChanged } =
+        await import('$store/renderer/slices/principal/principal-slice');
+      appStore.dispatch(principalContextChanged(null));
+      await waitFor(() =>
+        expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+          'unavailable until this connection is ready',
+        ),
+      );
+      expect(screen.queryByRole('button', { name: /Sign in/ })).toBeNull();
+      expect(mocks.signIn).not.toHaveBeenCalled();
+    });
+  });
+
+  it('summarizes only the current principal identity, not another joined account or roster owner', async () => {
+    const { principalReceived } = await import('$store/renderer/slices/principal/principal-slice');
+    const current = appStore.state.principal;
+    mocks.sessions = [{ ...guest, login: 'different-joined-account' }];
+    mocks.hosted = [hostedWorkspace];
+    mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        {
+          ...current.snapshot!,
+          principal: {
+            ...current.snapshot!.principal,
+            login: 'my-account',
+            displayName: 'Current Person',
+            identity: { provider: 'gitlab', host: 'gitlab.example', externalUserId: '42' },
+          },
+        },
+      ),
+    );
+    render(GuestSessionsSettings);
+    const summary = screen.getByTestId('collaboration-current-identity');
+    expect(summary.textContent).toContain('Current Person');
+    expect(summary.textContent).toContain('@my-account');
+    expect(summary.textContent).toContain('gitlab.example');
+    expect(summary.textContent).not.toContain('different-joined-account');
+    expect(summary.textContent).not.toContain('Host Person');
+    expect(screen.getByRole('button', { name: 'Sign in or change account' })).toBeTruthy();
+  });
+
+  it('shows provider context without inventing a profile or exposing its numeric identity key', () => {
+    const current = appStore.state.principal;
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        {
+          ...current.snapshot!,
+          principal: {
+            ...current.snapshot!.principal,
+            login: null,
+            displayName: null,
+            identity: { provider: 'github', host: 'github.com', externalUserId: '900104' },
+          },
+        },
+      ),
+    );
+    render(GuestSessionsSettings);
+    const summary = screen.getByTestId('collaboration-current-identity');
+    expect(summary.textContent).toContain('Profile unavailable');
+    expect(summary.textContent).toContain('GitHub');
+    expect(summary.textContent).not.toContain('900104');
+    expect(summary.textContent).not.toContain('@');
+  });
+
+  it('does not infer identity from joined accounts and withholds owner controls for unknown authority', async () => {
+    mocks.sessions = [guest];
+    render(GuestSessionsSettings);
+    expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+      'No collaboration identity selected',
+    );
+    const { principalContextChanged } =
+      await import('$store/renderer/slices/principal/principal-slice');
+    appStore.dispatch(principalContextChanged(null));
+    await waitFor(() =>
+      expect(screen.getByTestId('collaboration-current-identity').textContent).toContain(
+        'unavailable until this connection is ready',
+      ),
+    );
+    expect(screen.queryByTestId('host-membership-settings')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Sign in for collaboration' }).hasAttribute('disabled'),
+    ).toBe(true);
   });
 });

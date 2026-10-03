@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { SettingsDisclosure } from '$lib/components/patterns/settings';
   import { Button, Input, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
@@ -19,7 +20,7 @@
     selectHasOverrides,
     selectSpecialistFilePath,
     selectSpecialistSourceLabel,
-    selectSpecialistsFolderPath,
+    selectSpecialistCreation,
     selectEffectiveCodingAgent,
     selectExplicitReasoningEffort,
     selectFileSpecialists,
@@ -28,25 +29,24 @@
   import {
     deleteFileSpecialist as deleteFileSpecialistAction,
     saveFileSpecialist,
+    updateSpecialistDraft,
+    discardSpecialistDraft,
+    createSpecialistFromDraft,
   } from '$store/renderer/slices/specialists/specialists-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import AgentRulesEditor from './AgentRulesEditor.svelte';
   import AutoSaveTextarea from './AutoSaveTextarea.svelte';
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
-
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
-  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import {
-    generateUniqueSpecialistId,
-    type SpecialistModelOption,
-  } from '$shared/specialist-file-types';
+  import type { SpecialistModelOption } from '$shared/specialist-file-types';
+  import type { SpecialistDraft } from '$store/renderer/slices/specialists/specialist-creation-types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
@@ -86,16 +86,27 @@
     return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
   }
 
-  // New specialist form state. Model defaults to inherit (undefined) — a
-  // created specialist file has no `model:` key unless the user picks one.
-  let newName = $state('');
-  let newDescription = $state('');
-  let newCodingAgent = $state<string | undefined>(undefined);
-  let newModel = $state<string | undefined>(undefined);
-  let newEffort = $state<string | undefined>(undefined);
-  let newPrompt = $state(m.settings_aiBehavior_newPromptTemplate());
+  const draftContext = $derived(routeWorkspaceId ? `workspace:${routeWorkspaceId}` : 'user');
+  const creation$ = $derived(selectSpecialistCreation(draftContext));
+  const newName = $derived($creation$.draft.name);
+  const newDescription = $derived($creation$.draft.description);
+  const newModel = $derived($creation$.draft.model);
+  const newEffort = $derived($creation$.draft.reasoningEffort);
+  const newPrompt = $derived(
+    $creation$.draft.behaviorPrompt ?? m.settings_aiBehavior_newPromptTemplate(),
+  );
+  const creating = $derived($creation$.status === 'saving' || $creation$.status === 'refreshing');
+  const refreshFailed = $derived($creation$.status === 'refresh-failed');
+  const draftLocked = $derived(creating || refreshFailed);
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+  });
 
-  // Character limits
+  function updateDraft(patch: Partial<SpecialistDraft>) {
+    appStore.dispatch(updateSpecialistDraft(draftContext, patch));
+  }
+
   const MAX_PROMPT_LENGTH = 50000;
   const WARNING_THRESHOLD = 40000;
 
@@ -108,19 +119,6 @@
     Math.min(100, Math.round((newPromptCharCount / MAX_PROMPT_LENGTH) * 100)),
   );
 
-  // Reset form when switching to create view
-  $effect(() => {
-    if (activeView.type === 'create-specialist') {
-      newName = '';
-      newDescription = '';
-      newCodingAgent = undefined;
-      newModel = undefined;
-      newEffort = undefined;
-      newPrompt = m.settings_aiBehavior_newPromptTemplate();
-    }
-  });
-
-  // Get current specialist if viewing one
   const currentSpecialist = $derived(
     activeView.type === 'specialist' ? $specialists.find((s) => s.id === activeView.id) : null,
   );
@@ -178,9 +176,6 @@
       : null,
   );
 
-  const specialistsFolderPath = selectSpecialistsFolderPath();
-
-  // Local state for specialist model/coding agent selection
   let _specialistCodingAgentValue = $state('');
   let specialistModelValue = $state<string | undefined>(undefined);
   let specialistEffortValue = $state<string | undefined>(undefined);
@@ -207,8 +202,7 @@
       : '';
   });
 
-  // Sync specialist model value when specialist changes or file specialists
-  // change. The picker's selected value is the EXPLICIT frontmatter model
+  // Sync the EXPLICIT frontmatter model from the specialist's owning scope
   // only — undefined when inheriting (the daemon resolvedModel preview is
   // shown via the picker's default-option plumbing instead). The stored
   // model is a BARE id (PROTOCOL §5.11); the picker boundary still speaks
@@ -216,16 +210,19 @@
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
+      // User/bundled saves update the global list before the route projection.
+      const specialistWorkspaceId =
+        currentSpecialist.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
       const codingAgent = selectEffectiveCodingAgent.select(
         appStore.state,
         currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
+        specialistWorkspaceId,
       );
       _specialistCodingAgentValue = codingAgent;
       const explicitModel = selectExplicitModel.select(
         appStore.state,
         currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
+        specialistWorkspaceId,
       );
       specialistModelValue =
         explicitModel && codingAgent && !explicitModel.includes(':')
@@ -234,7 +231,7 @@
       specialistEffortValue = selectExplicitReasoningEffort.select(
         appStore.state,
         currentSpecialist.id,
-        routeWorkspaceId ?? undefined,
+        specialistWorkspaceId,
       );
     }
   });
@@ -491,18 +488,27 @@
   ) {
     // Empty string = the inherit ("use global default") option was picked.
     if (!compoundModelId) {
-      newCodingAgent = undefined;
-      newModel = undefined;
-      newEffort = effortForModel($defaultProviderId$ || undefined, $selectedModel, newEffort);
+      updateDraft({
+        codingAgent: undefined,
+        model: undefined,
+        reasoningEffort: effortForModel(
+          $defaultProviderId$ || undefined,
+          $selectedModel,
+          newEffort,
+        ),
+      });
       return;
     }
     // Prefer the resolved triple legs the picker emits (catalog-group
     // attribution for bare cross-provider picks); fall back to splitting a
     // legacy compound id (old persisted values).
     const resolved = pick ?? parseCompoundModelId(compoundModelId);
-    newCodingAgent = resolved.providerId || $defaultProviderId$;
-    newModel = compoundModelId;
-    newEffort = effortForModel(newCodingAgent || undefined, resolved.modelId, newEffort);
+    const provider = resolved.providerId || $defaultProviderId$;
+    updateDraft({
+      codingAgent: provider,
+      model: compoundModelId,
+      reasoningEffort: effortForModel(provider || undefined, resolved.modelId, newEffort),
+    });
   }
 
   function handlePromptSave(prompt: string) {
@@ -757,48 +763,32 @@
     onSpecialistDeleted?.();
   }
 
-  function createSpecialist() {
-    if (!newName.trim() || newPromptIsOverLimit) return;
-    const createdId = generateUniqueSpecialistId(
-      newName.trim(),
-      selectSpecialists
-        .select(appStore.state, routeWorkspaceId ?? undefined)
-        .map((specialist) => specialist.id),
-    );
-    // `newModel` carries the picker's compound id for display; writes emit
-    // the bare model id only (PROTOCOL §5.11), the provider on codingAgent.
-    const bareNewModel = newModel ? parseCompoundModelId(newModel).modelId : undefined;
-    appStore.dispatch(
-      saveFileSpecialist({
-        id: createdId,
-        name: newName.trim(),
-        description: newDescription.trim() || m.settings_aiBehavior_customSpecialistFallback(),
-        codingAgent: newCodingAgent,
-        model: bareNewModel,
-        reasoningEffort: newEffort,
-        behaviorPrompt: newPrompt,
-        scope: 'user',
-      }),
-    );
-    // Show success toast with file path
-    const folderPath = $specialistsFolderPath;
-    const expectedPath = folderPath
-      ? `${folderPath}/${createdId}.md`
-      : `~/.intent/specialists/${createdId}.md`;
-    notify.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
-      description: expectedPath.replace(/^\/Users\/[^/]+/, '~'),
-    });
-
-    onSpecialistCreated?.(createdId);
+  async function createSpecialist() {
+    const current = selectSpecialistCreation.select(appStore.state, draftContext);
+    if (
+      current.status === 'saving' ||
+      current.status === 'refreshing' ||
+      !current.draft.name.trim() ||
+      (current.draft.behaviorPrompt?.length ?? 0) > MAX_PROMPT_LENGTH
+    )
+      return;
+    const submittedView = activeView;
+    const submittedContext = draftContext;
+    const action = createSpecialistFromDraft(draftContext, routeWorkspaceId ?? undefined);
+    appStore.dispatch(action);
+    try {
+      const id = await action.promise;
+      if (mounted && activeView === submittedView && draftContext === submittedContext) {
+        onSpecialistCreated?.(id);
+      }
+    } catch {
+      // Errors are retained by the saga.
+    }
   }
 
   function discardNewSpecialist() {
-    newName = '';
-    newDescription = '';
-    newCodingAgent = undefined;
-    newModel = undefined;
-    newEffort = undefined;
-    newPrompt = m.settings_aiBehavior_newPromptTemplate();
+    if (creating) return;
+    appStore.dispatch(discardSpecialistDraft(draftContext));
     onDiscard?.();
   }
 </script>
@@ -1072,7 +1062,8 @@
         <div class="flex min-h-0 flex-1 flex-col gap-1.5">
           <Textarea
             id="create-specialist-prompt"
-            bind:value={newPrompt}
+            bind:value={() => newPrompt, (value) => updateDraft({ behaviorPrompt: value })}
+            disabled={draftLocked}
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
             class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 type-body
               xl:min-h-0
@@ -1112,7 +1103,8 @@
             id="create-specialist-name"
             noFocusStyle
             type="text"
-            bind:value={newName}
+            bind:value={() => newName, (value) => updateDraft({ name: value })}
+            disabled={draftLocked}
             placeholder={m.settings_aiBehavior_name_placeholder()}
           />
         </div>
@@ -1128,17 +1120,19 @@
             id="create-specialist-description"
             noFocusStyle
             type="text"
-            bind:value={newDescription}
+            bind:value={() => newDescription, (value) => updateDraft({ description: value })}
+            disabled={draftLocked}
             placeholder={m.settings_aiBehavior_description_placeholder()}
           />
         </div>
 
-        <div class="flex items-center gap-3">
+        <fieldset disabled={draftLocked} class="flex items-center gap-3">
           <span class="type-body shrink-0 font-medium text-foreground">
             {m.settings_aiBehavior_model_label()}
           </span>
           <ModelPicker
             selectedModel={newModel}
+            providerId={$creation$.draft.codingAgent}
             onModelChange={handleCreateModelChange}
             showDefaultOption={true}
             defaultModelId={$selectedModel}
@@ -1151,23 +1145,31 @@
             showReasoning
             reasoningEffort={newEffort ?? null}
             onReasoningChange={(effort) => {
-              newEffort = effort ?? undefined;
+              updateDraft({ reasoningEffort: effort ?? undefined });
             }}
           />
-        </div>
+        </fieldset>
 
+        {#if $creation$.error}
+          <p role="alert" class="type-body text-danger">{$creation$.error}</p>
+        {/if}
         <div class="pt-4 border-border">
           <div class="flex justify-end gap-2">
-            <Button variant="ghost" onclick={discardNewSpecialist}>
+            <Button variant="ghost" onclick={discardNewSpecialist} disabled={creating}>
               {m.settings_aiBehavior_discard()}
             </Button>
             <Button
               variant="default"
               onclick={createSpecialist}
+              loading={creating}
               disabled={!newName.trim() || newPromptIsOverLimit}
             >
-              <Fa icon={faPlus} class="w-3.5 h-3.5 mr-1.5" />
-              {m.settings_aiBehavior_createSpecialist_title()}
+              {#if !creating && !refreshFailed}
+                <Fa icon={faPlus} class="w-3.5 h-3.5 mr-1.5" />
+              {/if}
+              {refreshFailed
+                ? m.ui_errorToast_retry_label()
+                : m.settings_aiBehavior_createSpecialist_title()}
             </Button>
           </div>
         </div>
