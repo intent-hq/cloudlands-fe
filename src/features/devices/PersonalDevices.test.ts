@@ -203,16 +203,22 @@ afterEach(() => {
 });
 describe('Devices current-person UI through the actual store and IPC transport', () => {
   it.each(['member', 'guest'] as const)(
-    'ordinary Devices never mounts local administrator RPCs for a remote %s',
+    'ordinary Devices omits personal and local administrator RPCs for a remote %s',
     async (role) => {
       admit(role);
       const stopApi = store.runSaga(websocketApiSaga);
       try {
         render(DevicesSettings);
-        await screen.findByRole('button', { name: m.settings_personalDevices_pair_label() });
-        await waitFor(() =>
-          expect(rpc.mock.calls.some(([method]) => method === 'client.list')).toBe(true),
-        );
+        await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
+        expect(screen.getByRole('dialog')).toBeTruthy();
+        expect(
+          screen.queryByRole('region', { name: m.settings_personalDevices_title() }),
+        ).toBeNull();
+        expect(
+          screen.queryByRole('button', { name: m.settings_personalDevices_pair_label() }),
+        ).toBeNull();
+        expect(rpc.mock.calls.map(([method]) => method)).not.toContain('client.list');
+        expect(rpc.mock.calls.map(([method]) => method)).not.toContain('pairing.getSelfInfo');
         expect(invoke.mock.calls.filter(([, payload]) => payload?.localMachine)).toEqual([]);
         expect(rpc.mock.calls.map(([method]) => method)).not.toContain('settings.list');
       } finally {

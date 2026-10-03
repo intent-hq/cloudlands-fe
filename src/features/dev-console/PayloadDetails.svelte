@@ -2,12 +2,9 @@
   import { Button } from '$lib/components/ui/button';
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { formatInteger } from '$lib/i18n/format';
-  import type {
-    DevConsolePayload,
-    DevConsoleRecord,
-    DevConsoleRow,
-  } from '$shared/types/dev-console';
+  import type { DevConsoleRecord, DevConsoleRow } from '$shared/types/dev-console';
   import PayloadViewer from './PayloadViewer.svelte';
+  import { frameMetadata, payloadSide } from './payload-stream';
   import * as m from '$shared/paraglide/messages.js';
   let {
     row,
@@ -27,6 +24,8 @@
     onminimumheight?: (height: number) => void;
   } = $props();
   let copied = $state('');
+  const request = $derived(record ? payloadSide(record, 'request') : null);
+  const response = $derived(record ? payloadSide(record, 'response') : null);
   let root: HTMLElement;
   const minimumEditorHeight = 80;
   let payloadMinimum = $state(minimumEditorHeight);
@@ -36,7 +35,7 @@
     void copied;
     const shared = [
       ...root.querySelectorAll<HTMLElement>(
-        ':scope > header, :scope > .capture, :scope > .copy-status',
+        ':scope > header, :scope > .capture, :scope > .retention, :scope > .copy-status',
       ),
     ];
     const panes = [...root.querySelectorAll<HTMLElement>('.payload')].map((pane) => [
@@ -63,13 +62,6 @@
     measure();
     return () => observer.disconnect();
   });
-  const stateLabel = (payload: DevConsolePayload) =>
-    ({
-      complete: m.devConsole_fullState_label,
-      truncated: m.devConsole_truncated_label,
-      absent: m.devConsole_absent_label,
-      unserializable: m.devConsole_unserializable_label,
-    })[payload.state]();
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -108,38 +100,52 @@
       />{m.devConsole_full_label()}</label
     ><span>{m.devConsole_prospective_label()}</span>
   </div>
-  {#snippet payloadBlock(label: string, payload: DevConsolePayload)}
+  {#if record?.droppedFrames}
+    <div class="retention" role="status">
+      {m.devConsole_droppedFrames_description({
+        count: formatInteger(record.droppedFrames),
+      })}
+    </div>
+  {/if}
+  {#snippet payloadBlock(label: string, content: ReturnType<typeof payloadSide>)}
     <section class="payload">
       <div class="payload-heading">
-        <strong>{label}</strong><span class:truncated={payload.state === 'truncated'}
-          >{stateLabel(payload)} · {m.devConsole_payloadBytes_label({
-            retained: formatInteger(payload.retainedBytes),
-            original:
-              payload.originalBytes === null
-                ? m.devConsole_unknown_label()
-                : formatInteger(payload.originalBytes),
-          })}</span
-        ><Button
+        <strong>{label}</strong>
+        <Button
           size="compact"
           variant="ghost"
           wrapContent={false}
           class="payload-control"
-          disabled={!payload.text}
-          onclick={() => copy(payload.text)}>{m.devConsole_copy_label()}</Button
+          disabled={!content.copyText}
+          onclick={() => copy(content.copyText)}>{m.devConsole_copy_label()}</Button
         >
+        {#if content.frames.length === 1}
+          <span
+            class="frame-metadata"
+            class:truncated={content.frames[0].payload.state === 'truncated'}
+          >
+            {frameMetadata(content.frames[0])}
+          </span>
+        {:else}
+          <span
+            >{m.devConsole_retainedFrames_label({
+              count: formatInteger(content.frames.length),
+            })}</span
+          >
+        {/if}
       </div>
-      <PayloadViewer text={payload.text} {label} />
+      <PayloadViewer text={content.text} {label} />
     </section>
   {/snippet}
   <div class="payloads" style:min-height={`${payloadMinimum}px`}>
-    {#if record}
+    {#if request && response}
       {@render payloadBlock(
         row.kind === 'request' ? m.devConsole_request_label() : m.devConsole_event_label(),
-        record.payload,
+        request,
       )}
-      {#if record.response}{@render payloadBlock(
+      {#if response.frames.length}{@render payloadBlock(
           m.devConsole_response_label(),
-          record.response,
+          response,
         )}{/if}
     {:else}<p>{m.devConsole_loading_label()}</p>{/if}
   </div>
@@ -217,6 +223,10 @@
     flex-wrap: wrap;
     gap: 4px 10px;
   }
+  .frame-metadata {
+    flex-basis: 100%;
+    white-space: pre-line;
+  }
   .truncated {
     color: hsl(var(--danger));
   }
@@ -231,6 +241,11 @@
     width: 13px;
     height: 13px;
     padding: 0;
+  }
+  .retention {
+    padding: 2px 10px;
+    color: hsl(var(--muted-foreground));
+    flex-shrink: 0;
   }
   .copy-status {
     flex-shrink: 0;

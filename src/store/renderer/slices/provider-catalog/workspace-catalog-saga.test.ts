@@ -43,6 +43,7 @@ import {
   initialState,
   providerCatalogReducer,
   workspaceCatalogRequested,
+  workspaceCatalogReadFailed,
 } from './provider-catalog-slice';
 import { workspaceCatalogSaga } from './workspace-catalog-saga';
 import {
@@ -100,7 +101,9 @@ describe('workspace catalog ownership', () => {
       agentAvailability: availabilityInitial,
     };
     const listeners = new Set<() => void>();
+    const actions: StoreAction<unknown>[] = [];
     const dispatch = (action: StoreAction<unknown>) => {
+      actions.push(action);
       state = {
         ...state,
         providerCatalog: providerCatalogReducer(state.providerCatalog, action),
@@ -172,6 +175,12 @@ describe('workspace catalog ownership', () => {
       mocks.reconnect?.();
       await settle();
       expect(state.providerCatalog.workspaceEpoch).toBe(3);
+      await settle();
+      mocks.catalog.mockRejectedValueOnce(new Error('Catalog unavailable'));
+      dispatch(workspaceCatalogRequested('B'));
+      await settle();
+      expect(actions).toContainEqual(workspaceCatalogReadFailed('B'));
+      expect(selectContextSpecialists.select(state as StoreState, 'B')[0].id).toBe('B');
     } finally {
       task.cancel();
       await task.toPromise();

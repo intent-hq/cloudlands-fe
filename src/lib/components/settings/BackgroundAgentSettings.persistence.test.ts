@@ -62,6 +62,16 @@ beforeEach(() => {
   writes = [];
   revision = 1;
   request.mockImplementation(async (method, params) => {
+    if (method === 'settings.list') {
+      expect(params).toBeUndefined();
+      return {
+        settings: Object.entries(persisted).map(([path, value]) => ({
+          path,
+          value: structuredClone(value),
+        })),
+        revision,
+      };
+    }
     expect(method).toBe('settings.update');
     const { changes } = params as { changes: AppSettingChange[] };
     expect(params).toEqual({ changes });
@@ -134,10 +144,21 @@ it.each([0, 1, 2, 3].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ ro
   'saves bare model IDs after switching providers, preserving effort (row $row, $choice)',
   async ({ row, choice }) => {
     store.dispatch(setActiveProvider('claude-code'));
-    await waitFor(() => {
-      expect(persisted['model.defaultProvider']).toBe('claude-code');
-      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false);
-    });
+    expect(store.state.model.defaultProviderId).toBe('codex');
+    await waitFor(() => expect(persisted['model.defaultProvider']).toBe('claude-code'));
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      'settings.list',
+      'settings.update',
+    ]);
+    expect(store.state.model.defaultProviderId).toBe('codex');
+    expect(store.state.backgroundAgentSettings.providerId).toBe('codex');
+    // Deliver the daemon event separately from the successful write acknowledgement.
+    applySettingsChanges(
+      Object.entries(persisted).map(([path, value]) => ({ path, value })),
+      revision,
+    );
+    expect(store.state.model.defaultProviderId).toBe('claude-code');
+    expect(store.state.backgroundAgentSettings.providerId).toBe('claude-code');
     writes.length = 0;
     render(BackgroundAgentSettings);
     await openRow(row);
@@ -149,7 +170,10 @@ it.each([0, 1, 2, 3].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ ro
       ...emptyOverrides,
       ...(row ? { [['commit', 'pr', 'fast'][row - 1]]: model } : {}),
     };
-    await waitFor(() => expect(writes).toHaveLength(1));
+    await waitFor(() => {
+      expect(writes).toHaveLength(1);
+      expect(store.state.backgroundAgentSettings.persistencePending).toBe(false);
+    });
     expect(writes[0]).toEqual([
       { path: 'model.defaultProvider', value: 'claude-code' },
       { path: 'quickActions.defaultModel', value: row ? '' : model },

@@ -23,9 +23,13 @@ afterEach(() => {
   cleanup();
   window.electronAPI = original;
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
-function setup(maxRecords = 100) {
-  const capture = new DevConsoleCaptureService({ maxRecords });
+function setup(
+  maxRecords = 100,
+  options: ConstructorParameters<typeof DevConsoleCaptureService>[0] = {},
+) {
+  const capture = new DevConsoleCaptureService({ maxRecords, ...options });
   let emit!: RpcTrafficObserver;
   capture.registerClient('one', 'main', {
     observeTraffic(fn) {
@@ -342,4 +346,312 @@ it('keeps a selected request in its chronological position when a reply arrives 
   } finally {
     clock.mockRestore();
   }
+});
+
+const documentFor = (view: ReturnType<typeof render>, side: string) =>
+  view
+    .getByRole('region', { name: side, exact: true })
+    .querySelector('[data-testid=payload-document]')?.textContent ?? '';
+const byteSize = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+
+it.each(['chat.subscribe', 'note.subscribe'])(
+  'appends %s pushes, preserves the ack, and refreshes selected totals without reselection',
+  async (method) => {
+    let clock = 0;
+    const wall = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 2, 10));
+    const { request, emit, view } = setup(100, { monotonicNow: () => clock });
+    const params = method === 'chat.subscribe' ? { agentId: 'a' } : { workspaceId: 'w' };
+    request('s', method, params);
+    clock = 5;
+    wall.mockReturnValue(Date.UTC(2026, 9, 2, 10, 0, 0, 5));
+    const ack = { subscriptionId: 'sub' };
+    emit({ type: 'response', key: 's', status: 'success', payload: ack, connectionGeneration: 1 });
+    await waitFor(() => expect(view.getByRole('cell', { name: method })).toBeTruthy());
+    const row = view.getByRole('cell', { name: method }).closest('[role=row]')!;
+    await fireEvent.click(row);
+    await waitFor(() => expect(documentFor(view, 'Response / error')).toContain('sub'));
+    const snapshot = {
+      subscriptionId: 'sub',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot:
+        method === 'chat.subscribe'
+          ? { agentId: 'a', messages: [], truncated: false, totalMessages: 0, nextToken: null }
+          : [],
+    };
+    clock = 17;
+    wall.mockReturnValue(Date.UTC(2026, 9, 2, 10, 0, 0, 17));
+    emit({
+      type: 'notification',
+      method: 'subscription.push',
+      payload: snapshot,
+      connectionGeneration: 1,
+    });
+    const delta = {
+      subscriptionId: 'sub',
+      kind: 'delta',
+      seq: 1,
+      delta:
+        method === 'chat.subscribe'
+          ? {
+              updated: [
+                {
+                  agentId: 'a',
+                  messageId: 'm',
+                  role: 'assistant',
+                  block: { type: 'text', id: 'm:0', text: '🙂' },
+                },
+              ],
+            }
+          : { removedIds: ['note-gone'] },
+    };
+    clock = 40;
+    wall.mockReturnValue(Date.UTC(2026, 9, 2, 10, 0, 0, 40));
+    emit({
+      type: 'notification',
+      method: 'subscription.push',
+      payload: delta,
+      connectionGeneration: 1,
+    });
+    await waitFor(() =>
+      expect(documentFor(view, 'Response / error')).toContain(
+        method === 'chat.subscribe' ? '🙂' : 'note-gone',
+      ),
+    );
+    const text = documentFor(view, 'Response / error');
+    expect(text.indexOf('"subscriptionId": "sub"')).toBeLessThan(text.indexOf('"snapshot"'));
+    expect(text.indexOf('"snapshot"')).toBeLessThan(text.indexOf('"delta"'));
+    expect(text).toContain('10:00:00.005');
+    expect(text).toContain('10:00:00.017');
+    expect(text).toContain('10:00:00.040');
+    expect(text).toContain('5 ms since request');
+    expect(text).toContain('12 ms since previous');
+    expect(text).toContain('23 ms since previous');
+    expect(text).toContain(`${byteSize(delta)} / ${byteSize(delta)} bytes`);
+    expect(row.textContent).toContain(
+      String([params, ack, snapshot, delta].reduce((sum, p) => sum + byteSize(p), 0)),
+    );
+    expect(row.textContent).toContain('40.0');
+    expect(editors).toHaveLength(2);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    await fireEvent.click(view.getAllByRole('button', { name: 'Copy payload' })[1]);
+    expect(writeText).toHaveBeenCalledWith(
+      [ack, snapshot, delta].map((p) => JSON.stringify(p)).join('\n\n'),
+    );
+  },
+);
+
+// The inbound variant exercises the observer seam: production reverse RPCs are one-shot.
+it.each(['outbound', 'inbound'] as const)(
+  'keeps %s command input and output in separate live panes with independent intervals',
+  async (direction) => {
+    let clock = 0;
+    const { emit, view } = setup(100, { monotonicNow: () => clock });
+    emit({
+      type: 'request',
+      direction,
+      key: 'run',
+      requestId: 'run',
+      method: 'host.execStream',
+      payload: { command: 'cat', requestId: 'exec' },
+      connectionGeneration: 1,
+    });
+    clock = 2;
+    emit({
+      type: 'response',
+      key: 'run',
+      status: 'success',
+      payload: { requestId: 'exec' },
+      connectionGeneration: 1,
+    });
+    await waitFor(() => expect(view.getByRole('cell', { name: 'host.execStream' })).toBeTruthy());
+    await fireEvent.click(view.getByRole('cell', { name: 'host.execStream' }));
+    clock = 10;
+    emit({
+      type: 'request',
+      direction,
+      key: 'write',
+      requestId: 'write',
+      method: 'host.execStream.write',
+      payload: { requestId: 'exec', stdin: 'input-only' },
+      connectionGeneration: 1,
+    });
+    clock = 12;
+    emit({
+      type: 'response',
+      key: 'write',
+      status: 'success',
+      payload: { ok: true },
+      connectionGeneration: 1,
+    });
+    clock = 31;
+    emit({
+      type: 'notification',
+      direction: direction === 'outbound' ? 'inbound' : 'outbound',
+      method: 'events.event',
+      payload: {
+        subscriptionId: 'events',
+        event: {
+          type: 'host:exec:stdout',
+          id: 'e',
+          workspaceId: 'w',
+          timestamp: '2026-10-02T10:00:00Z',
+          actor: { type: 'system' },
+          data: { requestId: 'exec', chunk: 'b3V0cHV0LW9ubHk=' },
+        },
+      },
+      connectionGeneration: 1,
+    });
+    await waitFor(() =>
+      expect(documentFor(view, 'Response / error')).toContain('b3V0cHV0LW9ubHk='),
+    );
+    expect(documentFor(view, 'Request')).toContain('input-only');
+    expect(documentFor(view, 'Request')).not.toContain('b3V0cHV0LW9ubHk=');
+    expect(documentFor(view, 'Response / error')).not.toContain('input-only');
+    expect(documentFor(view, 'Request')).toContain('10 ms since previous');
+    expect(documentFor(view, 'Response / error')).toContain('10 ms since previous');
+    expect(documentFor(view, 'Response / error')).toContain('19 ms since previous');
+    expect(editors).toHaveLength(2);
+  },
+);
+
+it('bounds rendering during a frame flood, indicates dropped/truncated frames and preserves initial payloads', async () => {
+  const { request, emit, view, capture, sessionId } = setup(100, {
+    maxFramesPerRecord: 4,
+    previewBytes: 200,
+  });
+  request('s', 'note.subscribe', { workspaceId: 'w' });
+  emit({
+    type: 'response',
+    key: 's',
+    status: 'success',
+    payload: { subscriptionId: 'sub' },
+    connectionGeneration: 1,
+  });
+  await waitFor(() => expect(view.getByRole('cell', { name: 'note.subscribe' })).toBeTruthy());
+  await fireEvent.click(view.getByRole('cell', { name: 'note.subscribe' }));
+  await waitFor(() => expect(documentFor(view, 'Response / error')).toContain('sub'));
+  for (let seq = 0; seq < 50; seq++) {
+    emit({
+      type: 'notification',
+      method: 'subscription.push',
+      payload: {
+        subscriptionId: 'sub',
+        kind: 'delta',
+        seq,
+        delta: { removedIds: [`note-${seq}-` + 'x'.repeat(300)] },
+      },
+      connectionGeneration: 1,
+    });
+  }
+  await waitFor(() => expect(documentFor(view, 'Response / error')).toContain('note-49-'));
+  const response = documentFor(view, 'Response / error');
+  expect(response).toContain('"subscriptionId": "sub"');
+  expect(response).toContain('note-48-');
+  expect(response).not.toContain('note-47-');
+  expect(response).toContain('Truncated');
+  expect(view.getByRole('status').textContent).toContain('48');
+  expect(documentFor(view, 'Request')).toContain('"workspaceId": "w"');
+  expect(editors).toHaveLength(2);
+  expect(models).toHaveLength(2);
+  expect(response.length).toBeLessThan(1600);
+  const record = capture.getSnapshot('one', sessionId)!.records[0];
+  const row = view.getByRole('cell', { name: 'note.subscribe' }).closest('[role=row]')!;
+  expect(row.textContent).toContain(new Intl.NumberFormat('en').format(record.totalBytes!));
+});
+
+it('rejects an in-flight streaming refresh after selecting another RPC', async () => {
+  const { request, emit, invoke, view } = setup();
+  request('a', 'chat.subscribe', { agentId: 'a' });
+  emit({
+    type: 'response',
+    key: 'a',
+    status: 'success',
+    payload: { subscriptionId: 'sub' },
+    connectionGeneration: 1,
+  });
+  request('b', 'workspace.list', {});
+  emit({
+    type: 'response',
+    key: 'b',
+    status: 'success',
+    payload: { workspaces: [] },
+    connectionGeneration: 1,
+  });
+  await waitFor(() => expect(view.getByRole('cell', { name: 'chat.subscribe' })).toBeTruthy());
+  await fireEvent.click(view.getByRole('cell', { name: 'chat.subscribe' }));
+  await waitFor(() => expect(documentFor(view, 'Response / error')).toContain('sub'));
+  const originalImpl = invoke.getMockImplementation()!;
+  let release: (() => void) | undefined;
+  invoke.mockImplementation(async (channel, data) => {
+    const result = await originalImpl(channel, data);
+    if (channel === 'dev-console:record' && result?.method === 'chat.subscribe')
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    return result;
+  });
+  emit({
+    type: 'notification',
+    method: 'subscription.push',
+    payload: {
+      subscriptionId: 'sub',
+      kind: 'snapshot',
+      seq: 0,
+      snapshot: { agentId: 'a', messages: [], truncated: false, totalMessages: 0, nextToken: null },
+    },
+    connectionGeneration: 1,
+  });
+  await waitFor(() => expect(release).toBeTypeOf('function'));
+  await fireEvent.click(view.getByRole('cell', { name: 'workspace.list' }));
+  await waitFor(() => expect(documentFor(view, 'Response / error')).toContain('workspaces'));
+  release!();
+  await Promise.resolve();
+  expect(documentFor(view, 'Response / error')).not.toContain('snapshot');
+  expect(documentFor(view, 'Request')).not.toContain('agentId');
+  expect(documentFor(view, 'Response / error')).toContain('workspaces');
+});
+
+it('keeps the interval origin when retention drops a response observed before the original reply', async () => {
+  let clock = 0;
+  const { request, emit, view } = setup(100, { maxFramesPerRecord: 3, monotonicNow: () => clock });
+  request('run', 'host.execStream', { command: 'cat', requestId: 'exec' });
+  const output = (chunk: string) =>
+    emit({
+      type: 'notification',
+      method: 'events.event',
+      payload: {
+        subscriptionId: 'events',
+        event: {
+          type: 'host:exec:stdout',
+          id: 'e',
+          workspaceId: 'w',
+          timestamp: '2026-10-02T10:00:00Z',
+          actor: { type: 'system' },
+          data: { requestId: 'exec', chunk },
+        },
+      },
+      connectionGeneration: 1,
+    });
+  clock = 5;
+  output('Zmlyc3Q=');
+  clock = 10;
+  emit({
+    type: 'response',
+    key: 'run',
+    status: 'success',
+    payload: { requestId: 'exec' },
+    connectionGeneration: 1,
+  });
+  clock = 20;
+  output('bGFzdA==');
+  await waitFor(() => expect(view.getByRole('cell', { name: 'host.execStream' })).toBeTruthy());
+  await fireEvent.click(view.getByRole('cell', { name: 'host.execStream' }));
+  await waitFor(() => expect(documentFor(view, 'Response / error')).toContain('bGFzdA=='));
+  const response = documentFor(view, 'Response / error');
+  expect(response).not.toContain('Zmlyc3Q=');
+  expect(response).toContain('5 ms since previous');
+  expect(response).not.toContain('5 ms since request');
+  expect(response).toContain('10 ms since previous');
 });

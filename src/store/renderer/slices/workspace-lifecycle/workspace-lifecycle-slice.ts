@@ -8,7 +8,6 @@ import type {
 } from './workspace-lifecycle-types';
 
 export type WorkspaceHydrationBranch =
-  | 'tasks'
   | 'events'
   | 'scripts'
   | 'skills'

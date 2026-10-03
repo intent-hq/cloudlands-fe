@@ -19,6 +19,7 @@ import {
 import {
   workspaceCatalogRequested,
   workspaceCatalogReadStarted,
+  workspaceCatalogReadFailed,
   ensureWorkspaceCatalogRequested,
   workspaceCatalogReceived,
   workspaceCatalogInvalidated,
@@ -100,6 +101,7 @@ function* readCatalog(pending: Set<string>, action: CatalogAction) {
     );
   } catch (error) {
     logger.warn('Workspace catalog read failed', { workspaceId, error });
+    yield* put(workspaceCatalogReadFailed(workspaceId));
   } finally {
     pending.delete(workspaceId);
   }

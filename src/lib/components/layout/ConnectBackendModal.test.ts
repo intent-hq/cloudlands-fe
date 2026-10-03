@@ -138,6 +138,31 @@ describe('ConnectBackendModal', () => {
     expect(status.textContent).not.toBe(detailsStatus);
   });
 
+  it('shows both daemon versions and update guidance when compatibility inspection rejects', async () => {
+    const { m } = await import('../../../shared/paraglide/messages.js');
+    const warning = m.modals_connect_identityMethodUnavailable_error({
+      method: 'principal.me',
+      backendVersion: '0.9.12',
+      bundledVersion: '0.9.137',
+    });
+    mocks.addConnectionRequested.mockImplementation((params) => ({
+      payload: [params],
+      promise: Promise.reject(new Error(warning)),
+    }));
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+    const message = await screen.findByText(warning);
+    expect(message.textContent).toContain('0.9.12');
+    expect(message.textContent).toContain('0.9.137');
+    expect(message.textContent).toContain('Update and restart');
+    expect(message.textContent).not.toContain('secret-token');
+    expect(mocks.openConnectionRequested).not.toHaveBeenCalled();
+  });
+
   it('stores and opens the connection on confirm', async () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });

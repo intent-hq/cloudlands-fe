@@ -18,6 +18,7 @@
   } = $props();
 
   const header = createPanelHeaderContext();
+  let menuOpen = $state(false);
 </script>
 
 <Content {tab} {workspaceId} {isActive} />
@@ -29,13 +30,13 @@
 {/if}
 
 {#if header.actions.current}
-  <Menu.Root>
+  <Menu.Root bind:open={menuOpen}>
     <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
     <Menu.Content portal={false} data-testid="header-actions">
       {@render header.actions.current.display?.()}
       <Menu.Separator />
       {@render header.actions.current.actions?.()}
-      {@render header.actions.current.additional?.()}
+      {@render header.actions.current.additional?.(menuOpen)}
     </Menu.Content>
   </Menu.Root>
 {/if}

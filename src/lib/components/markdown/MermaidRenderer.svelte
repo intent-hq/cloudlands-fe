@@ -1785,24 +1785,35 @@ ${source}`;
 
   onMount(() => {
     mounted = true;
+    const noteLane = rendererElement?.closest<HTMLElement>('.node-mermaidBlock');
+    const layoutHost = noteLane ?? rendererElement;
+    // Note presentation width follows the SVG; it must not choose that SVG's layout.
+    const availableWidth = () => noteLane?.clientWidth ?? rendererElement?.clientWidth ?? 0;
     let observedWidth: number | undefined;
+    let observedRendererWidth: number | undefined;
     const resizeObserver =
       typeof ResizeObserver === 'undefined'
         ? undefined
-        : new ResizeObserver(([entry]) => {
-            if (entry.contentRect.width === observedWidth) return;
-            observedWidth = entry.contentRect.width;
-            compactLayout = entry.contentRect.width <= 620;
-            narrowLayout = narrowLayout
-              ? entry.contentRect.width < 440
-              : entry.contentRect.width <= 420;
+        : new ResizeObserver(() => {
+            const width = availableWidth();
+            if (width !== observedWidth) {
+              observedWidth = width;
+              compactLayout = width <= 620;
+              narrowLayout = narrowLayout ? width < 440 : width <= 420;
+            }
+            const rendererWidth = rendererElement?.clientWidth;
+            if (rendererWidth === observedRendererWidth) return;
+            observedRendererWidth = rendererWidth;
             const svg = rendererElement?.querySelector<SVGSVGElement>('.mermaid-svg svg');
             if (svg?.dataset.layoutSettled === 'true') applyMermaidTerminalGaps(svg);
           });
-    if (rendererElement && resizeObserver) {
-      compactLayout = rendererElement.clientWidth <= 620;
-      narrowLayout = rendererElement.clientWidth <= 420;
-      resizeObserver.observe(rendererElement);
+    if (layoutHost && resizeObserver) {
+      observedWidth = availableWidth();
+      compactLayout = observedWidth <= 620;
+      narrowLayout = observedWidth <= 420;
+      resizeObserver.observe(layoutHost);
+      if (rendererElement && rendererElement !== layoutHost)
+        resizeObserver.observe(rendererElement);
     }
     let themeSignature = readMermaidThemeSignature();
     const observer = new MutationObserver(() => {

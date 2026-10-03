@@ -10,6 +10,7 @@ import {
   isAgentReadWorkspaceCurrent,
 } from '$features/agent/agent-read-ownership';
 import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -61,8 +62,8 @@ import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-setting
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
  *      agent-side note writes (add_to_note etc.) appear live in the notes
  *      panel while the workspace is open. The same events also trigger a
- *      debounced `loadWorkspaceTasksRequested` refetch (initialized
- *      workspaces only) — task notes are plain notes, so a created/deleted
+ *      immediate invalidation and debounced refresh (visible
+ *      consumers only) — task notes are plain notes, so a created/deleted
  *      task note changes the BE-owned `task.list` stats rollup without a
  *      `task:status-changed` edge.
  *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on BOTH the
@@ -149,6 +150,7 @@ import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-setting
  */
 import { isHostMembershipChange } from '$shared/types/principal';
 import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { hostMembershipListsChanged } from '$store/renderer/slices/host-membership/host-membership-slice';
 import {
   hostMembershipChanged,
   principalIdentityChanged,
@@ -211,7 +213,8 @@ import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layo
 import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
 import {
   applyTaskStatusChanged,
-  loadWorkspaceTasksRequested,
+  invalidateWorkspaceTasks,
+  ensureWorkspaceTasksLoaded,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
@@ -2090,7 +2093,7 @@ function handleNoteEvent(
 /**
  * `task:created` (§6.5) carries `{ noteId, noteTitle, status, createdAt,
  * agentId? }` — a new task changes the BE-owned `task.list` rollup, so refetch
- * through the same debounced, initialized-workspaces-only path `note:*` uses.
+ * aggregates and invalidate detailed task lists through the same path `note:*` uses.
  * The new task itself arrives with that refetch; the HUD feed row is rendered
  * off the HUD's own feed subscription.
  */
@@ -2504,7 +2507,7 @@ async function reconcileWorkspaceActivity(
 
 /**
  * Single-flight + trailing-coalesce state for
- * {@link reconcileWorkspaceAgentSummary}, keyed per workspaceId (AGENTS.md
+ * {@link reconcileWorkspaceAggregates}, keyed per workspaceId (AGENTS.md
  * "Event-driven refetches — single-flight and coalesced"). A burst of
  * `agent:deleted` events for the same workspace (e.g. a multi-agent cleanup)
  * must produce at most one immediate `workspace.get` plus at most one
@@ -2512,10 +2515,10 @@ async function reconcileWorkspaceActivity(
  * unordered resolution could let a stale response that resolves last
  * restore an already-deleted agent into `agentSummary`.
  */
-const agentSummaryFetchInFlightByWorkspace = new Set<string>();
-const agentSummaryFetchFollowUpWantedByWorkspace = new Set<string>();
+const aggregateFetchInFlightByWorkspace = new Set<string>();
+const aggregateFetchFollowUpWantedByWorkspace = new Set<string>();
 
-async function runReconcileWorkspaceAgentSummaryFetch(workspaceId: string): Promise<void> {
+async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promise<void> {
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
     const response = (await backendRequest('workspace.get', { workspaceId })) as
@@ -2529,36 +2532,32 @@ async function runReconcileWorkspaceAgentSummaryFetch(workspaceId: string): Prom
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
   } finally {
-    agentSummaryFetchInFlightByWorkspace.delete(workspaceId);
     // Trailing coalesce: one or more triggers arrived while this fetch was in
     // flight — run exactly one follow-up fetch to pick up the latest state,
-    // regardless of how many triggers piled up.
-    if (agentSummaryFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runReconcileWorkspaceAgentSummaryFetch(workspaceId);
+    // regardless of how many triggers piled up. Keep the in-flight marker
+    // through trailing reads so another burst cannot start a parallel fetch.
+    if (aggregateFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
+      void runReconcileWorkspaceAggregatesFetch(workspaceId);
+    } else {
+      aggregateFetchInFlightByWorkspace.delete(workspaceId);
     }
   }
 }
 
 /**
- * Refresh the workspace entity's BE-owned `agentSummary` aggregate (PROTOCOL
- * §5.1) after an `agent:deleted` event. The HUD card agent rows are built
- * from `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts),
- * which the `agent.list` hydration path does NOT touch — without this
- * refetch a deleted agent lingers on its card until an unrelated workspace
- * refetch. Fetch `workspace.get` and merge the fresh entity via
- * `setWorkspaceEntity` (the `mergeWorkspaceEnrichment` path takes the
- * incoming `agentSummary` when present). Single-flighted with trailing
- * coalesce per workspaceId (see {@link agentSummaryFetchInFlightByWorkspace}):
- * the leading edge fetches immediately, and any triggers that arrive while
- * that fetch is in flight collapse into at most one trailing follow-up.
+ * Refresh daemon-owned workspace aggregates via the existing `workspace.get`
+ * projection (§5.1). Agent deletion and task/note changes carry no replacement
+ * rollups. `setWorkspaceEntity` updates HUD/card entities and seeds task stats
+ * for unloaded or stale lists without hydrating their detailed rows.
+ * Single-flight with one trailing read per burst, scoped to the affected workspace.
  */
-async function reconcileWorkspaceAgentSummary(workspaceId: string): Promise<void> {
-  if (agentSummaryFetchInFlightByWorkspace.has(workspaceId)) {
-    agentSummaryFetchFollowUpWantedByWorkspace.add(workspaceId);
+async function reconcileWorkspaceAggregates(workspaceId: string): Promise<void> {
+  if (aggregateFetchInFlightByWorkspace.has(workspaceId)) {
+    aggregateFetchFollowUpWantedByWorkspace.add(workspaceId);
     return;
   }
-  agentSummaryFetchInFlightByWorkspace.add(workspaceId);
-  await runReconcileWorkspaceAgentSummaryFetch(workspaceId);
+  aggregateFetchInFlightByWorkspace.add(workspaceId);
+  await runReconcileWorkspaceAggregatesFetch(workspaceId);
 }
 
 /**
@@ -3007,7 +3006,7 @@ function handleWorkspaceDeleteCancelledEvent(workspaceId: string): void {
     workspaceDeleteTombstoneTimers.delete(workspaceId);
   }
   appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
-  void reconcileWorkspaceAgentSummary(workspaceId);
+  void reconcileWorkspaceAggregates(workspaceId);
 }
 
 /**
@@ -3473,17 +3472,16 @@ function debouncedChangesRefresh(workspaceId: string): void {
   changesRefreshTimersByWorkspace.set(workspaceId, timer);
 }
 
-/**
- * Debounced workspace-tasks refetch for `note:*` events. A created/updated/
- * deleted note can change the BE-owned `task.list` stats rollup (task state
- * lives in note metadata), so refetch via `loadWorkspaceTasksRequested` —
- * but only for workspaces whose task list is loaded or currently loading.
- * Undemanded workspaces have never been viewed; eagerly loading their
- * tasks would fan out one `task.list` per note event across all workspaces.
- */
+/** Refresh aggregates independently; detailed task-list reads still require demand. */
 function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
+  appStore.dispatch(invalidateWorkspaceTasks(workspaceId));
+  // Listed workspaces can show progress even when no chat task list is open.
+  // Reuse the aggregate read, targeting only the event's workspace, never a fan-out.
+  if (selectWorkspaceById.select(appStore.state, workspaceId)) {
+    void reconcileWorkspaceAggregates(workspaceId);
+  }
   const entry = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
-  if (!entry?.initialized && !entry?.loading) return;
+  if (!entry?.demandIds.length) return;
   const existing = tasksRefreshTimersByWorkspace.get(workspaceId);
   if (existing) {
     clearTimeout(existing);
@@ -3493,8 +3491,8 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
     // Re-check at fire time: the slice may have been cleared (workspace
     // unmounted/deleted) during the debounce window.
     const current = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
-    if (!current?.initialized && !current?.loading) return;
-    appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+    if (!current?.demandIds.length) return;
+    appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
   }, TASKS_REFRESH_DEBOUNCE_MS);
   tasksRefreshTimersByWorkspace.set(workspaceId, timer);
 }
@@ -3743,9 +3741,25 @@ export function routeDaemonEventsNotification(
     appStore.dispatch(hostExecutionInvalidated());
     return;
   }
+  if (type === 'host:invites-changed') {
+    const data = (event as { data?: unknown }).data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    const { inviteId, action } = data as { inviteId?: unknown; action?: unknown };
+    if (
+      typeof inviteId === 'string' &&
+      inviteId.trim().length > 0 &&
+      typeof action === 'string' &&
+      ['created', 'revoked', 'redeemed'].includes(action)
+    )
+      appStore.dispatch(hostMembershipListsChanged());
+    return;
+  }
   if (type === 'host:members-changed') {
     const data = (event as { data?: unknown }).data;
-    if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
+    if (isHostMembershipChange(data)) {
+      appStore.dispatch(hostMembershipChanged(data));
+      appStore.dispatch(hostMembershipListsChanged());
+    }
     return;
   }
 
@@ -3981,7 +3995,7 @@ export function routeDaemonEventsNotification(
     // HUD card rows drop the deleted agent immediately — the `agent.list`
     // hydration above does not touch it. Fire-and-forget side effect, falls
     // through to the timeline dispatch below.
-    void reconcileWorkspaceAgentSummary(workspaceId);
+    void reconcileWorkspaceAggregates(workspaceId);
   }
 
   // monorepo#1106/#1989: a redrive that bypasses chat-send-service —
@@ -4422,6 +4436,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // gate narrows it like any other row.
   'presence:changed',
   'host:members-changed',
+  'host:invites-changed',
   'host:execution-context-changed',
 ] as const;
 
@@ -4572,8 +4587,8 @@ export function disposeDaemonEventsRoutingState(): void {
   }
   agentDeleteTombstoneTimers.clear();
   scriptOutputDecoders.clear();
-  agentSummaryFetchInFlightByWorkspace.clear();
-  agentSummaryFetchFollowUpWantedByWorkspace.clear();
+  aggregateFetchInFlightByWorkspace.clear();
+  aggregateFetchFollowUpWantedByWorkspace.clear();
   activityFetchInFlightByWorkspace.clear();
   activityFetchFollowUpWantedByWorkspace.clear();
   missingEntityFetchInFlightByWorkspace.clear();

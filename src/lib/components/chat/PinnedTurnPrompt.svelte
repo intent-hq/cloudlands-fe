@@ -42,7 +42,9 @@
       const label =
         wake.kind === 'hook'
           ? wake.attribution.displayName
-          : getPrMonitorWakeChipLabel(wake.attribution, repo);
+          : wake.kind === 'script'
+            ? wake.attribution.scriptName
+            : getPrMonitorWakeChipLabel(wake.attribution, repo);
       return label;
     }
     if (body.trim()) return body.trim();

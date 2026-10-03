@@ -7,7 +7,7 @@ export function trafficStream(row: DevConsoleRow): Exclude<TrafficTab, 'all'> | 
   return row.direction === 'inbound' ? 'events' : null;
 }
 export function trafficBytes(row: DevConsoleRow) {
-  return (row.payload.originalBytes ?? 0) + (row.response?.originalBytes ?? 0);
+  return row.totalBytes ?? (row.payload.originalBytes ?? 0) + (row.response?.originalBytes ?? 0);
 }
 export function orderTraffic(
   rows: DevConsoleRow[],
@@ -61,7 +61,9 @@ export function selectedPayloadReader(
         if (!row) return;
         const result = await read(row.id);
         if (stopped || token.version !== version) return;
-        if (!token.dirty) change(result);
+        // Publish progress even if another frame arrived during this read.
+        // Waiting for a quiet interval can starve a continuously active stream.
+        change(result);
       } while (token.dirty);
     } catch (error) {
       if (!stopped && token.version === version) fail(String(error));

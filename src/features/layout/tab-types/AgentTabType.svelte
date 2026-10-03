@@ -358,11 +358,16 @@
   {/if}
 {/snippet}
 
-{#snippet agentAdditionalActions()}
+{#snippet agentAdditionalActions(menuOpen: boolean)}
   {#each $presencePeople$ as person (person.principalId)}
     <Menu.CommandItem icon={faUserTie} label={presencePersonLabel(person)} disabled />
   {/each}
-  <TaskProgressControl tasks={taskProgressItems} embedded />
+  <TaskProgressControl
+    tasks={taskProgressItems}
+    {workspaceId}
+    isActive={isActive && menuOpen}
+    embedded
+  />
   {#if tab.agentId}
     <BrowserTabsMenu {workspaceId} agentId={tab.agentId} embedded />
   {/if}

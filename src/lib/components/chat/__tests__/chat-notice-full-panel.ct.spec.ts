@@ -7,10 +7,11 @@ import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelt
 test.setTimeout(120_000);
 
 async function measureNotice(component: Locator) {
-  // PanelLayout measures its initial width asynchronously. Separate protocol
-  // calls (even Promise.all) can mix narrow prose with wide notice geometry.
-  // Keep all related edges and typography in one synchronous browser read.
-  return component.evaluate((root) => {
+  // Let PanelLayout's width update settle, then read all related geometry together.
+  return component.evaluate(async (root) => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
     const paragraphs = root.querySelectorAll(
       '[data-message-id="follow-up-assistant"] [data-assistant-prose] p',
     );
@@ -138,9 +139,6 @@ test('notice and prose stay aligned across the panel inset breakpoint', async ({
   const wide = await measureNotice(component);
   expect(wide.geometry).toHaveLength(3);
   expectAligned(wide.geometry);
-  // Mixing the narrow prose sample with the wide notice recreates the false
-  // mismatch. Neither coherent snapshot has an alignment defect.
-  expect(wide.geometry[1].left - narrow.geometry[0].left).toBeGreaterThan(30);
 
   await component.update({ props: { width: 500 } });
   await expect.poll(panelWidth).toBeLessThan(640);

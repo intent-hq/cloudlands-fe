@@ -762,6 +762,13 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('true');
   });
 
+  it('uses daemon aggregate progress without initializing individual task rows', async () => {
+    mocks.taskState.initialized = false;
+    mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
+    await renderProgressCard({ taskStats: { total: 2, completed: 1, inProgress: 1 } });
+    expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('false');
+  });
+
   it('keeps the progress bar mounted across task refetches after initialization', async () => {
     mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
     const { container } = await renderProgressCard();

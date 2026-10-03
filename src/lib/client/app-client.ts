@@ -150,6 +150,8 @@ export interface MutationResult {
   /** sendQueuedMessageNow may restore the entry instead of delivering it (§5.5). */
   queued?: boolean;
   quarantined?: boolean;
+  /** IDs acknowledged by an explicit queued batch send. */
+  messageIds?: string[];
   /**
    * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced when the
    * daemon returns one by the seam mutations that extract it: `queueMessage`
@@ -197,6 +199,7 @@ export interface AgentCreateRequest {
   /** Reasoning effort for the session's model (Option B session field, §5.5). */
   reasoningEffort?: string;
   specialist?: string | null;
+  rememberSpecialist?: boolean;
   name?: string;
   nameExplicitlySet?: boolean;
   agentId?: string;
@@ -273,13 +276,6 @@ export interface UserMessageIndexItem {
 export type UserMessageIndexResult =
   | { ok: true; items: UserMessageIndexItem[]; total: number }
   | { ok: false; unsupported: boolean; error: string };
-
-/** Pull-request summary surfaced by the git domain. */
-export interface PrStatusSummary {
-  prNumber?: number;
-  url?: string;
-  state?: string;
-}
 
 /**
  * Post-refresh linkage state returned by `pr.refresh` (PROTOCOL §5.7
@@ -764,6 +760,12 @@ export interface AgentsClient {
     workspaceId: string;
     messageId: string;
   }): Promise<MutationResult>;
+  /** Send exactly the selected ready entries together in one interrupt turn. */
+  sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
+  }): Promise<MutationResult>;
   /**
    * Read the agent's persisted message queue (`agent.getQueue`, §5.5/§6.6).
    * Returns the daemon's `queue` array (QueuedMessage =
@@ -891,6 +893,7 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult>;
@@ -1013,6 +1016,8 @@ export interface AgentsClient {
  * terminal `streamingComplete` frames.
  */
 export interface ChatTranscript {
+  /** Exclusive older-page continuation from the authoritative snapshot. */
+  nextToken?: string | null;
   messages: AgentMessage[];
   truncated: boolean;
   totalMessages: number;
@@ -1416,12 +1421,11 @@ export interface GitClient {
     commitHash: string,
     opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null>;
-  prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   /**
    * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,
    * relink-after-merge, stale-link clearing) for one workspace on demand and
-   * returns the post-refresh linkage state. Unlike `pr.status` it does NOT
-   * require an active PR. Errors fold to `null`.
+   * returns the post-refresh linkage state. An active PR is not required.
+   * Errors fold to `null`.
    */
   prRefresh(workspaceId: string): Promise<PrRefreshResult | null>;
   /**

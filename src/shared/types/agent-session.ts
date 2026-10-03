@@ -71,6 +71,9 @@ export interface QueuedMessage {
   editing?: boolean;
   /** Original active edit identity when a held entry was absorbed into this survivor. */
   editingMessageId?: string;
+  /** Server hold marker; readiness resumes at holdUntil. */
+  holdKind?: string;
+  holdUntil?: string;
   /**
    * Optional terminal-failure requeue marker (STAB-112). When true, this message
    * was requeued after a terminal provider failure and should be visually distinguished
@@ -457,6 +460,14 @@ export interface AgentSession extends AgentNodeFields {
    */
   waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
 
+  /** Active script-run watches (§5.8a), omitted by the daemon when empty. */
+  waitingOnScriptMonitors?: Array<{
+    monitorId: string;
+    scriptId: string;
+    runId: string;
+    scriptName: string;
+    expiresAt: string;
+  }>;
   /**
    * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
    * companion for centralized PR monitoring (§5.42): light metadata for the

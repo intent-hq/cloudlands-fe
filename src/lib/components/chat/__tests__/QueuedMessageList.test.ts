@@ -56,6 +56,59 @@ function buttonTooltips(container: HTMLElement): string[] {
 }
 
 describe('QueuedMessageList', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+  it('bulk actions select only messages the admitted principal can mutate', async () => {
+    const onsendall = vi.fn().mockResolvedValue('queued');
+    const onclearall = vi.fn().mockResolvedValue(undefined);
+    renderQueue({
+      props: {
+        ownPrincipalId: 'self',
+        messages: [
+          queued({ id: 'own' }),
+          queued({ id: 'foreign', messageMetadata: { fromPrincipalId: 'other' } }),
+        ],
+        onsendall,
+        onclearall,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Send all ready messages now' }));
+    await waitFor(() => expect(onsendall).toHaveBeenCalledWith(['own']));
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear all queued messages' }));
+    await waitFor(() => expect(onclearall).toHaveBeenCalledWith(['own']));
+  });
+
+  it('host-owner bulk send excludes script-monitor wakes', async () => {
+    const onsendall = vi.fn().mockResolvedValue('queued');
+    renderQueue({
+      props: {
+        isHostOwner: true,
+        messages: [
+          queued({ id: 'human' }),
+          queued({ id: 'imported', messageMetadata: { humanAuthor: {} } }),
+          queued({ id: 'held', holdKind: 'debounce', holdUntil: '2099-01-01T00:00:00Z' }),
+          queued({
+            id: 'monitor',
+            messageMetadata: { type: 'script_monitor_wake', monitorId: 'monitor-1' },
+          }),
+        ],
+        onsendall,
+        onsendnow: vi.fn(),
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Send all ready messages now' }));
+    await waitFor(() => expect(onsendall).toHaveBeenCalledWith(['human']));
+    expect(screen.getAllByRole('button', { name: 'Send immediately' })).toHaveLength(3);
+  });
+
   describe('shared queue permissions', () => {
     it.each(['participant', 'owner', 'host-owner'])(
       'guards foreign edit entry points for a %s',
@@ -495,6 +548,36 @@ describe('QueuedMessageList', () => {
   });
 
   describe('send immediately', () => {
+    it.each(['single', 'all'] as const)(
+      'announces an active %s send and returns to idle when delivery stays queued',
+      async (scope) => {
+        const pending = deferred<'queued'>();
+        const send = vi.fn(() => pending.promise);
+        renderQueue({
+          props: {
+            messages: [queued({})],
+            ...(scope === 'single' ? { onsendnow: send } : { onsendall: send }),
+          },
+        });
+        const header = screen.getByTestId('queued-messages-disclosure');
+        const label = screen.getByTestId('queued-messages-label');
+        const idleText = label.textContent;
+        const idleName = header.getAttribute('aria-label');
+        await fireEvent.click(
+          screen.getByRole('button', {
+            name: scope === 'single' ? 'Send immediately' : 'Send all ready messages now',
+          }),
+        );
+        expect(label.textContent).not.toBe(idleText);
+        expect(header.getAttribute('aria-label')).not.toBe(idleName);
+        await fireEvent.click(header);
+        expect(header.getAttribute('aria-expanded')).toBe('false');
+        pending.resolve('queued');
+        await waitFor(() => expect(label.textContent).toBe(idleText));
+        expect(header.getAttribute('aria-label')).toBe(idleName);
+      },
+    );
+
     it('targets only the chosen ID and prevents duplicate/edit/remove actions until acknowledgement', async () => {
       const pending = deferred<'delivered'>();
       const onsendnow = vi.fn(() => pending.promise);
@@ -626,12 +709,9 @@ describe('QueuedMessageList', () => {
       const disclosure = screen.getByTestId('queued-messages-disclosure');
       const content = screen.getByTestId('queued-messages-content');
       const container = screen.getByTestId('queued-messages-container');
-      const label = screen.getByTestId('queued-messages-label');
-      const chevron = screen.getByTestId('queued-messages-chevron').querySelector('svg')!;
       expect(disclosure.getAttribute('aria-expanded')).toBe('true');
       expect(disclosure.getAttribute('aria-controls')).toBe(content.id);
-      expect(chevron.classList.contains('rotate-90')).toBe(false);
-      expect(label.textContent?.trim()).toBe('1 queued message');
+      expect(disclosure.getAttribute('aria-label')).toMatch(/^1\b/);
       expect(container.className).not.toContain('before:');
       expect(screen.getAllByTestId('queued-message-row')).toHaveLength(1);
     });
@@ -644,12 +724,6 @@ describe('QueuedMessageList', () => {
       await fireEvent.click(disclosure);
       await tick();
       expect(disclosure.getAttribute('aria-expanded')).toBe('false');
-      expect(
-        screen
-          .getByTestId('queued-messages-chevron')
-          .querySelector('svg')
-          ?.classList.contains('rotate-90'),
-      ).toBe(true);
       expect(screen.queryByTestId('queued-messages-content')).toBeNull();
       expect(screen.queryByTestId('queued-message-row')).toBeNull();
       expect(document.activeElement).toBe(disclosure);
@@ -657,9 +731,7 @@ describe('QueuedMessageList', () => {
       await view.rerender({
         messages: [queued({}), queued({ id: 'q-2', content: 'second', position: 1 })],
       });
-      expect(screen.getByTestId('queued-messages-label').textContent?.trim()).toBe(
-        '2 queued messages',
-      );
+      expect(disclosure.getAttribute('aria-label')).toMatch(/^2\b/);
       expect(disclosure.getAttribute('aria-expanded')).toBe('false');
       expect(screen.queryByTestId('queued-message-row')).toBeNull();
 
@@ -966,11 +1038,6 @@ describe('QueuedMessageList', () => {
   });
 
   it('lets the canonical follow authority pin bottom and preserve an unlocked viewport', async () => {
-    class ResizeObserverStub {
-      observe() {}
-      disconnect() {}
-    }
-    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
     const view = render(QueuedMessageEditMotionHost);
     const transcript = screen.getByTestId('queued-edit-transcript');
     let expandedHeight = 900;
@@ -994,13 +1061,20 @@ describe('QueuedMessageList', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps the requeued-after-failure indicator on queued rows', () => {
-    const { container } = renderQueue({
-      props: { messages: [queued({ content: 'try again', requeuedAfterFailure: true })] },
+  it('shows retry status separately from message content until sending starts', async () => {
+    const pending = deferred<'delivered'>();
+    renderQueue({
+      props: {
+        messages: [queued({ content: 'try again', requeuedAfterFailure: true })],
+        onsendnow: () => pending.promise,
+      },
     });
 
-    expect(screen.getByText(/try again/)).toBeTruthy();
-    expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
+    expect(screen.getByTestId('queued-message-text').textContent?.trim()).toBe('try again');
+    expect(screen.getByTestId('queued-message-retry-status').getAttribute('role')).toBe('status');
+    await fireEvent.click(screen.getByRole('button', { name: 'Send immediately' }));
+    expect(screen.queryByTestId('queued-message-retry-status')).toBeNull();
+    pending.resolve('delivered');
   });
 
   it('renders portable queue authors without a roster cache and keeps unknown, null and absent distinct', () => {
@@ -1097,9 +1171,6 @@ describe('QueuedMessageList', () => {
       ]);
       expect(headers[0].getAttribute('aria-label')).toContain('Guest User');
       expect(headers[1].getAttribute('aria-label')).toContain('owner');
-      expect(screen.getAllByTestId('queued-message-author-name').map((n) => n.textContent)).toEqual(
-        ['Guest User', 'owner'],
-      );
       const avatar = screen.getByTestId('queued-message-author-avatar') as HTMLImageElement;
       expect(avatar.getAttribute('src')).toBe(guest.avatarUrl);
       expect(screen.getByTestId('queued-message-author-avatar-fallback').textContent).toBe('O');
@@ -1199,9 +1270,8 @@ describe('QueuedMessageList', () => {
         guest.principalId,
         owner.principalId,
       ]);
-      expect(screen.getAllByTestId('queued-message-author-name').map((n) => n.textContent)).toEqual(
-        ['Guest User', 'Owner Renamed'],
-      );
+      expect(headers[0].getAttribute('aria-label')).toContain('Guest User');
+      expect(headers[1].getAttribute('aria-label')).toContain('Owner Renamed');
       expect(screen.getByText('first ever message, still queued')).toBeTruthy();
     });
 

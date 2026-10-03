@@ -4567,7 +4567,7 @@ describe('per-window backend IPC routing', () => {
     ],
     ['git.pull', { repoPath: '/host/github-project', branchName: 'main' }],
     ['git.status', { workspaceId: 'gitlab-origin-workspace' }],
-    ['pr.status', { workspaceId: 'github-workspace' }],
+    ['pr.refresh', { workspaceId: 'github-workspace' }],
   ])(
     'routes shared execution %s through the member window instead of the local default',
     async (method, params) => {

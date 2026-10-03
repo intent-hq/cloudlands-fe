@@ -59,7 +59,11 @@ import type {
   LeaveGuestWorkspaceParams,
   LeaveGuestWorkspaceResult,
 } from '$shared/types/guest-sessions';
-import { selectCurrentConnectionId } from '../../connections/connections-selectors';
+import {
+  selectConnectionsLoaded,
+  selectCurrentConnectionId,
+} from '../../connections/connections-selectors';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { authRejectedReceived } from '../../connections/connections-slice';
 import { selectAllTabs, selectHiddenTabs } from '../../panel-layout/panel-layout-selectors';
 import { destroyOwnedTabsForWorkspace } from '../../panel-layout/panel-layout-slice';
@@ -916,6 +920,9 @@ function* watchActions(): SagaGenerator<void> {
     takeEvery(leaveGuestWorkspaceRequested, leaveWorkspace, workspaceLeavesInFlight),
     call(watchRosterLoads),
     takeEvery(collaborationSignInRequested, function* () {
+      // Settings sign-in selects an identity on the local daemon, never the remote host.
+      if (!(yield* select(selectConnectionsLoaded.select))) return;
+      if ((yield* select(selectCurrentConnectionId.select)) !== LOCAL_CONNECTION_ID) return;
       if (yield* selectCollaborationReady.effect()) yield* call(openCollaborationSignIn);
     }),
     takeEvery(removeHostedMemberRequested, removeHostedMember),

@@ -1932,13 +1932,13 @@ describe('execute dispatch', () => {
     );
   });
 
-  it('new-agent dispatches the specialist-picker creation trigger', () => {
+  it('new-agent dispatches implicit creation to restore workspace defaults', () => {
     const { context, dispatch } = makeContext(makeState());
     getActionKeyDefinition('new-agent').execute(context);
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'workspaceAgents/createAgentWithSpecialistRequested',
-        payload: ['ws-1', null],
+        type: 'workspaceAgents/createAgentRequested',
+        payload: ['ws-1'],
       }),
     );
   });

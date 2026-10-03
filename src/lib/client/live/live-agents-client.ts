@@ -1,3 +1,4 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Live agents domain backed by the intentd daemon.
  *
@@ -270,7 +271,7 @@ export class LiveAgentsClient implements AgentsClient {
   // agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 50,
+    limit = CHAT_PAGE_SIZE,
     pageToken?: string,
     aroundMessageId?: string,
     aroundIndex?: number,
@@ -428,7 +429,12 @@ export class LiveAgentsClient implements AgentsClient {
     };
     if (request.model !== undefined) params.model = request.model;
     if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
-    if (request.specialist !== undefined && request.specialist !== null) {
+    if (request.rememberSpecialist !== undefined)
+      params.rememberSpecialist = request.rememberSpecialist;
+    if (
+      request.specialist !== undefined &&
+      (request.specialist !== null || request.rememberSpecialist)
+    ) {
       params.specialistId = request.specialist;
     }
     if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
@@ -622,6 +628,36 @@ export class LiveAgentsClient implements AgentsClient {
       return { success: false, error: mutationErrorMessage(error) };
     }
   }
+  async sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
+  }): Promise<MutationResult> {
+    try {
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        messageIds: string[];
+        turnId?: string;
+      }>('agent.sendQueuedMessagesNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageIds: params.messageIds,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        messageIds: result.messageIds,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(!result.queued && !result.quarantined && result.turnId
+          ? { turnId: result.turnId }
+          : {}),
+      };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
   async getQueue(agentId: string, workspaceId?: string): Promise<QueuedMessage[]> {
     // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
     // daemon's queue array through verbatim (incl. optional `messageMetadata`).
@@ -787,17 +823,35 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult> {
     const changes: Record<string, unknown> = { specialist: params.specialist };
+    if (params.rememberSpecialist !== undefined)
+      changes.rememberSpecialist = params.rememberSpecialist;
     if (params.model !== undefined) changes.model = params.model;
     if (params.systemPrompt !== undefined) changes.systemPrompt = params.systemPrompt;
-    return runMutation('agent.update', {
-      agentId: params.agentId,
-      workspaceId: params.workspaceId,
-      changes,
-    });
+    const request = { agentId: params.agentId, workspaceId: params.workspaceId, changes };
+    try {
+      await backendRequest('agent.update', request);
+      return { success: true };
+    } catch (error) {
+      // Older daemons reject unknown change keys before applying any fields.
+      // Retry only that refusal; all validation/storage failures keep rollback.
+      if (
+        params.rememberSpecialist !== undefined &&
+        (error as { rpcCode?: number })?.rpcCode === -32602 &&
+        mutationErrorMessage(error).includes(
+          'agent.update: unknown field `rememberSpecialist` in `changes`',
+        )
+      ) {
+        const legacyChanges = { ...changes };
+        delete legacyChanges.rememberSpecialist;
+        return runMutation('agent.update', { ...request, changes: legacyChanges });
+      }
+      return { success: false, error: mutationErrorMessage(error) };
+    }
   }
   async rename(
     agentId: string,

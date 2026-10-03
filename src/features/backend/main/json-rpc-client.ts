@@ -684,6 +684,7 @@ export class JsonRpcClient extends EventEmitter {
     if (hasMethod && !hasId) {
       this.observeFrame(() => ({
         type: 'notification',
+        direction: 'inbound',
         method: message.method as string,
         payload: message.params,
       }));

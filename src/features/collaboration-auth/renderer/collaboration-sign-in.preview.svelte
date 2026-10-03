@@ -7,10 +7,10 @@
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import type { CollaborationView } from '../types';
 
-  function setup() {
+  function setup(gitlabEnabled = true) {
     const before = appStore.state.userPreferences;
     appStore.dispatch(setLabsMultiplayerEnabled(true));
-    appStore.dispatch(setLabsGitLabEnabled(true));
+    appStore.dispatch(setLabsGitLabEnabled(gitlabEnabled));
     return () => {
       appStore.dispatch(setLabsMultiplayerEnabled(before.labsMultiplayerEnabled));
       appStore.dispatch(setLabsGitLabEnabled(before.labsGitLabEnabled));
@@ -38,6 +38,10 @@
     defaultState: 'github-consent',
     states: {
       'github-consent': { setup, props: { view: base, static: true } },
+      'github-only': {
+        setup: () => setup(false),
+        props: { static: true, view: { ...base, request: { scope: 'settings' }, user: null } },
+      },
       'github-choice': {
         setup,
         props: { static: true, view: { ...base, request: { scope: 'settings' }, user: null } },

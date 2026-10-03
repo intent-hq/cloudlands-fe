@@ -35,9 +35,13 @@ vi.mock('$store/renderer/slices/app-layout/app-layout-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
-  replaceMessages: Object.assign(
-    (...args: unknown[]) => ({ type: 'agentSessions/replaceMessages', payload: args }),
-    { type: 'agentSessions/replaceMessages' },
+  setHistoryOldestReached: (agentId: string) => ({
+    type: 'agentSessions/setHistoryOldestReached',
+    payload: [agentId],
+  }),
+  seedHistoryAround: Object.assign(
+    (...args: unknown[]) => ({ type: 'agentSessions/seedHistoryAround', payload: args }),
+    { type: 'agentSessions/seedHistoryAround' },
   ),
 }));
 
@@ -166,7 +170,9 @@ describe('openMessage', () => {
     await vi.runAllTimersAsync();
 
     expect(goto).not.toHaveBeenCalled();
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
+    );
     expect(mockGetConversation).not.toHaveBeenCalled();
     expect(eventListener).not.toHaveBeenCalled();
 
@@ -211,7 +217,7 @@ describe('openMessage', () => {
       prevToken: 'newer',
     };
     mockGetConversation.mockImplementation(async () => {
-      // The replaceMessages upsert lands the seek page in the store.
+      // The seedHistoryAround upsert lands the seek page in the store.
       mockState.value = stateWith({ messages: seekPage.messages, hydration: 'settled' });
       return seekPage;
     });
@@ -224,15 +230,15 @@ describe('openMessage', () => {
 
     expect(mockGetConversation).toHaveBeenCalledWith(
       'agent-1',
-      50,
+      5,
       undefined,
       'msg-1',
       undefined,
       'ws-1',
     );
     expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'agentSessions/replaceMessages',
-      payload: ['agent-1', seekPage.messages],
+      type: 'agentSessions/seedHistoryAround',
+      payload: ['agent-1', seekPage.messages, undefined],
     });
     expect(eventListener).toHaveBeenCalled();
 
@@ -256,7 +262,7 @@ describe('openMessage', () => {
       payload: ['ws-1', { agentId: 'agent-1' }],
     });
     expect(mockDispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'agentSessions/replaceMessages' }),
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
     );
     expect(eventListener).not.toHaveBeenCalled();
 
@@ -291,7 +297,7 @@ describe('seekConversationToMessage', () => {
     mockState.value = stateWith({ messages: [] });
   });
 
-  it('replaces the session with the page containing the message and returns true', async () => {
+  it('seeds the history with the page containing the message and returns true', async () => {
     const seekPage = {
       messages: [{ id: 'msg-old-1' }, { id: 'msg-target' }, { id: 'msg-old-2' }],
       truncated: true,
@@ -300,7 +306,7 @@ describe('seekConversationToMessage', () => {
       prevToken: 'newer',
     };
     mockGetConversation.mockImplementation(async () => {
-      // The replaceMessages upsert lands the seek page in the store.
+      // The seedHistoryAround upsert lands the seek page in the store.
       mockState.value = stateWith({ messages: seekPage.messages });
       return seekPage;
     });
@@ -309,15 +315,15 @@ describe('seekConversationToMessage', () => {
 
     expect(mockGetConversation).toHaveBeenCalledWith(
       'agent-1',
-      50,
+      5,
       undefined,
       'msg-target',
       undefined,
       'ws-1',
     );
     expect(mockDispatch).toHaveBeenCalledWith({
-      type: 'agentSessions/replaceMessages',
-      payload: ['agent-1', seekPage.messages],
+      type: 'agentSessions/seedHistoryAround',
+      payload: ['agent-1', seekPage.messages, undefined],
     });
   });
 
@@ -332,7 +338,9 @@ describe('seekConversationToMessage', () => {
 
     await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(false);
 
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
+    );
   });
 
   it('returns false gracefully when the seek is rejected (message deleted)', async () => {
@@ -340,6 +348,8 @@ describe('seekConversationToMessage', () => {
 
     await expect(seekConversationToMessage('agent-1', 'msg-target')).resolves.toBe(false);
 
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentSessions/seedHistoryAround' }),
+    );
   });
 });
