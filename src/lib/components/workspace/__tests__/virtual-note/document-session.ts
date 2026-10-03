@@ -17,7 +17,13 @@ import {
 } from './table-transfer';
 import { cloneTableWindow } from './table-payload';
 import { Editor, Extension, type CommandProps } from '@tiptap/core';
-import { Plugin, TextSelection, EditorState, type Transaction } from '@tiptap/pm/state';
+import {
+  Plugin,
+  TextSelection,
+  NodeSelection,
+  EditorState,
+  type Transaction,
+} from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
@@ -180,7 +186,7 @@ export class DocumentSession {
   private suppress = false;
   private prevTime = 0;
   private prevComposition: number | undefined;
-  private prevRange?: [number, number];
+  private prevRanges: [number, number][] = [];
   private pendingFetch?: Promise<void>;
   private pendingNavigation?: (accepted: boolean) => void;
   private rollbackState?: EditorState;
@@ -1033,7 +1039,8 @@ export class DocumentSession {
           );
           const restored = requestedSelection ?? this.selection;
           tr.setSelection(
-            next.mixed?.restoreSelection(tr.doc, restored) ??
+            next.restoreNodeSelection(tr.doc, restored) ??
+              next.mixed?.restoreSelection(tr.doc, restored) ??
               next.table?.restoreSelection(tr.doc, restored) ??
               TextSelection.create(
                 tr.doc,
@@ -1725,6 +1732,7 @@ export class DocumentSession {
     const p = this.projection!,
       editor = this.editor!;
     const selection =
+      p.restoreNodeSelection(editor.state.doc, this.selection) ??
       p.mixed?.restoreSelection(editor.state.doc, this.selection) ??
       p.table?.restoreSelection(editor.state.doc, this.selection) ??
       TextSelection.create(
@@ -1777,6 +1785,9 @@ export class DocumentSession {
       head = h ? { cell: h.cell.from, block: 0, offset: 0 } : undefined;
     }
     return {
+      ...(selection instanceof NodeSelection
+        ? { node: { from: p.sourceAt(selection.from), type: selection.node.type.name } }
+        : {}),
       ...(anchor && head
         ? { table: { anchor, head, kind: cells ? ('cell' as const) : ('text' as const) } }
         : {}),
@@ -1865,6 +1876,7 @@ export class DocumentSession {
       return;
     }
     let mixedAppended = 0;
+    const mixedRootMaps = this.projection?.mixed ? transactions[0].mapping.maps.length : undefined;
     if (this.projection?.mixed && transactions.length > 1 && transactions[0].docChanged) {
       // Reuse the actual immutable native documents and steps. Table fixups may
       // temporarily remove a cell; only the final appended result is admissible.
@@ -1899,7 +1911,7 @@ export class DocumentSession {
       selection: this.selection,
       prevTime: this.prevTime,
       prevComposition: this.prevComposition,
-      prevRange: this.prevRange,
+      prevRanges: this.prevRanges,
       acceptedRoots: this.acceptedRoots,
       acceptedAppended: this.acceptedAppended,
     };
@@ -1939,8 +1951,7 @@ export class DocumentSession {
           tr.mapping.maps[0]?.forEach((from, to) => {
             const start = this.projection!.sourceAt(from),
               end = this.projection!.sourceAt(to);
-            if (this.prevRange && start <= this.prevRange[1] && end >= this.prevRange[0])
-              adjacent = true;
+            if (this.prevRanges.some(([from, to]) => start <= to && end >= from)) adjacent = true;
           });
           const history =
             tr.getMeta('addToHistory') !== false &&
@@ -2031,11 +2042,11 @@ export class DocumentSession {
                 (splice) => {
                   oldStart = mapPoint(oldStart, splice, -1);
                   this.windowEnd = mapPoint(this.windowEnd, splice);
-                  if (!history && this.prevRange)
-                    this.prevRange = [
-                      mapPoint(this.prevRange[0], splice),
-                      mapPoint(this.prevRange[1], splice),
-                    ];
+                  if (!history)
+                    this.prevRanges = this.prevRanges.map(([from, to]) => [
+                      mapPoint(from, splice),
+                      mapPoint(to, splice),
+                    ]);
                 },
               );
               if (listProjection)
@@ -2149,10 +2160,23 @@ export class DocumentSession {
               (tr.time - this.prevTime <= 500 && !!adjacent));
           if (history) this.service.recordEdit(before, after, group);
           if (history) {
-            this.prevRange = undefined;
-            for (let m = tr.mapping.maps.length - 1; m >= 0 && !this.prevRange; m--) {
+            this.prevRanges = [];
+            for (
+              let m = (mixedRootMaps ?? tr.mapping.maps.length) - 1;
+              m >= 0 && !this.prevRanges.length;
+              m--
+            ) {
               tr.mapping.maps[m].forEach((_from, _to, from, to) => {
-                this.prevRange = [this.projection!.sourceAt(from), this.projection!.sourceAt(to)];
+                // Native history tracks the root edit range through appended fixups.
+                // A table repair/trailing paragraph is not the preceding typing range.
+                const tail = tr.mapping.slice(m + 1);
+                const start = tail.map(from, 1),
+                  end = tail.map(to, -1);
+                if (start <= end)
+                  this.prevRanges.push([
+                    this.projection!.sourceAt(start),
+                    this.projection!.sourceAt(end),
+                  ]);
               });
             }
             this.prevTime = tr.time;
@@ -2252,8 +2276,10 @@ export class DocumentSession {
     });
     this.selection = mapSelection(this.selection, splice, this.service.revision);
     this.windowEnd = mapPoint(this.windowEnd, splice);
-    if (this.prevRange)
-      this.prevRange = [mapPoint(this.prevRange[0], splice), mapPoint(this.prevRange[1], splice)];
+    this.prevRanges = this.prevRanges.map(([from, to]) => [
+      mapPoint(from, splice),
+      mapPoint(to, splice),
+    ]);
     this.cache.clear();
     if (table) {
       void this.seek(this.selection.head, true, anchorPoint);

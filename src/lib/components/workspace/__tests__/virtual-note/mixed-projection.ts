@@ -26,6 +26,22 @@ export class MixedProjection {
   readonly boundaries = new Map<number, number>();
   readonly tokens: SourceProjection['tokens'] = [];
   readonly parts: Array<{ pm: number; end: number; projection: SourceProjection }> = [];
+  sourceAt(pm: number, affinity = 1) {
+    const part = this.parts.find((p) => p.projection.table && pm >= p.pm && pm <= p.end);
+    if (!part) return undefined;
+    if (pm === part.pm) return part.projection.table!.window.from;
+    if (pm === part.end) return part.projection.table!.window.to;
+    return part.projection.table!.sourceAt(pm - part.pm, affinity);
+  }
+  pmAt(source: number, affinity = 1) {
+    const part = this.parts.find(
+      (p) =>
+        p.projection.table &&
+        source >= p.projection.table.window.from &&
+        source <= p.projection.table.window.to,
+    );
+    return part ? part.pm + part.projection.table!.pmAt(source, affinity) : undefined;
+  }
   pointAt(pm: number, cell = false) {
     const part = this.parts.find((p) => p.pm <= pm && p.end >= pm && p.projection.table);
     if (!part) return undefined;

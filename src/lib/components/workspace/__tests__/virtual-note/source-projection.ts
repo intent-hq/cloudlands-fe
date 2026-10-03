@@ -3,6 +3,8 @@ import { mapParagraphSeam, touchesParagraphSeam, type ParagraphSeam } from './pa
 import { Lexer, type Token as MarkdownToken } from 'marked';
 import type { JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import { NodeSelection } from '@tiptap/pm/state';
+import type { Selection } from './source-journal';
 import { Transform, type Step } from '@tiptap/pm/transform';
 import type { Splice } from './source-journal';
 import { scanFences, type Fence } from './fence-context';
@@ -501,16 +503,32 @@ export class SourceProjection {
       this.positions.set(1, start);
     }
   }
+  restoreNodeSelection(doc: PMNode, selection: Selection) {
+    if (!selection.node) return undefined;
+    let found: NodeSelection | undefined;
+    doc.descendants((node, pos) => {
+      if (
+        !found &&
+        node.type.name === selection.node!.type &&
+        this.boundaries.get(pos) === selection.node!.from &&
+        NodeSelection.isSelectable(node)
+      )
+        found = NodeSelection.create(doc, pos);
+    });
+    return found;
+  }
   sourceAt(pm: number, affinity = 1) {
     if (this.table) return this.table.sourceAt(pm, affinity);
     const source =
       affinity < 0 ? (this.ends.get(pm) ?? this.positions.get(pm)) : this.positions.get(pm);
-    const exact = source ?? this.boundaries.get(pm);
+    const exact = source ?? this.boundaries.get(pm) ?? this.mixed?.sourceAt(pm, affinity);
     if (exact === undefined) throw new Error(`No exact source provenance at PM ${pm}`);
     return exact;
   }
   pmAt(source: number, affinity = 1) {
     if (this.table) return this.table.pmAt(source, affinity);
+    const mixed = this.mixed?.pmAt(source, affinity);
+    if (mixed !== undefined) return mixed;
     let nearest = 1,
       distance = Infinity;
     for (const [pm, offset] of this.positions) {

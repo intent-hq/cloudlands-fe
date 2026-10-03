@@ -142,6 +142,10 @@ for (let boundary = 0; boundary < 5; boundary++) {
           pair.push(await capture(page, side));
         }
         histories.push(pair);
+        await info.attach(`mixed-history-${histories.length}.json`, {
+          body: JSON.stringify(pair),
+          contentType: 'application/json',
+        });
         expect(pair[1].error).toBe('');
         expect(pair[1].doc).toEqual(pair[0].doc);
         expect(pair[1].selection).toEqual(pair[0].selection);

@@ -65,6 +65,7 @@ export type Selection = {
   head: number;
   affinity: -1 | 1;
   revision: number;
+  node?: { from: number; type: string };
   table?: { anchor: TablePoint; head: TablePoint; kind: 'text' | 'cell' };
 };
 export type DeferredInput = {
@@ -127,6 +128,7 @@ export const mapSelection = (r: Selection, s: Splice, revision: number): Selecti
   anchor: mapPoint(r.anchor, s, r.affinity),
   head: mapPoint(r.head, s, r.affinity),
   revision,
+  ...(r.node ? { node: { ...r.node, from: mapPoint(r.node.from, s, 1) } } : {}),
   ...(r.table
     ? {
         table: {
