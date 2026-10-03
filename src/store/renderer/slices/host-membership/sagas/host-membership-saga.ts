@@ -154,6 +154,11 @@ function* execute(action: ReturnType<typeof hostMembershipRequested>): SagaGener
       }
       yield* call(hostMembershipClient.removeMember, command.principalId);
     } else if (command.kind === 'revoke') {
+      const state = yield* selectHostMembershipState.effect();
+      if (!getItem(state.invites, command.inviteId)) {
+        yield* put(hostMembershipFailed(target, m.collaboration_host_request_error()));
+        return;
+      }
       yield* call(hostMembershipClient.revokeInvite, command.inviteId);
     }
     if (command.kind !== 'load') {
