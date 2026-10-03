@@ -47,7 +47,10 @@ import { pendingScopeReleased } from '$store/renderer/slices/pending-submissions
 import { submitChatMessage } from '$features/agent/chat-submission';
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
 import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
-import { selectAgentSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+import {
+  selectAgentSubmissionDisplay,
+  selectSubmissionObserved,
+} from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
 import {
   beginSubmissionRead,
   announceSubmissionDelivery,
@@ -828,4 +831,72 @@ describe('queue freshness with the production standing subscription', () => {
       expect(queues()).toEqual([]);
     },
   );
+});
+
+it('observes the first deferred snapshot and still restores its in-flight transcript after a read', async () => {
+  agent = 'deferred-' + crypto.randomUUID();
+  const a = admit('Deferred user');
+  let onTranscript: Parameters<typeof appClient.chat.subscribe>[1] | undefined;
+  let resolveShell: ((reply: unknown) => void) | undefined;
+  const shellReply = new Promise((resolve) => {
+    resolveShell = resolve;
+  });
+  wire.request.mockImplementation((method, params) =>
+    method === 'agent.get' ? shellReply : baseReply(method, params),
+  );
+  const subscription = vi.spyOn(appClient.chat, 'subscribe').mockImplementation((_id, handler) => {
+    onTranscript = handler;
+    return () => {};
+  });
+  acquireChatInterestLease(agent, 'queue-deferred-regression');
+  cleanups.push(
+    () => {
+      subscription.mockRestore();
+      releaseChatInterestLease(agent, 'queue-deferred-regression');
+    },
+    store.runSaga(chatSubscribeSaga),
+    store.runSaga(chatReadSaga),
+  );
+  store.dispatch(initializeChatRequested(agent, { wsId: ws }));
+  await vi.waitFor(() => expect(onTranscript).toBeTypeOf('function'));
+  const live = {
+    id: 'live-assistant',
+    role: 'assistant',
+    timestamp: '2026-10-03T00:00:00Z',
+    contentBlocks: [{ type: 'text', text: 'Still working' }],
+    isStreaming: true,
+    streamingComplete: false,
+  };
+  onTranscript!({
+    messages: [
+      {
+        ...previous,
+        ...row(a),
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'Deferred user' }],
+      },
+      live,
+    ],
+    truncated: false,
+    totalMessages: 2,
+    isStreaming: true,
+    fromSnapshot: true,
+  } as Parameters<NonNullable<typeof onTranscript>>[0]);
+  const reference = { scope: a.scope, id: a.submission.id };
+  expect(selectSubmissionObserved.select(store.state, reference)).toBe(false);
+  expect(store.state.agentSessions.byAgentId[agent]).toBeUndefined();
+  resolveShell!({ agent: shell() });
+  await vi.waitFor(() =>
+    expect(selectSubmissionObserved.select(store.state, reference)).toBe(true),
+  );
+  await loadChatTranscript(agent, ws);
+  await vi.waitFor(() =>
+    expect(store.state.agentSessions.byAgentId[agent].messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'live-assistant', isStreaming: true }),
+      ]),
+    ),
+  );
+  expect(sends()).toEqual([]);
+  expect(queues()).toEqual([]);
 });
