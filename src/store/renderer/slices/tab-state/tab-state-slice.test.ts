@@ -195,6 +195,13 @@ describe('tabStateReducer', () => {
     expect(tabStateReducer(openedState, openWorkspaceTab('ws-1'))).toBe(openedState);
   });
 
+  it('keeps route ownership transient and preserves the ordinary workspace selection behavior', () => {
+    const fromRoute = tabStateReducer(initialState, openWorkspaceTab('ws-1', 'follow-request'));
+    const fromClick = tabStateReducer(initialState, openWorkspaceTab('ws-1'));
+    expect(fromRoute).toEqual(fromClick);
+    expect(serializeWorkspaceTabsState(fromRoute)).toEqual(serializeWorkspaceTabsState(fromClick));
+    expect(tabStateReducer(fromRoute, openWorkspaceTab('ws-1'))).toBe(fromRoute);
+  });
   it('never adds the onboarding route sentinel to workspace stacks', () => {
     expect(tabStateReducer(initialState, openWorkspaceTab('new'))).toBe(initialState);
   });

@@ -5,6 +5,8 @@
  * Extracted from +page.svelte to reduce file size and improve maintainability.
  */
 
+import { get } from 'svelte/store';
+import { page } from '$app/stores';
 import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectWorkspacePendingCreations } from '$store/renderer/slices/workspace/workspace-selectors';
 
@@ -37,7 +39,7 @@ export function useTabManagement(options: UseTabManagementOptions) {
 
     if (workspaceId && !tabOpened) {
       try {
-        appStore.dispatch(openWorkspaceTab(workspaceId));
+        appStore.dispatch(openWorkspaceTab(workspaceId, get(page).state?.presenceFollowRequestId));
         tabOpened = true;
       } catch (error) {
         logger.error('Failed to open workspace tab', { workspaceId, error });

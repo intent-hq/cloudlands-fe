@@ -12,6 +12,16 @@ const principal = {
 };
 
 describe('principal discovery wire contract', () => {
+  it('preserves simultaneous submission and invitation capabilities', () => {
+    const snapshot = parsePrincipalSnapshot(
+      { server: { capabilities: { submissionCorrelation: 1, invitationAccountSearch: 1 } } },
+      principal,
+    );
+    expect(snapshot?.capabilities).toMatchObject({
+      submissionCorrelation: 1,
+      invitationAccountSearch: true,
+    });
+  });
   it.each([undefined, false, true, 0, 2, '1', null, {}])(
     'requires exact integer capability 1, not %j',
     (flag) => {
@@ -95,3 +105,14 @@ describe('principal discovery wire contract', () => {
     }
   });
 });
+
+it.each([undefined, false, true, 0, 1, 2])(
+  'only admits invitation account search capability value 1 (%s)',
+  (flag) => {
+    const snapshot = parsePrincipalSnapshot(
+      { server: { capabilities: { invitationAccountSearch: flag } } },
+      { id: 'owner', login: null, displayName: null, avatarUrl: null, isAdministrator: true },
+    );
+    expect(snapshot?.capabilities.invitationAccountSearch).toBe(flag === 1);
+  },
+);

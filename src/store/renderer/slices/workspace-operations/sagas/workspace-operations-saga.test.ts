@@ -1,8 +1,18 @@
 import { store } from '../../../store';
+import {
+  installMockBackend,
+  resetMockBackend,
+} from '../../../../../test/mocks/backend-transport.mock';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const mod = await import('../../../../../test/mocks/backend-transport.mock');
+  return mod.mockBackendTransportModule;
+});
 
 const mocks = vi.hoisted(() => ({
   archive: vi.fn(),
@@ -191,6 +201,144 @@ describe('workspaceOperationsSaga', () => {
     store.dispose();
     vi.useRealTimers();
   });
+
+  it.each([
+    { name: 'instance members only', guests: 0, invites: 0, warns: false },
+    { name: 'mixed instance members and workspace guests', guests: 2, invites: 1, warns: true },
+    {
+      name: 'instance members and pending workspace invitations',
+      guests: 0,
+      invites: 2,
+      warns: true,
+    },
+  ])('uses the real role-aware preflight for $name', async ({ guests, invites, warns }) => {
+    const backend = installMockBackend();
+    backend.onRequest('hook.list', () => ({ hooks: [] }));
+    backend.onRequest('workspace.localChanges', () => ({
+      hasUnpushedCommits: false,
+      hasUncommittedChanges: false,
+      roots: [],
+    }));
+    backend.onRequest('workspace.members.list', () => ({
+      members: [
+        {
+          principalId: 'owner',
+          role: 'owner',
+          hostRole: 'owner',
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+          addedAt: '2026-10-01T00:00:00Z',
+        },
+        {
+          principalId: 'instance-member',
+          role: 'collaborator',
+          hostRole: 'member',
+          login: 'shared',
+          displayName: null,
+          avatarUrl: null,
+          addedAt: '2026-10-01T00:00:00Z',
+        },
+        ...Array.from({ length: guests }, (_, index) => ({
+          principalId: `guest-${index}`,
+          role: 'collaborator',
+          hostRole: 'guest',
+          login: 'shared',
+          displayName: null,
+          avatarUrl: null,
+          addedAt: '2026-10-01T00:00:00Z',
+        })),
+      ],
+      guestCount: guests + invites,
+      guestLimit: 10,
+    }));
+    const actual = await vi.importActual<typeof import('$lib/utils/delete-warning-utils')>(
+      '$lib/utils/delete-warning-utils',
+    );
+    mocks.getActiveWorkNames.mockImplementation(actual.getActiveWorkNames);
+    mocks.archive.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([{ ...workspace('ws-1'), memberCount: guests + 2, openInviteCount: 0 }]);
+    try {
+      run.send(requestArchiveWorkspace('ws-1'));
+      await vi.waitFor(() => {
+        if (warns) expect(run.state().workspaceOperations.showArchiveWarning).toBe(true);
+        else expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
+      });
+      expect(run.state().workspaceOperations.showArchiveWarning).toBe(warns);
+      if (warns) {
+        expect(run.state().workspaceOperations.guestsForArchive).toEqual({
+          collaboratorCount: guests,
+          openInviteCount: invites,
+        });
+        expect(mocks.archive).not.toHaveBeenCalled();
+      } else expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
+      expect(backend.requests.filter((r) => r.method === 'workspace.members.list')).toEqual([
+        {
+          method: 'workspace.members.list',
+          params: { workspaceId: 'ws-1' },
+          options: { timeoutMs: 10000 },
+        },
+      ]);
+    } finally {
+      run.task.cancel();
+      resetMockBackend();
+    }
+  });
+
+  it.each(['archive', 'delete'] as const)(
+    'stops %s when guest impact is unavailable',
+    async (kind) => {
+      mocks.getActiveWorkNames.mockResolvedValue(null);
+      const run = harness([workspace('ws-1')]);
+      run.send(
+        kind === 'archive' ? requestArchiveWorkspace('ws-1') : requestDeleteWorkspace('ws-1'),
+      );
+      await settle();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+      expect(mocks.notify.error).toHaveBeenCalledOnce();
+      run.task.cancel();
+    },
+  );
+
+  it('discards archive preflight after a connection change without a stale notification', async () => {
+    let finish!: (value: typeof noActiveWork) => void;
+    mocks.getActiveWorkNames.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const run = harness([workspace('ws-1')]);
+    run.send(requestArchiveWorkspace('ws-1'));
+    run.send(connectionStatusChanged('disconnected'));
+    finish(noActiveWork);
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    expect(run.state().workspaceOperations.showArchiveWarning).toBe(false);
+    run.task.cancel();
+  });
+
+  it.each(['archive', 'delete'] as const)(
+    'closes an unavailable bulk %s preflight without enabling confirmation',
+    async (kind) => {
+      mocks.getActiveWorkNames.mockResolvedValue(null);
+      const run = harness([workspace('ws-1')]);
+      run.send(
+        kind === 'archive'
+          ? openBulkArchiveConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Controlled' })
+          : openBulkDeleteConfirm({ workspaceIds: ['ws-1'], groupLabel: 'Controlled' }),
+      );
+      await settle();
+      run.send(kind === 'archive' ? confirmBulkArchive() : confirmBulkDelete());
+      await settle();
+      expect(mocks.archive).not.toHaveBeenCalled();
+      expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+      expect(mocks.notify.error).toHaveBeenCalledOnce();
+      run.task.cancel();
+    },
+  );
 
   it('uses the exact archive wire call and reports a failed result without updating state', async () => {
     mocks.archive

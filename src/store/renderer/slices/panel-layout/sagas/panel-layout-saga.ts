@@ -569,7 +569,7 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
         closable: true,
       },
       focusedPanelId ?? undefined,
-      { force: true },
+      { force: true, origin: 'layout-restore' },
     ),
   );
 }

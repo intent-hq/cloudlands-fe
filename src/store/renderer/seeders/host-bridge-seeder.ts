@@ -32,7 +32,7 @@ import { store as appStore } from '../store';
 import {
   selectHostAdministrationContext,
   selectHostRole,
-  selectPrincipalConnectionContext,
+  selectPrincipalActionContext,
 } from '../slices/principal/principal-selectors';
 import { mockUserPreferences } from '$lib/client/mock/fixtures';
 import { openExternalUrl } from '$lib/utils/open-external';
@@ -77,8 +77,8 @@ function asRecord(arg: unknown): Record<string, unknown> {
 registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GIT, async () => {
   try {
     const role = selectHostRole.select(appStore.state);
-    const connection = selectPrincipalConnectionContext.select(appStore.state);
-    if (!connection || !role) return { success: true, data: { available: 'unknown' } };
+    const context = selectPrincipalActionContext.select(appStore.state);
+    if (!context || !role) return { success: true, data: { available: 'unknown' } };
     const result =
       role === 'owner'
         ? await backendRequest<HostCheckGitResult>('host.checkGit')
@@ -89,12 +89,15 @@ registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_GIT, async () => {
             )
           ).tools.git;
     if (
-      connection !== selectPrincipalConnectionContext.select(appStore.state) ||
+      context !== selectPrincipalActionContext.select(appStore.state) ||
       role !== selectHostRole.select(appStore.state)
     ) {
       return { success: true, data: { available: 'unknown' } };
     }
-    const available = result?.available === true;
+    if (typeof result?.available !== 'boolean') {
+      return { success: true, data: { available: 'unknown' } };
+    }
+    const available = result.available;
     const version = typeof result?.version === 'string' ? result.version : undefined;
     return {
       success: true,
