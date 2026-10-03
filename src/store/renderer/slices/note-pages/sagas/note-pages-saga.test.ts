@@ -2,7 +2,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { MockNotePagesClient } from '$lib/client/mock/mock-note-pages-client';
-import type { NotePageState, NoteSourcePage } from '$lib/client/note-pages';
+import type { NotePageState, NoteSourcePage, NotePagingCapabilities } from '$lib/client/note-pages';
 import * as a from '../note-pages-slice';
 import { notePagesSaga } from './note-pages-saga';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -461,3 +461,64 @@ it('accepts a clean replacement backend only after reconnect renegotiation', asy
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.state?.scope).toEqual(replacement);
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.status).toBe('ready');
 });
+
+it('invalidates prior reads before awaiting a reconnect capability handshake', async () => {
+  const outstanding = deferred<NoteSourcePage>(),
+    hello = deferred<NotePagingCapabilities | null>();
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read: () => outstanding.promise,
+  });
+  vi.spyOn(client, 'capabilities')
+    .mockResolvedValueOnce({ backendId: 'db-a', annotations: false })
+    .mockReturnValueOnce(hello.promise);
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  client.reconnect();
+  await flush();
+  outstanding.resolve(page);
+  await flush();
+  const duringHello = r.state().byWorkspaceId['ws-a'].notes.spec;
+  hello.resolve({ backendId: 'db-a', annotations: false });
+  await flush();
+  expect(duringHello.pages).toEqual({});
+  expect(duringHello.status).not.toBe('ready');
+});
+it.each(['unsupported', 'error'])(
+  'ignores a superseded reconnect hello outcome: %s',
+  async (outcome) => {
+    const olderHello = deferred<NotePagingCapabilities | null>();
+    const client = new MockNotePagesClient({
+      capabilities: { backendId: 'db-a', annotations: false },
+      read: async () => page,
+    });
+    const oldResult = olderHello.promise.then((value) => {
+      if (outcome === 'error') throw new Error('old connection offline');
+      return value;
+    });
+    const caps = vi
+      .spyOn(client, 'capabilities')
+      .mockResolvedValueOnce({ backendId: 'db-a', annotations: false })
+      .mockReturnValueOnce(oldResult)
+      .mockResolvedValue({ backendId: 'db-a', annotations: false });
+    const r = run(client);
+    r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+    await flush();
+    client.push(tuple);
+    await flush();
+    client.reconnect();
+    await flush();
+    client.reconnect();
+    await flush();
+    olderHello.resolve(null);
+    await flush();
+    client.push({ ...tuple, stateGeneration: '11' });
+    await flush();
+    expect(r.state().byWorkspaceId['ws-a'].notes.spec.status).toBe('ready');
+    expect(client.subscriptionCount).toBe(1);
+    expect(caps).toHaveBeenCalledTimes(3);
+  },
+);

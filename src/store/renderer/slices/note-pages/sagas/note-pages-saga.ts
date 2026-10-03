@@ -48,22 +48,24 @@ function* stream(ws: string, id: string) {
     while (true) {
       const event = yield* take(channel);
       if (event.epoch !== admittedEpoch) {
+        // Release old page ownership before any asynchronous reconnect negotiation.
+        yield* put(actions.pageReset(ws, id, 'reset' in event ? event.error : undefined));
         if (admittedEpoch >= 0 || event.epoch > 1) {
           try {
             capabilities = yield* call([client, client.capabilities]);
           } catch (e) {
+            if (event.epoch !== epoch) continue;
             yield* put(actions.pageReset(ws, id, message(e)));
             return;
           }
+          // Every hello outcome belongs to its connection epoch, including lost support.
+          if (event.epoch !== epoch) continue;
           if (!capabilities) {
             yield* put(actions.pageLegacySelected(ws, id));
             return;
           }
-          // A second reconnect while hello was pending invalidates that hello too.
-          if (event.epoch !== epoch) continue;
         }
         admittedEpoch = event.epoch;
-        yield* put(actions.pageReset(ws, id, 'reset' in event ? event.error : undefined));
       }
       if ('reset' in event) continue;
       const n = yield* session(ws, id);

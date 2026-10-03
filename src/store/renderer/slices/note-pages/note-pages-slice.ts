@@ -67,7 +67,7 @@ export const pageRequested =
 export const pageRequestStarted = createAction<
   [workspaceId: string, noteId: string, generation: number, key: string]
 >('notePages/requestStarted');
-export const physicalReadKey = (ws: string, id: string, generation: number, key: string) =>
+const physicalReadKey = (ws: string, id: string, generation: number, key: string) =>
   JSON.stringify([ws, id, generation, key]);
 export const pageReadSettled =
   createAction<[workspaceId: string, noteId: string, generation: number, key: string]>(
