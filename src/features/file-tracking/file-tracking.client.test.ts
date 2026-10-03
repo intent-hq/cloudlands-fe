@@ -5,15 +5,38 @@
  * real daemon. Asserts the exact JSON-RPC method + params and the
  * unlocked fallback behavior after failed hydration.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
 }));
 
+const admission = vi.hoisted(() => ({
+  role: 'owner' as string | null,
+  context: 'owner-1' as string | null,
+  loaded: 'owner-1',
+  exists: true,
+}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectHostRole: { select: () => admission.role },
+  selectPrincipalActionContext: { select: () => admission.context },
+}));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceById: { select: () => (admission.exists ? { id: 'ws-abc' } : undefined) },
+  selectWorkspaceListLoadedForBackend: { select: () => admission.loaded === admission.context },
+}));
+
 const { dispatchSpy } = vi.hoisted(() => ({ dispatchSpy: vi.fn() }));
 vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: dispatchSpy },
+  store: {
+    dispatch: dispatchSpy,
+    get state() {
+      return {
+        workspace: { capabilityContext: admission.loaded },
+        connections: { windowBackendId: 'local' },
+      };
+    },
+  },
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
@@ -65,4 +88,80 @@ describe('toLockRecord', () => {
     expect(toLockRecord(undefined)).toEqual({});
     expect(toLockRecord('not-an-array')).toEqual({});
   });
+});
+
+describe('caller admission regression: locks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    admission.role = 'owner';
+    admission.context = 'owner-1';
+    admission.loaded = 'owner-1';
+    admission.exists = true;
+  });
+  afterEach(() => {
+    admission.role = 'owner';
+    admission.context = 'owner-1';
+    admission.loaded = 'owner-1';
+  });
+  it('does not issue a Member-only read for an admitted Guest', async () => {
+    admission.role = 'guest';
+    mockedRequest.mockResolvedValue({ lockedAgentIds: [] });
+    await hydrateAgentLocks('ws-abc');
+    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('M workspace lock caller fences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    admission.role = 'owner';
+    admission.context = 'owner-1';
+    admission.loaded = 'owner-1';
+    admission.exists = true;
+  });
+  afterEach(() => {
+    admission.role = 'owner';
+    admission.context = 'owner-1';
+    admission.loaded = 'owner-1';
+    admission.exists = true;
+  });
+  it.each(['owner', 'member'])('M17 permits %s without management or Labs', async (role) => {
+    admission.role = role;
+    mockedRequest.mockResolvedValue({ lockedAgentIds: ['held'] });
+    await hydrateAgentLocks('ws-abc');
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+  });
+  it.each(['unknown', 'absent', 'stale-list', 'guest-owner'] as const)(
+    'M18 refuses %s before issuing',
+    async (kind) => {
+      if (kind === 'unknown') admission.context = null;
+      if (kind === 'absent') admission.exists = false;
+      if (kind === 'stale-list') admission.loaded = 'old';
+      if (kind === 'guest-owner') admission.role = 'guest';
+      await hydrateAgentLocks('ws-abc');
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(dispatchSpy).not.toHaveBeenCalled();
+    },
+  );
+  it.each([false, true])(
+    'M19 joins held read rejected=%s but cannot publish after admission changed',
+    async (rejects) => {
+      let resolve!: (value: unknown) => void, reject!: (error: unknown) => void;
+      mockedRequest.mockReturnValue(
+        new Promise((yes, no) => {
+          resolve = yes;
+          reject = no;
+        }),
+      );
+      const original = hydrateAgentLocks('ws-abc');
+      admission.context = 'owner-2';
+      if (rejects) reject(new Error('same original refusal'));
+      else resolve({ lockedAgentIds: ['old'] });
+      await original;
+      expect(mockedRequest).toHaveBeenCalledTimes(1);
+      expect(dispatchSpy).not.toHaveBeenCalled();
+    },
+  );
 });

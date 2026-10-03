@@ -10,6 +10,9 @@ export const inputMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/accept-changes/components/NativeReviewAttempt.svelte',
+    'src/features/accept-changes/components/NativeSidebarReview.svelte',
+    'src/features/accept-changes/components/RepositorySelectionEditor.svelte',
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
     'src/features/dev-console/TrafficInspector.svelte',
     'src/features/host-membership/HostInvitationDialog.svelte',
@@ -76,7 +79,6 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/sidebar/BranchDisplay.svelte',
     'src/lib/components/workspace/sidebar/CommitsTimeline.svelte',
     'src/lib/components/workspace/sidebar/NotesPanel.svelte',
-    'src/lib/components/workspace/sidebar/PRSection.svelte',
     'src/lib/components/workspace/sidebar/SidebarExpandableSearch.svelte',
     'src/lib/components/workspace/sidebar/WorkspaceProgressCard.svelte',
     'src/lib/components/workspace/sidebar/context-picker/BrowserUrlPicker.svelte',

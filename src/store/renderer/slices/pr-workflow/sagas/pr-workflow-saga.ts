@@ -431,7 +431,8 @@ function* resumeAfterAuth({
 function* pendingAutoAction({
   payload: [workspaceId, pending],
 }: ReturnType<typeof setPendingAutoAction>): SagaGenerator<void> {
-  if (!pending) return;
+  // Native review owns its prepared intent and explicit confirmation in the original sidebar.
+  if (!pending || pending.action === 'native-review') return;
   yield* put(setPendingAutoAction(workspaceId, null));
   if (yield* selectIsWorkspaceCollaborator.effect(pending.workspaceId)) return;
   const draft = yield* selectAcceptChangesState.effect(pending.workspaceId);

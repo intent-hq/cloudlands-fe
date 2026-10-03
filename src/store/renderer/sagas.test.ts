@@ -19,6 +19,7 @@ describe('renderer app saga registry', () => {
       'presenceSaga',
       'principalSaga',
       'hostExecutionSaga',
+      'repositoryContextSaga',
       'settingsHydrationSaga',
       'activeStreamsSaga',
       'agentReadSaga',
@@ -138,7 +139,7 @@ describe('renderer app saga registry', () => {
   it('returns one cancellation handler per registered saga', () => {
     const auditedSagaNames = getAuditedSagaNames();
     const cancel = vi.fn();
-    const store = { runSaga: vi.fn(() => cancel) };
+    const store = { runSaga: vi.fn((_saga: unknown) => cancel) };
 
     const handlers = startAllAppSagas(store as never);
 

@@ -1,3 +1,4 @@
+import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
 import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
@@ -115,6 +116,7 @@ import { workspaceImportReducer } from './slices/workspace-import/workspace-impo
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
+  repositoryContext: repositoryContextReducer,
   providerSettings: providerSettingsReducer,
   settingsEvents: settingsEventsReducer,
   antigravitySetup: antigravitySetupReducer,

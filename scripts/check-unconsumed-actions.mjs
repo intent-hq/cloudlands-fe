@@ -486,6 +486,12 @@ export function inspectUnconsumedActions(
       if (!effect || !PATTERN_EFFECTS.has(effect)) return;
       const pattern = watcherPattern(effect, node);
       if (!pattern) return;
+      if (effect === 'ownedActionChannel') {
+        // This helper applies the finite type list before the original owner filter.
+        // A same-named local callback cannot claim the imported helper's contract.
+        bindings ??= predicateBindings(source);
+        if (!bindings.sourceReference(callee)) return;
+      }
       if (
         effect === 'actionChannel' &&
         (ts.isArrowFunction(unwrap(pattern)) || ts.isFunctionExpression(unwrap(pattern)))
