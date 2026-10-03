@@ -7,6 +7,7 @@
     title: 'Collaboration settings',
     defaultState: 'owner-empty',
     states: {
+      'mixed-sharing': { props: {}, setup: () => setup('owner', true, true, false, true) },
       'owner-empty': { props: {}, setup: () => setup('owner') },
       'owner-populated': { props: {}, setup: () => setup('owner', true) },
       'remote-member': { props: {}, setup: () => setup('member', true, true, true) },

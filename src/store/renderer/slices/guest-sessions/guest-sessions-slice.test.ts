@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { shareMembershipChanged } from '../workspace-share/workspace-share-slice';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
@@ -407,4 +408,21 @@ it('#6390 keeps the roster on an inherited-access refusal and removes generic re
   expect(state.hostedRosters.ws.inheritedPrincipalIds).toEqual([MEMBER.principalId]);
   expect(state.hostedRosters.ws.guestCount).toBe(0);
   expect(state.failedMemberKeys).toEqual([]);
+});
+
+it('invalidates tracked rosters on invitation events and drops absent capability counts on the next read', () => {
+  let state = guestSessionsReducer(initialState, hostedRosterReceived('ws', [MEMBER], 2, 10));
+  state = guestSessionsReducer(state, shareMembershipChanged({ workspaceId: 'ws' }));
+  expect(state.hostedRosters.ws).toMatchObject({
+    status: 'loading',
+    invalidation: 1,
+    guestCount: 2,
+  });
+  state = guestSessionsReducer(state, hostedRosterReceived('ws', [MEMBER]));
+  expect(state.hostedRosters.ws).toMatchObject({ status: 'loaded', invalidation: 1 });
+  expect(state.hostedRosters.ws.guestCount).toBeUndefined();
+  expect(state.hostedRosters.ws.guestLimit).toBeUndefined();
+  expect(guestSessionsReducer(state, shareMembershipChanged({ workspaceId: 'untracked' }))).toBe(
+    state,
+  );
 });

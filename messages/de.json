@@ -7096,5 +7096,16 @@
   "chat_scriptMonitor_counted_description": "Zeilenschwelle erreicht; Überwachung beendet",
   "chat_scriptMonitor_untrusted_description": "Passende Zeile (nicht vertrauenswürdige Skriptausgabe)",
   "inviteProgress_admission_enableButton": "Multiplayer aktivieren",
-  "inviteProgress_admission_enable_error": "Multiplayer konnte nicht aktiviert oder die Bereitschaft nicht bestätigt werden. Wähle „Multiplayer aktivieren“, um es erneut zu versuchen."
+  "inviteProgress_admission_enable_error": "Multiplayer konnte nicht aktiviert oder die Bereitschaft nicht bestätigt werden. Wähle „Multiplayer aktivieren“, um es erneut zu versuchen.",
+  "collaboration_lists_pending_label": "Ausstehende Einladungen: {count}",
+  "collaboration_lists_manageSharing_label": "Freigabe verwalten",
+  "collaboration_lists_sharingUnknown_label": "Der Einladungsstatus ist nicht verfügbar.",
+  "collaboration_lists_joinedWorkspaces_title": "Beigetretene Arbeitsbereiche",
+  "collaboration_lists_joinedUnavailable_label": "Beigetretene Verbindungen sind nicht verfügbar.",
+  "collaboration_lists_joinedInstances_title": "Beigetretene Instanzen",
+  "collaboration_lists_leaveInstance_label": "Instanz verlassen",
+  "collaboration_lists_noJoinedInstances_title": "Keine beigetretenen Instanzen",
+  "collaboration_lists_noJoinedInstances_description": "Instanzen, denen du beitrittst, erscheinen hier.",
+  "collaboration_lists_sharingLoading_label": "Workspace-Freigaben werden geladen…",
+  "collaboration_lists_sharingLoad_error": "Workspace-Freigaben konnten nicht geladen werden."
 }

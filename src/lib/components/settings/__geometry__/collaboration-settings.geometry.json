@@ -6,14 +6,30 @@
     "390": {
       "probes": {},
       "root": {
-        "height": 887,
+        "height": 868,
         "width": 390
       }
     },
     "1100": {
       "probes": {},
       "root": {
-        "height": 767,
+        "height": 748,
+        "width": 1100
+      }
+    }
+  },
+  "mixed-sharing": {
+    "390": {
+      "probes": {},
+      "root": {
+        "height": 1772,
+        "width": 390
+      }
+    },
+    "1100": {
+      "probes": {},
+      "root": {
+        "height": 1412,
         "width": 1100
       }
     }
@@ -22,14 +38,14 @@
     "390": {
       "probes": {},
       "root": {
-        "height": 1181,
+        "height": 1174,
         "width": 390
       }
     },
     "1100": {
       "probes": {},
       "root": {
-        "height": 903,
+        "height": 940,
         "width": 1100
       }
     }
@@ -38,14 +54,14 @@
     "390": {
       "probes": {},
       "root": {
-        "height": 1441,
+        "height": 1422,
         "width": 390
       }
     },
     "1100": {
       "probes": {},
       "root": {
-        "height": 1155,
+        "height": 1136,
         "width": 1100
       }
     }
@@ -54,14 +70,14 @@
     "390": {
       "probes": {},
       "root": {
-        "height": 640,
+        "height": 618,
         "width": 390
       }
     },
     "1100": {
       "probes": {},
       "root": {
-        "height": 494,
+        "height": 516,
         "width": 1100
       }
     }

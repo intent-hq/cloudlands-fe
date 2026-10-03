@@ -7096,5 +7096,16 @@
   "chat_scriptMonitor_counted_description": "Umbral de líneas alcanzado; supervisión terminada",
   "chat_scriptMonitor_untrusted_description": "Línea coincidente (salida de script no confiable)",
   "inviteProgress_admission_enableButton": "Activar Multiplayer",
-  "inviteProgress_admission_enable_error": "No se pudo activar Multiplayer o confirmar que está listo. Selecciona Activar Multiplayer para intentarlo de nuevo."
+  "inviteProgress_admission_enable_error": "No se pudo activar Multiplayer o confirmar que está listo. Selecciona Activar Multiplayer para intentarlo de nuevo.",
+  "collaboration_lists_pending_label": "Invitaciones pendientes: {count}",
+  "collaboration_lists_manageSharing_label": "Gestionar acceso",
+  "collaboration_lists_sharingUnknown_label": "El estado de las invitaciones no está disponible.",
+  "collaboration_lists_joinedWorkspaces_title": "Espacios de trabajo unidos",
+  "collaboration_lists_joinedUnavailable_label": "Las conexiones unidas no están disponibles.",
+  "collaboration_lists_joinedInstances_title": "Instancias unidas",
+  "collaboration_lists_leaveInstance_label": "Salir de la instancia",
+  "collaboration_lists_noJoinedInstances_title": "No hay instancias unidas",
+  "collaboration_lists_noJoinedInstances_description": "Las instancias a las que te unas aparecerán aquí.",
+  "collaboration_lists_sharingLoading_label": "Cargando los espacios de trabajo compartidos…",
+  "collaboration_lists_sharingLoad_error": "No se pudieron cargar los espacios de trabajo compartidos."
 }

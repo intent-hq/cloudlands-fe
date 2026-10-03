@@ -6090,3 +6090,46 @@ describe('personal credential import classification', () => {
     expect(store.replaceSecret).not.toHaveBeenCalled();
   });
 });
+
+it('reopens a saved instance through IPC after navigation policy is republished and its window pool was released', async () => {
+  const { EventEmitter } = await import('node:events');
+  const { COLLABORATION_AUTH } = await import('../../../collaboration-auth/types');
+  const member = { ...GUEST, hostRole: 'member' as const };
+  guestStore.findById.mockImplementation(async (id: string) => (id === member.id ? member : null));
+  guestStore.list.mockResolvedValue([member]);
+  guestStore.getDecryptedToken.mockResolvedValue('controlled-invited-secret');
+  const { mod, openOrFocus } = await loadModule();
+  mod.registerBackendHandlers();
+  const { registerCollaborationAuthHandlers } =
+    await import('../../../collaboration-auth/main/collaboration-auth.ipc');
+  registerCollaborationAuthHandlers();
+  const sender = Object.assign(new EventEmitter(), { id: 418, isDestroyed: () => false });
+  const event = { sender };
+  const publish = findHandler(COLLABORATION_AUTH.POLICY)!;
+  const open = findHandler('connections:open')!;
+  try {
+    await publish(event, { multiplayer: true, gitlab: false });
+    await expect(open(event, { id: member.id })).resolves.toEqual({
+      status: 'opened',
+      id: member.id,
+    });
+    const first = mod.getBackendClientForConnection(member.id);
+    sender.emit('did-navigate-in-page');
+    await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
+    mod.disconnectBackendClient(member.id);
+    await publish(event, { multiplayer: true, gitlab: false });
+    await expect(open(event, { id: member.id })).resolves.toEqual({
+      status: 'opened',
+      id: member.id,
+    });
+    expect(mod.getBackendClientForConnection(member.id)).not.toBe(first);
+    expect(openOrFocus).toHaveBeenNthCalledWith(1, member.id);
+    expect(openOrFocus).toHaveBeenNthCalledWith(2, member.id);
+    expect(store.setActiveId).not.toHaveBeenCalled();
+    await publish(event, { multiplayer: false, gitlab: false });
+    await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
+    expect(openOrFocus).toHaveBeenCalledTimes(2);
+  } finally {
+    sender.emit('destroyed');
+  }
+});

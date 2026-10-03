@@ -28,6 +28,7 @@ export function setupCollaborationSettingsPreview(
   populated = false,
   enabled = true,
   remote = false,
+  mixed = false,
 ) {
   const before = store.state;
   const originalClient = { ...hostMembershipClient };
@@ -136,6 +137,7 @@ export function setupCollaborationSettingsPreview(
               myRole: 'owner',
               canManage: true,
               memberCount: 2,
+              openInviteCount: 0,
             } as Workspace,
           ]
         : [],
@@ -182,6 +184,7 @@ export function setupCollaborationSettingsPreview(
               fingerprint: 'preview',
               tcAddress: null,
               principalId: 'preview-remote-taylor',
+              hostRole: 'member',
               login: 'taylor-work',
               identity: { provider: 'gitlab', host: 'gitlab.example', externalUserId: '107' },
               tokenEncrypted: true,
@@ -194,6 +197,64 @@ export function setupCollaborationSettingsPreview(
       connectedIds: [],
     }),
   );
+  if (mixed) {
+    const workspaces = getItems(store.state.workspace.workspaces);
+    store.dispatch(
+      replaceWorkspaceList([
+        ...workspaces,
+        {
+          ...workspaces[0],
+          id: 'preview-ordinary',
+          title: 'Ordinary private work',
+          memberCount: 3,
+          openInviteCount: 0,
+        } as Workspace,
+        {
+          ...workspaces[0],
+          id: 'preview-pending',
+          title: 'Pending workspace invitation',
+          memberCount: 1,
+          openInviteCount: 1,
+        } as Workspace,
+      ]),
+    );
+    store.dispatch(
+      hostedRosterReceived(
+        'preview-ordinary',
+        [
+          {
+            principalId: 'preview-member',
+            hostRole: 'member',
+            role: 'collaborator',
+            login: 'sam',
+            displayName: 'Sam Rivera',
+            avatarUrl: null,
+            addedAt: '2026-10-01T00:00:00Z',
+          },
+        ],
+        0,
+        10,
+      ),
+    );
+    store.dispatch(hostedRosterReceived('preview-pending', [], 1, 10));
+    const sessions = getItems(store.state.guestSessions.sessions);
+    store.dispatch(
+      guestSessionsListReceived({
+        sessions: [
+          ...sessions,
+          {
+            ...sessions[0],
+            id: 'preview-workspace-guest',
+            hostname: 'Workspace-only host',
+            hostRole: 'guest',
+            workspaces: [{ id: 'preview-direct', title: 'Direct shared project' }],
+          },
+        ],
+        openIds: ['preview-joined'],
+        connectedIds: ['preview-joined'],
+      }),
+    );
+  }
   const stop = store.runSaga(hostMembershipSaga);
   return () => {
     stop();
