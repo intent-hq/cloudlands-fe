@@ -92,9 +92,6 @@ export function prepareIsolatedTestProfile(
   checkPrivateFile(secrets);
   checkPrivateFile(config);
   if (!fs.existsSync(config)) fs.writeFileSync(config, PRIVATE_CONFIG, { flag: 'wx', mode: 0o600 });
-  if (fs.readFileSync(config, 'utf8') !== PRIVATE_CONFIG) {
-    throw new Error('Isolated test daemon configuration was changed');
-  }
   const identity = path.join(root, 'backend-sha');
   checkPrivateFile(identity);
   if (!fs.existsSync(identity)) fs.writeFileSync(identity, backendSha, { flag: 'wx', mode: 0o600 });
@@ -119,6 +116,8 @@ export function prepareIsolatedTestProfile(
     INTENTD_SECRETS_FILE: secrets,
     INTENTD_LEGACY_IMPORT_ROOTS: '',
     INTENTD_LEGACY_APP_DIR: '',
+    INTENTD_DISABLE_GH_CREDENTIALS: '1',
+    INTENTD_PRIVATE_TEST_PROFILE: '1',
     INTENTD_SIDECAR: '1',
   });
   return Object.freeze({ root, home, userData, data, socket, config, backendSha, environment });
@@ -167,9 +166,10 @@ export function assertIsolatedTestEnvironment(env: NodeJS.ProcessEnv): void {
   ]) {
     if (env[key] !== undefined) throw new Error('Isolated test transport override is forbidden');
   }
-  if (fs.readFileSync(profile.config, 'utf8') !== PRIVATE_CONFIG) {
-    throw new Error('Isolated test daemon configuration was changed');
-  }
+  // Preferences are mutable. The original daemon startup policy pins safety
+  // fields through update/reset/reload; a byte-equality guard would break them.
+  checkPrivateFile(profile.config);
+  if (!fs.existsSync(profile.config)) throw new Error('Isolated test configuration is missing');
 }
 
 export function assertNormalAppOperation(): void {

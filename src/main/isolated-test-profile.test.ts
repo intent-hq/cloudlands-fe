@@ -64,6 +64,8 @@ describe('isolated manual package state', () => {
       INTENTD_CONFIG: profile.config,
       INTENTD_LEGACY_IMPORT_ROOTS: '',
       INTENTD_LEGACY_APP_DIR: '',
+      INTENTD_DISABLE_GH_CREDENTIALS: '1',
+      INTENTD_PRIVATE_TEST_PROFILE: '1',
       INTENTD_SIDECAR: '1',
       PATH: '/usr/bin',
     });
@@ -91,7 +93,7 @@ describe('isolated manual package state', () => {
     },
   );
 
-  it('refuses links, shared permissions and a changed private config without repairing them', () => {
+  it('refuses links and shared permissions while preserving ordinary private preference changes', () => {
     const original = home();
     const normal = home();
     fs.symlinkSync(normal, path.join(original, '.intent-tests'));
@@ -103,10 +105,17 @@ describe('isolated manual package state', () => {
     expect(() => prepareIsolatedTestProfile(original, 'manual-123-1', backend)).toThrow('Unsafe');
     expect(fs.statSync(path.join(original, '.intent-tests')).mode & 0o777).toBe(0o755);
     const profile = prepareIsolatedTestProfile(home(), 'manual-125-1', backend);
-    fs.appendFileSync(profile.config, '\n# a different config');
+    fs.appendFileSync(profile.config, '\n[workspace]\nbranchPrefix = "isolation-ci"\n');
+    const saved = fs.readFileSync(profile.config, 'utf8');
+    expect(
+      prepareIsolatedTestProfile(path.dirname(path.dirname(profile.root)), 'manual-125-1', backend),
+    ).toEqual(profile);
+    expect(fs.readFileSync(profile.config, 'utf8')).toBe(saved);
+    fs.unlinkSync(profile.config);
+    fs.symlinkSync(path.join(normal, 'config.toml'), profile.config);
     expect(() =>
       prepareIsolatedTestProfile(path.dirname(path.dirname(profile.root)), 'manual-125-1', backend),
-    ).toThrow('configuration');
+    ).toThrow('Unsafe');
   });
 
   it('refuses an occupied endpoint and hard-linked database before reuse', () => {

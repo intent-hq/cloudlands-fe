@@ -8,12 +8,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
 
-const [dmg, output, backendSha] = process.argv.slice(2);
+const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
 assert.equal(process.platform, 'darwin');
 assert.equal(process.arch, 'arm64');
 assert.equal(process.env.GITHUB_ACTIONS, 'true');
 assert.equal(process.env.RUNNER_ENVIRONMENT, 'github-hosted');
 assert.match(backendSha, /^[a-f0-9]{40}$/);
+assert.match(frontendSha, /^[a-f0-9]{40}$/);
 assert.ok(dmg && output && process.env.RUNNER_TEMP);
 fs.mkdirSync(output, { recursive: false, mode: 0o700 });
 const work = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, 'intent-package-'));
@@ -21,7 +22,7 @@ const mount = path.join(work, 'mount');
 fs.mkdirSync(mount);
 const command = (file, args) => execFileSync(file, args, { encoding: 'utf8', timeout: 120_000 });
 const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-const evidence = { dmgSha256: hash(dmg), backendSha, phases: [], passed: false };
+const evidence = { dmgSha256: hash(dmg), backendSha, frontendSha, phases: [], passed: false };
 let application;
 let mounted = false;
 let normalServer;
@@ -32,9 +33,35 @@ const normalDesktop = path.join(os.homedir(), 'Library/Application Support/inten
 const normalLegacy = path.join(os.homedir(), 'intent');
 const markers = [];
 const electronExits = [];
+const daemonExits = [];
+evidence.electronExits = electronExits;
+evidence.daemonExits = daemonExits;
 
-async function closePackage(phase) {
+async function closePackage(phase, originalStartedAt) {
   const child = application.process();
+  let stopFailed = false;
+  let stopError;
+  try {
+    const stopped = await application.evaluate(async ({ app }) => {
+      const { pathToFileURL } = await import('node:url');
+      const sidecar = await import(
+        pathToFileURL(`${app.getAppPath()}/dist/features/backend/main/intentd-sidecar.js`).href
+      );
+      await sidecar.stopIntentdSidecar();
+      return sidecar.getSidecarRunLog();
+    });
+    daemonExits.push({ phase, ...stopped });
+    assert.equal(stopped.available, true);
+    if (originalStartedAt !== undefined) assert.equal(stopped.startedAt, originalStartedAt);
+    assert.ok(stopped.endedAt);
+    assert.equal(stopped.exitCode, 0);
+    assert.equal(stopped.signal, null);
+    assert.equal(stopped.spawnError, null);
+  } catch (error) {
+    stopFailed = true;
+    stopError = error;
+    daemonExits.push({ phase, failure: String(error) });
+  }
   let timer;
   const exited = new Promise((resolve, reject) => {
     if (child.exitCode !== null || child.signalCode !== null) {
@@ -50,9 +77,13 @@ async function closePackage(phase) {
     application = undefined;
     assert.equal(result.code, 0);
     assert.equal(result.signal, null);
+  } catch (error) {
+    if (!stopFailed) throw error;
+    electronExits.push({ phase, pid: child.pid, failure: String(error) });
   } finally {
     clearTimeout(timer);
   }
+  if (stopFailed) throw stopError;
 }
 
 async function eventually(read, accept, label, timeout = 60_000) {
@@ -71,27 +102,61 @@ async function eventually(read, accept, label, timeout = 60_000) {
 }
 
 async function inspect(app) {
-  return app.evaluate(async ({ app: instance }) => {
-    const { pathToFileURL } = await import('node:url');
-    const module = (name) => import(pathToFileURL(`${instance.getAppPath()}/dist/${name}.js`).href);
-    const policy = await module('main/isolated-test-profile');
-    const profile = policy.getIsolatedTestProfile();
-    const sidecar = await module('features/backend/main/intentd-sidecar');
-    const client = (await module('features/backend/main/backend.ipc')).getBackendClient();
-    return {
-      name: instance.getName(),
-      userData: instance.getPath('userData'),
-      home: instance.getPath('home'),
-      data: profile.data,
-      root: profile.root,
-      socket: profile.socket,
-      backendSha: profile.backendSha,
-      config: client.getConfig(),
-      running: sidecar.isSidecarRunning(),
-      run: sidecar.getSidecarRunLog(),
-      status: await client.request('system.status'),
-    };
-  });
+  return app.evaluate(
+    async ({ app: instance }, expected) => {
+      const { pathToFileURL } = await import('node:url');
+      const inspection = await import(
+        pathToFileURL(`${instance.getAppPath()}/dist/main/isolated-test-inspection.js`).href
+      );
+      return inspection.inspectIsolatedTestPackage(instance, expected);
+    },
+    { frontendSha, backendSha },
+  );
+}
+
+const safetySettings = {
+  'server.bindAddress': '127.0.0.1',
+  'server.wsApi.enabled': false,
+  'server.tunnel.enabled': false,
+  'server.tls.enabled': true,
+  'server.auth.enabled': true,
+  'updates.checkOnIdle': false,
+  'sourceControl.github.exposeGitCredentialToChildren': false,
+};
+
+async function inspectSettings(app, changePreferences = false) {
+  return app.evaluate(
+    async ({ app: instance }, { keys, changePreferences }) => {
+      const { pathToFileURL } = await import('node:url');
+      const { getBackendClient } = await import(
+        pathToFileURL(`${instance.getAppPath()}/dist/features/backend/main/backend.ipc.js`).href
+      );
+      const client = getBackendClient();
+      const changes = [];
+      if (changePreferences) {
+        await client.request('settings.update', {
+          changes: [{ path: 'workspace.branchPrefix', value: 'isolation-ci' }],
+        });
+        for (const [path, pinned] of Object.entries(keys)) {
+          try {
+            const result = await client.request('settings.update', {
+              changes: [{ path, value: typeof pinned === 'boolean' ? !pinned : '0.0.0.0' }],
+            });
+            changes.push({ path, outcome: 'returned', result });
+          } catch (error) {
+            changes.push({ path, outcome: 'rejected', error: String(error) });
+          }
+        }
+      }
+      const values = {};
+      for (const path of Object.keys(keys)) {
+        values[path] = (await client.request('settings.get', { path })).value;
+      }
+      const preference = await client.request('settings.get', { path: 'workspace.branchPrefix' });
+      return { values, preference: preference.value, changes };
+    },
+    { keys: safetySettings, changePreferences },
+  );
 }
 
 try {
@@ -165,11 +230,7 @@ try {
   const launch = () =>
     electron.launch({ executablePath: executable, env: launchEnv, timeout: 120_000 });
   application = await launch();
-  const initial = await eventually(
-    () => inspect(application),
-    (r) => r.running,
-    'private startup',
-  );
+  const initial = await eventually(() => inspect(application), Boolean, 'private startup');
   assert.equal(initial.root, expectedRoot);
   assert.equal(initial.userData, path.join(expectedRoot, 'desktop'));
   assert.equal(initial.data, path.join(expectedRoot, 'daemon'));
@@ -185,6 +246,13 @@ try {
     Number(fs.readFileSync(path.join(initial.data, 'intentd.pid'), 'utf8').trim());
   ownedPids.add(daemonPid());
   evidence.phases.push({ phase: 'startup', ...initial });
+  const privateConfig = path.join(initial.data, 'config.toml');
+  const configBeforePreferences = hash(privateConfig);
+  const settings = await inspectSettings(application, true);
+  assert.deepEqual(settings.values, safetySettings);
+  assert.equal(settings.preference, 'isolation-ci');
+  assert.notEqual(hash(privateConfig), configBeforePreferences);
+  evidence.phases.push({ phase: 'private-preferences', ...settings });
   // Execute the original shared-action entry points, all of which must reject or stay inert.
   const policy = await application.evaluate(async ({ app }) => {
     const { pathToFileURL } = await import('node:url');
@@ -192,6 +260,7 @@ try {
     const keys = await module('features/backend/main/keychain-sync-lifecycle');
     const helper = await module('features/backend/main/keychain-sync');
     const system = await module('features/system/main/system.ipc');
+    const invite = await module('features/backend/main/invite-connection');
     const updater = (await module('features/auto-update/main/auto-update.service'))
       .autoUpdateService;
     const outcomes = [];
@@ -201,6 +270,12 @@ try {
       () => updater.checkForUpdatesManual(),
       () => updater.downloadUpdate(),
       () => updater.installUpdate(),
+      () =>
+        invite.openInviteConnection({
+          hosts: ['127.0.0.1'],
+          port: 443,
+          fingerprint: 'aa'.repeat(32),
+        }),
     ]) {
       try {
         await operation();
@@ -214,11 +289,15 @@ try {
       sync: await keys.isKeychainSyncEnabled('darwin'),
       helper: await helper.createHelperKeychainClient().list(),
       outcomes,
+      ghCredentialsDisabled: process.env.INTENTD_DISABLE_GH_CREDENTIALS,
+      privateTestProfile: process.env.INTENTD_PRIVATE_TEST_PROFILE,
     };
   });
   assert.equal(policy.sync, false);
   assert.equal(policy.helper.ok, false);
-  assert.deepEqual(policy.outcomes, Array(5).fill('rejected'));
+  assert.deepEqual(policy.outcomes, Array(6).fill('rejected'));
+  assert.equal(policy.ghCredentialsDisabled, '1');
+  assert.equal(policy.privateTestProfile, '1');
   evidence.phases.push({ phase: 'shared-actions', ...policy });
   const recovery = await application.evaluate(async ({ app }) => {
     const { pathToFileURL } = await import('node:url');
@@ -237,16 +316,21 @@ try {
   });
   assert.equal(recovery.stopped.exitCode, 0);
   assert.equal(recovery.stopped.signal, null);
+  assert.equal(recovery.stopped.startedAt, initial.run.startedAt);
+  assert.ok(recovery.stopped.endedAt);
+  daemonExits.push({ phase: 'recovery-stop', ...recovery.stopped });
   assert.equal(recovery.spawned.spawned, true);
-  const recovered = await eventually(
-    () => inspect(application),
-    (r) => r.running,
-    'private recovery',
-  );
+  const recovered = await eventually(() => inspect(application), Boolean, 'private recovery');
   ownedPids.add(daemonPid());
   assert.equal(recovered.socket, initial.socket);
+  assert.equal(recovered.hello.clientId, initial.hello.clientId);
+  assert.notEqual(recovered.run.startedAt, initial.run.startedAt);
+  const recoveredSettings = await inspectSettings(application);
+  assert.deepEqual(recoveredSettings.values, safetySettings);
+  assert.equal(recoveredSettings.preference, 'isolation-ci');
+  evidence.phases.push({ phase: 'recovered-preferences', ...recoveredSettings });
   evidence.phases.push({ phase: 'recovery', ...recovery, ...recovered });
-  await closePackage('recovery-close');
+  await closePackage('recovery-close', recovered.run.startedAt);
   await eventually(
     () =>
       [...ownedPids].every((pid) => {
@@ -258,23 +342,25 @@ try {
         }
       }),
     Boolean,
-    'owned child exits',
+    'post-exit owned PID absence',
     15_000,
   );
   const db = path.join(initial.data, 'intentd.db');
   assert.ok(fs.statSync(db).size > 0);
   const inode = fs.statSync(db).ino;
   application = await launch();
-  const reopened = await eventually(
-    () => inspect(application),
-    (r) => r.running,
-    'private relaunch',
-  );
+  const reopened = await eventually(() => inspect(application), Boolean, 'private relaunch');
   ownedPids.add(daemonPid());
   assert.equal(reopened.root, initial.root);
+  assert.equal(reopened.socket, initial.socket);
+  assert.equal(reopened.hello.clientId, initial.hello.clientId);
+  const reopenedSettings = await inspectSettings(application);
+  assert.deepEqual(reopenedSettings.values, safetySettings);
+  assert.equal(reopenedSettings.preference, 'isolation-ci');
+  evidence.phases.push({ phase: 'reopened-preferences', ...reopenedSettings });
   assert.equal(fs.statSync(db).ino, inode);
   evidence.phases.push({ phase: 'relaunch', ...reopened });
-  await closePackage('relaunch-close');
+  await closePackage('relaunch-close', reopened.run.startedAt);
   await eventually(
     () =>
       [...ownedPids].every((pid) => {
@@ -286,7 +372,7 @@ try {
         }
       }),
     Boolean,
-    'final owned child exits',
+    'final post-exit owned PID absence',
     15_000,
   );
   assert.equal(normalConnections, 0);
@@ -301,7 +387,6 @@ try {
   assert.equal(fs.readlinkSync(normalCli), cliTarget);
   evidence.normalConnections = normalConnections;
   evidence.ownedPids = [...ownedPids];
-  evidence.electronExits = electronExits;
   evidence.passed = true;
 } catch (error) {
   evidence.error = String(error?.stack ?? error);
@@ -309,7 +394,7 @@ try {
 } finally {
   if (application) {
     try {
-      await application.close();
+      await closePackage('failure-cleanup');
     } catch (error) {
       evidence.cleanupError = String(error);
       evidence.passed = false;

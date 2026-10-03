@@ -1101,10 +1101,11 @@ jobs:
       - name: Prove packaged isolation on disposable macOS
         env:
           BACKEND_SHA: ${{ inputs.intentd_ref }}
+          FRONTEND_SHA: ${{ github.sha }}
         run: |
           mapfile_dmg=$(find isolated-package -type f -name '*.dmg')
           test "$(printf '%s\n' "$mapfile_dmg" | wc -l | tr -d ' ')" = 1
-          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA"
+          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
