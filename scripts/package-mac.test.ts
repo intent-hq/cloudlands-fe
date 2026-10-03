@@ -21,6 +21,67 @@ const { computeArchToTargetNamesMap } = builderRequire('app-builder-lib/out/targ
 vi.unstubAllEnvs();
 
 describe('native Mac packaging entry point', () => {
+  it.each(['x64', 'arm64'])(
+    'stages only the native %s CPU for the fixed isolated profile',
+    (arch) => {
+      const execute = vi.fn();
+      packageMac([`--${arch}`, '--isolated-test', '--publish', 'never'], {
+        platform: 'darwin',
+        hostArch: arch,
+        env: {
+          INTENT_ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+          INTENT_ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+        },
+        execute,
+      });
+      expect(execute.mock.calls.at(-1)?.[1]).toEqual([
+        '--mac',
+        `--${arch}`,
+        '--publish',
+        'never',
+        '--config',
+        'electron-builder.isolated-test.cjs',
+      ]);
+      expect(execute.mock.calls.some((call) => call[1].includes(`--targets=darwin-${arch}`))).toBe(
+        true,
+      );
+    },
+  );
+
+  it.each([
+    ['--config', 'other.json'],
+    ['--config.appId=app.cloudlands.intent'],
+    ['--publish', 'always'],
+    ['--mac=zip:arm64'],
+  ])('refuses isolated build overrides %j before staging', (...args) => {
+    const execute = vi.fn();
+    expect(() =>
+      packageMac(['--x64', '--isolated-test', ...args], {
+        platform: 'darwin',
+        hostArch: 'x64',
+        env: {
+          INTENT_ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+          INTENT_ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+        },
+        execute,
+      }),
+    ).toThrow();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('requires the compiled isolated identity before staging', () => {
+    const execute = vi.fn();
+    expect(() =>
+      packageMac(['--isolated-test'], {
+        platform: 'darwin',
+        hostArch: 'arm64',
+        env: {},
+        execute,
+      }),
+    ).toThrow(/identity/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   const parseBuilder = (args: string[]) =>
     configureBuildCommand(createYargs()).exitProcess(false).strict().parseSync(args);
 

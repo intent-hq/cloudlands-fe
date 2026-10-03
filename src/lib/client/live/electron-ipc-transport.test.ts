@@ -1,3 +1,4 @@
+import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
 /**
  * Unit tests for the Electron-IPC `BackendTransport` broadcast fan-outs.
  *
@@ -23,7 +24,7 @@ function createFakeApi() {
   const listeners = new Map<string, Map<string, (payload: unknown) => void>>();
   let counter = 0;
   return {
-    invoke: vi.fn(async () => ({ ok: true, result: undefined })),
+    invoke: vi.fn(async (_channel: string, _payload: unknown) => ({ ok: true, result: undefined })),
     on(channel: string, callback: (payload: unknown) => void): string {
       const id = `l${++counter}`;
       let channelListeners = listeners.get(channel);
@@ -488,4 +489,496 @@ it('carries workspace context through Electron subscription cleanup and preserve
     [IPC_CHANNELS.BACKEND.UNSUBSCRIBE, { subscriptionId: 'sub-a', workspaceId: 'workspace-a' }],
     [IPC_CHANNELS.BACKEND.UNSUBSCRIBE, { subscriptionId: 'direct' }],
   ]);
+});
+
+describe('captured repository transport', () => {
+  const root = { workspaceId: 'same', kind: 'primary' as const };
+  it('holds the original bridge and root across queue waits and never uses ordinary request', async () => {
+    const api = installFakeApi();
+    const payload = { root: { ...root } };
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'opaque' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(payload.root);
+    payload.root.workspaceId = 'changed';
+    api.invoke.mockResolvedValueOnce({
+      ok: true,
+      result: {
+        operationId: 'operation',
+        current: true,
+        settlement: { status: 'fulfilled', value: { branch: 'main' } },
+      },
+    } as never);
+    expect(await route.request('git.status', { workspaceId: 'same' })).toMatchObject({
+      current: true,
+      settlement: { value: { branch: 'main' } },
+    });
+    expect(api.invoke.mock.calls).toEqual([
+      [IPC_CHANNELS.BACKEND.REPOSITORY.CAPTURE, { root }],
+      [
+        IPC_CHANNELS.BACKEND.REPOSITORY.REQUEST,
+        { id: 'opaque', root, method: 'git.status', params: { workspaceId: 'same' } },
+      ],
+    ]);
+    installFakeApi();
+    await expect(route.request('git.status', { workspaceId: 'same' })).rejects.toMatchObject({
+      code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+    });
+    await route.release();
+    expect(api.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.BACKEND.REPOSITORY.RELEASE, {
+      id: 'opaque',
+      root,
+    });
+  });
+  it('retains an old fulfilled/failed operation while suppressing current application after bridge replacement', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'opaque' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    let finish!: (result: any) => void;
+    api.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = route.request('git.status', { workspaceId: 'same' });
+    installFakeApi();
+    const value = {
+      success: false,
+      steps: [{ step: 'commit', success: true }],
+      error: 'push failed',
+    };
+    finish({
+      ok: true,
+      result: { operationId: 'old', current: true, settlement: { status: 'fulfilled', value } },
+    });
+    expect(await pending).toEqual({
+      operationId: 'old',
+      current: false,
+      settlement: { status: 'fulfilled', value },
+    });
+    await route.release();
+  });
+  it('rejects overrides/released handles and passes uncertain settlement without success fallback', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'opaque' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    await expect(
+      route.request('git.status', { workspaceId: 'same' }, { localMachine: true } as never),
+    ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+    const uncertain = {
+      operationId: 'old',
+      current: false,
+      settlement: {
+        status: 'rejected',
+        error: { code: 'TRANSPORT_ERROR', message: 'Lost socket' },
+      },
+    };
+    api.invoke.mockResolvedValueOnce({ ok: true, result: uncertain } as never);
+    expect(await route.request('git.status', { workspaceId: 'same' })).toEqual(uncertain);
+    await route.release();
+    await route.release();
+    await expect(route.request('git.status', { workspaceId: 'same' })).rejects.toThrow();
+    expect(api.invoke).toHaveBeenCalledTimes(3);
+  });
+  it('does not fall back when the authoritative feed is unavailable', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'REPOSITORY_ROUTE_UNAVAILABLE', message: 'Unavailable' },
+    } as never);
+    await expect(
+      createElectronIpcBackendTransport().captureRepositoryRoute!(root),
+    ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+    expect(api.invoke).toHaveBeenCalledTimes(1);
+  });
+  it('releases the old main capture if the bridge changes while capture awaits', async () => {
+    const api = installFakeApi();
+    let finish!: (value: any) => void;
+    api.invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    installFakeApi();
+    finish({ ok: true, result: { id: 'old' } });
+    await expect(pending).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+    expect(api.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.BACKEND.REPOSITORY.RELEASE, {
+      id: 'old',
+      root,
+    });
+  });
+});
+
+describe('owner-frame repository retirement events', () => {
+  const channels = IPC_CHANNELS.BACKEND.REPOSITORY;
+  const root = { workspaceId: 'same', kind: 'primary' as const };
+  it('subscribes before acquisition and disposes a response retired during the await', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementationOnce(async () => {
+      expect(api.listenerCount(channels.RETIRED)).toBe(1);
+      api.emit(channels.RETIRED, { id: 'retired-before-reply' });
+      return { ok: true, result: { id: 'retired-before-reply' } } as never;
+    });
+    await expect(
+      createElectronIpcBackendTransport().captureRepositoryRoute!(root),
+    ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, {
+      id: 'retired-before-reply',
+      root,
+    });
+  });
+  it('retirement is correlated to one route and cleans its subscription on release', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'one' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    const retired = vi.fn();
+    route.onRetired(retired);
+    api.emit(channels.RETIRED, { id: 'another' });
+    expect(retired).not.toHaveBeenCalled();
+    api.emit(channels.RETIRED, { id: 'one' });
+    api.emit(channels.RETIRED, { id: 'one' });
+    expect(retired).toHaveBeenCalledOnce();
+    await expect(
+      route.request('workspace.repositoryContext', { workspaceId: 'same' }),
+    ).rejects.toThrow();
+    await route.release();
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+  it('retains the original settlement but marks it ineligible after an in-flight retirement', async () => {
+    const api = installFakeApi();
+    api.invoke.mockResolvedValueOnce({ ok: true, result: { id: 'one' } } as never);
+    const route = await createElectronIpcBackendTransport().captureRepositoryRoute!(root);
+    api.invoke.mockImplementationOnce(async () => {
+      api.emit(channels.RETIRED, { id: 'one' });
+      return {
+        ok: true,
+        result: {
+          operationId: 'original',
+          current: true,
+          settlement: { status: 'fulfilled', value: { ownReceipt: true } },
+        },
+      } as never;
+    });
+    expect(await route.request('workspace.repositoryContext', { workspaceId: 'same' })).toEqual({
+      operationId: 'original',
+      current: false,
+      settlement: { status: 'fulfilled', value: { ownReceipt: true } },
+    });
+    await route.release();
+  });
+});
+
+describe('selection session over the actual renderer IPC transport', () => {
+  const channels = IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION;
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const preview = {
+    root,
+    scope: { daemonId: 'A', authorityScopeId: 'server', authorityGeneration: '1' },
+    snapshot: {
+      root,
+      rootIncarnation: '1',
+      selectionRevision: '0',
+      selection: { kind: 'neverSaved' },
+    },
+    expiresAfterMs: 300000,
+  };
+  const observation = {
+    current: false,
+    uncertain: false,
+    attempt: {
+      status: 'settled',
+      receipt: {
+        result: { kind: 'failed', code: 'admission-retired' },
+        persistence: { kind: 'committed', selectionRevision: '1' },
+      },
+    },
+  };
+  it('retains failed plus committed through normal retirement and reconciles only its original handle', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result: channel === channels.CAPTURE ? { id: 'local-route', preview } : observation,
+        }) as never,
+    );
+    const session = await createElectronIpcBackendTransport().captureRepositorySelection!(root);
+    const retired = vi.fn();
+    session.onRetired(retired);
+    api.emit(channels.RETIRED, { id: 'local-route', kind: 'admission' });
+    expect(retired).toHaveBeenCalledWith('admission');
+    const result = await session.reconcile();
+    expect(result).toEqual(observation);
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RECONCILE, { id: 'local-route', root });
+    await session.release();
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+  it('owns the original bridge, rejects changed claim, and does not repeat a confirmation', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result: channel === channels.CAPTURE ? { id: 'route', preview } : observation,
+        }) as never,
+    );
+    const session = await createElectronIpcBackendTransport().captureRepositorySelection!(root);
+    await session.confirm({ kind: 'reset' });
+    await session.confirm({ kind: 'reset' });
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.CONFIRM)).toHaveLength(1);
+    await expect(
+      session.confirm({ kind: 'save', choice: { mode: 'automatic' } }),
+    ).rejects.toThrow();
+    installFakeApi();
+    await expect(session.reconcile()).rejects.toThrow();
+    await session.release();
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'route', root });
+  });
+  it('never marks a cached original attempt current after retirement or bridge replacement', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result:
+            channel === channels.CAPTURE
+              ? { id: 'route', preview }
+              : {
+                  current: true,
+                  attempt: { status: 'pending' },
+                  uncertain: false,
+                },
+        }) as never,
+    );
+    const session = await createElectronIpcBackendTransport().captureRepositorySelection!(root);
+    expect((await session.confirm({ kind: 'reset' })).current).toBe(true);
+    api.emit(channels.RETIRED, { id: 'route', kind: 'admission' });
+    expect(await session.confirm({ kind: 'reset' })).toEqual({
+      current: false,
+      attempt: { status: 'pending' },
+      uncertain: false,
+    });
+    installFakeApi();
+    expect((await session.confirm({ kind: 'reset' })).current).toBe(false);
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.CONFIRM)).toHaveLength(1);
+    await session.release();
+  });
+  it('disposes a known original local reference when capture metadata is malformed', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result: channel === channels.CAPTURE ? { id: 'route', preview: {} } : { released: true },
+        }) as never,
+    );
+    await expect(
+      createElectronIpcBackendTransport().captureRepositorySelection!(root),
+    ).rejects.toThrow();
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'route', root });
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+  it('reconciles a retirement during capture before publishing an editing session', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(async (channel) => {
+      if (channel === channels.CAPTURE) {
+        api.emit(channels.RETIRED, { id: 'route', kind: 'admission' });
+        return { ok: true, result: { id: 'route', preview } } as never;
+      }
+      return { ok: true, result: { released: true } } as never;
+    });
+    await expect(
+      createElectronIpcBackendTransport().captureRepositorySelection!(root),
+    ).rejects.toThrow();
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+});
+
+describe('native review original renderer bridge', () => {
+  const channels = IPC_CHANNELS.BACKEND.NATIVE_REVIEW;
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const input = {
+    workspaceId: root.workspaceId,
+    action: 'create-pr' as const,
+    review: { root, choice: { kind: 'saved' as const } },
+  };
+  const preview = {
+    ...nativeFixture.prepare,
+    reviewPreparation: { ...nativeFixture.prepare.reviewPreparation, root },
+    root,
+    expiresAfterMs: 300000,
+  };
+  it.each([
+    ['execute', true],
+    ['execute', false],
+    ['reconciliation', true],
+    ['reconciliation', false],
+  ] as const)(
+    'preserves %s uncertainty %s when later reconciliation fails',
+    async (source, uncertain) => {
+      const api = installFakeApi();
+      const reviewExecution = {
+        ...nativeFixture.execute.reviewExecution,
+        outcome: uncertain
+          ? { status: 'uncertain', stage: 'create-pr', message: 'Original response lost' }
+          : nativeFixture.execute.reviewExecution.outcome,
+      };
+      const original = {
+        current: false,
+        uncertain,
+        execute:
+          source === 'execute'
+            ? {
+                ...nativeFixture.execute,
+                operationId: 'native',
+                root,
+                state: 'settled',
+                reviewExecution,
+              }
+            : null,
+        reconciliation:
+          source === 'reconciliation'
+            ? { operationId: 'native', root, state: 'settled', reviewExecution }
+            : null,
+      };
+      api.invoke
+        .mockResolvedValueOnce({ ok: true, result: { id: 'native', preview } } as never)
+        .mockResolvedValueOnce({ ok: true, result: original } as never)
+        .mockRejectedValueOnce(new Error('Receipt retrieval failed'))
+        .mockResolvedValue({ ok: true, result: { released: true } } as never);
+      const session = await createElectronIpcBackendTransport().prepareNativeReview!(input);
+      expect(await (source === 'execute' ? session.confirm({}) : session.reconcile())).toEqual(
+        original,
+      );
+      api.emit(channels.RETIRED, { id: 'native', kind: 'admission' });
+      expect(await session.reconcile()).toEqual(original);
+      expect(api.invoke.mock.calls.filter(([name]) => name === channels.EXECUTE)).toHaveLength(
+        source === 'execute' ? 1 : 0,
+      );
+      await session.release();
+    },
+  );
+  it('reserves one text command and preserves uncertainty without fake execution data', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(
+      async (channel) =>
+        ({
+          ok: true,
+          result:
+            channel === channels.PREPARE
+              ? { id: 'native', preview }
+              : { current: false, uncertain: true, execute: null, reconciliation: null },
+        }) as never,
+    );
+    const session = await createElectronIpcBackendTransport().prepareNativeReview!(input);
+    const first = session.confirm({ prTitle: 'T' });
+    expect(session.confirm({ prTitle: 'T' })).toBe(first);
+    await expect(session.confirm({ prTitle: 'other' })).rejects.toThrow();
+    expect(await first).toEqual({
+      current: false,
+      uncertain: true,
+      execute: null,
+      reconciliation: null,
+    });
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.EXECUTE)).toHaveLength(1);
+    expect(api.invoke).toHaveBeenCalledWith(channels.EXECUTE, {
+      id: 'native',
+      root,
+      command: { prTitle: 'T' },
+    });
+    installFakeApi();
+    await expect(session.reconcile()).rejects.toThrow();
+    await session.release();
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'native', root });
+  });
+  it('retains retirement during preparation and releases malformed known references', async () => {
+    const api = installFakeApi();
+    api.invoke.mockImplementation(async (channel) => {
+      if (channel === channels.PREPARE) {
+        api.emit(channels.RETIRED, { id: 'native', kind: 'closed' });
+        return { ok: true, result: { id: 'native', preview } } as never;
+      }
+      return { ok: true, result: { released: true } } as never;
+    });
+    await expect(createElectronIpcBackendTransport().prepareNativeReview!(input)).rejects.toThrow();
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'native', root });
+  });
+  it('reserves dispatch before synchronous IPC reentrancy and releases without waiting for execution', async () => {
+    const api = installFakeApi();
+    let nested: Promise<unknown> | undefined;
+    let complete!: (value: unknown) => void;
+    api.invoke.mockImplementation((channel) => {
+      if (channel === channels.PREPARE)
+        return Promise.resolve({ ok: true, result: { id: 'native', preview } }) as never;
+      if (channel === channels.EXECUTE) {
+        nested = session.reconcile().catch((error) => error);
+        return new Promise((resolve) => {
+          complete = resolve as never;
+        }) as never;
+      }
+      return Promise.resolve({ ok: true, result: { released: true } }) as never;
+    });
+    const session = await createElectronIpcBackendTransport().prepareNativeReview!(input);
+    const run = session.confirm({ prTitle: 'T' });
+    expect(await nested).toBeInstanceOf(Error);
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.RECONCILE)).toHaveLength(0);
+    await session.release();
+    expect(api.invoke).toHaveBeenLastCalledWith(channels.RELEASE, { id: 'native', root });
+    complete({
+      ok: true,
+      result: { current: true, uncertain: true, execute: null, reconciliation: null },
+    });
+    expect(await run).toMatchObject({ current: false, uncertain: true });
+  });
+  it('prepares one child through the original bridge and never exposes daemon correlations', async () => {
+    const api = installFakeApi();
+    api.invoke
+      .mockResolvedValueOnce({ ok: true, result: { id: 'parent', preview } } as never)
+      .mockResolvedValueOnce({ ok: true, result: { id: 'child', preview } } as never)
+      .mockResolvedValue({ ok: true, result: { released: true } } as never);
+    const marked = {
+      ...input,
+      action: 'commit' as const,
+      review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' as const } },
+    };
+    const parent = await createElectronIpcBackendTransport().prepareNativeReview!(marked);
+    api.emit(channels.RETIRED, { id: 'parent', kind: 'admission' });
+    const first = parent.prepareCompanion!();
+    expect(parent.prepareCompanion!()).toBe(first);
+    const child = await first;
+    expect(child.prepareCompanion).toBeUndefined();
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.PREPARE)).toEqual([
+      [channels.PREPARE, { input: marked }],
+      [channels.PREPARE, { companionOf: 'parent', root }],
+    ]);
+    installFakeApi();
+    await parent.release();
+    await vi.waitFor(() =>
+      expect(api.invoke).toHaveBeenCalledWith(channels.RELEASE, { id: 'child', root }),
+    );
+    expect(api.listenerCount(channels.RETIRED)).toBe(0);
+  });
+  it('retains a child capture refusal instead of recapturing through a changed bridge', async () => {
+    const api = installFakeApi();
+    api.invoke
+      .mockResolvedValueOnce({ ok: true, result: { id: 'parent', preview } } as never)
+      .mockRejectedValueOnce(new Error('original refused'));
+    const parent = await createElectronIpcBackendTransport().prepareNativeReview!({
+      ...input,
+      action: 'commit',
+      review: { ...input.review, targetBranch: 'trunk', companion: { kind: 'create-pr' } },
+    });
+    const failed = parent.prepareCompanion!();
+    await expect(failed).rejects.toThrow();
+    const replacement = installFakeApi();
+    expect(parent.prepareCompanion!()).toBe(failed);
+    await expect(parent.prepareCompanion!()).rejects.toThrow();
+    expect(replacement.invoke).not.toHaveBeenCalled();
+    expect(api.invoke.mock.calls.filter(([name]) => name === channels.PREPARE)).toHaveLength(2);
+    api.invoke.mockResolvedValue({ ok: true, result: { released: true } } as never);
+    await parent.release();
+  });
 });

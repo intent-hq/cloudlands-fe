@@ -64,7 +64,7 @@
       >
       <Button
         variant="plain"
-        class="min-w-0 flex-1 justify-start truncate p-0 text-left font-normal text-muted-foreground"
+        class="min-w-0 flex-1 justify-start truncate p-0 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
         aria-expanded={expanded === monitor.monitorId}
         aria-controls={detailsId}
         onclick={() => (expanded = expanded === monitor.monitorId ? null : monitor.monitorId)}

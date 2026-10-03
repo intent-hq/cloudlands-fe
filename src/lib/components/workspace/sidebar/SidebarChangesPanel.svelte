@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
   import { Button } from '$lib/components/ui/button';
   /**
    * SidebarChangesPanel - Timeline-based changes panel
@@ -64,6 +65,7 @@
     type WorkspaceGitRootEntry,
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
+  import RepositoryContextSummary from '$features/accept-changes/components/RepositoryContextSummary.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
   import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
@@ -282,6 +284,12 @@
   const hasCommits = $derived(allCommits.length > 0);
   const commitDrawerOpen = $derived($workflow$.commitDrawerOpen && hasStaged);
   const mergeDrawerOpen = $derived($mergeDrawerOpen$ && (hasStaged || hasCommits));
+  let prSectionRef: PRSection | undefined = $state(undefined);
+  export function observeNativeRetirement() {
+    const original = prSectionRef;
+    if (!original) throw new Error('Original PRSection instance missing');
+    return original.observeNativeRetirement();
+  }
   // Post-merge state — read from Redux via selector
   const isMergedToTrunk = $derived($postMergeState$.isMergedToTrunk);
   const mergeHeadSha = $derived($postMergeState$.mergeHeadSha);
@@ -397,6 +405,19 @@
   });
 
   // Background-agent followups and canonical drafts are owned by the PR workflow saga.
+
+  // The prepared native intent only opens its original confirmation; it cannot auto-write.
+  $effect(() => {
+    const pending = $acceptChangesState$.pendingAutoAction;
+    const browsingSecondaryRoot = isBrowsingSecondaryRoot;
+    const owner = isOwner;
+    if (pending?.action !== 'native-review') return;
+    untrack(() => {
+      appStore.dispatch(setPendingAutoAction(workspaceId, null));
+      if (!browsingSecondaryRoot && owner && pending.workspaceId === workspaceId)
+        void prSectionRef?.triggerNativeReview(pending.intent);
+    });
+  });
 
   // Computed
   const hasPRs = $derived(pullRequests.length > 0);
@@ -535,7 +556,7 @@
     // Summary controls own their native button and picker keyboard interactions.
     if (
       target.closest(
-        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"]',
+        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"], [data-repository-summary], [data-native-sidebar-review]',
       )
     ) {
       return;
@@ -843,6 +864,11 @@
             ? (action) => (secondaryRefreshAction = action)
             : undefined}
         />
+        <RepositoryContextSummary
+          root={selectedSecondaryRoot
+            ? { workspaceId, kind: 'registered', gitRootId: selectedSecondaryRoot.key }
+            : { workspaceId, kind: 'primary' }}
+        />
 
         {#if isBrowsingSecondaryRoot}
           <!-- PR sections follow the dropdown while browsing a secondary root:
@@ -1021,6 +1047,8 @@
                 appStore.dispatch(setMergeDrawerOpen(workspaceId, open));
               }}
               {mergePanelContent}
+              bind:this={prSectionRef}
+              nativeReview
             />
 
             <!-- Post-merge options - shown when workspace is completed (commits merged to trunk).

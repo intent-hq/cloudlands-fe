@@ -2,6 +2,15 @@
 
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import {
+  selectHostRole,
+  selectPrincipalActionContext,
+} from '$store/renderer/slices/principal/principal-selectors';
+import {
+  selectWorkspaceById,
+  selectWorkspaceListLoadedForBackend,
+} from '$store/renderer/slices/workspace/workspace-selectors';
 import { setAgentLockState } from '$store/renderer/slices/agent-lock/agent-lock-slice';
 
 /** Fold a wire string[] into the slice's `Record<string, true>` lookup shape. */
@@ -25,7 +34,25 @@ export function toLockRecord(value: unknown): Record<string, true> {
  * (older) read response; the daemon only re-emits on diff, so the window is
  * tiny and self-heals on the next real change.
  */
+function lockReadContext(workspaceId: string): string | null {
+  const state = appStore.state;
+  const context = selectPrincipalActionContext.select(state);
+  const role = selectHostRole.select(state);
+  if (
+    !context ||
+    (role !== 'owner' && role !== 'member') ||
+    (role === 'member' && workspaceId === CHIEF_WORKSPACE_ID) ||
+    !selectWorkspaceById.select(state, workspaceId) ||
+    !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId) ||
+    state.workspace.capabilityContext !== context
+  )
+    return null;
+  return context;
+}
+
 export async function hydrateAgentLocks(workspaceId: string): Promise<void> {
+  const context = lockReadContext(workspaceId);
+  if (!context) return;
   let lockedAgentIds: Record<string, true> = {};
   let lockedFilePaths: Record<string, true> = {};
   try {
@@ -37,5 +64,6 @@ export async function hydrateAgentLocks(workspaceId: string): Promise<void> {
   } catch {
     // Degrade to unlocked; the `changes:agent-locks` event converges it later.
   }
+  if (lockReadContext(workspaceId) !== context) return;
   appStore.dispatch(setAgentLockState(workspaceId, lockedAgentIds, lockedFilePaths));
 }

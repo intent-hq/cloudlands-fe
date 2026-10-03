@@ -1,3 +1,4 @@
+import type { NativeReviewInput } from '$shared/types/native-review-operation';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { BackendError } from './backend-transport-types';
 /**
@@ -17,6 +18,47 @@ import {
 } from './node-placement-policy';
 import { resolveBackendTransport } from './backend-transport-factory';
 import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
+import type { RepositoryRootIdentity } from '$shared/types/repository-context';
+
+/** Separate explicit resource lifetime, bound to this exact transport. */
+export function captureBackendRepositoryResource(workspaceId: string) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositoryResource)
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_RESOURCE_UNAVAILABLE',
+        message: 'REPOSITORY_RESOURCE_UNAVAILABLE',
+      }),
+    );
+  return transport.captureRepositoryResource(workspaceId);
+}
+
+/** Capture once before enqueue; a missing bound path never uses ordinary routing. */
+export function captureBackendRepositoryRoute(root: RepositoryRootIdentity) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositoryRoute) {
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+        message: 'Repository route unavailable',
+      }),
+    );
+  }
+  return transport.captureRepositoryRoute(root);
+}
+
+/** A new explicit edit captures this transport once, before confirmation. */
+export function captureBackendRepositorySelection(root: RepositoryRootIdentity) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositorySelection)
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_SELECTION_UNAVAILABLE',
+        message: 'REPOSITORY_SELECTION_UNAVAILABLE',
+      }),
+    );
+  return transport.captureRepositorySelection(root);
+}
 
 export type { BackendNotification } from './backend-transport-types';
 export { electronAPI } from './electron-ipc-transport';
@@ -146,4 +188,17 @@ export function onBackendNotification(handler: (n: BackendNotification) => void)
  */
 export function onBackendReconnected(handler: () => void): () => void {
   return resolveBackendTransport().onReconnected(handler);
+}
+
+/** One captured transport; no ordinary request fallback or subsequent re-resolution. */
+export function prepareBackendNativeReview(input: NativeReviewInput) {
+  const transport = resolveBackendTransport();
+  if (!transport.prepareNativeReview)
+    return Promise.reject(
+      new BackendError({
+        code: 'NATIVE_REVIEW_UNAVAILABLE',
+        message: 'NATIVE_REVIEW_UNAVAILABLE',
+      }),
+    );
+  return transport.prepareNativeReview(input);
 }

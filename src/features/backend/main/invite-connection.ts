@@ -42,6 +42,7 @@
  */
 
 import net from 'node:net';
+import { assertNormalAppOperation } from '../../../main/isolated-test-profile';
 import tls from 'node:tls';
 import { createRequire } from 'node:module';
 import type { IncomingMessage } from 'node:http';
@@ -586,6 +587,7 @@ export async function openInviteConnection(
   target: InviteTarget,
   options: { timeoutMs?: number; tailcatSpawn?: TailcatSpawn } = {},
 ): Promise<InviteConnection> {
+  assertNormalAppOperation();
   const hosts = [...new Set(target.hosts.map((h) => h.trim()).filter((h) => h !== ''))];
   const tcAddress = target.tcAddress?.trim() || null;
   if (hosts.length === 0 && tcAddress === null) {

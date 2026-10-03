@@ -76,6 +76,11 @@ on:
         required: false
         type: string
         default: ''
+      isolated_test:
+        description: 'Build the separate macOS GitLab test app with private state and packaged isolation proof (requires exact intentd SHA and signing).'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -90,7 +95,7 @@ concurrency:
 jobs:
   # Resolve before allocating native Mac runners: unselected CPUs never get a job.
   select-macos:
-    if: ${{ inputs.build_macos }}
+    if: ${{ inputs.build_macos || inputs.isolated_test }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -176,7 +181,7 @@ jobs:
   # Copied from release-alpha.yml build-macos; the signing steps are gated on
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
-    if: ${{ inputs.build_macos }}
+    if: ${{ inputs.build_macos || inputs.isolated_test }}
     needs: [select-macos]
     name: macOS (${{ matrix.label }})
     strategy:
@@ -192,6 +197,18 @@ jobs:
     steps:
       - name: Checkout dispatched ref
         uses: actions/checkout@v7
+
+      - name: Validate isolated test package inputs
+        if: ${{ inputs.isolated_test }}
+        env:
+          BACKEND_REF: ${{ inputs.intentd_ref }}
+          SIGN: ${{ inputs.sign }}
+          BUILD_MACOS: ${{ inputs.build_macos }}
+          OTHER_PLATFORMS: ${{ inputs.build_windows || inputs.build_linux }}
+          BUILD_ARCH: ${{ inputs.macos_arch }}
+          SMOKE_MACOS: ${{ inputs.smoke_macos }}
+        run: |
+          [[ "$BACKEND_REF" =~ ^[a-f0-9]{40}$ ]] && [ "$SIGN" = true ] && [ "$BUILD_MACOS" = true ] && [ "$OTHER_PLATFORMS" = false ] && [ "$BUILD_ARCH" = arm64 ] && [ "$SMOKE_MACOS" = false ]
 
       - name: Select Xcode 26
         run: |
@@ -428,7 +445,13 @@ jobs:
             # Remove signing inputs entirely for an unsigned package.
             unset CSC_LINK CSC_KEY_PASSWORD
           fi
-          pnpm run dist:mac --${{ matrix.arch }} --publish never
+          if [ "${{ inputs.isolated_test }}" = true ]; then
+            export INTENT_ISOLATED_TEST_BUILD_ID="manual-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            export INTENT_ISOLATED_TEST_BACKEND_SHA="${{ steps.intentd_sha.outputs.sha }}"
+            pnpm run dist:mac --${{ matrix.arch }} --isolated-test --publish never
+          else
+            pnpm run dist:mac --${{ matrix.arch }} --publish never
+          fi
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
@@ -471,7 +494,7 @@ jobs:
           # group (TEAMID.dev.intentapp.backends), matching release-alpha.yml.
           # Unsigned builds ('' here) skip helper signing entirely, so the
           # guardrail stays off for them.
-          REQUIRE_SHARED_KEYCHAIN_GROUP: ${{ inputs.sign && '1' || '' }}
+          REQUIRE_SHARED_KEYCHAIN_GROUP: ${{ inputs.sign && !inputs.isolated_test && '1' || '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify packaged Mac build
@@ -561,7 +584,7 @@ jobs:
   # The Windows leg is opt-in and respects sign; release-alpha remains unsigned.
   # Native install/update acceptance and production enablement remain separate.
   build-windows:
-    if: ${{ inputs.build_windows }}
+    if: ${{ inputs.build_windows && !inputs.isolated_test }}
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
     # group as gh-linux-16x), fixed at the runner level to the Windows Server
     # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
@@ -848,7 +871,7 @@ jobs:
   # Copied from release-alpha.yml build-linux. Linux packages are unsigned in
   # the release pipeline too, so the `sign` input has no effect on this leg.
   build-linux:
-    if: ${{ inputs.build_linux }}
+    if: ${{ inputs.build_linux && !inputs.isolated_test }}
     strategy:
       # Let the other arch finish (and report) even when one fails.
       fail-fast: false
@@ -1153,3 +1176,40 @@ jobs:
         env:
           INTENTD_REF: ${{ inputs.intentd_ref }}
           INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}
+
+  verify-isolated-macos:
+    if: ${{ inputs.isolated_test && inputs.build_macos }}
+    needs: [select-macos, build-macos]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select-macos.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v5
+        with:
+          name: manual-macos-dmg-${{ matrix.arch }}
+          path: isolated-package
+      - name: Prove packaged isolation on disposable macOS
+        env:
+          BACKEND_SHA: ${{ inputs.intentd_ref }}
+          FRONTEND_SHA: ${{ github.sha }}
+        run: |
+          mapfile_dmg=$(find isolated-package -type f -name '*.dmg')
+          test "$(printf '%s\n' "$mapfile_dmg" | wc -l | tr -d ' ')" = 1
+          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: isolated-macos-proof-${{ matrix.arch }}
+          path: isolated-package-proof
+          if-no-files-found: error
+          retention-days: 7

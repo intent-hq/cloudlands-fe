@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 import os from 'os';
 import { readFileSync } from 'fs';
+import { execFileSync } from 'node:child_process';
 import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
 import { PARAGLIDE_STALE_MESSAGE, ensureRepoParaglide } from './scripts/paraglide-inputs-hash.mjs';
 import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
@@ -41,6 +42,21 @@ export function generatedParaglidePlugin({ ensure = ensureRepoParaglide } = {}) 
   };
 }
 
+/** Main-process imports need the same generated input in a cold unit checkout. */
+export function generatedBuildConfigPlugin({ rootDir = __dirname } = {}) {
+  return {
+    name: 'ensure-generated-build-config',
+    enforce: 'pre' as const,
+    buildStart() {
+      execFileSync(
+        process.execPath,
+        [path.join(rootDir, 'scripts/generate-build-config.cjs'), '--if-missing'],
+        { cwd: rootDir, stdio: 'pipe' },
+      );
+    },
+  };
+}
+
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
 
@@ -49,7 +65,7 @@ export default defineConfig(async () => {
   const packageJson = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
   return {
-    plugins: [generatedParaglidePlugin(), svelte()],
+    plugins: [generatedBuildConfigPlugin(), generatedParaglidePlugin(), svelte()],
     test: {
       globals: true,
       environment: 'jsdom',
