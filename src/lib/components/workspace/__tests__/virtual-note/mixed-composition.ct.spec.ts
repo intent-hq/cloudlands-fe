@@ -101,7 +101,7 @@ for (const cancel of [false, true]) {
       sameView: true,
       destroyed: false,
       composing: true,
-      error: '',
+      error: 'Stale or composing view pinned',
     });
     expect(bounded.after.error).toBe('');
     expect(bounded.after.code).toEqual(native.after.code);
@@ -111,6 +111,68 @@ for (const cancel of [false, true]) {
     expect(bounded.after.source).toBe(
       'R ' + source.slice(0, target) + (cancel ? '' : '日本語') + source.slice(target),
     );
+    const root = page.getByTestId('bounded').getByTestId('proof');
+    await expect
+      .poll(() => root.evaluate((el) => (el as Host).proof.editor!.view.composing))
+      .toBe(false);
+    expect(
+      await root.evaluate(async (el) => {
+        const p = (el as Host).proof,
+          old = p.editor!;
+        p.save();
+        await p.seek(p.service.length - 100);
+        return old.isDestroyed;
+      }),
+    ).toBe(true);
+    if (!cancel) {
+      const history = [];
+      for (const [key, expected] of [
+        ['Control+z', 'R ' + source],
+        ['Control+Shift+z', bounded.after.source!],
+      ]) {
+        const states = [];
+        for (const side of ['native', 'bounded']) {
+          await focus(page, side);
+          await page.keyboard.press(key);
+          await settled(page);
+          states.push(
+            await page
+              .getByTestId(side)
+              .getByTestId('proof')
+              .evaluate((el) => {
+                const h = el as Host,
+                  e = h.proof?.editor ?? h.native;
+                let code;
+                e.state.doc.descendants((node) => {
+                  if (node.type.name === 'codeBlock') code = node.toJSON();
+                });
+                const dom = window.getSelection()!;
+                return {
+                  code,
+                  offset: e.state.selection.$head.parentOffset,
+                  dom: e.view.posAtDOM(dom.focusNode!, dom.focusOffset),
+                  pm: e.state.selection.head,
+                  source: h.proof?.service.region(0),
+                  error: h.proof?.error ?? '',
+                  mapped: h.proof?.projection!.sourceAt(e.state.selection.head),
+                  logical: h.proof?.selection.head,
+                };
+              }),
+          );
+        }
+        history.push(states);
+        expect(states[1].source).toBe(expected);
+        expect(states[1].code).toEqual(states[0].code);
+        expect(states[1].offset).toBe(states[0].offset);
+        expect(states[1].error).toBe('');
+        expect(states[1].mapped).toBe(states[1].logical);
+        for (const state of states) expect(state.dom).toBe(state.pm);
+      }
+      await info.attach('mixed-composition-history.json', {
+        body: JSON.stringify(history),
+        contentType: 'application/json',
+      });
+    }
     await cdp.detach();
   });
 }
