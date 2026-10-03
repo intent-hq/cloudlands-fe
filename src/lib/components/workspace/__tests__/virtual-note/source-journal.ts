@@ -1256,6 +1256,35 @@ export class SourceJournal {
     const window = this.tableViewportWindow(...args);
     return window && this.transferTable(window);
   }
+  mixedBoundary(position: number) {
+    const { id, start } = this.locate(position),
+      source = this.region(id);
+    for (const table of this.tableIndex(source, start)) {
+      if (table.to - table.from <= 4096) continue;
+      const first = table.rows[0].cells[0],
+        last = table.rows.at(-1)!.cells.at(-1)!;
+      const before = source.slice(Math.max(0, table.from - 2048), table.from);
+      const after = source.slice(table.to, Math.min(source.length, table.to + 2048));
+      const local = position - start;
+      const side =
+        local >= table.from - before.length && local <= first.end && before.trim()
+          ? 'before'
+          : local >= last.body && local <= table.to + after.length && after.trim()
+            ? 'after'
+            : undefined;
+      if (!side) continue;
+      const result = {
+        revision: this.revision,
+        side,
+        from: start + (side === 'before' ? table.from - before.length : table.to),
+        to: start + (side === 'before' ? table.from : table.to + after.length),
+        at: start + (side === 'before' ? first.body : last.end),
+      };
+      this.log('mixed-boundary', position, bytes(JSON.stringify(result)));
+      return result;
+    }
+    return undefined;
+  }
   mixedTableRanges(from: number, to: number) {
     const ranges: Array<{ from: number; to: number; rows: number; columns: number }> = [];
     for (let id = this.locate(from).id; id <= this.locate(to).id && id < this.count; id++) {

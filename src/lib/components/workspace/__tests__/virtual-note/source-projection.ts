@@ -36,6 +36,7 @@ export type InlineContext = {
   documentEnd?: boolean;
   table?: TableWindow;
   tables?: TableWindow[];
+  fragments?: Array<{ source: string; start: number; context: InlineContext }>;
 };
 export const openMark = (mark: Mark) =>
   mark.type === 'bold' ? '**' : mark.type === 'italic' ? (mark.delimiter ?? '*') : '[';
@@ -114,8 +115,8 @@ export class SourceProjection {
     readonly context?: InlineContext,
     indexOnly = false,
   ) {
-    if (context?.tables?.length && !indexOnly) {
-      this.mixed = new MixedProjection(source, start, context, context.tables);
+    if ((context?.tables?.length || context?.fragments?.length) && !indexOnly) {
+      this.mixed = new MixedProjection(source, start, context, context.tables ?? []);
       this.content.content = this.mixed.content.content;
       for (const [p, s] of this.mixed.positions) this.positions.set(p, s);
       for (const [p, s] of this.mixed.ends) this.ends.set(p, s);

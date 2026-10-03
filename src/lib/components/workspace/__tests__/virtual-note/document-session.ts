@@ -199,7 +199,8 @@ export class DocumentSession {
   annotationInFlightBytes = 0;
   maxAnnotationInFlightBytes = 0;
   maxAnnotationCacheBytes = 0;
-  private annotationRanges(p: SourceProjection) {
+  private annotationRanges(p: SourceProjection): Array<{ from: number; to: number }> {
+    if (p.mixed) return p.mixed.parts.flatMap((part) => this.annotationRanges(part.projection));
     return p.table
       ? p.table.window.cells.map((cell) => ({ from: cell.first, to: cell.last }))
       : [{ from: p.start, to: p.start + p.source.length }];
@@ -225,7 +226,7 @@ export class DocumentSession {
       const page = this.service.annotations(range.from, range.to, revision, generation, {
         commentRevision,
         cursor,
-        ...(!cursor && p.table ? { ranges } : {}),
+        ...(!cursor && (p.table || p.mixed) ? { ranges } : {}),
       });
       this.annotationInFlightBytes = bytes(JSON.stringify(page));
       this.maxAnnotationInFlightBytes = Math.max(
@@ -277,22 +278,36 @@ export class DocumentSession {
     host.addEventListener('pointerdown', this.pointerDown);
     document.addEventListener('pointerup', this.pointerUp);
   }
-  private project(source: string, start: number, table?: InlineContext['table']) {
+  private project(
+    source: string,
+    start: number,
+    table?: InlineContext['table'],
+    fragments?: InlineContext['fragments'],
+  ) {
     if (bytes(source) > LIMITS.active)
       throw new Error('Proof projection exceeds experiment budget');
     this.parsedBytes += bytes(source);
     this.maxParsedBytes = Math.max(this.maxParsedBytes, bytes(source));
-    const context: InlineContext = table
+    const context: InlineContext = fragments
       ? {
-          revision: table.revision,
+          revision: this.service.revision,
           from: start,
-          to: start + source.length,
+          to: fragments.at(-1)!.context.to,
           before: [],
           after: [],
-          table,
+          fragments,
         }
-      : this.service.inlineContext(start, start + source.length);
-    if (!table) {
+      : table
+        ? {
+            revision: table.revision,
+            from: start,
+            to: start + source.length,
+            before: [],
+            after: [],
+            table,
+          }
+        : this.service.inlineContext(start, start + source.length);
+    if (!table && !fragments) {
       const ranges = this.service.mixedTableRanges(start, start + source.length);
       if (ranges.length)
         context.tables = ranges.map((range) => {
@@ -314,6 +329,12 @@ export class DocumentSession {
       if (ranges.length && bytes(source) + bytes(JSON.stringify(context)) > TABLE_ACTIVE_BYTES)
         throw new Error('Mixed source/context exceeds admission budget');
     }
+    if (
+      fragments &&
+      (bytes(source) + bytes(JSON.stringify(context)) > TABLE_ACTIVE_BYTES ||
+        fragments.some((f) => f.context.revision !== this.service.revision))
+    )
+      throw new Error('Sparse mixed admission exceeds budget or revision');
     if (context.revision !== this.service.revision)
       throw new Error('Stale inline context response');
     this.maxSourceContextBytes = Math.max(
@@ -395,8 +416,94 @@ export class DocumentSession {
     }
     return window;
   }
+  private sparseWindow(position: number) {
+    const boundary = this.service.mixedBoundary(position);
+    if (!boundary) return undefined;
+    let from = this.service.inlineBoundary(boundary.from, 1),
+      to = this.service.inlineBoundary(boundary.to, -1);
+    const raw = this.readRange(from, to);
+    const leading = raw.match(/^\n*/)?.[0].length ?? 0,
+      trailing = raw.match(/\n*$/)?.[0].length ?? 0;
+    from += leading;
+    to -= trailing;
+    const source = raw.slice(leading, raw.length - trailing);
+    const prose = { source, start: from, context: this.service.inlineContext(from, to) };
+    const table = this.receiveTable(this.service.tableWindowPages(boundary.at))!;
+    table.trailing = false;
+    const cells = {
+      source: table.cells.map((c) => c.raw).join(''),
+      start: table.from,
+      context: {
+        revision: table.revision,
+        from: table.from,
+        to: table.to,
+        before: [],
+        after: [],
+        table,
+      } as InlineContext,
+    };
+    const fragments = boundary.side === 'before' ? [prose, cells] : [cells, prose];
+    const joined = fragments.map((f) => f.source).join('');
+    this.inFlightBytes += bytes(joined);
+    this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
+    return {
+      from: fragments[0].start,
+      to: fragments.at(-1)!.context.to,
+      source: joined,
+      table: undefined,
+      fragments,
+      continuation: true,
+    };
+  }
+  private refreshSparse(splices: Splice[]) {
+    const fragments = this.projection!.context!.fragments!.map((fragment) => {
+      let from = fragment.start,
+        to = fragment.context.to;
+      const retained = fragment.context.table && cloneTableWindow(fragment.context.table);
+      for (const splice of splices) {
+        from = mapPoint(from, splice, -1);
+        to = mapPoint(to, splice, 1);
+        for (const cell of retained?.cells ?? []) {
+          cell.first = mapPoint(cell.first, splice, -1);
+          cell.last = mapPoint(cell.last, splice, 1);
+        }
+      }
+      if (retained) {
+        const table = this.receiveTable(
+          this.service.tableWindowPages(retained.cells[0].first, retained),
+        )!;
+        table.trailing = false;
+        return {
+          source: table.cells.map((c) => c.raw).join(''),
+          start: table.from,
+          context: {
+            revision: table.revision,
+            from: table.from,
+            to: table.to,
+            before: [],
+            after: [],
+            table,
+          } as InlineContext,
+        };
+      }
+      return {
+        source: this.readRange(from, to),
+        start: from,
+        context: this.service.inlineContext(from, to),
+      };
+    });
+    this.windowEnd = fragments.at(-1)!.context.to;
+    return this.project(
+      fragments.map((f) => f.source).join(''),
+      fragments[0].start,
+      undefined,
+      fragments,
+    );
+  }
   private readWindow(id: number, position?: number, selection = this.selection) {
     const at = position ?? this.service.start(id);
+    const sparse = this.sparseWindow(at);
+    if (sparse) return sparse;
     const candidate = continuationWindow(this.service, id, position);
     if (this.service.mixedTableRanges(candidate.from, candidate.to).length) {
       const source = this.readRange(candidate.from, candidate.to);
@@ -1007,7 +1114,12 @@ export class DocumentSession {
     }
     const window = this.readWindow(id, position, requestedSelection);
     try {
-      const next = this.project(window.source, window.from, window.table);
+      const next = this.project(
+        window.source,
+        window.from,
+        window.table,
+        'fragments' in window ? window.fragments : undefined,
+      );
       if (next.table || next.mixed) {
         try {
           if (next.mixed) MixedProjection.nodeBudget(next.content);
@@ -1614,6 +1726,8 @@ export class DocumentSession {
             );
           }
           if (
+            (!!this.projection?.context?.fragments?.at(-1)?.context.table &&
+              this.windowEnd < this.service.length) ||
             (this.projection?.list && this.windowEnd < this.service.length) ||
             this.projection?.code.some(
               (c) => c.fence.bodyTo >= this.windowEnd && c.fence.to > this.windowEnd,
@@ -1653,8 +1767,7 @@ export class DocumentSession {
         !restore &&
         (next.table
           ? next.table.pointPM(this.selection.table?.head) === undefined
-          : this.selection.head < window.from ||
-            this.selection.head > window.from + window.source.length)
+          : this.selection.head < window.from || this.selection.head > window.to)
       ) {
         // Navigation changes the viewport, not the durable document selection.
         if (next.table?.window.trailing === false) {
@@ -2133,7 +2246,9 @@ export class DocumentSession {
                   table,
                 );
                 this.windowEnd = table.cells.at(-1)!.last;
-              } else
+              } else if (this.projection!.context?.fragments)
+                this.projection = this.refreshSparse(splices);
+              else
                 this.projection = this.project(this.readRange(oldStart, this.windowEnd), oldStart);
             }
             if (
@@ -2267,7 +2382,7 @@ export class DocumentSession {
   }
   remote(splice: Splice) {
     const anchorPoint = this.selection.table?.head;
-    const table = !!this.projection?.table;
+    const table = !!this.projection?.table || !!this.projection?.context?.fragments;
     const oldStart = this.projection!.start;
     this.service.atomic(() => {
       this.service.validateTableRemote(splice);
@@ -2430,6 +2545,23 @@ export class DocumentSession {
       ),
       maxHighlightBytes: this.maxHighlightBytes,
       highlightCalls: this.highlightCalls,
+      mixedProjectionPayloadBytes: bytes(
+        JSON.stringify(
+          this.projection?.mixed?.parts.map(({ pm, end, projection: p }) => ({
+            pm,
+            end,
+            source: p.source,
+            context: p.context,
+            positions: [...p.positions],
+            ends: [...p.ends],
+            boundaries: [...p.boundaries],
+            tokens: p.tokens,
+            content: p.content,
+            list: p.list,
+            code: p.code,
+          })) ?? [],
+        ),
+      ),
       codeMetadataBytes: bytes(JSON.stringify(this.projection?.code ?? [])),
       residentInputBytes: this.residentInputBytes,
       maxResidentInputBytes: this.maxResidentInputBytes,

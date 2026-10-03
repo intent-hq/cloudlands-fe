@@ -200,6 +200,13 @@ export class MixedProjection {
       this.tokens.push(...part.tokens.map((token) => ({ ...token, pm: pm + token.pm })));
       pm += count;
     };
+    if (context.fragments) {
+      for (const fragment of context.fragments)
+        append(new SourceProjection(fragment.source, fragment.start, fragment.context));
+      this.boundaries.set(0, context.from);
+      this.boundaries.set(pm, context.to);
+      return;
+    }
     const prose = (to: number) => {
       const raw = source.slice(cursor - start, to - start);
       const leading = raw.match(/^\n*/)?.[0].length ?? 0;
