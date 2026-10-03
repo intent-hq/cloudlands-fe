@@ -59,6 +59,16 @@ export function isViewSelection(
 ): boolean {
   if (!viewSelectionTypes.has(action.type)) return false;
   const payload = action.payload;
+  // Restore's own primary-agent seed is not a newer viewer choice. Keep the
+  // exception on that exact action and origin, not the entire hydration window.
+  if (
+    action.type === panel.openTabInAdjacentOrSplit.type &&
+    payload &&
+    typeof payload === 'object' &&
+    'origin' in payload &&
+    payload.origin === 'layout-restore'
+  )
+    return false;
   const workspaceId = Array.isArray(payload)
     ? payload[0]
     : payload && typeof payload === 'object' && 'wsId' in payload

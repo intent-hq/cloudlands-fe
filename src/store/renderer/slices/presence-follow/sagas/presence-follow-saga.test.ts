@@ -1,6 +1,6 @@
-import { take, type SagaGenerator } from 'typed-redux-saga';
+import { call, take, type SagaGenerator } from 'typed-redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Workspace } from '$shared/types';
+import type { AgentSession, Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { HostRole } from '$shared/types/principal';
 import type { PresenceFocusItem } from '$shared/types/presence';
@@ -28,12 +28,16 @@ import {
   openWorkspaceFile,
 } from '../../workspace-navigation/workspace-navigation-slice';
 import {
+  openTabInAdjacentOrSplit,
   setActiveTab,
   focusPanel,
   selectNextTab,
   goBack,
 } from '../../panel-layout/panel-layout-slice';
 import { presenceFollowSaga } from './presence-follow-saga';
+import { setAgents } from '../../workspace-agents/workspace-agents-slice';
+import { selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
+import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 
 const wire = vi.hoisted(() => ({
   request: vi.fn(),
@@ -167,7 +171,10 @@ beforeEach(() => {
   store.dispatch(openWorkspaceTab('source'));
   actions = [];
   cancelCapture = store.runSaga(function* (): SagaGenerator<void> {
-    while (true) actions.push(yield* take([openAgentTabRequested, openWorkspaceNote]));
+    while (true)
+      actions.push(
+        yield* take([openAgentTabRequested, openWorkspaceNote, openTabInAdjacentOrSplit]),
+      );
   });
 });
 afterEach(() => {
@@ -262,6 +269,137 @@ describe('following authorized presence', () => {
     });
     expect(views()).toEqual([]);
     expect(wire.hydrate).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['empty', 'note'],
+    ['tabless', 'note'],
+    ['empty', 'agent'],
+    ['tabless', 'agent'],
+  ] as const)(
+    'follows after real %s layout restoration opens a primary agent before the requested %s',
+    async (stored, kind) => {
+      const workspaceId = `restore-${stored}-${kind}`;
+      const real = await vi.importActual<
+        typeof import('../../panel-layout/sagas/panel-layout-saga')
+      >('../../panel-layout/sagas/panel-layout-saga');
+      wire.hydrate.mockImplementation(real.hydrateWorkspaceLayout);
+      store.dispatch(
+        replaceWorkspaceList([
+          ...workspaces(),
+          { ...workspaces()[1], id: WorkspaceId(workspaceId), contextLinks: [] },
+        ]),
+      );
+      const primary = {
+        id: 'primary-agent',
+        backendSessionId: null,
+        workspaceId,
+        name: 'Primary',
+        status: 'idle',
+        messages: [],
+        isInitialAgent: true,
+        createdAt: '2026-10-03T00:00:00Z',
+        updatedAt: '2026-10-03T00:00:00Z',
+      } as AgentSession;
+      store.dispatch(bulkUpsertSessions([primary]));
+      store.dispatch(setAgents(workspaceId, [primary]));
+      const key = `panel-layout-${workspaceId}`;
+      if (stored === 'tabless')
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            root: { type: 'panel', panelId: 'restored-panel' },
+            panels: { 'restored-panel': { id: 'restored-panel', tabs: [], activeTabId: null } },
+            focusedPanelId: 'restored-panel',
+          }),
+        );
+      destination =
+        kind === 'note'
+          ? { workspaceId, noteId: 'follow-note' }
+          : { workspaceId, agentId: 'follow-agent' };
+      start('guest');
+      await settle();
+      expect(selectAllWorkspaceAgents.select(store.state, workspaceId)).toHaveLength(1);
+      click();
+      await settle();
+      expect(actions).toContainEqual(
+        expect.objectContaining({
+          type: openTabInAdjacentOrSplit.type,
+          payload: expect.objectContaining({
+            origin: 'layout-restore',
+            wsId: workspaceId,
+            tab: expect.objectContaining({ agentId: 'primary-agent' }),
+          }),
+        }),
+      );
+      expect(
+        Object.values(store.state.panelLayout.byWorkspaceId[workspaceId].panels).flatMap(
+          (panel) => panel.tabs,
+        ),
+      ).toContainEqual(expect.objectContaining({ agentId: 'primary-agent' }));
+      expect(wire.goto).toHaveBeenCalledWith(`/workspace/${workspaceId}`, {
+        state: { presenceFollowRequestId: 'click-1' },
+      });
+      expect(views()).toEqual([
+        kind === 'note'
+          ? openWorkspaceNote(workspaceId, 'follow-note', {
+              sourcePanelId: undefined,
+              openInAdjacentPanel: false,
+            })
+          : openAgentTabRequested(workspaceId, {
+              agentId: 'follow-agent',
+              sourcePanelId: undefined,
+              openInAdjacentPanel: false,
+            }),
+      ]);
+      localStorage.removeItem(key);
+    },
+  );
+  it('still cancels a manual adjacent-tab choice during real deferred restoration', async () => {
+    const real = await vi.importActual<typeof import('../../panel-layout/sagas/panel-layout-saga')>(
+      '../../panel-layout/sagas/panel-layout-saga',
+    );
+    const storage = await import('../../../utils/safe-local-storage-saga');
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const read = vi.spyOn(storage, 'getLocalStorageJSON').mockImplementation(function* () {
+      yield* call(() => pending);
+      return undefined;
+    });
+    try {
+      const workspaceId = 'manual-during-real-restore';
+      store.dispatch(
+        replaceWorkspaceList([
+          ...workspaces(),
+          { ...workspaces()[1], id: WorkspaceId(workspaceId), contextLinks: [] },
+        ]),
+      );
+      destination = { workspaceId, noteId: 'follow-note' };
+      wire.hydrate.mockImplementation(real.hydrateWorkspaceLayout);
+      start();
+      await settle();
+      click();
+      await settle();
+      expect(store.state.panelLayout.byWorkspaceId[workspaceId].restoreStatus).toBe('pending');
+      store.dispatch(
+        openTabInAdjacentOrSplit('source', {
+          type: 'note',
+          title: 'Manual',
+          noteId: 'manual',
+          closable: true,
+        }),
+      );
+      await settle();
+      expect(store.state.presenceFollow.navigation).toBeNull();
+      finish();
+      await settle();
+      expect(wire.goto).not.toHaveBeenCalled();
+      expect(views()).toEqual([]);
+    } finally {
+      finish();
+      read.mockRestore();
+    }
   });
   it('does not probe hidden destinations or offer an action for a null focus', async () => {
     destination = null;
@@ -449,6 +587,16 @@ describe('following authorized presence', () => {
   );
   it.each([
     ['workspace reselect', () => openWorkspaceTab('source')],
+    [
+      'adjacent tab',
+      () =>
+        openTabInAdjacentOrSplit('source', {
+          type: 'note',
+          title: 'Manual',
+          noteId: 'manual',
+          closable: true,
+        }),
+    ],
     ['agent', () => openAgentTabRequested('source', { agentId: 'manual-agent' })],
     ['file', () => openWorkspaceFile('source', 'manual.ts')],
     ['panel tab', () => setActiveTab('source', 'manual-tab')],
