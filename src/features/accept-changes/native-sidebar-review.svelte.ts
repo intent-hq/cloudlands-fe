@@ -235,8 +235,6 @@ export function createNativeSidebarReview(readProps: () => SidebarProps) {
   const hasRemote = $derived(readProps().hasRemote);
   const hasStaged = $derived(readProps().hasStaged);
   const prDrawerOpen = $derived(readProps().prDrawerOpen);
-  const prTitle = $derived(readProps().prTitle);
-  const prDescription = $derived(readProps().prDescription);
   const _commitMessage = $derived(readProps()._commitMessage);
   const onMergeDrawerToggle = $derived(readProps().onMergeDrawerToggle);
   const hostOperationContext = $derived(readProps().hostContext);
@@ -386,13 +384,15 @@ export function createNativeSidebarReview(readProps: () => SidebarProps) {
   }
   function prepareNativeCommit() {
     const read = selectNativeRead.select(appStore.state, nativeDemand);
+    // Input updates the store before its next renderer notification.
+    const draft = selectAcceptChangesState.select(appStore.state, workspaceId);
     if (
       nativeIntent ||
       nativeReadChanged ||
       !hasStaged ||
       !nativeBranch.trim() ||
       !nativeMessage.trim() ||
-      !prTitle.trim() ||
+      !draft.prTitle.trim() ||
       read.target?.provider !== 'gitlab' ||
       !read.contextKey ||
       read.contextKey !== nativeReadKey ||
@@ -412,8 +412,8 @@ export function createNativeSidebarReview(readProps: () => SidebarProps) {
       owner,
       targetBranch: nativeBranch,
       commitMessage: nativeMessage,
-      prTitle,
-      prBody: prDescription,
+      prTitle: draft.prTitle,
+      prBody: draft.prDescription,
       contextKey: read.contextKey,
       destinationKey: read.destinationKey,
     });

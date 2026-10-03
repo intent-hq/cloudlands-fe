@@ -33,7 +33,10 @@ import {
   selectAcceptChangesStatus,
   selectPostMergeState,
 } from '$store/renderer/slices/git/git-selectors';
-import { selectStagedWorkingChanges } from '$store/renderer/slices/changes/changes-selectors';
+import {
+  selectAcceptChangesState,
+  selectStagedWorkingChanges,
+} from '$store/renderer/slices/changes/changes-selectors';
 import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { selectWorkspaceActionContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { ComponentProps } from 'svelte';
@@ -156,6 +159,62 @@ describe('explicit sidebar producer and queue through real Store/root sagas/Live
     });
     expect(fixture.captures).toHaveLength(0);
   });
+  it.each([
+    ['description edit', 'Original review title', 'Latest review body'],
+    ['title and description edit', 'Latest review title', 'Latest review body'],
+    ['description cleared', 'Original review title', ''],
+  ])(
+    'captures the canonical draft before a renderer notification: %s',
+    async (_name, title, body) => {
+      await mount();
+      await drafts();
+      const titleField = screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement;
+      const bodyField = screen.getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement;
+      const commitButton = within(
+        screen.getByRole('region', { name: 'Create a merge request' }),
+      ).getByRole('button', { name: 'Commit' });
+
+      // Input reducers run immediately; the component's selector notification may arrive later.
+      titleField.value = title;
+      titleField.dispatchEvent(new Event('input', { bubbles: true }));
+      bodyField.value = body;
+      bodyField.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(selectAcceptChangesState.select(store.state, sidebarWorkspaceId)).toMatchObject({
+        prTitle: title,
+        prDescription: body,
+      });
+      commitButton.click();
+
+      const dialog = await screen.findByRole('dialog', { name: 'Commit' });
+      expect(commands()).toHaveLength(0);
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Commit' }));
+      await screen.findByText('Completed commit: staged-parent-B');
+      await child();
+      await screen.findByText('Merge request created');
+      expect(commands().map((request) => request.command)).toEqual([
+        { commitMessage: 'Commit original staged files' },
+        { prTitle: title, prBody: body },
+      ]);
+    },
+  );
+
+  it('rejects a title cleared before the renderer disables preparation', async () => {
+    await mount();
+    await drafts();
+    const titleField = screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement;
+    const commitButton = within(
+      screen.getByRole('region', { name: 'Create a merge request' }),
+    ).getByRole('button', { name: 'Commit' });
+    titleField.value = '   ';
+    titleField.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(selectAcceptChangesState.select(store.state, sidebarWorkspaceId).prTitle).toBe('   ');
+    commitButton.click();
+    await tick();
+    expect(fixture.captures).toHaveLength(0);
+    expect(commands()).toHaveLength(0);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('queues only its prepared original staged commit, then separately prepares and confirms its companion', async () => {
     await mount();
     const dispatch = vi.spyOn(store, 'dispatch');
