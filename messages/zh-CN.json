@@ -7077,6 +7077,7 @@
   "devConsole_interval_label": "间隔：{elapsed} 毫秒",
   "chat_queuedMessages_draftConflict_description": "此排队消息已合并、更改或删除。你的草稿保留在此处。请复制后重新使用，或丢弃草稿。",
   "chat_queuedMessages_discardDraft_label": "丢弃草稿",
+  "chat_scriptMonitor_command_label": "当前脚本命令",
   "chat_scriptMonitor_active_label": "监控中",
   "chat_scriptMonitor_stopping_label": "正在停止…",
   "chat_scriptMonitor_actions_ariaLabel": "{name} 的操作",
