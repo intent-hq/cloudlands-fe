@@ -88,6 +88,7 @@ export type Anchor = {
   sourceRevision?: number;
   authorId?: string;
 };
+export type AnnotationRange = { from: number; to: number };
 export type AnnotationCursor = {
   owner: number;
   from: number;
@@ -96,6 +97,7 @@ export type AnnotationCursor = {
   generation: number;
   commentRevision: number;
   offset: number;
+  ranges?: AnnotationRange[];
 };
 export type AnnotationPage = {
   revision: number;
@@ -1546,6 +1548,7 @@ export class SourceJournal {
   private editAnchorsBefore: Anchor[] = [];
   annotationPayloadBytes = 0;
   maxAnnotationPageBytes = 0;
+  maxAnnotationRequestBytes = 0;
   annotationReads = 0;
   private regions = new Map<number, string>();
   // Mock backing session state. Seam journal entries occupy individual bounded pages.
@@ -2147,7 +2150,12 @@ export class SourceJournal {
     to: number,
     revision: number,
     generation: number,
-    options: { commentRevision?: number; cursor?: AnnotationCursor; limit?: number } = {},
+    options: {
+      commentRevision?: number;
+      cursor?: AnnotationCursor;
+      limit?: number;
+      ranges?: AnnotationRange[];
+    } = {},
   ): AnnotationPage {
     const commentRevision = options.commentRevision ?? this.commentRevision;
     if (
@@ -2157,6 +2165,10 @@ export class SourceJournal {
     )
       throw new Error('Stale annotations');
     const limit = options.limit ?? 8;
+    const requestBytes = bytes(JSON.stringify({ from, to, revision, generation, ...options }));
+    if (requestBytes > LIMITS.request) throw new Error('Annotation request exceeds page budget');
+    this.maxAnnotationRequestBytes = Math.max(this.maxAnnotationRequestBytes, requestBytes);
+    const ranges = options.ranges ?? options.cursor?.ranges ?? [{ from, to }];
     if (
       !Number.isSafeInteger(from) ||
       !Number.isSafeInteger(to) ||
@@ -2167,6 +2179,19 @@ export class SourceJournal {
       limit > 8
     )
       throw new Error('Invalid annotation range or limit');
+    if (
+      !ranges.length ||
+      ranges.some(
+        (range, i) =>
+          !Number.isSafeInteger(range.from) ||
+          !Number.isSafeInteger(range.to) ||
+          range.from < from ||
+          range.to > to ||
+          range.to < range.from ||
+          (i > 0 && range.from < ranges[i - 1].to),
+      )
+    )
+      throw new Error('Invalid annotation intervals');
     const binding = {
       owner: this.annotationOwner,
       from,
@@ -2183,7 +2208,8 @@ export class SourceJournal {
       ) ||
         !Number.isSafeInteger(cursor.offset) ||
         cursor.offset < 0 ||
-        cursor.offset > this.anchors.length)
+        cursor.offset > this.anchors.length ||
+        JSON.stringify(cursor.ranges ?? [{ from, to }]) !== JSON.stringify(ranges))
     )
       throw new Error('Stale annotations cursor');
     const result: AnnotationPage = { revision, generation, commentRevision, items: [] };
@@ -2195,10 +2221,17 @@ export class SourceJournal {
         !a.alive ||
         a.from >= to ||
         a.to <= from ||
+        !ranges.some((range) => a.from < range.to && a.to > range.from) ||
         (a.kind === 'attribution' && a.sourceRevision !== revision)
       )
         continue;
-      const next = { ...binding, offset };
+      const next = {
+        ...binding,
+        offset,
+        ...(options.ranges || cursor?.ranges
+          ? { ranges: ranges.map((range) => ({ ...range })) }
+          : {}),
+      };
       if (
         result.items.length === limit ||
         bytes(JSON.stringify({ ...result, items: [...result.items, a], next })) > LIMITS.request
@@ -2625,6 +2658,7 @@ export class SourceJournal {
         0,
       ),
       maxAnnotationPageBytes: this.maxAnnotationPageBytes,
+      maxAnnotationRequestBytes: this.maxAnnotationRequestBytes,
       backingAnnotationBytes: bytes(JSON.stringify(this.anchors)),
       backingSeamScannedBytes: this.backingSeamScannedBytes,
       maxBackingSeamSourceBytes: this.maxBackingSeamSourceBytes,

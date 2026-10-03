@@ -109,8 +109,8 @@ test('visible annotation overlap and dirty draft survive native typing, eviction
       const endpoint = (editor: typeof n) => {
         const r = editor.state.selection.$head;
         return {
-          before: r.parent.textContent.slice(r.parentOffset - 20, r.parentOffset),
-          after: r.parent.textContent.slice(r.parentOffset, r.parentOffset + 20),
+          before: r.parent.textBetween(0, r.parentOffset, '', '').slice(-20),
+          after: r.parent.textBetween(r.parentOffset, r.parent.content.size, '', '').slice(0, 20),
           parent: r.parent.type.name,
         };
       };
@@ -147,4 +147,78 @@ test('visible annotation overlap and dirty draft survive native typing, eviction
     contentType: 'application/json',
   });
   await page.screenshot({ path: info.outputPath('annotation-history.png') });
+});
+
+test('table annotations page only admitted cells and preserve overlapping identities', async ({
+  mount,
+  page,
+}, info) => {
+  const row = (r: number) =>
+    '| ' + Array.from({ length: 10 }, (_, c) => `row${r}col${c} café repeated`).join(' | ') + ' |';
+  const source = [
+    row(0),
+    '| ' + Array(10).fill('---').join(' | ') + ' |',
+    ...Array.from({ length: 18 }, (_, r) => row(r + 1)),
+  ].join('\n');
+  await mount(Harness, { props: { sourceOverride: source } });
+  await focus(page, 'bounded');
+  const root = page.getByTestId('bounded').getByTestId('proof');
+  const evidence = await root.evaluate(async (el, source) => {
+    const p = (el as Host).proof;
+    p.service.anchors = [];
+    await p.seek(source.indexOf('row8col7'));
+    const cells = p.projection!.table!.window.cells;
+    const last = cells.at(-1)!;
+    const hidden = [...source.matchAll(/row\d+col\d+/g)].find(
+      (match) =>
+        match.index! > cells[0].first &&
+        match.index! < last.last &&
+        !cells.some((cell) => cell.first <= match.index! && cell.last > match.index!),
+    )?.index;
+    if (hidden === undefined)
+      throw new Error('Fixture must include an unloaded column between admitted rows');
+    p.service.replaceAttribution(p.service.revision, p.service.generation, [
+      { id: 'hidden-gap', from: hidden, to: hidden + 5, alive: true },
+      ...Array.from({ length: 19 }, (_, i) => ({
+        id: `overlap-${i}`,
+        from: last.first - 2,
+        to: last.last + 2,
+        alive: true,
+      })),
+    ]);
+    await p.loadAnnotations();
+    const pages = [];
+    do {
+      const ids = p.annotationPage!.items.map((a) => a.id);
+      const rendered = [...p.editor!.view.dom.querySelectorAll('[data-proof-attribution]')].map(
+        (span) => ({ id: span.getAttribute('data-proof-attribution'), text: span.textContent }),
+      );
+      pages.push({ ids, rendered, stats: p.snapshot() });
+      const next = p.annotationPage!.next;
+      if (!next) break;
+      await p.loadAnnotations(next);
+    } while (true);
+    return { pages, lastText: last.runs.map((run) => run.text).join(''), error: p.error };
+  }, source);
+  expect(evidence.error).toBe('');
+  expect(evidence.pages.flatMap((p) => p.ids)).toEqual(
+    Array.from({ length: 19 }, (_, i) => `overlap-${i}`),
+  );
+  for (const page of evidence.pages) {
+    expect(page.rendered.map((span) => span.id).sort()).toEqual([...page.ids].sort());
+    expect(page.rendered.every((span) => span.text === evidence.lastText)).toBe(true);
+    expect(page.stats.cachePages).toBeLessThanOrEqual(4);
+    expect(page.stats.cacheBytes).toBeLessThanOrEqual(16384);
+    expect(page.stats.maxAnnotationPageBytes).toBeLessThanOrEqual(4096);
+    expect(page.stats.maxAnnotationRequestBytes).toBeLessThanOrEqual(4096);
+    expect(page.stats.retainedEditorStates).toBe(0);
+  }
+  await info.attach('table-annotation-pages.json', {
+    body: JSON.stringify(evidence),
+    contentType: 'application/json',
+  });
+  await info.attach('table-annotation-pages.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });

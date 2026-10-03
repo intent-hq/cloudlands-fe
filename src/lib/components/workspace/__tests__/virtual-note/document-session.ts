@@ -191,6 +191,11 @@ export class DocumentSession {
   annotationInFlightBytes = 0;
   maxAnnotationInFlightBytes = 0;
   maxAnnotationCacheBytes = 0;
+  private annotationRanges(p: SourceProjection) {
+    return p.table
+      ? p.table.window.cells.map((cell) => ({ from: cell.first, to: cell.last }))
+      : [{ from: p.start, to: p.start + p.source.length }];
+  }
   /** A visible page, not a note-wide anchor map. Superseded replies cannot repaint. */
   async loadAnnotations(cursor?: AnnotationCursor) {
     const p = this.projection;
@@ -205,10 +210,14 @@ export class DocumentSession {
     this.annotationFlight = flight;
     try {
       const { revision, generation, commentRevision } = this.service;
-      const range = { from: p.start, to: p.start + p.source.length };
+      const ranges = this.annotationRanges(p);
+      const range = { from: ranges[0].from, to: ranges.at(-1)!.to };
+      if (cursor && JSON.stringify(cursor.ranges ?? [range]) !== JSON.stringify(ranges))
+        throw new Error('Stale annotations cursor');
       const page = this.service.annotations(range.from, range.to, revision, generation, {
         commentRevision,
         cursor,
+        ...(!cursor && p.table ? { ranges } : {}),
       });
       this.annotationInFlightBytes = bytes(JSON.stringify(page));
       this.maxAnnotationInFlightBytes = Math.max(
@@ -242,7 +251,7 @@ export class DocumentSession {
           .reduce((n, [, value]) => n + bytes(value), 0),
       );
       this.annotationPage = page;
-      this.annotationRange = `${p.start}:${p.source.length}`;
+      this.annotationRange = JSON.stringify(ranges);
       if (this.editor && !this.editor.isDestroyed) this.editor.view.setProps({});
       this.changed();
       return true;
@@ -1071,10 +1080,11 @@ export class DocumentSession {
       void this.loadAnnotations();
       const decorations = (state: EditorState) => {
         const p = this.projection!;
+        const ranges = this.annotationRanges(p);
         const page = this.annotationPage;
         const result =
           page &&
-          this.annotationRange === `${p.start}:${p.source.length}` &&
+          this.annotationRange === JSON.stringify(ranges) &&
           page.revision === this.service.revision &&
           page.generation === this.service.generation &&
           page.commentRevision === this.service.commentRevision
@@ -1115,21 +1125,24 @@ export class DocumentSession {
               style: 'list-style-type:none',
             }),
           ),
-          ...result.items.flatMap((a) => {
-            const from = p.pmAt(Math.max(a.from, p.start)),
-              to = p.pmAt(Math.min(a.to, p.start + p.source.length), -1);
-            return from < to
-              ? [
-                  Decoration.inline(
-                    from,
-                    to,
-                    a.kind === 'attribution'
-                      ? { 'data-proof-attribution': a.id }
-                      : { 'data-proof-comment': a.id },
-                  ),
-                ]
-              : [];
-          }),
+          ...result.items.flatMap((a) =>
+            ranges.flatMap((range) => {
+              if (a.from >= range.to || a.to <= range.from) return [];
+              const from = p.pmAt(Math.max(a.from, range.from)),
+                to = p.pmAt(Math.min(a.to, range.to), -1);
+              return from < to
+                ? [
+                    Decoration.inline(
+                      from,
+                      to,
+                      a.kind === 'attribution'
+                        ? { nodeName: 'span', 'data-proof-attribution': a.id }
+                        : { nodeName: 'span', 'data-proof-comment': a.id },
+                    ),
+                  ]
+                : [];
+            }),
+          ),
         ]);
       };
       const annotations = Extension.create({

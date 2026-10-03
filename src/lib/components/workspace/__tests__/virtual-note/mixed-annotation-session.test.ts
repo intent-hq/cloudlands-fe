@@ -66,9 +66,7 @@ it('makes later overlaps discoverable with one visible page and the shared four-
     } while (true);
     expect(ids).toEqual(Array.from({ length: 40 }, (_, i) => `cmt-${i}`));
     expect(session.annotationPage!.items.length).toBe(8);
-    expect(
-      session.editor!.view.dom.querySelectorAll('[data-proof-comment]').length,
-    ).toBeLessThanOrEqual(8);
+    expect(session.editor!.view.dom.querySelectorAll('[data-proof-comment]').length).toBe(8);
     expect(session.snapshot().cachePages).toBeLessThanOrEqual(4);
     expect(session.snapshot().cacheBytes).toBeLessThanOrEqual(16384);
   } finally {

@@ -144,3 +144,30 @@ it('never admits a partial canonical marker at a transport crop edge', () => {
   expect(service.inlineBoundary(inside, 1)).toBe(7 + marker.length);
   expect(service.inlineBoundary(inside, -1)).toBe(7);
 });
+
+it('binds paged disjoint queries to the admitted intervals, excluding hidden gaps', () => {
+  const service = new SourceJournal(() => 'x'.repeat(100), 1);
+  service.anchors = [
+    ...Array.from({ length: 17 }, (_, i) => ({ id: `overlap-${i}`, from: 0, to: 99, alive: true })),
+    { id: 'hidden', from: 30, to: 40, alive: true },
+  ];
+  const ranges = [
+    { from: 5, to: 10 },
+    { from: 80, to: 90 },
+  ];
+  const read = (options: unknown) =>
+    Reflect.apply(service.annotations, service, [5, 90, 1, 1, options]) as ReturnType<
+      SourceJournal['annotations']
+    >;
+  let page = read({ ranges });
+  const ids = page.items.map((a) => a.id);
+  expect(() => read({ ranges: [{ from: 5, to: 90 }], cursor: page.next })).toThrow(
+    'Stale annotations cursor',
+  );
+  while (page.next) {
+    page = read({ cursor: page.next });
+    ids.push(...page.items.map((a) => a.id));
+    expect(bytes(JSON.stringify(page))).toBeLessThanOrEqual(4096);
+  }
+  expect(ids).toEqual(Array.from({ length: 17 }, (_, i) => `overlap-${i}`));
+});
