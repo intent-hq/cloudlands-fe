@@ -12,6 +12,7 @@
 
 import { Node, mergeAttributes } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { Plugin } from '@tiptap/pm/state';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('CommentAnchor');
@@ -197,6 +198,35 @@ export const CommentAnchor = Node.create({
           });
         },
     };
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            compositionend(view) {
+              // Chromium may commit composition correctly in the model but leave
+              // its DOM caret inside the noneditable anchor's rendering text.
+              // Let native composition processing finish, then synchronize only
+              // that invalid caret through the editor's own selection mapping.
+              queueMicrotask(() => {
+                if (view.isDestroyed || view.composing || !view.hasFocus()) return;
+                const selection = view.dom.ownerDocument.getSelection();
+                if (!selection?.isCollapsed || !view.state.selection.empty) return;
+                const node = selection.focusNode;
+                const element = node?.nodeType === 1 ? (node as Element) : node?.parentElement;
+                const anchor = element?.closest(
+                  '.comment-anchor[data-anchor-id][contenteditable="false"]',
+                );
+                if (anchor && view.dom.contains(anchor)) view.focus();
+              });
+              return false;
+            },
+          },
+        },
+      }),
+    ];
   },
 
   // Custom serialization for markdown
