@@ -827,15 +827,32 @@ async function createProof(
       nonce,
       hostLabel,
     );
+    // GitHub creates a gist without returning a stable account ID. The host
+    // resolves that ID when verifying the gist; proveIdentity still rechecks
+    // the local account and consented login before sending it to the host.
+    // GitLab must return its actual snippet author's matching stable ID.
+    const account = isCollaborationIdentity(proof) ? proof : null;
     if (
-      !isCollaborationIdentity(proof) ||
-      !identitiesEqual(proof, prepared.identity) ||
+      !proof ||
+      proof.provider !== prepared.identity.provider ||
+      proof.host !== prepared.identity.host ||
+      !(
+        (proof.provider === 'github' &&
+          proof.host === 'github.com' &&
+          proof.externalUserId === null) ||
+        (account && identitiesEqual(account, prepared.identity))
+      ) ||
       typeof proof.proofId !== 'string' ||
-      !proof.proofId ||
+      !nonBlank(proof.proofId) ||
+      proof.proofId.trim() !== proof.proofId ||
       typeof proof.login !== 'string' ||
-      !proof.login
+      !nonBlank(proof.login) ||
+      proof.login.trim() !== proof.login ||
+      !(proof.avatarUrl === null || typeof proof.avatarUrl === 'string') ||
+      (proof.gistId !== undefined &&
+        (proof.provider !== 'github' || proof.gistId !== proof.proofId))
     ) {
-      if (typeof proof.proofId === 'string')
+      if (typeof proof?.proofId === 'string')
         await new CollaborationIdentityClient(prepared.local)
           .deleteProof(prepared.identity, proof.proofId)
           .catch(() => {});
@@ -848,7 +865,7 @@ async function createProof(
           host: proof.host,
           proofId: proof.proofId,
           login: proof.login,
-          account: proof,
+          account,
           collaboration: prepared,
         };
   }
