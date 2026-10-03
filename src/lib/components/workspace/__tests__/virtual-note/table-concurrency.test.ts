@@ -321,8 +321,24 @@ it('services one newer physical scroll after cancelling a delayed measured refil
     const selection = structuredClone(session.selection),
       revision = service.revision;
     const pending = state.fillTableCoverage(state.navigation, revision, state.selectionGeneration);
+    const intent = session as unknown as {
+      tableScrollRequest?: object;
+      tableCoverageRequest?: object;
+      tableCoverageState?: object;
+    };
+    const size = (v: unknown) => (v ? new TextEncoder().encode(JSON.stringify(v)).length : 0);
+    expect(intent.tableCoverageRequest).toBe(intent.tableScrollRequest);
+    expect(session.snapshot().tableCoverageIntentBytes).toBe(
+      size(intent.tableScrollRequest) + size(intent.tableCoverageState),
+    );
     scroller.scrollTop = 41 * 50;
     scroller.dispatchEvent(new Event('scroll'));
+    expect(intent.tableCoverageRequest).not.toBe(intent.tableScrollRequest);
+    expect(session.snapshot().tableCoverageIntentBytes).toBe(
+      size(intent.tableScrollRequest) +
+        size(intent.tableCoverageRequest) +
+        size(intent.tableCoverageState),
+    );
     session.delayFetch = undefined;
     release();
     await pending;
@@ -335,6 +351,224 @@ it('services one newer physical scroll after cancelling a delayed measured refil
     expect(session.snapshot().tableCoverageIntentBytes).toBe(0);
     gap.mockRestore();
   } finally {
+    session.destroy();
+  }
+});
+
+it('does not restart a failed measured refill for unchanged viewport and geometry', async () => {
+  const { session, service } = await start();
+  const state = session as unknown as {
+    navigation: number;
+    selectionGeneration: number;
+    tableScroller: HTMLElement;
+    tableCoverageBusy: boolean;
+    measuredTableGap: () => unknown;
+    checkTableCoverage: () => void;
+    fillTableCoverage: (n: number, r: number, g: number) => Promise<void>;
+  };
+  state.tableScroller = document.createElement('div');
+  const cell = session.projection!.table!.window.cells.find((c) => c.row === 1)!;
+  const gap = vi.spyOn(state, 'measuredTableGap').mockReturnValue({
+    cell: cell.from,
+    units: 102,
+    height: 600,
+    required: 520,
+    deficit: 599,
+    position: cell.body,
+  });
+  const show = vi.spyOn(session, 'show').mockImplementation(async () => {
+    state.navigation++;
+    return true;
+  });
+  try {
+    await state.fillTableCoverage(state.navigation, service.revision, state.selectionGeneration);
+    expect(session.error).toContain('no strictly progressing bounded refill');
+    expect(show).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 3; i++) {
+      state.checkTableCoverage();
+      await new Promise<void>((resolve) => setTimeout(resolve, 30));
+      await vi.waitFor(() => expect(state.tableCoverageBusy).toBe(false));
+    }
+    expect(show).toHaveBeenCalledTimes(1);
+    const failure = (session as unknown as { tableCoverageFailure?: object }).tableCoverageFailure;
+    expect(failure).toBeDefined();
+    expect(session.snapshot().tableCoverageIntentBytes).toBe(
+      new TextEncoder().encode(JSON.stringify(failure)).length,
+    );
+    state.tableScroller.scrollTop = 100;
+    state.checkTableCoverage();
+    await vi.waitFor(() => expect(show).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(state.tableCoverageBusy).toBe(false));
+    expect(service.region(0)).toBe(source);
+  } finally {
+    gap.mockRestore();
+    show.mockRestore();
+    session.destroy();
+  }
+  expect(session.snapshot().tableCoverageIntentBytes).toBe(0);
+});
+
+it('newer non-restoring navigation does not inherit a held coverage target', async () => {
+  const { session, service } = await start();
+  const state = session as unknown as {
+    host: HTMLElement;
+    navigation: number;
+    selectionGeneration: number;
+    tableScroller: HTMLElement;
+    tableViewTarget?: object;
+    setTableViewTarget: (position: number) => void;
+    measuredTableGap: () => unknown;
+    fillTableCoverage: (n: number, r: number, g: number) => Promise<void>;
+  };
+  const scroller = document.createElement('div');
+  scroller.append(state.host);
+  Object.defineProperties(scroller, { clientHeight: { value: 520 }, clientWidth: { value: 1280 } });
+  state.tableScroller = scroller;
+  const resize = vi.spyOn(session, 'resizeTable').mockImplementation(() => {});
+  state.setTableViewTarget(source.indexOf('after'));
+  expect(session.snapshot().tableCoverageIntentBytes).toBe(
+    new TextEncoder().encode(JSON.stringify(state.tableViewTarget)).length,
+  );
+  const cell = session.projection!.table!.window.cells.find((c) => c.row === 1)!;
+  const gap = vi
+    .spyOn(state, 'measuredTableGap')
+    .mockReturnValueOnce({
+      cell: cell.from,
+      units: 100,
+      height: 456,
+      required: 520,
+      deficit: 64,
+      position: cell.body,
+    })
+    .mockReturnValue(undefined);
+  let release!: () => void;
+  session.delayFetch = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  try {
+    const pending = state.fillTableCoverage(
+      state.navigation,
+      service.revision,
+      state.selectionGeneration,
+    );
+    const newer = session.seek(source.indexOf('bottom'), false);
+    session.delayFetch = undefined;
+    release();
+    await pending;
+    expect(await newer).toBe(true);
+    expect(state.tableViewTarget).toBeUndefined();
+    expect(service.region(0)).toBe(source);
+    expect(session.snapshot().tableCoverageIntentBytes).toBe(0);
+  } finally {
+    gap.mockRestore();
+    resize.mockRestore();
+    session.destroy();
+    scroller.remove();
+  }
+});
+
+for (const failure of ['intent budget', 'projection'] as const)
+  it(`does not publish a rejected seek target after ${failure} failure`, async () => {
+    const { session, service } = await start();
+    const state = session as unknown as {
+      host: HTMLElement;
+      tableViewTarget?: object;
+      tableTargetCandidate?: object;
+      checkTableCoverage: () => void;
+      checkTableIntentBudget: () => void;
+      project: () => never;
+    };
+    const scroller = document.createElement('div');
+    scroller.append(state.host);
+    Object.defineProperties(scroller, {
+      clientHeight: { value: 520 },
+      clientWidth: { value: 1280 },
+    });
+    const before = {
+      editor: session.editor,
+      projection: session.projection,
+      selection: structuredClone(session.selection),
+      revision: service.revision,
+    };
+    const check = state.checkTableIntentBudget.bind(state);
+    const staged = () => {
+      expect(state.tableViewTarget).toBeUndefined();
+      expect(state.tableTargetCandidate).toBeDefined();
+      expect(session.snapshot().tableCoverageIntentBytes).toBe(
+        new TextEncoder().encode(JSON.stringify(state.tableTargetCandidate)).length,
+      );
+    };
+    const fault =
+      failure === 'projection'
+        ? vi.spyOn(state, 'project').mockImplementationOnce(() => {
+            staged();
+            throw Error('injected projection rejection');
+          })
+        : vi.spyOn(state, 'checkTableIntentBudget').mockImplementationOnce(() => {
+            check();
+            staged();
+            throw Error('injected intent budget rejection');
+          });
+    try {
+      await expect(session.seek(source.indexOf('bottom'))).rejects.toThrow('injected');
+      expect(session.editor).toBe(before.editor);
+      expect(session.projection).toBe(before.projection);
+      expect(session.selection).toEqual(before.selection);
+      expect(service.revision).toBe(before.revision);
+      expect(service.region(0)).toBe(source);
+      expect(state.tableViewTarget).toBeUndefined();
+      expect(state.tableTargetCandidate).toBeUndefined();
+      state.checkTableCoverage();
+      await Promise.resolve();
+      expect(state.tableViewTarget).toBeUndefined();
+      expect(session.snapshot().tableCoverageIntentBytes).toBe(0);
+    } finally {
+      fault.mockRestore();
+      session.destroy();
+      scroller.remove();
+    }
+  });
+
+it('releases an over-budget measured-state descriptor while recording its attempted cost', async () => {
+  const { session, service } = await start();
+  const state = session as unknown as {
+    navigation: number;
+    selectionGeneration: number;
+    tableScroller: HTMLElement;
+    tableFont: () => string;
+    measuredTableGap: () => unknown;
+    fillTableCoverage: (n: number, r: number, g: number) => Promise<void>;
+  };
+  state.tableScroller = document.createElement('div');
+  const cell = session.projection!.table!.window.cells.find((c) => c.row === 1)!;
+  const gap = vi.spyOn(state, 'measuredTableGap').mockReturnValue({
+    cell: cell.from,
+    units: 100,
+    height: 456,
+    required: 520,
+    deficit: 64,
+    position: cell.body,
+  });
+  const font = vi.spyOn(state, 'tableFont').mockReturnValue('f'.repeat(20000));
+  const before = {
+    projection: session.projection,
+    editor: session.editor,
+    selection: structuredClone(session.selection),
+  };
+  try {
+    await state.fillTableCoverage(state.navigation, service.revision, state.selectionGeneration);
+    expect(session.error).toContain('intent exceeds source budget');
+    expect(session.projection).toBe(before.projection);
+    expect(session.editor).toBe(before.editor);
+    expect(session.selection).toEqual(before.selection);
+    expect(service.region(0)).toBe(source);
+    expect(session.snapshot().tableCoverageIntentBytes).toBe(0);
+    expect(session.snapshot().maxTableIntentAdmissionBytes).toBeGreaterThan(20000);
+    expect(session.snapshot().maxSourceContextBytes).toBeLessThanOrEqual(16384);
+  } finally {
+    gap.mockRestore();
+    font.mockRestore();
     session.destroy();
   }
 });

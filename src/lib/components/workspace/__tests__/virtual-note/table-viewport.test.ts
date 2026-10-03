@@ -309,3 +309,83 @@ for (const minimum of [4476, 4800])
     // Each candidate strictly shrinks; the requested floor is evaluated exactly once.
     expect(limits).toEqual([8192, 6553, 5242, minimum]);
   });
+
+it('admits a measured paragraph interval around the current target without truncating it to estimated overscan', () => {
+  const text = '| H |\n| --- |\n| ' + 'x'.repeat(120) + ' |';
+  const table = scanTables(text)[0];
+  const cell = table.rows[1].cells[0];
+  const window = admitTableWindow(
+    text,
+    table,
+    cell.body + 50,
+    1,
+    (entry) =>
+      entry.from === cell.from
+        ? {
+            type: 'tableCell',
+            content: Array.from({ length: 120 }, () => ({
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'x' }],
+            })),
+          }
+        : undefined,
+    undefined,
+    { cell: cell.from, block: 50, offset: 0 },
+    {
+      row: 1,
+      column: 0,
+      rowCount: 1,
+      columnCount: 1,
+      minimum: { cell: cell.from, units: 20, blocks: { from: 40, to: 60 } },
+    },
+    undefined,
+    'packed',
+  );
+  const admitted = window.cells.find((c) => c.from === cell.from)!;
+  expect(admitted.blocks!.map((b) => b.index)).toEqual(
+    Array.from({ length: 20 }, (_, i) => i + 40),
+  );
+  expect(admitted.first).toBe(cell.body + 40);
+  expect(admitted.last).toBe(cell.body + 60);
+  expect(admitted.raw).toBe(text.slice(admitted.first, admitted.last));
+  expect(
+    new TextEncoder().encode(JSON.stringify(packTableWindow(window))).length,
+  ).toBeLessThanOrEqual(3072);
+});
+
+it('rejects an oversized minimum paragraph interval without shrinking away its measured requirement', () => {
+  const text = '| H |\n| --- |\n| ' + 'x'.repeat(240) + ' |';
+  const table = scanTables(text)[0],
+    cell = table.rows[1].cells[0];
+  let reads = 0;
+  expect(() =>
+    admitTableWindow(
+      text,
+      table,
+      cell.body + 50,
+      1,
+      () => {
+        reads++;
+        return {
+          type: 'tableCell',
+          content: Array.from({ length: 240 }, () => ({
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'x' }],
+          })),
+        };
+      },
+      undefined,
+      { cell: cell.from, block: 50, offset: 0 },
+      {
+        row: 1,
+        column: 0,
+        rowCount: 1,
+        columnCount: 1,
+        minimum: { cell: cell.from, units: 240, blocks: { from: 0, to: 240 } },
+      },
+      undefined,
+      'packed',
+    ),
+  ).toThrow('minimum source cannot fit admission budget');
+  expect(reads).toBeLessThanOrEqual(3);
+});

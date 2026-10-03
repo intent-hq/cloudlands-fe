@@ -374,7 +374,7 @@ export function tableRuns(source: string, start: number): TableRun[] {
 }
 
 export type TableRectangle = {
-  minimum?: { cell: number; units: number };
+  minimum?: { cell: number; units: number; blocks?: { from: number; to: number } };
   fragmentStart?: (cell: TableCellSource, limit: number) => number;
   row: number;
   column: number;
@@ -543,6 +543,19 @@ export function admitTableWindow(
       if (old?.blocks?.length) {
         begin = old.blocks[0].index;
         end = old.blocks.at(-1)!.index + 1 + blocks.length - (old.blockCount ?? blocks.length);
+      }
+      const minimum =
+        rectangle?.minimum?.cell === entry.from ? rectangle.minimum.blocks : undefined;
+      if (minimum) {
+        if (minimum.from < 0 || minimum.to > blocks.length || minimum.from >= minimum.to)
+          throw new Error('Table viewport uncovered: stale minimum paragraphs');
+        begin = Math.min(begin, minimum.from);
+        end = Math.max(end, minimum.to);
+        // Measured paragraph coverage is a minimum, not an overscan estimate.
+        // Keep its source interval too; the same actual resident checks below
+        // reject an interval which cannot fit, rather than silently cropping it.
+        first = Math.min(first, blocks[begin].from);
+        last = Math.max(last, blocks[end - 1].to);
       }
       selectedBlocks = blocks.slice(begin, end);
     }

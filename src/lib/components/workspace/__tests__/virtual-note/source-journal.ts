@@ -1720,7 +1720,8 @@ export class SourceJournal {
       font: string;
       include?: number;
       nearby?: number;
-      minimum?: { cell: number; units: number };
+      minimum?: { cell: number; units: number; blocks?: { from: number; to: number } };
+      retainTarget?: boolean;
     },
     preferred?: TablePoint,
     selection?: Selection['table'],
@@ -1795,7 +1796,7 @@ export class SourceJournal {
                 const rowTop =
                   geometry.top +
                   geometry.heights.slice(0, entry.row - geometry.row).reduce((a, b) => a + b, 0);
-                return this.tableHeights.fragmentStart(
+                const first = this.tableHeights.fragmentStart(
                   key,
                   { ...entry, from: entry.from + start },
                   rowTop,
@@ -1803,6 +1804,16 @@ export class SourceJournal {
                   viewport.height,
                   limit,
                 );
+                // A restored target and the measured viewport share this crop.
+                // Clamp only its own cell; physical scrolling supplies no target.
+                return viewport.retainTarget &&
+                  position - start >= entry.body &&
+                  position - start <= entry.end
+                  ? Math.max(
+                      entry.body,
+                      Math.min(position - start, Math.max(first, position - start - limit + 1)),
+                    )
+                  : first;
               },
             }),
       },

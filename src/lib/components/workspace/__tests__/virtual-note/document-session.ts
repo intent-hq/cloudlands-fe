@@ -55,6 +55,33 @@ import { layoutTable } from './table-layout';
 import { CellSelection, tableEditingKey } from '@tiptap/pm/tables';
 
 type TableRollbackFrame = { projection: SourceProjection; parent?: TableRollbackFrame };
+type TableViewTarget = {
+  position: number;
+  point?: TablePoint;
+  revision: number;
+  generation: number;
+  navigation: number;
+};
+type TableCoverageState = {
+  cell: number;
+  first?: number;
+  last?: number;
+  blocks?: { from: number; to: number };
+  units: number;
+  height: number;
+  required: number;
+  deficit: number;
+  position: number;
+  revision: number;
+  generation: number;
+  top: number;
+  left: number;
+  width: number;
+  viewportHeight: number;
+  font: string;
+  target?: number;
+  point?: TablePoint;
+};
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
 export class DocumentSession {
@@ -328,7 +355,26 @@ export class DocumentSession {
     document.addEventListener('pointerup', this.pointerUp);
   }
   private get tableIntentBytes() {
-    return this.tableScrollRequest ? bytes(JSON.stringify(this.tableScrollRequest)) : 0;
+    return [
+      ...new Set([
+        this.tableScrollRequest,
+        this.tableCoverageRequest,
+        this.tableViewTarget,
+        this.tableTargetCandidate,
+        this.tableCoverageState,
+        this.tableCoverageFailure,
+      ]),
+    ].reduce((size, value) => size + (value ? bytes(JSON.stringify(value)) : 0), 0);
+  }
+  private checkTableIntentBudget() {
+    if (!this.projection?.tableSource) return;
+    const size =
+      this.projection.sourcePayloadBytes +
+      bytes(JSON.stringify(this.projection.context)) +
+      this.tableIntentBytes;
+    this.maxTableIntentAdmissionBytes = Math.max(this.maxTableIntentAdmissionBytes, size);
+    if (size > TABLE_ACTIVE_BYTES) throw new Error('Table viewport intent exceeds source budget');
+    this.maxSourceContextBytes = Math.max(this.maxSourceContextBytes, size);
   }
   private project(
     source: string | TableSourceView,
@@ -829,7 +875,13 @@ export class DocumentSession {
       return { ...candidate, source, table: undefined };
     }
     const scroller = this.host.parentElement;
-    const preferred = position === selection.head ? selection.table?.head : undefined;
+    const target = this.currentTableTarget();
+    const preferred =
+      target?.position === at
+        ? target.point
+        : position === selection.head
+          ? selection.table?.head
+          : undefined;
     const pages = scroller?.clientHeight
       ? this.service.tableViewportPages(
           at,
@@ -842,6 +894,7 @@ export class DocumentSession {
             ...(!this.drainingInput && this.tableScrollRequest?.position === at
               ? this.tableScrollRequest
               : {}),
+            ...(target?.position === at ? { retainTarget: true } : {}),
           },
           preferred,
           selection.table,
@@ -1051,6 +1104,10 @@ export class DocumentSession {
         }
         this.service.acknowledgeInput();
         this.residentInputBytes = 0;
+        if (this.projection?.table && this.tableScroller) {
+          this.setTableViewTarget(this.selection.head, this.selection.table?.head);
+          this.revealTableCaret();
+        }
       }
     } catch (error) {
       // Unacknowledged intent remains in the backing inbox for inspection/recovery.
@@ -1060,6 +1117,7 @@ export class DocumentSession {
       this.replayTime = undefined;
       this.residentInputBytes = 0;
       this.drainingInput = false;
+      this.checkTableCoverage();
       this.changed();
     }
   }
@@ -1071,8 +1129,52 @@ export class DocumentSession {
     position: number;
     top: number;
     left: number;
-    minimum?: { cell: number; units: number };
+    minimum?: { cell: number; units: number; blocks?: { from: number; to: number } };
   };
+  private tableCoverageRequest?: typeof this.tableScrollRequest;
+  // Numeric viewport intent, distinct from durable selection. A physical scroll
+  // or newer document/selection invalidates it; no source or old editor is kept.
+  private tableViewTarget?: TableViewTarget;
+  private tableTargetCandidate?: TableViewTarget;
+  private maxTableIntentAdmissionBytes = 0;
+  private tableCoverageState?: TableCoverageState;
+  private tableCoverageFailure?: TableCoverageState;
+  private currentTableTarget() {
+    const target = this.tableViewTarget;
+    if (
+      target &&
+      (target.revision !== this.service.revision ||
+        target.generation !== this.selectionGeneration ||
+        target.navigation !== this.navigation)
+    )
+      this.tableViewTarget = undefined;
+    return this.tableViewTarget;
+  }
+  private stageTableViewTarget(position: number, point?: TablePoint) {
+    if (!this.host.parentElement?.clientHeight) return;
+    this.tableTargetCandidate = {
+      position,
+      ...(point ? { point: { ...point } } : {}),
+      revision: this.service.revision,
+      generation: this.selectionGeneration,
+      navigation: this.navigation,
+    };
+    try {
+      this.checkTableIntentBudget();
+    } catch (error) {
+      this.tableTargetCandidate = undefined;
+      throw error;
+    }
+  }
+  private publishTableViewTarget() {
+    this.tableViewTarget = this.tableTargetCandidate;
+    this.tableTargetCandidate = undefined;
+    this.tableCoverageFailure = undefined;
+  }
+  private setTableViewTarget(position: number, point?: TablePoint) {
+    this.stageTableViewTarget(position, point);
+    this.publishTableViewTarget();
+  }
   private tableFragmentScrollTop = 0;
   private tableAnchoredScroll?: { left: number; top: number };
   private tableFont() {
@@ -1155,9 +1257,20 @@ export class DocumentSession {
         viewport.top + scroller.clientHeight,
         box.bottom - parseFloat(style.paddingBottom) + (layout?.bottom ?? 0),
       );
-      const deficit =
-        (c.first > c.body ? Math.max(0, first.top - top) : 0) +
-        (c.last < c.end ? Math.max(0, bottom - last.bottom) : 0);
+      const above = c.first > c.body ? Math.max(0, first.top - top) : 0,
+        below = c.last < c.end ? Math.max(0, bottom - last.bottom) : 0;
+      const deficit = above + below;
+      const blockHeight = (last.bottom - first.top) / paragraphs.length;
+      const blocks =
+        c.blocks && c.blocks.length > 1
+          ? {
+              from: Math.max(0, c.blocks[0].index - Math.ceil(above / blockHeight)),
+              to: Math.min(
+                c.blockCount!,
+                c.blocks.at(-1)!.index + 1 + Math.ceil(below / blockHeight),
+              ),
+            }
+          : undefined;
       if (deficit > 1)
         return {
           cell: c.from,
@@ -1166,9 +1279,29 @@ export class DocumentSession {
           required: bottom - top,
           deficit,
           position: c.body,
+          first: c.first,
+          last: c.last,
+          ...(blocks ? { blocks } : {}),
         };
     }
     return undefined;
+  }
+  private measureTableCoverageState(): TableCoverageState | undefined {
+    const gap = this.measuredTableGap();
+    if (!gap) return undefined;
+    const scroller = this.tableScroller!,
+      target = this.currentTableTarget();
+    return {
+      ...gap,
+      revision: this.service.revision,
+      generation: this.selectionGeneration,
+      top: scroller.scrollTop,
+      left: scroller.scrollLeft,
+      width: scroller.clientWidth,
+      viewportHeight: scroller.clientHeight,
+      font: this.tableFont(),
+      ...(target ? { target: target.position, point: target.point } : {}),
+    };
   }
   /** Only the current mounted rectangles decide coverage. Refills retain no owner. */
   private checkTableCoverage() {
@@ -1218,7 +1351,24 @@ export class DocumentSession {
           this.drainingInput
         )
           return;
-        const gap = this.measuredTableGap();
+        const gap = this.measureTableCoverageState();
+        if (gap) {
+          this.tableCoverageState = gap;
+          try {
+            this.checkTableIntentBudget();
+          } catch (error) {
+            this.tableCoverageState = undefined;
+            throw error;
+          }
+          // Observer callbacks may repeat after a failed refill. Own navigation
+          // increments are not progress; retry only for a changed measured state.
+          if (
+            this.tableCoverageFailure &&
+            JSON.stringify(this.tableCoverageFailure) === JSON.stringify(this.tableCoverageState)
+          )
+            return;
+        }
+        this.tableCoverageFailure = undefined;
         this.tableCoverage = {
           status: gap ? 'uncovered' : 'covered',
           attempts: attempt,
@@ -1232,11 +1382,12 @@ export class DocumentSession {
         previousDeficit = gap.deficit;
         const scroller = this.tableScroller!;
         request = {
-          position: gap.position,
+          position: this.currentTableTarget()?.position ?? gap.position,
           top: Math.max(0, scroller.scrollTop - this.tableOriginY),
           left: Math.max(0, scroller.scrollLeft - this.tableOriginX),
           minimum: {
             cell: gap.cell,
+            ...(gap.blocks ? { blocks: gap.blocks } : {}),
             units: Math.min(
               8192,
               Math.ceil(gap.units * Math.max(1, (gap.required + 24) / gap.height)),
@@ -1244,8 +1395,19 @@ export class DocumentSession {
           },
         };
         this.tableScrollRequest = request;
+        this.tableCoverageRequest = request;
+        this.checkTableIntentBudget();
         // show has its own revision/navigation/selection guards across delayFetch.
-        const pending = this.show(this.active, false, gap.position);
+        const pending = this.show(
+          this.active,
+          false,
+          request.position,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          request,
+        );
         navigation = this.navigation;
         if (!(await pending)) return;
         if (this.tableScrollRequest === request) this.tableScrollRequest = undefined;
@@ -1262,11 +1424,15 @@ export class DocumentSession {
         this.selectionGeneration === generation
       ) {
         this.error = String(error);
+        this.tableCoverageFailure = this.tableCoverageState;
         this.tableCoverage.status = 'uncovered';
         this.changed();
       }
     } finally {
       if (this.tableScrollRequest === request) this.tableScrollRequest = undefined;
+      this.tableCoverageRequest = undefined;
+      this.tableCoverageState = undefined;
+      this.currentTableTarget();
       this.tableCoverageBusy = false;
       if (this.tableCoverageRescan) {
         this.tableCoverageRescan = false;
@@ -1275,6 +1441,15 @@ export class DocumentSession {
     }
   }
   private tableScroll = () => {
+    const scroller = this.tableScroller;
+    const anchored = this.tableAnchoredScroll;
+    if (scroller && anchored?.left === scroller.scrollLeft && anchored.top === scroller.scrollTop) {
+      this.tableFragmentScrollTop = scroller.scrollTop;
+      return;
+    }
+    this.tableAnchoredScroll = undefined;
+    this.tableViewTarget = undefined;
+    this.tableCoverageFailure = undefined;
     if (this.tableCoverageBusy && this.pendingFetch) {
       // A physical scroll during a delayed refill supersedes that request.
       this.navigation++;
@@ -1286,17 +1461,8 @@ export class DocumentSession {
       // Fall through now: install the latest navigation before the shared fetch
       // resolves. Requiring another scroll would strand the visible viewport.
     }
-    const table = this.projection?.table?.window,
-      scroller = this.tableScroller;
+    const table = this.projection?.table?.window;
     if (!table || !scroller || !this.tableColumnWidth || this.editor?.view.composing) return;
-    const anchored = this.tableAnchoredScroll;
-    this.tableAnchoredScroll = undefined;
-    if (anchored?.left === scroller.scrollLeft && anchored.top === scroller.scrollTop) {
-      // Layout corrected the caret's pixel anchor. This scroll acknowledges that
-      // correction; admitting a viewport crop here could evict the active paragraph.
-      this.tableFragmentScrollTop = scroller.scrollTop;
-      return;
-    }
     const key = {
       revision: this.service.revision,
       table: table.from,
@@ -1527,7 +1693,7 @@ export class DocumentSession {
       }
     }
   }
-  private continueNearEdge() {
+  private continueNearEdge(afterEdit = false) {
     if (
       this.drainingInput ||
       !this.continuation ||
@@ -1548,15 +1714,19 @@ export class DocumentSession {
       // mounted fallback is not a gesture approaching a continuation boundary.
       if (!point || !mounted || mounted.offset !== point.offset || mounted.block !== point.block)
         return;
+      // Measured coverage can require more than the estimated paragraph count.
+      // Repage only near its actual boundary; character margins are meaningful
+      // for a single text block, not between several short native paragraphs.
       const pageBlocks =
         cell?.blocks &&
         point &&
         ((point.block - cell.blocks[0].index < 2 && cell.blocks[0].index > 0) ||
           (cell.blocks.at(-1)!.index - point.block < 2 &&
             cell.blocks.at(-1)!.index + 1 < (cell.blockCount ?? 0)) ||
-          cell.blocks.length > 8);
+          (afterEdit && cell.blocks.length > 8));
       const pageText =
         cell &&
+        (!cell.blocks || cell.blocks.length <= 1) &&
         ((cell.first > cell.body && head - cell.first < 32) ||
           (cell.last < cell.end && cell.last - head < 32));
       if (!pageBlocks && !pageText) return;
@@ -1599,13 +1769,28 @@ export class DocumentSession {
     requestedSelection?: Selection,
     anchorPoint: TablePoint | undefined = this.selection.table?.head,
     boundaryAnchor?: number,
+    coverageRequest?: typeof this.tableScrollRequest,
   ) {
     if (this.editor?.view.composing) {
       this.error = 'Composition pins current view';
       this.changed();
       return false;
     }
-    const ticket = ++this.navigation;
+    const ticket = this.navigation + 1;
+    if (
+      !restore &&
+      this.currentTableTarget() &&
+      coverageRequest &&
+      coverageRequest === this.tableCoverageRequest &&
+      this.tableScrollRequest === this.tableCoverageRequest &&
+      this.tableCoverageRequest
+    )
+      this.tableViewTarget!.navigation = ticket;
+    else {
+      this.tableViewTarget = undefined;
+      this.tableCoverageFailure = undefined;
+    }
+    this.navigation = ticket;
     const revision = this.service.revision;
     const selectionGeneration = this.selectionGeneration;
     // One shared pending request, with latest navigation winning before any payload is captured.
@@ -1642,7 +1827,15 @@ export class DocumentSession {
       return false;
     }
     const window = this.readWindow(id, position, requestedSelection, boundaryAnchor);
+    let shown = false;
     try {
+      if (restore && window.table && position !== undefined)
+        this.stageTableViewTarget(
+          position,
+          position === (requestedSelection ?? this.selection).head
+            ? (requestedSelection ?? this.selection).table?.head
+            : undefined,
+        );
       const next = this.project(
         window.source,
         window.from,
@@ -1659,6 +1852,7 @@ export class DocumentSession {
           return false;
         }
       }
+      if (restore) this.publishTableViewTarget();
       if (preserveView && this.editor) {
         if (this.pointerSelecting) this.pointerRemapped = true;
         // Keep Chromium's active keyboard or mouse gesture on the same focused view.
@@ -1710,6 +1904,7 @@ export class DocumentSession {
         this.rememberTableAnchor();
         this.error = '';
         this.changed();
+        shown = true;
         return true;
       }
       // Reconstructing a row is not a request to scroll to its origin: one row
@@ -2563,24 +2758,40 @@ export class DocumentSession {
           this.rememberTableAnchor();
         }
       }
+      if (restore && position !== undefined && this.projection.table && this.tableScroller) {
+        // A seek can request a different viewport without changing durable selection.
+        // Reveal that admitted source position before deferred coverage observes it.
+        const point = position === this.selection.head ? this.selection.table?.head : undefined;
+        this.revealTableCaret(
+          this.projection.table.pointPM(point) ?? this.projection.pmAt(position),
+        );
+      }
       if (!restore && this.projection.table && this.tableScroller && this.tableScrollRequest) {
         // Destroying the old DOM temporarily shrinks the scroll canvas. Restore
         // the requested viewport after mounting/layout, including fresh sessions
         // that have no focused native caret to recover the scroll position.
         this.tableScroller.scrollLeft = this.tableScrollRequest.left + this.tableOriginX;
         this.tableScroller.scrollTop = this.tableScrollRequest.top + this.tableOriginY;
+        this.tableAnchoredScroll = {
+          left: this.tableScroller.scrollLeft,
+          top: this.tableScroller.scrollTop,
+        };
       }
       this.error = '';
       this.changed();
+      shown = true;
       return true;
     } finally {
+      if (this.tableTargetCandidate?.navigation === ticket) this.tableTargetCandidate = undefined;
+      if (!shown && this.tableViewTarget?.navigation === ticket) this.tableViewTarget = undefined;
       this.inFlightBytes -= sourcePayloadBytes(window.source);
     }
   }
-  private revealTableCaret() {
+  private revealTableCaret(position = this.editor!.state.selection.head) {
     const scroller = this.tableScroller!,
       view = this.editor!.view;
-    const caret = view.coordsAtPos(view.state.selection.head, 1);
+    if (!scroller.clientHeight) return;
+    const caret = view.coordsAtPos(position, 1);
     const viewport = scroller.getBoundingClientRect();
     const threshold = view.someProp('scrollThreshold') || 0;
     const margin = view.someProp('scrollMargin') || 5;
@@ -3202,7 +3413,7 @@ export class DocumentSession {
       // race the browser's next native selection update.
       if (transactions.some((tr) => tr.docChanged)) void this.loadAnnotations();
       this.changed();
-      this.continueNearEdge();
+      this.continueNearEdge(transactions.some((tr) => tr.docChanged));
     } catch (error) {
       this.tableTabAtEnd = false;
       this.tableTabDestination = undefined;
@@ -3377,9 +3588,8 @@ export class DocumentSession {
         : undefined;
     return {
       tableCoverage: { ...this.tableCoverage },
-      tableCoverageIntentBytes: this.tableScrollRequest
-        ? bytes(JSON.stringify(this.tableScrollRequest))
-        : 0,
+      tableCoverageIntentBytes: this.tableIntentBytes,
+      maxTableIntentAdmissionBytes: this.maxTableIntentAdmissionBytes,
       maxSourceContextBytes: this.maxSourceContextBytes,
       clipboardRelay: { ...this.clipboardRelay },
       maxBackingClipboardMutationBytes: this.service.maxBackingClipboardMutationBytes,
@@ -3619,6 +3829,11 @@ export class DocumentSession {
       cachePeakBytes: 0,
     };
     this.tableScrollRequest = undefined;
+    this.tableCoverageRequest = undefined;
+    this.tableViewTarget = undefined;
+    this.tableTargetCandidate = undefined;
+    this.tableCoverageState = undefined;
+    this.tableCoverageFailure = undefined;
     this.tableCoverage = { status: 'unmeasured', attempts: 0, deficit: 0, sourceUnits: 0 };
   }
 }
