@@ -1740,6 +1740,30 @@ describe('panelLayoutReducer', () => {
   });
 
   describe('openTabInAdjacentOrSplit', () => {
+    it('keeps automatic restore origin out of layout state', () => {
+      const state = stateWithPanel('p1', []);
+      const tab = {
+        type: 'agent' as const,
+        title: 'Primary',
+        agentId: 'agent',
+        workspaceId: WS,
+        closable: true,
+      };
+      const options = { force: true, newTabId: 'fixed-tab', newPanelId: 'fixed-panel' };
+      const manual = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(WS, tab, 'p1', options, 1234),
+      );
+      const restored = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(WS, tab, 'p1', { ...options, origin: 'layout-restore' }, 1234),
+      );
+      expect(restored).toEqual(manual);
+      expect(restored.byWorkspaceId[WS].panels.p1.tabs).toContainEqual(
+        expect.objectContaining({ agentId: 'agent' }),
+      );
+    });
+
     it('does not split for a tab owned by another workspace', () => {
       const state = stateWithPanel('p1', [{ id: 'existing', type: 'file', title: 'Existing' }]);
       const result = panelLayoutReducer(

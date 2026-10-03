@@ -388,6 +388,8 @@ export const openTabInAdjacentOrSplit = createAction(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
     options?: {
+      /** Automatic restore reconciliation, never a manual selection. */
+      origin?: 'layout-restore';
       animated?: boolean;
       force?: boolean;
       allowDuplicate?: boolean;
@@ -399,6 +401,7 @@ export const openTabInAdjacentOrSplit = createAction(
     wsId,
     tab,
     sourcePanelId,
+    ...(options?.origin === undefined ? {} : { origin: options.origin }),
     animated: options?.animated ?? false,
     force: options?.force ?? false,
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),

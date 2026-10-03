@@ -39,6 +39,7 @@ import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
 import { principalSaga } from './slices/principal/sagas/principal-saga';
+import { presenceFollowSaga } from './slices/presence-follow/sagas/presence-follow-saga';
 import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
@@ -134,6 +135,7 @@ export const sagas = [
   connectionsSaga,
   guestSessionsSaga,
   presenceSaga,
+  presenceFollowSaga,
   principalSaga,
   hostExecutionSaga,
   settingsHydrationSaga,

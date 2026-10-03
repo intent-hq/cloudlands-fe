@@ -1730,6 +1730,7 @@
   "workspace_progressCard_base_label": "基準 {ref}",
   "workspace_progressCard_copied_label": "已複製",
   "workspace_progressCard_copyPath_ariaLabel": "複製工作區路徑",
+  "workspace_progressCard_presenceAtWorkspace_tooltip": "{name} · 在 {workspace}",
   "workspace_progressCard_presenceOnAgent_tooltip": "{name} · 正在檢視 {agent}",
   "workspace_progressCard_presenceOnNote_tooltip": "{name} · 正在檢視 {note}",
   "workspace_progressCard_presenceInWorkspace_tooltip": "{name} · 在此工作區中",

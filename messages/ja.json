@@ -1730,6 +1730,7 @@
   "workspace_progressCard_base_label": "ベース {ref}",
   "workspace_progressCard_copied_label": "コピーしました",
   "workspace_progressCard_copyPath_ariaLabel": "ワークスペースのパスをコピー",
+  "workspace_progressCard_presenceAtWorkspace_tooltip": "{name} · {workspace} 内",
   "workspace_progressCard_presenceOnAgent_tooltip": "{name} · {agent} を表示中",
   "workspace_progressCard_presenceOnNote_tooltip": "{name} · {note} を表示中",
   "workspace_progressCard_presenceInWorkspace_tooltip": "{name} · このワークスペースにいます",

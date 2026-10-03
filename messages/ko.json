@@ -1730,6 +1730,7 @@
   "workspace_progressCard_base_label": "베이스 {ref}",
   "workspace_progressCard_copied_label": "복사됨",
   "workspace_progressCard_copyPath_ariaLabel": "작업 공간 경로 복사",
+  "workspace_progressCard_presenceAtWorkspace_tooltip": "{name} · {workspace}에서",
   "workspace_progressCard_presenceOnAgent_tooltip": "{name} · {agent} 보는 중",
   "workspace_progressCard_presenceOnNote_tooltip": "{name} · {note} 보는 중",
   "workspace_progressCard_presenceInWorkspace_tooltip": "{name} · 이 워크스페이스에 있음",
