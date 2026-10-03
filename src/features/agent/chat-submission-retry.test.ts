@@ -18,6 +18,12 @@ vi.mock('svelte', async (original) => ({
   getContext: () => undefined,
 }));
 import { store } from '$store/renderer/store';
+import { appClient } from '$lib/client';
+import { chatSubscribeSaga } from '$store/renderer/slices/chat-state/sagas/chat-subscribe-saga';
+import {
+  acquireChatInterestLease,
+  releaseChatInterestLease,
+} from '$features/agent/utils/chat-interest-leases';
 import { createAdmittedLegacyPrincipal } from '../../test/fixtures/admitted-legacy-principal';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import {
@@ -31,6 +37,7 @@ import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-
 import { requestChatMessageRetry } from './chat-submission-retry';
 import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import {
+  initializeChatRequested,
   sendQueuedMessageNowRequested,
   sendQueuedMessagesNowRequested,
   clearQueuedMessagesRequested,
@@ -746,4 +753,79 @@ describe('queue control freshness after later daemon events', () => {
     expect(sends()).toEqual([]);
     expect(queues()).toEqual([]);
   });
+});
+
+describe('queue freshness with the production standing subscription', () => {
+  it.each([false, true])(
+    'bounds restoration reads and recovers on new evidence (history failure=%s)',
+    async (rejectHistory) => {
+      const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
+      const original = row(a, { mergeEligible: true });
+      emit('agent:queue:updated', { queue: [original] });
+      let onTranscript: Parameters<typeof appClient.chat.subscribe>[1] | undefined;
+      const subscription = vi
+        .spyOn(appClient.chat, 'subscribe')
+        .mockImplementation((_id, handler) => {
+          onTranscript = handler;
+          return () => {};
+        });
+      acquireChatInterestLease(agent, 'queue-refresh-regression');
+      const stopSubscription = store.runSaga(chatSubscribeSaga);
+      cleanups.push(() => {
+        stopSubscription();
+        subscription.mockRestore();
+        releaseChatInterestLease(agent, 'queue-refresh-regression');
+      });
+      store.dispatch(initializeChatRequested(agent, { wsId: ws }));
+      await vi.waitFor(() => expect(onTranscript).toBeTypeOf('function'));
+      const transcript = {
+        messages: [previous],
+        truncated: false,
+        totalMessages: 1,
+        isStreaming: false,
+        fromSnapshot: true,
+      } as Parameters<NonNullable<typeof onTranscript>>[0];
+      onTranscript!(transcript);
+      const settle = async () => {
+        // No further backend events: a feedback loop must not keep reading every turn.
+        for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+      };
+      await settle();
+      beginSubmissionRead(agent, ws, 'queue').complete([original]);
+      beginSubmissionRead(agent, ws, 'history').complete([]);
+      expect(display().queue[0].blocksMutations).toBe(false);
+      let failHistory = rejectHistory;
+      wire.request.mockClear().mockImplementation((method, params) => {
+        if (method === 'agent.getQueue') return Promise.resolve({ queue: [original] });
+        if (method === 'agent.getConversation' && failHistory)
+          return Promise.reject(new Error('queue refresh history failure'));
+        return baseReply(method, params);
+      });
+      cleanups.push(store.runSaga(chatReadSaga));
+      emit('agent:queue:updated', { queue: [original] });
+      await settle();
+      const reads = () =>
+        ['agent.getQueue', 'agent.getConversation'].map(
+          (method) => wire.request.mock.calls.filter(([name]) => name === method).length,
+        );
+      expect.soft(reads()).toEqual([1, 1]);
+      expect.soft(display().queue[0].blocksMutations).toBe(rejectHistory);
+      const settledReads = reads();
+      await settle();
+      expect.soft(reads()).toEqual(settledReads);
+      // A genuinely new subscription delivery remains evidence, even with the
+      // same object/content. It must invalidate and recover both read fences.
+      failHistory = false;
+      onTranscript!(transcript);
+      expect(display().queue[0].blocksMutations).toBe(true);
+      await settle();
+      expect(reads()).toEqual(settledReads.map((count) => count + 1));
+      expect(display().queue[0].blocksMutations).toBe(false);
+      expect(
+        store.state.agentSessions.byAgentId[agent].messages.map((message) => message.id),
+      ).toEqual(['previous']);
+      expect(sends()).toEqual([]);
+      expect(queues()).toEqual([]);
+    },
+  );
 });
