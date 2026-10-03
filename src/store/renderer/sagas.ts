@@ -1,3 +1,4 @@
+import { invitationAccountSearchSaga } from './slices/invitation-account-search/sagas/invitation-account-search-saga';
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
@@ -40,6 +41,7 @@ import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
 import { principalSaga } from './slices/principal/sagas/principal-saga';
+import { presenceFollowSaga } from './slices/presence-follow/sagas/presence-follow-saga';
 import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
@@ -135,6 +137,7 @@ export const sagas = [
   connectionsSaga,
   guestSessionsSaga,
   presenceSaga,
+  presenceFollowSaga,
   principalSaga,
   hostExecutionSaga,
   repositoryContextSaga,
@@ -177,6 +180,7 @@ export const sagas = [
   workspaceOperationsSaga,
   workspaceTransferSaga,
   workspaceShareSaga,
+  invitationAccountSearchSaga,
   hostMembershipSaga,
   hostUserPresenceSaga,
   workspaceImportSaga,

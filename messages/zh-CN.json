@@ -7213,5 +7213,11 @@
   "inviteProgress_admission_enable_error": "无法启用 Multiplayer 或确认就绪状态。请选择“启用 Multiplayer”重试。",
   "collaboration_instanceUsers_invited_label": "已邀请",
   "collaboration_instanceUsers_loading_label": "正在检查状态…",
-  "collaboration_instanceUsers_unavailable_label": "状态不可用"
+  "collaboration_instanceUsers_unavailable_label": "状态不可用",
+  "workspace_progressCard_presenceAtWorkspace_tooltip": "{name} · 在 {workspace}",
+  "collaboration_accountSearch_manual": "请输入准确的用户名。此实例不支持账号建议。",
+  "collaboration_accountSearch_failed": "账号搜索失败。请输入准确的用户名以继续。",
+  "collaboration_accountSearch_empty": "没有匹配的账号。您可以输入准确的用户名。",
+  "collaboration_accountSearch_suggestions": "账号建议",
+  "collaboration_accountSearch_loading": "正在搜索…"
 }

@@ -100,14 +100,14 @@
     type PresenceCircle,
     type PresenceCircleAction,
   } from '$features/presence/components/presence-person';
+  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
   import {
-    selectWorkspacePresenceFocusTargets,
-    selectWorkspacePresencePeople,
-    selectPresenceContext,
-  } from '$store/renderer/slices/presence/presence-selectors';
-  import { findSourcePanelId, navigateToNote } from '$lib/utils/workspace-navigation';
+    PRESENCE_FOLLOW_VISIBLE_LIMIT,
+    selectPresenceFollowTargets,
+  } from '$store/renderer/slices/presence-follow/presence-follow-selectors';
+  import { followPresencePersonRequested } from '$store/renderer/slices/presence-follow/presence-follow-slice';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -435,8 +435,7 @@
   // neither does a guest window or a window whose identity has not settled
   // (`selectHidesOwnerWorkspaceActions`), whatever `myRole` the row carries.
   // On top of that the Multiplayer lab must be on: with it off (the default)
-  // even the owner gets no Share item — and no presence-avatar fallback either,
-  // since that fallback reuses this action.
+  // even the owner gets no Share item.
   const canShare$ = selectCanShareWorkspace(workspaceIdStore);
   const shareAction: MenuAction | null = $derived(
     $canShare$
@@ -459,70 +458,79 @@
   // Multiplayer presence row: everybody else on this shared workspace, the
   // offline members greyscale, so the row shows even while only this window
   // is online. An avatar takes the viewer to where that person looks right
-  // now (their agent chat, else their note); with no such focus it opens the
-  // owner's Share screen and stays inert for a non-owner.
+  // now (their agent chat, else their note); unknown destinations are inert.
   const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
-  const presenceFocusTargets$ = selectWorkspacePresenceFocusTargets(workspaceIdStore);
+  const presenceFocusTargets$ = selectPresenceFollowTargets(workspaceIdStore);
   const presencePersonAction = $derived.by(() => {
     const targets = $presenceFocusTargets$;
     const agents = $workspaceAgentSessions$;
     const allNotes = $notes;
     const wsId = $workspace?.id ? String($workspace.id) : undefined;
-    const share = shareAction?.onClick ?? null;
-    const context = selectPresenceContext.select(appStore.state);
     return (person: PresenceCircle): PresenceCircleAction => {
-      // The hover names the person's forge too: "Ada · @ada on GitHub · on Coordinator".
       const name = person.hostRole
         ? presencePersonLabel(person)
         : presencePersonNameWithForge(person);
-      const target = targets[person.principalId];
-      const guarded = (action: (event: MouseEvent) => void) => (event: MouseEvent) => {
-        if (!wsId || !context || context !== selectPresenceContext.select(appStore.state)) return;
-        if (
-          !selectWorkspacePresencePeople
-            .select(appStore.state, wsId)
-            .some((p) => p.principalId === person.principalId)
-        )
-          return;
-        const currentTarget = selectWorkspacePresenceFocusTargets.select(appStore.state, wsId)[
-          person.principalId
-        ];
-        if (JSON.stringify(currentTarget) !== JSON.stringify(target)) return;
-        action(event);
-      };
-      if (target?.kind === 'agent') {
-        const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
+      const entry = targets[person.principalId];
+      const target = entry?.target;
+      if (!entry || !target)
         return {
-          label: m.workspace_progressCard_presenceOnAgent_tooltip({ name, agent }),
-          onSelect: wsId
-            ? guarded((event) =>
-                appStore.dispatch(
-                  openAgentTabRequested(wsId, {
-                    agentId: target.agentId,
-                    sourcePanelId: findSourcePanelId(event.target),
-                    openInAdjacentPanel: isCmdClickModifier({ event }),
-                  }),
-                ),
-              )
-            : null,
+          label:
+            !person.hostRole && !person.online
+              ? m.workspace_progressCard_presenceOffline_tooltip({ name })
+              : name,
+          onSelect: null,
         };
-      }
-      if (target?.kind === 'note') {
-        const note = allNotes.find((n) => String(n.id) === target.noteId)?.title ?? '';
-        return {
-          label: m.workspace_progressCard_presenceOnNote_tooltip({ name, note }),
-          onSelect: wsId
-            ? guarded(() => void navigateToNote(target.noteId, { workspaceId: wsId }))
-            : null,
-        };
-      }
+      const sameWorkspace = target.workspaceId === wsId;
+      const agent = sameWorkspace
+        ? agents.find((s) => String(s.id) === target.agentId)?.name
+        : undefined;
+      const note = sameWorkspace
+        ? allNotes.find((n) => String(n.id) === target.noteId)?.title
+        : undefined;
+      const viewLabel = target.agentId
+        ? m.workspace_progressCard_presenceOnAgent_tooltip({
+            name,
+            agent: agent || m.layout_tabTypes_agent_title(),
+          })
+        : target.noteId
+          ? m.workspace_progressCard_presenceOnNote_tooltip({
+              name,
+              note: note || m.layout_tabTypes_note_title(),
+            })
+          : name;
       return {
-        label: person.hostRole
-          ? name
-          : person.online
-            ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
-            : m.workspace_progressCard_presenceOffline_tooltip({ name }),
-        onSelect: share ? guarded(share) : null,
+        label:
+          !sameWorkspace || (!target.agentId && !target.noteId)
+            ? m.workspace_progressCard_presenceAtWorkspace_tooltip({
+                name: viewLabel,
+                workspace: entry.workspaceTitle,
+              })
+            : viewLabel,
+        onSelect: wsId
+          ? (event) => {
+              const current = selectPresenceFollowTargets.select(appStore.state, wsId)[
+                person.principalId
+              ];
+              if (
+                !current ||
+                current.scope !== entry.scope ||
+                current.generation !== entry.generation ||
+                current.seq !== entry.seq
+              )
+                return;
+              appStore.dispatch(
+                followPresencePersonRequested(
+                  entry.scope,
+                  person.principalId,
+                  entry.generation,
+                  entry.seq,
+                  crypto.randomUUID(),
+                  findSourcePanelId(event.target),
+                  isCmdClickModifier({ event }),
+                ),
+              );
+            }
+          : null,
       };
     };
   });
@@ -1156,6 +1164,7 @@
         <div class="flex h-5 w-full min-w-0 items-center" data-sidebar-presence-row>
           <PresenceAvatarStack
             people={$presencePeople$}
+            maxVisible={PRESENCE_FOLLOW_VISIBLE_LIMIT}
             size={18}
             action={presencePersonAction}
             class="pl-0.5"

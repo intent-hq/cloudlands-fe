@@ -7213,5 +7213,11 @@
   "inviteProgress_admission_enable_error": "Multiplayerを有効にできないか、準備状況を確認できませんでした。「Multiplayerを有効にする」を選択して再試行してください。",
   "collaboration_instanceUsers_invited_label": "招待済み",
   "collaboration_instanceUsers_loading_label": "状態を確認中…",
-  "collaboration_instanceUsers_unavailable_label": "状態を取得できません"
+  "collaboration_instanceUsers_unavailable_label": "状態を取得できません",
+  "workspace_progressCard_presenceAtWorkspace_tooltip": "{name} · {workspace} 内",
+  "collaboration_accountSearch_manual": "正確なユーザー名を入力してください。このインスタンスではアカウント候補を利用できません。",
+  "collaboration_accountSearch_failed": "アカウント検索に失敗しました。正確なユーザー名を入力して続行してください。",
+  "collaboration_accountSearch_empty": "一致するアカウントはありません。正確なユーザー名を入力できます。",
+  "collaboration_accountSearch_suggestions": "アカウント候補",
+  "collaboration_accountSearch_loading": "検索中…"
 }

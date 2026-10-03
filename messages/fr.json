@@ -7213,5 +7213,11 @@
   "inviteProgress_admission_enable_error": "Impossible d’activer Multiplayer ou de confirmer sa disponibilité. Sélectionnez Activer Multiplayer pour réessayer.",
   "collaboration_instanceUsers_invited_label": "Invité",
   "collaboration_instanceUsers_loading_label": "Vérification du statut…",
-  "collaboration_instanceUsers_unavailable_label": "Statut indisponible"
+  "collaboration_instanceUsers_unavailable_label": "Statut indisponible",
+  "workspace_progressCard_presenceAtWorkspace_tooltip": "{name} · dans {workspace}",
+  "collaboration_accountSearch_manual": "Saisissez un nom d’utilisateur exact. Les suggestions de comptes sont indisponibles sur cette instance.",
+  "collaboration_accountSearch_failed": "La recherche de comptes a échoué. Saisissez un nom d’utilisateur exact pour continuer.",
+  "collaboration_accountSearch_empty": "Aucun compte correspondant. Vous pouvez saisir un nom d’utilisateur exact.",
+  "collaboration_accountSearch_suggestions": "Suggestions de comptes",
+  "collaboration_accountSearch_loading": "Recherche…"
 }

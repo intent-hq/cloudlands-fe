@@ -7213,5 +7213,11 @@
   "inviteProgress_admission_enable_error": "Could not enable Multiplayer or confirm readiness. Select Enable Multiplayer to try again.",
   "collaboration_instanceUsers_invited_label": "Invited",
   "collaboration_instanceUsers_loading_label": "Checking status…",
-  "collaboration_instanceUsers_unavailable_label": "Status unavailable"
+  "collaboration_instanceUsers_unavailable_label": "Status unavailable",
+  "workspace_progressCard_presenceAtWorkspace_tooltip": "{name} · in {workspace}",
+  "collaboration_accountSearch_manual": "Enter an exact account username. Account suggestions are unavailable on this instance.",
+  "collaboration_accountSearch_failed": "Account search failed. Enter an exact account username to continue.",
+  "collaboration_accountSearch_empty": "No matching accounts. You can enter an exact account username.",
+  "collaboration_accountSearch_suggestions": "Account suggestions",
+  "collaboration_accountSearch_loading": "Searching…"
 }
