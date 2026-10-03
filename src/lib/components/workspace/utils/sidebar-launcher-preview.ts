@@ -144,15 +144,12 @@ export function deriveNoteLauncherItems(
 ): NoteLauncherState {
   const rootNotes = notes.filter((note) => isRootNote(note, notes));
   const specNote = rootNotes.find((note) => note.id === 'spec');
-  const orderedNotes = specNote
-    ? [specNote, ...rootNotes.filter((note) => note.id !== specNote.id)]
-    : rootNotes;
-  const launcherNotes = orderedNotes.slice(0, Math.max(0, limit));
+  const launcherNotes = specNote ? [specNote] : rootNotes.slice(0, Math.max(0, limit));
 
   return {
     launcherNotes,
     totalNotes: rootNotes.length,
-    overflowCount: Math.max(0, rootNotes.length - launcherNotes.length),
+    overflowCount: specNote ? 0 : Math.max(0, rootNotes.length - launcherNotes.length),
   };
 }
 
