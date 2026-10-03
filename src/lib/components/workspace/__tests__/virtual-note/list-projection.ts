@@ -23,7 +23,7 @@ type Entry = {
   paragraphPM: number;
 };
 const size = (node: JSONContent): number =>
-  node.type === 'commentAnchor'
+  ['commentAnchor', 'hardBreak'].includes(node.type!)
     ? 1
     : node.type === 'text'
       ? node.text!.length
@@ -32,6 +32,7 @@ const size = (node: JSONContent): number =>
 /** Structural ancestors contain no invented text. Only loaded source tokens receive caret provenance. */
 export class ListProjection {
   readonly seams: ListSeam[] = [];
+  readonly literalNewlines: Array<{ item: number; from: number; to: number }> = [];
   readonly codes: ListCode[] = [];
   readonly codeParts: Array<{
     node: JSONContent;
@@ -189,6 +190,8 @@ export class ListProjection {
               before: from === start ? context.before : [],
               after: to === end ? context.after : [],
               fences: [],
+              listParagraph: true,
+              literalNewlines: context.literalNewlines,
             })
           : undefined;
       const paragraph = part?.content.content![0] ?? { type: 'paragraph' };
@@ -356,6 +359,7 @@ export class ListProjection {
     moved?: Map<number, SourceProjection['tokens'][number]>,
   ) {
     this.seams.length = 0;
+    this.literalNewlines.length = 0;
     this.fences.length = 0;
     this.codes.length = 0;
     const survivors = new Map<number, SourceProjection['tokens'][number]>();
@@ -378,7 +382,9 @@ export class ListProjection {
       if (node.type.name === 'paragraph' && node.content.size) lastParagraph = pos;
     });
     const escape = (text: string) => text.replace(/[\\`*_[\]{}()#+.!>~-]/g, '\\$&');
+    let literalRanges: Array<{ from: number; to: number }> = [];
     const text = (node: PMNode, pm: number) => {
+      literalRanges = [];
       const origin = this.entries.find((e) => mapping.map(e.paragraphPM, -1) === pm);
       let out = '',
         active: Mark[] = origin?.part?.context?.before ?? [];
@@ -396,6 +402,11 @@ export class ListProjection {
         active = next;
       };
       node.forEach((child, offset) => {
+        if (child.type.name === 'hardBreak') {
+          transition(child.marks.map((m) => ({ type: m.type.name, attrs: m.attrs })));
+          out += '\n';
+          return;
+        }
         if (child.type.name === 'commentAnchor') {
           transition(child.marks.map((m) => ({ type: m.type.name, attrs: m.attrs })));
           out += `<!--anchor:${child.attrs.commentId}:${child.attrs.type}-->`;
@@ -403,12 +414,14 @@ export class ListProjection {
         }
         if (!child.isText || child.marks.some((m) => !['bold', 'link'].includes(m.type.name)))
           throw new Error('List proof inline grammar not yet admitted');
+        const literalFrom = out.length;
         for (let i = 0; i < child.text!.length; i++) {
           const char = child.text![i],
             t = survivors.get(pm + 1 + offset + i);
           transition(child.marks.map((m) => ({ type: m.type.name, attrs: m.attrs })));
           out += t?.text === char ? t.raw : escape(char);
         }
+        if (child.text!.includes('\n')) literalRanges.push({ from: literalFrom, to: out.length });
       });
       transition(origin?.part?.context?.after ?? []);
       return out;
@@ -474,12 +487,19 @@ export class ListProjection {
         }
         if (old) {
           used.add(old);
-          if (old.item.indent !== indent)
+          if (old.item.indent !== indent) {
+            const removedParent = this.entries.find(
+              (entry) => entry.item.from === old.item.parent && !used.has(entry),
+            );
+            // Lifting the leading parent paragraph also lifts its whole child list,
+            // including siblings outside this projection. Reuse the backing
+            // descendant repair with the removed parent as its source owner.
             this.indentation.push({
-              from: old.item.from,
+              from: removedParent?.item.from ?? old.item.from,
               after: this.start + this.source.length,
               delta: indent - old.item.indent,
             });
+          }
         }
         let prefix = old?.item.prefix;
         const ordinal = (node.attrs.start ?? 1) + index;
@@ -507,7 +527,20 @@ export class ListProjection {
               this.context.lists!.some((i) => i.to > this.start + this.source.length);
             if (partial && prefix !== origin.item.prefix)
               external.push({ from: origin.item.from, to: origin.item.body, insert: prefix! });
-            output += (partial ? '' : prefix) + text(child, at) + (tail ? '' : '\n');
+            const prefixText = partial ? '' : prefix!;
+            const body = text(child, at);
+            const bodyFrom = this.start + output.length + prefixText.length;
+            for (const range of literalRanges) {
+              const prior = this.context.literalNewlines?.find(
+                (r) => origin && r.from < origin.item.end && r.to > origin.item.body,
+              );
+              this.literalNewlines.push({
+                item: itemFrom,
+                from: partial && prior && range.from === 0 ? prior.from : bodyFrom + range.from,
+                to: tail && prior && range.to === body.length ? prior.to : bodyFrom + range.to,
+              });
+            }
+            output += prefixText + body + (tail ? '' : '\n');
           } else if (child.type.name === 'codeBlock') {
             const prior = this.codeParts.find((part) => mapping.map(part.pm, -1) === at);
             const partialStart = prior && prior.from > prior.code.bodyFrom;
@@ -554,7 +587,11 @@ export class ListProjection {
         output += prefix + text(node, pm) + (old?.suffix ?? '\n\n');
       } else if (node.type.name === 'codeBlock') {
         const old = this.prose.find(
-          (p) => p.node.type === node.type.name && mapping.map(p.pm, -1) === pm,
+          (p) =>
+            p.node.type === node.type.name &&
+            (mapping.map(p.pm, -1) === pm ||
+              (!mapping.mapResult(p.pm + size(p.node), 1).deleted &&
+                mapping.map(p.pm + size(p.node), 1) === pm + node.nodeSize)),
         );
         if (!old) throw new Error('Missing mixed code source provenance');
         const before = doc.type.schema.nodeFromJSON(old.part.content);
@@ -593,6 +630,9 @@ export class ListProjection {
       }
     });
     if (!this.source.endsWith('\n') && output.endsWith('\n')) output = output.slice(0, -1);
+    for (const range of this.literalNewlines)
+      if (range.to > this.start + this.source.length)
+        range.to += output.length - this.source.length;
     let from = 0,
       oldEnd = this.source.length,
       newEnd = output.length;

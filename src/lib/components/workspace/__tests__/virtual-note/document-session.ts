@@ -1,4 +1,6 @@
-import { Mapping } from '@tiptap/pm/transform';
+import type { CommandHistory } from './command-history';
+import { captureTableDOMReplacement } from './table-dom-replacement';
+import { Mapping, ReplaceStep } from '@tiptap/pm/transform';
 import { MixedProjection } from './mixed-projection';
 import {
   relayClipboard,
@@ -15,7 +17,7 @@ import {
   TABLE_NODE_LIMIT,
   type TablePage,
 } from './table-transfer';
-import { cloneTableWindow } from './table-payload';
+import { cloneTableWindow, tableAliasExpansionWork } from './table-payload';
 import { Editor, Extension, type CommandProps } from '@tiptap/core';
 import {
   Plugin,
@@ -24,7 +26,8 @@ import {
   EditorState,
   type Transaction,
 } from '@tiptap/pm/state';
-import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view';
+import type { ResolvedPos } from '@tiptap/pm/model';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { bytes } from './bounded-note-service';
@@ -34,6 +37,7 @@ import {
   mapSelection,
   mapPoint,
   type Selection,
+  type MixedCommand,
   type TablePoint,
   type Splice,
   type AnnotationPage,
@@ -46,6 +50,7 @@ import { CellSelection, tableEditingKey } from '@tiptap/pm/tables';
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
 export class DocumentSession {
+  private mixedKey?: { key: 'Backspace' | 'Delete'; doc: unknown; capture: boolean };
   clipboardInput?: ClipboardManifest;
   pasteTableSelection() {
     const manifest = this.clipboardInput;
@@ -179,6 +184,21 @@ export class DocumentSession {
       editor.view.focus();
     }
     this.pointerSelecting = false;
+    // A drag can briefly cross the table DOM boundary before landing in a cell.
+    // Keep its geometry stable and resolve only the released raw endpoints.
+    const dom = editor?.view.dom.ownerDocument.getSelection();
+    if (
+      editor &&
+      dom?.anchorNode &&
+      dom.focusNode &&
+      editor.view.dom.contains(dom.anchorNode) &&
+      editor.view.dom.contains(dom.focusNode)
+    ) {
+      const doc = editor.state.doc;
+      const anchor = doc.resolve(editor.view.posAtDOM(dom.anchorNode, dom.anchorOffset));
+      const head = doc.resolve(editor.view.posAtDOM(dom.focusNode, dom.focusOffset));
+      if (this.fromDOMBoundary(editor.view, anchor, head, 1)) return;
+    }
     this.continueNearEdge();
   };
   private cache = new Map<string, string>();
@@ -200,10 +220,21 @@ export class DocumentSession {
   maxAnnotationInFlightBytes = 0;
   maxAnnotationCacheBytes = 0;
   private annotationRanges(p: SourceProjection): Array<{ from: number; to: number }> {
-    if (p.mixed) return p.mixed.parts.flatMap((part) => this.annotationRanges(part.projection));
-    return p.table
-      ? p.table.window.cells.map((cell) => ({ from: cell.first, to: cell.last }))
-      : [{ from: p.start, to: p.start + p.source.length }];
+    const ranges = p.mixed
+      ? p.mixed.parts.flatMap((part) => this.annotationRanges(part.projection))
+      : p.table
+        ? p.table.window.cells.map((cell) => ({ from: cell.first, to: cell.last }))
+        : [{ from: p.start, to: p.start + p.source.length }];
+    // Mounted merged-cell owners can appear in visual rather than source order.
+    // Query the union of admitted intervals without including unloaded gaps.
+    ranges.sort((a, b) => a.from - b.from || a.to - b.to);
+    const ordered: Array<{ from: number; to: number }> = [];
+    for (const range of ranges) {
+      const previous = ordered.at(-1);
+      if (previous && range.from <= previous.to) previous.to = Math.max(previous.to, range.to);
+      else ordered.push({ ...range });
+    }
+    return ordered;
   }
   /** A visible page, not a note-wide anchor map. Superseded replies cannot repaint. */
   async loadAnnotations(cursor?: AnnotationCursor) {
@@ -326,12 +357,16 @@ export class DocumentSession {
             throw new Error('Mixed table requires complete bounded admission');
           return part;
         });
-      if (ranges.length && bytes(source) + bytes(JSON.stringify(context)) > TABLE_ACTIVE_BYTES)
+      if (
+        ranges.length &&
+        bytes(source) + bytes(JSON.stringify(context)) + this.domBoundaryBytes > TABLE_ACTIVE_BYTES
+      )
         throw new Error('Mixed source/context exceeds admission budget');
     }
     if (
       fragments &&
-      (bytes(source) + bytes(JSON.stringify(context)) > TABLE_ACTIVE_BYTES ||
+      (bytes(source) + bytes(JSON.stringify(context)) + this.domBoundaryBytes >
+        TABLE_ACTIVE_BYTES ||
         fragments.some((f) => f.context.revision !== this.service.revision))
     )
       throw new Error('Sparse mixed admission exceeds budget or revision');
@@ -339,7 +374,7 @@ export class DocumentSession {
       throw new Error('Stale inline context response');
     this.maxSourceContextBytes = Math.max(
       this.maxSourceContextBytes,
-      bytes(source) + bytes(JSON.stringify(context)),
+      bytes(source) + bytes(JSON.stringify(context)) + this.domBoundaryBytes,
     );
     this.maxSeamMetadataBytes = Math.max(
       this.maxSeamMetadataBytes,
@@ -416,7 +451,131 @@ export class DocumentSession {
     }
     return window;
   }
-  private sparseWindow(position: number, selection = this.selection) {
+  private domBoundaryPending = false;
+  private domBoundaryBytes = 0;
+  maxDOMBoundaryIntentBytes = 0;
+  private fromDOMBoundary(
+    view: EditorView,
+    anchor: ResolvedPos,
+    head: ResolvedPos,
+    pointerBias?: number,
+  ) {
+    const projection = this.projection;
+    const part = projection?.mixed?.parts.find((p) => p.projection.table && head.pos === p.pm + 1);
+    const table = part?.projection.table;
+    if (
+      !part ||
+      !table ||
+      head.parent.type.name !== 'table' ||
+      this.suppress ||
+      view.composing ||
+      this.pointerSelecting
+    )
+      return null;
+    const first = table.window.cells[0];
+    if (!first || (first.row === 0 && first.column === 0 && first.first === first.body))
+      return null;
+    // This callback receives ProseMirror's actual DOM-resolved endpoints, before
+    // cropped table normalization can turn its leading edge into the wrong cell.
+    const collapsed = anchor.pos === head.pos;
+    if (!collapsed && anchor.pos <= part.end) return null;
+    if (this.domBoundaryPending) return view.state.selection;
+    const intent = {
+      revision: this.service.revision,
+      generation: this.selectionGeneration,
+      table: table.window.from,
+      anchor: collapsed ? undefined : projection!.sourceAt(anchor.pos),
+      collapsed,
+      bias: pointerBias ?? (view.state.selection.head < head.pos ? 1 : -1),
+    };
+    const intentBytes = bytes(JSON.stringify(intent));
+    if (
+      intentBytes > LIMITS.request ||
+      bytes(projection!.source) + bytes(JSON.stringify(projection!.context)) + intentBytes >
+        TABLE_ACTIVE_BYTES
+    )
+      throw new Error('DOM boundary intent exceeds admission budget');
+    this.domBoundaryPending = true;
+    this.domBoundaryBytes = intentBytes;
+    this.maxDOMBoundaryIntentBytes = Math.max(this.maxDOMBoundaryIntentBytes, intentBytes);
+    const editor = this.editor;
+    queueMicrotask(() => {
+      void (async () => {
+        if (
+          this.editor !== editor ||
+          this.projection !== projection ||
+          this.service.revision !== intent.revision ||
+          this.selectionGeneration !== intent.generation
+        )
+          return;
+        const first = this.service.tableAddress(intent.table, 0, 0);
+        if (first.revision !== intent.revision) return;
+        let selected: Selection = {
+          revision: intent.revision,
+          anchor: first.source,
+          head: first.source,
+          affinity: 1,
+          table: { kind: 'text', anchor: first.point, head: first.point },
+        };
+        if (!intent.collapsed) {
+          const normalized = this.service.stageLogicalTableCommand(
+            {
+              revision: intent.revision,
+              table: intent.table,
+              command: 'normalizeLeadingBoundary',
+              selection: selected,
+            },
+            editor!,
+            false,
+          );
+          if (!normalized) throw new Error('Native boundary normalization failed');
+          selected = normalized;
+        }
+        if (
+          !(await this.show(
+            this.active,
+            true,
+            intent.collapsed ? first.source : selected.head,
+            true,
+            selected,
+            selected.table?.head,
+            intent.collapsed ? intent.anchor : undefined,
+          ))
+        )
+          return;
+        if (this.service.revision !== intent.revision || this.editor !== editor) return;
+        if (!intent.collapsed) {
+          this.selectionGeneration++;
+          this.changed();
+          return;
+        }
+        const current = this.projection!.mixed?.parts.find(
+          (p) => p.projection.table?.window.from === intent.table,
+        );
+        if (!current) throw new Error('DOM boundary lost its table provenance');
+        const doc = editor!.state.doc,
+          rawHead = current.pm + 1;
+        const rawAnchor = intent.collapsed ? rawHead : this.projection!.pmAt(intent.anchor!);
+        editor!.view.dispatch(
+          editor!.state.tr
+            .setSelection(
+              TextSelection.between(doc.resolve(rawAnchor), doc.resolve(rawHead), intent.bias),
+            )
+            .scrollIntoView(),
+        );
+      })()
+        .catch((error) => {
+          this.error = String(error);
+          this.changed();
+        })
+        .finally(() => {
+          this.domBoundaryPending = false;
+          this.domBoundaryBytes = 0;
+        });
+    });
+    return view.state.selection;
+  }
+  private sparseWindow(position: number, selection = this.selection, boundaryAnchor?: number) {
     const boundary = this.service.mixedBoundary(position);
     if (!boundary) return undefined;
     let from = this.service.inlineBoundary(boundary.from, 1),
@@ -445,6 +604,28 @@ export class DocumentSession {
       } as InlineContext,
     };
     const fragments = boundary.side === 'before' ? [prose, cells] : [cells, prose];
+    if (boundaryAnchor !== undefined && boundaryAnchor > table.to) {
+      const other = this.service.mixedBoundary(boundaryAnchor);
+      if (
+        !other ||
+        other.revision !== table.revision ||
+        other.side !== 'after' ||
+        other.from !== table.to
+      )
+        throw new Error('DOM boundary anchor no longer neighbors its table');
+      const raw = this.readRange(other.from, other.to),
+        leading = raw.match(/^\n*/)?.[0].length ?? 0,
+        trailing = raw.match(/\n*$/)?.[0].length ?? 0;
+      const from = other.from + leading,
+        to = other.to - trailing;
+      if (boundaryAnchor < from || boundaryAnchor > to)
+        throw new Error('DOM boundary anchor outside admitted prose');
+      fragments.push({
+        source: raw.slice(leading, raw.length - trailing),
+        start: from,
+        context: this.service.inlineContext(from, to),
+      });
+    }
     const joined = fragments.map((f) => f.source).join('');
     this.inFlightBytes += bytes(joined);
     this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
@@ -502,12 +683,18 @@ export class DocumentSession {
       fragments,
     );
   }
-  private readWindow(id: number, position?: number, selection = this.selection) {
+  private readWindow(
+    id: number,
+    position?: number,
+    selection = this.selection,
+    boundaryAnchor?: number,
+  ) {
     const at = position ?? this.service.start(id);
-    const sparse = this.sparseWindow(at, selection);
+    const sparse = this.sparseWindow(at, selection, boundaryAnchor);
     if (sparse) return sparse;
     const candidate = continuationWindow(this.service, id, position);
-    if (this.service.mixedTableRanges(candidate.from, candidate.to).length) {
+    const mixedRanges = this.service.mixedTableRanges(candidate.from, candidate.to);
+    if (mixedRanges.length && mixedRanges.every((range) => range.complete)) {
       const source = this.readRange(candidate.from, candidate.to);
       this.inFlightBytes += bytes(source);
       this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
@@ -541,7 +728,7 @@ export class DocumentSession {
       this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
       return { from, to, source, table, continuation: true };
     }
-    const bounds = continuationWindow(this.service, id, position);
+    const bounds = candidate;
     bounds.from = this.service.inlineBoundary(bounds.from, 1);
     bounds.to = this.service.inlineBoundary(bounds.to, -1);
     Object.assign(bounds, this.service.listWindow(bounds.from, bounds.to, position ?? bounds.from));
@@ -1043,9 +1230,10 @@ export class DocumentSession {
           (cell.last < cell.end && cell.last - head < 32));
       if (!pageBlocks && !pageText) return;
       this.continuationQueued = true;
+      const navigation = this.navigation;
       queueMicrotask(() => {
         this.continuationQueued = false;
-        if (this.editor && !this.editor.view.composing)
+        if (this.navigation === navigation && this.editor && !this.editor.view.composing)
           void this.show(this.active, true, this.selection.head, true);
       });
       return;
@@ -1059,9 +1247,16 @@ export class DocumentSession {
     ))
       return;
     this.continuationQueued = true;
+    const navigation = this.navigation;
     queueMicrotask(() => {
       this.continuationQueued = false;
-      if (this.drainingInput || !this.editor || this.editor.view.composing) return;
+      if (
+        this.navigation !== navigation ||
+        this.drainingInput ||
+        !this.editor ||
+        this.editor.view.composing
+      )
+        return;
       void this.show(this.active, true, this.selection.head, true);
     });
   }
@@ -1072,6 +1267,7 @@ export class DocumentSession {
     preserveView = false,
     requestedSelection?: Selection,
     anchorPoint: TablePoint | undefined = this.selection.table?.head,
+    boundaryAnchor?: number,
   ) {
     if (this.editor?.view.composing) {
       this.error = 'Composition pins current view';
@@ -1114,7 +1310,7 @@ export class DocumentSession {
       this.changed();
       return false;
     }
-    const window = this.readWindow(id, position, requestedSelection);
+    const window = this.readWindow(id, position, requestedSelection, boundaryAnchor);
     try {
       const next = this.project(
         window.source,
@@ -1428,6 +1624,7 @@ export class DocumentSession {
           this.accept([transaction, ...(appendedTransactions ?? [])]),
         editorProps: {
           ...config.editorProps,
+          createSelectionBetween: (view, anchor, head) => this.fromDOMBoundary(view, anchor, head),
           handleDOMEvents: {
             ...config.editorProps?.handleDOMEvents,
             paste: (_view, event) => {
@@ -1488,6 +1685,22 @@ export class DocumentSession {
             },
           },
           handleKeyDown: (_view, event) => {
+            this.mixedKey =
+              !event.altKey &&
+              !event.metaKey &&
+              !event.ctrlKey &&
+              !event.shiftKey &&
+              ['Backspace', 'Delete'].includes(event.key)
+                ? {
+                    key: event.key as 'Backspace' | 'Delete',
+                    doc: _view.state.doc,
+                    capture: this.editor!.isCapturingTransaction,
+                  }
+                : undefined;
+            const keyIntent = this.mixedKey;
+            queueMicrotask(() => {
+              if (this.mixedKey === keyIntent) this.mixedKey = undefined;
+            });
             if (
               this.selection.table?.kind === 'cell' &&
               _view.state.selection instanceof CellSelection &&
@@ -1717,12 +1930,15 @@ export class DocumentSession {
               return true;
             }
             const p = this.projection!;
+            // Sparse mixed source concatenates only admitted fragments; its text
+            // length is not the logical end of the revisioned source window.
+            const admittedEnd = p.context?.to ?? p.start + p.source.length;
             const globalRange =
               !p.table &&
               (this.selection.anchor < p.start ||
                 this.selection.head < p.start ||
-                this.selection.anchor > p.start + p.source.length ||
-                this.selection.head > p.start + p.source.length);
+                this.selection.anchor > admittedEnd ||
+                this.selection.head > admittedEnd);
             if (
               globalRange &&
               event.shiftKey &&
@@ -1749,6 +1965,173 @@ export class DocumentSession {
       const dispatch = this.editor.view.props.dispatchTransaction!;
       this.editor.view.setProps({
         dispatchTransaction: (tr) => {
+          const current = this.editor!.state;
+          const projection = this.projection;
+          const fence = projection?.context?.fences?.find(
+            (f) => f.to > projection.start + projection.source.length && f.from > projection.start,
+          );
+          if (
+            !this.suppress &&
+            !this.editor!.isCapturingTransaction &&
+            tr.docChanged &&
+            projection?.list &&
+            fence
+          ) {
+            const key = this.mixedKey?.doc === current.doc ? this.mixedKey.key : undefined;
+            const boundary = projection.pmAt(fence.bodyFrom);
+            const crosses = current.selection.from < boundary && current.selection.to >= boundary;
+            const atJoin =
+              key === 'Backspace'
+                ? current.selection.head === boundary
+                : key === 'Delete' &&
+                  current.selection.head < boundary &&
+                  current.selection.$head.parentOffset ===
+                    current.selection.$head.parent.content.size;
+            if (crosses || atJoin) {
+              const revision = projection.context!.revision;
+              const span =
+                revision === this.service.revision
+                  ? this.service.mixedCodeSpan(fence.from, revision)
+                  : { owner: fence.from, from: projection.start, to: fence.to };
+              const intent: MixedCommand = {
+                ...span,
+                revision,
+                selection: { ...this.fromPM(current.selection), revision },
+                command: key ?? 'replace',
+                ...(key ? { capture: this.mixedKey!.capture } : {}),
+                ...(!key &&
+                tr.steps.length === 1 &&
+                tr.steps[0] instanceof ReplaceStep &&
+                tr.steps[0].slice.openStart
+                  ? {
+                      replacement: {
+                        from: projection.sourceAt(tr.steps[0].from, 1),
+                        to: projection.sourceAt(tr.steps[0].to, -1),
+                        slice: tr.steps[0].slice.toJSON() ?? {},
+                        anchor: tr.selection.anchor - tr.steps[0].from,
+                        head: tr.selection.head - tr.steps[0].from,
+                      },
+                    }
+                  : {}),
+                ...(!key
+                  ? {
+                      slice:
+                        tr.doc
+                          .slice(
+                            tr.mapping.map(current.selection.from, -1),
+                            tr.mapping.map(current.selection.to, 1),
+                          )
+                          .toJSON() ?? {},
+                    }
+                  : {}),
+              };
+              tr = current.tr
+                .setTime(tr.time)
+                .setMeta('composition', tr.getMeta('composition'))
+                .setMeta('proofMixedCommand', intent);
+            }
+          }
+          if (!this.editor!.isCapturingTransaction && tr.docChanged) this.mixedKey = undefined;
+          if (!this.suppress && tr.docChanged && projection?.mixed && !current.selection.empty) {
+            const tablePart = projection.mixed.parts.find(
+              (part) =>
+                part.projection.table &&
+                current.selection.from < part.end &&
+                current.selection.to > part.end,
+            );
+            if (tablePart) {
+              const table = tablePart.projection.table!,
+                revision = projection.context!.revision;
+              const anchor = table.pointAt(current.selection.anchor - tablePart.pm),
+                head = table.pointAt(current.selection.head - tablePart.pm);
+              const point = anchor ?? head;
+              if (point) {
+                const neighbor =
+                  revision === this.service.revision
+                    ? this.service.tableFollowingParagraph(table.window.from, revision)
+                    : { from: table.window.to, to: table.window.to };
+                if (revision !== this.service.revision || neighbor.to > this.windowEnd) {
+                  const dom = captureTableDOMReplacement(tr, current.selection);
+                  tr = current.tr
+                    .setTime(tr.time)
+                    .setMeta('composition', tr.getMeta('composition'))
+                    .setMeta('proofLogicalTableCommand', {
+                      revision,
+                      table: table.window.from,
+                      command: 'replaceSelection',
+                      neighbor,
+                      selection: {
+                        ...this.fromPM(current.selection),
+                        revision,
+                        table: { kind: 'text', anchor: anchor ?? point, head: head ?? point },
+                      },
+                      slice:
+                        tr.doc
+                          .slice(
+                            tr.mapping.map(current.selection.from, -1),
+                            tr.mapping.map(current.selection.to, 1),
+                          )
+                          .toJSON() ?? {},
+                      ...dom,
+                    });
+                }
+              }
+            }
+          }
+          const logical = this.selection.table;
+          const mounted =
+            !this.suppress && logical?.kind === 'text'
+              ? this.fromPM(this.editor!.state.selection).table
+              : undefined;
+          const step = tr.steps.length === 1 ? tr.steps[0] : undefined;
+          const activeLogicalTable =
+            logical &&
+            (this.projection?.table ??
+              this.projection?.mixed?.parts.find((part) => {
+                const window = part.projection.table?.window;
+                return (
+                  window && logical.anchor.cell >= window.from && logical.anchor.cell < window.to
+                );
+              })?.projection.table);
+          const outsideSelection =
+            step instanceof ReplaceStep &&
+            (step.from !== this.editor!.state.selection.from ||
+              step.to !== this.editor!.state.selection.to);
+          const aliasStepSelection =
+            !this.suppress &&
+            activeLogicalTable?.window.aliased &&
+            outsideSelection &&
+            step instanceof ReplaceStep &&
+            !step.slice.openStart &&
+            !step.slice.openEnd
+              ? this.fromPM(TextSelection.create(this.editor!.state.doc, step.from, step.to))
+              : undefined;
+          const aliasStep =
+            aliasStepSelection?.table?.kind === 'text' &&
+            aliasStepSelection.table.anchor.cell === aliasStepSelection.table.head.cell;
+          if (
+            mounted &&
+            logical &&
+            (JSON.stringify(mounted) !== JSON.stringify(logical) ||
+              activeLogicalTable?.window.aliased) &&
+            step instanceof ReplaceStep &&
+            (!outsideSelection || aliasStep)
+          ) {
+            const table = activeLogicalTable;
+            if (table)
+              tr = this.editor!.state.tr.setTime(tr.time)
+                .setMeta('composition', tr.getMeta('composition'))
+                .setMeta('proofLogicalTableCommand', {
+                  revision: this.service.revision,
+                  table: table.window.from,
+                  command: 'replaceSelection',
+                  selection: structuredClone(aliasStep ? aliasStepSelection : this.selection),
+                  slice: step.slice.toJSON() ?? {},
+                  ...(aliasStep
+                    ? { preserve: { anchor: logical.anchor, head: logical.head } }
+                    : {}),
+                });
+          }
           // ProseMirror's active mouse gesture remembers its pre-crop anchor.
           // Restore that source anchor before admitting its next selection transaction.
           if (
@@ -1953,10 +2336,68 @@ export class DocumentSession {
       revision: this.service.revision,
     };
   }
+  private commandGroups(tr: Transaction, ranges: CommandHistory) {
+    const composition = tr.getMeta('composition');
+    return (
+      this.prevTime !== 0 &&
+      ((composition !== undefined && composition === this.prevComposition) ||
+        (tr.time - this.prevTime <= 500 &&
+          ranges.before.some(([a, b]) =>
+            this.prevRanges.some(([from, to]) => a <= to && b >= from),
+          )))
+    );
+  }
+  private rememberCommand(tr: Transaction, ranges: CommandHistory) {
+    this.prevTime = tr.time;
+    this.prevRanges = ranges.after;
+    const composition = tr.getMeta('composition');
+    if (composition !== undefined) this.prevComposition = composition;
+  }
   private accept(transactions: Transaction[]) {
     if (this.suppress) return;
+    const mixed = transactions.find((tr) => tr.getMeta('proofMixedCommand'));
+    if (mixed) {
+      let ranges: CommandHistory = { before: [], after: [] };
+      const before = structuredClone(this.selection);
+      try {
+        const after = this.service.atomic(() => {
+          this.service.beginChanges();
+          const result = this.service.stageMixedCommand(
+            mixed.getMeta('proofMixedCommand'),
+            this.editor!,
+            (history) => {
+              ranges = history;
+            },
+          );
+          this.service.recordEdit(before, result, this.commandGroups(mixed, ranges));
+          return result;
+        });
+        this.selection = after;
+        this.selectionGeneration++;
+        this.rememberCommand(mixed, ranges);
+        this.cache.clear();
+        this.error = '';
+        const navigation = this.navigation,
+          generation = this.selectionGeneration;
+        queueMicrotask(() => {
+          if (
+            this.navigation === navigation &&
+            this.selectionGeneration === generation &&
+            this.service.revision === after.revision &&
+            this.editor
+          )
+            void this.seek(after.head);
+        });
+      } catch (error) {
+        this.error = String(error);
+        this.rejectedTransactions++;
+        this.changed();
+      }
+      return;
+    }
     const command = transactions.find((tr) => tr.getMeta('proofLogicalTableCommand'));
     if (command) {
+      let ranges: CommandHistory = { before: [], after: [] };
       const before = structuredClone(this.selection);
       try {
         const after = this.service.atomic(() => {
@@ -1964,6 +2405,11 @@ export class DocumentSession {
           const after = this.service.stageLogicalTableCommand(
             command.getMeta('proofLogicalTableCommand'),
             this.editor!,
+            true,
+            true,
+            (history) => {
+              ranges = history;
+            },
           );
           if (!after) throw new Error('Logical table command no longer applies');
           if (
@@ -1976,18 +2422,26 @@ export class DocumentSession {
             after.affinity = 1;
             after.table = { anchor: next.point, head: next.point, kind: 'text' };
           }
-          this.service.recordEdit(before, after, false);
+          this.service.recordEdit(before, after, this.commandGroups(command, ranges));
           return after;
         });
         this.tableTabAtEnd = false;
         this.tableTabDestination = undefined;
         this.selection = after;
         this.selectionGeneration++;
-        this.prevTime = 0;
+        this.rememberCommand(command, ranges);
         this.cache.clear();
         this.error = '';
+        const navigation = this.navigation,
+          generation = this.selectionGeneration;
         queueMicrotask(() => {
-          void this.seek(after.head);
+          if (
+            this.navigation === navigation &&
+            this.selectionGeneration === generation &&
+            this.service.revision === after.revision &&
+            this.editor
+          )
+            void this.seek(after.head);
         });
       } catch (error) {
         this.tableTabAtEnd = false;
@@ -2232,6 +2686,12 @@ export class DocumentSession {
                     ]);
                 },
               );
+              if (listProjection)
+                this.service.setLiteralNewlines(
+                  oldStart,
+                  this.windowEnd,
+                  listProjection.literalNewlines,
+                );
               if (listProjection)
                 this.service.setListCodes(
                   oldStart,
@@ -2598,6 +3058,8 @@ export class DocumentSession {
       tableRunParseCalls: tableRunWork.calls,
       tableRunParseBytes: tableRunWork.bytes,
       maxTableRunParseBytes: tableRunWork.maxBytes,
+      maxTableAliasExpansionBytes: tableAliasExpansionWork.maxBytes,
+      maxTableAliasResidentBytes: tableAliasExpansionWork.maxResidentBytes,
       tableResourceBound: tableBound,
       tableDomElements: tableDOM?.elements ?? 0,
       tableDomTextNodes: tableDOM?.textNodes ?? 0,
@@ -2725,6 +3187,7 @@ export class DocumentSession {
         bytes(JSON.stringify(this.editor?.options.content ?? {})),
       calls: this.service.logs,
       created: this.created,
+      maxDOMBoundaryIntentBytes: this.maxDOMBoundaryIntentBytes,
       destroyed: this.destroyed,
       mounted: this.created - this.destroyed,
       pmNodes: nodes + Number(!!this.projection?.table),

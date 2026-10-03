@@ -317,6 +317,7 @@ for (const backward of [false, true])
     await mount(Harness, { props: { sourceOverride: source, anchors: true } });
     const results = [];
     for (const side of ['native', 'bounded']) {
+      await focus(page, side);
       await page
         .getByTestId(side)
         .getByTestId('proof')
@@ -363,7 +364,7 @@ for (const backward of [false, true])
     expect(bounded.logical).toEqual(native.logical);
     for (const result of results) expect(result.dom).toEqual(result.pm);
     const tableIndex = native.doc.content!.findIndex((n) => n.type === 'table');
-    expect(bounded.doc).toEqual({
+    const cropped = {
       type: 'doc',
       content: native.doc.content!.flatMap((node, i) =>
         node.type === 'table'
@@ -382,7 +383,26 @@ for (const backward of [false, true])
             ? [node]
             : [],
       ),
+    };
+    // The physical crop may end at a table. Ask the actual native configuration
+    // to apply its trailing-node lifecycle to this independent oracle crop.
+    await focus(page, 'native');
+    await page
+      .getByTestId('native')
+      .getByTestId('proof')
+      .evaluate((el, doc) => {
+        (el as Host).native.commands.setContent(doc);
+      }, cropped);
+    const croppedNative = await capture(page, 'native');
+    await info.attach('partial-clear-cropped-native.json', {
+      body: JSON.stringify(croppedNative),
+      contentType: 'application/json',
     });
+    // Mixed prose windows preserve the native full-document context; a standalone
+    // table window follows the previously approved isolated native lifecycle.
+    expect(bounded.doc).toEqual(
+      bounded.proseBefore || bounded.proseAfter ? cropped : croppedNative.doc,
+    );
     const saved = await page
       .getByTestId('bounded')
       .getByTestId('proof')
@@ -414,3 +434,319 @@ for (const backward of [false, true])
         .evaluate((el) => (el as Host).proof.service.region(0)),
     ).toBe(saved.source);
   });
+
+for (const edge of ['before', 'after'] as const)
+  for (const backward of [false, true])
+    for (const gesture of ['shift', 'pointer'] as const)
+      test(`sparse mixed ${edge} ${gesture} ${backward ? 'backward' : 'forward'} selection`, async ({
+        mount,
+        page,
+      }, info) => {
+        await mount(Harness, { props: { sourceOverride: source } });
+        await focus(page, 'bounded');
+        await page
+          .getByTestId('bounded')
+          .getByTestId('proof')
+          .evaluate(
+            async (el, at) => {
+              await (el as Host).proof.seek(at);
+            },
+            edge === 'before' ? 0 : source.length - 1,
+          );
+        const results = [];
+        for (const side of ['native', 'bounded']) {
+          await focus(page, side);
+          const endpoints = await page
+            .getByTestId(side)
+            .getByTestId('proof')
+            .evaluate(
+              (el, { edge, backward, gesture }) => {
+                const h = el as Host,
+                  e = h.proof?.editor ?? h.native;
+                const roots: Array<{ pos: number; node: typeof e.state.doc }> = [];
+                e.state.doc.forEach((node, pos) => roots.push({ node, pos }));
+                const table = roots.findIndex((r) => r.node.type.name === 'table');
+                const a = roots[edge === 'before' ? table - 1 : table],
+                  b = roots[edge === 'before' ? table : table + 1];
+                let left = -1,
+                  right = -1;
+                if (a.node.isTextblock) left = a.pos + a.node.nodeSize - 1;
+                else
+                  a.node.descendants((node, pos) => {
+                    if (node.isTextblock) left = a.pos + 1 + pos + node.nodeSize - 1;
+                  });
+                if (b.node.isTextblock) right = b.pos + 1;
+                else
+                  b.node.descendants((node, pos) => {
+                    if (node.isTextblock && right < 0) right = b.pos + 2 + pos;
+                  });
+                const first =
+                    gesture === 'shift'
+                      ? backward
+                        ? right
+                        : left
+                      : backward
+                        ? right + 1
+                        : left - 1,
+                  last = backward ? left - 1 : right + 1;
+                e.chain().setTextSelection(first).scrollIntoView().run();
+                return { first, last };
+              },
+              { edge, backward, gesture },
+            );
+          await settled(page);
+          const prepared = await capture(page, side);
+          await info.attach(`prepared-${side}.json`, {
+            body: JSON.stringify({ endpoints, prepared }),
+            contentType: 'application/json',
+          });
+          expect(prepared.pm).toEqual({ anchor: endpoints.first, head: endpoints.first });
+          await page
+            .getByTestId(side)
+            .getByTestId('proof')
+            .evaluate((el) => {
+              const h = el as Host & { selectionTrace: unknown[] },
+                e = h.proof?.editor ?? h.native;
+              const trace = (h.selectionTrace = [] as unknown[]);
+              const createSelection = e.view.props.createSelectionBetween;
+              e.view.setProps({
+                createSelectionBetween: (view, anchor, head) => {
+                  trace.push({
+                    kind: 'selectionBetween',
+                    anchor: anchor.pos,
+                    head: head.pos,
+                    anchorParent: anchor.parent.type.name,
+                    headParent: head.parent.type.name,
+                  });
+                  return createSelection?.(view, anchor, head) ?? null;
+                },
+              });
+
+              const dom = () => {
+                const d = window.getSelection()!;
+                return {
+                  anchor: e.view.posAtDOM(d.anchorNode!, d.anchorOffset),
+                  head: e.view.posAtDOM(d.focusNode!, d.focusOffset),
+                };
+              };
+              e.on('transaction', ({ transaction }) =>
+                trace.push({
+                  kind: 'transaction',
+                  before: transaction.before.content.size,
+                  selection: transaction.selection.toJSON(),
+                  steps: transaction.steps.map((s) => s.toJSON()),
+                  meta: Object.keys((transaction as unknown as { meta: object }).meta),
+                }),
+              );
+              for (const name of ['keydown', 'keyup'])
+                e.view.dom.addEventListener(
+                  name,
+                  (event) => {
+                    const key = event as KeyboardEvent;
+                    trace.push({
+                      kind: name,
+                      key: key.key,
+                      shift: key.shiftKey,
+                      selection: e.state.selection.toJSON(),
+                      dom: dom(),
+                      focused: e.view.hasFocus(),
+                    });
+                  },
+                  true,
+                );
+            });
+          if (gesture === 'shift')
+            await page.keyboard.press(backward ? 'Shift+ArrowLeft' : 'Shift+ArrowRight');
+          else {
+            const coords = await page
+              .getByTestId(side)
+              .getByTestId('proof')
+              .evaluate((el, p) => {
+                const h = el as Host,
+                  e = h.proof?.editor ?? h.native,
+                  scroller = e.view.dom.parentElement!.parentElement!;
+                const a = e.view.coordsAtPos(p.first),
+                  b = e.view.coordsAtPos(p.last);
+                scroller.scrollTop +=
+                  (Math.min(a.top, b.top) + Math.max(a.bottom, b.bottom)) / 2 -
+                  (scroller.getBoundingClientRect().top + scroller.clientHeight / 2);
+                const point = (at: number) => {
+                  const r = e.view.coordsAtPos(at);
+                  return { x: r.left, y: (r.top + r.bottom) / 2 };
+                };
+                return { first: point(p.first), last: point(p.last) };
+              }, endpoints);
+            await page.mouse.move(coords.first.x, coords.first.y);
+            await page.mouse.down();
+            await page.mouse.move(coords.last.x, coords.last.y, { steps: 8 });
+            await page.mouse.up();
+          }
+          results.push(await capture(page, side));
+          const trace = await page
+            .getByTestId(side)
+            .getByTestId('proof')
+            .evaluate((el) => (el as Host & { selectionTrace: unknown[] }).selectionTrace);
+          await info.attach(`selection-trace-${side}.json`, {
+            body: JSON.stringify(trace),
+            contentType: 'application/json',
+          });
+        }
+        await info.attach('sparse-selection.json', {
+          body: JSON.stringify(results),
+          contentType: 'application/json',
+        });
+        for (const result of results) {
+          expect(result.error).toBe('');
+          expect(result.dom).toEqual(result.pm);
+        }
+        expect(results[1].logical).toEqual(results[0].logical);
+        expect(results[1].stats!.mounted).toBe(1);
+        expect(results[1].stats!.maxSourceContextBytes).toBeLessThanOrEqual(16384);
+        expect(results[1].stats!.cachePages).toBeLessThanOrEqual(4);
+      });
+
+for (const neighbor of ['paragraph', 'fence'] as const)
+  for (const clipped of [false, true])
+    test(`native raw boundary ${neighbor} ${clipped ? 'clipped' : 'complete'} header replacement`, async ({
+      mount,
+      page,
+    }, info) => {
+      const header = clipped ? '**wide 🌍** '.repeat(800).trim() : 'Long **header café 🌍**';
+      const before = neighbor === 'fence' ? '```text\nbefore café 🌍\n```' : 'before **café 🌍**';
+      const source =
+        before +
+        '\n\n| ' +
+        header +
+        ' | <!--anchor:keep:point-->KEEP |\n| --- | --- |\n' +
+        Array.from({ length: 800 }, (_, i) => `| row${i} | value${i} |\n`).join('') +
+        '\nafter café 🌍';
+      await mount(Harness, { props: { sourceOverride: source, anchors: true } });
+      const selected = [],
+        edited = [];
+      for (const side of ['native', 'bounded']) {
+        await focus(page, side);
+        await page
+          .getByTestId(side)
+          .getByTestId('proof')
+          .evaluate(async (el) => {
+            const h = el as Host;
+            if (h.proof) await h.proof.seek(h.proof.service.length - 1);
+            const e = h.proof?.editor ?? h.native;
+            e.chain()
+              .setTextSelection(e.state.doc.content.size - e.state.doc.lastChild!.nodeSize + 1)
+              .scrollIntoView()
+              .run();
+          });
+        await settled(page);
+        await page.keyboard.press('Shift+ArrowLeft');
+        await settled(page);
+        selected.push(
+          await page
+            .getByTestId(side)
+            .getByTestId('proof')
+            .evaluate((el) => {
+              const h = el as Host,
+                p = h.proof,
+                e = p?.editor ?? h.native,
+                s = e.state.selection;
+              const table =
+                p?.projection?.table ??
+                p?.projection?.mixed?.parts.find((part) => part.projection.table)?.projection.table;
+              const paragraph = table?.paragraphs.find(
+                (b) =>
+                  b.cell.from === p.selection.table?.head.cell &&
+                  b.block === p.selection.table?.head.block,
+              );
+              const dom = window.getSelection()!;
+              const rect = e.view.coordsAtPos(s.head),
+                viewport = e.view.dom.parentElement!.parentElement!.getBoundingClientRect();
+              return {
+                range: {
+                  type: s.toJSON().type,
+                  anchor: p?.selection.table?.anchor.offset ?? s.$anchor.parentOffset,
+                  head: p?.selection.table?.head.offset ?? s.$head.parentOffset,
+                },
+                parent: s.$head.parent.toJSON(),
+                crop: paragraph?.offset ?? 0,
+                pm: { anchor: s.anchor, head: s.head },
+                dom: {
+                  anchor: e.view.posAtDOM(dom.anchorNode!, dom.anchorOffset),
+                  head: e.view.posAtDOM(dom.focusNode!, dom.focusOffset),
+                },
+                visible: rect.bottom >= viewport.top && rect.top <= viewport.bottom,
+                source: p?.service.region(0),
+                error: p?.error ?? '',
+                stats: p?.snapshot(),
+              };
+            }),
+        );
+        await page.keyboard.insertText('EDIT');
+        await settled(page);
+        edited.push(await capture(page, side));
+      }
+      await info.attach('raw-boundary-native-selection.json', {
+        body: JSON.stringify({ selected, edited }),
+        contentType: 'application/json',
+      });
+      expect(selected[1].range).toEqual(selected[0].range);
+      expect(selected[1].source).toBe(source);
+      const expectedCrop = await page
+        .getByTestId('native')
+        .getByTestId('proof')
+        .evaluate(
+          (el, data) => {
+            const schema = (el as Host).native.schema;
+            const full = schema.nodeFromJSON(data.parent),
+              mounted = schema.nodeFromJSON(data.mounted);
+            return full.cut(data.crop, data.crop + mounted.content.size).toJSON();
+          },
+          { parent: selected[0].parent, mounted: selected[1].parent, crop: selected[1].crop },
+        );
+      expect(selected[1].parent).toEqual(expectedCrop);
+      for (const s of selected) {
+        expect(s.dom).toEqual(s.pm);
+        expect(s.visible).toBe(true);
+        expect(s.error).toBe('');
+      }
+      expect(edited[1].error).toBe('');
+      const saved = await page
+        .getByTestId('bounded')
+        .getByTestId('proof')
+        .evaluate(async (el) => {
+          const h = el as Host,
+            p = h.proof,
+            value = p.service.region(0),
+            old = p.editor!;
+          const fresh = await h.parseSource(value);
+          p.save();
+          await p.seek(p.service.length - 1);
+          return { value, fresh: fresh.doc, destroyed: old.isDestroyed, stats: p.snapshot() };
+        });
+      expect(saved.fresh).toEqual(edited[0].doc);
+      expect(saved.value).toContain('<!--anchor:keep:point-->KEEP');
+      expect(saved.value.slice(saved.value.indexOf('| <!--anchor:keep:point-->'))).toBe(
+        source.slice(source.indexOf('| <!--anchor:keep:point-->')),
+      );
+      expect(saved.value.startsWith(before + '\n\n| ')).toBe(true);
+      expect(saved.destroyed).toBe(true);
+      expect(saved.stats.maxSourceContextBytes).toBeLessThanOrEqual(16384);
+      expect(saved.stats.cachePages).toBeLessThanOrEqual(4);
+      expect(saved.stats.mounted).toBe(1);
+      await focus(page, 'bounded');
+      await page.keyboard.press('Control+z');
+      await settled(page);
+      expect(
+        await page
+          .getByTestId('bounded')
+          .getByTestId('proof')
+          .evaluate((el) => (el as Host).proof.service.region(0)),
+      ).toBe(source);
+      await page.keyboard.press('Control+Shift+z');
+      await settled(page);
+      expect(
+        await page
+          .getByTestId('bounded')
+          .getByTestId('proof')
+          .evaluate((el) => (el as Host).proof.service.region(0)),
+      ).toBe(saved.value);
+    });

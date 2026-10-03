@@ -98,6 +98,7 @@ for (const mode of ['merged-input', 'crossing-target', 'combined'] as const) {
         };
         const before = structuredClone(session.selection);
         await session.seek(raw.rows[5].cells[0].body);
+        expect(await session.loadAnnotations()).toBe(true);
         const html =
           mode === 'crossing-target'
             ? '<table><tr><td><p><strong>P</strong></p></td><td><p>Q</p></td></tr></table>'

@@ -275,3 +275,32 @@ for (const edge of ['before', 'after'] as const)
       session.destroy();
     }
   });
+
+for (const backward of [false, true])
+  it(`keeps admitted sparse Shift ${backward ? 'backward' : 'forward'} input on the native path`, async () => {
+    const backing = new SourceJournal(() => source, 1);
+    const session = new DocumentSession(backing, document.createElement('div'));
+    try {
+      await session.seek(source.length - 1);
+      const editor = session.editor!;
+      const blocks: Array<{ from: number; to: number }> = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.isTextblock) blocks.push({ from: pos + 1, to: pos + node.nodeSize - 1 });
+      });
+      editor.commands.setTextSelection(backward ? blocks.at(-1)!.from : blocks.at(-2)!.to);
+      const selection = structuredClone(session.selection);
+      expect(selection.head).toBeGreaterThan(
+        session.projection!.start + session.projection!.source.length,
+      );
+      const event = new KeyboardEvent('keydown', {
+        key: backward ? 'ArrowLeft' : 'ArrowRight',
+        shiftKey: true,
+        cancelable: true,
+      });
+      expect(editor.view.props.handleKeyDown!(editor.view, event)).toBe(false);
+      expect(event.defaultPrevented).toBe(false);
+      expect(session.selection).toEqual(selection);
+    } finally {
+      session.destroy();
+    }
+  });

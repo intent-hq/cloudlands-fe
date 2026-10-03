@@ -1,3 +1,4 @@
+import { tableParagraphLeaves } from './table-nested';
 import type { JSONContent } from '@tiptap/core';
 import { tableRuns, tableRunNode, type TableFragment } from './table-source';
 
@@ -9,6 +10,7 @@ export type TableInlineWrite = {
   nodeType: string;
   attrs: JSONContent['attrs'];
   block: number;
+  path?: number[];
   from: number;
   to: number;
   content: JSONContent[];
@@ -129,7 +131,13 @@ export function patchTableInline(
       },
     ],
   };
-  const paragraph = original.content?.[edit.block];
+  const leaf = edit.path ? tableParagraphLeaves(original)[edit.block] : undefined;
+  if (
+    edit.path &&
+    (!leaf || JSON.stringify(leaf.path.map((p) => p.index)) !== JSON.stringify(edit.path))
+  )
+    throw new Error('Stale nested table path');
+  const paragraph = leaf?.node ?? original.content?.[edit.block];
   const nodes = paragraph?.content ?? [];
   if (
     !paragraph ||
@@ -138,21 +146,21 @@ export function patchTableInline(
     edit.to > nodes.reduce((n, node) => n + length(node), 0)
   )
     throw new Error('Invalid native table inline range');
-  return {
-    ...original,
-    content: original.content!.map((node, index) =>
-      index === edit.block
-        ? {
-            ...node,
-            content: join([
-              ...slice(nodes, 0, edit.from),
-              ...edit.content,
-              ...slice(nodes, edit.to, Infinity),
-            ]),
-          }
-        : node,
-    ),
+  const updated = {
+    ...paragraph,
+    content: join([
+      ...slice(nodes, 0, edit.from),
+      ...edit.content,
+      ...slice(nodes, edit.to, Infinity),
+    ]),
   };
+  const replace = (node: JSONContent, path: number[]): JSONContent => ({
+    ...node,
+    content: node.content!.map((child, index) =>
+      index === path[0] ? (path.length === 1 ? updated : replace(child, path.slice(1))) : child,
+    ),
+  });
+  return replace(original, edit.path ?? [edit.block]);
 }
 
 /** Mock backing only: splice an admitted native fragment into its backing cell record. */

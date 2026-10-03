@@ -1,3 +1,4 @@
+import { nestedTableContent } from './table-nested';
 import { tableInlineSourcePatch } from './table-inline-source';
 import type { JSONContent } from '@tiptap/core';
 import { DOMSerializer, Fragment, Mark, type Node as PMNode } from '@tiptap/pm/model';
@@ -60,6 +61,7 @@ export class TableProjection {
     pm: number;
     end: number;
     offset: number;
+    path?: number[];
   }> = [];
   structural?: TableStructure;
   readonly codeChanges: TableCodeEdit[] = [];
@@ -90,6 +92,82 @@ export class TableProjection {
         }
         this.boundaries.set(rowPM, cell.from);
         cellPM = rowPM + 1;
+      }
+      if (cell.blocks?.some((block) => block.path)) {
+        const leaves = cell.blocks.map((block) => ({
+          block,
+          node: {
+            type: 'paragraph',
+            ...(block.path!.at(-1)!.attrs ? { attrs: block.path!.at(-1)!.attrs } : {}),
+            content: cell.runs.filter((run) => (run.block ?? 0) === block.index).map(tableRunNode),
+          } as JSONContent,
+        }));
+        const node: JSONContent = {
+          type: cell.nodeType ?? (cell.row === 0 ? 'tableHeader' : 'tableCell'),
+          attrs: {
+            ...(cell.attrs ?? { colspan: 1, rowspan: 1, colwidth: null, align: cell.align }),
+            ...cell.mounted,
+          },
+          content: nestedTableContent(
+            leaves.map((leaf) => ({ path: leaf.block.path!, node: leaf.node })),
+          ),
+        };
+        const visit = (part: JSONContent, at: number) => {
+          const leaf = leaves.find((leaf) => leaf.node === part);
+          if (leaf) {
+            const first = at + 1;
+            let pm = first;
+            this.boundaries.set(first, leaf.block.from);
+            const runs = cell.runs.filter((run) => (run.block ?? 0) === leaf.block.index);
+            for (const run of runs) {
+              for (let i = 0; i < run.text.length; i++) {
+                const from =
+                  run.emitted?.from ??
+                  (run.to - run.from === run.text.length ? run.from + i : run.from);
+                const to =
+                  run.emitted?.to ?? (run.to - run.from === run.text.length ? from + 1 : run.to);
+                this.positions.set(pm + i, from);
+                this.ends.set(pm + i + 1, to);
+                this.tokens.push({
+                  pm: pm + i,
+                  from,
+                  to,
+                  text: run.text[i],
+                  raw: run.emitted?.raw ?? cell.raw.slice(from - cell.first, to - cell.first),
+                  marks: run.marks as SourceProjection['tokens'][number]['marks'],
+                });
+              }
+              pm += run.text.length;
+            }
+            this.boundaries.set(pm, leaf.block.to);
+            this.paragraphs.push({
+              cell,
+              block: leaf.block.index,
+              pm: first,
+              end: pm,
+              offset: runs[0]?.offset ?? 0,
+              path: leaf.block.path!.map((part) => part.index),
+            });
+            return;
+          }
+          let next = at + 1;
+          for (const child of part.content ?? []) {
+            visit(child, next);
+            next += size(child);
+          }
+        };
+        visit(node, cellPM);
+        row!.content!.push(node);
+        this.boundaries.set(cellPM, cell.body);
+        this.boundaries.set(cellPM + size(node), cell.end);
+        this.entries.push({
+          cell,
+          pm: cellPM,
+          paragraph: cellPM + 1,
+          end: cellPM + size(node) - 1,
+        });
+        cellPM += size(node);
+        continue;
       }
       const paragraphs: JSONContent[] = [];
       let pm = cellPM + 2;
@@ -191,12 +269,16 @@ export class TableProjection {
       cell: paragraph.cell.from,
       block: paragraph.block,
       offset: pm - paragraph.pm + paragraph.offset,
+      ...(paragraph.path ? { path: paragraph.path } : {}),
     };
   }
   pointPM(point?: TablePoint) {
     if (!point) return undefined;
     const paragraph = this.paragraphs.find(
-      (p) => p.cell.from === point.cell && p.block === point.block,
+      (p) =>
+        p.cell.from === point.cell &&
+        p.block === point.block &&
+        (!point.path || JSON.stringify(point.path) === JSON.stringify(p.path)),
     );
     return paragraph
       ? Math.max(
@@ -392,6 +474,7 @@ export class TableProjection {
               nodeType: after.type.name,
               attrs: after.attrs,
               block: paragraph.block,
+              ...(paragraph.path ? { path: paragraph.path } : {}),
               from: paragraph.offset + step.from - paragraph.pm,
               to: paragraph.offset + step.to - paragraph.pm,
               content: step.slice.content.content.map((n) => n.toJSON()),

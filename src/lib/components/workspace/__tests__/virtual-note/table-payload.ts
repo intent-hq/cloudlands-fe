@@ -6,12 +6,19 @@ import {
   type ParagraphRunContext,
 } from './table-run-context';
 import type { TableFragment, TableWindow } from './table-source';
+import { bytes } from './bounded-note-service';
+
+export const tableAliasExpansionWork = { calls: 0, bytes: 0, maxBytes: 0, maxResidentBytes: 0 };
 
 // Renderer cells retain this tuple, not an expanded object plus an encoded copy.
 // Plain text provenance is derived from its source interval when requested.
 type Extra = Partial<
   Omit<TableFragment, 'row' | 'column' | 'from' | 'to' | 'body' | 'raw' | 'align'>
-> & { syntax?: RunContext; paragraphSyntax?: ParagraphRunContext[] };
+> & {
+  syntax?: RunContext;
+  paragraphSyntax?: ParagraphRunContext[];
+  aliasAtoms?: Array<[number, number, number, string, number]>;
+};
 type CellData = [number, number, number, number, number, string, (string | null)?, Extra?];
 class PackedCell implements TableFragment {
   constructor(readonly data: CellData) {}
@@ -46,6 +53,35 @@ class PackedCell implements TableFragment {
     return this.data[7]?.end ?? this.body + this.raw.length;
   }
   get runs() {
+    const atoms = this.data[7]?.aliasAtoms;
+    if (atoms) {
+      const runs = [
+        ...(this.data[7]?.runs ?? []),
+        ...atoms.map(([at, block, offset, id, emittedFrom]) => {
+          const typeAt = id.lastIndexOf(':'),
+            raw = `<!--anchor:${id}-->`;
+          return {
+            from: this.first + at,
+            to: this.first + at,
+            text: '\ufffc',
+            marks: [],
+            block,
+            offset,
+            anchor: { id, type: id.slice(typeAt + 1), commentId: id.slice(0, typeAt) },
+            emitted: { from: emittedFrom, to: emittedFrom + raw.length, raw },
+          };
+        }),
+      ].sort((a, b) => (a.block ?? 0) - (b.block ?? 0) || (a.offset ?? 0) - (b.offset ?? 0));
+      const size = bytes(JSON.stringify(runs));
+      tableAliasExpansionWork.calls++;
+      tableAliasExpansionWork.bytes += size;
+      tableAliasExpansionWork.maxBytes = Math.max(tableAliasExpansionWork.maxBytes, size);
+      tableAliasExpansionWork.maxResidentBytes = Math.max(
+        tableAliasExpansionWork.maxResidentBytes,
+        size + bytes(JSON.stringify(this.data)),
+      );
+      return runs;
+    }
     const paragraphs = this.data[7]?.paragraphSyntax;
     if (paragraphs)
       return paragraphs.flatMap(([first, last, context]) =>
@@ -121,7 +157,29 @@ function packTableCell(c: TableFragment): TableFragment {
     else {
       const paragraphs = compactParagraphContexts(c);
       if (paragraphs) extra.paragraphSyntax = paragraphs;
-      else extra.runs = c.runs;
+      else {
+        const atoms = c.runs.filter(
+          (r) =>
+            r.anchor &&
+            r.emitted &&
+            !r.marks.length &&
+            r.from === r.to &&
+            r.anchor.id === `${r.anchor.commentId}:${r.anchor.type}` &&
+            r.emitted.raw === `<!--anchor:${r.anchor.id}-->` &&
+            r.emitted.to - r.emitted.from === r.emitted.raw.length,
+        );
+        if (atoms.length) {
+          extra.aliasAtoms = atoms.map((r) => [
+            r.from - c.first,
+            r.block ?? 0,
+            r.offset ?? 0,
+            r.anchor!.id,
+            r.emitted!.from,
+          ]);
+          const packed = new Set(atoms);
+          extra.runs = c.runs.filter((r) => !packed.has(r));
+        } else extra.runs = c.runs;
+      }
     }
   }
   for (const key of [

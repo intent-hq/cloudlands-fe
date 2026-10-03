@@ -1,3 +1,7 @@
+import { aliasedTableIndex, emittedTableAnchor, type TableAliases } from './table-alias';
+import { commandHistory, type CommandHistory } from './command-history';
+import type { TableDOMReplacement } from './table-dom-replacement';
+import { Lexer } from 'marked';
 import { mapListCode, touchesListCode, validListCode, type ListCode } from './list-code';
 import {
   validParagraphSeam,
@@ -6,7 +10,7 @@ import {
   type ParagraphSeam,
 } from './paragraph-seam';
 import { planTableTextPaste } from './table-text-paste-plan';
-import type { TableCommandName } from './table-native-command';
+import type { TableCommandName, TableCommandSlice } from './table-native-command';
 import { planTablePaste } from './table-paste-plan';
 import {
   ClipboardBacking,
@@ -18,7 +22,14 @@ import {
   fitCellTextPaste,
   type ClipboardValue,
 } from './table-clipboard';
-import type { Schema } from '@tiptap/pm/model';
+import { Slice, type Schema } from '@tiptap/pm/model';
+import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state';
+import {
+  CommandManager,
+  commands as nativeCommands,
+  extensions as nativeExtensions,
+} from '@tiptap/core';
+import { ListKeymap } from '@tiptap/extension-list';
 import { encodeTablePages, TABLE_ACTIVE_BYTES } from './table-transfer';
 import { TableHeights } from './table-heights';
 import { cloneTableWindow, packTableWindow } from './table-payload';
@@ -31,6 +42,7 @@ import {
   scanTables,
   tableCellAt,
   tableRuns,
+  nativeTableCellRuns,
   admitTableWindow,
   type TableIndex,
   type TableWindow,
@@ -59,7 +71,7 @@ export const LIMITS = {
 };
 export const fixture = (id: number) =>
   `Region ${String(id).padStart(4, '0')} — café 🌍. repeated repeated [link](https://example.test).\n\n`;
-export type TablePoint = { cell: number; block: number; offset: number };
+export type TablePoint = { cell: number; block: number; offset: number; path?: number[] };
 export type Selection = {
   anchor: number;
   head: number;
@@ -73,6 +85,23 @@ export type DeferredInput = {
   time: number;
   selection?: Selection;
   text?: string;
+};
+export type MixedCommand = {
+  revision: number;
+  owner: number;
+  from: number;
+  to: number;
+  selection: Selection;
+  command: 'Backspace' | 'Delete' | 'replace';
+  capture?: boolean;
+  slice?: TableCommandSlice;
+  replacement?: {
+    from: number;
+    to: number;
+    slice: TableCommandSlice;
+    anchor: number;
+    head: number;
+  };
 };
 export type Splice = { from: number; to: number; insert: string };
 export type Change = Splice & {
@@ -812,17 +841,243 @@ export class SourceJournal {
       revision: this.revision,
     };
   }
+  maxMixedCommandRequestBytes = 0;
+  maxBackingMixedCommandBytes = 0;
+  maxBackingMixedCommandNodes = 0;
+  /** Scalar ownership for the existing list/fence boundary; all indexing stays in backing. */
+  mixedCodeSpan(owner: number, revision: number) {
+    if (revision !== this.revision) throw new Error('Stale mixed ownership');
+    const { id, start } = this.locate(owner);
+    this.spans(id);
+    const fence = this.inlineIndex.get(id)!.fences.find((f) => f.from + start === owner);
+    if (!fence) throw new Error('Mixed fence no longer exists');
+    const all = this.listItems(id).filter((item) => item.to <= fence.from);
+    const last = all.at(-1);
+    if (!last || this.region(id).slice(last.to, fence.from).trim())
+      throw new Error('Mixed fence has no adjacent list');
+    let first = last;
+    for (let i = all.length - 2; !(last.parent < 0 && last.ordinal === 1) && i >= 0; i--) {
+      const item = all[i];
+      if (item.parent < 0 && item.ordinal === 1) {
+        first = item;
+        break;
+      }
+      first = item;
+    }
+    // The closing marker belongs to the moved construct; following blank-line
+    // framing belongs to its untouched neighbor and stays outside the operation.
+    const separator = /(?:`{3,}|~{3,})[ \t]*(?:\r?\n)*$/.test(fence.closing)
+      ? (fence.closing.match(/(?:\r?\n)+$/)?.[0].length ?? 0)
+      : 0;
+    return { owner, from: first.from + start, to: fence.to + start - separator };
+  }
+  stageMixedCommand(
+    intent: MixedCommand,
+    editor: Editor,
+    receiveHistory?: (history: CommandHistory) => void,
+  ): Selection {
+    const encoded = JSON.stringify(intent);
+    this.maxMixedCommandRequestBytes = Math.max(this.maxMixedCommandRequestBytes, bytes(encoded));
+    if (bytes(encoded) > LIMITS.request) throw new Error('Mixed command exceeds request budget');
+    const received = JSON.parse(encoded) as MixedCommand;
+    if (received.revision !== this.revision || received.selection.revision !== this.revision)
+      throw new Error('Stale mixed command');
+    const span = this.mixedCodeSpan(received.owner, received.revision);
+    if (
+      span.from !== received.from ||
+      span.to !== received.to ||
+      Math.min(received.selection.anchor, received.selection.head) < span.from ||
+      Math.max(received.selection.anchor, received.selection.head) > span.to
+    )
+      throw new Error('Invalid mixed command ownership');
+    const source = this.slice(span.from, span.to);
+    const context = this.backingInlineContext(span.from, span.to);
+    const projection = new SourceProjection(source, span.from, context);
+    if (!projection.list) throw new Error('Mixed list projection missing');
+    const doc = editor.schema.nodeFromJSON(projection.content);
+    const selection = TextSelection.create(
+      doc,
+      projection.pmAt(received.selection.anchor, received.selection.affinity),
+      projection.pmAt(received.selection.head, received.selection.affinity),
+    );
+    const state = EditorState.create({ doc, selection });
+    let transaction: Transaction | undefined;
+    if (received.command === 'replace') {
+      if (received.replacement) {
+        const replacement = received.replacement;
+        if (
+          replacement.from < span.from ||
+          replacement.to > span.to ||
+          replacement.to < replacement.from
+        )
+          throw new Error('Invalid mixed DOM replacement span');
+        const from = projection.pmAt(replacement.from),
+          to = projection.pmAt(replacement.to);
+        transaction = state.tr.replace(from, to, Slice.fromJSON(editor.schema, replacement.slice));
+        transaction.setSelection(
+          TextSelection.create(transaction.doc, from + replacement.anchor, from + replacement.head),
+        );
+      } else
+        transaction = state.tr.replaceSelection(
+          Slice.fromJSON(editor.schema, received.slice ?? {}),
+        );
+    } else {
+      let backingState = state;
+      const capabilities = {
+        get state() {
+          return backingState;
+        },
+        schema: editor.schema,
+        extensionManager: { commands: nativeCommands },
+        view: {
+          dispatch: (tr: Transaction) => {
+            if (received.capture) {
+              if (!transaction) transaction = tr;
+              else tr.steps.forEach((step) => transaction!.step(step));
+            } else {
+              transaction = tr;
+              backingState = backingState.apply(tr);
+            }
+          },
+        },
+        get commands() {
+          return manager.commands;
+        },
+        chain: () => manager.chain(),
+      };
+      const backingEditor = new Proxy(capabilities, {
+        get(target, key) {
+          if (!(key in target))
+            throw new Error(`Mixed native planner requested renderer capability ${String(key)}`);
+          return Reflect.get(target, key);
+        },
+      }) as unknown as Editor;
+      const manager = new CommandManager({ editor: backingEditor });
+      const listKeys = ListKeymap.config.addKeyboardShortcuts!.call({
+        editor: backingEditor,
+        options: ListKeymap.options,
+      } as never);
+      const keys = nativeExtensions.Keymap.config.addKeyboardShortcuts!.call({
+        editor: backingEditor,
+      } as never);
+      if (!listKeys[received.command]!({ editor: backingEditor }))
+        keys[received.command]!({ editor: backingEditor });
+    }
+    if (!transaction) throw new Error('Native mixed command unavailable');
+    const tr: Transaction = transaction;
+    // Include rejected plans: source, context, two native trees and provenance
+    // coexist in this external mock. These are serialized sizes, not a heap cap.
+    let nativeNodes = 0;
+    doc.descendants(() => {
+      nativeNodes++;
+    });
+    tr.doc.descendants(() => {
+      nativeNodes++;
+    });
+    this.maxBackingMixedCommandNodes = Math.max(this.maxBackingMixedCommandNodes, nativeNodes);
+    const initialWork =
+      bytes(source) +
+      bytes(JSON.stringify(context)) +
+      bytes(JSON.stringify(doc.toJSON())) +
+      bytes(JSON.stringify(tr.doc.toJSON())) +
+      bytes(JSON.stringify(projection.content)) +
+      bytes(JSON.stringify(projection.tokens)) +
+      bytes(JSON.stringify([...projection.positions])) +
+      bytes(JSON.stringify([...projection.ends]));
+    this.maxBackingMixedCommandBytes = Math.max(this.maxBackingMixedCommandBytes, initialWork);
+    const history = commandHistory([tr]);
+    history.before = history.before.map(([a, b]) => [
+      projection.sourceAt(a),
+      projection.sourceAt(b),
+    ]);
+    const splices = projection.list.translateTransaction(tr);
+    let end = span.to;
+    this.stageProjection(
+      splices,
+      projection.list.fences,
+      this.revision,
+      true,
+      projection.list.indentation,
+      (splice) => {
+        end = mapPoint(end, splice);
+      },
+    );
+    this.setLiteralNewlines(span.from, end, projection.list.literalNewlines);
+    this.setListCodes(span.from, end, projection.list.codes);
+    this.setSeams(span.from, end, projection.list.seams);
+    const afterSource = this.slice(span.from, end);
+    const afterContext = this.backingInlineContext(span.from, end);
+    const afterProjection = new SourceProjection(afterSource, span.from, afterContext);
+    if (!editor.schema.nodeFromJSON(afterProjection.content).eq(tr.doc)) {
+      throw new Error('Full mixed native result differs from live projection');
+    }
+    let nodes = 0;
+    doc.descendants(() => {
+      nodes++;
+    });
+    tr.doc.descendants(() => {
+      nodes++;
+    });
+    this.maxBackingMixedCommandNodes = Math.max(this.maxBackingMixedCommandNodes, nodes);
+    this.maxBackingMixedCommandBytes = Math.max(
+      this.maxBackingMixedCommandBytes,
+      initialWork +
+        bytes(afterSource) +
+        bytes(JSON.stringify(context)) +
+        bytes(JSON.stringify(afterContext)) +
+        bytes(JSON.stringify(doc.toJSON())) +
+        bytes(JSON.stringify(tr.doc.toJSON())) +
+        bytes(JSON.stringify(splices)),
+    );
+    history.after = history.after.map(([a, b]) => [
+      afterProjection.sourceAt(a),
+      afterProjection.sourceAt(b),
+    ]);
+    const receipt = JSON.stringify(history);
+    if (bytes(receipt) > LIMITS.request) throw new Error('Mixed history receipt exceeds budget');
+    this.maxMixedCommandRequestBytes = Math.max(this.maxMixedCommandRequestBytes, bytes(receipt));
+    receiveHistory?.(JSON.parse(receipt));
+    return {
+      anchor: afterProjection.sourceAt(tr.selection.anchor),
+      head: afterProjection.sourceAt(tr.selection.head),
+      affinity: tr.selection.anchor <= tr.selection.head ? 1 : -1,
+      revision: this.revision,
+    };
+  }
+  tableFollowingParagraph(owner: number, revision: number) {
+    if (revision !== this.revision) throw new Error('Stale table neighbor');
+    const { id, start } = this.locate(owner),
+      source = this.region(id);
+    const table = this.tableIndex(source, start).find((t) => t.from + start === owner);
+    if (!table) throw new Error('Missing table neighbor owner');
+    const from = table.to + (source.slice(table.to).match(/^(?:\r?\n)*/)?.[0].length ?? 0);
+    const token = Lexer.lex(source.slice(from), { gfm: true })[0];
+    if (token?.type !== 'paragraph') throw new Error('Native table neighbor is not a paragraph');
+    return { from: from + start, to: from + start + token.raw.replace(/(?:\r?\n)+$/, '').length };
+  }
   maxTableStructuralTransientBytes = 0;
   maxBackingTableCommandBytes = 0;
   maxBackingTableCommandNodes = 0;
   /** A revisioned command and logical endpoints, not a cropped native tree.
    * Full native planning and source/session serialization belong to mock backing. */
   stageLogicalTableCommand(
-    intent: { revision: number; table: number; command: TableCommandName; selection: Selection },
+    intent: {
+      revision: number;
+      table: number;
+      command: TableCommandName;
+      selection: Selection;
+      slice?: TableCommandSlice;
+      neighbor?: { from: number; to: number };
+      dom?: TableDOMReplacement;
+      preserve?: { anchor: TablePoint; head: TablePoint };
+    },
     editor: Editor,
     apply = true,
     dispatch = true,
+    receiveHistory?: (history: CommandHistory) => void,
   ): Selection | false {
+    if (intent.command === 'normalizeLeadingBoundary' && apply)
+      throw new Error('Boundary normalization is read-only');
     const encoded = JSON.stringify(intent),
       size = bytes(encoded);
     if (size > LIMITS.request) throw new Error('Table command request exceeds budget');
@@ -835,6 +1090,44 @@ export class SourceJournal {
     const source = this.region(id);
     const table = this.tableIndex(source, start).find((t) => t.from + start === received.table);
     if (!table) throw new Error('Logical table no longer exists');
+    let neighborBytes = 0;
+    let neighbor:
+      { node: import('@tiptap/pm/model').Node; anchor?: number; head?: number } | undefined;
+    if (received.neighbor) {
+      const bounds = this.tableFollowingParagraph(received.table, received.revision);
+      if (
+        received.command !== 'replaceSelection' ||
+        logical.kind !== 'text' ||
+        bounds.from !== received.neighbor.from ||
+        bounds.to !== received.neighbor.to
+      )
+        throw new Error('Invalid mixed table neighbor ownership');
+      const projection = new SourceProjection(
+        this.slice(bounds.from, bounds.to),
+        bounds.from,
+        this.backingInlineContext(bounds.from, bounds.to),
+      );
+      const doc = editor.schema.nodeFromJSON(projection.content);
+      if (doc.childCount !== 1 || doc.firstChild!.type.name !== 'paragraph')
+        throw new Error('Invalid native table paragraph');
+      const anchor =
+        received.selection.anchor >= bounds.from && received.selection.anchor <= bounds.to
+          ? projection.pmAt(received.selection.anchor, received.selection.affinity)
+          : undefined;
+      const head =
+        received.selection.head >= bounds.from && received.selection.head <= bounds.to
+          ? projection.pmAt(received.selection.head, received.selection.affinity)
+          : undefined;
+      if ((anchor === undefined) === (head === undefined))
+        throw new Error('Mixed table selection must cross one boundary');
+      neighbor = { node: doc.firstChild!, anchor, head };
+      neighborBytes =
+        bytes(projection.source) +
+        bytes(JSON.stringify(projection.content)) +
+        bytes(JSON.stringify(projection.context)) +
+        bytes(JSON.stringify(projection.tokens));
+      this.maxBackingMixedCommandBytes = Math.max(this.maxBackingMixedCommandBytes, neighborBytes);
+    }
     const plan = planTableTextPaste(
       source,
       start,
@@ -848,12 +1141,30 @@ export class SourceJournal {
         return value ? JSON.parse(value) : undefined;
       },
       this.clipboardCellSerialization,
-      { name: received.command, kind: logical.kind, dispatch },
+      {
+        name: received.command,
+        kind: logical.kind,
+        dispatch,
+        slice: received.slice,
+        neighbor,
+        dom: received.dom,
+        preserve: received.preserve,
+        aliased: this.tableStates.has(`alia:${received.table}`),
+      },
     );
     this.maxBackingTableCommandBytes = Math.max(
       this.maxBackingTableCommandBytes,
-      plan.costs.serializedBytes + plan.costs.planBytes,
+      neighborBytes + plan.costs.serializedBytes + plan.costs.planBytes,
     );
+    if (received.neighbor) {
+      this.maxBackingMixedCommandBytes = Math.max(
+        this.maxBackingMixedCommandBytes,
+        neighborBytes + plan.costs.serializedBytes + plan.costs.planBytes,
+      );
+      // The consumed paragraph excludes its following separators. The old table
+      // row terminator now lies inside that consumed span, not at its new end.
+      plan.text = plan.text.replace(/\r?\n$/, '');
+    }
     this.maxBackingTableCommandNodes = Math.max(this.maxBackingTableCommandNodes, plan.costs.nodes);
     this.maxTableStructuralTransientBytes = Math.max(
       this.maxTableStructuralTransientBytes,
@@ -887,7 +1198,8 @@ export class SourceJournal {
         for (const cell of row.cells)
           if (this.tableStates.has(`cell:${cell.from + start}`))
             this.stageTableState(`cell:${cell.from + start}`, '');
-      const previous = source.slice(table.from, table.to);
+      const operationEnd = received.neighbor ? received.neighbor.to - start : table.to;
+      const previous = source.slice(table.from, operationEnd);
       let prefix = 0,
         suffix = 0;
       while (
@@ -904,11 +1216,15 @@ export class SourceJournal {
         suffix++;
       this.stage({
         from: table.from + start + prefix,
-        to: table.to + start - suffix,
+        to: operationEnd + start - suffix,
         insert: plan.text.slice(prefix, plan.text.length - suffix),
       });
       for (const cell of plan.states)
         this.stageTableState(`cell:${cell.from}`, JSON.stringify(cell.node));
+      if (plan.aliases)
+        this.stageTableState(`alia:${received.table}`, JSON.stringify(plan.aliases));
+      else if (this.tableStates.has(`alia:${received.table}`))
+        this.stageTableState(`alia:${received.table}`, '');
       // Keep the native live boundary without rewriting either neighbor's source.
       // The table scan owns its final row newline; the remaining right blank line
       // would otherwise be a newly parsed empty paragraph when joined to the left.
@@ -921,11 +1237,13 @@ export class SourceJournal {
       revision: this.revision,
       table: plan.logicalSelection,
     };
-    const response = JSON.stringify(after);
+    const response = JSON.stringify({ after, history: plan.history });
     if (bytes(response) > LIMITS.request) throw new Error('Table command response exceeds budget');
     this.maxTableWriteBytes = Math.max(this.maxTableWriteBytes, size, bytes(response));
     this.log('table-logical-command', received.table, size);
-    return JSON.parse(response) as Selection;
+    const decoded = JSON.parse(response) as { after: Selection; history: CommandHistory };
+    receiveHistory?.(decoded.history);
+    return decoded.after;
   }
   maxBackingTableSplitCells = 0;
   maxBackingTableSplitBytes = 0;
@@ -1076,18 +1394,32 @@ export class SourceJournal {
     return this.tableWindow(cell.body + start, retained)!;
   }
   validateTableRemote(splice: Splice) {
+    const regions = new Map<number, ReturnType<SourceJournal['tableIndex']>>();
     for (const key of this.tableStates.keys()) {
       const at = Number(key.slice(5)),
         { id, start } = this.locate(at);
-      if (key.startsWith('tail:')) {
+      let tables = regions.get(id);
+      if (!tables) {
+        tables = this.tableIndex(this.region(id), start);
+        regions.set(id, tables);
+      }
+      if (key.startsWith('alia:')) {
+        const table = tables.find((t) => t.from + start === at);
+        if (!table) throw new Error('Conflict: invalidated table alias owner');
+        const to = table.to + start;
         if (
-          !this.tableIndex(this.region(id), start).some((t) => t.from + start === at) ||
-          (splice.from <= at && splice.to > at)
+          (splice.from < to && splice.to > at) ||
+          (splice.from === splice.to && splice.from > at && splice.from < to)
         )
+          throw new Error('Conflict: remote source overlaps live table aliases');
+        continue;
+      }
+      if (key.startsWith('tail:')) {
+        if (!tables.some((t) => t.from + start === at) || (splice.from <= at && splice.to > at))
           throw new Error('Conflict: remote source removes native table terminal owner');
         continue;
       }
-      const cell = this.tableIndex(this.region(id), start)
+      const cell = tables
         .flatMap((t) => t.rows.flatMap((r) => r.cells))
         .find((c) => c.from + start === at);
       if (!cell) throw new Error('Conflict: invalidated table metadata');
@@ -1100,10 +1432,27 @@ export class SourceJournal {
         throw new Error('Conflict: remote source overlaps live table structure');
     }
   }
+  maxBackingTableAliasBytes = 0;
   private tableIndex(source: string, start: number) {
-    return scanTables(this.maskListCode(source, start), (from) => {
+    const masked = this.maskListCode(source, start);
+    const metadata = (from: number) => {
       const value = this.tableStates.get(`cell:${from + start}`);
       return value ? JSON.parse(value) : undefined;
+    };
+    return scanTables(masked, metadata).map((table) => {
+      const value = this.tableStates.get(`alia:${table.from + start}`);
+      if (!value) return table;
+      const physical = scanTables(masked, undefined, true).find((t) => t.from === table.from)!;
+      const aliases = JSON.parse(value) as TableAliases;
+      const logical = aliasedTableIndex(physical, aliases);
+      this.maxBackingTableAliasBytes = Math.max(
+        this.maxBackingTableAliasBytes,
+        bytes(masked) +
+          bytes(value) +
+          bytes(JSON.stringify(physical)) +
+          bytes(JSON.stringify(logical)),
+      );
+      return logical;
     });
   }
   private stageTableMerge(
@@ -1256,11 +1605,40 @@ export class SourceJournal {
     const window = this.tableViewportWindow(...args);
     return window && this.transferTable(window);
   }
+  private completeMixedTableFits(source: string, table: TableIndex, start: number) {
+    try {
+      const window = admitTableWindow(
+        source,
+        table,
+        table.from,
+        this.revision,
+        (cell) => {
+          const saved = this.tableStates.get(`cell:${cell.from + start}`);
+          return saved ? JSON.parse(saved) : undefined;
+        },
+        undefined,
+        undefined,
+        { row: 0, column: 0, rowCount: table.rows.length, columnCount: table.columns },
+      );
+      return (
+        window.cells.every((cell) => !cell.partial) &&
+        window.cells.length === table.rows.length * table.columns
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'Table cell context cannot fit admission budget'
+      )
+        return false;
+      throw error;
+    }
+  }
   mixedBoundary(position: number) {
     const { id, start } = this.locate(position),
       source = this.region(id);
     for (const table of this.tableIndex(source, start)) {
-      if (table.to - table.from <= 4096) continue;
+      if (table.to - table.from <= 4096 && this.completeMixedTableFits(source, table, start))
+        continue;
       const first = table.rows[0].cells[0],
         last = table.rows.at(-1)!.cells.at(-1)!;
       const before = source.slice(Math.max(0, table.from - 2048), table.from);
@@ -1278,7 +1656,11 @@ export class SourceJournal {
         side,
         from: start + (side === 'before' ? table.from - before.length : table.to),
         to: start + (side === 'before' ? table.from : table.to + after.length),
-        at: start + (side === 'before' ? first.body : last.end),
+        at:
+          start +
+          (side === 'before'
+            ? Math.max(first.body, Math.min(first.end, local))
+            : Math.max(last.body, Math.min(last.end, local))),
       };
       this.log('mixed-boundary', position, bytes(JSON.stringify(result)));
       return result;
@@ -1286,7 +1668,13 @@ export class SourceJournal {
     return undefined;
   }
   mixedTableRanges(from: number, to: number) {
-    const ranges: Array<{ from: number; to: number; rows: number; columns: number }> = [];
+    const ranges: Array<{
+      from: number;
+      to: number;
+      rows: number;
+      columns: number;
+      complete: boolean;
+    }> = [];
     for (let id = this.locate(from).id; id <= this.locate(to).id && id < this.count; id++) {
       const start = this.start(id);
       for (const table of this.tableIndex(this.region(id), start)) {
@@ -1295,13 +1683,16 @@ export class SourceJournal {
           to: table.to + start,
           rows: table.rows.length,
           columns: table.columns,
+          complete: false,
         };
         if (
           range.from >= from &&
           range.to <= to &&
           (this.slice(from, range.from).trim() || this.slice(range.to, to).trim())
-        )
+        ) {
+          range.complete = this.completeMixedTableFits(this.region(id), table, start);
           ranges.push(range);
+        }
       }
     }
     const size = bytes(JSON.stringify(ranges));
@@ -1446,14 +1837,29 @@ export class SourceJournal {
       local,
       preferred && { ...preferred, cell: preferred.cell - start },
       rectangle,
+      (cell, path, anchor) => {
+        const value = this.tableStates.get(`alia:${table.from + start}`);
+        if (!value) return undefined;
+        this.backingTableScannedBytes += bytes(source);
+        return emittedTableAnchor(source, table, JSON.parse(value), cell, path, anchor, (size) => {
+          this.maxBackingTableAliasBytes = Math.max(this.maxBackingTableAliasBytes, size);
+        });
+      },
     );
     window.from += start;
     window.to += start;
+    if (this.tableStates.has(`alia:${window.from}`)) window.aliased = true;
     window.trailing = window.to !== this.length || this.tableStates.has(`tail:${window.from}`);
     for (const cell of window.cells) {
       for (const field of ['from', 'to', 'body', 'end', 'first', 'last'] as const)
         cell[field] += start;
       for (const run of cell.runs) {
+        if (run.emitted)
+          run.emitted = {
+            ...run.emitted,
+            from: run.emitted.from + start,
+            to: run.emitted.to + start,
+          };
         if (run.code) run.code = { from: run.code.from + start, to: run.code.to + start };
         run.from += start;
         run.to += start;
@@ -1546,6 +1952,64 @@ export class SourceJournal {
       };
       this.anchors = this.anchors.filter((a) => a.id !== id).concat(anchor);
     }
+  }
+  private reindexAliasCommentMarkers() {
+    if (!this.markerIds.size) return;
+    const points = new Map<string, { start?: number; end?: number }>();
+    for (const [key, value] of this.tableStates) {
+      if (!key.startsWith('alia:')) continue;
+      const at = Number(key.slice(5)),
+        { id, start } = this.locate(at),
+        source = this.region(id);
+      const table = this.tableIndex(source, start).find((t) => t.from + start === at);
+      if (!table) throw new Error('Missing live annotation alias owner');
+      const aliases = JSON.parse(value) as TableAliases;
+      for (const row of table.rows)
+        for (const cell of row.cells) {
+          const encoded = this.tableStates.get(`cell:${cell.from + start}`);
+          if (!encoded || !encoded.includes('commentAnchor')) continue;
+          const raw = source.slice(cell.body, cell.end);
+          const mapped = nativeTableCellRuns(
+            cell,
+            tableRuns(raw, cell.body),
+            JSON.parse(encoded),
+            (entry, path, anchor) =>
+              emittedTableAnchor(source, table, aliases, entry, path, anchor, (size) => {
+                this.maxBackingTableAliasBytes = Math.max(this.maxBackingTableAliasBytes, size);
+              }),
+          );
+          this.backingMarkerScannedBytes += bytes(source);
+          this.maxBackingTableAliasBytes = Math.max(
+            this.maxBackingTableAliasBytes,
+            bytes(source) +
+              bytes(value) +
+              bytes(encoded) +
+              bytes(raw) +
+              bytes(JSON.stringify(mapped)),
+          );
+          for (const run of mapped.runs) {
+            const marker = run.anchor;
+            if (!marker || !this.markerIds.has(marker.commentId)) continue;
+            const point = points.get(marker.commentId) ?? {};
+            if (marker.type === 'start') point.start = run.to + start;
+            if (marker.type === 'end') point.end = run.from + start;
+            points.set(marker.commentId, point);
+          }
+        }
+    }
+    this.anchors = this.anchors.map((anchor) => {
+      const point = points.get(anchor.id);
+      if (!point || anchor.kind !== 'comment') return anchor;
+      const from = point.start ?? anchor.from,
+        to = point.end ?? anchor.to;
+      return {
+        ...anchor,
+        from,
+        to,
+        alive:
+          (anchor.alive || (point.start !== undefined && point.end !== undefined)) && to > from,
+      };
+    });
   }
   replaceAttribution(revision: number, generation: number, anchors: Anchor[]) {
     if (revision !== this.revision || generation !== this.generation)
@@ -1707,6 +2171,29 @@ export class SourceJournal {
       }
     });
   }
+  setLiteralNewlines(
+    from: number,
+    to: number,
+    ranges: Array<{ item: number; from: number; to: number }>,
+  ) {
+    if (bytes(JSON.stringify(ranges)) > LIMITS.request)
+      throw new Error('List text provenance exceeds budget');
+    for (const old of this.paragraphSeams.values()) {
+      if (old.kind !== 'list-text' || old.to <= from || old.from >= to) continue;
+      if (!ranges.some((r) => r.from === old.from && r.to === old.to && r.item === old.item))
+        this.paragraphSeamChange(old, null, true);
+    }
+    for (const range of ranges) {
+      const seam: ParagraphSeam = { ...range, kind: 'list-text' };
+      if (!validParagraphSeam(seam, this.length, this.slice(range.from, range.to)))
+        throw new Error('Invalid list text provenance');
+      const { id, start } = this.locate(range.item);
+      const owner = scanLists(this.region(id)).find((item) => item.from + start === range.item);
+      if (!owner || range.from < owner.body + start) throw new Error('Invalid list text owner');
+      if (JSON.stringify(this.paragraphSeams.get(range.from)) !== JSON.stringify(seam))
+        this.paragraphSeamChange(this.paragraphSeams.get(range.from) ?? null, seam, true);
+    }
+  }
   private paragraphSeams = new Map<number, ParagraphSeam>();
   private mappedParagraphSeams(splice: Splice, validate = true) {
     return new Map(
@@ -1737,6 +2224,7 @@ export class SourceJournal {
     if (before) next.delete(before.from);
     if (after) next.set(after.from, { ...after });
     this.paragraphSeams = next;
+    this.inlineIndex.clear();
     this.revision++;
     if (history) this.stagedPages.push(page);
   }
@@ -1926,6 +2414,19 @@ export class SourceJournal {
           (i) => !fences.some((f) => i.from >= f.from && i.from < f.to),
         ),
       };
+      for (const range of this.paragraphSeams.values()) {
+        if (range.kind !== 'list-text') continue;
+        const owner = index.lists.find((item) => item.from + this.start(id) === range.item);
+        if (!owner) continue;
+        owner.end = Math.max(owner.end, range.to - this.start(id));
+        owner.to = Math.max(owner.to, owner.end + Number(source[owner.end] === '\n'));
+        index.lists = index.lists.filter(
+          (item) =>
+            item === owner ||
+            item.from + this.start(id) < range.from ||
+            item.from + this.start(id) >= range.to,
+        );
+      }
       this.inlineIndex.set(id, index);
       this.backingIndexBuilds++;
       this.backingIndexScannedBytes += bytes(source);
@@ -1961,7 +2462,8 @@ export class SourceJournal {
     // This mock may scan its full index; only the final bounded context reaches the renderer.
     while (
       bytes(this.slice(from, to)) + bytes(JSON.stringify(this.inlineContext(from, to))) >
-      LIMITS.request - 512
+        LIMITS.request - 512 ||
+      (this.slice(from, to).match(/\n/g)?.length ?? 0) * 2 + 32 > LIMITS.nodes
     ) {
       const center = Math.max(from, Math.min(to, target));
       const nextFrom = from + Math.ceil((center - from) / 8);
@@ -2001,7 +2503,7 @@ export class SourceJournal {
     }
     return start + local;
   }
-  inlineContext(from: number, to: number, revision = this.revision): InlineContext {
+  private backingInlineContext(from: number, to: number, revision = this.revision): InlineContext {
     if (revision !== this.revision) throw new Error('Stale inline context');
     const stack = (position: number) => {
       const { id, start } = this.locate(position);
@@ -2009,7 +2511,7 @@ export class SourceJournal {
       return this.spans(id)
         .filter((s) => s.openFrom < local && s.contentFrom <= local && local <= s.contentTo)
         .map((s) =>
-          s.mark.type === 'italic'
+          ['italic', 'bold'].includes(s.mark.type)
             ? { ...s.mark, range: { from: s.contentFrom + start, to: s.contentTo + start } }
             : s.mark,
         );
@@ -2062,6 +2564,10 @@ export class SourceJournal {
       to,
       before,
       after,
+      documentEnd: to === this.length,
+      literalNewlines: [...this.paragraphSeams.values()]
+        .filter((seam) => seam.kind === 'list-text' && seam.from < to && seam.to > from)
+        .map((seam) => ({ item: seam.item!, from: seam.from, to: seam.to })),
       listCodes: [...this.listCodes.values()].filter((code) => code.to > from && code.from < to),
       ...([...this.paragraphSeams.values()].some((seam) => seam.from < to && seam.to > from)
         ? {
@@ -2081,6 +2587,10 @@ export class SourceJournal {
         : {}),
       ...(fences.length ? { fences, documentEnd: to === this.length } : {}),
     };
+    return context;
+  }
+  inlineContext(from: number, to: number, revision = this.revision): InlineContext {
+    const context = this.backingInlineContext(from, to, revision);
     const size = bytes(JSON.stringify(context));
     if (size > LIMITS.request) throw new Error('Inline context exceeds experiment metadata budget');
     this.inlineContextReads++;
@@ -2336,6 +2846,7 @@ export class SourceJournal {
       commentRevision !== this.commentRevision
     )
       throw new Error('Stale annotations');
+    this.reindexAliasCommentMarkers();
     const limit = options.limit ?? 8;
     const requestBytes = bytes(JSON.stringify({ from, to, revision, generation, ...options }));
     if (requestBytes > LIMITS.request) throw new Error('Annotation request exceeds page budget');
@@ -2434,6 +2945,7 @@ export class SourceJournal {
     this.reindexCommentMarkers();
   }
   recordEdit(before: Selection, after: Selection, group: boolean) {
+    this.reindexAliasCommentMarkers();
     this.record(
       {
         changes: [],
@@ -2857,6 +3369,9 @@ export class SourceJournal {
   }
   get stats() {
     return {
+      maxMixedCommandRequestBytes: this.maxMixedCommandRequestBytes,
+      maxBackingMixedCommandBytes: this.maxBackingMixedCommandBytes,
+      maxBackingMixedCommandNodes: this.maxBackingMixedCommandNodes,
       annotationReads: this.annotationReads,
       backingMarkerScannedBytes: this.backingMarkerScannedBytes,
       maxCommentDraftPageBytes: this.maxCommentDraftPageBytes,
@@ -2880,6 +3395,7 @@ export class SourceJournal {
         0,
       ),
       maxTableParagraphTransientBytes: this.maxTableParagraphTransientBytes,
+      backingTableAliasIndexBytes: this.maxBackingTableAliasBytes,
       backingTableMetadataBytes: [...this.tableStates.values()].reduce(
         (n, value) => n + bytes(value),
         0,

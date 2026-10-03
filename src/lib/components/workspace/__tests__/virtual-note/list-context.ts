@@ -1,3 +1,4 @@
+import { Lexer } from 'marked';
 /** Mock backing index for tight, one-paragraph list items. Never a renderer full-document scan. */
 export type ListItem = {
   from: number;
@@ -48,6 +49,22 @@ export function scanLists(source: string): ListItem[] {
     };
     result.push(item);
     stack.push(item);
+  }
+  // Extend only a canonical list text token. The backing lexer determines
+  // lazy continuation ownership; unadmitted trailing lines never enter a view.
+  const starts = new Set(result.map((item) => item.from));
+  for (const item of result) {
+    if (item.to >= source.length || starts.has(item.to) || source[item.to] === '\n') continue;
+    const token = Lexer.lex(source.slice(item.from + item.indent), { gfm: true })[0];
+    if (token?.type !== 'list') continue;
+    const first = token.items[0]?.tokens[0];
+    if (first?.type !== 'text' || !first.text.includes('\n')) continue;
+    // Native lazy continuations keep their literal source spelling. Indented
+    // lines requiring a separate offset map are not guessed here.
+    if (source.startsWith(first.text, item.body)) {
+      item.end = item.body + first.text.length;
+      item.to = item.end + Number(source[item.end] === '\n');
+    }
   }
   return result;
 }

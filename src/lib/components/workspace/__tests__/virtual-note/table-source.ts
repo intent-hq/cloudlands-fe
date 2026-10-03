@@ -1,3 +1,4 @@
+import { tableParagraphLeaves, type TablePath } from './table-nested';
 import type { TableGeometry } from './table-heights';
 import { packTableWindow } from './table-payload';
 import { Lexer, Parser, type Token } from 'marked';
@@ -17,6 +18,8 @@ export type TableRun = {
   block?: number;
   offset?: number;
   code?: { from: number; to: number };
+  /** Actual canonical occurrence for a live atom omitted by an outer-cell flatten. */
+  emitted?: { from: number; to: number; raw: string };
 };
 export type TableCellSource = {
   row: number;
@@ -59,13 +62,14 @@ export type TableFragment = TableCellSource & {
   last: number;
   raw: string;
   runs: TableRun[];
-  blocks?: Array<{ index: number; from: number; to: number }>;
+  blocks?: Array<{ index: number; from: number; to: number; path?: TablePath }>;
   blockCount?: number;
   attrs?: JSONContent['attrs'];
   nodeType?: string;
 };
 export type TableWindow = {
   revision: number;
+  aliased?: boolean;
   trailing?: boolean;
   selected?: {
     anchor: number;
@@ -93,6 +97,7 @@ export type TableWindow = {
 export function scanTables(
   source: string,
   metadata?: (from: number) => JSONContent | undefined,
+  emittedCells = false,
 ): TableIndex[] {
   const fences = scanFences(source);
   const lines: Array<{ from: number; to: number; text: string }> = [];
@@ -167,7 +172,7 @@ export function scanTables(
       let column = 0;
       for (const entry of cells) {
         while ((occupied.get(column) ?? 0) > row) column++;
-        if (column >= table.columns) break;
+        if (column >= table.columns && !emittedCells) break;
         const attrs = metadata?.(entry.from)?.attrs;
         const span = Number(attrs?.colspan ?? 1),
           rowSpan = Number(attrs?.rowspan ?? 1);
@@ -198,7 +203,8 @@ export function scanTables(
         });
       }
       table.rows.push({ from: line.from, to: line.to, cells: indexed });
-      table.to = line.to;
+      // Header-only tables still own their delimiter line.
+      table.to = Math.max(table.to, line.to);
     };
     add(lines[n], header);
     n += 2;
@@ -374,6 +380,88 @@ export type TableRectangle = {
   geometry?: TableGeometry;
 };
 
+/** Backing-only mapping shared by page admission and revisioned live annotation indexes. */
+export function nativeTableCellRuns(
+  entry: TableCellSource,
+  runs: TableRun[],
+  native: JSONContent,
+  emittedAnchor?: (
+    cell: TableCellSource,
+    path: TablePath,
+    anchor: TableRun['anchor'],
+  ) => TableRun['emitted'],
+) {
+  const blocks: NonNullable<TableFragment['blocks']> = [];
+  const mapped: TableRun[] = [];
+  let index = 0,
+    offset = 0,
+    boundary = entry.body;
+  const leaves = tableParagraphLeaves(native);
+  const nested = leaves.some((leaf) => leaf.path.length > 1);
+  for (const [block, leaf] of leaves.entries()) {
+    const paragraph = leaf.node;
+    const from = boundary;
+    let blockOffset = 0;
+    if (paragraph.type !== 'paragraph') throw new Error('Unrepresented native table block');
+    for (const node of paragraph.content ?? []) {
+      if (node.type === 'commentAnchor' && runs[index]?.anchor?.id !== node.attrs?.id) {
+        const emitted = emittedAnchor?.(entry, leaf.path, node.attrs as TableRun['anchor']);
+        if (!emitted) throw new Error('Missing native table anchor occurrence');
+        mapped.push({
+          from: boundary,
+          to: boundary,
+          text: '\ufffc',
+          marks: node.marks ?? [],
+          block,
+          offset: blockOffset,
+          anchor: node.attrs as TableRun['anchor'],
+          emitted,
+        });
+        blockOffset++;
+        continue;
+      }
+      const text =
+        node.type === 'commentAnchor'
+          ? '\ufffc'
+          : node.type === 'hardBreak'
+            ? '\n'
+            : (node.text ?? '');
+      let consumed = 0;
+      while (consumed < text.length) {
+        const run = runs[index];
+        if (!run) throw new Error('Table metadata does not match source text');
+        const count = Math.min(text.length - consumed, run.text.length - offset);
+        if (text.slice(consumed, consumed + count) !== run.text.slice(offset, offset + count))
+          throw new Error('Table metadata does not match source text');
+        const equal = run.to - run.from === run.text.length;
+        const start = equal ? run.from + offset : run.from;
+        boundary = equal ? start + count : run.to;
+        mapped.push({
+          from: start,
+          to: boundary,
+          text: text.slice(consumed, consumed + count),
+          marks: node.marks ?? [],
+          ...(run.code ? { code: run.code } : {}),
+          block,
+          offset: blockOffset + consumed,
+          ...(node.type === 'hardBreak' ? { hardBreak: true } : {}),
+          ...(node.type === 'commentAnchor' ? { anchor: node.attrs as TableRun['anchor'] } : {}),
+        });
+        consumed += count;
+        offset += count;
+        if (offset === run.text.length) {
+          index++;
+          offset = 0;
+        }
+      }
+      blockOffset += text.length;
+    }
+    blocks.push({ index: block, from, to: boundary, ...(nested ? { path: leaf.path } : {}) });
+  }
+  if (index !== runs.length || offset) throw new Error('Table metadata lost source text');
+  return { runs: mapped, blocks };
+}
+
 export function admitTableWindow(
   source: string,
   table: TableIndex,
@@ -383,6 +471,11 @@ export function admitTableWindow(
   retained?: TableWindow,
   preferred?: TablePoint,
   rectangle?: TableRectangle,
+  emittedAnchor?: (
+    cell: TableCellSource,
+    path: TablePath,
+    anchor: TableRun['anchor'],
+  ) => TableRun['emitted'],
 ): TableWindow {
   const targetRow = table.rows.findIndex((row) => position < row.to);
   const row = Math.max(0, targetRow < 0 ? table.rows.length - 1 : targetRow);
@@ -398,60 +491,9 @@ export function admitTableWindow(
       return { ...run, offset };
     });
     const native = nativeCell?.(entry);
-    const blocks: Array<{ index: number; from: number; to: number }> = [];
-    if (native) {
-      const mapped: TableRun[] = [];
-      let index = 0,
-        offset = 0,
-        boundary = entry.body;
-      for (const [block, paragraph] of (native.content ?? []).entries()) {
-        const from = boundary;
-        let blockOffset = 0;
-        if (paragraph.type !== 'paragraph') throw new Error('Unrepresented native table block');
-        for (const node of paragraph.content ?? []) {
-          const text =
-            node.type === 'commentAnchor'
-              ? '\ufffc'
-              : node.type === 'hardBreak'
-                ? '\n'
-                : (node.text ?? '');
-          let consumed = 0;
-          while (consumed < text.length) {
-            const run = runs[index];
-            if (!run) throw new Error('Table metadata does not match source text');
-            const count = Math.min(text.length - consumed, run.text.length - offset);
-            if (text.slice(consumed, consumed + count) !== run.text.slice(offset, offset + count))
-              throw new Error('Table metadata does not match source text');
-            const equal = run.to - run.from === run.text.length;
-            const start = equal ? run.from + offset : run.from;
-            boundary = equal ? start + count : run.to;
-            mapped.push({
-              from: start,
-              to: boundary,
-              text: text.slice(consumed, consumed + count),
-              marks: node.marks ?? [],
-              ...(run.code ? { code: run.code } : {}),
-              block,
-              offset: blockOffset + consumed,
-              ...(node.type === 'hardBreak' ? { hardBreak: true } : {}),
-              ...(node.type === 'commentAnchor'
-                ? { anchor: node.attrs as TableRun['anchor'] }
-                : {}),
-            });
-            consumed += count;
-            offset += count;
-            if (offset === run.text.length) {
-              index++;
-              offset = 0;
-            }
-          }
-          blockOffset += text.length;
-        }
-        blocks.push({ index: block, from, to: boundary });
-      }
-      if (index !== runs.length || offset) throw new Error('Table metadata lost source text');
-      runs = mapped;
-    }
+    const mapped = native && nativeTableCellRuns(entry, runs, native, emittedAnchor);
+    const blocks = mapped ? mapped.blocks : [];
+    if (mapped) runs = mapped.runs;
     // Unseen merged cells use the approved logical-row estimate. Their bounded
     // paragraph window must progress with the admitted span, including empty
     // paragraphs whose source positions coincide. An explicit caret wins.
@@ -503,8 +545,7 @@ export function admitTableWindow(
     const selected = runs
       .filter(
         (r) =>
-          r.to > first &&
-          r.from < last &&
+          (r.emitted ? r.to >= first && r.from <= last : r.to > first && r.from < last) &&
           (!selectedBlocks.length || selectedBlocks.some((b) => b.index === (r.block ?? 0))),
       )
       .map((r) => {
@@ -524,8 +565,16 @@ export function admitTableWindow(
       last = selectedBlocks.at(-1)!.to;
     }
     if (selected.length) {
-      first = selected[0].from;
-      last = selected.at(-1)!.to;
+      // Keep actual admitted cell delimiters when the window reaches its edges.
+      // Dropping a closing mark leaves its source behind after whole-text edits.
+      first =
+        first === entry.body && selectedBlocks.length === blocks.length
+          ? entry.body
+          : selected[0].from;
+      last =
+        last === entry.end && selectedBlocks.length === blocks.length
+          ? entry.end
+          : selected.at(-1)!.to;
     }
     return {
       ...entry,
@@ -616,10 +665,15 @@ export function admitTableWindow(
         : {}),
     };
     // Raw fragments and token/structural context are admitted together, with edit headroom.
+    const resident =
+      bytes(JSON.stringify(packTableWindow(window))) + cells.reduce((n, c) => n + bytes(c.raw), 0);
+    const aliasExpansion = cells.reduce(
+      (n, c) => n + (c.runs.some((r) => r.emitted) ? bytes(JSON.stringify(c.runs)) : 0),
+      0,
+    );
     if (
-      bytes(JSON.stringify(packTableWindow(window))) +
-        cells.reduce((n, c) => n + bytes(c.raw), 0) <=
-      (retained ? 16256 : viewport ? 14336 : 3072)
+      resident <= (retained ? 16256 : viewport ? 14336 : 3072) &&
+      resident + aliasExpansion <= 16384
     )
       return window;
     if (retained) throw new Error('Table edit requires window headroom');

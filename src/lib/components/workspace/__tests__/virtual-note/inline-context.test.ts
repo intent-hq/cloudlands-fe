@@ -1,3 +1,6 @@
+import { Editor } from '@tiptap/core';
+import { createEditorConfig } from '$lib/utils/editor-config';
+import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { expect, it } from 'vitest';
 import { SourceJournal } from './source-journal';
 import { DocumentSession } from './document-session';
@@ -212,7 +215,29 @@ for (const [kind, open, close] of [
     );
     try {
       await session.seek(open.length + text.length + 2048);
-      expect(session.editor!.getText()).toBe('y'.repeat(session.projection!.source.length));
+      const native = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: await processMarkdownToHTML(source),
+          editable: true,
+          useMarkdown: true,
+          enableComments: false,
+          enableMentions: false,
+          onUpdate: () => {},
+        }),
+      );
+      try {
+        // A punctuation-adjacent closer followed immediately by a word is literal
+        // in the locked parser. Preserve that native grammar at the crop edge.
+        const tail = native.getText().lastIndexOf('y'.repeat(6141));
+        const offset =
+          tail + session.projection!.start - (open.length + text.length + close.length);
+        expect(session.editor!.getText()).toBe(
+          native.getText().slice(offset, offset + session.projection!.source.length),
+        );
+      } finally {
+        native.destroy();
+      }
       expect(session.projection!.context!.before).toEqual([]);
     } finally {
       session.destroy();

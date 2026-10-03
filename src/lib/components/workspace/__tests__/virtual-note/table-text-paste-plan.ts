@@ -1,3 +1,8 @@
+import { serializeTableAliases, aliasedTableIndex, type TableAliases } from './table-alias';
+import type { CommandHistory } from './command-history';
+import type { TableDOMReplacement } from './table-dom-replacement';
+import { Slice } from '@tiptap/pm/model';
+import { tablePointPosition, tableTextPoint, tableFlattenedTextOffset } from './table-nested';
 import type { Editor, JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { tableEditing } from '@tiptap/pm/tables';
@@ -8,9 +13,19 @@ import {
   type ClipboardValue,
   type CellSerializationWork,
 } from './table-clipboard';
-import { tableRuns, tableRunNode, type TableIndex, type TableCellSource } from './table-source';
+import {
+  tableRuns,
+  tableRunNode,
+  scanTables,
+  type TableIndex,
+  type TableCellSource,
+} from './table-source';
 import type { TablePoint } from './source-journal';
-import { applyNativeTableCommand, type TableCommandName } from './table-native-command';
+import {
+  applyNativeTableCommand,
+  type TableCommandName,
+  type TableCommandSlice,
+} from './table-native-command';
 import { CellSelection } from '@tiptap/pm/tables';
 
 /** External backing model, NOT a renderer projection or production algorithm.
@@ -27,9 +42,53 @@ export function planTableTextPaste(
   editor: Editor,
   stored: (from: number) => JSONContent | undefined,
   serialization?: CellSerializationWork,
-  command?: { name: TableCommandName; kind: 'text' | 'cell'; dispatch?: boolean },
+  command?: {
+    name: TableCommandName;
+    kind: 'text' | 'cell';
+    dispatch?: boolean;
+    slice?: TableCommandSlice;
+    neighbor?: { node: PMNode; anchor?: number; head?: number };
+    dom?: TableDOMReplacement;
+    preserve?: { anchor: TablePoint; head: TablePoint };
+    aliased?: boolean;
+  },
 ) {
   const schema = editor.schema;
+  const sourcePoint = (
+    entries: { pm: number; cell: PMNode; raw: string; from: number; aliased?: boolean }[],
+    pm: number,
+  ) => {
+    for (const entry of entries) {
+      if (pm < entry.pm) return entry.from;
+      if (pm >= entry.pm + entry.cell.nodeSize) continue;
+      if (pm <= entry.pm + 1) return entry.from;
+      if (pm >= entry.pm + entry.cell.nodeSize - 1) return entry.from + entry.raw.length;
+      let offset = entry.aliased
+        ? tableFlattenedTextOffset(entry.cell, pm - entry.pm - 1)
+        : tableTextPoint(entry.cell, pm - entry.pm - 1).textOffset;
+      const body = entry.from + entry.raw.length - entry.raw.trimStart().length;
+      for (const run of tableRuns(entry.raw.trim(), body)) {
+        if (offset <= run.text.length)
+          return run.to - run.from === run.text.length
+            ? run.from + offset
+            : offset
+              ? run.to
+              : run.from;
+        offset -= run.text.length;
+      }
+      return entry.from + entry.raw.trimEnd().length;
+    }
+    const last = entries.at(-1);
+    return last ? last.from + last.raw.length : table.from + start;
+  };
+  const beforeEntries: {
+    pm: number;
+    cell: PMNode;
+    raw: string;
+    from: number;
+    aliased?: boolean;
+  }[] = [];
+  const afterEntries: typeof beforeEntries = [];
   const origins = new Map<PMNode, TableCellSource>();
   const positions = new Map<number, number>();
   let rowPosition = 1;
@@ -48,6 +107,13 @@ export function planTableTextPaste(
           ],
         },
       );
+      beforeEntries.push({
+        pm: cellPosition,
+        cell,
+        raw: source.slice(entry.from, entry.to),
+        from: entry.from + start,
+        aliased: command?.aliased,
+      });
       origins.set(cell, entry);
       positions.set(entry.from + start, cellPosition);
       cellPosition += cell.nodeSize;
@@ -59,28 +125,75 @@ export function planTableTextPaste(
   });
   const doc = schema.nodes.doc.create(null, [
     schema.nodes.table.create(null, rows),
-    schema.nodes.paragraph.create(),
+    command?.neighbor?.node ?? schema.nodes.paragraph.create(),
   ]);
   const position = (point: TablePoint) => {
     const pos = positions.get(point.cell);
     if (pos === undefined) throw new Error('Stale cross-cell text point');
     const cell = doc.nodeAt(pos)!;
-    let offset = pos + 2;
-    for (let i = 0; i < point.block; i++) offset += cell.child(i).nodeSize;
-    return offset + point.offset;
+    return pos + 1 + tablePointPosition(cell, point);
   };
+  let replacement: { from: number; to: number; anchor: number; head: number } | undefined;
+  let expandedSlice = command?.slice;
+  if (command?.dom) {
+    const neighbor = command.neighbor;
+    if (!neighbor || !command.slice || command.name !== 'replaceSelection')
+      throw new Error('Missing DOM replacement ownership');
+    const tail = Math.max(neighbor.anchor ?? 0, neighbor.head ?? 0);
+    if (tail < 1 || tail > neighbor.node.content.size + 1)
+      throw new Error('Invalid DOM suffix position');
+    expandedSlice = structuredClone(command.slice);
+    let leaf = expandedSlice.content?.[command.dom.path[0]];
+    for (const index of command.dom.path.slice(1)) leaf = leaf?.content?.[index];
+    if (!leaf || leaf.type !== 'paragraph') throw new Error('Invalid DOM suffix ancestry');
+    const prefix = schema.nodeFromJSON(leaf);
+    leaf.content = prefix.content.append(neighbor.node.content.cut(tail - 1)).toJSON() ?? [];
+    const from = neighbor.anchor === undefined ? position(anchor) : position(head);
+    replacement = {
+      from,
+      to: doc.content.size,
+      anchor: from + command.dom.anchor,
+      head: from + command.dom.head,
+    };
+  }
   const fitted = command
     ? applyNativeTableCommand(
         doc,
-        command.kind === 'cell' ? positions.get(anchor.cell)! : position(anchor),
-        command.kind === 'cell' ? positions.get(head.cell)! : position(head),
+        command.neighbor?.anchor !== undefined
+          ? doc.firstChild!.nodeSize + command.neighbor.anchor
+          : command.kind === 'cell'
+            ? positions.get(anchor.cell)!
+            : position(anchor),
+        command.neighbor?.head !== undefined
+          ? doc.firstChild!.nodeSize + command.neighbor.head
+          : command.kind === 'cell'
+            ? positions.get(head.cell)!
+            : position(head),
         command.kind,
         command.name,
         editor,
         command.dispatch,
+        expandedSlice,
+        replacement,
+        command.preserve && {
+          anchor: position(command.preserve.anchor),
+          head: position(command.preserve.head),
+        },
       )
     : fitNativeTextPaste(doc, position(anchor), position(head), value, editor, [tableEditing()]);
+  if (command?.dom && expandedSlice) {
+    const materialized = Slice.fromJSON(schema, expandedSlice);
+    materialized.content.descendants(() => {
+      fitted.costs.nodes++;
+    });
+    fitted.costs.serializedBytes += bytes(JSON.stringify(expandedSlice));
+  }
   const result = fitted.state.doc.firstChild!;
+  if (command?.neighbor) {
+    for (let i = 1; i < fitted.state.doc.childCount; i++)
+      if (fitted.state.doc.child(i).content.size)
+        throw new Error('Native mixed table move retained an unplanned neighbor');
+  }
   if (result.type.name !== 'table') {
     if (
       !['deleteTable', 'deleteSelection'].includes(command?.name ?? '') ||
@@ -91,6 +204,7 @@ export function planTableTextPaste(
     return {
       accepted: 'accepted' in fitted ? fitted.accepted : true,
       text: '',
+      history: { before: [], after: [] } as CommandHistory,
       states: [],
       point: undefined,
       caret: table.from + start,
@@ -100,6 +214,7 @@ export function planTableTextPaste(
     };
   }
   let text = '';
+  let aliases: TableAliases | undefined;
   const states: Array<{ from: number; node: JSONContent }> = [];
   let point: TablePoint | undefined, caret: number | undefined;
   let anchorPoint: TablePoint | undefined, anchorSource: number | undefined;
@@ -125,6 +240,7 @@ export function planTableTextPaste(
       const from = table.from + text.length + (old ? old.cells[c].from - old.from : line.length);
       states.push({ from: from + start, node: cell.toJSON() });
       const nodePosition = 2 + ro + co;
+      afterEntries.push({ pm: nodePosition, cell, raw, from: from + start });
       const selection = fitted.state.selection.$head;
       const cellSelection = fitted.state.selection instanceof CellSelection;
       const headPosition = cellSelection
@@ -133,22 +249,28 @@ export function planTableTextPaste(
       const anchorPosition = cellSelection
         ? (fitted.state.selection as CellSelection).$anchorCell.pos
         : fitted.state.selection.anchor;
+      const logicalPoint = (position: number) => {
+        const { textOffset: _textOffset, ...point } = tableTextPoint(
+          cell,
+          position - nodePosition - 1,
+        );
+        return point;
+      };
       if (anchorPosition >= nodePosition && anchorPosition < nodePosition + cell.nodeSize) {
         anchorPoint = {
           cell: from + start,
-          block: cellSelection ? 0 : fitted.state.selection.$anchor.index(3),
-          offset: cellSelection ? 0 : fitted.state.selection.$anchor.parentOffset,
+          ...(cellSelection ? { block: 0, offset: 0 } : logicalPoint(anchorPosition)),
         };
         anchorSource = from + start + raw.length - raw.trimStart().length;
       }
       if (headPosition >= nodePosition && headPosition < nodePosition + cell.nodeSize) {
         point = {
           cell: from + start,
-          block: cellSelection ? 0 : selection.index(3),
-          offset: cellSelection ? 0 : selection.parentOffset,
+          ...(cellSelection ? { block: 0, offset: 0 } : logicalPoint(headPosition)),
         };
-        let offset = point.offset;
-        for (let i = 0; i < point.block; i++) offset += cell.child(i).content.size;
+        let offset = cellSelection
+          ? 0
+          : tableTextPoint(cell, headPosition - nodePosition - 1).textOffset;
         const body = from + raw.length - raw.trimStart().length;
         const content = raw.trim();
         caret = body + content.length;
@@ -203,9 +325,59 @@ export function planTableTextPaste(
       } else text += '|' + delimiters.join('|') + '|' + ending;
     }
   });
+  let nested = false;
+  result.descendants((node) => {
+    if (node.type.name === 'table') nested = true;
+  });
+  if (nested) {
+    const serialized = serializeTableAliases(result);
+    aliases = serialized.aliases;
+
+    fitted.costs.nodes += serialized.costs.nodes;
+    fitted.costs.serializedBytes += serialized.costs.serializedBytes;
+    let canonical = '';
+    result.forEach((row, _offset, r) => {
+      const nativeRow = serialized.index.rows[r];
+      const old = table.rows.find((_, i) => rows[i] === row);
+      canonical += old
+        ? source.slice(old.from, r === 0 ? Math.max(old.to, table.delimiter.to) : old.to)
+        : serialized.source.slice(nativeRow.from, nativeRow.to);
+    });
+    const index = aliasedTableIndex(scanTables(canonical, undefined, true)[0], aliases);
+    const cells = index.rows.flatMap((row) => row.cells);
+    const remap = new Map<number, number>();
+    for (const [i, entry] of afterEntries.entries()) {
+      const cell = cells[i];
+      remap.set(entry.from, table.from + start + cell.from);
+      entry.from = table.from + start + cell.from;
+      entry.raw = canonical.slice(cell.from, cell.to);
+      entry.aliased = true;
+      states[i].from = entry.from;
+    }
+    if (point) point.cell = remap.get(point.cell)!;
+    if (anchorPoint) anchorPoint.cell = remap.get(anchorPoint.cell)!;
+    caret = sourcePoint(afterEntries, fitted.state.selection.head);
+    anchorSource = sourcePoint(afterEntries, fitted.state.selection.anchor);
+    text = canonical;
+  }
   if (!point || caret === undefined)
     throw new Error('Cross-cell text paste did not retain a cell caret');
+  const nativeHistory =
+    command?.name === 'replaceSelection' && 'history' in fitted ? fitted.history : undefined;
+  const history: CommandHistory = { before: [], after: [] };
+  if (nativeHistory) {
+    history.before = nativeHistory.before.map(([a, b]) => [
+      sourcePoint(beforeEntries, a),
+      sourcePoint(beforeEntries, b),
+    ]);
+    history.after = nativeHistory.after.map(([a, b]) => [
+      sourcePoint(afterEntries, a),
+      sourcePoint(afterEntries, b),
+    ]);
+  }
   return {
+    aliases,
+    history,
     accepted: 'accepted' in fitted ? fitted.accepted : true,
     text,
     states,
@@ -219,7 +391,10 @@ export function planTableTextPaste(
     anchorSource: fitted.state.selection.empty ? caret : (anchorSource ?? caret),
     costs: {
       ...fitted.costs,
-      planBytes: bytes(JSON.stringify({ text, states })),
+      planBytes:
+        bytes(JSON.stringify({ text, states, history, aliases })) +
+        bytes(JSON.stringify(beforeEntries)) +
+        bytes(JSON.stringify(afterEntries)),
       cells: states.length,
       sourceBytes: bytes(text),
       metadataBytes: bytes(JSON.stringify(states)),

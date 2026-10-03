@@ -33,6 +33,8 @@ export type InlineContext = {
   listCodes?: ListCode[];
   seams?: ListSeam[];
   paragraphSeams?: ParagraphSeam[];
+  listParagraph?: boolean;
+  literalNewlines?: Array<{ from: number; to: number }>;
   documentEnd?: boolean;
   table?: TableWindow;
   tables?: TableWindow[];
@@ -104,6 +106,7 @@ export class SourceProjection {
   readonly code: Array<{ pm: number; end: number; fence: Fence; prefix: string; suffix: string }> =
     [];
   private trailing = '';
+  private paragraphTails = new Map<number, string>();
   private leading = '';
   readonly addedParagraphSeams: ParagraphSeam[] = [];
   readonly list?: ListProjection;
@@ -273,6 +276,12 @@ export class SourceProjection {
         match[2] = source.slice(split.from - start, split.to - start);
         paragraphs.lastIndex = split.to - start;
       }
+      if (context?.listParagraph) {
+        match[0] = source;
+        match[1] = source;
+        match[2] = '';
+        paragraphs.lastIndex = source.length;
+      }
       const raw = match[1];
       let base = start + match.index;
       const leading =
@@ -298,6 +307,27 @@ export class SourceProjection {
         if (indexOnly) {
           pm += value.length;
           return;
+        }
+        // DOMParser collapses horizontal whitespace in normal paragraph text.
+        // Retain the entire raw run as one token so edits preserve its bytes.
+        if (/^[ \t]$/.test(value)) {
+          value = ' ';
+          const prior = this.tokens.at(-1);
+          if (
+            prior?.text === ' ' &&
+            prior.pm + 1 === pm &&
+            prior.to === base + from &&
+            !context?.paragraphSeams?.some(
+              (seam) => seam.kind === 'space' && seam.from === base + from,
+            ) &&
+            JSON.stringify(prior.marks) === JSON.stringify(stack)
+          ) {
+            prior.to = base + to;
+            prior.raw += raw.slice(from, to);
+            this.positions.set(pm, base + to);
+            this.ends.set(pm, base + to);
+            return;
+          }
         }
         const previous = nodes.at(-1);
         if (previous?.type === 'text' && JSON.stringify(previous.marks) === JSON.stringify(stack))
@@ -329,9 +359,12 @@ export class SourceProjection {
       // and escapes. Renderer input is still just this bounded paragraph; the
       // full-source index-only pass remains separately accounted mock backing.
       const italics = new Map<number, number>();
+      const strong = new Map<number, number>();
       const indexItalics = (tokens: MarkdownToken[], offset: number) => {
         for (const token of tokens) {
           if (token.type === 'em') italics.set(offset, offset + token.raw.length);
+          if (token.type === 'strong' && token.raw.startsWith('**'))
+            strong.set(offset, offset + token.raw.length);
           if (token.type === 'em' || token.type === 'strong')
             indexItalics(token.tokens!, offset + (token.type === 'em' ? 1 : 2));
           else if (token.type === 'link') indexItalics(token.tokens!, offset + 1);
@@ -341,13 +374,14 @@ export class SourceProjection {
       if (raw.includes('_') || raw.includes('*'))
         indexItalics(Lexer.lexInline(raw, { gfm: true }), 0);
       for (const mark of [...(context?.before ?? []), ...(context?.after ?? [])]) {
-        if (mark.type !== 'italic' || !mark.range) continue;
-        let open = mark.range.from - base - 1;
-        let end = mark.range.to - base + 1;
+        if (!['italic', 'bold'].includes(mark.type) || !mark.range) continue;
+        const width = mark.type === 'bold' ? 2 : 1;
+        let open = mark.range.from - base - width;
+        let end = mark.range.to - base + width;
         if (mark.range.from <= this.start && match.index === 0) {
           open = 0;
           for (const before of context?.before ?? []) {
-            if (before.type === 'italic' && before.range?.from === mark.range.from) break;
+            if (before.type === mark.type && before.range?.from === mark.range.from) break;
             open += openMark(before).length;
           }
         }
@@ -355,15 +389,55 @@ export class SourceProjection {
           end = this.start + this.source.length - base;
           for (const after of (context?.after ?? []).slice().reverse()) {
             end += closeMark(after).length;
-            if (after.type === 'italic' && after.range?.to === mark.range.to) break;
+            if (after.type === mark.type && after.range?.to === mark.range.to) break;
           }
         }
         // Cropped whitespace does not become an actual Markdown delimiter edge.
         // These two scalar bounds come from the revisioned backing token index.
-        if (open >= 0 && end <= raw.length) italics.set(open, end);
+        if (open >= 0 && end <= raw.length) {
+          if (mark.type === 'bold') {
+            // Local edits can split an inherited span. Its old outer range must
+            // not override actual closing/opening delimiters inside this crop.
+            const firstClose = closing('**', open + width, end);
+            if (firstClose >= 0) strong.set(open, firstClose + width);
+            if (mark.range.to >= this.start + this.source.length) {
+              let lastOpen = open;
+              for (
+                let next = closing('**', open + width, end - width);
+                next >= 0;
+                next = closing('**', next + width, end - width)
+              )
+                lastOpen = next;
+              strong.set(lastOpen, end);
+            }
+          } else italics.set(open, end);
+        }
       }
       const parse = (from: number, to: number, stack: Mark[]) => {
         for (let i = from; i < to;) {
+          if (
+            raw[i] === '\n' &&
+            context?.listParagraph &&
+            !context.literalNewlines?.some((range) => base + i >= range.from && base + i < range.to)
+          ) {
+            if (!indexOnly) {
+              nodes.push({ type: 'hardBreak', marks: stack });
+              this.tokens.push({
+                pm,
+                from: base + i,
+                to: base + i + 1,
+                text: '\n',
+                raw: '\n',
+                marks: stack,
+              });
+              this.positions.set(pm, base + i);
+              this.ends.set(pm + 1, base + i + 1);
+              this.positions.set(pm + 1, base + i + 1);
+            }
+            pm++;
+            i++;
+            continue;
+          }
           const anchor = raw.startsWith('<!--anchor:', i)
             ? raw.slice(i, to).match(/^<!--anchor:([^:]+):(start|end|point)-->/)
             : null;
@@ -415,8 +489,8 @@ export class SourceProjection {
             end = italicEnd;
             mark = { type: 'italic', delimiter: raw[i] };
           } else if (raw.startsWith('**', i)) {
-            const close = closing('**', i + 2, to);
-            if (close > i + 2) {
+            const close = (strong.get(i) ?? -1) - 2;
+            if (close > i + 2 && close + 2 <= to) {
               contentFrom = i + 2;
               contentTo = close;
               end = close + 2;
@@ -453,6 +527,27 @@ export class SourceProjection {
         }
       };
       parse(0, raw.length, []);
+      if (!indexOnly && (match[2] || !context || context.documentEnd)) {
+        const token = this.tokens.at(-1),
+          node = nodes.at(-1);
+        if (
+          token?.text === ' ' &&
+          !token.marks.length &&
+          token.pm + 1 === pm &&
+          token.to === base + raw.length &&
+          node?.type === 'text'
+        ) {
+          this.paragraphTails.set(pm - 1, token.raw);
+          this.tokens.pop();
+          node.text = node.text!.slice(0, -1);
+          if (!node.text) nodes.pop();
+          this.positions.delete(pm);
+          this.ends.delete(pm);
+          pm--;
+          this.positions.set(pm, token.from);
+          this.ends.set(pm, token.from);
+        }
+      }
       if (!indexOnly)
         this.positions.set(pm, Math.min(this.start + this.source.length, base + raw.length));
       const separator = match[2];
@@ -559,6 +654,11 @@ export class SourceProjection {
         to = mapping.mapResult(token.pm + 1, -1);
       if (!from.deleted && !to.deleted && to.pos === from.pos + 1) survivors.set(from.pos, token);
     }
+    const tails = new Map<number, string>();
+    for (const [end, raw] of this.paragraphTails) {
+      const mapped = mapping.mapResult(end, 1);
+      if (!mapped.deleted) tails.set(mapped.pos, raw);
+    }
     const separators = new Map<number, string>();
     for (const paragraph of this.paragraphs) {
       const end = mapping.mapResult(paragraph.end, 1),
@@ -646,11 +746,20 @@ export class SourceProjection {
             ? token.marks
             : [...desired].sort((a, b) => Number(b.type === 'link') - Number(a.type === 'link'));
           transition(stack);
+          // Separate surviving native spaces may become adjacent after a deletion.
+          // Record their source boundary; a genuinely fresh parse still collapses them.
+          if (/^[ \t]$/.test(char) && /[ \t]$/.test(source))
+            this.addedParagraphSeams.push({
+              from: this.start + source.length,
+              to: this.start + source.length + 1,
+              kind: 'space',
+            });
           source += token?.text === char ? token.raw : escape(char);
         }
       });
       transition(index === after.childCount - 1 ? (this.context?.after ?? []) : []);
       const end = offset + paragraph.nodeSize - 1;
+      source += tails.get(end) ?? '';
       const separator = separators.get(end);
       const retainSingle =
         this.context?.paragraphSeams?.length &&
