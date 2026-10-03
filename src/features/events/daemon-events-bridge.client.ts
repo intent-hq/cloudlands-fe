@@ -148,6 +148,7 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
  */
 import { isHostMembershipChange } from '$shared/types/principal';
 import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { hostMembershipListsChanged } from '$store/renderer/slices/host-membership/host-membership-slice';
 import {
   hostMembershipChanged,
   principalIdentityChanged,
@@ -3733,9 +3734,25 @@ export function routeDaemonEventsNotification(
     appStore.dispatch(hostExecutionInvalidated());
     return;
   }
+  if (type === 'host:invites-changed') {
+    const data = (event as { data?: unknown }).data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    const { inviteId, action } = data as { inviteId?: unknown; action?: unknown };
+    if (
+      typeof inviteId === 'string' &&
+      inviteId.trim().length > 0 &&
+      typeof action === 'string' &&
+      ['created', 'revoked', 'redeemed'].includes(action)
+    )
+      appStore.dispatch(hostMembershipListsChanged());
+    return;
+  }
   if (type === 'host:members-changed') {
     const data = (event as { data?: unknown }).data;
-    if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
+    if (isHostMembershipChange(data)) {
+      appStore.dispatch(hostMembershipChanged(data));
+      appStore.dispatch(hostMembershipListsChanged());
+    }
     return;
   }
 
@@ -4411,6 +4428,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // gate narrows it like any other row.
   'presence:changed',
   'host:members-changed',
+  'host:invites-changed',
   'host:execution-context-changed',
 ] as const;
 

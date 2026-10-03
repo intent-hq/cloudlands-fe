@@ -80,9 +80,9 @@
   });
 </script>
 
-<section class="px-6 py-5" data-testid="hosted-workspace-roster" data-workspace-id={workspace.id}>
-  <div class="flex items-center justify-between gap-3">
-    <h3 class="min-w-0 truncate type-body font-medium text-foreground">{workspace.title}</h3>
+<section class="py-3" data-testid="hosted-workspace-roster" data-workspace-id={workspace.id}>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h3 class="min-w-0 break-words type-body font-medium text-foreground">{workspace.title}</h3>
     {#if $roster$.status !== 'withheld'}
       <Button
         variant="ghost"
@@ -132,7 +132,7 @@
       class="mt-2 overflow-visible"
     >
       {#snippet row({ item: member })}
-        <div class="flex items-center justify-between gap-3 py-2">
+        <div class="flex flex-wrap items-center justify-between gap-3 py-2">
           <div class="flex min-w-0 items-center gap-2">
             <PrincipalAvatar
               avatarUrl={member.avatarUrl}
@@ -141,8 +141,8 @@
               testid="hosted-roster-avatar"
             />
             <div class="min-w-0">
-              <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
-              <p class="truncate type-caption text-muted-foreground">
+              <p class="break-words type-body text-foreground">{memberLabel(member)}</p>
+              <p class="break-words type-caption text-muted-foreground">
                 {m.settings_guestSessions_role_collaborator_label()}
                 {#if member.login && member.displayName}
                   · @{member.login}
