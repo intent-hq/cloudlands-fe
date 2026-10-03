@@ -1,3 +1,4 @@
+import { tableSourcePayloadBytes, type TableSourceOwnership } from './table-source-view';
 import { bytes } from './bounded-note-service';
 import { unpackTableWindow } from './table-payload';
 import type { TableWindow } from './table-source';
@@ -6,9 +7,14 @@ export const TABLE_ACTIVE_BYTES = 16384;
 export const TABLE_NODE_LIMIT = 4096;
 export type TablePage = { revision: number; index: number; count: number; payload: string };
 /** Mock backing encoder. Only these independently bounded pages cross to the renderer. */
-export function encodeTablePages(window: TableWindow): TablePage[] {
+export function encodeTablePages(
+  window: TableWindow,
+  ownership: TableSourceOwnership = 'copied',
+): TablePage[] {
+  if ((window.sourceOwnership ?? 'copied') !== ownership)
+    throw new Error('Table source ownership mismatch');
   const encoded = JSON.stringify(window);
-  if (bytes(encoded) + window.cells.reduce((n, c) => n + bytes(c.raw), 0) > TABLE_ACTIVE_BYTES)
+  if (bytes(encoded) + tableSourcePayloadBytes(window) > TABLE_ACTIVE_BYTES)
     throw new Error('Table viewport exceeds active budget');
   const pages: TablePage[] = [];
   let payload = '';
@@ -28,7 +34,11 @@ export function encodeTablePages(window: TableWindow): TablePage[] {
   if (pages.length > 4) throw new Error('Table transfer exceeds four pages');
   return pages.map((page) => ({ ...page, count: pages.length }));
 }
-export function decodeTablePages(pages: TablePage[], revision: number): TableWindow {
+export function decodeTablePages(
+  pages: TablePage[],
+  revision: number,
+  ownership: TableSourceOwnership = 'copied',
+): TableWindow {
   if (!pages.length || pages.length > 4) throw new Error('Invalid table page count');
   for (const [index, page] of pages.entries()) {
     if (page.revision !== revision) throw new Error('Stale table transfer');
@@ -36,11 +46,10 @@ export function decodeTablePages(pages: TablePage[], revision: number): TableWin
       throw new Error('Invalid table page assembly');
   }
   const window = unpackTableWindow(JSON.parse(pages.map((p) => p.payload).join('')));
+  if ((window.sourceOwnership ?? 'copied') !== ownership)
+    throw new Error('Table source ownership mismatch');
   if (window.revision !== revision) throw new Error('Stale table assembly');
-  if (
-    bytes(JSON.stringify(window)) + window.cells.reduce((n, c) => n + bytes(c.raw), 0) >
-    TABLE_ACTIVE_BYTES
-  )
+  if (bytes(JSON.stringify(window)) + tableSourcePayloadBytes(window) > TABLE_ACTIVE_BYTES)
     throw new Error('Table assembly exceeds active budget');
   return window;
 }

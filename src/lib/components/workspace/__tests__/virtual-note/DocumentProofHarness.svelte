@@ -28,7 +28,11 @@
   let snapshot = $state('');
   let index = 0;
   const publish = () => {
-    if (proof) snapshot = JSON.stringify(proof.snapshot());
+    if (proof) {
+      const next = JSON.stringify(proof.snapshot());
+      proof.recordDebugPublication(new TextEncoder().encode(next).length);
+      snapshot = next;
+    }
   };
   onMount(() => {
     let disposed = false;

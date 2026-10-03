@@ -1,3 +1,4 @@
+import { tableSourcePayloadBytes, type TableSourceOwnership } from './table-source-view';
 import { tableParagraphLeaves, type TablePath } from './table-nested';
 import type { TableGeometry } from './table-heights';
 import { packTableWindow } from './table-payload';
@@ -68,6 +69,7 @@ export type TableFragment = TableCellSource & {
   nodeType?: string;
 };
 export type TableWindow = {
+  sourceOwnership?: TableSourceOwnership;
   revision: number;
   aliased?: boolean;
   trailing?: boolean;
@@ -372,6 +374,7 @@ export function tableRuns(source: string, start: number): TableRun[] {
 }
 
 export type TableRectangle = {
+  minimum?: { cell: number; units: number };
   fragmentStart?: (cell: TableCellSource, limit: number) => number;
   row: number;
   column: number;
@@ -476,6 +479,7 @@ export function admitTableWindow(
     path: TablePath,
     anchor: TableRun['anchor'],
   ) => TableRun['emitted'],
+  ownership: TableSourceOwnership = retained?.sourceOwnership ?? 'copied',
 ): TableWindow {
   const targetRow = table.rows.findIndex((row) => position < row.to);
   const row = Math.max(0, targetRow < 0 ? table.rows.length - 1 : targetRow);
@@ -651,6 +655,7 @@ export function admitTableWindow(
     }
     cells.sort((a, b) => a.row - b.row || a.column - b.column);
     const window: TableWindow = {
+      ...(ownership === 'packed-cells' ? { sourceOwnership: ownership } : {}),
       revision,
       from: table.from,
       to: table.to,
@@ -664,9 +669,11 @@ export function admitTableWindow(
         ? { geometry: rectangle?.geometry ?? retained?.geometry }
         : {}),
     };
+    if (rectangle?.minimum && !cells.some((c) => c.from === rectangle.minimum!.cell))
+      throw new Error('Table viewport uncovered: stale minimum cell');
     // Raw fragments and token/structural context are admitted together, with edit headroom.
     const resident =
-      bytes(JSON.stringify(packTableWindow(window))) + cells.reduce((n, c) => n + bytes(c.raw), 0);
+      bytes(JSON.stringify(packTableWindow(window))) + tableSourcePayloadBytes(window);
     const aliasExpansion = cells.reduce(
       (n, c) => n + (c.runs.some((r) => r.emitted) ? bytes(JSON.stringify(c.runs)) : 0),
       0,
@@ -679,6 +686,8 @@ export function admitTableWindow(
     if (retained) throw new Error('Table edit requires window headroom');
     if (radius && !rectangle) radius--;
     else limit = Math.floor(limit * (viewport ? 0.8 : 0.5));
+    if (rectangle?.minimum && limit < rectangle.minimum.units)
+      throw new Error('Table viewport uncovered: minimum source cannot fit admission budget');
     if (limit < 8) throw new Error('Table cell context cannot fit admission budget');
   }
 }

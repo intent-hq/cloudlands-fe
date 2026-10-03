@@ -202,8 +202,14 @@ function packTableCell(c: TableFragment): TableFragment {
 export function packTableWindow(w: TableWindow): TableWindow {
   return { ...w, cells: w.cells.map(packTableCell) };
 }
+export const tableCloneWork = {
+  calls: 0,
+  maxExpandedPayloadBytes: 0,
+  maxOwnerAndClonePayloadBytes: 0,
+  liveScratchBytes: 0,
+};
 export function cloneTableWindow(w: TableWindow): TableWindow {
-  return structuredClone({
+  const expanded = {
     ...w,
     cells: w.cells.map((c) => ({
       row: c.row,
@@ -225,7 +231,22 @@ export function cloneTableWindow(w: TableWindow): TableWindow {
         ? { blocks: c.blocks, blockCount: c.blockCount, attrs: c.attrs, nodeType: c.nodeType }
         : {}),
     })),
-  });
+  };
+  // Native structuredClone receives this expanded object. Its derived runs and
+  // result coexist with the packed owner until return; none are hidden by compaction.
+  const size = bytes(JSON.stringify(expanded));
+  tableCloneWork.calls++;
+  tableCloneWork.maxExpandedPayloadBytes = Math.max(tableCloneWork.maxExpandedPayloadBytes, size);
+  tableCloneWork.liveScratchBytes += size;
+  tableCloneWork.maxOwnerAndClonePayloadBytes = Math.max(
+    tableCloneWork.maxOwnerAndClonePayloadBytes,
+    bytes(JSON.stringify(w)) + tableCloneWork.liveScratchBytes + size,
+  );
+  try {
+    return structuredClone(expanded);
+  } finally {
+    tableCloneWork.liveScratchBytes -= size;
+  }
 }
 
 export function unpackTableWindow(

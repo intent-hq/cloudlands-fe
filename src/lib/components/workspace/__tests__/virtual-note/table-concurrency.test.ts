@@ -202,3 +202,139 @@ it('supersedes a delayed table window after a remote row insertion and preserves
     session.destroy();
   }
 });
+
+for (const change of ['edit', 'selection', 'composition', 'destroy'] as const)
+  it(`does not repopulate a delayed measured refill after ${change}`, async () => {
+    const { session, service } = await start();
+    const internals = session as unknown as {
+      navigation: number;
+      selectionGeneration: number;
+      tableScroller: HTMLElement;
+      measuredTableGap: () => {
+        cell: number;
+        units: number;
+        height: number;
+        required: number;
+        deficit: number;
+        position: number;
+      };
+      fillTableCoverage: (
+        navigation: number,
+        revision: number,
+        generation: number,
+      ) => Promise<void>;
+    };
+    const scroller = document.createElement('div');
+    internals.tableScroller = scroller;
+    const old = session.projection!,
+      cell = old.table!.window.cells.find((c) => c.row === 1)!;
+    const oldPayload = JSON.stringify(old.table!.window);
+    const gap = vi.spyOn(internals, 'measuredTableGap').mockReturnValue({
+      cell: cell.from,
+      units: 2146,
+      height: 456,
+      required: 520,
+      deficit: 64,
+      position: cell.body,
+    });
+    let release!: () => void;
+    session.delayFetch = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    try {
+      const pending = internals.fillTableCoverage(
+        internals.navigation,
+        service.revision,
+        internals.selectionGeneration,
+      );
+      if (change === 'edit') session.editor!.commands.insertContent('Q');
+      if (change === 'selection') session.editor!.commands.setTextSelection(1);
+      if (change === 'composition')
+        Object.defineProperty(session.editor!.view, 'composing', {
+          configurable: true,
+          value: true,
+        });
+      if (change === 'destroy') session.destroy();
+      const projection = session.projection,
+        source = service.region(0),
+        selection = structuredClone(session.selection);
+      session.delayFetch = undefined;
+      release();
+      await pending;
+      expect(session.projection).toBe(projection);
+      expect(service.region(0)).toBe(source);
+      expect(session.selection).toEqual(selection);
+      expect(JSON.stringify(old.table!.window)).toBe(oldPayload);
+      expect(session.snapshot().tableCoverageIntentBytes).toBe(0);
+    } finally {
+      gap.mockRestore();
+      session.destroy();
+    }
+  });
+
+it('services one newer physical scroll after cancelling a delayed measured refill', async () => {
+  const source =
+    '| H |\n| --- |\n' +
+    Array.from({ length: 100 }, (_, i) => `| row${i} ${'text '.repeat(30)} |`).join('\n');
+  const service = new SourceJournal(() => source, 1),
+    scroller = document.createElement('div'),
+    host = document.createElement('div');
+  scroller.append(host);
+  const session = new DocumentSession(service, host);
+  const state = session as unknown as {
+    navigation: number;
+    selectionGeneration: number;
+    tableScroller: HTMLElement;
+    tableColumnWidth: number;
+    tableScroll: () => void;
+    measuredTableGap: () => unknown;
+    fillTableCoverage: (n: number, r: number, g: number) => Promise<void>;
+  };
+  try {
+    await session.seek(source.indexOf('row0'));
+    Object.defineProperties(scroller, {
+      clientHeight: { value: 520 },
+      clientWidth: { value: 1280 },
+      scrollHeight: { value: 8000 },
+    });
+    state.tableScroller = scroller;
+    state.tableColumnWidth = 1280;
+    scroller.addEventListener('scroll', state.tableScroll);
+    const cell = session.projection!.table!.window.cells.find((c) => c.row === 1)!;
+    const gap = vi
+      .spyOn(state, 'measuredTableGap')
+      .mockReturnValueOnce({
+        cell: cell.from,
+        units: 100,
+        height: 456,
+        required: 520,
+        deficit: 64,
+        position: cell.body,
+      })
+      .mockReturnValue(undefined);
+    let release!: () => void;
+    session.delayFetch = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const selection = structuredClone(session.selection),
+      revision = service.revision;
+    const pending = state.fillTableCoverage(state.navigation, revision, state.selectionGeneration);
+    scroller.scrollTop = 41 * 50;
+    scroller.dispatchEvent(new Event('scroll'));
+    session.delayFetch = undefined;
+    release();
+    await pending;
+    await vi.waitFor(() =>
+      expect(session.projection!.table!.window.cells.some((c) => c.row === 50)).toBe(true),
+    );
+    expect(service.region(0)).toBe(source);
+    expect(service.revision).toBe(revision);
+    expect(session.selection).toEqual(selection);
+    expect(session.snapshot().tableCoverageIntentBytes).toBe(0);
+    gap.mockRestore();
+  } finally {
+    session.destroy();
+  }
+});

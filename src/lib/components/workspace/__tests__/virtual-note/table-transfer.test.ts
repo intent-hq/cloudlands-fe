@@ -1,3 +1,5 @@
+import { TableSourceView } from './table-source-view';
+import { SourceProjection } from './source-projection';
 import { tableRuns } from './table-source';
 import { expect, it } from 'vitest';
 import { bytes } from './bounded-note-service';
@@ -117,4 +119,34 @@ it('pages dense native paragraph contexts with exact offsets, marks and empty bl
   const restored = decodeTablePages(JSON.parse(JSON.stringify(pages)), 7);
   expect(restored.cells[0].runs).toEqual(cell.runs);
   expect(restored.cells[0].blocks).toEqual(cell.blocks);
+});
+
+it('requires an explicit packed-cell owner on both transfer ends and charges its exact descriptor', () => {
+  const raw = '漢'.repeat(3500);
+  const copied = fixture(raw);
+  expect(() => encodeTablePages(copied)).toThrow('budget');
+  const owner = { ...copied, sourceOwnership: 'packed-cells' as const };
+  expect(() => encodeTablePages(owner)).toThrow('ownership');
+  const pages = encodeTablePages(owner, 'packed-cells');
+  expect(() => decodeTablePages(pages, 7)).toThrow('ownership');
+  const decoded = decodeTablePages(pages, 7, 'packed-cells');
+  const view = new TableSourceView(decoded);
+  const reference = {
+    kind: 'packed-cells',
+    revision: 7,
+    from: 60000,
+    to: 63500,
+    length: 3500,
+    ranges: [[0, 60000, 63500]],
+  };
+  expect(JSON.stringify(view)).toBe(JSON.stringify(reference));
+  expect(view.payloadBytes).toBe(new TextEncoder().encode(JSON.stringify(reference)).length);
+  expect(view.logicalBytes).toBe(new TextEncoder().encode(raw).length);
+  expect(bytes(JSON.stringify(decoded)) + view.payloadBytes).toBeLessThanOrEqual(16384);
+  const context = { revision: 7, from: 60000, to: 63500, before: [], after: [], table: decoded };
+  expect(() => new SourceProjection(raw, 60000, context)).toThrow('Copied source');
+  const projection = new SourceProjection(view, 60000, context);
+  expect(projection.table!.window).toBe(decoded);
+  expect(projection.sourcePayload).toBe(view);
+  expect(() => projection.source).toThrow('packed cell source');
 });

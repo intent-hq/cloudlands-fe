@@ -1,3 +1,4 @@
+import { tableSourcePayloadBytes, type TableSourceOwnership } from './table-source-view';
 import { aliasedTableIndex, emittedTableAnchor, type TableAliases } from './table-alias';
 import { commandHistory, type CommandHistory } from './command-history';
 import type { TableDOMReplacement } from './table-dom-replacement';
@@ -1705,7 +1706,7 @@ export class SourceJournal {
     return window && this.transferTable(window);
   }
   transferTable(window: TableWindow) {
-    const pages = encodeTablePages(window);
+    const pages = encodeTablePages(window, window.sourceOwnership ?? 'copied');
     for (const page of pages) this.log('table-page', window.from, bytes(JSON.stringify(page)));
     return pages;
   }
@@ -1719,9 +1720,11 @@ export class SourceJournal {
       font: string;
       include?: number;
       nearby?: number;
+      minimum?: { cell: number; units: number };
     },
     preferred?: TablePoint,
     selection?: Selection['table'],
+    ownership: TableSourceOwnership = 'copied',
   ) {
     const { id, start } = this.locate(position);
     const table = this.tableIndex(this.region(id), start).find(
@@ -1782,6 +1785,9 @@ export class SourceJournal {
         rowCount: geometry.heights.length,
         columnCount,
         geometry,
+        ...(viewport.minimum
+          ? { minimum: { ...viewport.minimum, cell: viewport.minimum.cell - start } }
+          : {}),
         ...(viewport.top === undefined
           ? {}
           : {
@@ -1801,6 +1807,7 @@ export class SourceJournal {
             }),
       },
       selection,
+      ownership,
     );
   }
   tableWindow(
@@ -1809,6 +1816,7 @@ export class SourceJournal {
     preferred?: TablePoint,
     rectangle?: TableRectangle,
     selection?: Selection['table'],
+    ownership: TableSourceOwnership = retained?.sourceOwnership ?? 'copied',
   ) {
     const { id, start } = this.locate(position),
       source = this.region(id);
@@ -1845,6 +1853,7 @@ export class SourceJournal {
           this.maxBackingTableAliasBytes = Math.max(this.maxBackingTableAliasBytes, size);
         });
       },
+      ownership,
     );
     window.from += start;
     window.to += start;
@@ -1901,7 +1910,8 @@ export class SourceJournal {
     window.layout = this.tableHeights.layout(window);
     const packed = packTableWindow(window);
     const size = bytes(JSON.stringify(packed));
-    if (size > TABLE_ACTIVE_BYTES) throw new Error('Table window exceeds admission budget');
+    if (size + tableSourcePayloadBytes(packed) > TABLE_ACTIVE_BYTES)
+      throw new Error('Table window exceeds admission budget');
     this.maxTableWindowBytes = Math.max(this.maxTableWindowBytes, size);
     return packed;
   }

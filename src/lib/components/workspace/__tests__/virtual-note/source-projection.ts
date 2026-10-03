@@ -1,3 +1,4 @@
+import { TableSourceView, sourcePayloadBytes, sourceLogicalBytes } from './table-source-view';
 import type { ListCode } from './list-code';
 import { mapParagraphSeam, touchesParagraphSeam, type ParagraphSeam } from './paragraph-seam';
 import { Lexer, type Token as MarkdownToken } from 'marked';
@@ -112,14 +113,45 @@ export class SourceProjection {
   readonly list?: ListProjection;
   readonly table?: TableProjection;
   readonly mixed?: MixedProjection;
+  readonly source!: string;
+  readonly tableSource?: TableSourceView;
+  get sourcePayload() {
+    return this.tableSource ?? this.source;
+  }
+  get sourcePayloadBytes() {
+    return sourcePayloadBytes(this.sourcePayload);
+  }
+  get sourceLogicalBytes() {
+    return sourceLogicalBytes(this.sourcePayload);
+  }
   constructor(
-    readonly source: string,
+    source: string | TableSourceView,
     readonly start = 0,
     readonly context?: InlineContext,
     indexOnly = false,
   ) {
+    if (source instanceof TableSourceView) {
+      if (
+        !context?.table ||
+        !source.owns(context.table) ||
+        indexOnly ||
+        context.fragments ||
+        context.tables
+      )
+        throw new Error('Invalid standalone packed cell source');
+      this.tableSource = source;
+      Object.defineProperty(this, 'source', {
+        get() {
+          throw new Error('Standalone table uses packed cell source');
+        },
+      });
+    } else {
+      if (context?.table?.sourceOwnership === 'packed-cells')
+        throw new Error('Copied source cannot use packed cell source accounting');
+      this.source = source;
+    }
     if ((context?.tables?.length || context?.fragments?.length) && !indexOnly) {
-      this.mixed = new MixedProjection(source, start, context, context.tables ?? []);
+      this.mixed = new MixedProjection(this.source, start, context, context.tables ?? []);
       this.content.content = this.mixed.content.content;
       for (const [p, s] of this.mixed.positions) this.positions.set(p, s);
       for (const [p, s] of this.mixed.ends) this.ends.set(p, s);
@@ -136,6 +168,7 @@ export class SourceProjection {
       this.tokens.push(...this.table.tokens);
       return;
     }
+    if (typeof source !== 'string') throw new Error('Missing table source owner');
     if (context && (context.from !== start || context.to !== start + source.length))
       throw new Error('Context does not describe this source window');
     if (context?.lists?.length && !indexOnly) {
@@ -164,7 +197,7 @@ export class SourceProjection {
       const prose = (to: number) => {
         if (to <= cursor) return;
         const part = new SourceProjection(
-          source.slice(cursor - start, to - start),
+          this.source.slice(cursor - start, to - start),
           cursor,
           {
             revision: context?.revision ?? 0,

@@ -180,3 +180,58 @@ it('uses bounded encountered text measurements to page oversized cell contents b
       expect(new TextEncoder().encode(JSON.stringify(page)).length).toBeLessThanOrEqual(4096);
   }
 });
+
+for (const measured of [456, 552])
+  it(`prioritizes 520px visible coverage over overscan with a ${measured}px source span`, () => {
+    const service = new SourceJournal(() => '| H |\n| --- |\n| ' + '漢字'.repeat(10000) + ' |', 1);
+    const viewport = { top: 0, width: 1280, height: 520, font: 'model-short-span' };
+    const initial = service.tableViewportWindow(16, viewport)!;
+    const cell = initial.cells.find((c) => c.row === 1)!;
+    service.tableHeights.measureCells(initial, [
+      { cell: cell.from, height: ((cell.last - cell.first) * measured) / 2146, padding: 17 },
+    ]);
+    const top = 1900,
+      rowTop = 41;
+    const first = service.tableHeights.fragmentStart(
+      initial.geometry!,
+      cell,
+      rowTop,
+      top,
+      520,
+      2146,
+    );
+    const leading = top - rowTop - ((first - cell.body) * measured) / 2146;
+    expect(leading).toBeLessThanOrEqual(Math.max(0, measured - 520) + measured / 2146);
+    if (measured < 520) {
+      const next = service.tableViewportWindow(
+        cell.body,
+        { ...viewport, top },
+        undefined,
+        undefined,
+        'packed-cells',
+      )!;
+      expect(
+        (next.cells.find((c) => c.row === 1)!.raw.length * measured) / 2146,
+      ).toBeGreaterThanOrEqual(520);
+    }
+  });
+
+it('reports a measured minimum that cannot fit instead of returning an underfilled crop', () => {
+  const source = '| H |\n| --- |\n| ' + '漢'.repeat(20000) + ' |';
+  const service = new SourceJournal(() => source, 1);
+  expect(() =>
+    service.tableViewportWindow(
+      16,
+      {
+        top: 1000,
+        width: 1280,
+        height: 520,
+        font: 'too-dense',
+        minimum: { cell: service.tableAddress(0, 1, 0).point.cell, units: 8192 },
+      },
+      undefined,
+      undefined,
+      'packed-cells',
+    ),
+  ).toThrow('viewport uncovered');
+});

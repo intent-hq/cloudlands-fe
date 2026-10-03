@@ -1,3 +1,9 @@
+import {
+  TableSourceView,
+  sourcePayloadBytes,
+  sourceLogicalBytes,
+  type TableSourceOwnership,
+} from './table-source-view';
 import type { CommandHistory } from './command-history';
 import { captureTableDOMReplacement } from './table-dom-replacement';
 import { Mapping, ReplaceStep } from '@tiptap/pm/transform';
@@ -17,7 +23,7 @@ import {
   TABLE_NODE_LIMIT,
   type TablePage,
 } from './table-transfer';
-import { cloneTableWindow, tableAliasExpansionWork } from './table-payload';
+import { cloneTableWindow, tableAliasExpansionWork, tableCloneWork } from './table-payload';
 import { Editor, Extension, type CommandProps } from '@tiptap/core';
 import {
   Plugin,
@@ -47,6 +53,8 @@ import { SourceProjection, openMark, closeMark, type InlineContext } from './sou
 import { continuationWindow, CONTINUATION } from './continuation-window';
 import { layoutTable } from './table-layout';
 import { CellSelection, tableEditingKey } from '@tiptap/pm/tables';
+
+type TableRollbackFrame = { projection: SourceProjection; parent?: TableRollbackFrame };
 
 /** Test-only logical document. Production editor, APIs, annotations and size guard are unchanged. */
 export class DocumentSession {
@@ -319,16 +327,19 @@ export class DocumentSession {
     host.addEventListener('pointerdown', this.pointerDown);
     document.addEventListener('pointerup', this.pointerUp);
   }
+  private get tableIntentBytes() {
+    return this.tableScrollRequest ? bytes(JSON.stringify(this.tableScrollRequest)) : 0;
+  }
   private project(
-    source: string,
+    source: string | TableSourceView,
     start: number,
     table?: InlineContext['table'],
     fragments?: InlineContext['fragments'],
   ) {
-    if (bytes(source) > LIMITS.active)
+    if (sourcePayloadBytes(source) > LIMITS.active)
       throw new Error('Proof projection exceeds experiment budget');
-    this.parsedBytes += bytes(source);
-    this.maxParsedBytes = Math.max(this.maxParsedBytes, bytes(source));
+    this.parsedBytes += sourceLogicalBytes(source);
+    this.maxParsedBytes = Math.max(this.maxParsedBytes, sourceLogicalBytes(source));
     const context: InlineContext = fragments
       ? {
           revision: this.service.revision,
@@ -342,7 +353,7 @@ export class DocumentSession {
         ? {
             revision: table.revision,
             from: start,
-            to: start + source.length,
+            to: table.cells.at(-1)!.last,
             before: [],
             after: [],
             table,
@@ -369,13 +380,14 @@ export class DocumentSession {
         });
       if (
         ranges.length &&
-        bytes(source) + bytes(JSON.stringify(context)) + this.domBoundaryBytes > TABLE_ACTIVE_BYTES
+        sourcePayloadBytes(source) + bytes(JSON.stringify(context)) + this.domBoundaryBytes >
+          TABLE_ACTIVE_BYTES
       )
         throw new Error('Mixed source/context exceeds admission budget');
     }
     if (
       fragments &&
-      (bytes(source) + bytes(JSON.stringify(context)) + this.domBoundaryBytes >
+      (sourcePayloadBytes(source) + bytes(JSON.stringify(context)) + this.domBoundaryBytes >
         TABLE_ACTIVE_BYTES ||
         fragments.some((f) => f.context.revision !== this.service.revision))
     )
@@ -384,7 +396,10 @@ export class DocumentSession {
       throw new Error('Stale inline context response');
     this.maxSourceContextBytes = Math.max(
       this.maxSourceContextBytes,
-      bytes(source) + bytes(JSON.stringify(context)) + this.domBoundaryBytes,
+      sourcePayloadBytes(source) +
+        bytes(JSON.stringify(context)) +
+        this.domBoundaryBytes +
+        this.tableIntentBytes,
     );
     this.maxSeamMetadataBytes = Math.max(
       this.maxSeamMetadataBytes,
@@ -399,13 +414,22 @@ export class DocumentSession {
     // The parser adds only this metadata-derived envelope, never a source prefix.
     this.maxProjectionInputBytes = Math.max(
       this.maxProjectionInputBytes,
-      bytes(source) +
+      sourcePayloadBytes(source) +
         bytes(JSON.stringify(context.fences ?? [])) +
         bytes(JSON.stringify(context.lists ?? [])) +
         bytes(JSON.stringify(context.seams ?? [])) +
         bytes(context.before.map(openMark).join('') + context.after.map(closeMark).join('')),
     );
-    return new SourceProjection(source, start, context);
+    const next = new SourceProjection(source, start, context);
+    if (next.tableSource) {
+      this.measureTableOwners(next);
+      if (
+        next.sourcePayloadBytes + bytes(JSON.stringify(context)) + this.tableIntentBytes >
+        TABLE_ACTIVE_BYTES
+      )
+        throw new Error('Standalone table owner and descriptor exceed source budget');
+    }
+    return next;
   }
   private readRange(from: number, to: number) {
     if (to - from > LIMITS.active) throw new Error('Unbounded source range');
@@ -427,38 +451,132 @@ export class DocumentSession {
     }
     return source;
   }
+  // Mirrors actual synchronous rollback references, including reentrant acceptance.
+  // Frames are popped in finally; no outgoing owner registry survives acceptance.
+  private tableRollback?: TableRollbackFrame;
+  private measureTableOwners(candidate?: SourceProjection) {
+    const projections: SourceProjection[] = [];
+    let rollbackFrames = 0;
+    const add = (p?: SourceProjection) => {
+      if (p?.tableSource && !projections.includes(p)) projections.push(p);
+    };
+    for (let frame = this.tableRollback; frame; frame = frame.parent) {
+      rollbackFrames++;
+      add(frame.projection);
+    }
+    add(this.projection);
+    add(candidate);
+    const owners: NonNullable<InlineContext['table']>['cells'][] = [];
+    const payload = projections.map((p) => {
+      const window = p.table!.window;
+      let owner = owners.indexOf(window.cells);
+      if (owner < 0) {
+        owner = owners.length;
+        owners.push(window.cells);
+      }
+      return {
+        source: p.tableSource!.descriptor,
+        context: { ...p.context, table: { ...window, cells: { owner } } },
+      };
+    });
+    const descriptorBytes = projections.reduce((n, p) => n + p.tableSource!.payloadBytes, 0);
+    // Reference encoding charges each distinct packed owner once and every live
+    // descriptor/context separately. This is serialized payload, not heap usage.
+    const payloadBytes = projections.length
+      ? bytes(JSON.stringify({ owners, projections: payload }))
+      : 0;
+    this.maxTableSourceOwnerOverlap = Math.max(this.maxTableSourceOwnerOverlap, owners.length);
+    this.maxTableDescriptorOverlapBytes = Math.max(
+      this.maxTableDescriptorOverlapBytes,
+      descriptorBytes,
+    );
+    this.maxTableLivePayloadBytes = Math.max(this.maxTableLivePayloadBytes, payloadBytes);
+    this.maxTableRollbackFrames = Math.max(this.maxTableRollbackFrames, rollbackFrames);
+    this.maxTableResidentAndAssemblyBytes = Math.max(
+      this.maxTableResidentAndAssemblyBytes,
+      payloadBytes,
+    );
+    return { ownerCount: owners.length, descriptorBytes, payloadBytes, rollbackFrames };
+  }
+  maxTableLivePayloadBytes = 0;
+  maxTableRollbackFrames = 0;
+  maxTableSourceOwnerOverlap = 0;
+  maxTableDescriptorOverlapBytes = 0;
+  maxTableCacheAndDecodeBytes = 0;
+  tableReceiveAccounting = {
+    wireBytes: 0,
+    decodeBufferBytes: 0,
+    decodedOwnerBytes: 0,
+    previousProjectionBytes: 0,
+    cacheBeforeBytes: 0,
+    cachePeakBytes: 0,
+  };
+  debugPublicationBytes = 0;
+  maxDebugPublicationOverlapBytes = 0;
+  recordDebugPublication(size: number) {
+    this.maxDebugPublicationOverlapBytes = Math.max(
+      this.maxDebugPublicationOverlapBytes,
+      this.debugPublicationBytes + size,
+    );
+    this.debugPublicationBytes = size;
+  }
   maxTableTransferPageBytes = 0;
   maxTableTransferBytes = 0;
   maxTableAssemblyBytes = 0;
   maxTableRestoreAnchorBytes = 0;
   maxTableResidentAndAssemblyBytes = 0;
-  private receiveTable(pages: TablePage[] | undefined) {
+  private receiveTable(pages: TablePage[] | undefined, ownership: TableSourceOwnership = 'copied') {
     if (!pages) return undefined;
     const encodedBytes = pages.reduce((n, p) => n + bytes(JSON.stringify(p)), 0);
     const assemblyBytes = pages.reduce((n, p) => n + bytes(p.payload), 0);
     this.maxTableTransferBytes = Math.max(this.maxTableTransferBytes, encodedBytes);
     this.maxTableAssemblyBytes = Math.max(this.maxTableAssemblyBytes, encodedBytes + assemblyBytes);
-    const window = decodeTablePages(pages, this.service.revision);
+    const window = decodeTablePages(pages, this.service.revision, ownership);
+    const receipt = {
+      wireBytes: encodedBytes,
+      decodeBufferBytes: assemblyBytes,
+      decodedOwnerBytes: bytes(JSON.stringify(window)),
+      previousProjectionBytes:
+        this.measureTableOwners().payloadBytes +
+        (this.projection?.tableSource
+          ? 0
+          : (this.projection?.sourcePayloadBytes ?? 0) +
+            bytes(JSON.stringify(this.projection?.context ?? {}))),
+      cacheBeforeBytes: [...this.cache.values()].reduce((n, value) => n + bytes(value), 0),
+      cachePeakBytes: 0,
+    };
+    receipt.cachePeakBytes = receipt.cacheBeforeBytes;
+    this.tableReceiveAccounting = receipt;
+
     this.maxTableResidentAndAssemblyBytes = Math.max(
       this.maxTableResidentAndAssemblyBytes,
       encodedBytes +
         assemblyBytes +
         bytes(JSON.stringify(window)) +
-        bytes(this.projection?.source ?? '') +
-        bytes(JSON.stringify(this.projection?.context ?? {})),
+        receipt.previousProjectionBytes,
     );
     for (const page of pages) {
       const payload = JSON.stringify(page);
       this.maxTableTransferPageBytes = Math.max(this.maxTableTransferPageBytes, bytes(payload));
       const key = `table:${page.revision}:${window.from}:${window.cells[0].first}:${page.index}`;
       this.cache.delete(key);
-      this.cache.set(key, payload);
+      // Evict before inserting: the live cache never briefly owns a fifth page.
       while (
-        this.cache.size > LIMITS.cachePages ||
-        [...this.cache.values()].reduce((n, v) => n + bytes(v), 0) > TABLE_ACTIVE_BYTES
+        this.cache.size >= LIMITS.cachePages ||
+        [...this.cache.values()].reduce((n, v) => n + bytes(v), 0) + bytes(payload) >
+          TABLE_ACTIVE_BYTES
       )
         this.cache.delete(this.cache.keys().next().value!);
+      this.cache.set(key, payload);
+      receipt.cachePeakBytes = Math.max(
+        receipt.cachePeakBytes,
+        [...this.cache.values()].reduce((n, v) => n + bytes(v), 0),
+      );
     }
+    this.maxTableCacheAndDecodeBytes = Math.max(
+      this.maxTableCacheAndDecodeBytes,
+      receipt.cachePeakBytes + encodedBytes + assemblyBytes + receipt.decodedOwnerBytes,
+    );
     return window;
   }
   private domBoundaryPending = false;
@@ -501,7 +619,7 @@ export class DocumentSession {
     const intentBytes = bytes(JSON.stringify(intent));
     if (
       intentBytes > LIMITS.request ||
-      bytes(projection!.source) + bytes(JSON.stringify(projection!.context)) + intentBytes >
+      projection!.sourcePayloadBytes + bytes(JSON.stringify(projection!.context)) + intentBytes >
         TABLE_ACTIVE_BYTES
     )
       throw new Error('DOM boundary intent exceeds admission budget');
@@ -727,14 +845,22 @@ export class DocumentSession {
           },
           preferred,
           selection.table,
+          'packed-cells',
         )
-      : this.service.tableWindowPages(at, undefined, preferred, undefined, selection.table);
-    const table = this.receiveTable(pages);
+      : this.service.tableWindowPages(
+          at,
+          undefined,
+          preferred,
+          undefined,
+          selection.table,
+          'packed-cells',
+        );
+    const table = this.receiveTable(pages, 'packed-cells');
     if (table) {
-      const source = table.cells.map((c) => c.raw).join('');
+      const source = new TableSourceView(table);
       const from = table.cells[0].first,
         to = table.cells.at(-1)!.last;
-      this.inFlightBytes += bytes(source);
+      this.inFlightBytes += sourcePayloadBytes(source);
       this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
       return { from, to, source, table, continuation: true };
     }
@@ -941,7 +1067,12 @@ export class DocumentSession {
   private tableTabDestination?: Selection;
   tableViewport = 0;
   private tableScroller?: HTMLElement;
-  private tableScrollRequest?: { position: number; top: number; left: number };
+  private tableScrollRequest?: {
+    position: number;
+    top: number;
+    left: number;
+    minimum?: { cell: number; units: number };
+  };
   private tableFragmentScrollTop = 0;
   private tableAnchoredScroll?: { left: number; top: number };
   private tableFont() {
@@ -988,7 +1119,173 @@ export class DocumentSession {
     editor.view.dom.style.paddingTop = `${(this.projection!.table!.window.geometry?.top ?? 0) + this.tableOriginY}px`;
     this.tableAnchoredScroll = { left: scroller.scrollLeft, top: scroller.scrollTop };
   }
+  private tableCoverageBusy = false;
+  private tableCoverageRescan = false;
+  private tableCoverageQueued = false;
+  tableCoverage = { status: 'unmeasured', attempts: 0, deficit: 0, sourceUnits: 0 };
+  private measuredTableGap() {
+    const p = this.projection,
+      editor = this.editor,
+      scroller = this.tableScroller;
+    if (!p?.table || !editor || !scroller || !scroller.clientHeight) return undefined;
+    const viewport = scroller.getBoundingClientRect();
+    for (const entry of p.table.entries) {
+      const c = entry.cell;
+      if (c.first === c.body && c.last === c.end) continue;
+      const cell = editor.view.nodeDOM(entry.pm) as HTMLElement;
+      const box = cell.getBoundingClientRect();
+      if (
+        box.right <= viewport.left ||
+        box.left >= viewport.right ||
+        box.bottom <= viewport.top ||
+        box.top >= viewport.top + scroller.clientHeight
+      )
+        continue;
+      const paragraphs = Array.from(cell.querySelectorAll('p'));
+      const first = paragraphs[0]?.getBoundingClientRect(),
+        last = paragraphs.at(-1)?.getBoundingClientRect();
+      if (!first || !last || last.bottom <= first.top) continue;
+      const layout = p.table.window.layout?.find((l) => l.cell === c.from);
+      const style = getComputedStyle(cell);
+      const top = Math.max(
+        viewport.top,
+        box.top + parseFloat(style.paddingTop) - (layout?.top ?? 0),
+      );
+      const bottom = Math.min(
+        viewport.top + scroller.clientHeight,
+        box.bottom - parseFloat(style.paddingBottom) + (layout?.bottom ?? 0),
+      );
+      const deficit =
+        (c.first > c.body ? Math.max(0, first.top - top) : 0) +
+        (c.last < c.end ? Math.max(0, bottom - last.bottom) : 0);
+      if (deficit > 1)
+        return {
+          cell: c.from,
+          units: c.last - c.first,
+          height: last.bottom - first.top,
+          required: bottom - top,
+          deficit,
+          position: c.body,
+        };
+    }
+    return undefined;
+  }
+  /** Only the current mounted rectangles decide coverage. Refills retain no owner. */
+  private checkTableCoverage() {
+    if (
+      this.tableCoverageQueued ||
+      this.tableCoverageBusy ||
+      !this.projection?.tableSource ||
+      this.pointerSelecting ||
+      this.drainingInput ||
+      this.editor?.view.composing
+    )
+      return;
+    this.tableCoverageQueued = true;
+    const navigation = this.navigation,
+      revision = this.service.revision,
+      generation = this.selectionGeneration;
+    queueMicrotask(() => {
+      this.tableCoverageQueued = false;
+      if (
+        this.navigation !== navigation ||
+        this.service.revision !== revision ||
+        this.selectionGeneration !== generation ||
+        !this.editor ||
+        this.editor.view.composing ||
+        this.pointerSelecting ||
+        this.drainingInput ||
+        this.tableScrollRequest
+      )
+        return;
+      void this.fillTableCoverage(navigation, revision, generation);
+    });
+  }
+  private async fillTableCoverage(navigation: number, revision: number, generation: number) {
+    this.tableCoverageBusy = true;
+    let request: typeof this.tableScrollRequest;
+    try {
+      let previousUnits = 0,
+        previousDeficit = Infinity;
+      for (let attempt = 0; attempt <= 4; attempt++) {
+        if (
+          !this.editor ||
+          this.navigation !== navigation ||
+          this.service.revision !== revision ||
+          this.selectionGeneration !== generation ||
+          this.editor.view.composing ||
+          this.pointerSelecting ||
+          this.drainingInput
+        )
+          return;
+        const gap = this.measuredTableGap();
+        this.tableCoverage = {
+          status: gap ? 'uncovered' : 'covered',
+          attempts: attempt,
+          deficit: gap?.deficit ?? 0,
+          sourceUnits: gap?.units ?? 0,
+        };
+        if (!gap) return;
+        if (attempt === 4 || (gap.units <= previousUnits && gap.deficit >= previousDeficit - 1))
+          throw new Error('Table viewport uncovered: no strictly progressing bounded refill');
+        previousUnits = gap.units;
+        previousDeficit = gap.deficit;
+        const scroller = this.tableScroller!;
+        request = {
+          position: gap.position,
+          top: Math.max(0, scroller.scrollTop - this.tableOriginY),
+          left: Math.max(0, scroller.scrollLeft - this.tableOriginX),
+          minimum: {
+            cell: gap.cell,
+            units: Math.min(
+              8192,
+              Math.ceil(gap.units * Math.max(1, (gap.required + 24) / gap.height)),
+            ),
+          },
+        };
+        this.tableScrollRequest = request;
+        // show has its own revision/navigation/selection guards across delayFetch.
+        const pending = this.show(this.active, false, gap.position);
+        navigation = this.navigation;
+        if (!(await pending)) return;
+        if (this.tableScrollRequest === request) this.tableScrollRequest = undefined;
+        const top = scroller.scrollTop,
+          left = scroller.scrollLeft;
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (scroller.scrollTop !== top || scroller.scrollLeft !== left) return;
+      }
+    } catch (error) {
+      if (
+        this.editor &&
+        this.navigation === navigation &&
+        this.service.revision === revision &&
+        this.selectionGeneration === generation
+      ) {
+        this.error = String(error);
+        this.tableCoverage.status = 'uncovered';
+        this.changed();
+      }
+    } finally {
+      if (this.tableScrollRequest === request) this.tableScrollRequest = undefined;
+      this.tableCoverageBusy = false;
+      if (this.tableCoverageRescan) {
+        this.tableCoverageRescan = false;
+        this.checkTableCoverage();
+      }
+    }
+  }
   private tableScroll = () => {
+    if (this.tableCoverageBusy && this.pendingFetch) {
+      // A physical scroll during a delayed refill supersedes that request.
+      this.navigation++;
+      this.pendingNavigation?.(false);
+      this.pendingNavigation = undefined;
+      this.tableScrollRequest = undefined;
+      this.tableCoverage.status = 'unmeasured';
+      this.tableCoverageRescan = true;
+      // Fall through now: install the latest navigation before the shared fetch
+      // resolves. Requiring another scroll would strand the visible viewport.
+    }
     const table = this.projection?.table?.window,
       scroller = this.tableScroller;
     if (!table || !scroller || !this.tableColumnWidth || this.editor?.view.composing) return;
@@ -1048,11 +1345,11 @@ export class DocumentSession {
     const atEnd = scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 1;
     this.tableFragmentScrollTop = scroller.scrollTop;
     const at = this.service.tableAddress(table.from, row, column);
-    this.tableScrollRequest = {
+    const request = (this.tableScrollRequest = {
       position: at.source,
       top: Math.max(0, scroller.scrollTop - this.tableOriginY),
       left: Math.max(0, scroller.scrollLeft - this.tableOriginX),
-    };
+    });
     const active = this.projection!.table!.entries.find(
       (e) => e.cell.from === this.selection.table?.head.cell,
     )?.cell;
@@ -1064,10 +1361,12 @@ export class DocumentSession {
         active.column >= column &&
         active.column <= lastColumn);
     void this.show(this.active, false, at.source, preserve && !fragmentMove).finally(() => {
+      if (this.tableScrollRequest !== request) return;
       this.tableScrollRequest = undefined;
       if (atEnd && this.projection?.table)
         scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
       this.tableFragmentScrollTop = scroller.scrollTop;
+      this.checkTableCoverage();
     });
   };
   tableColumnWidth = 0;
@@ -1150,7 +1449,9 @@ export class DocumentSession {
         editor.view.setProps({});
         layoutTable(editor, table.window, this.tableViewport);
         const size =
-          bytes(this.projection!.source) + bytes(JSON.stringify(this.projection!.context));
+          this.projection!.sourcePayloadBytes +
+          bytes(JSON.stringify(this.projection!.context)) +
+          this.tableIntentBytes;
         if (size > TABLE_ACTIVE_BYTES)
           throw new Error('Measured table context exceeds source budget');
         this.maxSourceContextBytes = Math.max(this.maxSourceContextBytes, size);
@@ -1212,6 +1513,7 @@ export class DocumentSession {
       });
     }
     if (before && scroller) this.preserveTableAnchor(before);
+    this.checkTableCoverage();
     this.rememberTableAnchor();
     if (scroller && !this.tableScroller) {
       this.tableScroller = scroller;
@@ -1438,7 +1740,10 @@ export class DocumentSession {
       if (restoreViewport) {
         const anchorBytes = bytes(JSON.stringify({ restoreAnchor, restoreViewport, anchorPoint }));
         const activeBytes =
-          bytes(window.source) + bytes(JSON.stringify(next.context)) + anchorBytes;
+          sourcePayloadBytes(window.source) +
+          bytes(JSON.stringify(next.context)) +
+          anchorBytes +
+          this.tableIntentBytes;
         if (activeBytes > TABLE_ACTIVE_BYTES)
           throw new Error('Table restoration anchor exceeds source budget');
         this.maxSourceContextBytes = Math.max(this.maxSourceContextBytes, activeBytes);
@@ -1446,7 +1751,7 @@ export class DocumentSession {
         this.maxTableResidentAndAssemblyBytes = Math.max(
           this.maxTableResidentAndAssemblyBytes,
           activeBytes +
-            bytes(this.projection!.source) +
+            this.projection!.sourcePayloadBytes +
             bytes(JSON.stringify(this.projection!.context)),
         );
       }
@@ -1696,7 +2001,9 @@ export class DocumentSession {
                 (p.list || p.table) &&
                 event.inputType === 'insertText' &&
                 (bytes(event.data ?? '') > 128 ||
-                  bytes(p.source) + bytes(JSON.stringify(p.context)) + 2 * bytes(event.data ?? '') >
+                  p.sourcePayloadBytes +
+                    bytes(JSON.stringify(p.context)) +
+                    2 * bytes(event.data ?? '') >
                     LIMITS.request - 128);
               if (!this.service.pendingInputs && !needsWindow && !(p.table && this.pendingFetch))
                 return false;
@@ -2267,7 +2574,7 @@ export class DocumentSession {
       this.changed();
       return true;
     } finally {
-      this.inFlightBytes -= bytes(window.source);
+      this.inFlightBytes -= sourcePayloadBytes(window.source);
     }
   }
   private revealTableCaret() {
@@ -2580,6 +2887,9 @@ export class DocumentSession {
       acceptedRoots: this.acceptedRoots,
       acceptedAppended: this.acceptedAppended,
     };
+    const parentRollback = this.tableRollback;
+    if (old.projection?.tableSource)
+      this.tableRollback = { projection: old.projection, parent: parentRollback };
     try {
       this.service.atomic(() => {
         this.acceptedAppended += mixedAppended;
@@ -2665,7 +2975,7 @@ export class DocumentSession {
                 history,
               );
               this.projection = this.project(
-                table.cells.map((c) => c.raw).join(''),
+                new TableSourceView(table),
                 table.cells[0].first,
                 table,
               );
@@ -2784,7 +3094,7 @@ export class DocumentSession {
                     responseBytes * 3 +
                       bytes(JSON.stringify(previous)) +
                       bytes(JSON.stringify(table)) +
-                      bytes(this.projection!.source),
+                      this.projection!.sourcePayloadBytes,
                   );
                 } else {
                   const retained = cloneTableWindow(tableBatch!.window);
@@ -2797,10 +3107,13 @@ export class DocumentSession {
                     before.head,
                     splices[0] ?? { from: 0, to: 0, insert: '' },
                   );
-                  table = this.receiveTable(this.service.tableWindowPages(target, retained))!;
+                  table = this.receiveTable(
+                    this.service.tableWindowPages(target, retained),
+                    'packed-cells',
+                  )!;
                 }
                 this.projection = this.project(
-                  table.cells.map((c) => c.raw).join(''),
+                  new TableSourceView(table),
                   table.cells[0].first,
                   table,
                 );
@@ -2899,6 +3212,8 @@ export class DocumentSession {
       this.rejectedTransactions++;
       this.lastRejection = this.error.slice(0, 512);
       this.changed();
+    } finally {
+      this.tableRollback = parentRollback;
     }
   }
   async history(redo = false) {
@@ -3000,9 +3315,10 @@ export class DocumentSession {
     } else void this.seek(this.selection.head);
   }
   snapshot() {
+    const tableOwners = this.measureTableOwners();
     // Reuse only synchronous numeric results within this publication. Annotation,
     // plugin and backing-service state remain fresh on every publication phase.
-    const activeBytes = bytes(this.projection?.source ?? '');
+    const activeBytes = this.projection?.sourcePayloadBytes ?? 0;
     const inlineContextBytes = bytes(JSON.stringify(this.projection?.context ?? {}));
     const codeMetadataBytes = bytes(JSON.stringify(this.projection?.code ?? []));
     const projectionJsonBytes = bytes(JSON.stringify(this.projection?.content ?? {}));
@@ -3060,6 +3376,10 @@ export class DocumentSession {
             )
         : undefined;
     return {
+      tableCoverage: { ...this.tableCoverage },
+      tableCoverageIntentBytes: this.tableScrollRequest
+        ? bytes(JSON.stringify(this.tableScrollRequest))
+        : 0,
       maxSourceContextBytes: this.maxSourceContextBytes,
       clipboardRelay: { ...this.clipboardRelay },
       maxBackingClipboardMutationBytes: this.service.maxBackingClipboardMutationBytes,
@@ -3096,6 +3416,20 @@ export class DocumentSession {
       tableRunParseCalls: tableRunWork.calls,
       tableRunParseBytes: tableRunWork.bytes,
       maxTableRunParseBytes: tableRunWork.maxBytes,
+      tableSourceOwnerCount: this.projection?.tableSource ? 1 : 0,
+      tableRollbackOwnerActive: !!this.tableRollback,
+      tableLiveOwnerCount: tableOwners.ownerCount,
+      tableLivePayloadBytes: tableOwners.payloadBytes,
+      maxTableLivePayloadBytes: this.maxTableLivePayloadBytes,
+      maxTableRollbackFrames: this.maxTableRollbackFrames,
+      maxTableSourceOwnerOverlap: this.maxTableSourceOwnerOverlap,
+      maxTableDescriptorOverlapBytes: this.maxTableDescriptorOverlapBytes,
+      maxTableCacheAndDecodeBytes: this.maxTableCacheAndDecodeBytes,
+      tableReceiveAccounting: { ...this.tableReceiveAccounting },
+      tableAccountingDescriptorBytes: bytes(JSON.stringify(this.tableReceiveAccounting)),
+      tableCloneWork: { ...tableCloneWork },
+      debugPublicationBytes: this.debugPublicationBytes,
+      maxDebugPublicationOverlapBytes: this.maxDebugPublicationOverlapBytes,
       maxTableAliasExpansionBytes: tableAliasExpansionWork.maxBytes,
       maxTableAliasResidentBytes: tableAliasExpansionWork.maxResidentBytes,
       tableResourceBound: tableBound,
@@ -3188,7 +3522,9 @@ export class DocumentSession {
       active: this.active,
       error: this.error,
       selection: this.selection,
-      source: this.projection?.source,
+      source: this.projection?.tableSource?.descriptor ?? this.projection?.source,
+      logicalSourceBytes: this.projection?.sourceLogicalBytes ?? 0,
+      tableSourceDescriptorBytes: this.projection?.tableSource?.payloadBytes ?? 0,
       reads: this.service.reads,
       maxSourceRead: this.service.maxRead,
       // Count duplicated source/text representations explicitly; these are serialized payload
@@ -3273,5 +3609,16 @@ export class DocumentSession {
     this.editor = undefined;
     this.projection = undefined;
     this.cache.clear();
+    this.debugPublicationBytes = 0;
+    this.tableReceiveAccounting = {
+      wireBytes: 0,
+      decodeBufferBytes: 0,
+      decodedOwnerBytes: 0,
+      previousProjectionBytes: 0,
+      cacheBeforeBytes: 0,
+      cachePeakBytes: 0,
+    };
+    this.tableScrollRequest = undefined;
+    this.tableCoverage = { status: 'unmeasured', attempts: 0, deficit: 0, sourceUnits: 0 };
   }
 }

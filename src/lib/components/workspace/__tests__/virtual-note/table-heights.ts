@@ -60,7 +60,10 @@ export class TableHeights {
   ) {
     const rate = this.samples(key).get(cell.from)?.rate;
     if (!rate) return cell.body;
-    const offset = Math.max(0, top - rowTop - height / 5);
+    const offset = Math.max(
+      0,
+      top - rowTop - Math.min(height / 5, Math.max(0, limit * rate - height)),
+    );
     return Math.max(cell.body, Math.min(cell.end - limit, cell.body + Math.floor(offset / rate)));
   }
   measureCells(
