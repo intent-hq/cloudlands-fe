@@ -7219,5 +7219,16 @@
   "collaboration_accountSearch_failed": "La recherche de comptes a échoué. Saisissez un nom d’utilisateur exact pour continuer.",
   "collaboration_accountSearch_empty": "Aucun compte correspondant. Vous pouvez saisir un nom d’utilisateur exact.",
   "collaboration_accountSearch_suggestions": "Suggestions de comptes",
-  "collaboration_accountSearch_loading": "Recherche…"
+  "collaboration_accountSearch_loading": "Recherche…",
+  "collaboration_lists_pending_label": "Invitations en attente : {count}",
+  "collaboration_lists_manageSharing_label": "Gérer le partage",
+  "collaboration_lists_sharingUnknown_label": "Le statut des invitations est indisponible.",
+  "collaboration_lists_joinedWorkspaces_title": "Espaces de travail rejoints",
+  "collaboration_lists_joinedUnavailable_label": "Les connexions rejointes sont indisponibles.",
+  "collaboration_lists_joinedInstances_title": "Instances rejointes",
+  "collaboration_lists_leaveInstance_label": "Quitter l’instance",
+  "collaboration_lists_noJoinedInstances_title": "Aucune instance rejointe",
+  "collaboration_lists_noJoinedInstances_description": "Les instances que vous rejoignez apparaîtront ici.",
+  "collaboration_lists_sharingLoading_label": "Chargement du partage des espaces de travail…",
+  "collaboration_lists_sharingLoad_error": "Impossible de charger le partage des espaces de travail."
 }

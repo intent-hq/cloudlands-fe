@@ -1,3 +1,4 @@
+import { shareMembershipChanged } from '../../workspace-share/workspace-share-slice';
 import type { StoreState } from '$store/renderer/types';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
@@ -2011,5 +2012,47 @@ describe('guestSessionsSaga', () => {
     } finally {
       await stop(run.task);
     }
+  });
+  it('refreshes invite-only events and discards an overtaken roster response', async () => {
+    const run = start();
+    await settle();
+    run.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', 2)]));
+    const initial = loadHostedRosterRequested('ws-1');
+    run.dispatch(initial);
+    await initial.promise;
+    let oldResolve!: (value: unknown) => void;
+    let freshResolve!: (value: unknown) => void;
+    mocks.request
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            oldResolve = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            freshResolve = resolve;
+          }),
+      );
+    const old = loadHostedRosterRequested('ws-1');
+    old.promise.catch(() => {});
+    run.dispatch(old);
+    run.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+    oldResolve({ members: [OWNER], guestCount: 0, guestLimit: 10 });
+    await settle();
+    expect(run.getState().guestSessions.hostedRosters['ws-1'].status).toBe('loading');
+    expect(run.getState().guestSessions.hostedRosters['ws-1'].members).toEqual([MEMBER]);
+    expect(mocks.request).toHaveBeenCalledTimes(3);
+    freshResolve({ members: [OWNER], guestCount: 1, guestLimit: 10 });
+    await settle();
+    expect(run.getState().guestSessions.hostedRosters['ws-1']).toMatchObject({
+      status: 'loaded',
+      guestCount: 1,
+    });
+    expect(mocks.request).toHaveBeenLastCalledWith('workspace.members.list', {
+      workspaceId: 'ws-1',
+    });
+    await stop(run.task);
   });
 });

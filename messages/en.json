@@ -7219,5 +7219,16 @@
   "collaboration_accountSearch_failed": "Account search failed. Enter an exact account username to continue.",
   "collaboration_accountSearch_empty": "No matching accounts. You can enter an exact account username.",
   "collaboration_accountSearch_suggestions": "Account suggestions",
-  "collaboration_accountSearch_loading": "Searching…"
+  "collaboration_accountSearch_loading": "Searching…",
+  "collaboration_lists_pending_label": "Pending invitations: {count}",
+  "collaboration_lists_manageSharing_label": "Manage sharing",
+  "collaboration_lists_sharingUnknown_label": "Invitation status is unavailable.",
+  "collaboration_lists_joinedWorkspaces_title": "Joined workspaces",
+  "collaboration_lists_joinedUnavailable_label": "Joined connections are unavailable.",
+  "collaboration_lists_joinedInstances_title": "Joined instances",
+  "collaboration_lists_leaveInstance_label": "Leave instance",
+  "collaboration_lists_noJoinedInstances_title": "No joined instances",
+  "collaboration_lists_noJoinedInstances_description": "Instances you join will appear here.",
+  "collaboration_lists_sharingLoading_label": "Loading workspace sharing…",
+  "collaboration_lists_sharingLoad_error": "Workspace sharing could not be loaded."
 }

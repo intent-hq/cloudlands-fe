@@ -7219,5 +7219,16 @@
   "collaboration_accountSearch_failed": "アカウント検索に失敗しました。正確なユーザー名を入力して続行してください。",
   "collaboration_accountSearch_empty": "一致するアカウントはありません。正確なユーザー名を入力できます。",
   "collaboration_accountSearch_suggestions": "アカウント候補",
-  "collaboration_accountSearch_loading": "検索中…"
+  "collaboration_accountSearch_loading": "検索中…",
+  "collaboration_lists_pending_label": "保留中の招待: {count}",
+  "collaboration_lists_manageSharing_label": "共有を管理",
+  "collaboration_lists_sharingUnknown_label": "招待の状態を取得できません。",
+  "collaboration_lists_joinedWorkspaces_title": "参加中のワークスペース",
+  "collaboration_lists_joinedUnavailable_label": "参加先の接続を取得できません。",
+  "collaboration_lists_joinedInstances_title": "参加中のインスタンス",
+  "collaboration_lists_leaveInstance_label": "インスタンスから退出",
+  "collaboration_lists_noJoinedInstances_title": "参加中のインスタンスはありません",
+  "collaboration_lists_noJoinedInstances_description": "参加したインスタンスがここに表示されます。",
+  "collaboration_lists_sharingLoading_label": "ワークスペースの共有を読み込み中…",
+  "collaboration_lists_sharingLoad_error": "ワークスペースの共有を読み込めませんでした。"
 }
