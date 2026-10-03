@@ -1,5 +1,7 @@
+import { v4 as uuid } from 'uuid';
+import { noteWindowSaga } from './note-window-saga';
 import { eventChannel, buffers } from 'redux-saga';
-import { call, put, race, take, takeEvery } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery, fork } from 'typed-redux-saga';
 import { rejectedNoteSave } from '$lib/client/note-page-errors';
 import { appClient } from '$lib/client';
 import type {
@@ -7,7 +9,11 @@ import type {
   NotePageRequest,
   NotePagingCapabilities,
 } from '$lib/client/note-pages';
-import { selectNotePageSession, selectPhysicalNoteReadCount } from '../note-pages-selectors';
+import {
+  selectNotePageSession,
+  selectPhysicalNoteReadCount,
+  selectPhysicalNoteReadTicket,
+} from '../note-pages-selectors';
 import * as actions from '../note-pages-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -78,15 +84,22 @@ function* stream(ws: string, id: string) {
       }
       yield* put(actions.pageStateReceived(ws, id, n.generation, event.state));
       const after = yield* session(ws, id);
+      if (after?.status === 'ready') {
+        for (const [panel, window] of Object.entries(after.windows)) {
+          if (!window.loading && !window.value)
+            yield* put(actions.pageWindowRequested(ws, id, panel, window.at));
+        }
+      }
       if (after?.status === 'ready' && after.state && !Object.keys(after.pages).length)
-        yield* put(
-          actions.pageRequested(ws, id, {
-            kind: 'source',
-            at: Object.values(after.panels).flat()[0]?.start ?? 0,
-            sourceRevision: after.state.sourceRevision,
-            noteInstanceId: after.state.scope.noteInstanceId,
-          }),
-        );
+        if (!Object.keys(after.windows).length)
+          yield* put(
+            actions.pageRequested(ws, id, {
+              kind: 'source',
+              at: Object.values(after.panels).flat()[0]?.start ?? 0,
+              sourceRevision: after.state.sourceRevision,
+              noteInstanceId: after.state.scope.noteInstanceId,
+            }),
+          );
     }
   } finally {
     channel.close();
@@ -131,7 +144,14 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
         }
       : request;
   const generation = n.generation;
-  yield* put(actions.pageRequestStarted(ws, id, generation, requestKey));
+  const ticket = uuid();
+  yield* put(actions.pageRequestStarted(ws, id, generation, requestKey, ticket));
+  if ((yield* selectPhysicalNoteReadTicket.effect(ws, id, generation, requestKey)) !== ticket) {
+    const current = yield* session(ws, id);
+    if (current?.generation === generation && !current.requests[requestKey])
+      yield* put(actions.pageReadDeferred(ws, id, generation, request));
+    return;
+  }
   try {
     const page = yield* call([client, client.read], ws, id, scopedRequest);
     yield* put(actions.sourcePageReceived(ws, id, generation, requestKey, page));
@@ -222,6 +242,7 @@ function* ownSession(
   }
 }
 export function* notePagesSaga() {
+  yield* fork(noteWindowSaga);
   yield* takeEvery(actions.pageRequested, read);
   yield* takeSingleFlightInContext(
     actions.pageSaveRequested,

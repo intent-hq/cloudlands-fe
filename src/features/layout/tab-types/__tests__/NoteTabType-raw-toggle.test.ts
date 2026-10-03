@@ -25,6 +25,7 @@ const mockState = vi.hoisted(() => {
     workspaceId: 'ws-1',
     title: 'Note 1',
     content: 'Note content',
+    contentLength: undefined as number | undefined,
     contentType: 'markdown',
     tags: [],
     isPinned: false,
@@ -36,6 +37,8 @@ const mockState = vi.hoisted(() => {
 
   return {
     dispatch: vi.fn(),
+    loadContent: vi.fn(async () => true),
+    pageSession: store<{ status: string } | undefined>(undefined),
     noteViewMode: store<'editor' | 'raw' | 'preview'>('editor'),
     spellcheckEnabled: store(true),
     noteFontStyle: store('sans'),
@@ -48,6 +51,10 @@ const mockState = vi.hoisted(() => {
   };
 });
 
+vi.mock('$features/notes/virtualized/NoteReadingView.svelte', async () => ({
+  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default,
+}));
 vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default,
@@ -97,6 +104,12 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: Object.assign(() => mockState.note, { select: () => mockState.note.get() }),
   selectWorkspaceNotesState: () => mockState.notesState,
+}));
+vi.mock('$features/notes/notes-read-service', () => ({
+  ensureNoteContentLoaded: mockState.loadContent,
+}));
+vi.mock('$store/renderer/slices/note-pages/note-pages-selectors', () => ({
+  selectNotePageSession: () => mockState.pageSession,
 }));
 vi.mock('$features/notes/notes-write-service', () => ({
   createNote: vi.fn(),
@@ -149,6 +162,8 @@ import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
 describe('NoteTabType note view modes', () => {
   beforeEach(() => {
     mockState.dispatch.mockClear();
+    mockState.loadContent.mockClear();
+    mockState.pageSession.set(undefined);
     mockState.noteViewMode.set('editor');
     mockState.spellcheckEnabled.set(true);
     mockState.noteFontStyle.set('sans');
@@ -493,5 +508,69 @@ $$\frac{1}{2}$$
     unmount();
 
     expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(callsBeforeUnmount);
+  });
+
+  it('an explicitly supplied paged surface never fetches a complete slim-note body', async () => {
+    mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
+    const surface = {
+      copyDocument: vi.fn(async () => {}),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'tab-paged', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(mockState.loadContent).not.toHaveBeenCalled();
+    const clipboard = { writeText: vi.fn(async () => {}) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy full note' }));
+    await waitFor(() => expect(surface.copyDocument).toHaveBeenCalledTimes(1));
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+  });
+  it('explicit legacy capability restores complete-note loading instead of a partial editor', async () => {
+    mockState.pageSession.set({ status: 'legacy' });
+    mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
+    const surface = {
+      copyDocument: vi.fn(async () => {}),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'tab-legacy', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await waitFor(() => expect(mockState.loadContent).toHaveBeenCalledWith('ws-1', 'note-1'));
+  });
+  it('keeps the page session owned while a prepared tab uses legacy compatibility', async () => {
+    const { pagePanelOpened, pagePanelClosed } =
+      await import('$store/renderer/slices/note-pages/note-pages-slice');
+    mockState.pageSession.set({ status: 'legacy' });
+    const surface = {
+      copyDocument: vi.fn(async () => {}),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    const { unmount } = render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'tab-legacy-owner', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await waitFor(() =>
+      expect(mockState.dispatch).toHaveBeenCalledWith(
+        pagePanelOpened('ws-1', 'note-1', 'tab-legacy-owner'),
+      ),
+    );
+    mockState.dispatch.mockClear();
+    mockState.pageSession.set({ status: 'connecting' });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(mockState.dispatch).not.toHaveBeenCalledWith(
+      pagePanelClosed('ws-1', 'note-1', 'tab-legacy-owner'),
+    );
+    unmount();
+    expect(mockState.dispatch).toHaveBeenCalledWith(
+      pagePanelClosed('ws-1', 'note-1', 'tab-legacy-owner'),
+    );
   });
 });

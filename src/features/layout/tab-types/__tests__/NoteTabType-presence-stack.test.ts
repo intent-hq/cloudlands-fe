@@ -66,6 +66,10 @@ const mockState = vi.hoisted(() => {
   };
 });
 
+vi.mock('$features/notes/virtualized/NoteReadingView.svelte', async () => ({
+  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default,
+}));
 vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
     .default,

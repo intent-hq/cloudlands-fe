@@ -522,3 +522,165 @@ it.each(['unsupported', 'error'])(
     expect(caps).toHaveBeenCalledTimes(3);
   },
 );
+
+it('assembles a renderer window through real page ownership and bounded context requests', async () => {
+  const read = vi.fn(async (_ws, _id, q) =>
+    q.kind === 'context'
+      ? {
+          kind: 'noteContextPage',
+          scope,
+          sourceRevision: 'r:7',
+          snapshotId: 'snap',
+          expiresAt: page.expiresAt,
+          items: [
+            {
+              kind: 'boundary',
+              id: 'p',
+              construct: 'paragraph',
+              sourceRange: { start: 0, end: 3 },
+              continuationBefore: false,
+              continuationAfter: false,
+            },
+          ],
+          nextCursor: null,
+        }
+      : page,
+  );
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  await flush();
+  client.push(tuple);
+  await flush();
+  await flush();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.windows.p.value?.text).toBe('A😀');
+  expect(read.mock.calls.some((c) => c[2].kind === 'context')).toBe(true);
+  expect(Object.keys(r.state().physicalReads)).toHaveLength(0);
+  expect(
+    Object.values(r.state().byWorkspaceId['ws-a'].notes.spec.pages).length,
+  ).toBeLessThanOrEqual(4);
+});
+
+it('does not publish an assembled window after its panel closes while context is pending', async () => {
+  const pending = deferred<any>();
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read: async (_ws, _id, q) => (q.kind === 'context' ? pending.promise : page),
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  await flush();
+  expect(Object.keys(r.state().physicalReads)).toHaveLength(1);
+  r.dispatch(a.pagePanelClosed('ws-a', 'spec', 'p'));
+  pending.resolve({
+    kind: 'noteContextPage',
+    scope,
+    sourceRevision: 'r:7',
+    snapshotId: 'snap',
+    expiresAt: page.expiresAt,
+    items: [],
+    nextCursor: null,
+  });
+  await flush();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.windows.p).toBeUndefined();
+  expect(Object.keys(r.state().physicalReads)).toHaveLength(0);
+});
+
+it('refreshes an open window at its retained position after authoritative revision changes', async () => {
+  let revision = 'r:7';
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read: async (_ws, _id, q) =>
+      q.kind === 'context'
+        ? {
+            kind: 'noteContextPage',
+            scope,
+            sourceRevision: revision,
+            snapshotId: revision,
+            expiresAt: page.expiresAt,
+            items: [],
+            nextCursor: null,
+          }
+        : {
+            ...page,
+            sourceRevision: revision,
+            snapshotId: revision,
+            text: revision === 'r:7' ? 'A😀' : 'B😀',
+          },
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  await flush();
+  client.push(tuple);
+  await flush();
+  await flush();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.windows.p.value?.text).toBe('A😀');
+  revision = 'r:8';
+  client.push({ ...tuple, stateGeneration: '11', sourceRevision: revision });
+  await flush();
+  await flush();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.windows.p.value?.text).toBe('B😀');
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.windows.p.value?.sourceRevision).toBe('r:8');
+});
+
+it('finishes every visible panel window after saturated physical reads drain', async () => {
+  const waiting: Array<() => void> = [];
+  let outstanding = 0,
+    peak = 0;
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read: async (_ws, _id, q) => {
+      outstanding++;
+      peak = Math.max(peak, outstanding);
+      await new Promise<void>((resolve) => waiting.push(resolve));
+      outstanding--;
+      if (q.kind === 'context')
+        return {
+          kind: 'noteContextPage',
+          scope,
+          sourceRevision: 'r:7',
+          snapshotId: 'snap',
+          expiresAt: page.expiresAt,
+          items: [],
+          nextCursor: null,
+        };
+      const start = q.kind === 'source' ? (q.at ?? 0) : 0;
+      return {
+        ...page,
+        text: 'abc',
+        range: { start, end: start + 3 },
+        sourceLength: 100,
+        contextRef: `ctx-${start}`,
+      };
+    },
+  });
+  const r = run(client);
+  for (let i = 0; i < 6; i++) {
+    r.dispatch(a.pagePanelOpened('ws-a', 'spec', `p${i}`));
+    r.dispatch(a.pageWindowRequested('ws-a', 'spec', `p${i}`, i * 10));
+  }
+  await flush();
+  client.push(tuple);
+  await flush();
+  for (let turn = 0; turn < 12; turn++) {
+    waiting.splice(0).forEach((resolve) => resolve());
+    await flush();
+    await flush();
+  }
+  const windows = Object.values(r.state().byWorkspaceId['ws-a'].notes.spec.windows);
+  expect(windows).toHaveLength(6);
+  expect(windows.map((w) => w.value?.range.start).sort((a, b) => a! - b!)).toEqual([
+    0, 10, 20, 30, 40, 50,
+  ]);
+  expect(peak).toBeLessThanOrEqual(4);
+  expect(outstanding).toBe(0);
+});

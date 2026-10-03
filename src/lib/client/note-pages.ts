@@ -25,18 +25,93 @@ export interface NoteSourcePage extends NotePageIdentity {
   contextRef: string;
   metadataRef: string;
 }
+interface CanonicalProfile {
+  profile: 'canonicalNote';
+  profileVersion: 1;
+}
+type CanonicalProvenance = 'explicit' | 'implicit' | 'repaired';
+interface CanonicalNativeNode extends CanonicalProfile {
+  kind: 'nativeNode';
+  id: string;
+  nodeType: string;
+  nodeClass: 'container' | 'text' | 'atom';
+  parentRef: string | null;
+  childIndex: number;
+  sourceRange: SourceRange;
+  provenance: CanonicalProvenance;
+  sourcePiecesRef?: string;
+  attributesRef: string;
+  marksRef?: string;
+}
+interface CanonicalSourceMap extends CanonicalProfile {
+  kind: 'sourceMap';
+  id: string;
+  ownerRef: string;
+  textNodeId: string | null;
+  textNodeRef: string | null;
+  sourceRange: SourceRange;
+  renderedRange: SourceRange;
+  mapping: 'identity' | 'entity' | 'normalized' | 'omitted' | 'projection';
+  textRef: string | null;
+}
+interface CanonicalSourcePiece {
+  kind: 'sourcePiece';
+  id: string;
+  nodeRef: string;
+  sourceRange: SourceRange;
+  role: 'opening' | 'body' | 'closing' | 'attribute' | 'omitted';
+}
 type NoteContextItem =
+  | CanonicalNativeNode
+  | CanonicalSourceMap
+  | CanonicalSourcePiece
   | {
       kind: 'boundary';
       id: string;
       sourceRange: SourceRange;
       construct: string;
       parentRef?: string;
-      continuationBefore: boolean;
-      continuationAfter: boolean;
+      continuationBefore?: boolean;
+      continuationAfter?: boolean;
+      detailRef?: string;
+      nativeRef?: string;
+      attributesRef?: string;
+      sourceMapRef?: string;
+      htmlPosition?: CanonicalProfile & {
+        tableRef: string;
+        rowIndex?: number;
+        columnIndex?: number;
+        cellRole?: 'data' | 'header';
+      };
+      htmlSource?: {
+        provenance: CanonicalProvenance;
+        openingRange: SourceRange | null;
+        bodyRange: SourceRange | null;
+        closingRange: SourceRange | null;
+        piecesRef?: string;
+      };
+      tablePosition?: {
+        tableRef: string;
+        rowIndex: number;
+        columnIndex?: number;
+        alignment?: 'none' | 'left' | 'center' | 'right';
+      };
+    }
+  | {
+      kind: 'span';
+      id: string;
+      sourceRange: SourceRange;
+      role: string;
+      nativeRef?: string | null;
+      sourceMapRef?: string;
+      codeSource?: CanonicalProfile & {
+        openingRange: SourceRange;
+        bodyRange: SourceRange;
+        closingRange: SourceRange;
+      };
+      parentRef?: string;
       detailRef?: string;
     }
-  | { kind: 'span'; id: string; sourceRange: SourceRange; role: string; detailRef?: string }
   | {
       kind: 'fragment';
       id: string;

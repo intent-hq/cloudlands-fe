@@ -1,3 +1,4 @@
+import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
 import type {
   NoteCommitReceipt,
   NoteScope,
@@ -22,6 +23,16 @@ export interface NoteDraft {
 }
 export interface NotePageSession {
   panels: Record<string, SourceRange[]>;
+  windows: Record<
+    string,
+    {
+      at: number;
+      request: number;
+      value: NoteWindow | null;
+      error: string | null;
+      loading: boolean;
+    }
+  >;
   generation: number;
   state: NotePageState | null;
   status: 'connecting' | 'ready' | 'legacy' | 'error' | 'deleted';
@@ -47,6 +58,6 @@ export interface NotePagesWorkspaceState {
 }
 export interface NotePagesState {
   nextGeneration: number;
-  physicalReads: Record<string, { workspaceId: string; noteId: string }>;
+  physicalReads: Record<string, { workspaceId: string; noteId: string; ticket?: string }>;
   byWorkspaceId: Record<string, NotePagesWorkspaceState>;
 }

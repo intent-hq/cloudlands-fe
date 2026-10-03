@@ -24,6 +24,104 @@ function range(value: unknown) {
   if (!uint(r.start) || !uint(r.end) || r.end < r.start)
     throw new Error('Invalid note source address');
 }
+function canonicalProfile(i: Record<string, unknown>) {
+  if (i.profile !== 'canonicalNote' || i.profileVersion !== 1)
+    throw new Error('Unsupported canonical note profile');
+}
+function provenance(i: Record<string, unknown>, pieces: unknown, source: Record<string, unknown>) {
+  if (
+    !['explicit', 'implicit', 'repaired'].includes(String(i.provenance)) ||
+    (i.provenance === 'implicit' && source.start !== source.end) ||
+    (i.provenance === 'repaired' ? !token(pieces) : pieces !== undefined)
+  )
+    throw new Error('Invalid canonical source provenance');
+}
+function canonicalItem(i: Record<string, unknown>): boolean {
+  if (i.kind === 'nativeNode') {
+    canonicalProfile(i);
+    range(i.sourceRange);
+    const r = object(i.sourceRange);
+    provenance(i, i.sourcePiecesRef, r);
+    if (
+      typeof i.nodeType !== 'string' ||
+      !i.nodeType ||
+      new TextEncoder().encode(i.nodeType).length > 1024 ||
+      !['container', 'text', 'atom'].includes(String(i.nodeClass)) ||
+      !uint(i.childIndex) ||
+      !token(i.attributesRef) ||
+      (i.marksRef !== undefined && !token(i.marksRef)) ||
+      (i.nodeType === 'doc'
+        ? i.parentRef !== null || i.childIndex !== 0 || i.nodeClass !== 'container'
+        : !token(i.parentRef)) ||
+      (i.nodeClass === 'text') !== (i.nodeType === 'text')
+    )
+      throw new Error('Invalid canonical native node');
+    return true;
+  }
+  if (i.kind === 'sourceMap') {
+    canonicalProfile(i);
+    range(i.sourceRange);
+    range(i.renderedRange);
+    const s = object(i.sourceRange),
+      r = object(i.renderedRange);
+    const sourceLength = (s.end as number) - (s.start as number),
+      renderedLength = (r.end as number) - (r.start as number);
+    if (
+      !token(i.ownerRef) ||
+      !['identity', 'entity', 'normalized', 'omitted', 'projection'].includes(String(i.mapping)) ||
+      (i.mapping === 'identity' && sourceLength !== renderedLength) ||
+      (i.mapping === 'projection' && sourceLength !== 0) ||
+      (i.mapping === 'omitted' && (renderedLength !== 0 || i.textRef !== null)) ||
+      (i.textNodeId === null
+        ? i.textNodeRef !== null || i.mapping !== 'omitted' || r.start !== 0 || r.end !== 0
+        : !token(i.textNodeId) || !token(i.textNodeRef)) ||
+      (renderedLength ? !token(i.textRef) : i.textRef !== null)
+    )
+      throw new Error('Invalid canonical source map');
+    return true;
+  }
+  if (i.kind === 'sourcePiece') {
+    range(i.sourceRange);
+    const r = object(i.sourceRange);
+    if (
+      !token(i.nodeRef) ||
+      r.start === r.end ||
+      !['opening', 'body', 'closing', 'attribute', 'omitted'].includes(String(i.role))
+    )
+      throw new Error('Invalid canonical source piece');
+    return true;
+  }
+  return false;
+}
+function htmlBoundary(i: Record<string, unknown>) {
+  const p = object(i.htmlPosition),
+    s = object(i.htmlSource),
+    r = object(i.sourceRange);
+  canonicalProfile(p);
+  provenance(s, s.piecesRef, r);
+  if (
+    !token(p.tableRef) ||
+    !token(i.nativeRef) ||
+    !token(i.attributesRef) ||
+    (i.sourceMapRef !== undefined && !token(i.sourceMapRef)) ||
+    (i.construct === 'htmlTable' ? p.rowIndex !== undefined : !uint(p.rowIndex)) ||
+    (i.construct === 'htmlTableCell'
+      ? !uint(p.columnIndex) || !['data', 'header'].includes(String(p.cellRole))
+      : p.columnIndex !== undefined || p.cellRole !== undefined)
+  )
+    throw new Error('Invalid canonical HTML address');
+  for (const key of ['openingRange', 'bodyRange', 'closingRange']) {
+    if (s[key] === null) continue;
+    range(s[key]);
+    const part = object(s[key]);
+    if (
+      (part.start as number) < (r.start as number) ||
+      (part.end as number) > (r.end as number) ||
+      s.provenance === 'implicit'
+    )
+      throw new Error('Invalid canonical HTML source range');
+  }
+}
 function pageItem(value: unknown, kind: NotePageRequest['kind']) {
   const i = object(value);
   if (kind === 'taskIds') {
@@ -106,6 +204,7 @@ function pageItem(value: unknown, kind: NotePageRequest['kind']) {
     } else if (i.type !== 'null' || i.value !== null) throw new Error('Invalid metadata type');
     return;
   }
+  if (canonicalItem(i)) return;
   if (i.kind === 'fragment') {
     if (
       typeof i.field !== 'string' ||
@@ -120,12 +219,51 @@ function pageItem(value: unknown, kind: NotePageRequest['kind']) {
     if (i.kind === 'boundary') {
       if (
         typeof i.construct !== 'string' ||
-        typeof i.continuationBefore !== 'boolean' ||
-        typeof i.continuationAfter !== 'boolean'
+        (i.sourceMapRef === undefined && String(i.construct).startsWith('htmlTable')
+          ? i.continuationBefore !== undefined || i.continuationAfter !== undefined
+          : typeof i.continuationBefore !== 'boolean' || typeof i.continuationAfter !== 'boolean')
       )
         throw new Error('Invalid context boundary');
+      if (['htmlTable', 'htmlTableRow', 'htmlTableCell'].includes(String(i.construct)))
+        htmlBoundary(i);
+      if (['tableHead', 'tableRow', 'tableCell'].includes(String(i.construct))) {
+        const p = object(i.tablePosition);
+        if (
+          !token(p.tableRef) ||
+          !uint(p.rowIndex) ||
+          (i.construct === 'tableHead' && p.rowIndex !== 0) ||
+          (i.construct === 'tableRow' && p.rowIndex === 0) ||
+          (i.construct === 'tableCell' &&
+            (!uint(p.columnIndex) ||
+              !['none', 'left', 'center', 'right'].includes(String(p.alignment))))
+        )
+          throw new Error('Invalid table context address');
+      } else if (i.tablePosition !== undefined) throw new Error('Unexpected table context address');
     } else if (i.kind !== 'span' || typeof i.role !== 'string')
       throw new Error('Invalid context span');
+    else if (i.role === 'code') {
+      const c = object(i.codeSource);
+      canonicalProfile(c);
+      range(c.openingRange);
+      range(c.bodyRange);
+      range(c.closingRange);
+      const opening = object(c.openingRange),
+        body = object(c.bodyRange),
+        closing = object(c.closingRange),
+        outer = object(i.sourceRange);
+      if (
+        (i.nativeRef !== null && !token(i.nativeRef)) ||
+        (i.sourceMapRef !== undefined && !token(i.sourceMapRef)) ||
+        opening.start !== outer.start ||
+        opening.end !== body.start ||
+        body.end !== closing.start ||
+        closing.end !== outer.end ||
+        opening.start === opening.end ||
+        (opening.end as number) - (opening.start as number) !==
+          (closing.end as number) - (closing.start as number)
+      )
+        throw new Error('Invalid canonical code source');
+    }
   }
 }
 function readPage(

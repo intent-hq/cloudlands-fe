@@ -30,6 +30,13 @@
   import { isNoteContentStale } from '$shared/utils/note-content';
   import { invoke } from '$lib/electron-bridge';
   import { createLogger } from '$lib/utils/client-logger';
+  import NoteReadingView from '$features/notes/virtualized/NoteReadingView.svelte';
+  import {
+    pagePanelOpened,
+    pagePanelClosed,
+  } from '$store/renderer/slices/note-pages/note-pages-slice';
+  import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
+  import type { NoteReadingSurface } from '$features/notes/virtualized/note-window-view';
   import NoteWithComments from '$lib/components/workspace/NoteWithComments.svelte';
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
@@ -57,7 +64,17 @@
 
   const logger = createLogger('NoteTabType');
 
-  let { tab, workspaceId, isActive, isPanelFocused }: TabTypeComponentProps = $props();
+  // The default remains legacy until the document-operation owner supplies the
+  // complete paged surface. Capability alone must not enable an unfinished editor.
+  let {
+    tab,
+    workspaceId,
+    isActive,
+    isPanelFocused,
+    readingSurface,
+  }: TabTypeComponentProps & {
+    readingSurface?: NoteReadingSurface;
+  } = $props();
 
   const headerContext = getPanelHeaderContext();
 
@@ -78,6 +95,16 @@
   $effect(() => noteViewNoteIdStore.set(tab.noteId ?? ''));
   const noteViewModeStore = selectNoteViewMode(noteViewWorkspaceIdStore, noteViewNoteIdStore);
   const noteViewMode = $derived($noteViewModeStore);
+  const notePageSession = selectNotePageSession(noteViewWorkspaceIdStore, noteViewNoteIdStore);
+  const pagedSurface = $derived($notePageSession?.status === 'legacy' ? undefined : readingSurface);
+  // The tab owns negotiation across legacy/paged renderer changes. Keeping this
+  // owner alive lets reconnect renegotiate an older daemon without a full reopen.
+  $effect(() => {
+    if (!readingSurface || !workspaceId || !tab.noteId) return;
+    const owner = { workspaceId, noteId: tab.noteId, panelId: tab.id };
+    appStore.dispatch(pagePanelOpened(owner.workspaceId, owner.noteId, owner.panelId));
+    return () => appStore.dispatch(pagePanelClosed(owner.workspaceId, owner.noteId, owner.panelId));
+  });
 
   // Version history state
   let showVersionHistory = $state(false);
@@ -105,7 +132,14 @@
   );
   $effect(() => {
     const noteId = tab.noteId;
-    if (!isActive || !noteId || !noteContentStale || contentLoadFailedNoteId === noteId) return;
+    if (
+      pagedSurface ||
+      !isActive ||
+      !noteId ||
+      !noteContentStale ||
+      contentLoadFailedNoteId === noteId
+    )
+      return;
     void ensureNoteContentLoaded(workspaceId, noteId).then((loaded) => {
       if (!loaded && tab.noteId === noteId) contentLoadFailedNoteId = noteId;
     });
@@ -182,6 +216,7 @@
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
     if (!$note) return $notesState.loading || !$notesState.initialized ? 'loading' : 'missing';
+    if (pagedSurface) return 'read-only';
     if (noteContentLoadFailed) return 'error';
     if (noteContentStale) return 'loading';
     if (!noteEditable) return 'read-only';
@@ -197,7 +232,8 @@
   async function handleCopyNote() {
     if (!$note) return;
     try {
-      await navigator.clipboard.writeText($note.content || '');
+      if (pagedSurface) await pagedSurface.copyDocument();
+      else await navigator.clipboard.writeText($note.content || '');
       noteCopyFeedback = m.layout_noteTab_copiedFullNote_label();
       if (noteCopyTimeoutId) clearTimeout(noteCopyTimeoutId);
       noteCopyTimeoutId = setTimeout(() => {
@@ -332,7 +368,19 @@
 
 <NoteContentSurface state={noteContentState}>
   {#if tab.noteId}
-    {#if noteContentLoadFailed}
+    {#if pagedSurface && $workspace}
+      <NoteReadingView
+        ownsPanel={false}
+        {workspaceId}
+        workspace={$workspace}
+        noteId={tab.noteId}
+        panelId={tab.id}
+        editing={pagedSurface.editing}
+        onSelection={pagedSurface.selectionChanged}
+        onFullOperation={pagedSurface.fullOperation}
+        onReady={pagedSurface.ready}
+      />
+    {:else if noteContentLoadFailed}
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
         <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
         <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>

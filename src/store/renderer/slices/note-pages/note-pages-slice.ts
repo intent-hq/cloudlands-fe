@@ -1,3 +1,4 @@
+import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
@@ -26,6 +27,7 @@ export const initialNotePagesState: NotePagesState = {
 };
 const newSession = (): NotePageSession => ({
   panels: {},
+  windows: {},
   generation: 0,
   state: null,
   status: 'connecting',
@@ -45,6 +47,21 @@ export const pagePanelOpened =
   createAction<[workspaceId: string, noteId: string, panelId: string]>('notePages/panelOpened');
 export const pagePanelClosed =
   createAction<[workspaceId: string, noteId: string, panelId: string]>('notePages/panelClosed');
+export const pageWindowRequested = createAction<
+  [workspaceId: string, noteId: string, panelId: string, at: number]
+>('notePages/windowRequested');
+export const pageWindowSettled =
+  createAction<
+    [
+      workspaceId: string,
+      noteId: string,
+      panelId: string,
+      generation: number,
+      request: number,
+      value: NoteWindow | null,
+      error: string | null,
+    ]
+  >('notePages/windowSettled');
 export const pageVisibleRangesChanged = createAction<
   [workspaceId: string, noteId: string, panelId: string, ranges: SourceRange[]]
 >('notePages/visibleRangesChanged');
@@ -65,7 +82,7 @@ export const pageRequested =
     'notePages/requested',
   );
 export const pageRequestStarted = createAction<
-  [workspaceId: string, noteId: string, generation: number, key: string]
+  [workspaceId: string, noteId: string, generation: number, key: string, ticket?: string]
 >('notePages/requestStarted');
 const physicalReadKey = (ws: string, id: string, generation: number, key: string) =>
   JSON.stringify([ws, id, generation, key]);
@@ -131,6 +148,9 @@ function invalidate(n: NotePageSession): NotePageSession {
   return {
     ...n,
     generation: n.generation + 1,
+    windows: Object.fromEntries(
+      Object.entries(n.windows).map(([id, w]) => [id, { ...w, value: null, loading: false }]),
+    ),
     pages: {},
     pageOrder: [],
     requests: {},
@@ -157,7 +177,11 @@ notePagesReducer.with(pagePanelClosed, (s, { payload: [ws, id, panel] }) =>
   update(s, ws, id, (n) => {
     const panels = { ...n.panels };
     delete panels[panel];
-    return Object.keys(panels).length ? { ...n, panels } : { ...invalidate(n), panels };
+    const windows = { ...n.windows };
+    delete windows[panel];
+    return Object.keys(panels).length
+      ? { ...n, panels, windows }
+      : { ...invalidate(n), panels, windows };
   }),
 );
 notePagesReducer.with(pageVisibleRangesChanged, (s, { payload: [ws, id, panel, ranges] }) =>
@@ -236,7 +260,19 @@ notePagesReducer.with(pageReadSettled, (s, { payload: [ws, id, generation, key] 
   delete physicalReads[physicalReadKey(ws, id, generation, key)];
   return { ...s, physicalReads };
 });
-notePagesReducer.with(pageRequestStarted, (s, { payload: [ws, id, generation, key] }) => {
+notePagesReducer.with(pageRequestStarted, (s, { payload: [ws, id, generation, key, ticket] }) => {
+  if (ticket) {
+    const n = getWorkspaceState(s, ws).notes[id];
+    if (
+      !n ||
+      n.generation !== generation ||
+      !Object.keys(n.panels).length ||
+      n.requests[key] ||
+      Object.values(s.physicalReads).filter((r) => r.workspaceId === ws && r.noteId === id)
+        .length >= 4
+    )
+      return s;
+  }
   const updated = update(s, ws, id, (n) =>
     generation === n.generation
       ? { ...n, requests: { ...n.requests, [key]: true }, deferredRead: null }
@@ -246,7 +282,11 @@ notePagesReducer.with(pageRequestStarted, (s, { payload: [ws, id, generation, ke
     ...updated,
     physicalReads: {
       ...updated.physicalReads,
-      [physicalReadKey(ws, id, generation, key)]: { workspaceId: ws, noteId: id },
+      [physicalReadKey(ws, id, generation, key)]: {
+        workspaceId: ws,
+        noteId: id,
+        ...(ticket ? { ticket } : {}),
+      },
     },
   };
 });
@@ -383,3 +423,39 @@ notePagesReducer.with(workspaceUnmounted, (s, { payload: [ws] }) => {
   }
   return setWorkspaceState({ ...s, nextGeneration }, ws, { ...w, notes });
 });
+
+notePagesReducer.with(pageWindowRequested, (s, { payload: [ws, id, panel, at] }) =>
+  update(s, ws, id, (n) => {
+    if (!(panel in n.panels) || !Number.isSafeInteger(at) || at < 0) return n;
+    const prior = n.windows[panel];
+    return {
+      ...n,
+      windows: {
+        ...n.windows,
+        [panel]: {
+          at,
+          request: (prior?.request ?? 0) + 1,
+          value: prior?.value ?? null,
+          error: null,
+          loading: true,
+        },
+      },
+    };
+  }),
+);
+notePagesReducer.with(
+  pageWindowSettled,
+  (s, { payload: [ws, id, panel, generation, request, value, error] }) =>
+    update(s, ws, id, (n) => {
+      const w = n.windows[panel];
+      if (!w || generation !== n.generation || request !== w.request) return n;
+      if (
+        value &&
+        (!n.state ||
+          value.sourceRevision !== n.state.sourceRevision ||
+          !sameNoteScope(value.scope, n.state.scope))
+      )
+        return n;
+      return { ...n, windows: { ...n.windows, [panel]: { ...w, value, error, loading: false } } };
+    }),
+);

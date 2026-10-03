@@ -166,3 +166,39 @@ it('buffers pre-ack snapshots, resubscribes on gaps/reconnect and disposes late 
   });
   expect(rpc.mock.calls.filter(([m]) => m === 'note.get' || m === 'comment.list')).toEqual([]);
 });
+
+it('decodes the exact far-cell and repeated-table address frames from protocol 9b39c3de', async () => {
+  const client = new LiveNotePagesClient();
+  const v = vectors.tablePositions;
+  for (const frame of [v.cellFrame, v.rowFrame, v.tableFrame, v.headerFrame, v.secondTableFrame]) {
+    rpc.mockResolvedValueOnce(frame.result);
+    expect(
+      await client.read('ws-a', 'spec', { kind: 'context', contextRef: 'scoped-ref' }),
+    ).toEqual(frame.result);
+  }
+  expect(v.cellFrame.result.items[0].tablePosition).toEqual({
+    tableRef: 'first-table-ref',
+    rowIndex: 100001,
+    columnIndex: 2,
+    alignment: 'right',
+  });
+});
+
+it.each([
+  undefined,
+  { tableRef: 'table', rowIndex: 1, columnIndex: -1, alignment: 'left' },
+  { tableRef: 'table', rowIndex: 1, columnIndex: 2, alignment: 'diagonal' },
+  { tableRef: '', rowIndex: 1, columnIndex: 2, alignment: 'left' },
+  { tableRef: 'table', rowIndex: 1.5, columnIndex: 2, alignment: 'left' },
+])('rejects invalid table addresses without hydrating earlier cells: %j', async (tablePosition) => {
+  const frame = structuredClone(vectors.tablePositions.cellFrame.result);
+  const malformed = { ...frame, items: [{ ...frame.items[0], tablePosition }] };
+  rpc.mockResolvedValueOnce(malformed);
+  await expect(
+    new LiveNotePagesClient().read('ws-a', 'spec', {
+      kind: 'context',
+      contextRef: 'far-cell-context',
+    }),
+  ).rejects.toThrow();
+  expect(rpc).toHaveBeenCalledTimes(1);
+});
