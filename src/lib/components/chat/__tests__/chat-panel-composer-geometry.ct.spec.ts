@@ -271,6 +271,18 @@ test('shows and splits a queued append while preserving keyboard focus and defer
   await expect(queue.getByRole('button', { name: 'Clear all queued messages' })).toBeDisabled();
   await expect(editor).toBeFocused();
   await editor.pressSequentially('Keep newer draft');
+  await expect
+    .poll(async () => {
+      const pending = await queue.getByTestId('queued-message-row').boundingBox();
+      const viewport = await queue.getByTestId('queued-messages-viewport').boundingBox();
+      return (
+        !!pending &&
+        !!viewport &&
+        pending.y >= viewport.y - 1 &&
+        pending.y + pending.height <= viewport.y + viewport.height + 1
+      );
+    })
+    .toBe(true);
   await page.screenshot({ path: testInfo.outputPath('queue-pending.png') });
   await component.update({ props: { ...props, queuePhase: 'foreign' } });
   await expect(queue.getByTestId('queued-message-text')).toHaveText([

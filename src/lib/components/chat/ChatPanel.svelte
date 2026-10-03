@@ -1144,6 +1144,7 @@
   // view (display-only; the daemon queue and drain order are untouched).
   // Legacy queues omit transcript-stamped drains. Correlated full snapshots
   // remain authoritative: a restored retry may legitimately share history aliases.
+  const admittedPrincipal$ = selectPrincipalSnapshot();
   const visibleQueuedMessages = $derived(
     $admittedPrincipal$?.capabilities.submissionCorrelation === 1
       ? $queuedMessages$.filter(isUserQueuedMessage)
@@ -1167,7 +1168,6 @@
   // The viewer's own rows carry no author identity (transcript and queue).
   const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
   const isHostOwner$ = selectCanAdministerHost();
-  const admittedPrincipal$ = selectPrincipalSnapshot();
   const queuePrincipalId = $derived($admittedPrincipal$?.principal.id ?? null);
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
