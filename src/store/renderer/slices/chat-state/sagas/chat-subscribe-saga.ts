@@ -1,3 +1,7 @@
+import {
+  observeSubmissionEvidence,
+  submissionHistoryEvidence,
+} from '$features/agent/submission-evidence';
 /**
  * Chat subscribe saga — feeds the STANDING `chat.subscribe` transcript
  * (PROTOCOL §7.1) into the agent-session slice so ChatPanel renders from the
@@ -448,6 +452,12 @@ function* applyTranscript(
         ? transcript.messages
         : deduplicateAgentMessages([...retained, ...transcript.messages]);
     if (isCurrentSubscription(coordinator, agentId, entry)) {
+      observeSubmissionEvidence(
+        agentId,
+        session.workspaceId,
+        'history',
+        submissionHistoryEvidence(transcript.messages),
+      );
       yield* put(replaceMessages(agentId, merged));
     } else {
       reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');

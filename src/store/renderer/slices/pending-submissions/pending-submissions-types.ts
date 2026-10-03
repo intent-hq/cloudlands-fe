@@ -77,3 +77,8 @@ export interface SubmissionRead {
   generation: number;
   kind: 'queue' | 'history';
 }
+
+export interface SubmissionReference {
+  scope: SubmissionScope;
+  id: string;
+}

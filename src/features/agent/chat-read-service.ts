@@ -1,3 +1,4 @@
+import { beginSubmissionRead, submissionHistoryEvidence } from './submission-evidence';
 import { CHAT_PAGE_SIZE } from '$shared/constants';
 import { claimAgentReadOwnership } from './agent-read-ownership';
 /**
@@ -144,6 +145,7 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
     throw error;
   }
 
+  const submissionRead = beginSubmissionRead(agentId, workspaceId, 'history');
   // Actually perform the work
   (async () => {
     try {
@@ -171,6 +173,10 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
         workspaceId ?? session.workspaceId,
       );
       if (connection !== connectionGeneration || !ownership.isCurrent()) return;
+      if (!submissionRead.isCurrent()) {
+        void loadChatTranscript(agentId, workspaceId);
+        return;
+      }
       const allMessages = page.messages;
 
       // Final re-check before any side effects: the deletion may have become
@@ -216,6 +222,7 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       // because the daemon snapshot actually reports a turn is in-flight;
       // any orphan/stale healing belongs in the daemon, not the renderer.
       const sessionWithMessages = { ...session, messages: mergedMessages };
+      submissionRead.complete(submissionHistoryEvidence(allMessages));
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {

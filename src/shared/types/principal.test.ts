@@ -26,6 +26,19 @@ describe('principal discovery wire contract', () => {
       expect(snapshot?.capabilities.personalPairing).toBe(true);
     },
   );
+  it.each([undefined, false, true, 0, 1, 2, '1', null, {}])(
+    'enables submission correlation only for exact server capability 1 (%j)',
+    (flag) => {
+      const snapshot = parsePrincipalSnapshot(
+        {
+          capabilities: { submissionCorrelation: 1 },
+          server: { capabilities: { submissionCorrelation: flag } },
+        },
+        principal,
+      );
+      expect(snapshot?.capabilities.submissionCorrelation).toBe(flag === 1 ? 1 : undefined);
+    },
+  );
   it.each([undefined, 'owner', -1, 0.5, Number.MAX_SAFE_INTEGER + 1])(
     'rejects malformed advertised revision %s',
     (value) => {

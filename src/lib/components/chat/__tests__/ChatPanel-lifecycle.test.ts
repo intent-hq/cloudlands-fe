@@ -17,6 +17,12 @@ import {
   followToBottom as scrollToBottomUtil,
 } from '$lib/utils/smartScroll';
 
+import { createAdmittedLegacyPrincipal } from '../../../../test/fixtures/admitted-legacy-principal';
+import {
+  workspaceReducer,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { pendingSubmissionsReducer } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 const mocks = vi.hoisted(() => {
   let activeReadableSubscriptions = 0;
   const mutableReadable = <T>(initial: T) => {
@@ -732,6 +738,15 @@ beforeEach(() => {
   mocks.transientUi = initialTransientUi;
   mocks.deferComposerEmits = false;
   mocks.dispatch.mockImplementation((action) => {
+    const state = mocks.storeState as import('$store/renderer/types').StoreState;
+    if (state.pendingSubmissions) {
+      const pending = pendingSubmissionsReducer(state.pendingSubmissions, action);
+      const workspace = workspaceReducer(state.workspace, action);
+      if (pending !== state.pendingSubmissions || workspace !== state.workspace) {
+        mocks.storeState = { ...state, workspace, pendingSubmissions: pending };
+        (appStore as unknown as { emitState(): void }).emitState();
+      }
+    }
     if (action?.type === 'transientUi/setComposerContextItems') {
       mocks.transientUi = transientUiReducer(
         mocks.transientUi as typeof initialTransientUi,
@@ -755,7 +770,17 @@ beforeEach(() => {
   mocks.pendingProposalRecovery.set(undefined);
   mocks.chatError.set(null);
   mocks.chatQuotaExceeded.set(null);
-  mocks.storeState = {};
+  mocks.storeState = {
+    ...createAdmittedLegacyPrincipal(),
+    pendingSubmissions: { byAgentId: {} },
+    workspace: workspaceReducer(
+      workspaceReducer(
+        undefined,
+        setWorkspaceEntity({ ...workspace('workspace-a'), myRole: 'owner' }),
+      ),
+      setWorkspaceEntity({ ...workspace('workspace-b'), myRole: 'owner' }),
+    ),
+  };
   mocks.specialistChange = null;
   mocks.failureCorrelation.set(undefined);
   mocks.awaitingSwitchBackSnapshot.set(false);
@@ -767,7 +792,9 @@ beforeEach(() => {
   mocks.pendingBrowserCaptures.set([]);
   mocks.focusedActiveTab = { type: 'agent', agentId: 'agent-a' };
   mocks.dividerSessionValue = { anchorId: null };
-  mocks.animateMessageSend.mockResolvedValue(undefined);
+  mocks.animateMessageSend.mockImplementation(async ({ launchBubble }) => {
+    launchBubble?.remove();
+  });
   mocks.createMessageSendLaunchBubble.mockImplementation(() => {
     const bubble = document.createElement('div');
     bubble.dataset.messageSendTransition = 'true';
@@ -2279,7 +2306,62 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
   });
 
-  it('expires an unclaimed send launch bubble at the bounded transition deadline', async () => {
+  it('keeps the daemon-owned initial prompt until its user row arrives while displaying a separate new submission', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    const view = render(ChatPanel, {
+      props: {
+        workspace: workspace('workspace-a'),
+        agentId: 'agent-a',
+        initialPrompt: 'Initial daemon prompt',
+      },
+    });
+    await tick();
+    expect(
+      view.container.querySelectorAll('[data-message-key="pending-initial-message"]'),
+    ).toHaveLength(1);
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Separate follow-up' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    expect(view.container.querySelectorAll('[data-send-app-message-id]')).toHaveLength(1);
+    expect(
+      view.container.querySelectorAll('[data-message-key="pending-initial-message"]'),
+    ).toHaveLength(1);
+    mocks.agentMessages.set([
+      optimisticUserMessage('initial-daemon-app-id', 'Initial daemon prompt'),
+    ]);
+    await tick();
+    expect(view.container.querySelector('[data-message-key="pending-initial-message"]')).toBeNull();
+    expect(view.container.querySelectorAll('[data-send-app-message-id]')).toHaveLength(2);
+  });
+
+  it('hides staged content on workspace rebind and on participation loss', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    const view = render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Private pending content' },
+    });
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    const id = latestSentAppMessageId();
+    expect(view.container.querySelector(`[data-send-app-message-id="${id}"]`)).not.toBeNull();
+    await view.rerender({ workspace: workspace('workspace-b'), agentId: 'agent-a' });
+    (appStore as unknown as { emitState(): void }).emitState();
+    await tick();
+    expect(view.container.querySelector(`[data-send-app-message-id="${id}"]`)).toBeNull();
+    await view.rerender({ workspace: workspace('workspace-a'), agentId: 'agent-a' });
+    appStore.dispatch(
+      setWorkspaceEntity({ ...workspace('workspace-a'), myRole: 'viewer', canManage: false }),
+    );
+    await tick();
+    expect(view.container.querySelector(`[data-send-app-message-id="${id}"]`)).toBeNull();
+  });
+
+  it('animates immediately into the staged row before transcript preparation', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.draftClear.mockResolvedValue({ ok: true });
     render(ChatPanel, {
@@ -2291,14 +2373,10 @@ describe('ChatPanel mounted lifecycle', () => {
       target: { value: 'send without an optimistic transcript row' },
     });
     await fireEvent.click(screen.getByTestId('mock-input-submit'));
-    const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
-    expect(bubble.isConnected).toBe(true);
-
-    await vi.advanceTimersByTimeAsync(2999);
-    expect(bubble.isConnected).toBe(true);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(bubble.isConnected).toBe(false);
-    expect(mocks.animateMessageSend).not.toHaveBeenCalled();
+    await tick();
+    await Promise.resolve();
+    expect(mocks.animateMessageSend).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 
   it('removes a pending send launch bubble when the panel is destroyed', async () => {
@@ -2312,7 +2390,7 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
       target: { value: 'pending handoff' },
     });
-    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    (screen.getByTestId('mock-input-submit') as HTMLButtonElement).click();
     const bubble = mocks.createMessageSendLaunchBubble.mock.results.at(-1)?.value as HTMLElement;
     expect(bubble.isConnected).toBe(true);
 
@@ -2320,7 +2398,7 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(bubble.isConnected).toBe(false);
   });
 
-  it('matches a delayed optimistic row once and restores the focused composer after finish', async () => {
+  it('hands the immediate staged row to delayed transcript content without repeating animation or losing focus', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.draftClear.mockResolvedValue({ ok: true });
     const finish = deferred<void>();
@@ -2440,8 +2518,13 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it('keeps rapid ordinary sends unique and expires the only unmatched launch bubble', async () => {
+  it('keeps rapid ordinary sends unique while their immediate handoff is in flight', async () => {
     mocks.draftGet.mockResolvedValue(null);
+    const finish = deferred<void>();
+    mocks.animateMessageSend.mockImplementation(async ({ launchBubble }) => {
+      await finish.promise;
+      launchBubble?.remove();
+    });
     mocks.draftClear.mockResolvedValue({ ok: true });
     render(ChatPanel, {
       props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
@@ -2460,9 +2543,12 @@ describe('ChatPanel mounted lifecycle', () => {
     const identities = sendActions.map((action) => action.payload.payload.userAppMessageId);
 
     expect(new Set(identities).size).toBe(2);
-    expect(mocks.createMessageSendLaunchBubble).toHaveBeenCalledOnce();
-    expect(document.querySelectorAll('[data-message-send-transition]')).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.createMessageSendLaunchBubble).toHaveBeenCalledTimes(2);
+    expect(mocks.animateMessageSend).toHaveBeenCalledTimes(2);
+    expect(document.querySelectorAll('[data-message-send-transition]')).toHaveLength(2);
+    finish.resolve();
+    await Promise.resolve();
+    await tick();
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
   });
 

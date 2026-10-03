@@ -74,6 +74,10 @@ export const pendingEvidenceObserved = createAction<
     now: number,
   ]
 >('pendingSubmissions/evidenceObserved');
+/** A lean persisted-row event fences ACKs; content remains until the transcript publishes. */
+export const pendingDeliveryAnnounced = createAction<
+  [scope: SubmissionScope, rows: SubmissionEvidence[]]
+>('pendingSubmissions/deliveryAnnounced');
 export const pendingLifecycleObserved = createAction<[scope: SubmissionScope, active: boolean]>(
   'pendingSubmissions/lifecycleObserved',
 );
@@ -436,4 +440,37 @@ pendingSubmissionsReducer.with(
     }
     return next;
   },
+);
+
+pendingSubmissionsReducer.with(pendingDeliveryAnnounced, (state, { payload: [scope, rows] }) =>
+  update(state, scope, (entry) => {
+    if (!entry.supported) return entry;
+    const ids = new Set(rows.flatMap((row) => evidenceSubmissionIds(row, scope.principalId)));
+    return {
+      ...entry,
+      generation: entry.generation + 1,
+      observationVersion: entry.observationVersion + 1,
+      queueFresh: false,
+      historyFresh: false,
+      refreshNeeded: true,
+      operations: createCollection(
+        'id',
+        getItems(entry.operations).map((op) => (ids.has(op.id) ? { ...op, observed: true } : op)),
+      ),
+      submissions: createCollection(
+        'id',
+        getItems(entry.submissions).map((submission) =>
+          ids.has(submission.id)
+            ? { ...submission, destination: 'conversation' as const, status: 'accepted' as const }
+            : submission,
+        ),
+      ),
+      seeds: createCollection(
+        'id',
+        getItems(entry.seeds).filter(
+          (row) => !evidenceSubmissionIds(row, scope.principalId).some((id) => ids.has(id)),
+        ),
+      ),
+    };
+  }),
 );

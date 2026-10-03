@@ -1,3 +1,13 @@
+import { loadChatTranscript } from '$features/agent/chat-read-service';
+import {
+  selectSubmissionIsCurrent,
+  selectSubmissionObserved,
+  selectPendingSubmissionEntry,
+} from '../../pending-submissions/pending-submissions-selectors';
+import {
+  pendingSubmissionSending,
+  pendingSubmissionSettled,
+} from '../../pending-submissions/pending-submissions-slice';
 import { reconcileQueuedMessage } from '$features/agent/utils/reconcile-queued-message';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
@@ -126,6 +136,7 @@ const ORDINARY_CHAT_COMMANDS = [
 ];
 
 type LifecycleSendOptions = {
+  submission?: SendMessagePayload['submission'];
   imageBlocks?: SendMessagePayload['imageBlocks'];
   fileBlocks?: SendMessagePayload['fileBlocks'];
   noteIds?: string[];
@@ -307,12 +318,33 @@ function* dispatchToLifecycle(
   skipQueueCheck: boolean,
 ): SagaGenerator<void> {
   const ownership = captureAgentMutationOwnership(agentId, wsId);
-  if (!(yield* mutationIsCurrent(agentId, ownership))) return;
+  const submission = options.submission;
+  function* current(): SagaGenerator<boolean> {
+    return (
+      (yield* mutationIsCurrent(agentId, ownership)) &&
+      (!submission || (yield* selectSubmissionIsCurrent.effect(submission)))
+    );
+  }
+  const supported = submission
+    ? (yield* selectPendingSubmissionEntry.effect(submission.scope))?.supported === true
+    : false;
+  function* settle(
+    outcome: 'accepted' | 'rejected' | 'uncertain',
+    row?: QueuedMessage,
+    queued = false,
+  ): SagaGenerator<void> {
+    if (submission && (yield* current()))
+      yield* put(
+        pendingSubmissionSettled(submission.scope, submission.id, outcome, Date.now(), row, queued),
+      );
+  }
+  if (!(yield* current())) return;
   const workspace =
     wsId === CHIEF_WORKSPACE_ID
       ? createChiefVirtualWorkspace()
       : yield* selectWorkspaceById.effect(wsId);
   if (!workspace) {
+    yield* settle('rejected');
     yield* put(chatSendFailed(agentId, m.agent_chatSend_workspaceNotFound_error({ id: wsId })));
     return;
   }
@@ -337,7 +369,7 @@ function* dispatchToLifecycle(
         imageBlocks: yield* call(toImageReferenceBlocks, wsId, imageBlocks),
       };
     } catch (error) {
-      if (!(yield* mutationIsCurrent(agentId, ownership))) return;
+      if (!(yield* current())) return;
       yield* put(
         chatLastAttemptedMessageSet(
           agentId,
@@ -347,21 +379,23 @@ function* dispatchToLifecycle(
           }),
         ),
       );
+      yield* settle('rejected');
       yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
       return;
     }
   }
 
-  if (!(yield* mutationIsCurrent(agentId, ownership))) return;
+  if (!(yield* current())) return;
   yield* call(hydrateBeforeSend, agentId, wsId);
-  if (!(yield* mutationIsCurrent(agentId, ownership))) return;
+  if (!(yield* current())) return;
   const recordedAttempt = buildRecordedAttempt(content, options);
   const isResponding = yield* selectAgentIsResponding.effect(agentId);
   if (!skipQueueCheck && isResponding) {
-    yield* put(clearChatDraft(wsId, agentId));
+    if (!submission) yield* put(clearChatDraft(wsId, agentId));
     try {
       const queueOptions = {
         workspaceId: wsId,
+        ...(supported && submission ? { messageId: submission.id } : {}),
         ...(options.imageBlocks !== undefined ? { imageBlocks: options.imageBlocks } : {}),
         ...(options.fileBlocks !== undefined ? { fileBlocks: options.fileBlocks } : {}),
         ...(options.messageMetadata !== undefined
@@ -375,14 +409,16 @@ function* dispatchToLifecycle(
       // to it.
       yield* put(chatQueuedSendStarted(agentId));
       const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, wsId);
+      if (submission) yield* put(pendingSubmissionSending(submission.scope, submission.id));
       const result = yield* call(
         [appClient.agents, appClient.agents.queue],
         agentId,
         content,
         queueOptions,
       );
-      if (!(yield* mutationIsCurrent(agentId, ownership))) return;
+      if (!(yield* current())) return;
       if (!result.success) {
+        yield* settle('rejected');
         yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
         yield* put(chatSendFailed(agentId, result.error ?? m.agent_chatSend_queueRejected_error()));
         return;
@@ -390,6 +426,29 @@ function* dispatchToLifecycle(
       yield* put(chatErrorCleared(agentId));
       yield* put(chatModelUnavailableCleared(agentId));
       const queuedMessage = result.queuedMessage;
+      if (supported) {
+        yield* settle('accepted', queuedMessage, true);
+        const turnId = result.turnId ?? queuedMessage?.turnId;
+        if (queuedMessage && typeof turnId === 'string') {
+          const retryMessage = (yield* selectAgentQueueMessages.effect(agentId, wsId)).find(
+            (message) => message.id === queuedMessage.id || message.turnId === turnId,
+          );
+          yield* put(
+            chatQueuedRetryRecordSet(
+              agentId,
+              queuedMessage.id,
+              buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt),
+              turnId,
+              !retryMessage && (yield* selectSubmissionObserved.effect(submission!)),
+            ),
+          );
+        }
+        if (wsId === CHIEF_WORKSPACE_ID)
+          yield* call(renameChiefThreadIfPlaceholder, agentId, content);
+        void loadChatTranscript(agentId, wsId);
+        yield* call(() => hydrateAgentQueue(agentId, wsId).catch(() => undefined));
+        return;
+      }
       if (queuedMessage) {
         const turnId = result.turnId ?? queuedMessage.turnId;
         let retryMessage: QueuedMessage | undefined = queuedMessage;
@@ -398,14 +457,11 @@ function* dispatchToLifecycle(
         // snapshot (including the shrunk-after-drain one) is at least as
         // fresh as this echo, so seeding over it would re-add a just-drained
         // row (monorepo#2481).
-        if (
-          (yield* mutationIsCurrent(agentId, ownership)) &&
-          getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend
-        ) {
+        if ((yield* current()) && getAgentQueueEventSnapshotSeq(agentId, wsId) === queueSeqAtSend) {
           const existing = yield* selectAgentQueueMessages.effect(agentId, wsId);
           const next = reconcileQueuedMessage(existing, queuedMessage);
           yield* put(replaceAgentQueue(agentId, next, wsId));
-        } else if (yield* mutationIsCurrent(agentId, ownership)) {
+        } else if (yield* current()) {
           logger.debug(
             'queue-on-send seed superseded by an authoritative snapshot; reconciling via hydrate',
             { agentId, queuedMessageId: queuedMessage.id },
@@ -424,7 +480,7 @@ function* dispatchToLifecycle(
             (message) => message.id === queuedMessage.id || message.turnId === turnId,
           );
         }
-        if (typeof turnId === 'string' && (yield* mutationIsCurrent(agentId, ownership))) {
+        if (typeof turnId === 'string' && (yield* current())) {
           const record = buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, recordedAttempt);
           yield* put(
             retryMessage
@@ -436,8 +492,10 @@ function* dispatchToLifecycle(
       if (wsId === CHIEF_WORKSPACE_ID) {
         yield* call(renameChiefThreadIfPlaceholder, agentId, content);
       }
+      yield* settle('rejected');
     } catch (error) {
-      if (!(yield* mutationIsCurrent(agentId, ownership))) return;
+      if (!(yield* current())) return;
+      yield* settle('uncertain');
       const message = error instanceof Error ? error.message : String(error);
       yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
       yield* put(chatSendFailed(agentId, m.agent_chatSend_queueFailed_error({ error: message })));
@@ -447,13 +505,16 @@ function* dispatchToLifecycle(
 
   yield* put(chatSendStarted(agentId, wsId));
   yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
-  yield* put(clearChatDraft(wsId, agentId));
+  if (!submission) yield* put(clearChatDraft(wsId, agentId));
   try {
+    if (submission) yield* put(pendingSubmissionSending(submission.scope, submission.id));
     yield* call(sendAgentMessage, agentId, content, workspace, options);
-    if ((yield* mutationIsCurrent(agentId, ownership)) && wsId === CHIEF_WORKSPACE_ID)
+    if ((yield* current()) && wsId === CHIEF_WORKSPACE_ID)
       yield* call(renameChiefThreadIfPlaceholder, agentId);
   } catch (error) {
     if (!(yield* mutationIsCurrent(agentId, ownership))) return;
+    if (submission && !(yield* selectPendingSubmissionEntry.effect(submission.scope))) return;
+    yield* settle('uncertain');
     yield* put(chatSendFailed(agentId, error instanceof Error ? error.message : String(error)));
   }
 }
@@ -480,6 +541,7 @@ function* handleSend(action: SendAction): SagaGenerator<void> {
     payload.text,
     payload.workspaceContextStr,
     {
+      submission: payload.submission,
       imageBlocks: payload.imageBlocks,
       fileBlocks: payload.fileBlocks,
       noteIds: payload.noteIds,

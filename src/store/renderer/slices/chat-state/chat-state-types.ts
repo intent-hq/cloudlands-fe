@@ -348,6 +348,7 @@ export interface ChatAgentState {
  * DOM-derived context may be raw; the saga owns serialization before IPC.
  */
 export interface SendMessagePayload {
+  submission?: import('../pending-submissions/pending-submissions-types').SubmissionReference;
   text: string;
   /** Stable identity shared by the optimistic row and its composer transition. */
   userAppMessageId?: string;

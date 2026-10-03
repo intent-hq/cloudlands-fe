@@ -152,3 +152,71 @@ test('supports attachment keyboard navigation, removal, and composer resizing', 
   }, handleY - 60);
   await expect.poll(async () => (await input.boundingBox())!.height).toBeGreaterThan(before);
 });
+
+for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+  test(`shows a submitted prompt before preparation with keyboard focus and follow-scroll preserved (${reducedMotion})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion });
+    const props = {
+      width: 520,
+      height: 480,
+      submissionSupport: true,
+      followUp: 'discussion' as const,
+    };
+    const component = await mount(ChatPanelComposerGeometryHost, { props });
+    const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+    await editor.click();
+    await editor.pressSequentially('Visible before preparation');
+    await editor.press('Enter');
+    const pending = component
+      .locator('[data-send-app-message-id]')
+      .filter({ hasText: 'Visible before preparation' });
+    await expect(pending).toHaveCount(1);
+    await expect(pending).toBeVisible();
+    await expect(editor).toBeFocused();
+    await expect(editor).not.toContainText('Visible before preparation');
+    await expect
+      .poll(async () =>
+        pending.evaluate((node) => {
+          const scroll =
+            node.closest('[data-testid="chat-transcript-scroll-viewport"]') ??
+            node.closest('.overflow-y-auto');
+          if (!scroll) return false;
+          const row = node.getBoundingClientRect();
+          const viewport = scroll.getBoundingClientRect();
+          return row.top >= viewport.top - 1 && row.bottom <= viewport.bottom + 1;
+        }),
+      )
+      .toBe(true);
+    await component.update({ props: { ...props, settleSubmission: 'history' } });
+    await expect(component.getByText('Visible before preparation', { exact: true })).toHaveCount(1);
+    await expect(editor).toBeFocused();
+    await expect(page.locator('[data-message-send-transition]')).toHaveCount(0);
+  });
+}
+
+test('moves the same visible submission into a queue fallback while preserving a new draft', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const props = { width: 520, height: 480, submissionSupport: true };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  await editor.click();
+  await editor.pressSequentially('Queue this after admission');
+  await editor.press('Enter');
+  await expect(component.getByText('Queue this after admission', { exact: true })).toHaveCount(1);
+  await editor.pressSequentially('Keep this newer draft');
+  await component.update({ props: { ...props, settleSubmission: 'queue' } });
+  await expect(
+    component
+      .getByRole('region', { name: 'Queued to send when idle' })
+      .getByText('Queue this after admission', { exact: true }),
+  ).toBeVisible();
+  await expect(component.getByText('Queue this after admission', { exact: true })).toHaveCount(1);
+  await expect(editor).toContainText('Keep this newer draft');
+  await expect(editor).toBeFocused();
+});

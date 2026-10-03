@@ -1,3 +1,4 @@
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import type { AppSelector } from '../../types';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
@@ -12,7 +13,7 @@ import type {
 } from './pending-submissions-types';
 
 /** Call at render time with the same ownership captured for admission. Stale views show no pending text. */
-const selectPendingSubmissionEntry: AppSelector<
+export const selectPendingSubmissionEntry: AppSelector<
   PendingSubmissionEntry | undefined,
   [scope: SubmissionScope]
 > = store.createSelector<[scope: SubmissionScope], PendingSubmissionEntry | undefined>(
@@ -43,3 +44,30 @@ export const selectPendingSubmissionDisplay: AppSelector<
 
 export const selectPendingSubmissionsState: AppSelector<PendingSubmissionsState> =
   store.createSelector((state) => state.pendingSubmissions);
+
+export const selectSubmissionIsCurrent = store.createSelector(
+  (state, reference: import('./pending-submissions-types').SubmissionReference) => {
+    const entry = selectPendingSubmissionEntry.select(state, reference.scope);
+    return (
+      !!entry &&
+      (!!getItem(entry.operations, reference.id) || !!getItem(entry.submissions, reference.id))
+    );
+  },
+);
+
+/** Scope comes from the admitted entry; selectors still validate the current view's workspace. */
+export const selectAgentSubmissionDisplay = store.createSelector(
+  (state, agentId: string, workspaceId: string) => {
+    const scope = state.pendingSubmissions?.byAgentId[agentId]?.scope;
+    return scope?.workspaceId === workspaceId
+      ? selectPendingSubmissionDisplay.select(state, scope)
+      : projectPendingSubmissions(undefined, []);
+  },
+);
+
+export const selectSubmissionObserved = store.createSelector(
+  (state, reference: import('./pending-submissions-types').SubmissionReference) => {
+    const entry = selectPendingSubmissionEntry.select(state, reference.scope);
+    return !!entry && getItem(entry.operations, reference.id)?.observed === true;
+  },
+);

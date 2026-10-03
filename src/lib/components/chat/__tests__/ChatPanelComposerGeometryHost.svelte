@@ -24,6 +24,11 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+  import { selectAgentSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+  import {
+    pendingEvidenceObserved,
+    pendingSubmissionSettled,
+  } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
@@ -42,6 +47,8 @@
     transcript = false,
     responseDelivered = false,
     initializeStore = true,
+    submissionSupport = false,
+    settleSubmission,
     followUp,
     historyNotice,
   }: {
@@ -59,6 +66,8 @@
     transcript?: boolean;
     responseDelivered?: boolean;
     initializeStore?: boolean;
+    submissionSupport?: boolean;
+    settleSubmission?: 'history' | 'queue';
     followUp?: 'blocker' | 'discussion';
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
   } = $props();
@@ -95,6 +104,22 @@
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
     : () => {};
   if (ownsStore) admitLegacyPrincipal();
+  if (submissionSupport) {
+    const current = store.state.principal;
+    store.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        {
+          ...current.snapshot!,
+          capabilities: { ...current.snapshot!.capabilities, submissionCorrelation: 1 },
+        },
+      ),
+    );
+  }
   const session = {
     id: agentId,
     workspaceId,
@@ -258,6 +283,7 @@
     setWorkspaceEntity({
       id: workspaceId,
       title: fixture.chief ? 'Chief' : 'Composer geometry',
+      myRole: 'owner',
       branch: 'test',
       status: 'active',
       path: '/tmp/chat-panel-composer-geometry',
@@ -305,6 +331,43 @@
         ],
       }),
     );
+  });
+  $effect(() => {
+    if (!settleSubmission) return;
+    const pending = selectAgentSubmissionDisplay.select(store.state, agentId, workspaceId)
+      .conversation[0];
+    const scope = store.state.pendingSubmissions.byAgentId[agentId]?.scope;
+    if (!pending || !scope) return;
+    const author = {
+      principalId: scope.principalId,
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+    };
+    if (settleSubmission === 'queue') {
+      store.dispatch(
+        pendingSubmissionSettled(scope, pending.id, 'accepted', Date.now(), undefined, true),
+      );
+    } else {
+      const message = {
+        id: pending.id,
+        appMessageId: pending.appMessageId,
+        role: 'user' as const,
+        timestamp,
+        contentBlocks: [{ type: 'text' as const, text: pending.content }],
+        author,
+        metadata: { submissionIds: [pending.id] },
+      };
+      store.dispatch(
+        pendingEvidenceObserved(
+          scope,
+          'history',
+          [{ ...message, submissionIds: [pending.id] }],
+          Date.now(),
+        ),
+      );
+      store.dispatch(updateSession(agentId, { messages: [...session.messages, message] }));
+    }
   });
   if (fixture.draft) store.dispatch(setChatDraft(workspaceId, agentId, fixture.draft));
   $effect(() => {
