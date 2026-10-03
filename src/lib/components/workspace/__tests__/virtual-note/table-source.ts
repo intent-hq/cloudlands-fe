@@ -684,10 +684,14 @@ export function admitTableWindow(
     )
       return window;
     if (retained) throw new Error('Table edit requires window headroom');
-    if (radius && !rectangle) radius--;
-    else limit = Math.floor(limit * (viewport ? 0.8 : 0.5));
-    if (rectangle?.minimum && limit < rectangle.minimum.units)
+    if (rectangle?.minimum && limit <= rectangle.minimum.units)
       throw new Error('Table viewport uncovered: minimum source cannot fit admission budget');
+    if (radius && !rectangle) radius--;
+    else {
+      // Do not skip a feasible measured minimum when geometric shrinking crosses it.
+      // It must pass all the same checks above once; failure at that floor terminates.
+      limit = Math.max(rectangle?.minimum?.units ?? 0, Math.floor(limit * (viewport ? 0.8 : 0.5)));
+    }
     if (limit < 8) throw new Error('Table cell context cannot fit admission budget');
   }
 }

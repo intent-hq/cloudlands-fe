@@ -1,5 +1,8 @@
 import { expect, it } from 'vitest';
 import { SourceJournal } from './source-journal';
+import { admitTableWindow, scanTables } from './table-source';
+import { packTableWindow } from './table-payload';
+import { encodeTablePages } from './table-transfer';
 
 const source =
   '| ' +
@@ -235,3 +238,74 @@ it('reports a measured minimum that cannot fit instead of returning an underfill
     ),
   ).toThrow('viewport uncovered');
 });
+
+for (const minimum of [4476, 4800])
+  it(`evaluates the crossed ${minimum}-unit minimum before deciding viewport feasibility`, () => {
+    const source = `| H |\n| --- |\n| CELL_START ${Array.from({ length: 20000 }, (_, i) => String.fromCodePoint(0x4e00 + (i % 5000))).join('')} CELL_END |`;
+    const service = new SourceJournal(() => source, 1);
+    const table = scanTables(source)[0];
+    const cell = table.rows[1].cells[0];
+    const limits: number[] = [];
+    const geometry = service.tableHeights.viewport(
+      { revision: 1, table: 0, width: 1280, font: 'measured-refill-regression' },
+      2,
+      701,
+      520,
+    );
+    const admit = () =>
+      admitTableWindow(
+        source,
+        table,
+        cell.body,
+        1,
+        undefined,
+        undefined,
+        undefined,
+        {
+          row: 1,
+          column: 0,
+          rowCount: 1,
+          columnCount: 1,
+          geometry,
+          minimum: { cell: cell.from, units: minimum },
+          fragmentStart: (_cell, limit) => {
+            limits.push(limit);
+            return 5446;
+          },
+        },
+        undefined,
+        'packed-cells',
+      );
+    if (minimum === 4800) {
+      expect(admit).toThrow('minimum source cannot fit admission budget');
+    } else {
+      const window = packTableWindow(admit());
+      expect(window.cells[0].last - window.cells[0].first).toBe(4476);
+      expect(window.cells[0].raw).toBe(source.slice(5446, 5446 + 4476));
+      const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+      const descriptor = {
+        kind: 'packed-cells',
+        revision: 1,
+        from: window.cells[0].first,
+        to: window.cells.at(-1)!.last,
+        length: window.cells.reduce((n, c) => n + c.raw.length, 0),
+        ranges: window.cells.map((c, i) => [i, c.first, c.last]),
+      };
+      expect(size(window) + size(descriptor)).toBeLessThanOrEqual(14336);
+      const context = {
+        revision: 1,
+        from: window.cells[0].first,
+        to: window.cells.at(-1)!.last,
+        before: [],
+        after: [],
+        table: window,
+      };
+      expect(size(context) + size(descriptor)).toBeLessThanOrEqual(16384);
+      const pages = encodeTablePages(window, 'packed-cells');
+      expect(pages).toHaveLength(4);
+      for (const page of pages) expect(size(page)).toBeLessThanOrEqual(4096);
+    }
+    // The geometric shrink would skip this feasible/infeasible candidate entirely.
+    // Each candidate strictly shrinks; the requested floor is evaluated exactly once.
+    expect(limits).toEqual([8192, 6553, 5242, minimum]);
+  });
