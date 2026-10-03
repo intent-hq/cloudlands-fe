@@ -1,0 +1,1508 @@
+{
+  "head": "c84e240a921c5f3d321ac748321ac295f46f6ac9",
+  "cases": [
+    [
+      "lib/components/workspace/__tests__/virtual-note/bounded-table.ct.spec.ts",
+      "native table text copy, cut and paste retain clipboard, marks and untouched source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/bounded-table.ct.spec.ts",
+      "native table typing, Enter, save and destroyed-view history retain exact live cells"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/bounded-table.ct.spec.ts",
+      "oversized unbreakable cells wrap inside stable columns and resize keeps the logical caret"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/bounded-table.ct.spec.ts",
+      "scrolling an oversized table cell reaches its final text without a source seek"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/bounded-table.ct.spec.ts",
+      "table widths remain stable through real horizontal and vertical viewport eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "canonical bold: leading backwards whitespace preserves saved text, selection and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "canonical bold: trailing whitespace preserves saved text, selection and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: Backspace, undo and redo at the seam"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: Chromium composition grouping and restored selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: Delete, undo and redo at the seam"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: Enter, undo and redo at the seam"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: backward Shift-selection crosses a source seam"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: clipboard paste and cut across the seam with 1000ms history gap"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: clipboard paste and cut across the seam with 100ms history gap"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: forward Shift-selection crosses a source seam"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: real pointer drag across the seam preserves direction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "native differential: typing and bold undo grouping and selection restoration"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "rapid seam selection preserves every native keyboard movement after repeated selection updates"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: 200 delayed navigations coalesce before capturing source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: 3000-byte paste retains its inverse atomically"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: 5000-byte paste retains its inverse atomically"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: bold-end survives save, reload, undo and redo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: bold-link survives save, reload, undo and redo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: bold-split survives save, reload, undo and redo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: literal survives save, reload, undo and redo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: partial-bold survives save, reload, undo and redo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: rejected journal admission rolls back the editor, source, selection and redo branch"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: remote changes map prior history without adding undo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts",
+      "review regression: transaction changes map prior history without adding undo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "accepted appended transactions share the root history event and exact source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "composition pins a view while an earlier boundary fetch is delayed, then survives eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "document endpoints, eviction counters and distant chronological redo stay bounded"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "earlier remote splice remaps a draft and history; overlap retains both"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "regression: clean fifth region remains traversable"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "regression: deleting then undoing an anchor restores its decoration"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "regression: save after 65 inserts does not prevent undo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "regression: undo follows A then B chronology from another view"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts",
+      "returning after a paragraph split reloads the same source caret and screen anchor"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/editing-proof.ct.spec.ts",
+      "Chromium IME composition pins the view; committed text and dirty draft survive scrolling and failed save"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/editing-proof.ct.spec.ts",
+      "bounded retention refuses a fifth region without dropping dirty history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/editing-proof.ct.spec.ts",
+      "native cross-page selection/delete maps annotation positions and undo survives remount"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/editing-proof.ct.spec.ts",
+      "real typing, formatting, nested lists and tables only mount and parse a bounded region"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/editing-proof.ct.spec.ts",
+      "records the region-edge navigation and select-all limitation of the minimal integration"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ` closing closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ` continuation closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ` middle closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ` opening closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ` original closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ` repeat closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ~ closing closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ~ continuation closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ~ middle closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ~ opening closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ~ original closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts",
+      "literal ~ repeat closing-marker paste keeps canonical code, reload caret and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "Enter at an artificial double-newline code edge waits instead of exiting the block"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "delayed fenced Backspace then Enter and literal typing applies once"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "delayed fenced Delete then Enter and literal typing applies once"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "fenced backward pointer drag and clipboard retain literal syntax"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "fenced forward pointer drag and clipboard retain literal syntax"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "native fenced backward selection, typing and history through eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "native fenced forward selection, typing and history through eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "native real-end Enter exits to prose and Backspace joins it back into code"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "one-megabyte fenced code seeks middle and real closing edge with bounded highlighting"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "real document end retains native trailing prose without saving phantom bytes"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "real opening fence Enter and formatting shortcut preserve literal code and info"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "remote unloaded fence language preserves native draft, save and undo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts",
+      "unloaded fences preserve native code structure and literal source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "Enter split, join and two history events preserve inherited bold"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "Enter split, join and two history events preserve inherited combined"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "delayed Backspace then Enter retains inherited context and input order"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "delayed Delete then Enter retains inherited context and input order"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "delimiter crop boundaries match real native text and marks"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "empty bold crop-end display agrees with native at and beside the opener"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "empty combined crop-end display agrees with native at and beside the opener"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "empty link crop-end display agrees with native at and beside the opener"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "inherits bold with both delimiters outside the window"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "inherits combined with both delimiters outside the window"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "inherits link with both delimiters outside the window"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "native Z input beside an unloaded bold opener survives save, eviction and undo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "native Z input beside an unloaded combined opener survives save, eviction and undo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "native Z input beside an unloaded link opener survives save, eviction and undo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "native backward selection and formatting cross an inherited crop edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "native forward selection and formatting cross an inherited crop edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "native typing, deletion and chronological undo inside inherited bold"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "native typing, deletion and chronological undo inside inherited combined"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "native typing, deletion and chronological undo inside inherited link"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "one MiB combined span retains bounded context while seeking middle and end"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "remote bold opener preserves native display, typing and history at a closing crop edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "remote combined opener preserves native display, typing and history at a closing crop edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "remote link opener preserves native display, typing and history at a closing crop edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts",
+      "removes bold from a selected subrange of an unloaded combined span"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-annotations.ct.spec.ts",
+      "paragraph annotation overlap and dirty draft survive native typing, eviction and keyboard history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-annotations.ct.spec.ts",
+      "table annotation overlap and dirty draft survive native typing, eviction and keyboard history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-annotations.ct.spec.ts",
+      "table annotations page only admitted cells and preserve overlapping identities"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 0: backward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 0: backward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 0: browser Backspace, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 0: browser Delete, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 0: browser insert, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 0: browser paste, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 0: forward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 0: forward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 1: backward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 1: backward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 1: browser Backspace, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 1: browser Delete, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 1: browser insert, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 1: browser paste, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 1: forward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 1: forward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 2: backward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 2: backward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 2: browser Backspace, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 2: browser Delete, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 2: browser insert, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 2: browser paste, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 2: forward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 2: forward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 3: backward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 3: backward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 3: browser Backspace, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 3: browser Delete, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 3: browser insert, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 3: browser paste, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 3: forward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 3: forward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 4: backward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 4: backward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 4: browser Backspace, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 4: browser Delete, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 4: browser insert, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 4: browser paste, eviction and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 4: forward pointer selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts",
+      "mixed boundary 4: forward shift selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-composition.ct.spec.ts",
+      "Chromium mixed list/fence composition cancel retains the view through delayed reads and remote invalidation"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-composition.ct.spec.ts",
+      "Chromium mixed list/fence composition commit retains the view through delayed reads and remote invalidation"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-construct.ct.spec.ts",
+      "mixed admitted source has native construct types before and after fresh reload"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-construct.ct.spec.ts",
+      "native backward Shift selection crosses fence and table"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-construct.ct.spec.ts",
+      "native forward Shift selection crosses fence and table"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-full-span.ct.spec.ts",
+      "full mixed Chromium Backspace followed by a distant edit and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-full-span.ct.spec.ts",
+      "full mixed Chromium Delete followed by a distant edit and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-full-span.ct.spec.ts",
+      "full mixed Chromium list-replace followed by a distant edit and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-full-span.ct.spec.ts",
+      "full mixed Chromium list-type followed by a distant edit and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-full-span.ct.spec.ts",
+      "full mixed Chromium table-marked-replace followed by a distant edit and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-full-span.ct.spec.ts",
+      "full mixed Chromium table-replace followed by a distant edit and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-full-span.ct.spec.ts",
+      "full mixed Chromium table-type followed by a distant edit and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "native raw boundary fence clipped header replacement"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "native raw boundary fence complete header replacement"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "native raw boundary paragraph clipped header replacement"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "native raw boundary paragraph complete header replacement"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed Chromium partial cell clear backward"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed Chromium partial cell clear forward"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed after pointer backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed after pointer forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed after pointerLifecycle backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed after pointerLifecycle forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed after shift backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed after shift forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed before pointer backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed before pointer forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed before pointerLifecycle backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed before pointerLifecycle forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed before shift backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse mixed before shift forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table after: Chromium Backspace and actual eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table after: Chromium Delete and actual eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table after: Chromium insert and actual eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table after: Chromium paste and actual eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table after: repeated native deletion, eviction and chronological history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table before: Chromium Backspace and actual eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table before: Chromium Delete and actual eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table before: Chromium insert and actual eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table before: Chromium paste and actual eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts",
+      "sparse table before: repeated native deletion, eviction and chronological history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after backward native-full-no-added-wait"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward native-deferred-ignored-root-records"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward native-deferred-selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward native-full-no-added-wait"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward native-full-zero-delay-timer-barrier"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward native-minimal-no-added-wait"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward native-post-release-newer"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward paired-bounded-first-no-added-wait"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward paired-bounded-first-zero-delay-timer-barrier"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward paired-native-first-no-added-wait"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer after forward paired-native-first-zero-delay-timer-barrier"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer before backward native-full-no-added-wait"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer before backward native-full-zero-delay-timer-barrier"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer before backward native-minimal-no-added-wait"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts",
+      "native finalizer before forward native-full-no-added-wait"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "deep native bulletList Enter and Delete keep unloaded mixed ancestors"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "deep native orderedList Enter and Delete keep unloaded mixed ancestors"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "deep native taskList Enter and Delete keep unloaded mixed ancestors"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "delayed backward selection across a nested item crop copies no synthetic ancestor text"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "delayed oversized nested Delete, Enter and typing replay once with global history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "mixed marker groups match native spacing and canonical reload: - first\n+ second\n* third"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "mixed marker groups match native spacing and canonical reload: 17. first\n18) second"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native Backspace lifts then joins a list item without phantom ancestor text"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native Enter exits an empty list item at the real document end"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native adjacent list join preserves live groups and reopens with canonical groups"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native bounded list selection, copy, cut and paste preserve exact source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native bulletList Enter and global undo survive list eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native bulletList Tab and Shift-Tab preserve source and ancestor structure"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native indentation moves unloaded descendants of a giant parent and reverses after eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native ordered join boundaries preserve marks, escaped spelling, and ordinals"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native orderedList Enter and global undo survive list eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native orderedList Tab and Shift-Tab preserve source and ancestor structure"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native task checkbox state survives the actual canonical parser"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native taskList Enter and global undo survive list eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "native taskList Tab and Shift-Tab preserve source and ancestor structure"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "ordinary nested list insert700 stays bounded during edits and eviction history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "ordinary nested list type700 stays bounded during edits and eviction history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "ordinary task three-state keyboard cycle preserves source and eviction history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "ordinary task three-state mouse cycle preserves source and eviction history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "oversized nested item keeps actual native caret at an artificial window edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "records native adjacent-list save reload and continued editing behavior"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "remote ancestor revision during a nested draft preserves real native chronological history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "remote insertion at a native join boundary rejects before changing retained history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts",
+      "repeated native list joins bound session metadata and preserve older boundaries through history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-continuation.ct.spec.ts",
+      "one paragraph: Backspace at the old window edge, undo and redo match native"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-continuation.ct.spec.ts",
+      "one paragraph: Delete at the old window edge, undo and redo match native"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-continuation.ct.spec.ts",
+      "one paragraph: Enter at the old window edge, undo and redo match native"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-continuation.ct.spec.ts",
+      "one paragraph: backward native selection survives a continuation replacement"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-continuation.ct.spec.ts",
+      "one paragraph: forward native selection survives a continuation replacement"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-continuation.ct.spec.ts",
+      "opens and edits one paragraph larger than 64KiB through a bounded view"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-continuation.ct.spec.ts",
+      "rapid keyboard selections retain every endpoint through repeated continuation changes"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-deferred.ct.spec.ts",
+      "deferred Enter after Backspace preserves the split and both history events"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-deferred.ct.spec.ts",
+      "deferred Enter after Delete preserves the split and both history events"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-deferred.ct.spec.ts",
+      "deferred boundary input preserves subsequent Control+z"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-deferred.ct.spec.ts",
+      "deferred boundary input preserves subsequent Shift+ArrowLeft"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-deferred.ct.spec.ts",
+      "deferred boundary input preserves subsequent typing after history timeout"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-history.ct.spec.ts",
+      "delayed continuation preserves boundary Backspace and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-history.ct.spec.ts",
+      "delayed continuation preserves boundary Backspace followed by typing and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-history.ct.spec.ts",
+      "delayed continuation preserves boundary Delete and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-history.ct.spec.ts",
+      "delayed continuation preserves boundary Delete followed by typing and history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-history.ct.spec.ts",
+      "one paragraph: delayed continuation during composition preserves input and undo"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-history.ct.spec.ts",
+      "one paragraph: distant chronological undo survives cache eviction and destroyed views"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-pointer.ct.spec.ts",
+      "one paragraph: backward pointer drag and clipboard cross the loaded edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/paragraph-pointer.ct.spec.ts",
+      "one paragraph: forward pointer drag and clipboard cross the loaded edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts",
+      "native Enter keeps marked cell text through flattened save and destroyed reload (anchors=false)"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts",
+      "native Enter keeps marked cell text through flattened save and destroyed reload (anchors=true)"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts",
+      "native combined table marks and rendered math survive serialization (anchors=false)"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts",
+      "native combined table marks and rendered math survive serialization (anchors=true)"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts",
+      "native markdown retains table alignment through Markdown and destroyed-view reload"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts",
+      "native native HTML retains table alignment through Markdown and destroyed-view reload"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts",
+      "native table Shift+Enter retains breaks, cells and edit history through canonical save"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts",
+      "native table paragraph marks and escaped literals survive editing, save and view destruction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-cell-continuation.ct.spec.ts",
+      "oversized ASCII cell covers middle, end and return viewports with paged source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-cell-continuation.ct.spec.ts",
+      "oversized CJK cell covers middle, end and return viewports with paged source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-cell-continuation.ct.spec.ts",
+      "oversized emoji cell covers middle, end and return viewports with paged source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-cell-continuation.ct.spec.ts",
+      "oversized marks and escapes cell covers middle, end and return viewports with paged source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native ArrowDown continues inside a cell fragment"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native ArrowDown continues inside a cell fragment with delayed fetch"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native ArrowLeft continues inside a cell fragment"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native ArrowLeft continues inside a cell fragment with delayed fetch"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native ArrowRight continues inside a cell fragment"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native ArrowRight continues inside a cell fragment with delayed fetch"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native ArrowUp continues inside a cell fragment"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native ArrowUp continues inside a cell fragment with delayed fetch"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native Shift+ArrowLeft continues inside a cell fragment"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native Shift+ArrowLeft continues inside a cell fragment with delayed fetch"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native Shift+ArrowRight continues inside a cell fragment"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts",
+      "native Shift+ArrowRight continues inside a cell fragment with delayed fetch"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-delete.ct.spec.ts",
+      "native table deletion preserves live boundary and fresh parser phases (2 left newlines)"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-delete.ct.spec.ts",
+      "native table deletion preserves live boundary and fresh parser phases (4 left newlines)"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-dense-edit.ct.spec.ts",
+      "dense table clipboard and destroyed-view history preserve native text, marks and exact source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-dense-edit.ct.spec.ts",
+      "dense table delayed and destroyed-view history preserve native text, marks and exact source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-dense-edit.ct.spec.ts",
+      "dense table typing and destroyed-view history preserve native text, marks and exact source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-dense-enter.ct.spec.ts",
+      "dense native Enter, empty paragraphs and typing retain exact live structure through delayed eviction and chronological history"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-density.ct.spec.ts",
+      "native marked table viewport measures visible text nodes independently of encoding"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-density.ct.spec.ts",
+      "native viewport glyph density measures the source budget needed for a wrapped cell"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-end-tab.ct.spec.ts",
+      "native Tab appends once at the true end of a 2-column table and restores column zero"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-end-tab.ct.spec.ts",
+      "native Tab appends once at the true end of a 80-column table and restores column zero"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-geometry.ct.spec.ts",
+      "actual table glyph resizing preserves the native caret and invalidates row measurements"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-geometry.ct.spec.ts",
+      "encountered offscreen text corrects row height while the visible caret keeps its pixel anchor"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-geometry.ct.spec.ts",
+      "encountered row height survives horizontal eviction of its tall cell"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-geometry.ct.spec.ts",
+      "horizontal and vertical revisits restore the native cell after actual view eviction"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-geometry.ct.spec.ts",
+      "remote row insertion and deletion retain the active native cell and its pixel anchor"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-geometry.ct.spec.ts",
+      "viewport resize and font changes preserve logical and pixel caret anchors"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "history reveals offscreen oversized caret after scrolling down at end"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "history reveals offscreen oversized caret after scrolling down with tail"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "history reveals offscreen oversized caret after scrolling up at end"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "history reveals offscreen oversized caret after scrolling up with tail"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "horizontal history restores a visible logical caret: clamped left 250px"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "horizontal history restores a visible logical caret: hidden left 80px"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "horizontal history restores a visible logical caret: hidden right"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "horizontal history restores a visible logical caret: inside left viewport edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "horizontal history restores a visible logical caret: outside left viewport edge"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "horizontal history restores a visible logical caret: visible unchanged"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "oversized cell destroyed view and history retains visible caret at end"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "oversized cell destroyed view and history retains visible caret with tail"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "oversized cell real keyboard history retains visible caret at end"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts",
+      "oversized cell real keyboard history retains visible caret with tail"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-marked-clipboard.ct.spec.ts",
+      "dense native clipboard crosses bold, italic and code without losing marks or untouched source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-merged-arrow.ct.spec.ts",
+      "native delayed ArrowDown traverses a visible merged paragraph boundary"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-merged-arrow.ct.spec.ts",
+      "native delayed ArrowUp traverses a visible merged paragraph boundary"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-merged-scroll.ct.spec.ts",
+      "ordinary scrolling exposes later merged paragraphs and returns to the origin"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-middle-scroll.ct.spec.ts",
+      "ordinary oversized cell scrolling covers middle and revisit at table end"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-middle-scroll.ct.spec.ts",
+      "ordinary oversized cell scrolling covers middle and revisit with a following row"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts",
+      "native browser paste owns colspan corners with backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts",
+      "native browser paste owns colspan corners with forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts",
+      "native browser paste owns combined corners with backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts",
+      "native browser paste owns combined corners with forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts",
+      "native browser paste owns ordinary corners with backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts",
+      "native browser paste owns ordinary corners with forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts",
+      "native browser paste owns rowspan corners with backward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts",
+      "native browser paste owns rowspan corners with forward selection"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts",
+      "native ArrowDown crosses a mounted table edge without changing logical columns"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts",
+      "native ArrowLeft crosses a mounted table edge without changing logical columns"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts",
+      "native ArrowRight crosses a mounted table edge without changing logical columns"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts",
+      "native ArrowUp crosses a mounted table edge without changing logical columns"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts",
+      "native Shift+ArrowDown crosses a mounted table edge without changing logical columns"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts",
+      "native Shift+ArrowLeft crosses a mounted table edge without changing logical columns"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts",
+      "native Shift+ArrowRight crosses a mounted table edge without changing logical columns"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts",
+      "native Shift+ArrowUp crosses a mounted table edge without changing logical columns"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-paged-paste.ct.spec.ts",
+      "native browser external paged paste preserves cells and history: plain=false, cross=false"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-paged-paste.ct.spec.ts",
+      "native browser external paged paste preserves cells and history: plain=false, cross=true"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-paged-paste.ct.spec.ts",
+      "native browser external paged paste preserves cells and history: plain=true, cross=false"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-paged-paste.ct.spec.ts",
+      "native browser external paged paste preserves cells and history: plain=true, cross=true"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-pointer.ct.spec.ts",
+      "native cell pointer selection crosses a projected backward row edge without disabling the drag"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-pointer.ct.spec.ts",
+      "native cell pointer selection crosses a projected column edge without disabling the drag"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-pointer.ct.spec.ts",
+      "native cell pointer selection crosses a projected forward row edge without disabling the drag"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-residency.ct.spec.ts",
+      "dense table resources plateau across repeated scroll visits (1500 backing repeats)"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-residency.ct.spec.ts",
+      "dense table resources plateau across repeated scroll visits (6000 backing repeats)"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-short-span.ct.spec.ts",
+      "oversized calibrated CJK short-span cell covers middle, end and return viewports with paged source"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-span-keyboard.ct.spec.ts",
+      "native backward delayed Tab skips 1-column merged owners"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-span-keyboard.ct.spec.ts",
+      "native backward delayed Tab skips 6-column merged owners"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-span-keyboard.ct.spec.ts",
+      "native forward delayed Tab skips 1-column merged owners"
+    ],
+    [
+      "lib/components/workspace/__tests__/virtual-note/table-span-keyboard.ct.spec.ts",
+      "native forward delayed Tab skips 6-column merged owners"
+    ]
+  ],
+  "runtime": {
+    "runnerVersion": "1.58.2",
+    "supplierVersion": "1.63.0",
+    "chromiumVersion": "153.0.8010.12",
+    "revision": "1243"
+  },
+  "executableSha256": "ded93a9c9a53a1ae040f08124badcca95c938e9d5015ff340c3b5538c41bf39e",
+  "esm": "c1cd642662992e8aa1c0fe4e25127bc7e5091a1f048d8f4ff688053bc2f0ee34",
+  "cjs": "301516198c6cd19ed1d01f27644385a401669f0dc22531f8a27ea5c122b469e0",
+  "sources": {
+    "package.json": "4b8456ce5b80df512a192d70561648c529cf67644b3fb1af06132c3384ff8fe9",
+    "patches/bits-ui@2.18.1.patch": "3c106d315f0ed37af1e9c7c840c5c2b56408f0d51beb0baca95d0f4b42103595",
+    "patches/brace-expansion@5.0.8.patch": "1dd6d68223b3644c1125dff1fdb53ca7a3f3939698c438371ac86e2a7ceb8ab7",
+    "patches/playwright-core@1.58.2.patch": "caa2ef4ff2713cfcca71af2bc50d749d7f9d02c4cf79c6161183692cfac6add6",
+    "patches/prosemirror-tables@1.8.5.patch": "9aa8d4a6e9674a47d760ca3cd78f7692916b5d7bbae9fc53c1aaa72d03109173",
+    "playwright-ct.config.ts": "0ac0f34df98aaceba6ae6b4230cd9ac95232edd8a0219ce6abe1d51dfcc3897e",
+    "playwright/ct-browser-fixtures.ts": "a64fed71a93f9c863e5bf5919df43306d646806db0832adb9319f732a73f80f6",
+    "pnpm-lock.yaml": "d2df60cca2a6622e1f53a69194fc4e7fa49ac2fd5aee48a0aba60c5ff3974319",
+    "scripts/ct-browser.mjs": "914e64a12714e60976381d21f517bb6f370ef0645cf8aa55d457835de4e6c380",
+    "scripts/run-ct-tests.mjs": "b1d635a67c1b923e976d93c3c4f7551fc75dda24055fb7b583b9c14a2bd548c3",
+    "src/lib/components/tiptap/CommentAnchor.ts": "c7a7c50eb7f3c16d12aea413cef52bab6a8982031b0da85983208223f21ce05c",
+    "src/lib/components/workspace/__tests__/virtual-note/DifferentialProofHarness.svelte": "2596454147cf62a1bdf712bbbe81022f74f1dac6da2f533805f09fce6a6f53c8",
+    "src/lib/components/workspace/__tests__/virtual-note/DocumentProofHarness.svelte": "be398712a5eb242fb1f27c0e86e2df37cabca71ef573b129a2dcc6498ace0bf4",
+    "src/lib/components/workspace/__tests__/virtual-note/EditingProofHarness.svelte": "5f5dfdf81e759c7eafde3351a82f80ca6d4d71bbaddcf8f7e9da7afa11bfc2bb",
+    "src/lib/components/workspace/__tests__/virtual-note/NativePointerProbeHarness.svelte": "14e46534b304ea5a6b63b4a21a64adb5ad9cae702c5444612af8a4b33dbc38d6",
+    "src/lib/components/workspace/__tests__/virtual-note/ParagraphProofHarness.svelte": "d08891fdb911c3a192ff855551607e29137c8360376ce4a484f075c9dda1055c",
+    "src/lib/components/workspace/__tests__/virtual-note/bounded-note-service.test.ts": "ce4e784cd00bca8dcd8f4788c7fa326aa67d90219a96cf209a51c106b8101709",
+    "src/lib/components/workspace/__tests__/virtual-note/bounded-note-service.ts": "67cde8d28eccb4ffcaec89e294b7a5afef35a2a1daa782be38256183582f8445",
+    "src/lib/components/workspace/__tests__/virtual-note/bounded-table.ct.spec.ts": "2d6dda6cdeae9577e58fa5c52a0208c453f044ec3e650084a6d6ba819c93ba5f",
+    "src/lib/components/workspace/__tests__/virtual-note/command-history.ts": "1141b987b3ddee7c6a2ba2ebf9027b32143074d3c0f704c79a7f769bec0bf76e",
+    "src/lib/components/workspace/__tests__/virtual-note/continuation-window.ts": "4e17c1042d0a093314e5b0dfe92e41a08c7f1c57e0e239e99a459db67dd4cc9f",
+    "src/lib/components/workspace/__tests__/virtual-note/document-differential.ct.spec.ts": "c9999cd229430153b106b490920cfa4fd3cf5abeb7c5f65b5e17ee06fe079e83",
+    "src/lib/components/workspace/__tests__/virtual-note/document-session.ct.spec.ts": "136b267466ec89e31b5d8185749fec03da269a733060a4430d87fbaa92f64d0b",
+    "src/lib/components/workspace/__tests__/virtual-note/document-session.test.ts": "9369a648f90fb0bdd4a32cd38fa6d7bbda1d79ce6087613b0f436ec4b27f737a",
+    "src/lib/components/workspace/__tests__/virtual-note/document-session.ts": "bfa2f931538324c02cc7670e7f5bb87ce885ecd6cfa75724a1b5a60976b99077",
+    "src/lib/components/workspace/__tests__/virtual-note/editing-proof.ct.spec.ts": "9039e861061d6b0245281885fcecc98f3ecd404fdbfb19641f3c5502f9fd26d8",
+    "src/lib/components/workspace/__tests__/virtual-note/editing-proof.ts": "709f6b4492e1644935268070414a8cc70e28d7cf9d2132644343866bac874ad4",
+    "src/lib/components/workspace/__tests__/virtual-note/fence-collision.ct.spec.ts": "cb1fb7b1279812c56368e1c97b6f8c78250c752f4b219ca8daa97d545b4d2182",
+    "src/lib/components/workspace/__tests__/virtual-note/fence-collision.test.ts": "f184b9f4472fc79ebc22fae4a721315d08e6d972f90971bd2f85be5ae11bd0d9",
+    "src/lib/components/workspace/__tests__/virtual-note/fence-context.ts": "2496a6fd8ca3d39b22e56fd5c1659172a0a442b63b212396912279a95c0c4a4a",
+    "src/lib/components/workspace/__tests__/virtual-note/fenced-code.ct.spec.ts": "0a6cd63ef25e0c75632265cc6cb1b5017d6b64880712c1b8105d3a8689708831",
+    "src/lib/components/workspace/__tests__/virtual-note/fenced-code.test.ts": "766f95281ae5bfe1fcfa628f170abb696d87fdc72b4bc5817adf10b15920584b",
+    "src/lib/components/workspace/__tests__/virtual-note/inline-context.ct.spec.ts": "b023c456a8aa41b72695a8e1841e0535a0f7d8e908b6b96d14fae4d90e2bff0e",
+    "src/lib/components/workspace/__tests__/virtual-note/inline-context.test.ts": "ce32f9d5bc2badbc6dcf908b520e19226c6d7bcc1cb6edc24f8b956a58ba0f16",
+    "src/lib/components/workspace/__tests__/virtual-note/list-boundaries.test.ts": "42cf01d02570fb28d8cb6f57a49b352f060fdd829206cd3f44660182cf7a8e95",
+    "src/lib/components/workspace/__tests__/virtual-note/list-code-admission.test.ts": "fe9766a4c63978e563072c2eef02431822e3502a990becccafa75140a03fa190",
+    "src/lib/components/workspace/__tests__/virtual-note/list-code.ts": "e4cfd97358175fee7bac47a3acba77d03df991a2085b657d1aa16ea905bf5971",
+    "src/lib/components/workspace/__tests__/virtual-note/list-context.ts": "e08bbc4b9a402cbfe4e857441bb8ae64141932a82e9401c16c646b5e98bf2d28",
+    "src/lib/components/workspace/__tests__/virtual-note/list-measurement.test.ts": "32c104058a871eadd5dbca862cb00d97b918ecd9c8c3fb94c3fda60373acdf84",
+    "src/lib/components/workspace/__tests__/virtual-note/list-newlines.test.ts": "a278bfc6bab86a3dbef46a0bb9d83d00fd3705e2157c9814486b3cab58173bd8",
+    "src/lib/components/workspace/__tests__/virtual-note/list-projection.ts": "31848a1099a156ba35bdcb6a658bd9ccb1851e4d40da355d573e13ebc33b2e58",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-adapter-edit.test.ts": "f19270c5505b7ebe034417f16f5598116805d8f87725fa97e089d372df33094f",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-annotation-session.test.ts": "bbb780fc46a9613844a182f3c97531877e6ac025c795d9ac4ca2c3660820c845",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-annotations.ct.spec.ts": "b902a142e5c8ea08c9b96c8329d9c61291e8a592ef34719ab91aa794b873e7bd",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-annotations.test.ts": "47f3ce090de9afbc1ddc5fd07433d1deb5b04b62efba7e3a331ceac49dd747fd",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-boundary-browser.ct.spec.ts": "6f927ad39b670e7d91c98fae697f504c176c40c74f449624706858aa19243aac",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-boundary-edit.test.ts": "6bf09b0b78e1d25483cc81ca5b7944b90b80d3903b6fab6ece2d46661131cf25",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-boundary-span.test.ts": "3af1a678d1f650517933fb460ff138473ef57eb74d1d9f876390eabd81b027c2",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-cell-clear.test.ts": "34688ff81b6031c3a14879fb8600e293d6de88e30b3bda162969fd9143b80a3b",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-clipped-command.test.ts": "5485c3099bb97d94027b91fa6063bd7fffd47a9d2e62cc6e3b1abe9f4b6ceb30",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-command-history.test.ts": "de420413e1dff3d14a4ac065430708744b7c46e837a09fc95254a63db9940c8a",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-composition.ct.spec.ts": "16d760e0ffdd1a8db065208babb6f3a44535ac67e9884965072b343c87c19ed9",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-construct.ct.spec.ts": "4461919e774aedcbb470fc038a8cf999d300fde508a8e2e6ad4485d9d73f4b31",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-construct.test.ts": "2430132644a7c26952e923e7b2e4c126cff950665df181e4088f72565bea7feb",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-dom-boundary.test.ts": "553fa2d1facb36c8c2a034b5e14fe76c2aaec88f22e2fd34799ce36c53da3801",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-full-span.ct.spec.ts": "9184eee168b7e0833d37c6915e4e3643f5127773e552808c8379f0ef5c83dbeb",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-full-span.test.ts": "63b91fed6241b9f3b168996ef54b8c0952e938ab567a3b54b083e7479854c302",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-full-table.test.ts": "3c8caae57f72f3ca50ab97d7ebae6dda14a71436a9d501e2964132cf5e407033",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-large-boundary.test.ts": "1c9ff05370c9f1862f6d0cb56328971f7a4e73ea7f08d3dd87b638882172d950",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-live-space.test.ts": "c4a68644b091eb7164044a5feff645bb12e965835d35944108f7f3e1dffa2294",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-marker-boundary.test.ts": "12ba98499bf32afaf784abb8ba56f5d6eb46e431debe58756fea6795f9f109eb",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-marker.test.ts": "c7cbcd2f778d692ab99bf6258e3e50a201a9cfc2854f3f8c9f32e1a097f92a0e",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-native-grammar.test.ts": "7fc3d0bbc8bdeb9b28ec2b0c049e9bcb5c2c835a466855b2b8677a8b4573f45a",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-native-selection.test.ts": "236ab0764c6b96eb99a6db777096f3b3b7051b57f3a9726137692a51bca5c397",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-projection.ts": "b9ef4e26dadda26833ed4e612105352d38b396ccd7054b42f319262991dc1fff",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-prose-adapters.test.ts": "039f9432cdf2f0f8068c586d997e42945a84ffc76ad963520df0b09c34e46a1d",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-sparse-continued.test.ts": "e4b38d6ab2b2348fae6367282255c5650af1fcaaca35e216a2774d5a36334b83",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-sparse.ct.spec.ts": "782eee7e3d8215ed1c3e936c9e92cef7ab68db73377f983d65bc8d9741f1f0a2",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-sparse.test.ts": "1cd106aaa175117e900881a2dcf677169f15afc4f24bcc2cad32be999024ca0e",
+    "src/lib/components/workspace/__tests__/virtual-note/mixed-table-annotations.test.ts": "884a07c5eb7a8a9530de42e48f1452fb0e9837853e968a80f84ffac01e2217aa",
+    "src/lib/components/workspace/__tests__/virtual-note/native-list-lifecycle.test.ts": "54b823408cef65a6b82b9ddf516e453cfdf389cc1393af8a69fe2e227f842014",
+    "src/lib/components/workspace/__tests__/virtual-note/native-pointer-finalizer.ct.spec.ts": "f1667318aa4ebd75f3add5dad849e262129fed57d24e4e1b6557ad5d5c227178",
+    "src/lib/components/workspace/__tests__/virtual-note/native-pointer-probe.ts": "c2e07b558ef2d3bc2b18df3e13b6e898e351a39ef611a671183bc603af0eaab4",
+    "src/lib/components/workspace/__tests__/virtual-note/nested-code-live.test.ts": "41074bd745111269780f7985bdca595f43849776a31ed46f52ad6f3fd70c4798",
+    "src/lib/components/workspace/__tests__/virtual-note/nested-list.ct.spec.ts": "fffe93457c41384e3d8e1ce7fcb60cccd3754a43ae041bfeecee3e3b69e983a1",
+    "src/lib/components/workspace/__tests__/virtual-note/nested-list.test.ts": "82b92f415a4fa26bfd96c97ef2661986556fb3ffb1647a5d9bb66d8c80755dbb",
+    "src/lib/components/workspace/__tests__/virtual-note/nested-table-live.test.ts": "312307c0e62824d9041dbe6bb62150679a6001d1224be8c8a9b98360c2efe9ad",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-browser.ts": "f64a1ed327ae01a124878cb796da8fb1e6e8de63adab41987bac6c5ade2200ec",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-continuation.ct.spec.ts": "bfd10240b7f5ce37241b249929c63e79b881dd12662ab833f77ccab4f24246ac",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-continuation.test.ts": "58cc60a624096b054061a9b423f3a5fd39046db431a04ca2a836fea6a6cf8c6a",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-deferred.ct.spec.ts": "f969a506b02e23edd9439059836e0ec7a7fa95bd6d1784b91f75f69129d859e4",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-enter.test.ts": "25a63d9136f19ad06b65ee94ea2a0da8a63e1045ce56c489fb8dde4311511ce3",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-history.ct.spec.ts": "34f71302f4ee3e4c69e296451ae1eb7fe218cfa7778599e52501ce3036de4e2d",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-italic.test.ts": "5c93b4ebd00a239a654d485e612801ebadbb7a08b3d21892d495fbd187b0bd26",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-pointer.ct.spec.ts": "73519bc41c06ad568c051c60b21289aaae67052f9600a367449fb4be0e93413f",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-seam.ts": "1bef68c935ae0027884fab3e861a5c34fe05fbd1bb5c8661a3e00f9c4e371e5e",
+    "src/lib/components/workspace/__tests__/virtual-note/paragraph-seams.test.ts": "523ac93085821cbe6e15804dbcc056f84e4f174f459da74b58cef52ffab4d8ff",
+    "src/lib/components/workspace/__tests__/virtual-note/source-journal-seams.test.ts": "d0a058ba54715f70e5ec96bf8a2570a92e512af1b23d284e2669179525dbc97b",
+    "src/lib/components/workspace/__tests__/virtual-note/source-journal.ts": "e9b3f1637e49039a26e91f4c1aa033866930f5b2669ac1c2edcee22c1cc105bf",
+    "src/lib/components/workspace/__tests__/virtual-note/source-preservation.test.ts": "9e9de8eb6f3fdc7174c490120ae164eb34872d6d1972c0df65c4b8f93d68c97d",
+    "src/lib/components/workspace/__tests__/virtual-note/source-projection.ts": "87ce10b33a5949b23e8e17a20ab5ab4fc11bd6fd54c772072f772c552b09d8db",
+    "src/lib/components/workspace/__tests__/virtual-note/table-alias.ts": "ed593ecbc473add5d8e7cc5e799da9405daf0cbb2d2532e822d488196f8cdac7",
+    "src/lib/components/workspace/__tests__/virtual-note/table-alignment.ct.spec.ts": "cf216ec337bcaacee0c65573b1ca77a84eee513f36ba3fbca3e036ee31449efb",
+    "src/lib/components/workspace/__tests__/virtual-note/table-cell-clipboard.test.ts": "5b3e9274bcea9cea818ac0a7f2174c4d0de501fe775f322bdd73c73141cd5735",
+    "src/lib/components/workspace/__tests__/virtual-note/table-cell-continuation.ct.spec.ts": "d14e130740194cad88c6c034bf2aa5b372a1e80d1f418ba8ef7ceff46d2b1e89",
+    "src/lib/components/workspace/__tests__/virtual-note/table-cell-cut.test.ts": "201e7667fd12520228dbcc8f9d1d8b81e0d5b1c3626e563c45eddd3fce18a464",
+    "src/lib/components/workspace/__tests__/virtual-note/table-cell-paste.test.ts": "446bd41043fecc0e0ab6b53c26e4429c12bd7f183f83d52a596c78f735386699",
+    "src/lib/components/workspace/__tests__/virtual-note/table-clipboard-spans.test.ts": "9ef3f8f6eaf2e1e8268a4e9782f165d8935261e0278246e28d227f87db0408d6",
+    "src/lib/components/workspace/__tests__/virtual-note/table-clipboard-transfer.test.ts": "f9e5988a194fb1518c576c93e09f415d0c763cc27816a02b267ce4b04df29eda",
+    "src/lib/components/workspace/__tests__/virtual-note/table-clipboard.ts": "3b480d0942bd729d89d44f337315abd2dac60e810302ac107c98d65049282d77",
+    "src/lib/components/workspace/__tests__/virtual-note/table-code.ts": "3136b422214cf8b6acf33afacb442ba8e83f23e7990fb38dd97a80ca7428697d",
+    "src/lib/components/workspace/__tests__/virtual-note/table-concurrency.test.ts": "da9f7b25bb9692cc8849476d904ebc577f7485ef612a4ac2e7a6d26847a3a789",
+    "src/lib/components/workspace/__tests__/virtual-note/table-content-arrow.ct.spec.ts": "47416400c93dcf3c9647f5488322299a1e8e17f08973d1f751a1ff65cc7c88af",
+    "src/lib/components/workspace/__tests__/virtual-note/table-cross-cell-framing.test.ts": "c48e5501c059985db5da606746f1268fa40bcf9b1c50bc86a982a13738d04e12",
+    "src/lib/components/workspace/__tests__/virtual-note/table-cross-cell-spans.test.ts": "e714a69136cd6fadfddf37dbda7b2aed8740953768f658fe7adc0c967b7dae1a",
+    "src/lib/components/workspace/__tests__/virtual-note/table-cross-cell-text-faults.test.ts": "8e2d041c4e5d0d5d7562244b398c7f4459839bf9524ef56b32b68891902ae04b",
+    "src/lib/components/workspace/__tests__/virtual-note/table-cross-cell-text-paste.test.ts": "9037b841e700eac4c18959d1cab57e8174c1f984f30002a090ffe37d6e204d9e",
+    "src/lib/components/workspace/__tests__/virtual-note/table-delete-placements.test.ts": "5c1e75d57b048a6a7edd712f5a0e158d4d63118d7d8bdbf6db8dd87bc5b39fa6",
+    "src/lib/components/workspace/__tests__/virtual-note/table-delete.ct.spec.ts": "f48f83ee12f5e331add66c76c025a56f154cf03acf3a9b5a721515efd922e680",
+    "src/lib/components/workspace/__tests__/virtual-note/table-delete.test.ts": "a0750880c49da8090e6339b42a31dd8ef3b6fa3350656c4f1051493b6df6cfa1",
+    "src/lib/components/workspace/__tests__/virtual-note/table-dense-edit.ct.spec.ts": "6639db0e78165d54df7e98ee6dfd02569eab4b3fbec8092b205b9420099e0804",
+    "src/lib/components/workspace/__tests__/virtual-note/table-dense-enter.ct.spec.ts": "75abe02efebf016254c950ce08f43d282ef321c7dcc185a03a64de6f755efcc0",
+    "src/lib/components/workspace/__tests__/virtual-note/table-dense-paragraph.test.ts": "d75c8c386763cd3540546cd4527a53345d2af21782f88cbd9efab5fc7aa77905",
+    "src/lib/components/workspace/__tests__/virtual-note/table-density.ct.spec.ts": "d9498c472884433a845300ab49bb548a61fa03093dd6548370d0ce323f032933",
+    "src/lib/components/workspace/__tests__/virtual-note/table-dom-replacement.ts": "500ef9dad151828cc5ceaf8c941f92b1600c06451c31763788d1d5b4d72df19f",
+    "src/lib/components/workspace/__tests__/virtual-note/table-end-tab.ct.spec.ts": "0f6f6a5f0f9789ee3468a9920a3bc9659e3b73047b6fe865f7f02543bd27d46d",
+    "src/lib/components/workspace/__tests__/virtual-note/table-geometry.ct.spec.ts": "4f65cf611cc24b27925a235e10233cc3ca185267bb4dda689d66c25edb570803",
+    "src/lib/components/workspace/__tests__/virtual-note/table-grid-structure.test.ts": "aef9b11bd4b26db0d70ad98965d40039ed465d2a5227d2510b796dc4d6a12970",
+    "src/lib/components/workspace/__tests__/virtual-note/table-heights.ts": "824208252c46aa751f9024d204bb1e101f0a55a160819503c3d51fa87a03a2ad",
+    "src/lib/components/workspace/__tests__/virtual-note/table-history-viewport.ct.spec.ts": "8d8b1d828ced837ab8863981f6c2c8e464d290b9bac0f7ce849c14e33b2056e4",
+    "src/lib/components/workspace/__tests__/virtual-note/table-inline-source.ts": "2b77f00a82092dbaa5288e05a6c50c1291db71c23ec4d741428bb439f85df1ba",
+    "src/lib/components/workspace/__tests__/virtual-note/table-inline-write.test.ts": "a8ae6b5b738b83bb18eea08969ecb641ce2963dd1b00067cb83f8d8d1ffa6510",
+    "src/lib/components/workspace/__tests__/virtual-note/table-layout.ts": "d5e86445bef34a4e58d0775f46fa2eb4260ecca434b43091d9194bbe6011984d",
+    "src/lib/components/workspace/__tests__/virtual-note/table-logical-command-faults.test.ts": "17e427a71478252768c6a75fbf4736e58eda2833c045c47e8fcdfda6fb072918",
+    "src/lib/components/workspace/__tests__/virtual-note/table-logical-commands.test.ts": "c030f651e145f0800c964ac31280b58b10612724a5062bf869783679ba8a125b",
+    "src/lib/components/workspace/__tests__/virtual-note/table-marked-clipboard.ct.spec.ts": "22f9915488c0aba20f134028d6d0027b5d263010685ee612ad3135b88c53daee",
+    "src/lib/components/workspace/__tests__/virtual-note/table-merged-arrow.ct.spec.ts": "90843ed3f47cf3db023fb01403632e38f493a68b6f16045e1e3a679a586b13aa",
+    "src/lib/components/workspace/__tests__/virtual-note/table-merged-scroll.ct.spec.ts": "48dbc2436795cb3c90d3a55d96099bc6e6a602b3c65b3beb637168d223a0ee66",
+    "src/lib/components/workspace/__tests__/virtual-note/table-middle-scroll.ct.spec.ts": "fa551ae696e8202c574aa0626367c0e532b5a9190882d87beb54e5631d5be255",
+    "src/lib/components/workspace/__tests__/virtual-note/table-native-alias.test.ts": "26b6751481d0f1aead48295068bb8da040ade057d8db3ca04efcaefd6d8fba9d",
+    "src/lib/components/workspace/__tests__/virtual-note/table-native-command.ts": "f34636dad2c80c6c5d6663636725df2b4f9ddb0097c6dbc83677a518cba545e5",
+    "src/lib/components/workspace/__tests__/virtual-note/table-native-cross-cell.test.ts": "e3922747bf925350419d8d9a1281a7f62c6860e0b1c4a4afb1cf13819699d958",
+    "src/lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.ct.spec.ts": "2c09fa8d669a9fa04cc23241fa77f4d0b8cedc03dc01cf96973e2d9306f900ae",
+    "src/lib/components/workspace/__tests__/virtual-note/table-native-paste-owner.test.ts": "737431ef8f95dbe94abbbfa23144002df5a271b8a2f436d0a2eb29c489d46f83",
+    "src/lib/components/workspace/__tests__/virtual-note/table-native-paste-span.test.ts": "fe8be6b9564d997d0b86c5b4a376e66f0a7251a8ec7547c1a27e9a4d790a9ce7",
+    "src/lib/components/workspace/__tests__/virtual-note/table-native-slice-paste.test.ts": "bf877cfdda88f6570a30b2f5908f067ad7fb088cf27adcc95052f59a62916bd1",
+    "src/lib/components/workspace/__tests__/virtual-note/table-nested.ts": "bc25a364d5a95630b36d98541cd552da265b6f2a567e0c4f372fdf40ea0f4813",
+    "src/lib/components/workspace/__tests__/virtual-note/table-owner-keyboard.ct.spec.ts": "90479b3d4fad897c1be2c29e64d17d4a5e3e31bf384b29024cb7c4620f18d517",
+    "src/lib/components/workspace/__tests__/virtual-note/table-owner-navigation.test.ts": "e78ec9d04ca6e4c8cce513fa9e3ed9adf88d8f98dceac5d28510ca5f8439bcd8",
+    "src/lib/components/workspace/__tests__/virtual-note/table-paged-paste.ct.spec.ts": "68047ab9f8d3e6e2c64b54d8a0f2e674588c3d694aeff972e4152bd04b913db8",
+    "src/lib/components/workspace/__tests__/virtual-note/table-paragraph-write.test.ts": "c4dfd36b522f0b793d29eea4b60c7aaee179a67e99453ba8ed57cab74b052207",
+    "src/lib/components/workspace/__tests__/virtual-note/table-paste-growth.test.ts": "60539165a0b57555ea21357148d1641eb0a5cf9c5e6f204faf4243830e3e217d",
+    "src/lib/components/workspace/__tests__/virtual-note/table-paste-large.test.ts": "651378158acc365c7ab0ce8319f05de124a4608689132918e1cb9decc44c4a41",
+    "src/lib/components/workspace/__tests__/virtual-note/table-paste-plan.ts": "0eb95ef9e580ff253064166594b340e904b45d2be40166b0fd9d6fd9e3254e34",
+    "src/lib/components/workspace/__tests__/virtual-note/table-paste-spans.test.ts": "efa8216855aaf44f0929444ea4863446e75f7ec3ea6f9bffe23110a82ed3d601",
+    "src/lib/components/workspace/__tests__/virtual-note/table-payload.ts": "84c9fbf6d8878f01d54733729a328438e448f91b5826d44174b3bf4eed82bbad",
+    "src/lib/components/workspace/__tests__/virtual-note/table-pointer.ct.spec.ts": "20a4458391b0c7306d583d81c7ea0c722d9d9623be776402e164f025af26aaaa",
+    "src/lib/components/workspace/__tests__/virtual-note/table-projection.ts": "c1d2544f2acc9c50b268e733a363d9f923e3cb88a8bab5fdcf4b86212decd7e3",
+    "src/lib/components/workspace/__tests__/virtual-note/table-residency.ct.spec.ts": "b7412d504bda58d21e5badc9ba6e69ee8a6bad1432132a1bb417e001a3a8d054",
+    "src/lib/components/workspace/__tests__/virtual-note/table-resource.test.ts": "9e97f3e1b0f3e5b3ca4b7e082fd8278bc2864295cdf6f1b278631f2c8bc856fc",
+    "src/lib/components/workspace/__tests__/virtual-note/table-resources.ts": "dd4727376e8c14f7ba4acac3ab3f46dd2d57b871d4693678d2e61e2172a5e82c",
+    "src/lib/components/workspace/__tests__/virtual-note/table-rowspan-control.test.ts": "8d21d4d10c07455def07a3e38112a5c0b8f468444afe6aace8c24453bc0e4947",
+    "src/lib/components/workspace/__tests__/virtual-note/table-run-context.ts": "a48dd70e289863e0d365c0bf0e924422a5172b62cd250b023066919ae1692df9",
+    "src/lib/components/workspace/__tests__/virtual-note/table-selection-projection.test.ts": "ca3999a3e8ab5f1055e7764d8493eab33228bccdbf1e4c9a9ba9fa72117e8eb1",
+    "src/lib/components/workspace/__tests__/virtual-note/table-session.test.ts": "20a3e033561ca80688d8bcb9877670718b5faaa729eaea3a0c5f3263a50a61ba",
+    "src/lib/components/workspace/__tests__/virtual-note/table-short-span.ct.spec.ts": "e5f1888c4ef678b1d059014191b89f201b2fb2f8a82a3e82031b696faf126309",
+    "src/lib/components/workspace/__tests__/virtual-note/table-source-view.ts": "3f4582b350d71780bbae3e21d86a8381bf44722cf45a55491780e659051a173e",
+    "src/lib/components/workspace/__tests__/virtual-note/table-source.ts": "ee1a02fa33dce8fee7675676a9b9c584cb5be84d3b58dfb21a88428014ae6d4b",
+    "src/lib/components/workspace/__tests__/virtual-note/table-span-edit.test.ts": "3051e9687b7c437593b28061649e0d4121b2b15637be11b1424d9586058d33c1",
+    "src/lib/components/workspace/__tests__/virtual-note/table-span-keyboard.ct.spec.ts": "10ad0b870bcf0befeccaf6f303ec61757829dcc61c99aedbc6756e9f30c0b73d",
+    "src/lib/components/workspace/__tests__/virtual-note/table-span-layout.test.ts": "a747e065b0960ddbc4efa8da1bec2891ae7dfa3588ff8ed127019a50e093119f",
+    "src/lib/components/workspace/__tests__/virtual-note/table-span-projection.test.ts": "2a86ee2640e083fc42e3999e096d0c6c8df05afcded5e145452f7984415ca504",
+    "src/lib/components/workspace/__tests__/virtual-note/table-state.ts": "35ecb616d70b6c3f5e0d00c468737e0475785c3375dc5f292d82f6dcb4108c73",
+    "src/lib/components/workspace/__tests__/virtual-note/table-structure.test.ts": "1e99df1e07f194c0235785671438b101d953f0adf5326d57530cf8166875e0c6",
+    "src/lib/components/workspace/__tests__/virtual-note/table-terminal-journal.test.ts": "474abeac7d4f574aafd44b49b69ab8b1ecfcae8644ddd912a2e257e05748fa5e",
+    "src/lib/components/workspace/__tests__/virtual-note/table-terminal-phase.test.ts": "e94af7a785fb0e5bd2e4eaba59f4757b8d337b36a2a5151bfbc8192858ce6f8c",
+    "src/lib/components/workspace/__tests__/virtual-note/table-text-paste-events.test.ts": "852ada1be9ceea5b1e937383efa8436aebbd2918cfff8ec070df83ec9e24b4a2",
+    "src/lib/components/workspace/__tests__/virtual-note/table-text-paste-plan.ts": "5103bf10b35620112303a25237f3ca1131159015a780100610830592c3a36c7d",
+    "src/lib/components/workspace/__tests__/virtual-note/table-text-paste.test.ts": "b3dc2b3b9592b5eb32e16f87f270f7c7c2fa3699ed9d99bdc6981389f7fe3563",
+    "src/lib/components/workspace/__tests__/virtual-note/table-transfer.test.ts": "3bf31753670d67339b7d82535cbab1d368bb888f3e648362ba3f2982a50f538b",
+    "src/lib/components/workspace/__tests__/virtual-note/table-transfer.ts": "d9e0357717b927079bc7d00dc4b252a80d6eb486e837426e085d89fc52a7ae23",
+    "src/lib/components/workspace/__tests__/virtual-note/table-viewport.test.ts": "31ad89d3dbcce220ef64777ed2d2141d9ef0c7981e5aa8d3b5a319bb77252641",
+    "src/lib/styles/comments.css": "3ea5890b76277d7a6cc152f23296bfe7721615688fe49d59a5cc627167ec2115",
+    "src/lib/utils/editor-config.ts": "8e703b1af7a32f1cce5b5de5fada2183af1217246ae7032e92155bd6081c7a8b",
+    "src/lib/utils/markdown-processor.ts": "16ed4f8843d1768cca6373c0be0f7226bf143f1b1f58a6b32073c55637e22f6a",
+    "src/test/ct-test.ts": "ffa61440f9133601d5014288fd111594c6cddde436af9a58813d2632ac802831"
+  }
+}
