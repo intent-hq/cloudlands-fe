@@ -55,6 +55,8 @@ import {
 } from './transfer-connections';
 import { JsonRpcError } from './json-rpc-errors';
 import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
+import { createRepositoryResourceFeed } from './repository-resource-feed';
+import { registerRepositoryResourceHandlers } from './repository-resource-lifecycle';
 import { createRepositoryAuthorityFeed } from './repository-authority-feed';
 import { createRepositorySelectionFeed } from './repository-selection-feed';
 import { registerRepositorySelectionHandlers } from './repository-selection-lifecycle';
@@ -395,6 +397,8 @@ const repositoryFeeds = new WeakMap<
   JsonRpcClient,
   ReturnType<typeof createRepositoryAuthorityFeed>
 >();
+const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryResourceFeed>>();
+let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
   ReturnType<typeof createRepositorySelectionFeed>
@@ -798,6 +802,7 @@ function retireOriginalMember(
   };
   try {
     repositoryRoutes?.retireBackend(member.id);
+    resourceRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
     nativeReviewRoutes?.retireBackend(member.id);
     // Original disconnect side effects run once while the transport and admitted releases remain alive.
@@ -827,6 +832,7 @@ function retireOriginalMember(
     );
     app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, client);
     repositoryFeeds.get(client)?.dispose();
+    resourceFeeds.get(client)?.dispose();
     selectionFeeds.get(client)?.dispose();
     nativeReviewFeeds.get(client)?.dispose();
     scope.listeners.add(wake);
@@ -979,10 +985,12 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         keychainSyncLifecycle?.dispose();
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
+        resourceRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
         for (const client of scope.members.keys()) {
           repositoryFeeds.get(client)?.dispose();
+          resourceFeeds.get(client)?.dispose();
           selectionFeeds.get(client)?.dispose();
           nativeReviewFeeds.get(client)?.dispose();
         }
@@ -1604,6 +1612,7 @@ export function disconnectBackendClient(id: string): void {
   const instance = backendClients.get(id);
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
+  resourceRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
   backendClients.delete(id);
@@ -1622,6 +1631,7 @@ export function disconnectBackendClient(id: string): void {
   void cancelInflightHostExecStreamsForBackendSwitch(instance);
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   repositoryFeeds.get(instance)?.dispose();
+  resourceFeeds.get(instance)?.dispose();
   selectionFeeds.get(instance)?.dispose();
   nativeReviewFeeds.get(instance)?.dispose();
   instance.dispose();
@@ -1981,12 +1991,14 @@ function createAdditionalBackendClient(
   // Subscribe before start/hello. Older test doubles have no private source feed.
   if (typeof instance.onRepositoryConnectionEvent === 'function') {
     repositoryFeeds.set(instance, createRepositoryAuthorityFeed(instance));
+    resourceFeeds.set(instance, createRepositoryResourceFeed(instance));
     selectionFeeds.set(instance, createRepositorySelectionFeed(instance));
     nativeReviewFeeds.set(instance, createNativeReviewFeed(instance));
   }
   instance.on('notification', (notification: JsonRpcNotification) => {
     if (
       notification.method === 'workspace.repositoryContext.retired' ||
+      notification.method === 'sourceControl.read.retired' ||
       notification.method === 'workspace.repositorySelection.retired' ||
       notification.method === 'accept-changes.retired'
     )
@@ -2172,6 +2184,7 @@ function createAdditionalBackendClient(
   if (poolLifecycle?.phase === 'stopping') {
     instance.beginRetirement();
     repositoryFeeds.get(instance)?.dispose();
+    resourceFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
     nativeReviewFeeds.get(instance)?.dispose();
     poolChanged();
@@ -4178,6 +4191,14 @@ export function registerBackendHandlers(): void {
       return feed.capture(connection, root);
     },
   });
+  resourceRoutes = registerRepositoryResourceHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    capture: (client, connection, workspaceId) => {
+      const feed = resourceFeeds.get(client);
+      if (!feed) return Promise.reject(new Error('REPOSITORY_RESOURCE_UNAVAILABLE'));
+      return feed.capture(connection, workspaceId);
+    },
+  });
   repositoryRoutes = registerRepositoryRouteHandlers(ipcMain, {
     // Explicit pool lookup only: do not instantiate local or follow focus.
     readBackend: (id) => backendClients.get(id),
@@ -4197,6 +4218,7 @@ export function registerBackendHandlers(): void {
         return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
       }
       if (
+        method.startsWith('sourceControl.read.') ||
         method === 'workspace.repositoryContext' ||
         method === 'workspace.repositoryContext.capture' ||
         method === 'workspace.repositoryContext.release' ||
@@ -5204,6 +5226,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 /** Dispose every pooled backend client (app shutdown). */
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
+  resourceRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();
   for (const [id, instance] of backendClients) {
@@ -5216,6 +5239,7 @@ export function disposeAllBackendClients(): void {
     clearBackendFailureState(id);
     disposeTransferConnectionsForBackend(id);
     repositoryFeeds.get(instance)?.dispose();
+    resourceFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
     nativeReviewFeeds.get(instance)?.dispose();
     instance.dispose();

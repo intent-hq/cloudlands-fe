@@ -190,6 +190,9 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly integrations: AppClient['integrations'] = {
+    captureRepositoryResource: async () => {
+      throw new Error('REPOSITORY_RESOURCE_UNAVAILABLE');
+    },
     githubUser: async () => fx.mockGitHubUser,
     githubPullRequest: async (owner, repo, number) => ({
       ...(number === fx.mockGitHubPullRequestQueued.number

@@ -554,7 +554,7 @@ export function createGlobalLinkClickHandler(
   container.addEventListener('click', clickHandler);
 
   // Also set up tooltip behavior on the same container
-  const cleanupTooltip = createLinkTooltipHandler(container);
+  const cleanupTooltip = createLinkTooltipHandler(container, options.workspaceId);
 
   return () => {
     container.removeEventListener('click', clickHandler);
@@ -604,12 +604,13 @@ export function createLinkClickHandler(options: LinkHandlerOptions) {
  * cleanup();
  * ```
  */
-export function createLinkTooltipHandler(container: HTMLElement): () => void {
+export function createLinkTooltipHandler(container: HTMLElement, workspaceId?: string): () => void {
   let currentAnchor: HTMLAnchorElement | null = null;
 
   // Lazy-import the tooltip functions to avoid circular deps
   // and keep the module lightweight until first hover
-  let showFn: ((anchor: HTMLAnchorElement, url: string) => void) | null = null;
+  let showFn: ((anchor: HTMLAnchorElement, url: string, workspaceId?: string) => void) | null =
+    null;
   let hideFn: (() => void) | null = null;
 
   async function ensureImported() {
@@ -635,7 +636,10 @@ export function createLinkTooltipHandler(container: HTMLElement): () => void {
       ensureImported().then(() => {
         // Double-check we're still on the same anchor after async import
         if (currentAnchor === anchor && showFn) {
-          showFn(anchor, anchor.href);
+          const originalWorkspace =
+            workspaceId ??
+            anchor.closest<HTMLElement>('[data-workspace-surface]')?.dataset.workspaceSurface;
+          showFn(anchor, anchor.href, originalWorkspace);
         }
       });
     } else if (currentAnchor) {

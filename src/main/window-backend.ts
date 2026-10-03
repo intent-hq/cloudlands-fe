@@ -24,10 +24,39 @@ type StrictBinding = Readonly<{
 
 const strictBindings = new WeakMap<Electron.WebContents, StrictBinding>();
 const observedWindows = new WeakSet<BrowserWindowType>();
+const retirementListeners = new WeakMap<Electron.WebContents, Set<() => void>>();
+
+/** Observe replacement of the actual document binding, including equal-ID restamps. */
+export function onStrictBackendBindingRetired(
+  sender: Electron.WebContents,
+  listener: () => void,
+): () => void {
+  let listeners = retirementListeners.get(sender);
+  if (!listeners) {
+    listeners = new Set();
+    retirementListeners.set(sender, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function retireStrictBinding(sender: Electron.WebContents): void {
+  if (!strictBindings.delete(sender)) return;
+  for (const listener of [...(retirementListeners.get(sender) ?? [])]) {
+    try {
+      listener();
+    } catch {
+      /* All original consumers must be retired. */
+    }
+  }
+}
 
 function bindCurrentDocument(window: BrowserWindowType, backendId: string): void {
   const sender = window.webContents;
   if (window.isDestroyed() || sender.isDestroyed() || !sender.mainFrame) return;
+  retireStrictBinding(sender);
   strictBindings.set(
     sender,
     Object.freeze({
@@ -47,21 +76,21 @@ export function stampWindowWithBackend(
   (window as BackendBoundWindow).backendId = backendId;
   const sender = window.webContents;
   if (!sender?.mainFrame) return;
-  strictBindings.delete(sender);
+  retireStrictBinding(sender);
   bindCurrentDocument(window, backendId);
   if (observedWindows.has(window)) return;
   observedWindows.add(window);
   // A navigation is unavailable until the new main document is ready. Neither
   // a frame object nor a backend ID is a non-reused document lifetime (A/B/A).
   sender.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
-    if (mainFrame && !inPlace) strictBindings.delete(sender);
+    if (mainFrame && !inPlace) retireStrictBinding(sender);
   });
   sender.on('dom-ready', () => {
     if (window.webContents === sender) bindCurrentDocument(window, getBackendIdForWindow(window));
   });
-  sender.on('render-process-gone', () => strictBindings.delete(sender));
-  sender.once('destroyed', () => strictBindings.delete(sender));
-  window.once('closed', () => strictBindings.delete(sender));
+  sender.on('render-process-gone', () => retireStrictBinding(sender));
+  sender.once('destroyed', () => retireStrictBinding(sender));
+  window.once('closed', () => retireStrictBinding(sender));
 }
 
 /** Explicit live document binding only. Never consult focused or local fallback routing. */
@@ -78,7 +107,7 @@ export function getStrictBackendBindingForWebContents(
     (binding.window as BackendBoundWindow).backendId !== binding.backendId ||
     BrowserWindow.fromWebContents(sender) !== binding.window
   ) {
-    strictBindings.delete(sender);
+    retireStrictBinding(sender);
     return null;
   }
   return binding;

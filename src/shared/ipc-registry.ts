@@ -932,6 +932,12 @@ export const IPC_CHANNELS = {
       RELEASE: 'backend:repository-selection:release',
       RETIRED: 'backend:repository-selection:retired',
     },
+    REPOSITORY_RESOURCE: {
+      CAPTURE: 'backend:repository-resource:capture',
+      DETAIL: 'backend:repository-resource:detail',
+      RELEASE: 'backend:repository-resource:release',
+      RETIRED: 'backend:repository-resource:retired',
+    },
     REPOSITORY: {
       CAPTURE: 'backend:repository:capture',
       RETIRED: 'backend:repository:retired',

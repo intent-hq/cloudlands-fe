@@ -2251,6 +2251,10 @@ export interface GitHubIssueDetails {
 }
 
 export interface IntegrationsClient {
+  /** Admitted GitLab details on the original workspace connection; never falls back. */
+  captureRepositoryResource(
+    workspaceId: string,
+  ): Promise<import('$shared/types/repository-resource-read').RepositoryResourceSession>;
   githubUser(): Promise<GitHubUser | null>;
   /**
    * One pull request by number (`github.pulls.get`, §5.27). THROWS on

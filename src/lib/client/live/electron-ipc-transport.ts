@@ -9,6 +9,7 @@ import {
   type NativeReviewObservation,
 } from '$shared/types/native-review-operation';
 import { z } from 'zod';
+import { createRepositoryResourceTransport } from './repository-resource-transport';
 import {
   SelectionRootSchema,
   SelectionPreviewSchema,
@@ -191,6 +192,8 @@ export function createElectronIpcBackendTransport(): BackendTransport {
   return {
     captureRepositorySelection,
     prepareNativeReview,
+    captureRepositoryResource: createRepositoryResourceTransport(electronAPI),
+
     async captureRepositoryRoute(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute> {
       const api = electronAPI();
       const unavailable = () =>

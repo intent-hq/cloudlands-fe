@@ -6913,5 +6913,13 @@
   "native_review_targetChoice_description": "이 리뷰의 대상 브랜치를 선택하세요. 준비 단계에서 브랜치를 확인하며, 작업 공간 설정은 변경되지 않습니다.",
   "native_review_targetRequired_error": "대상 브랜치를 입력하세요.",
   "native_review_changeTarget_label": "대상 브랜치 변경",
-  "native_review_targetContextChanged_description": "저장소 정보가 변경되었습니다. 리뷰를 다시 시작하여 대상 브랜치를 확인하세요."
+  "native_review_targetContextChanged_description": "저장소 정보가 변경되었습니다. 리뷰를 다시 시작하여 대상 브랜치를 확인하세요.",
+  "ui_linkTooltip_resourceLoading_ariaLabel": "{provider} 세부 정보 불러오는 중",
+  "ui_linkTooltip_resourceUnavailable_description": "{provider}에서 세부 정보를 불러오지 못했습니다.",
+  "ui_linkTooltip_resourceRateLimited_description": "{provider} 요청 한도에 도달했습니다. 나중에 다시 시도하세요.",
+  "ui_linkTooltip_resourceUnknown_label": "알 수 없음",
+  "ui_linkTooltip_resourceLocked_label": "잠김",
+  "ui_linkTooltip_resourceMergeRequest_label": "병합 요청",
+  "ui_linkTooltip_resourceIssue_label": "이슈",
+  "ui_linkTooltip_resourceRestricted_description": "이 {provider} 리소스에 대한 접근이 제한되어 있습니다."
 }

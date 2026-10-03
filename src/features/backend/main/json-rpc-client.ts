@@ -37,6 +37,7 @@ export interface RepositoryConnection {
   readonly incarnation: object;
   readonly identity: object;
   readonly repositoryContext: boolean;
+  readonly repositoryResourceRead?: boolean;
   readonly repositorySelection: boolean;
   readonly nativeReview: boolean;
   readonly nativeReviewCompanion: boolean;
@@ -556,6 +557,9 @@ export class JsonRpcClient extends EventEmitter {
       nativeReviewCompanion:
         (result as { server?: { capabilities?: { nativeReviewCompanion?: unknown } } }).server
           ?.capabilities?.nativeReviewCompanion === 1,
+      repositoryResourceRead:
+        (result as { server?: { capabilities?: { repositoryResourceRead?: unknown } } }).server
+          ?.capabilities?.repositoryResourceRead === 1,
       repositoryContext:
         (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
           ?.capabilities?.repositoryContext === 1,
