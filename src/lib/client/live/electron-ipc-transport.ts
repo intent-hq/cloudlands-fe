@@ -1,3 +1,24 @@
+import {
+  NativeReviewInputSchema,
+  NativeReviewPreparedViewSchema,
+  NativeReviewObservationSchema,
+  NativeReviewTextCommandSchema,
+  type NativeReviewInput,
+  type NativeReviewSession,
+  type NativeReviewRetirement,
+  type NativeReviewObservation,
+} from '$shared/types/native-review-operation';
+import { z } from 'zod';
+import { createRepositoryResourceTransport } from './repository-resource-transport';
+import {
+  SelectionRootSchema,
+  SelectionPreviewSchema,
+  SelectionObservationSchema,
+  SelectionCommandSchema,
+  type RepositorySelectionSession,
+  type SelectionRetirement,
+  type SelectionObservation,
+} from '$shared/types/repository-selection';
 /**
  * Electron-IPC implementation of the `BackendTransport` interface.
  *
@@ -11,11 +32,17 @@
  */
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
+  RepositoryRootIdentitySchema,
+  type RepositoryRootIdentity,
+} from '$shared/types/repository-context';
+import {
   BackendError,
   type BackendErrorPayload,
   type BackendNotification,
   type BackendRequestOptions,
   type BackendTransport,
+  type BoundRepositoryResult,
+  type BoundRepositoryRoute,
 } from './backend-transport-types';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -163,6 +190,121 @@ export function createElectronIpcBackendTransport(): BackendTransport {
   );
 
   return {
+    captureRepositorySelection,
+    prepareNativeReview,
+    captureRepositoryResource: createRepositoryResourceTransport(electronAPI),
+
+    async captureRepositoryRoute(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute> {
+      const api = electronAPI();
+      const unavailable = () =>
+        new BackendError({
+          code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+          message: 'Repository route unavailable',
+        });
+      if (!api) throw unavailable();
+      const capturedRoot = Object.freeze(RepositoryRootIdentitySchema.parse(root));
+      let id: string | undefined;
+      let released = false;
+      let retired = false;
+      let overflow = false;
+      const early = new Set<string>();
+      const handlers = new Set<() => void>();
+      const retire = () => {
+        if (retired) return;
+        retired = true;
+        for (const handler of [...handlers]) {
+          try {
+            handler();
+          } catch {
+            /* Other owners still need retirement. */
+          }
+        }
+        handlers.clear();
+      };
+      const listener = api.on(BACKEND.REPOSITORY.RETIRED, (payload: unknown) => {
+        if (
+          !payload ||
+          typeof payload !== 'object' ||
+          !('id' in payload) ||
+          typeof payload.id !== 'string'
+        )
+          return;
+        if (id === undefined && !overflow) {
+          early.add(payload.id);
+          if (early.size > 32) {
+            overflow = true;
+            early.clear();
+            retire();
+          }
+        } else if (payload.id === id) retire();
+      });
+      const release = async () => {
+        if (released) return;
+        released = true;
+        retire();
+        api.offById(BACKEND.REPOSITORY.RETIRED, listener);
+        if (!id) return;
+        // Always address the original bridge, including cleanup after replacement.
+        try {
+          await api.invoke(BACKEND.REPOSITORY.RELEASE, { id, root: capturedRoot });
+        } catch {
+          /* Main also retires on document teardown and expiry. */
+        }
+      };
+      try {
+        const result = unwrap<{ id: string }>(
+          await api.invoke(BACKEND.REPOSITORY.CAPTURE, { root: capturedRoot }),
+        );
+        if (typeof result.id !== 'string' || !result.id) throw unavailable();
+        id = result.id;
+        if (early.has(id)) retire();
+        early.clear();
+        if (electronAPI() !== api || overflow || retired) throw unavailable();
+      } catch (error) {
+        await release();
+        throw error;
+      }
+      return {
+        onRetired(handler) {
+          if (released || retired || electronAPI() !== api) {
+            handler();
+            return () => {};
+          }
+          handlers.add(handler);
+          return () => {
+            handlers.delete(handler);
+          };
+        },
+        async request<T>(
+          method: string,
+          params: Record<string, unknown>,
+          options?: { timeoutMs?: number },
+        ) {
+          if (
+            released ||
+            retired ||
+            electronAPI() !== api ||
+            (options && 'localMachine' in options)
+          )
+            throw unavailable();
+          const result = unwrap<BoundRepositoryResult<T>>(
+            await api.invoke(BACKEND.REPOSITORY.REQUEST, {
+              id,
+              root: capturedRoot,
+              method,
+              params: toPlainJson(params),
+              ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+            }),
+          );
+          return {
+            ...result,
+            current: result.current && !released && !retired && electronAPI() === api,
+          };
+        },
+        release,
+      };
+    },
+
     isAvailable(): boolean {
       return !!electronAPI();
     },
@@ -241,5 +383,359 @@ export function createElectronIpcBackendTransport(): BackendTransport {
         handler();
       });
     },
+  };
+}
+
+/** Original bridge and opaque main-owned selection reference. */
+async function captureRepositorySelection(
+  root: RepositoryRootIdentity,
+): Promise<RepositorySelectionSession> {
+  const api = electronAPI(),
+    capturedRoot = SelectionRootSchema.parse(root);
+  const unavailable = () =>
+    new BackendError({
+      code: 'REPOSITORY_SELECTION_UNAVAILABLE',
+      message: 'REPOSITORY_SELECTION_UNAVAILABLE',
+    });
+  if (!api) throw unavailable();
+  const channels = BACKEND.REPOSITORY_SELECTION;
+  let id: string | undefined,
+    ended = false,
+    retirement: SelectionRetirement | undefined;
+  let overflow = false;
+  const early = new Map<string, SelectionRetirement>(),
+    handlers = new Set<(kind: SelectionRetirement) => void>();
+  const retire = (kind: SelectionRetirement) => {
+    if (retirement === 'closed' || retirement === kind) return;
+    retirement = kind;
+    for (const handler of [...handlers]) {
+      try {
+        handler(kind);
+      } catch {
+        /* Notify all owners. */
+      }
+    }
+    if (kind === 'closed') handlers.clear();
+  };
+  const listener = api.on(channels.RETIRED, (payload: unknown) => {
+    const event = z
+      .object({ id: z.string().min(1), kind: z.enum(['admission', 'closed']) })
+      .strict()
+      .safeParse(payload);
+    if (!event.success) return;
+    if (id === undefined) {
+      if (early.get(event.data.id) !== 'closed') early.set(event.data.id, event.data.kind);
+      if (early.size > 32) {
+        overflow = true;
+        early.clear();
+        retire('closed');
+      }
+    } else if (event.data.id === id) retire(event.data.kind);
+  });
+  const release = async () => {
+    if (ended) return;
+    ended = true;
+    retire('closed');
+    api.offById(channels.RETIRED, listener);
+    if (id) {
+      try {
+        await api.invoke(channels.RELEASE, { id, root: capturedRoot });
+      } catch {
+        /* Main has a bounded original owner. */
+      }
+    }
+  };
+  let preview;
+  try {
+    const raw = unwrap<unknown>(await api.invoke(channels.CAPTURE, { root: capturedRoot }));
+    const known = z.object({ id: z.string().min(1).max(4096) }).safeParse(raw);
+    if (known.success) id = known.data.id;
+    const captured = z
+      .object({ id: z.string().min(1), preview: SelectionPreviewSchema })
+      .strict()
+      .parse(raw);
+    id = captured.id;
+    preview = captured.preview;
+    const before = early.get(id);
+    early.clear();
+    if (before) retire(before);
+    if (
+      ended ||
+      overflow ||
+      retirement ||
+      electronAPI() !== api ||
+      JSON.stringify(preview.root) !== JSON.stringify(capturedRoot)
+    )
+      throw unavailable();
+  } catch (error) {
+    await release();
+    throw error;
+  }
+  let retained: SelectionObservation | undefined, claim: string | undefined;
+  let pending: Promise<SelectionObservation> | undefined;
+  const call = (
+    dispatch: () => Promise<BackendResult<unknown> | undefined>,
+  ): Promise<SelectionObservation> => {
+    if (ended || retirement === 'closed' || electronAPI() !== api || pending)
+      return Promise.reject(unavailable());
+    const task = (async () => {
+      try {
+        const result = SelectionObservationSchema.parse(unwrap(await dispatch()));
+        if (retained?.attempt?.status !== 'settled') retained = result;
+      } catch {
+        retained = {
+          ...(retained ?? { attempt: null, current: false }),
+          uncertain: retained?.attempt?.status !== 'settled',
+        };
+      }
+      return {
+        ...retained,
+        current: !!retained.current && !ended && !retirement && electronAPI() === api,
+      };
+    })();
+    pending = task;
+    void task.finally(() => {
+      if (pending === task) pending = undefined;
+    });
+    return task;
+  };
+  return {
+    preview,
+    onRetired(handler) {
+      if (ended || electronAPI() !== api) retire('closed');
+      if (retirement) handler(retirement);
+      if (retirement !== 'closed') handlers.add(handler);
+      return () => {
+        handlers.delete(handler);
+      };
+    },
+    confirm(command) {
+      const selected = SelectionCommandSchema.parse(command),
+        key = JSON.stringify(selected);
+      if (claim !== undefined) {
+        if (claim !== key) return Promise.reject(unavailable());
+        return (
+          pending ??
+          Promise.resolve({
+            ...(retained ?? { attempt: null, uncertain: true }),
+            current: !!retained?.current && !ended && !retirement && electronAPI() === api,
+          })
+        );
+      }
+      if (retirement || ended || pending || electronAPI() !== api)
+        return Promise.reject(unavailable());
+      claim = key;
+      return call(() =>
+        api.invoke(channels.CONFIRM, { id, root: capturedRoot, command: selected }),
+      );
+    },
+    reconcile: () => call(() => api.invoke(channels.RECONCILE, { id, root: capturedRoot })),
+    release,
+  };
+}
+
+/** Original native preparation and its one immutable text claim. */
+async function prepareNativeReview(input: NativeReviewInput): Promise<NativeReviewSession> {
+  const api = electronAPI(),
+    capturedInput = NativeReviewInputSchema.parse(input);
+  if (!api)
+    throw new BackendError({
+      code: 'NATIVE_REVIEW_UNAVAILABLE',
+      message: 'NATIVE_REVIEW_UNAVAILABLE',
+    });
+  return captureNativeReview(
+    api,
+    capturedInput.review.root,
+    { input: capturedInput },
+    !!capturedInput.review.companion,
+  );
+}
+async function captureNativeReview(
+  api: NonNullable<ReturnType<typeof electronAPI>>,
+  capturedRoot: NativeReviewInput['review']['root'],
+  payload:
+    | { input: NativeReviewInput }
+    | { companionOf: string; root: NativeReviewInput['review']['root'] },
+  marked = false,
+): Promise<NativeReviewSession> {
+  const unavailable = () =>
+    new BackendError({
+      code: 'NATIVE_REVIEW_UNAVAILABLE',
+      message: 'NATIVE_REVIEW_UNAVAILABLE',
+    });
+  if (electronAPI() !== api) throw unavailable();
+  const channels = BACKEND.NATIVE_REVIEW;
+  let id: string | undefined,
+    ended = false,
+    retirement: NativeReviewRetirement | undefined;
+  let companionTask: Promise<NativeReviewSession> | undefined;
+  const isClosed = () => retirement === 'closed';
+  let overflow = false;
+  const early = new Map<string, NativeReviewRetirement>(),
+    handlers = new Set<(kind: NativeReviewRetirement) => void>();
+  const retire = (kind: NativeReviewRetirement) => {
+    if (retirement === 'closed' || retirement === kind) return;
+    retirement = kind;
+    for (const handler of [...handlers]) {
+      try {
+        handler(kind);
+      } catch {
+        /* Notify all owners. */
+      }
+    }
+    if (kind === 'closed') handlers.clear();
+  };
+  const listener = api.on(channels.RETIRED, (payload: unknown) => {
+    const event = z
+      .object({ id: z.string().min(1), kind: z.enum(['admission', 'closed']) })
+      .strict()
+      .safeParse(payload);
+    if (!event.success) return;
+    if (id === undefined) {
+      if (early.get(event.data.id) !== 'closed') early.set(event.data.id, event.data.kind);
+      if (early.size > 32) {
+        overflow = true;
+        early.clear();
+        retire('closed');
+      }
+    } else if (event.data.id === id) retire(event.data.kind);
+  });
+  const release = async () => {
+    if (ended) return;
+    ended = true;
+    retire('closed');
+    api.offById(channels.RETIRED, listener);
+    void companionTask?.then(
+      (child) => child.release(),
+      () => {},
+    );
+    if (id) {
+      try {
+        await api.invoke(channels.RELEASE, { id, root: capturedRoot });
+      } catch {
+        /* Main has a bounded original owner. */
+      }
+    }
+  };
+  let preview;
+  try {
+    const raw = unwrap<unknown>(await api.invoke(channels.PREPARE, payload));
+    const known = z.object({ id: z.string().min(1).max(4096) }).safeParse(raw);
+    if (known.success) id = known.data.id;
+    const captured = z
+      .object({ id: z.string().min(1), preview: NativeReviewPreparedViewSchema })
+      .strict()
+      .parse(raw);
+    id = captured.id;
+    preview = captured.preview;
+    const before = early.get(id);
+    early.clear();
+    if (before) retire(before);
+    if (
+      ended ||
+      overflow ||
+      retirement ||
+      electronAPI() !== api ||
+      JSON.stringify(preview.root) !== JSON.stringify(capturedRoot)
+    )
+      throw unavailable();
+  } catch (error) {
+    await release();
+    throw error;
+  }
+  let retained: NativeReviewObservation | undefined, claim: string | undefined;
+  let pending: Promise<NativeReviewObservation> | undefined;
+  const call = (
+    dispatch: () => Promise<BackendResult<unknown> | undefined>,
+  ): Promise<NativeReviewObservation> => {
+    if (ended || retirement === 'closed' || electronAPI() !== api || pending)
+      return Promise.reject(unavailable());
+    let finish!: (value: NativeReviewObservation) => void;
+    const task = new Promise<NativeReviewObservation>((resolve) => {
+      finish = resolve;
+    });
+    pending = task; // Reserve before an IPC implementation can call back synchronously.
+    void (async () => {
+      try {
+        const result = NativeReviewObservationSchema.parse(unwrap(await dispatch()));
+        retained = result;
+      } catch {
+        retained = {
+          ...(retained ?? { execute: null, reconciliation: null, current: false }),
+          uncertain:
+            retained?.uncertain ||
+            (retained?.execute?.state !== 'settled' &&
+              retained?.reconciliation?.state !== 'settled'),
+        };
+      }
+      return {
+        ...retained,
+        current: !!retained.current && !ended && !retirement && electronAPI() === api,
+      };
+    })().then(finish, () =>
+      finish({
+        ...(retained ?? { execute: null, reconciliation: null }),
+        current: false,
+        uncertain: true,
+      }),
+    );
+    void task.finally(() => {
+      if (pending === task) pending = undefined;
+    });
+    return task;
+  };
+  return {
+    ...(marked
+      ? {
+          prepareCompanion() {
+            if (companionTask) return companionTask;
+            companionTask = Promise.resolve().then(async () => {
+              if (!id || ended || retirement === 'closed' || pending || electronAPI() !== api)
+                throw unavailable();
+              const child = await captureNativeReview(api, capturedRoot, {
+                companionOf: id,
+                root: capturedRoot,
+              });
+              if (ended || isClosed() || electronAPI() !== api) {
+                await child.release();
+                throw unavailable();
+              }
+              return child;
+            });
+            return companionTask;
+          },
+        }
+      : {}),
+    preview,
+    onRetired(handler) {
+      if (ended || electronAPI() !== api) retire('closed');
+      if (retirement) handler(retirement);
+      if (retirement !== 'closed') handlers.add(handler);
+      return () => {
+        handlers.delete(handler);
+      };
+    },
+    confirm(command) {
+      const selected = NativeReviewTextCommandSchema.parse(command),
+        key = JSON.stringify(selected);
+      if (claim !== undefined) {
+        if (claim !== key) return Promise.reject(unavailable());
+        return (
+          pending ??
+          Promise.resolve({
+            ...(retained ?? { execute: null, reconciliation: null, uncertain: true }),
+            current: !!retained?.current && !ended && !retirement && electronAPI() === api,
+          })
+        );
+      }
+      if (retirement || ended || pending || electronAPI() !== api)
+        return Promise.reject(unavailable());
+      claim = key;
+      return call(() =>
+        api.invoke(channels.EXECUTE, { id, root: capturedRoot, command: selected }),
+      );
+    },
+    reconcile: () => call(() => api.invoke(channels.RECONCILE, { id, root: capturedRoot })),
+    release,
   };
 }

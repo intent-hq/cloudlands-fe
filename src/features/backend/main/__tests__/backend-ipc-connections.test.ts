@@ -22,6 +22,13 @@ import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Backend state is reloaded per case, but the generated translation catalog is
+// immutable for this suite. Keep its real exports shared: recompiling every
+// locale on each reset retains enough VM code to exhaust the worker heap.
+vi.mock('../../../../shared/paraglide/messages.js', async (importOriginal) =>
+  importOriginal<typeof import('../../../../shared/paraglide/messages.js')>(),
+);
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -1285,6 +1292,53 @@ describe('WSS auth-rejection propagation', () => {
 // ---------------------------------------------------------------------------
 
 describe('connections:* IPC handlers', () => {
+  it('rejects shared sync, publication and remote pairing in an isolated test package before effects', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const { BUILD_CONFIG } = await import('../../../../main/build-config.generated');
+    const original = Object.getOwnPropertyDescriptor(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID')!;
+    Object.defineProperty(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID', { value: 'manual-123-1' });
+    try {
+      const before = { rpc: [...rpc.calls], prefs: localPrefs.setLocalPref.mock.calls.length };
+      for (const [channel, params] of [
+        ['connections:sync-set-enabled', { enabled: true }],
+        ['connections:publish-self', undefined],
+        [
+          'connections:capture-fingerprint',
+          { host: 'normal.local', port: 8443, token: 'test-only' },
+        ],
+        [
+          'connections:add',
+          {
+            label: 'Normal',
+            host: 'normal.local',
+            port: 8443,
+            token: 'test-only',
+            fingerprint: 'ab'.repeat(32),
+          },
+        ],
+      ] as const) {
+        const handler = findHandler(channel);
+        expect(handler).toBeDefined();
+        await expect(handler!({}, params)).rejects.toThrow('disabled in the isolated test app');
+      }
+      await expect(
+        findHandler('connections:update-backend')!({}, { id: 'local' }),
+      ).resolves.toMatchObject({
+        ok: false,
+        reason: 'unsupported',
+      });
+      expect(rpc.calls).toEqual(before.rpc);
+      expect(localPrefs.setLocalPref).toHaveBeenCalledTimes(before.prefs);
+      expect(importedPrincipal.inspect).not.toHaveBeenCalled();
+      expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+      expect(store.add).not.toHaveBeenCalled();
+      expect(keychainSync.requestReconcile).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID', original);
+    }
+  });
+
   it('connections:list returns the list + active selection', async () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();

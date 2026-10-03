@@ -13,6 +13,11 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const showMessageBox = vi.fn();
+const isolatedTestBuild = vi.hoisted(() => vi.fn(() => false));
+vi.mock('../../../../main/isolated-test-profile', async (original) => ({
+  ...(await original<typeof import('../../../../main/isolated-test-profile')>()),
+  isIsolatedTestBuild: isolatedTestBuild,
+}));
 const appIsReady = vi.fn(() => true);
 const clipboardWriteText = vi.fn();
 const openExternal = vi.fn();
@@ -370,6 +375,7 @@ function signedOutDaemon(): void {
 }
 
 beforeEach(() => {
+  isolatedTestBuild.mockReturnValue(false);
   lifetimeCurrent = true;
   remoteIdentity.mockImplementation(async (candidate) => ({
     principal: {
@@ -404,6 +410,30 @@ beforeEach(() => {
 });
 
 describe('handleInviteDeepLink', () => {
+  it('refuses an isolated test invitation before capture, dial, consent or credential work', async () => {
+    isolatedTestBuild.mockReturnValue(true);
+    await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
+    expect(showMessageBox).toHaveBeenCalledWith({
+      type: 'info',
+      title: 'Invitations are unavailable in this test app',
+      message:
+        'This test build connects only to its private bundled daemon. Open invitations in your normal Intent app.',
+    });
+    for (const effect of [
+      captureIdentity,
+      openInviteConnection,
+      showInviteConsent,
+      localRequest,
+      prepareIdentity,
+      guestFindMatching,
+      guestGetDecryptedToken,
+      guestAdd,
+      openBackendWindow,
+      openExternal,
+    ])
+      expect(effect).not.toHaveBeenCalled();
+  });
+
   it('happy path: dial with pin → challenge → prove box → gist → prove → store GUEST session → delete gist → open window', async () => {
     await handleInviteDeepLink(`${LINK}&tc=ts.example:443`);
 

@@ -28,6 +28,69 @@ const saga = (body: string[], { path = SAGA, actions = ACTIONS_IMPORT } = {}) =>
 
 const noExceptions = { exceptions: [] };
 
+describe('owned action channels', () => {
+  it.each([
+    [
+      "import { ownedActionChannel as owned } from '$store/renderer/utils/owned-action-channel';",
+      'owned',
+    ],
+    [
+      "import * as effects from '$store/renderer/utils/owned-action-channel';",
+      'effects.ownedActionChannel',
+    ],
+  ])('recognizes the explicit types through the real helper: %s', (binding, callee) => {
+    const result = inspectUnconsumedActions(
+      [
+        slice(),
+        {
+          path: SAGA,
+          content: [
+            SAGA_IMPORT,
+            ACTIONS_IMPORT,
+            binding,
+            'export function* demoSaga() {',
+            "  yield* put(a({ id: 'x' }));",
+            '  yield* put(b());',
+            `  yield* ${callee}([a.type], matchesOriginalOwner, buffer);`,
+            '}',
+          ].join('\n'),
+        },
+      ],
+      noExceptions,
+    );
+    expect(result.violations).toEqual([expect.stringContaining('action b is dispatched')]);
+  });
+
+  it.each([
+    ["import { ownedActionChannel } from 'unrelated';", ''],
+    [
+      "import { ownedActionChannel } from '$store/renderer/utils/owned-action-channel';",
+      'const ownedActionChannel = fake;',
+    ],
+  ])('does not credit a foreign or shadowed helper: %s', (binding, shadow) => {
+    const result = inspectUnconsumedActions(
+      [
+        slice(),
+        {
+          path: SAGA,
+          content: [
+            SAGA_IMPORT,
+            ACTIONS_IMPORT,
+            binding,
+            'export function* demoSaga() {',
+            shadow,
+            "  yield* put(a({ id: 'x' }));",
+            '  yield* ownedActionChannel([a.type], matchesOriginalOwner, buffer);',
+            '}',
+          ].join('\n'),
+        },
+      ],
+      noExceptions,
+    );
+    expect(result.violations).toEqual([expect.stringContaining('action a is dispatched')]);
+  });
+});
+
 describe('unconsumed action guard', () => {
   it('accepts a put handled by a reducer case', () => {
     const result = inspectUnconsumedActions(
