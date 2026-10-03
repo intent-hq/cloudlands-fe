@@ -1730,6 +1730,7 @@
   "workspace_progressCard_base_label": "Base {ref}",
   "workspace_progressCard_copied_label": "Copié",
   "workspace_progressCard_copyPath_ariaLabel": "Copier le chemin de l'espace de travail",
+  "workspace_progressCard_presenceAtWorkspace_tooltip": "{name} · dans {workspace}",
   "workspace_progressCard_presenceOnAgent_tooltip": "{name} · sur {agent}",
   "workspace_progressCard_presenceOnNote_tooltip": "{name} · sur {note}",
   "workspace_progressCard_presenceInWorkspace_tooltip": "{name} · dans cet espace de travail",
