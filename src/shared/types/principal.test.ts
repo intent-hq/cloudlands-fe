@@ -82,3 +82,14 @@ describe('principal discovery wire contract', () => {
     }
   });
 });
+
+it.each([undefined, false, true, 0, 1, 2])(
+  'only admits invitation account search capability value 1 (%s)',
+  (flag) => {
+    const snapshot = parsePrincipalSnapshot(
+      { server: { capabilities: { invitationAccountSearch: flag } } },
+      { id: 'owner', login: null, displayName: null, avatarUrl: null, isAdministrator: true },
+    );
+    expect(snapshot?.capabilities.invitationAccountSearch).toBe(flag === 1);
+  },
+);

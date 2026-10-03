@@ -25,7 +25,7 @@
   } from '$store/renderer/slices/host-membership/host-membership-slice';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import { instanceUserRows } from './instance-users';
-  import HostInvitationDialog from './HostInvitationDialog.svelte';
+  import HostInvitationDialog from './HostInvitationDialogHost.svelte';
   import { readHostInviteLink } from './invite-links';
 
   const { context, suspended = false }: { context: string; suspended?: boolean } = $props();

@@ -1,3 +1,4 @@
+import { invitationAccountSearchSaga } from './slices/invitation-account-search/sagas/invitation-account-search-saga';
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
@@ -177,6 +178,7 @@ export const sagas = [
   workspaceOperationsSaga,
   workspaceTransferSaga,
   workspaceShareSaga,
+  invitationAccountSearchSaga,
   hostMembershipSaga,
   hostUserPresenceSaga,
   workspaceImportSaga,

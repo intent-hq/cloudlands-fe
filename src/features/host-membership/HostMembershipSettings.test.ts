@@ -16,6 +16,10 @@ import {
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import HostMembershipSettingsHost from './HostMembershipSettingsHost.svelte';
 import type { StoreState } from '$store/renderer/types';
+import {
+  initialState as invitationAccountSearch,
+  invitationAccountSearchReducer,
+} from '$store/renderer/slices/invitation-account-search/invitation-account-search-slice';
 const mocks = vi.hoisted(() => ({
   state: {} as StoreState,
   dispatch: vi.fn(),
@@ -47,11 +51,15 @@ import HostMembershipSettings from './HostMembershipSettings.svelte';
 beforeEach(() => {
   mocks.dispatch.mockReset();
   mocks.request.mockReset();
-  mocks.state = withHostPrincipal({ hostMembership: initialState });
+  mocks.state = withHostPrincipal({ hostMembership: initialState, invitationAccountSearch });
   mocks.dispatch.mockImplementation((action) => {
     mocks.state = {
       ...mocks.state,
       hostMembership: hostMembershipReducer(mocks.state.hostMembership, action),
+      invitationAccountSearch: invitationAccountSearchReducer(
+        mocks.state.invitationAccountSearch,
+        action,
+      ),
       principal: principalReducer(mocks.state.principal, action),
     };
     mocks.emit();
