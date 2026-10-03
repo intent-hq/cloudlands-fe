@@ -2,14 +2,10 @@
   /**
    * Settings → Collaboration.
    *
-   * Current-principal identity and owner-only instance sharing precede two
-   * workspace lists: the workspaces this backend HOSTS for collaborators (owner
-   * side — roster + *Remove* / *Remove all guests*, hidden from a
-   * collaborator-only client so a guest never sees owner controls) and the
-   * hosts this app JOINED as a guest, each with its joined workspaces nested
-   * underneath (*Open*; per-workspace *Leave*: `workspace.members.leave` then
-   * the local drop; *Leave host*: best-effort `principal.revokeSelf`, then the
-   * local delete and window teardown). Every destructive action confirms.
+   * Current identity and instance sharing precede workspace guest sharing and
+   * separately joined instances. Instance membership never appears as a set of
+   * individually leaveable workspaces. Saved workspace-only sessions keep their
+   * existing per-workspace controls. Every destructive action confirms.
    *
    * Every failure keeps a *Retry* bound to the CONFIRMED operation that
    * failed — never to whatever the confirm dialog last showed: opening or
@@ -52,6 +48,10 @@
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
     selectGuestSessions,
+    selectHostedSharingLoadState,
+    selectJoinedInstanceSessions,
+    selectJoinedWorkspaceSessions,
+    selectGuestSessionsUnavailable,
     selectGuestLeaveConfirmations,
     selectWindowGuestSession,
     selectInheritedWorkspaceKeys,
@@ -103,6 +103,11 @@
 
   const inheritedWorkspaceKeys$ = selectInheritedWorkspaceKeys();
   const sessions$ = selectGuestSessions();
+  const sharingLoad$ = selectHostedSharingLoadState();
+  const instanceSessions$ = selectJoinedInstanceSessions();
+  const workspaceSessions$ = selectJoinedWorkspaceSessions();
+  const unavailable$ = selectGuestSessionsUnavailable();
+  const actionContext$ = selectPrincipalActionContext();
   const currentSession$ = selectWindowGuestSession();
   const hostRole$ = selectHostRole();
   const principal$ = selectPrincipalSnapshot();
@@ -169,8 +174,16 @@
   let leaveDialogOpen = $state(false);
   const consumerId = $props.id();
   const openWorkflow$ = selectConnectionWorkflow(consumerId);
+  let openContext = $state<string | null>(null);
+  let openLifetime = $state<string | null>(null);
   const openTarget = $derived(
-    $sessions$.find((session) => session.id === $openWorkflow$?.targetId),
+    $actionContext$ === openContext
+      ? $sessions$.find(
+          (session) =>
+            session.id === $openWorkflow$?.targetId &&
+            guestSessionLifetime(session) === openLifetime,
+        )
+      : undefined,
   );
   const openError = $derived(
     openTarget && $openWorkflow$?.outcome?.kind === 'secretUnavailable'
@@ -207,7 +220,9 @@
    * sits next to the row.
    */
   function openHost(session: GuestSessionRecord) {
-    if (!actionReady()) return;
+    if (!actionReady() || !sameSavedSession(session)) return;
+    openContext = selectPrincipalActionContext.select(appStore.state);
+    openLifetime = guestSessionLifetime(session);
     appStore.dispatch(connectionWorkflowRequested(consumerId, { kind: 'open', id: session.id }));
   }
 
@@ -276,6 +291,154 @@
     appStore.dispatch(removeAllHostedGuestsRequested(workspaceId));
   }
 </script>
+
+{#snippet joinedRows(sessions: GuestSessionRecord[], instance: boolean)}
+  <div class="p-4" data-testid={instance ? 'guest-sessions-instances' : 'guest-sessions-joined'}>
+    {#if !instance}<h3 class="type-body mb-3 font-medium text-foreground">
+        {m.collaboration_lists_joinedWorkspaces_title()}
+      </h3>{/if}
+    {#if $unavailable$}
+      <p class="type-body text-muted-foreground" role="status">
+        {m.collaboration_lists_joinedUnavailable_label()}
+      </p>
+    {:else if !$loaded$}
+      <p class="type-body text-muted-foreground" role="status">
+        {m.settings_guestSessions_loading_label()}
+      </p>
+    {:else if sessions.length > 0}
+      <ListView
+        virtualize={false}
+        items={sessions}
+        getKey={(session) => session.id}
+        getText={(session) => formatGuestSessionLabel(session)}
+        ariaLabel={instance
+          ? m.collaboration_lists_joinedInstances_title()
+          : m.collaboration_lists_joinedWorkspaces_title()}
+        class="overflow-visible rounded-xl bg-card"
+      >
+        {#snippet row({ item: session })}
+          {@const open = $openIds$.includes(session.id)}
+          {@const connected = open && $connectedIds$.includes(session.id)}
+          {@const guestAddress = formatGuestSessionAddress(session)}
+          <div class="py-3" data-session-id={session.id}>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate type-body text-foreground">
+                  {formatGuestSessionLabel(session)}
+                </p>
+                <p class="truncate type-caption text-muted-foreground">
+                  <!-- The dialled tc address / host stays visible once the
+                       captured machine name is the primary label. -->
+                  {#if guestAddress !== null}
+                    <span data-guest-address={guestAddress}>{guestAddress}</span>
+                    ·
+                  {/if}
+                  <!-- Status only for a host with a window (pooled client); a
+                       joined host that was never opened has no status. -->
+                  {#if open}
+                    <span data-guest-connected={connected}>
+                      {connected
+                        ? m.settings_guestSessions_status_connected_label()
+                        : m.settings_guestSessions_status_notConnected_label()}
+                    </span>
+                    ·
+                  {/if}
+                  {session.login
+                    ? `@${session.login}`
+                    : m.settings_collaboration_profileUnavailable_label()}
+                  {#if $currentSession$?.id === session.id && $hostRole$ === 'member'}
+                    · {m.collaboration_host_member_label()}{/if}
+                  {#if session.identity}
+                    ·
+                    {session.identity.provider === 'github'
+                      ? m.workspace_share_pinProvider_github_label()
+                      : m.workspace_share_pinProvider_gitlab_label({
+                          host: session.identity.host,
+                        })}{/if}
+                </p>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!$ready$ ||
+                    ($openWorkflow$?.phase !== 'settled' &&
+                      $openWorkflow$?.targetId === session.id)}
+                  onclick={() => openHost(session)}
+                >
+                  {m.settings_guestSessions_open_label()}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!$ready$ || $leavingIds$.includes(session.id)}
+                  onclick={() => requestLeave(session)}
+                >
+                  {$leavingIds$.includes(session.id)
+                    ? m.settings_guestSessions_leaving_label()
+                    : instance
+                      ? m.collaboration_lists_leaveInstance_label()
+                      : m.settings_guestSessions_leave_label()}
+                </Button>
+              </div>
+            </div>
+            {#if !instance && session.workspaces.length > 0}
+              <ul
+                class="mt-3 ml-3 border-l border-border pl-3 divide-y divide-border"
+                aria-label={m.settings_guestSessions_workspaces_ariaLabel({
+                  name: formatGuestSessionLabel(session),
+                })}
+                data-testid="guest-session-workspaces"
+              >
+                {#each session.workspaces as workspace (workspace.id)}
+                  {@const key = `${session.id}:${workspace.id}`}
+                  <li
+                    class="flex items-center justify-between gap-3 py-2"
+                    data-workspace-id={workspace.id}
+                  >
+                    <p class="min-w-0 truncate type-body text-foreground">
+                      {workspaceLabel(workspace)}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={!$ready$ ||
+                        $leavingWorkspaceKeys$.includes(key) ||
+                        $inheritedWorkspaceKeys$.includes(key)}
+                      onclick={() => requestLeaveWorkspace(session, workspace)}
+                    >
+                      {$leavingWorkspaceKeys$.includes(key)
+                        ? m.settings_guestSessions_leaving_label()
+                        : m.settings_guestSessions_leaveWorkspace_label()}
+                    </Button>
+                  </li>
+                  {#if $inheritedWorkspaceKeys$.includes(key)}
+                    <li class="type-caption text-muted-foreground" role="status">
+                      {m.collaboration_workspace_inherited_error()}
+                    </li>
+                  {/if}
+                {/each}
+              </ul>
+            {:else if !instance}
+              <p class="mt-2 ml-3 type-caption text-muted-foreground">
+                {m.settings_guestSessions_workspaces_empty_label()}
+              </p>
+            {/if}
+          </div>
+        {/snippet}
+      </ListView>
+    {:else}
+      <div class="space-y-1">
+        <p class="type-body font-medium text-foreground">
+          {m.collaboration_lists_noJoinedInstances_title()}
+        </p>
+        <p class="type-body text-muted-foreground">
+          {m.collaboration_lists_noJoinedInstances_description()}
+        </p>
+      </div>
+    {/if}
+  </div>
+{/snippet}
 
 {#if $multiplayer$}
   <div class="space-y-8" data-testid="guest-sessions-settings">
@@ -358,6 +521,13 @@
           <h3 class="type-body mb-3 font-medium text-foreground">
             {m.settings_guestSessions_hosting_title()}
           </h3>
+          {#if $sharingLoad$ !== 'loaded'}
+            <p class="type-body text-muted-foreground" role="status">
+              {$sharingLoad$ === 'error'
+                ? m.collaboration_lists_sharingLoad_error()
+                : m.collaboration_lists_sharingLoading_label()}
+            </p>
+          {/if}
           {#if $hosted$.length > 0}
             <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
               {#each $hosted$ as workspace (workspace.id)}
@@ -367,7 +537,7 @@
                 />
               {/each}
             </div>
-          {:else}
+          {:else if $sharingLoad$ === 'loaded'}
             <div class="space-y-1">
               <p class="type-body font-medium text-foreground">
                 {m.settings_guestSessions_hosting_empty_title()}
@@ -411,143 +581,16 @@
         </div>
       {/if}
 
-      <div class="p-4" data-testid="guest-sessions-joined">
-        <h3 class="type-body mb-3 font-medium text-foreground">
-          {m.settings_guestSessions_joined_title()}
-        </h3>
-        {#if !$loaded$}
-          <p class="type-body text-muted-foreground" role="status">
-            {m.settings_guestSessions_loading_label()}
-          </p>
-        {:else if $sessions$.length > 0}
-          <ListView
-            virtualize={false}
-            items={$sessions$}
-            getKey={(session) => session.id}
-            getText={(session) => formatGuestSessionLabel(session)}
-            ariaLabel={m.settings_guestSessions_joined_title()}
-            class="overflow-visible rounded-xl bg-card"
-          >
-            {#snippet row({ item: session })}
-              {@const open = $openIds$.includes(session.id)}
-              {@const connected = open && $connectedIds$.includes(session.id)}
-              {@const guestAddress = formatGuestSessionAddress(session)}
-              <div class="py-3" data-session-id={session.id}>
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <div class="min-w-0">
-                    <p class="truncate type-body text-foreground">
-                      {formatGuestSessionLabel(session)}
-                    </p>
-                    <p class="truncate type-caption text-muted-foreground">
-                      <!-- The dialled tc address / host stays visible once the
-                       captured machine name is the primary label. -->
-                      {#if guestAddress !== null}
-                        <span data-guest-address={guestAddress}>{guestAddress}</span>
-                        ·
-                      {/if}
-                      <!-- Status only for a host with a window (pooled client); a
-                       joined host that was never opened has no status. -->
-                      {#if open}
-                        <span data-guest-connected={connected}>
-                          {connected
-                            ? m.settings_guestSessions_status_connected_label()
-                            : m.settings_guestSessions_status_notConnected_label()}
-                        </span>
-                        ·
-                      {/if}
-                      {session.login
-                        ? `@${session.login}`
-                        : m.settings_collaboration_profileUnavailable_label()}
-                      {#if $currentSession$?.id === session.id && $hostRole$ === 'member'}
-                        · {m.collaboration_host_member_label()}{/if}
-                      {#if session.identity}
-                        ·
-                        {session.identity.provider === 'github'
-                          ? m.workspace_share_pinProvider_github_label()
-                          : m.workspace_share_pinProvider_gitlab_label({
-                              host: session.identity.host,
-                            })}{/if}
-                    </p>
-                  </div>
-                  <div class="flex shrink-0 items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={!$ready$ ||
-                        ($openWorkflow$?.phase !== 'settled' &&
-                          $openWorkflow$?.targetId === session.id)}
-                      onclick={() => openHost(session)}
-                    >
-                      {m.settings_guestSessions_open_label()}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={!$ready$ || $leavingIds$.includes(session.id)}
-                      onclick={() => requestLeave(session)}
-                    >
-                      {$leavingIds$.includes(session.id)
-                        ? m.settings_guestSessions_leaving_label()
-                        : m.settings_guestSessions_leave_label()}
-                    </Button>
-                  </div>
-                </div>
-                {#if session.workspaces.length > 0}
-                  <ul
-                    class="mt-3 ml-3 border-l border-border pl-3 divide-y divide-border"
-                    aria-label={m.settings_guestSessions_workspaces_ariaLabel({
-                      name: formatGuestSessionLabel(session),
-                    })}
-                    data-testid="guest-session-workspaces"
-                  >
-                    {#each session.workspaces as workspace (workspace.id)}
-                      {@const key = `${session.id}:${workspace.id}`}
-                      <li
-                        class="flex items-center justify-between gap-3 py-2"
-                        data-workspace-id={workspace.id}
-                      >
-                        <p class="min-w-0 truncate type-body text-foreground">
-                          {workspaceLabel(workspace)}
-                        </p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={!$ready$ ||
-                            $leavingWorkspaceKeys$.includes(key) ||
-                            $inheritedWorkspaceKeys$.includes(key)}
-                          onclick={() => requestLeaveWorkspace(session, workspace)}
-                        >
-                          {$leavingWorkspaceKeys$.includes(key)
-                            ? m.settings_guestSessions_leaving_label()
-                            : m.settings_guestSessions_leaveWorkspace_label()}
-                        </Button>
-                      </li>
-                      {#if $inheritedWorkspaceKeys$.includes(key)}
-                        <li class="type-caption text-muted-foreground" role="status">
-                          {m.collaboration_workspace_inherited_error()}
-                        </li>
-                      {/if}
-                    {/each}
-                  </ul>
-                {:else}
-                  <p class="mt-2 ml-3 type-caption text-muted-foreground">
-                    {m.settings_guestSessions_workspaces_empty_label()}
-                  </p>
-                {/if}
-              </div>
-            {/snippet}
-          </ListView>
-        {:else}
-          <div class="space-y-1">
-            <p class="type-body font-medium text-foreground">
-              {m.settings_guestSessions_joined_empty_title()}
-            </p>
-            <p class="type-body text-muted-foreground">
-              {m.settings_guestSessions_joined_empty_description()}
-            </p>
-          </div>
-        {/if}
-      </div>
+      {#if $workspaceSessions$.length > 0}
+        {@render joinedRows($workspaceSessions$, false)}
+      {/if}
+    </SettingsSection>
+
+    <SettingsSection
+      id="collaboration-joined-instances"
+      title={m.collaboration_lists_joinedInstances_title()}
+    >
+      {@render joinedRows($instanceSessions$, true)}
     </SettingsSection>
 
     {#if openError}
@@ -580,7 +623,7 @@
       </div>
     {/each}
 
-    {#each $failedLeaveWorkspaces$ as failed (workspaceKey(failed))}
+    {#each $failedLeaveWorkspaces$.filter((failed) => !$instanceSessions$.some((session) => session.id === failed.session.id)) as failed (workspaceKey(failed))}
       {@const key = workspaceKey(failed)}
       <div
         class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
@@ -612,7 +655,9 @@
     description={m.settings_guestSessions_leaveConfirm_description({
       name: leaveTarget ? formatGuestSessionLabel(leaveTarget) : '',
     })}
-    confirmText={m.settings_guestSessions_leave_label()}
+    confirmText={leaveTarget && $instanceSessions$.some((session) => session.id === leaveTarget?.id)
+      ? m.collaboration_lists_leaveInstance_label()
+      : m.settings_guestSessions_leave_label()}
     variant="destructive"
     onConfirm={() => void leaveHost(leaveTarget)}
   />
