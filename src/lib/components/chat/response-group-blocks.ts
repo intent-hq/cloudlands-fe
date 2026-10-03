@@ -1,5 +1,6 @@
 import type { ContentBlock } from '$shared/types';
 import type { ContentBlockGroup, RenderContentBlock } from '$lib/utils/messageParser';
+import { parseSuggestedPrompts } from '$lib/utils/messageParser';
 import {
   getIdBackedContentBlockKey,
   getToolResultContentBlockKey,
@@ -9,6 +10,7 @@ import {
   extractReasoningHeading,
   extractReasoningHistory,
   extractStandaloneReasoningTitle,
+  extractStandaloneReasoningTitles,
 } from './reasoning-heading';
 import { getProposalFromBlock } from '$shared/types/proposal-resource';
 
@@ -67,47 +69,96 @@ export function normalizeResponseGroup(block: ContentBlockGroup): ContentBlockGr
 }
 
 function pairAdjacentReasoningGroup(
-  preceding: ContentBlock,
+  preceding: ContentBlock[],
   group: ContentBlockGroup,
 ): ContentBlockGroup | null {
-  if (preceding.type !== 'thinking' || !isReasoningPhaseGroupName(group.name)) return null;
-
-  const precedingReasoning = extractReasoningHeading(preceding.text ?? preceding.content ?? '');
+  if (!isReasoningPhaseGroupName(group.name)) return null;
+  const nonempty = preceding.filter((child) => (child.text ?? child.content ?? '').trim());
+  const last = nonempty.at(-1);
+  const precedingReasoning = extractReasoningHeading(last?.text ?? last?.content ?? '');
+  const externalTitle = precedingReasoning.heading
+    ? extractStandaloneReasoningTitle(precedingReasoning.body)
+    : null;
   const normalizedGroup = normalizeResponseGroup(group);
-  if (!group.isStreaming && !precedingReasoning.heading && !normalizedGroup.name) {
-    const precedingHistory = reasoningWithText(preceding, precedingReasoning.body);
-    if (!precedingHistory) return null;
-
-    const [firstChild, ...remainingChildren] = normalizedGroup.children;
-    const children =
-      firstChild?.type === 'text'
-        ? [firstChild, precedingHistory, ...remainingChildren]
-        : [precedingHistory, ...normalizedGroup.children];
-    return {
-      ...normalizedGroup,
-      hasAdjacentReasoningHistory: true,
-      children,
-    };
-  }
-
-  const description = group.children[0];
-  if (description?.type !== 'text' || !(description.text ?? description.content ?? '').trim()) {
+  // Compact title-only rows do not name an otherwise headingless group.
+  // Keep its prose inline on completion, unless the existing explicit
+  // external-title handoff supplies the group title.
+  if (
+    !externalTitle &&
+    !normalizedGroup.name &&
+    nonempty.length > 0 &&
+    nonempty.every((child) => extractStandaloneReasoningTitles(child.text ?? child.content ?? ''))
+  ) {
     return null;
   }
-
-  if (!precedingReasoning.heading) return null;
-
-  const title = extractStandaloneReasoningTitle(precedingReasoning.body);
-  if (!title) return null;
-
-  const precedingHistory = reasoningWithText(preceding, precedingReasoning.heading);
-  const children = normalizedGroup.children;
-
+  // A title supplied by the preceding phase must not consume a different
+  // heading from the group's own history.
+  const children = externalTitle
+    ? group.children.flatMap((child) => {
+        if (child.type !== 'thinking') return [child];
+        const parsed = extractReasoningHeading(child.text ?? child.content ?? '');
+        const content =
+          parsed.heading && /^(reasoning|thinking)$/i.test(parsed.heading)
+            ? parsed.body
+            : (child.text ?? child.content ?? '');
+        const normalized = reasoningWithText(child, content);
+        return normalized ? [normalized] : [];
+      })
+    : normalizedGroup.children;
+  let title = externalTitle ?? normalizedGroup.name;
+  let titleIndex = -1;
+  if (!title) {
+    titleIndex = nonempty.findLastIndex((child) => {
+      const heading = extractReasoningHeading(child.text ?? child.content ?? '').heading;
+      return !!heading && !/^(reasoning|thinking)$/i.test(heading);
+    });
+    if (titleIndex >= 0)
+      title =
+        extractReasoningHeading(nonempty[titleIndex].text ?? nonempty[titleIndex].content ?? '')
+          .heading ?? '';
+  }
+  const history = nonempty.flatMap((child, index) => {
+    const text =
+      externalTitle && index === nonempty.length - 1
+        ? (precedingReasoning.heading ?? '')
+        : index === titleIndex
+          ? extractReasoningHeading(child.text ?? child.content ?? '').body
+          : (child.text ?? child.content ?? '');
+    const normalized = reasoningWithText(child, text);
+    return normalized ? [normalized] : [];
+  });
+  const hasDescription =
+    children[0]?.type === 'text' && !!(children[0].text ?? children[0].content ?? '').trim();
+  const descriptionCount = hasDescription ? 1 : 0;
   return {
     ...normalizedGroup,
     name: title,
-    hasAdjacentReasoningHistory: true,
-    children: precedingHistory ? [children[0], precedingHistory, ...children.slice(1)] : children,
+    hasDescription,
+    hasAdjacentReasoningHistory: history.length > 0,
+    adjacentReasoningHistoryCount: history.length,
+    children: [
+      ...children.slice(0, descriptionCount),
+      ...history,
+      ...children.slice(descriptionCount),
+    ],
+  };
+}
+
+function responseGroupSegment(
+  group: ContentBlockGroup,
+  start: number,
+  end: number,
+): ContentBlockGroup {
+  const segment = { ...group, children: group.children.slice(start, end) };
+  if (group.adjacentReasoningHistoryCount === undefined) return segment;
+  const historyStart = group.hasDescription ? 1 : 0;
+  const historyEnd = historyStart + group.adjacentReasoningHistoryCount;
+  const count = Math.max(0, Math.min(end, historyEnd) - Math.max(start, historyStart));
+  return {
+    ...segment,
+    hasDescription: start === 0 && group.hasDescription,
+    hasAdjacentReasoningHistory: count > 0,
+    adjacentReasoningHistoryCount: count,
   };
 }
 
@@ -128,7 +179,7 @@ export function hoistProposalBlocksFromResponseGroups(
       if (!getProposalFromBlock(child)) continue;
 
       if (segmentStart < index) {
-        hoisted.push({ ...block, children: block.children.slice(segmentStart, index) });
+        hoisted.push(responseGroupSegment(block, segmentStart, index));
       }
       hoisted.push(child);
       segmentStart = index + 1;
@@ -137,7 +188,7 @@ export function hoistProposalBlocksFromResponseGroups(
     if (segmentStart === 0) {
       hoisted.push(block);
     } else if (segmentStart < block.children.length) {
-      hoisted.push({ ...block, children: block.children.slice(segmentStart) });
+      hoisted.push(responseGroupSegment(block, segmentStart, block.children.length));
     }
   }
 
@@ -161,13 +212,21 @@ export function normalizeResponseGroups(
 
   for (let index = 0; index < blocks.length; index += 1) {
     const block = blocks[index];
-    const next = blocks[index + 1];
-    if (block.type !== 'content_group' && next?.type === 'content_group') {
-      const paired = pairAdjacentReasoningGroup(block, next);
-      if (paired) {
-        normalized.push(paired);
-        index += 1;
-        continue;
+    if (block.type === 'thinking') {
+      const preceding: ContentBlock[] = [];
+      let nextIndex = index;
+      while (blocks[nextIndex]?.type === 'thinking') {
+        preceding.push(blocks[nextIndex] as ContentBlock);
+        nextIndex += 1;
+      }
+      const next = blocks[nextIndex];
+      if (next?.type === 'content_group') {
+        const paired = pairAdjacentReasoningGroup(preceding, next);
+        if (paired) {
+          normalized.push(paired);
+          index = nextIndex;
+          continue;
+        }
       }
     }
 
@@ -295,6 +354,32 @@ export function getResponseGroupCurrentBlockIndex(blocks: readonly ContentBlock[
   }
 
   return -1;
+}
+
+export function getResponseGroupCurrentChildIndex(group: ContentBlockGroup): number {
+  const firstCurrent = (group.hasDescription ? 1 : 0) + (group.adjacentReasoningHistoryCount ?? 0);
+  const index = getResponseGroupCurrentBlockIndex(group.children);
+  return index >= firstCurrent ? index : -1;
+}
+
+/** Hidden bookkeeping and empty prompt suggestions do not end a response group. */
+export function isTerminalResponseGroup(
+  blocks: readonly RenderContentBlock[],
+  index: number,
+  isVisible: (block: ContentBlock) => boolean = (block) => block.type !== 'tool_result',
+): boolean {
+  return (
+    blocks[index]?.type === 'content_group' &&
+    !blocks.slice(index + 1).some((block) => {
+      if (block.type === 'content_group') return true;
+      if (getProposalFromBlock(block)) return true;
+      if (block.type === 'text') {
+        return !!parseSuggestedPrompts(block.text ?? block.content ?? '').cleanedContent.trim();
+      }
+      if (block.type === 'thinking') return !!(block.text ?? block.content ?? '').trim();
+      return isVisible(block);
+    })
+  );
 }
 
 export function getResponseGroupCurrentBlock(

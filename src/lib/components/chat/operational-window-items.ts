@@ -15,7 +15,7 @@ import { operationalRowKey, type OperationalRowDescriptor } from './operational-
 
 export interface WindowItem {
   key: string;
-  navigation: { messageId: string; path: string; text?: string };
+  navigation: { messageId: string; path: string; text?: string; aliases?: string[] };
   kind: OperationalRowDescriptor['kind'];
   estimatedHeight: number;
   mountPath: string;
@@ -178,12 +178,15 @@ function projectWindowItems(
             navigation: {
               ...base.navigation,
               text: `${historyItem.title ?? ''}\n\n${historyItem.body}`,
+              aliases: ['', 'summary', 'body'].map(
+                (part) => `${base.navigation.path}:phase:${fragment}${part ? `:${part}` : ''}`,
+              ),
             },
-            kind: historyItem.title ? 'reasoning' : 'content',
+            kind: 'reasoning',
             historyItem,
             fragment,
             key: operationalRowKey(scope, blockId, `history:${fragment}`),
-            estimatedHeight: historyItem.title ? 28 : 48,
+            estimatedHeight: 28,
           }),
         );
         return;
@@ -193,7 +196,11 @@ function projectWindowItems(
         fragments.forEach((text, fragment) =>
           result.push({
             ...base,
-            navigation: { ...base.navigation, text },
+            navigation: {
+              ...base.navigation,
+              text,
+              aliases: [`${base.navigation.path}:title:${fragment}:summary`],
+            },
             block: { ...block, text, content: undefined },
             fragment,
             key: operationalRowKey(
@@ -210,6 +217,15 @@ function projectWindowItems(
     }
     result.push({
       ...base,
+      navigation: {
+        ...base.navigation,
+        aliases:
+          block.type === 'thinking'
+            ? [`${base.navigation.path}:summary`, `${base.navigation.path}:body`]
+            : block.type === 'content_group'
+              ? [`${base.navigation.path}:summary`]
+              : [],
+      },
       fragment: 0,
       key: operationalRowKey(scope, blockId, 'summary'),
       estimatedHeight: kind === 'content' ? 48 : 28,

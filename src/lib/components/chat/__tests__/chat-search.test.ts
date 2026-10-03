@@ -39,7 +39,7 @@ describe('chat search utilities', () => {
     ]);
   });
 
-  it('indexes every visible child in a live response group without a disclosure path', () => {
+  it('indexes live preview and older history with their disclosure owner', () => {
     const message = assistant(
       'assistant-live',
       [
@@ -51,14 +51,7 @@ describe('chat search utilities', () => {
     );
 
     expect(findChatSearchMatches([message], 'earlier', new Map())).toEqual([
-      {
-        messageId: 'assistant-live',
-        matchIndexInMessage: 0,
-        occurrenceInBlock: 0,
-        turnKey: 'assistant-live',
-        blockPath: 'b:0:c:0',
-        disclosurePath: [],
-      },
+      expect.objectContaining({ blockPath: 'b:0:c:0', disclosurePath: ['group:b:0'] }),
     ]);
     expect(findChatSearchMatches([message], 'current live', new Map())).toEqual([
       {
@@ -67,7 +60,7 @@ describe('chat search utilities', () => {
         occurrenceInBlock: 0,
         turnKey: 'assistant-live',
         blockPath: 'b:0:c:1',
-        disclosurePath: [],
+        disclosurePath: ['group:b:0'],
       },
     ]);
   });
@@ -78,17 +71,16 @@ describe('chat search utilities', () => {
       [
         { type: 'text', text: '<group:Inspection>' },
         { type: 'thinking', text: 'Completed searchable thought.' },
-        { type: 'tool_use', id: 'later-tool', name: 'view', input: {} },
       ],
       true,
     );
     expect(findChatSearchMatches([message], 'searchable thought', new Map())[0]).toMatchObject({
-      blockPath: 'b:0:c:0',
-      disclosurePath: ['thinking:b:0:c:0'],
+      blockPath: 'b:0:c:0:body',
+      disclosurePath: ['group:b:0', 'reasoning:b:0:c:0'],
     });
   });
 
-  it('indexes live adjacent text while excluding reasoning history', () => {
+  it('indexes adjacent description and history when no current child exists', () => {
     const message = assistant(
       'assistant-adjacent-preview',
       [
@@ -105,10 +97,15 @@ describe('chat search utilities', () => {
     );
 
     expect(findChatSearchMatches([message], 'adjacent description', new Map())).toHaveLength(1);
-    expect(findChatSearchMatches([message], 'Hidden predecessor', new Map())).toEqual([]);
+    expect(findChatSearchMatches([message], 'Hidden predecessor', new Map())).toEqual([
+      expect.objectContaining({
+        blockPath: 'b:0:c:1:phase:0:summary',
+        disclosurePath: ['group:b:0'],
+      }),
+    ]);
   });
 
-  it('excludes the alternate reasoning description and history while collapsed', () => {
+  it('indexes the alternate reasoning description and history while collapsed', () => {
     const blocks = [
       { type: 'text', text: '<group:Prepping>hidden group description' },
       { type: 'thinking', text: 'Reasoning\n\nhidden first reasoning body' },
@@ -118,13 +115,13 @@ describe('chat search utilities', () => {
 
     expect(
       findChatSearchMatches([assistant('alternate-complete', blocks)], 'hidden', new Map()),
-    ).toEqual([]);
+    ).toHaveLength(3);
     expect(
       findChatSearchMatches([assistant('alternate-complete', blocks)], 'visible final', new Map()),
     ).toHaveLength(1);
   });
 
-  it('indexes completed headingless reasoning inline without disclosure state', () => {
+  it('indexes completed headingless reasoning with only its phase disclosure', () => {
     const message = assistant('inline-headingless', [
       {
         type: 'thinking',
@@ -141,13 +138,13 @@ describe('chat search utilities', () => {
         matchIndexInMessage: 0,
         occurrenceInBlock: 0,
         turnKey: 'inline-headingless',
-        blockPath: 'b:0:c:1',
-        disclosurePath: [],
+        blockPath: 'b:0:c:1:phase:0:body',
+        disclosurePath: ['reasoning:b:0:c:1:phase:0'],
       },
     ]);
   });
 
-  it('reveals meaningfully titled completed reasoning while preserving generic exclusions', () => {
+  it('reveals meaningfully titled completed reasoning through its body owner', () => {
     const message = assistant('titled-reasoning', [
       { type: 'text', text: '<group:Prepping>Visible titled description.' },
       {
@@ -163,8 +160,8 @@ describe('chat search utilities', () => {
         matchIndexInMessage: 0,
         occurrenceInBlock: 0,
         turnKey: 'titled-reasoning',
-        blockPath: 'b:0:c:1',
-        disclosurePath: ['group:b:0'],
+        blockPath: 'b:0:c:1:phase:0:body',
+        disclosurePath: ['group:b:0', 'reasoning:b:0:c:1:phase:0'],
       },
     ]);
   });

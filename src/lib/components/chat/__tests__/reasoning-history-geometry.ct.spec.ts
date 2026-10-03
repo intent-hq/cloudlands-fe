@@ -33,6 +33,11 @@ async function openGroup(fixture: Locator): Promise<Locator> {
 
 async function assertExpandedFixture(fixture: Locator, includeAnswer: boolean) {
   const group = fixture.getByTestId('response-group');
+  const bodyDisclosures = group.locator('[data-testid="reasoning-history-row"] button');
+  await expect(bodyDisclosures).toHaveCount(3);
+  for (const disclosure of await bodyDisclosures.all()) {
+    if ((await disclosure.getAttribute('aria-expanded')) !== 'true') await disclosure.click();
+  }
   const children = group.locator('[data-response-group-child]');
   await expect(children).toHaveCount(6);
   expect(
@@ -92,7 +97,7 @@ test('preserves nested and inline content in both renderers', async ({ mount, pa
   for (const renderer of rendererIds) {
     const fixture = component.getByTestId(`${renderer}-titled`);
     await openGroup(fixture);
-    const details = fixture.locator('[data-operational-expanded-content]');
+    const details = fixture.locator('[data-operational-expanded-content]').first();
     await expect(details).toBeVisible();
     await expect.poll(() => details.evaluate((element) => element.getAnimations().length)).toBe(0);
     await assertExpandedFixture(fixture, true);
@@ -100,6 +105,10 @@ test('preserves nested and inline content in both renderers', async ({ mount, pa
     const inline = component.getByTestId(`${renderer}-inline`);
     await expect(inline.getByTestId('response-group')).toHaveCount(0);
     await expect(inline.locator('[data-reasoning-section-boundary]')).toHaveCount(0);
+    await expect(inline.getByRole('button', { name: 'Reasoning' })).toHaveCount(2);
+    for (const disclosure of await inline.getByRole('button', { name: 'Reasoning' }).all()) {
+      await disclosure.click();
+    }
     const inlineText = (await inline.textContent()) ?? '';
     for (const value of [
       'Inline group description.',
@@ -316,7 +325,7 @@ for (const renderer of rendererIds) {
       });
       const verify = async (stage: 'titles' | 'body' | 'following' | 'completed') => {
         const fixture = component.getByTestId('compact-reasoning-fixture');
-        await openReasoning(fixture);
+        await openReasoning(fixture, stage === 'titles' ? 0 : 1);
         await assertContentOnceInOrder(fixture, [
           ...(shape === 'single' ? growthTitles.slice(0, 1) : growthTitles),
           ...(stage === 'titles' ? [] : growthBody.split('\n\n')),

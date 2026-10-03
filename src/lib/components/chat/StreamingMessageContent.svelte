@@ -71,6 +71,8 @@
   import {
     dedupeKeys,
     getResponseGroupChildBoundary,
+    getResponseGroupCurrentChildIndex,
+    isTerminalResponseGroup,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
@@ -586,33 +588,6 @@
   function isVisibleGroupChild(block: ContentBlock): boolean {
     return block.type !== 'tool_result' || isStandaloneToolResult(toolResultClassification, block);
   }
-
-  let lastVisibleTopLevelBlockIndex = $derived.by(() => {
-    for (let i = groupedBlocks.length - 1; i >= 0; i--) {
-      if (isVisibleTopLevelBlock(groupedBlocks[i])) return i;
-    }
-    return -1;
-  });
-
-  /**
-   * Index of the last group child that actually renders. tool_result children
-   * are skipped by the group render loop, and text children that are empty
-   * after stripping suggested prompts render nothing — a hidden trailing
-   * child must not steal the "last block" streaming flag from the final
-   * visible one.
-   */
-  function lastRenderableChildIndex(children: ContentBlock[]): number {
-    for (let i = children.length - 1; i >= 0; i--) {
-      const child = children[i];
-      if (!isVisibleGroupChild(child)) continue;
-      if (child.type === 'text') {
-        const text = child.text || (child as any).content || '';
-        if (!parseSuggestedPrompts(text).cleanedContent.trim()) continue;
-      }
-      return i;
-    }
-    return -1;
-  }
   const reserveToolEntrance = createToolEntranceReservations(operationalPanel, enteredToolKeys);
   function projectWindowItems(...args: Parameters<ReturnType<typeof createWindowItemProjector>>) {
     const animate = isStreaming && areAnimationsEnabled() && !prefersReducedMotion();
@@ -768,6 +743,7 @@
   searchPath: string | undefined = undefined,
   rowKey: string = parsedKey,
   historyItem: ReasoningHistoryItem | undefined = undefined,
+  fragment = 0,
 )}
   {@const proposal = getProposalFromBlock(block)}
   {#if proposal !== null}
@@ -945,9 +921,12 @@
     {#if reasoningHistory}
       <ReasoningHistoryBlock
         item={historyItem}
+        {fragment}
+        saved={operationalPanel.state(rowKey, () => ({}))}
         {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
+        {searchPath}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         {adjacentOperationalRow}
@@ -955,6 +934,7 @@
     {:else}
       <ThinkingBlock
         {searchPath}
+        {fragment}
         saved={operationalPanel.state(rowKey, () => ({}))}
         {allowFileMedia}
         canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
@@ -1026,7 +1006,7 @@
       ? 'calc(var(--operational-row-inline-padding) + var(--operational-leading-slot-size) + var(--operational-leading-gap))'
       : undefined}
     data-message-content-block={childBlock.type}
-    data-chat-search-block-path={childBlock.type === 'tool_result'
+    data-chat-search-block-path={childBlock.type === 'tool_result' || childBlock.type === 'thinking'
       ? undefined
       : chatSearchBlockPath(groupIndex, childIndex)}
     data-response-group-child
@@ -1038,7 +1018,7 @@
       `${groupIndex}-${childIndex}`,
       group.isStreaming &&
         groupIndex === groupedBlocks.length - 1 &&
-        childIndex === lastRenderableChildIndex(group.children),
+        childIndex === getResponseGroupCurrentChildIndex(group),
       nested,
       item.fragment > 0 ||
         isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
@@ -1046,6 +1026,7 @@
       chatSearchBlockPath(groupIndex, childIndex),
       item.key,
       item.historyItem,
+      item.fragment,
     )}
   </div>
 {/snippet}
@@ -1055,6 +1036,20 @@
   {@const blockIndex = item.blockIndex}
   {#if block.type === 'content_group'}
     {@const group = block}
+    {@const currentIndex = getResponseGroupCurrentChildIndex(group)}
+    {#snippet currentChild()}
+      <OperationalWindow
+        scope={`${rowScope}:group:${item.key}`}
+        items={projectWindowItems(
+          group.children,
+          rowScope,
+          (child) => isVisibleGroupChild(child as ContentBlock),
+          group,
+          blockIndex,
+        ).filter((child) => child.childIndex === currentIndex)}
+        row={renderWindowItem}
+      />
+    {/snippet}
     <div
       class="content-block content-block--group {getOperationalClusterSpacingClass(
         groupedBlocks,
@@ -1070,7 +1065,8 @@
         saved={operationalPanel.state(item.key, () => ({}))}
         name={group.name}
         isStreaming={group.isStreaming}
-        isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+        isTerminal={isTerminalResponseGroup(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}
+        currentChild={currentIndex >= 0 ? currentChild : undefined}
         {isLastConversationMessage}
         blocks={group.children.filter(isVisibleGroupChild)}
         searchPath={chatSearchBlockPath(blockIndex)}
@@ -1133,6 +1129,7 @@
         chatSearchBlockPath(blockIndex),
         item.key,
         item.historyItem,
+        item.fragment,
       )}
     </div>
   {/if}
