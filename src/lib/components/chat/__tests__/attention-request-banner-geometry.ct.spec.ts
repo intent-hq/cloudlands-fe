@@ -23,7 +23,7 @@ for (const kind of ['blocker', 'discussion'] as const) {
           const header = component.getByTestId('attention-request-header');
           const label = component.getByTestId('attention-request-label');
           const reason = component.getByTestId('attention-request-reason');
-          const timestamp = header.locator('[title]');
+          const timestamp = header.locator('[data-slot="tooltip-trigger"]');
           if (kind === 'discussion')
             await label.evaluate((node, value) => (node.textContent = value), longLabel);
 
@@ -34,7 +34,9 @@ for (const kind of ['blocker', 'discussion'] as const) {
             const labelBox = box('attention-request-label');
             const reasonBox = box('attention-request-reason');
             const timestampBox = root
-              .querySelector('[data-testid="attention-request-header"] [title]')!
+              .querySelector(
+                '[data-testid="attention-request-header"] [data-slot="tooltip-trigger"]',
+              )!
               .getBoundingClientRect();
             const bannerBox = box('attention-request-banner');
             const transcript = root.firstElementChild as HTMLElement;
@@ -84,8 +86,8 @@ for (const missing of ['reason', 'timestamp'] as const) {
     await expect(component.getByTestId('attention-request-reason')).toHaveCount(
       missing === 'reason' ? 0 : 1,
     );
-    await expect(component.getByTestId('attention-request-header').locator('[title]')).toHaveCount(
-      missing === 'timestamp' ? 0 : 1,
-    );
+    await expect(
+      component.getByTestId('attention-request-header').locator('[data-slot="tooltip-trigger"]'),
+    ).toHaveCount(missing === 'timestamp' ? 0 : 1);
   });
 }

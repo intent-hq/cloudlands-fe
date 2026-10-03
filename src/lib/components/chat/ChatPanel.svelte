@@ -220,6 +220,10 @@
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import QuestionComposer from './questions/QuestionComposer.svelte';
   import {
+    getChatAttentionFocusAction,
+    type ChatAttentionFocusRequest,
+  } from './chat-attention-focus';
+  import {
     deriveMarkedQuestionRecoveryState,
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
@@ -456,6 +460,8 @@
     draftPrompt?: string | null;
     /** Focus the prompt once on mount after the input component is ready. */
     autoFocus?: boolean;
+    /** Explicit Home attention click; does not submit or replace draft content. */
+    attentionFocusRequest?: ChatAttentionFocusRequest;
     onClose?: () => void;
     onFocus?: () => void;
     onChatUpdate?: (update: {
@@ -482,6 +488,7 @@
     initialPrompt: initialPromptProp = null,
     draftPrompt = null,
     autoFocus = false,
+    attentionFocusRequest,
 
     onClose: _onClose, // Prefix with underscore to indicate intentionally unused
     onFocus,
@@ -5815,6 +5822,38 @@
     inputComponent?.focus?.();
   }
 
+  let questionWizard = $state<QuestionWizard>();
+  let handledAttentionFocus = $state(0);
+  $effect(() => {
+    const request = attentionFocusRequest;
+    const action = getChatAttentionFocusAction(request, {
+      active: isActive,
+      handledRequestId: handledAttentionFocus,
+      questionMessageId: pendingQuestions?.messageId ?? null,
+      collapsed: questionWizardCollapsed,
+      questionReady: !!questionWizard,
+      promptReady: !!inputComponent && !draftManager.gateVisible,
+    });
+    if (!request || !action) return;
+    if (action === 'expand-question' || action === 'collapse-question') {
+      const messageId = pendingQuestions?.messageId;
+      if (!messageId) return;
+      const collapsed = action === 'collapse-question';
+      questionWizardCollapsedOverride = { messageId, collapsed };
+      saveWizardCollapsed(wizardDraftKey(agentId, messageId), collapsed);
+      return;
+    }
+    let cancelled = false;
+    void tick().then(() => {
+      if (cancelled || !isActive || attentionFocusRequest?.requestId !== request.requestId) return;
+      const focused = action === 'focus-question' ? questionWizard?.focusQuestion() : focusPrompt();
+      if (focused) handledAttentionFocus = request.requestId;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
   // Export functions for parent components
   export function focusPrompt(): boolean {
     if (!isActive) return false;
@@ -7339,6 +7378,7 @@
                 {#if pendingQuestions}
                   {#key pendingQuestions.messageId}
                     <QuestionWizard
+                      bind:this={questionWizard}
                       questions={pendingQuestions.questions}
                       draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
                       collapsed={questionWizardCollapsed}

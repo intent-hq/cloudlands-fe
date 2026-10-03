@@ -133,10 +133,7 @@
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import { SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import {
-    togglePanel,
-    setShowCreateModal,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -618,9 +615,11 @@
       description: 'Command Palette (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCommandPalette,
     });
-    // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
+    // Cmd+O (Mac) / Ctrl+O (Win/Linux) opens Home.
     registerWorkspaceSpacesShortcut(paletteShortcuts, {
-      toggleSpaces: () => appStore.dispatch(togglePanel('all-workspaces')),
+      toggleSpaces: () => {
+        void goto('/');
+      },
       resolveBinding: getEffectiveShortcut,
     });
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
@@ -991,7 +990,9 @@
           class="workspace-sidebar-frame relative z-40 flex min-h-0 shrink-0 bg-transparent"
           data-sidebar-panel-frame
         >
-          <SidebarPanel />
+          {#if routePathname !== '/'}
+            <SidebarPanel />
+          {/if}
         </div>
 
         <!-- Workspace content area -->

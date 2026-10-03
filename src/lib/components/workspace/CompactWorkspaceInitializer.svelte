@@ -1124,6 +1124,13 @@
           const selection = await resolveGitHubPrefillSelection(snapshot);
           if (isStale()) return;
           handleIssueSelect(`#${prefill.number}`, selection);
+          // Home already read the PR head. Reflect that exact branch in the form
+          // as well as selectedPRBranch, which the create request submits.
+          if (snapshot.kind === 'pr' && snapshot.sourceBranch) {
+            handleBranchChange(
+              new CustomEvent('branchChange', { detail: { branch: snapshot.sourceBranch } }),
+            );
+          }
           if (autoFocus) richTextarea?.focus();
         } catch (err) {
           logger.error('Failed to apply GitHub prefill', err);

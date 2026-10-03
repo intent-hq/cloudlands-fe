@@ -90,30 +90,6 @@ const virtualModules: Record<string, string> = {
       get state() { return {}; },
       getReadableState() { return { subscribe(run) { run({}); return () => {}; } }; },
     };`,
-  '$shared/paraglide/messages.js': `
-    export const m = {
-      layout_panelTabBar_close_label: () => 'Close',
-      layout_panelTabBar_closeAllOthers_label: () => 'Close all others',
-      layout_panelTabBar_closeTabsToRight_label: () => 'Close tabs to the right',
-      layout_workspaceTabStrip_openSpaces_ariaLabel: () => 'Open spaces',
-      layout_workspaceTabStrip_untitled_label: () => 'Untitled',
-      layout_workspaceTabStrip_status_ariaLabel: ({ name, statuses }) => name + '. ' + statuses,
-      layout_workspaceTabStrip_reorderAnnouncement: ({ name, position }) => name + ' ' + position,
-      layout_workspaceTabStrip_close_ariaLabel: ({ name }) => 'Close ' + name,
-      layout_workspaceTabStrip_loading_ariaLabel: ({ workspaceId }) => 'Loading ' + workspaceId,
-      workspace_statusIcon_failed_label: () => 'Failed',
-      workspace_statusIcon_blocked_label: () => 'Blocked',
-      workspace_statusIcon_needsAttention_label: () => 'Needs attention',
-      workspace_statusIcon_inProgress_label: () => 'In progress',
-      workspace_taskStatus_waiting_label: () => 'Waiting',
-      hud_workspaceState_unread_label: () => 'Unread',
-      workspace_statusIcon_notStarted_label: () => 'Not started',
-      workspace_statusIcon_idle_label: () => 'Idle',
-      workspace_statusIcon_complete_label: () => 'Complete',
-      workspace_statusIcon_prReady_label: () => 'PR ready',
-      workspace_statusIcon_prOpen_label: () => 'PR open',
-      workspace_statusIcon_prMerged_label: () => 'PR merged',
-    };`,
   '@fortawesome/free-solid-svg-icons': `
     export const faArrowRight = { iconName: 'arrow-right' };
     export const faCheck = { iconName: 'check' };

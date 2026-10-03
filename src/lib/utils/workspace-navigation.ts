@@ -401,10 +401,6 @@ export function getSettingsPreviousPath(): string {
 export async function navigateBackFromSettings(): Promise<void> {
   const prevPath = getSettingsPreviousPath();
   logger.info('[navigateBackFromSettings] Navigating back to:', prevPath);
-  if (prevPath === '/') {
-    await navigateToFirstWorkspace();
-    return;
-  }
   await goto(prevPath);
 }
 

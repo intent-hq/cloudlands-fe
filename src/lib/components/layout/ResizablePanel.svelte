@@ -933,7 +933,7 @@
         onkeydown={handleHandleKeydown}
         tabindex={0}
         aria-label={m.layout_resizable_resizePanel_ariaLabel()}
-        title={m.layout_resizable_dragToResize_tooltip()}
+        tooltip={m.layout_resizable_dragToResize_tooltip()}
       ></Button>
     {/if}
   </div>
@@ -962,7 +962,7 @@
         onkeydown={handleHandleKeydown}
         tabindex={0}
         aria-label={m.layout_resizable_resizePanelHeight_ariaLabel()}
-        title={m.layout_resizable_dragToResizeHeight_tooltip()}
+        tooltip={m.layout_resizable_dragToResizeHeight_tooltip()}
       ></Button>
     {/if}
 
