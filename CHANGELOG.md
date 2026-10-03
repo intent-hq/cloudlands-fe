@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.202.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.201.2...v2.202.0) (2026-10-03)
+
+
+### 🚀 Features
+
+* autocomplete instance invitation accounts ([#3138](https://github.com/intent-hq/cloudlands-fe/issues/3138)) ([333db71](https://github.com/intent-hq/cloudlands-fe/commit/333db712a03cf6ffa8cd8ba008a481b4735ca142))
+
+
+### 🐛 Bug Fixes
+
+* exclude instance members from archive guest warnings ([#3148](https://github.com/intent-hq/cloudlands-fe/issues/3148)) ([5e06f55](https://github.com/intent-hq/cloudlands-fe/commit/5e06f5593db189c6a0a61efe502ed196a68e3da2))
+* follow presence avatars to reachable workspace views ([#3150](https://github.com/intent-hq/cloudlands-fe/issues/3150)) ([3580d7b](https://github.com/intent-hq/cloudlands-fe/commit/3580d7bef5d84627a69bfea6b2591a88787619c5))
+* match script monitor row title size to sibling subscription rows ([#3154](https://github.com/intent-hq/cloudlands-fe/issues/3154)) ([44577cb](https://github.com/intent-hq/cloudlands-fe/commit/44577cbff447a120f168f94b1ee3cfa71137debf))
+* separate joined instances and restore invited instance reopening ([#3152](https://github.com/intent-hq/cloudlands-fe/issues/3152)) ([948e9a2](https://github.com/intent-hq/cloudlands-fe/commit/948e9a2f17d2aad30cd326057b3331e2519e12e8))
+* show readable chat authors and preserve input focus ([#3139](https://github.com/intent-hq/cloudlands-fe/issues/3139)) ([3eacc19](https://github.com/intent-hq/cloudlands-fe/commit/3eacc193127a01ce520ef7e52681aad8cb7584ba))
+* unify instance users and live connection status ([#6642](https://github.com/intent-hq/cloudlands-fe/issues/6642)) ([#3143](https://github.com/intent-hq/cloudlands-fe/issues/3143)) ([22fff99](https://github.com/intent-hq/cloudlands-fe/commit/22fff9943b83036c9c5ceed6754cf9fa57ae40da))
+* verify Git for admitted shared-instance members ([#6662](https://github.com/intent-hq/cloudlands-fe/issues/6662)) ([#3149](https://github.com/intent-hq/cloudlands-fe/issues/3149)) ([266451f](https://github.com/intent-hq/cloudlands-fe/commit/266451f18afa8954d1f7fdee3fc14052230b2ca8))
+
 ## [2.201.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.201.1...v2.201.2) (2026-10-03)
 
 
