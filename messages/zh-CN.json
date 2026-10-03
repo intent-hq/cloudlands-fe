@@ -7029,12 +7029,12 @@
   "collaboration_pin_provider_label": "身份提供商",
   "collaboration_pin_instance_label": "GitLab 实例",
   "collaboration_pin_account_label": "账号用户名",
-  "collaboration_host_invite_title": "邀请主机成员",
+  "collaboration_host_invite_title": "邀请用户",
   "collaboration_host_inviteDialog_title": "邀请加入此实例",
   "collaboration_host_invite_description": "此账号专属链接只能使用一次，七天后过期。它不是个人设备链接。",
   "collaboration_host_invite_scope": "访问当前及未来的所有工作区",
   "collaboration_host_invite_permissions": "成员可以创建、全面管理和删除当前及未来的所有工作区，并使用主机可用的代码仓库及 AI 配置运行命令和代理。只有所有者可以管理主机。",
-  "collaboration_host_members_title": "主机成员列表",
+  "collaboration_host_members_title": "实例用户",
   "collaboration_host_member_label": "主机成员",
   "collaboration_host_refresh_label": "刷新",
   "collaboration_host_expires_label": "过期时间：{date}",
@@ -7210,5 +7210,8 @@
   "isolatedTest_invitationUnavailable_description": "此测试版本仅连接其专用的内置守护进程。请在常规 Intent 应用中打开邀请。",
   "isolatedTest_invitationUnavailable_title": "此测试应用不支持邀请",
   "inviteProgress_admission_enableButton": "启用 Multiplayer",
-  "inviteProgress_admission_enable_error": "无法启用 Multiplayer 或确认就绪状态。请选择“启用 Multiplayer”重试。"
+  "inviteProgress_admission_enable_error": "无法启用 Multiplayer 或确认就绪状态。请选择“启用 Multiplayer”重试。",
+  "collaboration_instanceUsers_invited_label": "已邀请",
+  "collaboration_instanceUsers_loading_label": "正在检查状态…",
+  "collaboration_instanceUsers_unavailable_label": "状态不可用"
 }

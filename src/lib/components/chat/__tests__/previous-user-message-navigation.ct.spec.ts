@@ -724,6 +724,56 @@ test('loading failure leaves transcript intact and the arrow retries', async ({ 
   await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail","reply-tail"]');
 });
 
+test('discard replay preserves pending navigation and the landed reading position', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      messages: automatedTail,
+      historyStartLoaded: false,
+      discardSnapshot: true,
+      deferPages: true,
+      totalMessages: automatedTail.length + 5,
+      conversationPages: [
+        conversationPage([
+          historyMessage('replayed-human', 'user', 'Retain this navigation target', 899),
+          ...automatedTail,
+        ]),
+      ],
+    },
+  });
+  const source = component.locator('[data-message-id="reply-tail"]');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+  const replay = () =>
+    component.getByTestId('replay-discard').evaluate((node: HTMLButtonElement) => node.click());
+  await replay();
+  await releasePage(component);
+  await expectAtMessage(component, 'replayed-human');
+  await expect(component.getByTestId('navigation-state')).toContainText('replayed-human');
+  await replay();
+  // Let the discard effect's next-tick re-anchor and the quiet spacer reconcile run.
+  await page.waitForTimeout(500);
+  await expectAtMessage(component, 'replayed-human');
+  await bottomArrow(component).expectAtBottom(false);
+  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+  await component
+    .getByTestId('discard-transcript')
+    .evaluate((node: HTMLButtonElement) => node.click());
+  await expect(component.getByTestId('navigation-state')).not.toContainText('replayed-human');
+  await bottomArrow(component).expectAtBottom(true);
+  await expect
+    .poll(() =>
+      component
+        .getByTestId('chat-transcript-scroll-viewport')
+        .evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+    )
+    .toBeLessThanOrEqual(2);
+});
+
 for (const cancel of ['wheel', 'discard', 'newer-navigation'] as const) {
   test(`pending unloaded navigation is cancelled by ${cancel}`, async ({ mount, page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });

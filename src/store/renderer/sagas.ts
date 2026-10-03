@@ -1,3 +1,4 @@
+import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { repositoryContextSaga } from './slices/repository-context/sagas/repository-context-saga';
@@ -177,6 +178,7 @@ export const sagas = [
   workspaceTransferSaga,
   workspaceShareSaga,
   hostMembershipSaga,
+  hostUserPresenceSaga,
   workspaceImportSaga,
   scriptsOperationSaga,
   lifecycleReadSaga,
