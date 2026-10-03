@@ -116,7 +116,6 @@ function* typecheckContextEffects(): Generator {
   // @ts-expect-error FIFO context extractors must return a string
   yield* takeEveryByContextFIFO(typedAction, () => 1, typedWorker, {}, { enabled: true });
 
-  // @ts-expect-error FIFO prefix arguments must match the worker's leading parameters
   yield* takeEveryByContextFIFO(
     takeableChannel,
     (message) => message.contextId,
@@ -125,6 +124,7 @@ function* typecheckContextEffects(): Generator {
       void message;
     },
     {},
+    // @ts-expect-error FIFO prefix arguments must match the worker's leading parameters
     'wrong',
   );
 
@@ -183,14 +183,13 @@ function* typecheckContextEffects(): Generator {
     'event',
   );
 
-  // @ts-expect-error channel context extractors must return a string
   yield* takeLatestInContext(
     takeableChannel,
+    // @ts-expect-error channel context extractors must return a string
     () => 1,
     function* worker() {},
   );
 
-  // @ts-expect-error channel prefix arguments must match the worker's leading parameters
   yield* takeLeadingInContext(
     takeableChannel,
     (message) => message.contextId,
@@ -198,6 +197,7 @@ function* typecheckContextEffects(): Generator {
       void prefix;
       void message;
     },
+    // @ts-expect-error channel prefix arguments must match the worker's leading parameters
     'wrong',
   );
 
