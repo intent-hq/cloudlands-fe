@@ -160,6 +160,8 @@ export interface TranscriptSnapshotMeta {
   oldestMessageId?: string;
   /** §7.1 resume disposition when the registration requested one. */
   resumed?: boolean;
+  /** Local hydration replay; its original discard must not reset the current viewport. */
+  replayed?: true;
   /** Monotonic per-agent counter so waiters can detect a NEW snapshot. */
   seq: number;
 }

@@ -92,6 +92,7 @@ import {
   selectChatAgentState,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
+  selectAgentHistoryMessages,
   selectAgentMessages,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -284,12 +285,19 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     '%s does not rewind successful older-page reads during loading',
     async (trigger) => {
       const agentId = `load-cursor-${trigger}`;
+      const page = (start: number) =>
+        Array.from({ length: 5 }, (_, i) =>
+          makeMessage(`m-${start + i}`, `Message ${start + i}`, {
+            timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, start + i)).toISOString(),
+          }),
+        );
+      const history = () => selectAgentHistoryMessages.select(appStore.state, agentId);
       seedSession(agentId);
       const stopScrollback = appStore.runSaga(chatScrollbackSaga);
       try {
         const sub = openChat(agentId);
         const snapshot: ChatTranscript = {
-          ...transcript([makeMessage('m-15', 'Newest window')]),
+          ...transcript(page(15)),
           fromSnapshot: true,
           truncated: true,
           totalMessages: 20,
@@ -300,14 +308,14 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         expect(appClient.agents.getConversation).not.toHaveBeenCalled();
         vi.mocked(appClient.agents.getConversation)
           .mockResolvedValueOnce({
-            messages: [makeMessage('m-10', 'Older page')],
+            messages: page(10),
             truncated: true,
             totalMessages: 20,
             nextToken: 'before-10',
             prevToken: 'after-10',
           })
           .mockResolvedValueOnce({
-            messages: [makeMessage('m-5', 'Next older page')],
+            messages: page(5),
             truncated: true,
             totalMessages: 20,
             nextToken: 'before-5',
@@ -319,24 +327,44 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
             false,
           ),
         );
+        expect(history()).toEqual(page(10));
         if (trigger !== 'snapshot refresh') {
           appStore.dispatch(transcriptHydrationStarted(agentId));
           appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
         } else {
           // A refreshed snapshot can change its newest rows while retaining
           // the same oldest row/cursor (e.g. an in-flight turn update).
-          sub.handler({ ...snapshot, messages: [makeMessage('m-15', 'Refreshed window')] });
+          sub.handler({ ...snapshot, messages: page(15) });
         }
+        const afterReplay = history();
         appStore.dispatch(olderHistoryPageRequested(WS, agentId));
         await vi.waitFor(() =>
           expect(selectChatAgentState.select(appStore.state, agentId).fetchingOlderHistory).toBe(
             false,
           ),
         );
+        expect.soft(afterReplay).toEqual(page(10));
+        expect(history()).toEqual([...page(5), ...page(10)]);
+        expect([...history(), ...selectAgentMessages.select(appStore.state, agentId)]).toEqual([
+          ...page(5),
+          ...page(10),
+          ...page(15),
+        ]);
         expect(vi.mocked(appClient.agents.getConversation).mock.calls).toEqual([
           [agentId, 5, 'before-15', undefined, undefined, WS],
           [agentId, 5, 'before-10', undefined, undefined, WS],
         ]);
+        if (trigger === 'discard replay') {
+          const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
+          sub.handler({ ...snapshot });
+          expect(history()).toEqual([]);
+          expect(selectAgentMessages.select(appStore.state, agentId)).toEqual(page(15));
+          expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+            scrollbackOlderToken: 'before-15',
+            scrollbackDiscardEpoch: epoch + 1,
+            fetchingOlderHistory: false,
+          });
+        }
       } finally {
         stopScrollback();
       }

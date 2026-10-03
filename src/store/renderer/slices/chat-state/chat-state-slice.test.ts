@@ -1543,6 +1543,21 @@ describe('chatState selectors', () => {
     expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('older-1');
   });
 
+  it('exposes replay identity to snapshot consumers and clears it on fresh discard', () => {
+    const meta = { truncated: true, totalMessages: 20, resumed: false };
+    const replayed = chatStateReducer(
+      initialState,
+      chatTranscriptSnapshotApplied(AGENT, meta, true),
+    );
+    expect(replayed.byAgentId[AGENT].transcriptSnapshot).toMatchObject({
+      ...meta,
+      replayed: true,
+    });
+    const fresh = chatStateReducer(replayed, chatTranscriptSnapshotApplied(AGENT, meta));
+    expect(fresh.byAgentId[AGENT].transcriptSnapshot).not.toHaveProperty('replayed');
+    expect(fresh.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(1);
+  });
+
   it('a local snapshot replay seeds the cursor when chat state was lost', () => {
     const state = chatStateReducer(
       initialState,

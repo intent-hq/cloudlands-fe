@@ -830,7 +830,7 @@ export const transcriptHydrationFailed = createAction<[agentId: string]>(
  * replay, which must not repeat the original snapshot's scrollback discard.
  */
 export const chatTranscriptSnapshotApplied = createAction<
-  [agentId: string, meta: Omit<TranscriptSnapshotMeta, 'seq'>, replayed?: true]
+  [agentId: string, meta: Omit<TranscriptSnapshotMeta, 'seq' | 'replayed'>, replayed?: true]
 >('chatState/transcriptSnapshotApplied');
 
 /** Standing chat.subscribe lifecycle phase reported by the live client. */
@@ -1372,7 +1372,11 @@ chatStateReducer.with(
     const agent = getAgent(state, agentId);
     return updateAgent(state, agentId, {
       agentId,
-      transcriptSnapshot: { ...meta, seq: (agent.transcriptSnapshot?.seq ?? 0) + 1 },
+      transcriptSnapshot: {
+        ...meta,
+        ...(replayed ? { replayed } : {}),
+        seq: (agent.transcriptSnapshot?.seq ?? 0) + 1,
+      },
       // A snapshot from the CURRENT subscription is exactly what the
       // switch-back reveal gate waits for — reveal the transcript.
       awaitingSwitchBackSnapshot: false,
