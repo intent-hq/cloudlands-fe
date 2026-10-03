@@ -136,7 +136,8 @@ test('keeps the Mac Home hit target clear of traffic lights through live zoom an
       await page.evaluate(async () => {
         const { goto, page } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
         await goto('/workspace/titlebar-test');
-        if (page.url.pathname !== '/workspace/titlebar-test') throw new Error('Route did not reset');
+        if (page.url.pathname !== '/workspace/titlebar-test')
+          throw new Error('Route did not reset');
       });
       await expect(toggle).not.toHaveAttribute('aria-current');
       if (activation === 'click') await toggle.click();
