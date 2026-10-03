@@ -101,3 +101,51 @@ it('independently distinguishes native true-end Tab live trailing paragraph from
     editor.destroy();
   }
 });
+
+for (const ending of [' ', '  ', '\t'])
+  it(`retains native live trailing whitespace after a split (${JSON.stringify(ending)})`, async () => {
+    const source = 'before' + ending + 'rest';
+    const oracle = await native(source),
+      service = new SourceJournal(() => source, 1),
+      session = new DocumentSession(service, document.createElement('div'));
+    try {
+      await session.show(0);
+      // Native HTML parsing collapses this raw whitespace run into one PM space.
+      for (const e of [oracle, session.editor!]) {
+        e.commands.setTextSelection(8);
+        expect(e.commands.splitBlock()).toBe(true);
+      }
+      expect(session.error).toBe('');
+      expect(session.editor!.getJSON()).toEqual(oracle.getJSON());
+      const saved = 'before' + ending + '\n\nrest';
+      expect(service.region(0)).toBe(saved);
+      session.save();
+      const old = session.editor!;
+      await session.seek(0);
+      expect(old.isDestroyed).toBe(true);
+      expect(session.editor!.getJSON()).toEqual(oracle.getJSON());
+      const canonical = await native(saved),
+        fresh = new DocumentSession(
+          new SourceJournal(() => saved, 1),
+          document.createElement('div'),
+        );
+      try {
+        await fresh.show(0);
+        expect(fresh.editor!.getJSON()).toEqual(canonical.getJSON());
+      } finally {
+        canonical.destroy();
+        fresh.destroy();
+      }
+      await session.history();
+      oracle.commands.undo();
+      expect(service.region(0)).toBe(source);
+      expect(session.editor!.getJSON()).toEqual(oracle.getJSON());
+      await session.history(true);
+      oracle.commands.redo();
+      expect(service.region(0)).toBe(saved);
+      expect(session.editor!.getJSON()).toEqual(oracle.getJSON());
+    } finally {
+      oracle.destroy();
+      session.destroy();
+    }
+  });

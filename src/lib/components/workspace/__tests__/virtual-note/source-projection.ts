@@ -535,6 +535,10 @@ export class SourceProjection {
           !token.marks.length &&
           token.pm + 1 === pm &&
           token.to === base + raw.length &&
+          !context?.paragraphSeams?.some(
+            (seam) =>
+              (seam.kind === 'space' || seam.kind === 'trailing-space') && seam.to === token.to,
+          ) &&
           node?.type === 'text'
         ) {
           this.paragraphTails.set(pm - 1, token.raw);
@@ -759,6 +763,19 @@ export class SourceProjection {
       });
       transition(index === after.childCount - 1 ? (this.context?.after ?? []) : []);
       const end = offset + paragraph.nodeSize - 1;
+      // A native split can leave a surviving space at the true paragraph end.
+      // Preserve its live width without changing bytes or fresh parser behavior.
+      if (
+        paragraph.lastChild?.isText &&
+        /[ \t]$/.test(paragraph.lastChild.text!) &&
+        /[ \t]$/.test(source) &&
+        !this.addedParagraphSeams.some((seam) => seam.from === this.start + source.length - 1)
+      )
+        this.addedParagraphSeams.push({
+          from: this.start + source.length - 1,
+          to: this.start + source.length,
+          kind: 'trailing-space',
+        });
       source += tails.get(end) ?? '';
       const separator = separators.get(end);
       const retainSingle =

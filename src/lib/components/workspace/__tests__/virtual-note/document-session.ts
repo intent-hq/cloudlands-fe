@@ -888,6 +888,25 @@ export class DocumentSession {
                 ),
               ),
             );
+          } else if (
+            current.command === 'insertText' &&
+            current.text &&
+            this.editor.state.selection.empty &&
+            this.editor.state.selection.$from.parent.type.spec.code
+          ) {
+            // Re-enter the native text-input pipeline after admitting the code
+            // context. execCommand retains a browser editing range across the
+            // canceled input and can delete unrelated text after a keymap Enter.
+            const view = this.editor.view;
+            const { from, to } = view.state.selection;
+            const text = current.text;
+            const defaultInput = () => view.state.tr.insertText(text, from, to).scrollIntoView();
+            if (
+              !view.someProp('handleTextInput', (handler) =>
+                handler(view, from, to, text, defaultInput),
+              )
+            )
+              view.dispatch(defaultInput());
           } else accepted = document.execCommand(current.command, false, current.text);
           await Promise.resolve();
           this.replayingInput = false;

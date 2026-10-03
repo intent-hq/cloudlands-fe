@@ -43,7 +43,7 @@ export function nestedTableContent(blocks: Array<{ path: TablePath; node: JSONCo
 }
 
 /** Backing-only native walk; emits one leaf at a time, never a renderer ancestry index. */
-export function visitTableParagraphs(
+function visitTableParagraphs(
   cell: import('@tiptap/pm/model').Node,
   visit: (
     node: import('@tiptap/pm/model').Node,

@@ -8,7 +8,8 @@ import test from 'node:test';
 
 const require = createRequire(import.meta.url);
 const adapter = require.resolve('@tiptap/pm/tables');
-const cjs = require.resolve('prosemirror-tables', { paths: [dirname(adapter)] });
+// Resolve the transitive dependency from its owning adapter, not this package.
+const cjs = createRequire(adapter).resolve('prosemirror-tables');
 const esm = join(dirname(cjs), 'index.js');
 // Exercise the actual locked dependency in both forms consumed by Tiptap/Electron.
 for (const format of ['esm', 'cjs']) {

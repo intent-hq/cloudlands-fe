@@ -70,6 +70,19 @@ async function sameCode(page: Page, expected: string, compareSelection = true) {
       };
       return {
         error: p.error,
+        endpoints: { native: nativeSelection, bounded: p.selection },
+        sourceDifference: (() => {
+          const actual = p.service.region(0);
+          let at = 0;
+          while (at < Math.min(actual.length, expected.length) && actual[at] === expected[at]) at++;
+          return {
+            at,
+            actual: actual.slice(Math.max(0, at - 80), at + 120),
+            expected: expected.slice(Math.max(0, at - 80), at + 120),
+            actualLength: actual.length,
+            expectedLength: expected.length,
+          };
+        })(),
         exact: p.service.region(0) === expected,
         parserNative: JSON.stringify(full) === JSON.stringify(n.getJSON()),
         type: actual.type.name,
@@ -90,6 +103,11 @@ async function sameCode(page: Page, expected: string, compareSelection = true) {
     },
     { expected, compareSelection },
   );
+  if (!result.exact || !result.selection)
+    await test.info().attach('fence-parity-diagnostic.json', {
+      body: JSON.stringify(result),
+      contentType: 'application/json',
+    });
   expect(result.error).toBe('');
   expect(result.exact).toBe(true);
   expect(result.parserNative).toBe(true);
@@ -248,8 +266,11 @@ async function pointCode(page: Page, side: string, source: string, at: number) {
         let rect = e.view.coordsAtPos(pos);
         const scroller = e.view.dom.parentElement!.parentElement!;
         const viewport = scroller.getBoundingClientRect();
-        if (rect.top < viewport.top || rect.bottom > viewport.bottom) {
-          scroller.scrollTop += rect.top - viewport.top - 200;
+        // Keep the target outside Chromium's edge-autoscroll band. A target that
+        // merely fits can move another line between pointermove and mouseup.
+        const margin = 2 * (rect.bottom - rect.top);
+        if (rect.top < viewport.top + margin || rect.bottom > viewport.bottom - margin) {
+          scroller.scrollTop += rect.top - viewport.top - viewport.height / 2;
           rect = e.view.coordsAtPos(pos);
         }
         const pre = e.view.dom.querySelector('pre')!;

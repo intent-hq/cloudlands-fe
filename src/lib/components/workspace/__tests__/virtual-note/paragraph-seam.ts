@@ -4,7 +4,7 @@ import { mapPoint, type Splice } from './source-journal';
 export type ParagraphSeam = {
   from: number;
   to: number;
-  kind?: 'leading' | 'terminal' | 'split' | 'list-text' | 'space';
+  kind?: 'leading' | 'terminal' | 'split' | 'list-text' | 'space' | 'trailing-space';
   item?: number;
 };
 export const validParagraphSeam = (seam: ParagraphSeam, length: number, raw: string) =>
@@ -12,7 +12,7 @@ export const validParagraphSeam = (seam: ParagraphSeam, length: number, raw: str
   seam.from >= 0 &&
   seam.to <= length &&
   seam.to - seam.from === raw.length &&
-  (seam.kind === 'space'
+  (seam.kind === 'space' || seam.kind === 'trailing-space'
     ? /^[ \t]$/.test(raw)
     : seam.kind === 'list-text'
       ? Number.isSafeInteger(seam.item) &&

@@ -24,15 +24,12 @@ async function state(page: Page, side: string) {
 export async function settled(page: Page) {
   // Input acknowledgement can precede selectionchange/paint. Agreement at that instant
   // may still be the previous selection; allow the browser to finish before polling.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
   await expect
     .poll(() =>
-      page.evaluate(() => {
+      page.evaluate(async () => {
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
         const selection = window.getSelection();
         if (!selection?.anchorNode || !selection.focusNode) return true;
         for (const el of document.querySelectorAll('[data-testid="proof"]')) {
