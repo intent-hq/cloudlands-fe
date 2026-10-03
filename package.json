@@ -128,7 +128,7 @@
     "type-check:handlers": "tsx scripts/type-check.ts handlers",
     "type-check:report": "tsx scripts/type-check.ts report",
     "generate:ipc-types": "tsx scripts/generate-ipc-types.ts",
-    "prebuild": "node scripts/pnpm-run.mjs generate:i18n && node scripts/pnpm-run.mjs type-check:quiet && node scripts/pnpm-run.mjs generate:ipc-types",
+    "prebuild": "node scripts/pnpm-run.mjs generate:build-config && node scripts/pnpm-run.mjs generate:i18n && node scripts/pnpm-run.mjs type-check:quiet && node scripts/pnpm-run.mjs generate:ipc-types",
     "test:migration": "vitest run src/shared/types/__tests__/branded-ids.migration.test.ts && vitest run --config tests/integration/vitest.integration.config.ts tests/integration/import-fixes.test.ts",
     "test:event-system": "vitest run src/features/events/__tests__/types.test.ts",
     "test:cdp-helpers": "tsx test/test-cdp-helpers.ts",
