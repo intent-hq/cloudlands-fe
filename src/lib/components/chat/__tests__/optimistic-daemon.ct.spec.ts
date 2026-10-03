@@ -298,6 +298,10 @@ test('optimistic real-daemon pre-ACK batch drain never resurrects rapid submissi
     await expect
       .poll(() => page.evaluate(() => window.__optimisticDaemon!.display().queue.length))
       .toBe(0);
+    // Backend multiplicity alone does not prove that renderer dedup kept both sends.
+    await expect(
+      component.getByTestId('user-message-surface').filter({ hasText: 'Rapid identical' }),
+    ).toHaveCount(2);
     await page.screenshot({ path: info.outputPath('optimistic-daemon-drained-before-ack.png') });
     await component.unmount();
   } finally {
