@@ -437,7 +437,7 @@ for (const backward of [false, true])
 
 for (const edge of ['before', 'after'] as const)
   for (const backward of [false, true])
-    for (const gesture of ['shift', 'pointer'] as const)
+    for (const gesture of ['shift', 'pointer', 'pointerLifecycle'] as const)
       test(`sparse mixed ${edge} ${gesture} ${backward ? 'backward' : 'forward'} selection`, async ({
         mount,
         page,
@@ -454,6 +454,14 @@ for (const edge of ['before', 'after'] as const)
             edge === 'before' ? 0 : source.length - 1,
           );
         const results = [];
+        const continuations: Array<
+          Array<{
+            phase: string;
+            state: Awaited<ReturnType<typeof capture>>;
+            source: string;
+            fresh: unknown;
+          }>
+        > = [];
         for (const side of ['native', 'bounded']) {
           await focus(page, side);
           const endpoints = await page
@@ -590,6 +598,43 @@ for (const edge of ['before', 'after'] as const)
             body: JSON.stringify(trace),
             contentType: 'application/json',
           });
+          if (gesture === 'pointerLifecycle') {
+            const phases = [];
+            for (const phase of ['typed', 'evicted', 'undo', 'redo']) {
+              if (phase === 'typed') await page.keyboard.type('Q');
+              else if (phase === 'evicted' && side === 'bounded') {
+                expect(
+                  await page
+                    .getByTestId(side)
+                    .getByTestId('proof')
+                    .evaluate(async (el) => {
+                      const p = (el as Host).proof,
+                        old = p.editor!;
+                      p.save();
+                      await p.seek(p.selection.head);
+                      return old.isDestroyed;
+                    }),
+                ).toBe(true);
+                await focus(page, side);
+              } else if (phase === 'undo' || phase === 'redo')
+                await page.keyboard.press(phase === 'undo' ? 'Control+z' : 'Control+Shift+z');
+              const state = await capture(page, side);
+              const sourceState = await page
+                .getByTestId(side)
+                .getByTestId('proof')
+                .evaluate(async (el) => {
+                  const h = el as Host & { nativeMarkdown: () => string };
+                  const source = h.proof ? h.proof.service.region(0) : h.nativeMarkdown();
+                  return { source, fresh: (await h.parseSource(source)).doc };
+                });
+              phases.push({ phase, state, ...sourceState });
+            }
+            continuations.push(phases);
+            await info.attach(`pointer-continuation-${side}.json`, {
+              body: JSON.stringify(phases),
+              contentType: 'application/json',
+            });
+          }
         }
         await info.attach('sparse-selection.json', {
           body: JSON.stringify(results),
@@ -598,6 +643,22 @@ for (const edge of ['before', 'after'] as const)
         for (const result of results) {
           expect(result.error).toBe('');
           expect(result.dom).toEqual(result.pm);
+        }
+        if (gesture === 'pointerLifecycle') {
+          for (let i = 0; i < continuations[0].length; i++) {
+            const native = continuations[0][i],
+              bounded = continuations[1][i];
+            expect(bounded.state.error).toBe('');
+            for (const result of [native, bounded])
+              expect(result.state.dom).toEqual(result.state.pm);
+            expect(bounded.fresh).toEqual(native.fresh);
+            expect(bounded.state.logical).toEqual(native.state.logical);
+            expect(bounded.source).toContain('| cell-400 café 🌍 | repeated |');
+            expect(bounded.state.stats!.mounted).toBe(1);
+            expect(bounded.state.stats!.maxSourceContextBytes).toBeLessThanOrEqual(16384);
+          }
+          expect(continuations[1][2].source).toBe(source);
+          expect(continuations[1][3].source).toBe(continuations[1][0].source);
         }
         expect(results[1].logical).toEqual(results[0].logical);
         expect(results[1].stats!.mounted).toBe(1);

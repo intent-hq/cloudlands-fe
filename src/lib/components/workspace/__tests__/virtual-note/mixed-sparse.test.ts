@@ -1,6 +1,7 @@
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { Editor, type JSONContent } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
+import { CellSelection, TableMap } from '@tiptap/pm/tables';
 import { store } from '$store/renderer/configured-store';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
@@ -14,6 +15,67 @@ const table =
   Array.from({ length: 800 }, (_, i) => `| cell-${i} café 🌍 | repeated |\n`).join('');
 const suffix = '\nfollowing café 🌍 repeated';
 const source = prefix + table + suffix;
+for (const backward of [false, true])
+  it(`types into the final mixed table row rectangle ${backward ? 'backward' : 'forward'}`, async () => {
+    const oracle = new Editor(
+      createEditorConfig({
+        element: document.createElement('div'),
+        content: await processMarkdownToHTML(source),
+        editable: true,
+        useMarkdown: true,
+        enableComments: false,
+        enableMentions: false,
+        onUpdate: () => {},
+      }),
+    );
+    const service = new SourceJournal(() => source, 1);
+    const session = new DocumentSession(service, document.createElement('div'));
+    try {
+      await session.seek(source.length - 1);
+      for (const editor of [oracle, session.editor!]) {
+        let tablePos = -1;
+        editor.state.doc.forEach((node, pos) => {
+          if (node.type.name === 'table') tablePos = pos;
+        });
+        const node = editor.state.doc.nodeAt(tablePos)!;
+        const map = TableMap.get(node);
+        const first = tablePos + 1 + map.map[(map.height - 1) * map.width];
+        const last = tablePos + 1 + map.map[map.height * map.width - 1];
+        editor.view.dispatch(
+          editor.state.tr.setSelection(
+            CellSelection.create(
+              editor.state.doc,
+              backward ? last : first,
+              backward ? first : last,
+            ),
+          ),
+        );
+        editor.view.dispatch(editor.state.tr.insertText('Q'));
+      }
+      expect(session.error).toBe('');
+      const fresh = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: await processMarkdownToHTML(service.region(0)),
+          editable: true,
+          useMarkdown: true,
+          enableComments: false,
+          enableMentions: false,
+          onUpdate: () => {},
+        }),
+      );
+      try {
+        expect(fresh.getJSON()).toEqual(oracle.getJSON());
+      } finally {
+        fresh.destroy();
+      }
+      expect(service.region(0)).toContain('| cell-400 café 🌍 | repeated |');
+      expect(service.region(0)).toContain(suffix);
+    } finally {
+      session.destroy();
+      oracle.destroy();
+    }
+  });
 for (const side of ['before', 'after'] as const)
   it(`admits native ${side} prose with an oversized table without hydrating its source hull`, async () => {
     const oracle = new Editor(

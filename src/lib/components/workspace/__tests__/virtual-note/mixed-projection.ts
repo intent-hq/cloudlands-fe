@@ -84,7 +84,9 @@ export class MixedProjection {
     let from = Infinity,
       to = -Infinity;
     tr.steps.forEach((step, index) => {
-      const inverse = tr.mapping.slice(0, index).invert();
+      // Mapping.slice is a view; invert() still reverses its entire map array.
+      // Slice the inverse instead so only earlier native steps affect ownership.
+      const inverse = tr.mapping.invert().slice(tr.mapping.maps.length - index);
       step.getMap().forEach((first, last) => {
         from = Math.min(from, inverse.map(first, -1));
         to = Math.max(to, inverse.map(last, 1));
