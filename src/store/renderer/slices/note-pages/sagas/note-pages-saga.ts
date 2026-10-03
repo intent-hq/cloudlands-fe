@@ -51,8 +51,9 @@ function* stream(ws: string, id: string) {
         // Release old page ownership before any asynchronous reconnect negotiation.
         yield* put(actions.pageReset(ws, id, 'reset' in event ? event.error : undefined));
         if (admittedEpoch >= 0 || event.epoch > 1) {
+          let received: NotePagingCapabilities | null;
           try {
-            capabilities = yield* call([client, client.capabilities]);
+            received = yield* call([client, client.capabilities]);
           } catch (e) {
             if (event.epoch !== epoch) continue;
             yield* put(actions.pageReset(ws, id, message(e)));
@@ -60,10 +61,11 @@ function* stream(ws: string, id: string) {
           }
           // Every hello outcome belongs to its connection epoch, including lost support.
           if (event.epoch !== epoch) continue;
-          if (!capabilities) {
+          if (!received) {
             yield* put(actions.pageLegacySelected(ws, id));
             return;
           }
+          capabilities = received;
         }
         admittedEpoch = event.epoch;
       }
