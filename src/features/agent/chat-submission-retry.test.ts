@@ -56,7 +56,11 @@ import {
   announceSubmissionDelivery,
 } from '$features/agent/submission-evidence';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
-import { __resetAgentQueueReadServiceForTests } from '$features/agent/agent-queue-read-service';
+import {
+  hydrateAgentQueue,
+  __resetAgentQueueReadServiceForTests,
+} from '$features/agent/agent-queue-read-service';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
 import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
@@ -1096,3 +1100,119 @@ it.each(['send', 'send-all', 'clear', 'remove'])(
     expect(count('agent.queueMessage')).toBe(0);
   },
 );
+
+// Exercise stream:start after admission: mounting after the event misses the lifecycle guard.
+it.each([
+  { startAfterAdmission: false, automaticRefresh: false },
+  { startAfterAdmission: true, automaticRefresh: false },
+  { startAfterAdmission: true, automaticRefresh: true },
+])(
+  'allows confirmed remove during normal streaming (%j)',
+  async ({ startAfterAdmission, automaticRefresh }) => {
+    const streamStart = () =>
+      emit('agent:stream:start', { messageId: 'msg_provider', turnId: 'provider-turn' });
+    if (!startAfterAdmission) streamStart();
+    const sent = admit('already delivered first prompt');
+    const delivered = {
+      ...previous,
+      id: sent.submission.id,
+      author: row(sent).author,
+      metadata: { submissionIds: [sent.submission.id] },
+    };
+    beginSubmissionRead(agent, ws, 'history').complete([row(sent)]);
+    store.dispatch(
+      pendingSubmissionSettled(sent.scope, sent.submission.id, 'accepted', Date.now()),
+    );
+    if (startAfterAdmission) streamStart();
+    const queued = admitAgentSubmission(store, agent, ws, 1, {
+      content: 'confirmed next prompt',
+      destination: 'queue',
+    })!;
+    const confirmed = row(queued, { mergeEligible: true });
+    emit('agent:queue:updated', { queue: [confirmed] });
+    store.dispatch(
+      pendingSubmissionSettled(
+        queued.scope,
+        queued.submission.id,
+        'accepted',
+        Date.now(),
+        confirmed,
+        true,
+      ),
+    );
+    wire.request.mockImplementation(async (method, params) => {
+      if (method === 'agent.getQueue') return { queue: [confirmed] };
+      if (method === 'agent.getConversation')
+        return { messages: [delivered], totalMessages: 1, truncated: false };
+      if (method === 'agent.get')
+        return { agent: { ...shell(), isResponding: true, isStreaming: true } };
+      if (method === 'agent.removeQueuedMessage') return { success: true };
+      return baseReply(method, params);
+    });
+    cleanups.push(store.runSaga(chatReadSaga));
+    startSending();
+    if (automaticRefresh) {
+      emit('agent:queue:updated', { queue: [confirmed] });
+      await vi.waitFor(() => {
+        expect(count('agent.getQueue')).toBe(1);
+        expect(count('agent.getConversation')).toBe(1);
+      });
+    } else await Promise.all([hydrateAgentQueue(agent, ws), loadChatTranscript(agent, ws)]);
+    await vi.waitFor(() => expect(display().queue[0].blocksMutations).toBe(false));
+    const entry = store.state.pendingSubmissions.byAgentId[agent];
+    expect(getItems(entry.submissions)).toEqual([]);
+    expect(getItems(entry.operations)).toEqual([]);
+    expect(getItems(entry.processing)).toEqual([]);
+    expect(entry.queueFresh && entry.historyFresh).toBe(true);
+    expect(entry.refreshNeeded).toBe(false);
+    store.dispatch(removeQueuedMessageRequested(agent, confirmed.id));
+    await vi.waitFor(() => expect(count('agent.removeQueuedMessage')).toBe(1));
+    expect(
+      wire.request.mock.calls.find(([method]) => method === 'agent.removeQueuedMessage')?.[1],
+    ).toEqual({
+      agentId: agent,
+      workspaceId: ws,
+      messageId: confirmed.id,
+    });
+  },
+);
+
+it('keeps confirmed controls blocked while a drained contribution lacks delivery evidence', async () => {
+  const processing = admit('draining prompt');
+  const consumed = row(processing);
+  emit('agent:queue:processing', {
+    messageId: consumed.id,
+    turnId: consumed.turnId,
+    queuedMessages: [consumed],
+  });
+  store.dispatch(
+    pendingSubmissionSettled(processing.scope, processing.submission.id, 'accepted', Date.now()),
+  );
+  emit('agent:stream:start', { messageId: 'msg_provider', turnId: consumed.turnId });
+  const next = admitAgentSubmission(store, agent, ws, 1, {
+    content: 'next prompt',
+    destination: 'queue',
+  })!;
+  const confirmed = row(next, { mergeEligible: true });
+  emit('agent:queue:updated', { queue: [confirmed] });
+  store.dispatch(
+    pendingSubmissionSettled(
+      next.scope,
+      next.submission.id,
+      'accepted',
+      Date.now(),
+      confirmed,
+      true,
+    ),
+  );
+  beginSubmissionRead(agent, ws, 'queue').complete([confirmed]);
+  beginSubmissionRead(agent, ws, 'history').complete([]);
+  const entry = store.state.pendingSubmissions.byAgentId[agent];
+  expect(entry.refreshNeeded).toBe(false);
+  expect(getItems(entry.processing).map((message) => message.id)).toEqual([consumed.id]);
+  expect(display().queue[0].blocksMutations).toBe(true);
+  startSending();
+  store.dispatch(removeQueuedMessageRequested(agent, confirmed.id));
+  await quiet();
+  expect(count('agent.removeQueuedMessage')).toBe(0);
+});

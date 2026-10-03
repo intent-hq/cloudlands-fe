@@ -643,3 +643,72 @@ describe('authoritative rapid submission identities', () => {
     expect(rows.map((row) => row.id)).toEqual([queued.id, direct.id]);
   });
 });
+
+// Recovery leaves replace flat aliases on a persisted combined retry row.
+const recoveredAuthoritative: AgentMessage = {
+  ...rapidAuthoritativeMessages[0],
+  metadata: {
+    recoverySources: [
+      {
+        messageId: 'source-a',
+        submissionIds: ['source-a'],
+        author: { principalId: 'alice', login: null, displayName: null, avatarUrl: null },
+        origin: 'user',
+      },
+      {
+        messageId: 'source-b',
+        submissionIds: ['source-b'],
+        author: { principalId: 'bob', login: null, displayName: null, avatarUrl: null },
+        origin: 'user',
+      },
+    ],
+  },
+};
+describe('authoritative recovery-source identities', () => {
+  it.each([false, true])(
+    'preserves recovery and distinct direct rows in bulk, insert and replacement (reverse=%s)',
+    (reverse) => {
+      const direct = rapidAuthoritativeMessages[1];
+      const rows = reverse ? [direct, recoveredAuthoritative] : [recoveredAuthoritative, direct];
+      const ids = rows.map((message) => message.id);
+      expect.soft(deduplicateAgentMessages(rows).map((message) => message.id)).toEqual(ids);
+      expect
+        .soft(insertAgentMessageWithDedup([rows[0]], rows[1]).map((message) => message.id))
+        .toEqual(ids);
+      expect
+        .soft(
+          replaceAgentMessageByIdWithDedup(
+            [rows[0], { ...rows[1], id: 'pending' }],
+            'pending',
+            rows[1],
+          ).map((message) => message.id),
+        )
+        .toEqual(ids);
+    },
+  );
+  it('deduplicates same recovery row and matching app echoes without consuming its sibling', () => {
+    const recovered = { ...recoveredAuthoritative, appMessageId: 'app_msg_recovery' };
+    const direct = rapidAuthoritativeMessages[1];
+    expect(
+      deduplicateAgentMessages([recovered, recovered, direct]).map((message) => message.id),
+    ).toEqual([recovered.id, direct.id]);
+    expect(insertAgentMessageWithDedup([recovered], recovered)).toEqual([recovered]);
+    const optimistic = { ...recovered, id: 'optimistic-recovery', metadata: undefined };
+    expect(
+      insertAgentMessageWithDedup([optimistic, direct], recovered).map((message) => message.id),
+    ).toEqual([recovered.id, direct.id]);
+  });
+  it('retains a recovery row whose legacy source has no submission aliases', () => {
+    const recovered = {
+      ...recoveredAuthoritative,
+      metadata: {
+        recoverySources: [{ messageId: 'legacy-source', author: null, origin: 'user' as const }],
+      },
+    };
+    const direct = rapidAuthoritativeMessages[1];
+    expect(deduplicateAgentMessages([recovered, direct]).map((message) => message.id)).toEqual([
+      recovered.id,
+      direct.id,
+    ]);
+  });
+});
