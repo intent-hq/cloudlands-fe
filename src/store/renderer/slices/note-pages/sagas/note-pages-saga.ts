@@ -1,12 +1,13 @@
 import { eventChannel, buffers } from 'redux-saga';
 import { call, put, race, take, takeEvery } from 'typed-redux-saga';
+import { rejectedNoteSave } from '$lib/client/note-page-errors';
 import { appClient } from '$lib/client';
 import type {
   NotePageState,
   NotePageRequest,
   NotePagingCapabilities,
 } from '$lib/client/note-pages';
-import { selectNotePageSession } from '../note-pages-selectors';
+import { selectNotePageSession, selectPhysicalNoteReadCount } from '../note-pages-selectors';
 import * as actions from '../note-pages-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -47,6 +48,20 @@ function* stream(ws: string, id: string) {
     while (true) {
       const event = yield* take(channel);
       if (event.epoch !== admittedEpoch) {
+        if (admittedEpoch >= 0 || event.epoch > 1) {
+          try {
+            capabilities = yield* call([client, client.capabilities]);
+          } catch (e) {
+            yield* put(actions.pageReset(ws, id, message(e)));
+            return;
+          }
+          if (!capabilities) {
+            yield* put(actions.pageLegacySelected(ws, id));
+            return;
+          }
+          // A second reconnect while hello was pending invalidates that hello too.
+          if (event.epoch !== epoch) continue;
+        }
         admittedEpoch = event.epoch;
         yield* put(actions.pageReset(ws, id, 'reset' in event ? event.error : undefined));
       }
@@ -80,7 +95,7 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
   const requestKey = JSON.stringify(
     Object.fromEntries(Object.entries(request).sort(([a], [b]) => a.localeCompare(b))),
   );
-  if (!client || !n || n.requests[requestKey]) return;
+  if (!client || !n || !Object.keys(n.panels).length || n.requests[requestKey]) return;
   const receiptRead = request.kind === 'mapping' || request.kind === 'effects';
   if (receiptRead) {
     if (
@@ -94,16 +109,8 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
   } else if (n.status !== 'ready') return;
   const cached = n.pages[requestKey];
   if (cached && (!('expiresAt' in cached) || Date.parse(cached.expiresAt) > Date.now())) return;
-  if (Object.keys(n.requests).length >= 4) {
-    yield* put(
-      actions.pageRequestFailed(
-        ws,
-        id,
-        n.generation,
-        requestKey,
-        'Page read limit reached; retry after pending reads settle',
-      ),
-    );
+  if ((yield* selectPhysicalNoteReadCount.effect(ws, id)) >= 4) {
+    yield* put(actions.pageReadDeferred(ws, id, n.generation, request));
     return;
   }
   const live = Object.values(n.pages).find((p) => p.kind === 'noteSourcePage');
@@ -132,6 +139,11 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
       yield* put(actions.pageReset(ws, id, message(e)));
       if (!current.readRecoveryAttempted) yield* put(actions.pageRefreshRequested(ws, id, true));
     } else yield* put(actions.pageRequestFailed(ws, id, generation, requestKey, message(e)));
+  } finally {
+    yield* put(actions.pageReadSettled(ws, id, generation, requestKey));
+    const current = yield* session(ws, id);
+    if (current?.deferredRead && Object.keys(current.panels).length)
+      yield* put(actions.pageRequested(ws, id, current.deferredRead));
   }
 }
 function* save(action: ReturnType<typeof actions.pageSaveRequested>) {
@@ -146,8 +158,10 @@ function* save(action: ReturnType<typeof actions.pageSaveRequested>) {
     const result = yield* call([client, client.applySplices], operation);
     yield* put(actions.pageSaveSettled(ws, id, result));
     if (result.outcome === 'committed') yield* put(actions.pageRefreshRequested(ws, id));
-  } catch {
-    yield* put(actions.pageSaveUnknown(ws, id, operation.operationId));
+  } catch (error) {
+    const outcome = rejectedNoteSave(error, operation);
+    if (outcome) yield* put(actions.pageSaveSettled(ws, id, outcome));
+    else yield* put(actions.pageSaveUnknown(ws, id, operation.operationId));
   }
 }
 function* retry(action: ReturnType<typeof actions.pageSaveRetryRequested>) {

@@ -19,7 +19,11 @@ import type {
 } from './note-pages-types';
 const emptyWorkspace: NotePagesWorkspaceState = { notes: {} };
 const { getWorkspaceState, setWorkspaceState } = createWorkspaceScopedHelpers(emptyWorkspace);
-export const initialNotePagesState: NotePagesState = { byWorkspaceId: {}, nextGeneration: 0 };
+export const initialNotePagesState: NotePagesState = {
+  byWorkspaceId: {},
+  nextGeneration: 0,
+  physicalReads: {},
+};
 const newSession = (): NotePageSession => ({
   panels: {},
   generation: 0,
@@ -29,6 +33,7 @@ const newSession = (): NotePageSession => ({
   pages: {},
   pageOrder: [],
   requests: {},
+  deferredRead: null,
   drafts: [],
   history: [],
   receipts: [],
@@ -62,6 +67,16 @@ export const pageRequested =
 export const pageRequestStarted = createAction<
   [workspaceId: string, noteId: string, generation: number, key: string]
 >('notePages/requestStarted');
+export const physicalReadKey = (ws: string, id: string, generation: number, key: string) =>
+  JSON.stringify([ws, id, generation, key]);
+export const pageReadSettled =
+  createAction<[workspaceId: string, noteId: string, generation: number, key: string]>(
+    'notePages/readSettled',
+  );
+export const pageReadDeferred =
+  createAction<[workspaceId: string, noteId: string, generation: number, request: NotePageRequest]>(
+    'notePages/readDeferred',
+  );
 export const sourcePageReceived = createAction<
   [workspaceId: string, noteId: string, generation: number, key: string, page: NoteReadPage]
 >('notePages/sourceReceived');
@@ -119,6 +134,7 @@ function invalidate(n: NotePageSession): NotePageSession {
     pages: {},
     pageOrder: [],
     requests: {},
+    deferredRead: null,
     needsReconcile: n.needsReconcile,
   };
 }
@@ -160,7 +176,14 @@ notePagesReducer.with(pageReset, (s, { payload: [ws, id, error] }) =>
   })),
 );
 notePagesReducer.with(pageLegacySelected, (s, { payload: [ws, id] }) =>
-  update(s, ws, id, (n) => ({ ...invalidate(n), status: 'legacy' })),
+  update(s, ws, id, (n) => {
+    const retained = n.drafts.length || n.history.length || n.pending || n.receipts.length;
+    return {
+      ...invalidate(n),
+      status: retained ? 'error' : 'legacy',
+      error: retained ? 'Note paging support lost; retained edits require recovery' : null,
+    };
+  }),
 );
 notePagesReducer.with(pageStateReceived, (s, { payload: [ws, id, generation, state] }) =>
   update(s, ws, id, (n) => {
@@ -205,11 +228,28 @@ notePagesReducer.with(pageStateReceived, (s, { payload: [ws, id, generation, sta
     };
   }),
 );
-notePagesReducer.with(pageRequestStarted, (s, { payload: [ws, id, generation, key] }) =>
-  update(s, ws, id, (n) =>
-    generation === n.generation ? { ...n, requests: { ...n.requests, [key]: true } } : n,
-  ),
+notePagesReducer.with(pageReadDeferred, (s, { payload: [ws, id, generation, request] }) =>
+  update(s, ws, id, (n) => (generation === n.generation ? { ...n, deferredRead: request } : n)),
 );
+notePagesReducer.with(pageReadSettled, (s, { payload: [ws, id, generation, key] }) => {
+  const physicalReads = { ...s.physicalReads };
+  delete physicalReads[physicalReadKey(ws, id, generation, key)];
+  return { ...s, physicalReads };
+});
+notePagesReducer.with(pageRequestStarted, (s, { payload: [ws, id, generation, key] }) => {
+  const updated = update(s, ws, id, (n) =>
+    generation === n.generation
+      ? { ...n, requests: { ...n.requests, [key]: true }, deferredRead: null }
+      : n,
+  );
+  return {
+    ...updated,
+    physicalReads: {
+      ...updated.physicalReads,
+      [physicalReadKey(ws, id, generation, key)]: { workspaceId: ws, noteId: id },
+    },
+  };
+});
 notePagesReducer.with(sourcePageReceived, (s, { payload: [ws, id, generation, key, page] }) =>
   update(s, ws, id, (n) => {
     if (

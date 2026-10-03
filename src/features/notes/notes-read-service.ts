@@ -160,6 +160,8 @@ export function ensureNoteContentLoaded(workspaceId: string, noteId: string): Pr
   const key = JSON.stringify([workspaceId, noteId]);
   const generation = generations.get(key) ?? 0;
   return coalesce(`note:${workspaceId}:${noteId}`, async () => {
+    if (isPagedNoteSession(workspaceId, noteId) || generation !== (generations.get(key) ?? 0))
+      return;
     const note = await appClient.notes.get(noteId, workspaceId);
     if (
       !note ||

@@ -2,6 +2,7 @@ import type {
   NoteCommitReceipt,
   NoteScope,
   NotePageState,
+  NotePageRequest,
   NoteReadPage,
   NoteSplice,
   NoteSpliceOperation,
@@ -28,6 +29,7 @@ export interface NotePageSession {
   pages: Record<string, NoteReadPage>;
   pageOrder: string[];
   requests: Record<string, boolean>;
+  deferredRead: NotePageRequest | null;
   /** Session-owned, never evicted with clean pages. Preserved until explicit discard. */
   drafts: NoteDraft[];
   history: NoteDraft[];
@@ -45,5 +47,6 @@ export interface NotePagesWorkspaceState {
 }
 export interface NotePagesState {
   nextGeneration: number;
+  physicalReads: Record<string, { workspaceId: string; noteId: string }>;
   byWorkspaceId: Record<string, NotePagesWorkspaceState>;
 }

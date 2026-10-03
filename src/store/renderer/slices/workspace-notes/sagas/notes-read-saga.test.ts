@@ -5,7 +5,10 @@ import { appClient } from '$lib/client';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
-import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceUnmounted,
+  backendReconnected,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   applyNoteCreated,
   applyNoteDeleted,
@@ -68,7 +71,16 @@ function harness(seed: Note[] = []) {
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, notesReadSaga);
-  return { actions, channel, task };
+  return {
+    actions,
+    channel,
+    task,
+    state: () => workspaceNotes,
+    send: (action: Parameters<typeof workspaceNotesReducer>[1]) => {
+      dispatch(action);
+      channel.put(action);
+    },
+  };
 }
 
 describe('notesReadSaga', () => {
@@ -495,8 +507,96 @@ it('uses bounded task links without hydrating a complete spec', async () => {
   await settle();
   await settle();
   expect(get).not.toHaveBeenCalled();
-  expect(run.actions).toContainEqual(specTaskLinksReceived(WS, ['b', 'a']));
+  expect(run.actions).toContainEqual(specTaskLinksReceived(WS, ['b', 'a'], 0));
   run.task.cancel();
   await run.task.toPromise();
   vi.restoreAllMocks();
+});
+
+describe('summary ownership across read lanes', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each([false, true])(
+    'rejects a stale hydration summary after a newer event or deletion: %s',
+    async (deleted) => {
+      const old = deferred<string[]>();
+      vi.spyOn(appClient.notes, 'listTaskLinks')
+        .mockReturnValueOnce(old.promise)
+        .mockResolvedValue(['new-link']);
+      vi.spyOn(appClient.notes, 'list').mockResolvedValue([
+        note('spec', { content: '', contentLength: 12 }),
+      ]);
+      vi.spyOn(appClient.notes, 'get').mockResolvedValue(note('spec', { content: 'fresh' }));
+      const h = harness();
+      try {
+        h.send(workspaceNotesHydrationRequested(WS, 1, false));
+        await settle();
+        h.send(
+          deleted ? applyNoteDeleted(WS, 'spec') : noteEventReceived(WS, 'spec', 'note:updated'),
+        );
+        await settle();
+        old.resolve(['old-link']);
+        await settle();
+        expect(h.state().byWorkspaceId[WS].specTaskLinks).toEqual(deleted ? null : ['new-link']);
+        if (deleted) expect(h.state().byWorkspaceId[WS].notes.ids).not.toContain('spec');
+        else expect(h.state().byWorkspaceId[WS].notes.ids).toContain('spec');
+      } finally {
+        h.task.cancel();
+      }
+    },
+  );
+  it('refreshes a complete legacy spec after a bounded summary update', async () => {
+    vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(['new-link']);
+    vi.spyOn(appClient.notes, 'get').mockResolvedValue(note('spec', { content: 'fresh', rev: 2 }));
+    const h = harness([note('spec', { rev: 1 })]);
+    try {
+      h.send(noteEventReceived(WS, 'spec', 'note:updated'));
+      await settle();
+      expect(h.state().byWorkspaceId[WS].notes.map.spec.content).toBe('fresh');
+    } finally {
+      h.task.cancel();
+    }
+  });
+  it('keeps a valid listing when the spec is absent without falling back to a full read', async () => {
+    vi.spyOn(appClient.notes, 'listTaskLinks').mockRejectedValue(
+      Object.assign(new Error('missing'), { code: 'not-found', rpcCode: -32602 }),
+    );
+    vi.spyOn(appClient.notes, 'list').mockResolvedValue([note('other')]);
+    const get = vi.spyOn(appClient.notes, 'get');
+    const h = harness();
+    try {
+      h.send(workspaceNotesHydrationRequested(WS, 1, false));
+      await settle();
+      expect(h.state().byWorkspaceId[WS].initialized).toBe(true);
+      expect(h.state().byWorkspaceId[WS].notes.ids).toEqual(['other']);
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      h.task.cancel();
+    }
+  });
+});
+
+it.each(['reconnect', 'unmount'])('discards a late summary chain after %s', async (kind) => {
+  const old = deferred<string[]>();
+  const links = vi
+    .spyOn(appClient.notes, 'listTaskLinks')
+    .mockReturnValueOnce(old.promise)
+    .mockResolvedValue(['new']);
+  const list = vi
+    .spyOn(appClient.notes, 'list')
+    .mockResolvedValue([note('spec', { content: '', contentLength: 50 })]);
+  const h = harness();
+  try {
+    h.send(workspaceNotesHydrationRequested(WS, 1, false));
+    await settle();
+    h.send(kind === 'reconnect' ? backendReconnected() : workspaceUnmounted(WS));
+    h.send(workspaceNotesHydrationRequested(WS, 2, true));
+    await settle();
+    old.resolve(['old']);
+    await settle();
+    expect(h.state().byWorkspaceId[WS].specTaskLinks).toEqual(['new']);
+  } finally {
+    h.task.cancel();
+    links.mockRestore();
+    list.mockRestore();
+  }
 });

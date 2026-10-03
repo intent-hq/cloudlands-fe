@@ -1,3 +1,5 @@
+import { isMissingNote } from '$lib/client/note-page-errors';
+import { isNoteContentStale } from '$shared/utils/note-content';
 import { pageReset } from '../../note-pages/note-pages-slice';
 import { selectNotePageSession } from '../../note-pages/note-pages-selectors';
 import { call, put, race, take } from 'typed-redux-saga';
@@ -5,7 +7,10 @@ import { call, put, race, take } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
-import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceUnmounted,
+  backendReconnected,
+} from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   takeLatestByContext,
   takeSingleFlightInContext,
@@ -31,9 +36,10 @@ type ObservedAction = { type: string; payload?: unknown };
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
   return (
-    action.type === workspaceUnmounted.type &&
-    Array.isArray(action.payload) &&
-    action.payload[0] === workspaceId
+    action.type === backendReconnected.type ||
+    (action.type === workspaceUnmounted.type &&
+      Array.isArray(action.payload) &&
+      action.payload[0] === workspaceId)
   );
 }
 
@@ -53,7 +59,12 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
     const fetchSlimListAndLinks = async (id: string) => {
       const [rows, links] = await Promise.all([
         appClient.notes.list(id, { projection: 'slim' }),
-        appClient.notes.listTaskLinks?.(id, SPEC_NOTE_ID) ?? Promise.resolve(null),
+        (appClient.notes.listTaskLinks?.(id, SPEC_NOTE_ID) ?? Promise.resolve(null)).catch(
+          (error) => {
+            if (isMissingNote(error)) return [];
+            throw error;
+          },
+        ),
       ]);
       if (links !== null) return { rows, links };
       // Only an actually unsupported daemon may use the legacy complete-spec path.
@@ -61,9 +72,18 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
       return { rows: rows.map((n) => (spec && String(n.id) === SPEC_NOTE_ID ? spec : n)), links };
     };
     const { rows, links } = yield* call(fetchSlimListAndLinks, workspaceId);
-    const notes = rows.map(toRuntimeNote);
+    const latest = yield* selectWorkspaceNotesState.effect(workspaceId);
+    const summaryCurrent = latest.specTaskLinksGeneration === current.specTaskLinksGeneration;
+    const acceptedRows = summaryCurrent
+      ? rows
+      : rows.flatMap((n) => {
+          if (String(n.id) !== SPEC_NOTE_ID) return [n];
+          if (latest.specDeleted) return [];
+          return [latest.notes.map[SPEC_NOTE_ID] ?? n];
+        });
+    const notes = acceptedRows.map(toRuntimeNote);
     if (links !== null || current.specTaskLinks !== null)
-      yield* put(specTaskLinksReceived(workspaceId, links));
+      yield* put(specTaskLinksReceived(workspaceId, links, current.specTaskLinksGeneration));
     yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
     const spec = notes.find((note) => String(note.id) === SPEC_NOTE_ID);
     if (spec) yield* put(selectNote(workspaceId, String(spec.id)));
@@ -79,6 +99,7 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
 }
 
 function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEventType) {
+  const owner = yield* selectWorkspaceNotesState.effect(workspaceId);
   if (noteId === SPEC_NOTE_ID && eventType !== 'note:deleted' && appClient.notes.listTaskLinks) {
     try {
       const links = yield* call(
@@ -87,11 +108,16 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
         noteId,
       );
       if (links !== null) {
-        yield* put(specTaskLinksReceived(workspaceId, links));
-        return;
+        yield* put(specTaskLinksReceived(workspaceId, links, owner.specTaskLinksGeneration));
+        const latest = yield* selectWorkspaceNotesState.effect(workspaceId);
+        if (latest.specTaskLinksGeneration !== owner.specTaskLinksGeneration) return;
+        const complete = yield* selectNoteById.effect(workspaceId, noteId);
+        if (!complete || isNoteContentStale(complete)) return;
       }
     } catch (error) {
-      logger.error('Failed to refresh task links', error);
+      if (isMissingNote(error))
+        yield* put(specTaskLinksReceived(workspaceId, [], owner.specTaskLinksGeneration));
+      else logger.error('Failed to refresh task links', error);
       return;
     }
   }

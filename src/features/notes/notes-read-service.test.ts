@@ -323,3 +323,22 @@ it('does not resurrect a note from a full read that finishes after deletion', as
   await flush();
   expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.ids).not.toContain(id);
 });
+
+it('rechecks paged ownership before a trailing complete-content RPC', async () => {
+  notesGetMock.mockReset();
+  __resetNotesReadServiceForTests();
+  const ws = 'trailing-page-owner',
+    id = 'spec';
+  const slim = makeNote(id, ws, { content: '', contentLength: 80 });
+  appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [slim] }));
+  const pending = deferred<Note | null>();
+  notesGetMock.mockReturnValueOnce(pending.promise).mockResolvedValue({ ...slim, content: 'full' });
+  const first = ensureNoteContentLoaded(ws, id),
+    second = ensureNoteContentLoaded(ws, id);
+  expect(notesGetMock).toHaveBeenCalledTimes(1);
+  appStore.dispatch(pagePanelOpened(ws, id, 'panel'));
+  pending.resolve({ ...slim, content: 'full' });
+  await Promise.all([first, second]);
+  expect(notesGetMock).toHaveBeenCalledTimes(1);
+  appStore.dispatch(pageSessionDiscarded(ws, id));
+});

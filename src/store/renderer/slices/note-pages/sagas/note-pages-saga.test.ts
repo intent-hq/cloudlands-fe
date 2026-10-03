@@ -323,3 +323,141 @@ it('keeps capability transport failure recoverable without selecting legacy', as
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.status).toBe('error');
   expect(r.task.isRunning()).toBe(true);
 });
+
+it('bounds physical reads across revision invalidation and admits the latest demand when they settle', async () => {
+  const pending = deferred<NoteSourcePage>();
+  let active = 0,
+    peak = 0;
+  const read = vi.fn(() => {
+    active++;
+    peak = Math.max(peak, active);
+    return pending.promise.finally(() => active--);
+  });
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  for (let i = 0; i < 12; i++) {
+    client.push({ ...tuple, stateGeneration: String(10 + i), sourceRevision: `r:${7 + i}` });
+    await flush();
+  }
+  expect(peak).toBeLessThanOrEqual(4);
+  pending.resolve(page);
+  await flush();
+  expect(read).toHaveBeenCalledTimes(5);
+  expect(read.mock.calls.at(-1)).toEqual([
+    'ws-a',
+    'spec',
+    expect.objectContaining({ sourceRevision: 'r:18' }),
+  ]);
+});
+it.each([false, true])(
+  'renegotiates lost capability on reconnect and retains dirty ownership: %s',
+  async (dirty) => {
+    const client = new MockNotePagesClient({
+      capabilities: { backendId: 'db-a', annotations: false },
+      read: async () => page,
+    });
+    const caps = vi
+      .spyOn(client, 'capabilities')
+      .mockResolvedValueOnce({ backendId: 'db-a', annotations: false })
+      .mockResolvedValue(null);
+    const r = run(client);
+    r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+    await flush();
+    client.push(tuple);
+    await flush();
+    if (dirty)
+      r.dispatch(
+        a.pageDraftChanged('ws-a', 'spec', {
+          scope,
+          sequence: 1,
+          baseRevision: 'r:7',
+          splices: [{ start: 0, end: 1, text: 'draft' }],
+          selection: { anchor: 0, head: 1, anchorAffinity: 'before', headAffinity: 'after' },
+        }),
+      );
+    client.reconnect();
+    await flush();
+    expect(caps).toHaveBeenCalledTimes(2);
+    const n = r.state().byWorkspaceId['ws-a'].notes.spec;
+    expect(n.status).toBe(dirty ? 'error' : 'legacy');
+    expect(n.drafts).toHaveLength(dirty ? 1 : 0);
+  },
+);
+it('classifies an explicit revision conflict without losing the draft or save identity', async () => {
+  const failure = Object.assign(new Error('Revision conflict'), {
+    code: 'note-revision-conflict',
+    rpcCode: -32005,
+    data: { code: 'note-revision-conflict', currentRevision: 'r:8' },
+  });
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read: async () => page,
+    save: async () => {
+      throw failure;
+    },
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  const splices = [{ start: 0, end: 1, text: 'draft' }];
+  const draft = {
+    scope,
+    sequence: 1,
+    baseRevision: 'r:7',
+    splices,
+    selection: {
+      anchor: 0,
+      head: 1,
+      anchorAffinity: 'before' as const,
+      headAffinity: 'after' as const,
+    },
+  };
+  r.dispatch(a.pageDraftChanged('ws-a', 'spec', draft));
+  r.dispatch(
+    a.pageSaveRequested(
+      'ws-a',
+      'spec',
+      {
+        scope,
+        baseRevision: 'r:7',
+        operationId: 'op',
+        payloadDigest: 'digest',
+        expiresAt: '2099-01-01T00:00:00Z',
+        splices,
+      },
+      1,
+    ),
+  );
+  await flush();
+  const n = r.state().byWorkspaceId['ws-a'].notes.spec;
+  expect(n.drafts).toEqual([draft]);
+  expect(n.pending?.status).toBe('conflict');
+});
+
+it('accepts a clean replacement backend only after reconnect renegotiation', async () => {
+  const replacement = { ...scope, backendId: 'db-b', noteInstanceId: 'inc-b' };
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read: async () => ({ ...page, scope: replacement }),
+  });
+  vi.spyOn(client, 'capabilities')
+    .mockResolvedValueOnce({ backendId: 'db-a', annotations: false })
+    .mockResolvedValue({ backendId: 'db-b', annotations: false });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  client.reconnect();
+  client.push({ ...tuple, scope: replacement, stateGeneration: '1' });
+  await flush();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.state?.scope).toEqual(replacement);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.status).toBe('ready');
+});

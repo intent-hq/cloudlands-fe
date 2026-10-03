@@ -1,3 +1,4 @@
+import { isMissingNote } from '../../../lib/client/note-page-errors';
 import { NotePageReader } from '../../../lib/client/note-page-reader';
 import { readNoteTaskLinks } from '../../../lib/client/note-task-links';
 /**
@@ -191,7 +192,10 @@ export async function computeWorkspaceGitSummary(
 export async function getWorkspaceTasks(workspaceId: WorkspaceId): Promise<WorkspaceTask[]> {
   const client = getBackendClient();
   const reader = new NotePageReader((method, params) => client.request(method, params));
-  const linkedIds = await readNoteTaskLinks(reader, workspaceId, SPEC_NOTE_ID);
+  const linkedIds = await readNoteTaskLinks(reader, workspaceId, SPEC_NOTE_ID).catch((error) => {
+    if (isMissingNote(error)) return [];
+    throw error;
+  });
   let result: { notes?: Note[] } | undefined;
   try {
     const [listResult, specResult] = await Promise.all([

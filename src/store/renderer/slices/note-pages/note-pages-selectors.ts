@@ -6,3 +6,9 @@ export const selectNotePageSession = store.createSelector(
 export const selectNoteVisibleRanges = store.createSelector((s, ws: string, id: string) =>
   Object.values(s.notePages?.byWorkspaceId[ws]?.notes[id]?.panels ?? {}).flat(),
 );
+
+export const selectPhysicalNoteReadCount = store.createSelector(
+  (s, ws: string, id: string) =>
+    Object.values(s.notePages.physicalReads).filter((r) => r.workspaceId === ws && r.noteId === id)
+      .length,
+);

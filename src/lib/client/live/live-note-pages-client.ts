@@ -81,7 +81,7 @@ function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
 
 export class LiveNotePagesClient extends NotePageReader implements NotePagesClient {
   constructor() {
-    super(backendRequest);
+    super((method, params) => backendRequest(method, params));
   }
   async applySplices(op: NoteSpliceOperation) {
     const { scope, ...params } = op;

@@ -11,7 +11,10 @@ import {
   upsertItem,
 } from '@themislib/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
-import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  workspaceUnmounted,
+  backendReconnected,
+} from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { WorkspaceNotesWorkspaceState, WorkspaceNotesState } from './workspace-notes-types';
 import { normalizeNoteUpdatePatch } from './workspace-notes-normalization';
 
@@ -33,6 +36,8 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   noteVersions: null,
   readyTasks: null,
   specTaskLinks: null,
+  specTaskLinksGeneration: 0,
+  specDeleted: false,
 };
 
 export const initialState: WorkspaceNotesState = {
@@ -42,9 +47,9 @@ export const initialState: WorkspaceNotesState = {
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceNotesState);
 
-export const specTaskLinksReceived = createAction<[workspaceId: string, ids: string[] | null]>(
-  'workspaceNotes/specTaskLinksReceived',
-);
+export const specTaskLinksReceived = createAction<
+  [workspaceId: string, ids: string[] | null, generation?: number]
+>('workspaceNotes/specTaskLinksReceived');
 export const clearWorkspaceNotesForWorkspaces = createAction<[workspaceIds: string[]]>(
   'workspaceNotes/clearWorkspaceNotesForWorkspaces',
 );
@@ -189,10 +194,46 @@ const applyReadyTasksError = createAction<[workspaceId: string, error: string]>(
 );
 
 export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialState);
-workspaceNotesReducer.with(specTaskLinksReceived, (state, { payload: [workspaceId, ids] }) => {
-  const ws = getWorkspaceState(state, workspaceId);
-  return setWorkspaceState(state, workspaceId, { ...ws, specTaskLinks: ids });
-});
+workspaceNotesReducer.with(
+  specTaskLinksReceived,
+  (state, { payload: [workspaceId, ids, generation] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    if (generation !== undefined && generation !== ws.specTaskLinksGeneration) return state;
+    return setWorkspaceState(state, workspaceId, { ...ws, specTaskLinks: ids });
+  },
+);
+workspaceNotesReducer.with(backendReconnected, (state) => ({
+  ...state,
+  byWorkspaceId: Object.fromEntries(
+    Object.entries(state.byWorkspaceId).map(([id, ws]) => [
+      id,
+      { ...ws, specTaskLinksGeneration: ws.specTaskLinksGeneration + 1 },
+    ]),
+  ),
+}));
+workspaceNotesReducer.with(
+  workspaceNotesHydrationRequested,
+  (state, { payload: [workspaceId, , force] }) => {
+    const ws = getWorkspaceState(state, workspaceId);
+    if (ws.loading || (!force && ws.initialized)) return state;
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      specTaskLinksGeneration: ws.specTaskLinksGeneration + 1,
+    });
+  },
+);
+workspaceNotesReducer.with(
+  noteEventReceived,
+  (state, { payload: [workspaceId, noteId, eventType] }) => {
+    if (noteId !== 'spec') return state;
+    const ws = getWorkspaceState(state, workspaceId);
+    return setWorkspaceState(state, workspaceId, {
+      ...ws,
+      specDeleted: eventType === 'note:deleted',
+      specTaskLinksGeneration: ws.specTaskLinksGeneration + 1,
+    });
+  },
+);
 workspaceNotesReducer.with(
   clearWorkspaceNotesForWorkspaces,
   (state, { payload: [workspaceIds] }) => {
@@ -245,6 +286,9 @@ workspaceNotesReducer.with(
         loading: false,
         error: null,
         initialized: true,
+        specDeleted: merged.some((note) => String(note.id) === 'spec')
+          ? false
+          : workspaceState.specDeleted,
         notesVersion: workspaceState.notesVersion + 1,
       });
     }, state);
@@ -300,17 +344,16 @@ workspaceNotesReducer.with(applyNoteCreated, (state, { payload: [workspaceId, no
   });
 });
 workspaceNotesReducer.with(applyNoteDeleted, (state, { payload: [workspaceId, noteId] }) => {
-  const workspaceState = state.byWorkspaceId[workspaceId];
-  if (!workspaceState?.initialized) return state;
-
-  const notes = removeItem(workspaceState.notes, noteId as Note['id']);
-  if (notes === workspaceState.notes) return state;
-
+  const ws = getWorkspaceState(state, workspaceId);
+  const notes = removeItem(ws.notes, noteId as Note['id']);
+  if (noteId !== 'spec' && (!ws.initialized || notes === ws.notes)) return state;
   return setWorkspaceState(state, workspaceId, {
-    ...workspaceState,
+    ...ws,
     notes,
-    specTaskLinks: noteId === 'spec' ? null : workspaceState.specTaskLinks,
-    notesVersion: workspaceState.notesVersion + 1,
+    specTaskLinks: noteId === 'spec' ? null : ws.specTaskLinks,
+    specDeleted: noteId === 'spec' || ws.specDeleted,
+    specTaskLinksGeneration: ws.specTaskLinksGeneration + (noteId === 'spec' ? 1 : 0),
+    notesVersion: ws.notesVersion + 1,
   });
 });
 workspaceNotesReducer.with(applyNoteUpdated, (state, { payload: [workspaceId, noteId, note] }) => {
