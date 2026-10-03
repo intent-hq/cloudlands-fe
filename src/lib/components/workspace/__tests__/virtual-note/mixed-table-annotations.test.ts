@@ -61,3 +61,48 @@ it('queries and decorates disjoint admitted table cells without annotations in h
     session.destroy();
   }
 });
+
+it('pages canonical comment IDs only for admitted disjoint table cells', async () => {
+  const mark = (id: string, text: string) =>
+    `<!--anchor:${id}:start-->${text}<!--anchor:${id}:end-->`;
+  const row = (r: number) =>
+    '| ' +
+    Array.from({ length: 10 }, (_, c) => mark(`cmt-${r}-${c}`, `r${r}c${c} café`)).join(' | ') +
+    ' |';
+  const source = [
+    row(0),
+    '| ' + Array(10).fill('---').join(' | ') + ' |',
+    ...Array.from({ length: 18 }, (_, r) => row(r + 1)),
+  ].join('\n');
+  const service = new SourceJournal(() => source, 1);
+  service.anchors = [];
+  for (let r = 0; r < 19; r++)
+    for (let c = 0; c < 10; c++) service.registerComment(`cmt-${r}-${c}`);
+  const session = new DocumentSession(service, document.createElement('div'));
+  try {
+    await session.seek(source.indexOf('r8c7'));
+    expect(session.error).toBe('');
+    const cells = session.projection!.table!.window.cells;
+    const expected = cells.flatMap((cell) =>
+      cell.runs.filter((r) => r.anchor?.type === 'start').map((r) => r.anchor!.commentId),
+    );
+    expect(expected.length).toBeGreaterThan(8);
+    expect(expected).not.toContain('cmt-8-0');
+    const actual: string[] = [];
+    do {
+      actual.push(...session.annotationPage!.items.map((a) => a.id));
+      const next = session.annotationPage!.next;
+      if (!next) break;
+      expect(await session.loadAnnotations(next)).toBe(true);
+    } while (true);
+    expect(actual).toEqual(expected);
+    const stats = session.snapshot();
+    expect(stats.maxAnnotationRequestBytes).toBeLessThanOrEqual(4096);
+    expect(stats.maxAnnotationPageBytes).toBeLessThanOrEqual(4096);
+    expect(stats.maxTableTransferPageBytes).toBeLessThanOrEqual(4096);
+    expect(stats.cacheBytes).toBeLessThanOrEqual(16384);
+    expect(stats.cachePages).toBeLessThanOrEqual(4);
+  } finally {
+    session.destroy();
+  }
+});

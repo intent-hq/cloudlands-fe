@@ -11,6 +11,7 @@ import {
 import type { Transaction } from '@tiptap/pm/state';
 import type { ListItem, ListSeam } from './list-context';
 import type { Splice } from './source-journal';
+import type { Fence } from './fence-context';
 
 type Entry = {
   item: ListItem;
@@ -30,6 +31,7 @@ const size = (node: JSONContent): number =>
 /** Structural ancestors contain no invented text. Only loaded source tokens receive caret provenance. */
 export class ListProjection {
   readonly seams: ListSeam[] = [];
+  readonly fences: Fence[] = [];
   readonly indentation: Array<{ from: number; after: number; delta: number }> = [];
   readonly content: JSONContent = { type: 'doc', content: [] };
   readonly entries: Entry[] = [];
@@ -96,6 +98,14 @@ export class ListProjection {
         const fragment = new SourceProjection(
           body.slice(nodeFrom - part.start, nodeTo - part.start),
           nodeFrom,
+          {
+            revision: context.revision,
+            from: nodeFrom,
+            to: nodeTo,
+            before: [],
+            after: [],
+            fences: part.code.filter((code) => code.pm === offset).map((code) => code.fence),
+          },
         );
         this.content.content!.push(node);
         this.prose.push({
@@ -287,6 +297,7 @@ export class ListProjection {
     moved?: Map<number, SourceProjection['tokens'][number]>,
   ) {
     this.seams.length = 0;
+    this.fences.length = 0;
     const survivors = new Map<number, SourceProjection['tokens'][number]>();
     for (const t of this.tokens) {
       const a = mapping.mapResult(t.pm, 1),
@@ -458,8 +469,19 @@ export class ListProjection {
           new Slice(Fragment.from(node), 0, 0),
         );
         let source = old.part.source;
+        const delta = this.start + output.length + old.prefix.length - old.part.start;
         for (const splice of old.part
-          .translate(replacement, before)
+          .translate(replacement, before, (fences) => {
+            this.fences.push(
+              ...fences.map((fence) => ({
+                ...fence,
+                from: fence.from + delta,
+                bodyFrom: fence.bodyFrom + delta,
+                bodyTo: fence.bodyTo + delta,
+                to: fence.to + delta,
+              })),
+            );
+          })
           .sort((a, b) => b.from - a.from))
           source =
             source.slice(0, splice.from - old.part.start) +

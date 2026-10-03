@@ -1902,6 +1902,7 @@ export class DocumentSession {
                 : this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
                     fences = next;
                   });
+            if (this.projection!.list) fences = this.projection!.list.fences;
             if (tableBatch?.codeChanges.length)
               splices.push(...this.service.tableCodePatches(tableBatch.codeChanges));
             if (tableBatch?.structural) {

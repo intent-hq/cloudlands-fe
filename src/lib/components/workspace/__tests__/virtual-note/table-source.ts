@@ -13,6 +13,7 @@ export type TableRun = {
   text: string;
   marks: NonNullable<JSONContent['marks']>;
   hardBreak?: boolean;
+  anchor?: { id: string; type: string; commentId: string };
   block?: number;
   offset?: number;
   code?: { from: number; to: number };
@@ -28,6 +29,17 @@ export type TableCellSource = {
   span?: number;
   rowSpan?: number;
 };
+
+export function tableRunNode(run: TableRun): JSONContent {
+  return {
+    ...(run.anchor
+      ? { type: 'commentAnchor', attrs: run.anchor }
+      : run.hardBreak
+        ? { type: 'hardBreak' }
+        : { type: 'text', text: run.text }),
+    marks: run.marks,
+  };
+}
 export type TableIndex = {
   from: number;
   to: number;
@@ -315,7 +327,16 @@ export function tableRuns(source: string, start: number): TableRun[] {
       ) {
         runs.push({ from, to: from + token.raw.length, text: '\n', marks, hardBreak: true });
       } else if (token.type === 'html' && /^<!--/.test(token.raw)) {
-        // Anchors stay in untouched canonical source, not synthetic editable text.
+        const anchor = /^<!--anchor:([^:>]+):(start|end|point)-->$/.exec(token.raw);
+        if (anchor)
+          runs.push({
+            from,
+            to: from + token.raw.length,
+            text: '\ufffc',
+            marks,
+            anchor: { id: `${anchor[1]}:${anchor[2]}`, type: anchor[2], commentId: anchor[1] },
+          });
+        // Other HTML comments remain untouched source, with no editable atom.
       } else if (token.type === 'text' || token.type === 'escape' || token.type === 'html') {
         plain(token.raw, from, marks);
       } else throw new Error(`Unrepresented table inline token: ${token.type}`);
@@ -388,7 +409,12 @@ export function admitTableWindow(
         let blockOffset = 0;
         if (paragraph.type !== 'paragraph') throw new Error('Unrepresented native table block');
         for (const node of paragraph.content ?? []) {
-          const text = node.type === 'hardBreak' ? '\n' : (node.text ?? '');
+          const text =
+            node.type === 'commentAnchor'
+              ? '\ufffc'
+              : node.type === 'hardBreak'
+                ? '\n'
+                : (node.text ?? '');
           let consumed = 0;
           while (consumed < text.length) {
             const run = runs[index];
@@ -408,6 +434,9 @@ export function admitTableWindow(
               block,
               offset: blockOffset + consumed,
               ...(node.type === 'hardBreak' ? { hardBreak: true } : {}),
+              ...(node.type === 'commentAnchor'
+                ? { anchor: node.attrs as TableRun['anchor'] }
+                : {}),
             });
             consumed += count;
             offset += count;

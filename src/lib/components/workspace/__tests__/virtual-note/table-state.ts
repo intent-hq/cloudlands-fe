@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
-import { tableRuns, type TableFragment } from './table-source';
+import { tableRuns, tableRunNode, type TableFragment } from './table-source';
 
 export type TableInlineWrite = {
   revision: number;
@@ -32,11 +32,7 @@ export function patchTableParagraphs(
     content: [
       {
         type: 'paragraph',
-        content: tableRuns(source, edit.body).map((run) => ({
-          type: run.hardBreak ? 'hardBreak' : 'text',
-          ...(run.hardBreak ? {} : { text: run.text }),
-          marks: run.marks,
-        })),
+        content: tableRuns(source, edit.body).map(tableRunNode),
       },
     ],
   };
@@ -57,7 +53,9 @@ export function patchTableParagraphs(
     edit.paragraphs.some(
       (p) =>
         p.type !== 'paragraph' ||
-        (p.content ?? []).some((n) => n.type !== 'text' && n.type !== 'hardBreak'),
+        (p.content ?? []).some(
+          (n) => n.type !== 'text' && n.type !== 'hardBreak' && n.type !== 'commentAnchor',
+        ),
     )
   )
     throw new Error('Invalid native table paragraph range');
@@ -80,7 +78,8 @@ export function patchTableParagraphs(
   };
 }
 
-const length = (node: JSONContent) => (node.type === 'hardBreak' ? 1 : (node.text?.length ?? 0));
+const length = (node: JSONContent) =>
+  node.type === 'hardBreak' || node.type === 'commentAnchor' ? 1 : (node.text?.length ?? 0);
 function slice(nodes: JSONContent[], from: number, to: number) {
   let cursor = 0;
   const result: JSONContent[] = [];
@@ -126,11 +125,7 @@ export function patchTableInline(
     content: [
       {
         type: 'paragraph',
-        content: tableRuns(source, edit.body).map((run) => ({
-          type: run.hardBreak ? 'hardBreak' : 'text',
-          ...(run.hardBreak ? {} : { text: run.text }),
-          marks: run.marks,
-        })),
+        content: tableRuns(source, edit.body).map(tableRunNode),
       },
     ],
   };
@@ -173,11 +168,7 @@ export function patchTableCell(
     content: [
       {
         type: 'paragraph',
-        content: tableRuns(source, fragment.body).map((run) => ({
-          type: run.hardBreak ? 'hardBreak' : 'text',
-          ...(run.hardBreak ? {} : { text: run.text }),
-          marks: run.marks,
-        })),
+        content: tableRuns(source, fragment.body).map(tableRunNode),
       },
     ],
   };

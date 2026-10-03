@@ -33,6 +33,7 @@ const signature = (runs: TableRun[]) =>
       r.block ?? 0,
       r.hardBreak ?? false,
       r.code ?? null,
+      r.anchor ?? null,
     ]),
   );
 /** Backing-side validation: use compact syntax only when it reconstructs every exact run. */

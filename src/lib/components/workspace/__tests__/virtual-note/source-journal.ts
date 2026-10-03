@@ -1461,11 +1461,21 @@ export class SourceJournal {
     // mock backing index, never an alternate persisted comment format.
     const source = this.slice(0, this.length);
     this.backingMarkerScannedBytes += bytes(source);
+    const fences = scanFences(source);
+    const markerAt = (marker: string) => {
+      let at = source.indexOf(marker);
+      while (at >= 0) {
+        const literal = fences.find((fence) => at >= fence.from && at < fence.to);
+        if (!literal) return at;
+        at = source.indexOf(marker, literal.to);
+      }
+      return -1;
+    };
     for (const id of this.markerIds) {
       const opening = `<!--anchor:${id}:start-->`,
         closing = `<!--anchor:${id}:end-->`;
-      const start = source.indexOf(opening),
-        end = source.indexOf(closing);
+      const start = markerAt(opening),
+        end = markerAt(closing);
       const previous = this.anchors.find((a) => a.id === id);
       const alive = start >= 0 && end > start;
       const anchor: Anchor = {

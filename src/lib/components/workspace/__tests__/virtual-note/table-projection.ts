@@ -7,14 +7,14 @@ import { ReplaceStep, type Step } from '@tiptap/pm/transform';
 import { processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 import type { SourceProjection } from './source-projection';
 import type { Splice, TablePoint, Selection } from './source-journal';
-import { scanTables, type TableWindow, type TableFragment } from './table-source';
+import { scanTables, tableRunNode, type TableWindow, type TableFragment } from './table-source';
 import type { TableCodeEdit } from './table-code';
 import type { TableInlineWrite, TableParagraphWrite } from './table-state';
 
 const size = (node: JSONContent): number =>
   node.type === 'text'
     ? node.text!.length
-    : node.type === 'hardBreak'
+    : node.type === 'hardBreak' || node.type === 'commentAnchor'
       ? 1
       : 2 + (node.content ?? []).reduce((n, c) => n + size(c), 0);
 
@@ -101,11 +101,7 @@ export class TableProjection {
         const first = pm;
         this.boundaries.set(pm, cell.blocks?.[part].from ?? cell.first);
         for (const run of cell.runs.filter((r) => (r.block ?? 0) === block)) {
-          inline.push(
-            run.hardBreak
-              ? { type: 'hardBreak', marks: run.marks }
-              : { type: 'text', text: run.text, marks: run.marks },
-          );
+          inline.push(tableRunNode(run));
           const length = run.hardBreak ? 1 : run.text.length;
           for (let i = 0; i < length; i++) {
             const from = run.to - run.from === length ? run.from + i : run.from;
