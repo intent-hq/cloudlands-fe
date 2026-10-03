@@ -24,10 +24,9 @@ export interface CollaboratorSenderAttribution {
 /**
  * Mirror of the daemon's `single_line_name`: control characters collapse to
  * spaces, whitespace runs collapse to one space, and a name that sanitizes
- * to empty is dropped. Shared with the sender chip so its label carries the
- * same identity the preamble named.
+ * to empty is dropped. Used only for byte-exact historical preamble matching.
  */
-export function singleLineName(name: string | null | undefined): string | null {
+function singleLineName(name: string | null | undefined): string | null {
   if (typeof name !== 'string') return null;
   const collapsed = name
     .replace(/\p{Cc}/gu, ' ')

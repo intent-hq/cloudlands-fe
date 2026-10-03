@@ -1,3 +1,5 @@
+import { appClient } from '$lib/client';
+import { hostUserPresenceSaga } from '$store/renderer/slices/host-membership/sagas/host-user-presence-saga';
 import { store } from '$store/renderer/store';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -28,10 +30,30 @@ export function setupCollaborationSettingsPreview(
   populated = false,
   enabled = true,
   remote = false,
+  status: 'ready' | 'loading' | 'error' = 'ready',
   mixed = false,
 ) {
   const before = store.state;
   const originalClient = { ...hostMembershipClient };
+  const originalListClients = appClient.clients.list;
+  appClient.clients.list = async () => {
+    if (status === 'loading') return new Promise(() => {});
+    if (status === 'error') throw new Error('Controlled status failure');
+    return [
+      {
+        clientId: 'preview-device',
+        principalId: 'preview-owner',
+        hostRole: 'owner',
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        connections: 1,
+        capabilities: {},
+        transports: ['wss'],
+        connectedAt: '2026-10-03T00:00:00Z',
+      },
+    ];
+  };
   const identity = remote
     ? { provider: 'gitlab' as const, host: 'gitlab.example', externalUserId: '84' }
     : { provider: 'github' as const, host: 'github.com', externalUserId: '42' };
@@ -256,8 +278,11 @@ export function setupCollaborationSettingsPreview(
     );
   }
   const stop = store.runSaga(hostMembershipSaga);
+  const stopPresence = store.runSaga(hostUserPresenceSaga);
   return () => {
     stop();
+    stopPresence();
+    appClient.clients.list = originalListClients;
     store.dispatch(
       connectionsListReceived({
         connections: getItems(before.connections.connections),

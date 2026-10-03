@@ -18,9 +18,7 @@ for (const state of ['member', 'unknown', 'disabled']) {
     await mount(Preview, {
       hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state } },
     });
-    await expect(
-      page.getByRole('button', { name: 'Invite a host member', exact: true }),
-    ).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Invite user', exact: true })).toHaveCount(0);
     await expect(
       page.getByRole('region', { name: 'Share this instance', exact: true }),
     ).toHaveCount(0);
@@ -43,7 +41,7 @@ test('unlinked owner opens and cancels invitation using the keyboard without los
   await mount(Preview, {
     hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state: 'owner-empty' } },
   });
-  const invite = page.getByRole('button', { name: 'Invite a host member', exact: true });
+  const invite = page.getByRole('button', { name: 'Invite user', exact: true });
   const account = page.getByRole('textbox', { name: 'Account username' });
   await expect(account).toHaveCount(0);
   await invite.focus();
@@ -112,6 +110,11 @@ for (const width of [390, 1100]) {
         geometrySnapshot: { scene: 'collaboration-settings', state: 'mixed-sharing' },
       },
     });
+    const users = page.getByRole('list', { name: 'Instance Users', exact: true });
+    await expect(users).toContainText('Casey Morgan');
+    await expect(users.getByText('Online', { exact: true })).toBeVisible();
+    await expect(users.getByText('Offline', { exact: true })).toBeVisible();
+    await expect(users.getByRole('button', { name: 'Copy link', exact: true })).toBeVisible();
     const instances = page.getByRole('region', { name: 'Joined instances', exact: true });
     await expect(instances.locator('[data-session-id]')).toHaveCount(1);
     await expect(instances).toContainText('Studio host');
