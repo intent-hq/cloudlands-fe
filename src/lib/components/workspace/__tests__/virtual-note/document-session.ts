@@ -2011,7 +2011,7 @@ export class DocumentSession {
         return {
           anchor: first.source,
           head: last.source,
-          affinity: 1,
+          affinity: 1 as const,
           revision: this.service.revision,
           table: { kind: 'cell' as const, anchor: first.point, head: last.point },
         };

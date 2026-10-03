@@ -31,6 +31,8 @@ async function capture(page: Page, side: string) {
             const logicalRow = rows?.[row] ?? row;
             const logicalColumn =
               cells?.filter((c) => c.row === logicalRow)[column]?.column ?? column;
+            if (s.toJSON().type === 'cell')
+              return { kind: 'cell', row: logicalRow, column: logicalColumn };
             return {
               kind: 'cell',
               row: logicalRow,
@@ -61,8 +63,6 @@ async function capture(page: Page, side: string) {
           kind: 'cell',
           row: anchor !== selected.backwardRows ? selected.top : selected.bottom - 1,
           column: anchor !== selected.backwardColumns ? selected.left : selected.right - 1,
-          depth: 1,
-          offset: 0,
         });
         logical = { type: 'cell', anchor: point(true), head: point(false) };
       }
@@ -79,6 +79,14 @@ async function capture(page: Page, side: string) {
           head: e.view.posAtDOM(dom.focusNode!, dom.focusOffset),
         },
         cells,
+        proseBefore:
+          h.proof?.projection?.mixed?.parts.some(
+            (p) => !p.projection.table && p.projection.start < part!.window.from,
+          ) ?? false,
+        proseAfter:
+          h.proof?.projection?.mixed?.parts.some(
+            (p) => !p.projection.table && p.projection.start >= part!.window.to,
+          ) ?? false,
         error: h.proof?.error ?? '',
         stats: h.proof?.snapshot(),
       };
@@ -161,7 +169,7 @@ for (const edge of ['before', 'after'] as const)
         type: 'doc',
         content: nativeDoc.content!.flatMap((node, i) => {
           if (node.type !== 'table')
-            return (edge === 'before' ? i < tableIndex : i > tableIndex) ? [node] : [];
+            return (i < tableIndex ? bounded.proseBefore : bounded.proseAfter) ? [node] : [];
           return [
             {
               ...node,
