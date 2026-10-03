@@ -30,6 +30,8 @@ import {
   chatLiveStreamPhaseChanged,
   chatTranscriptSnapshotApplied,
   scrollbackFetchStarted,
+  scrollbackOlderPageSettled,
+  scrollbackGapPageSettled,
   scrollbackSeekSettled,
   scrollbackContinuationReset,
   pendingQuestionRecoveryRequested,
@@ -1540,6 +1542,57 @@ describe('chatState selectors', () => {
     expect(state.byAgentId[AGENT].fetchingOlderHistory).toBe(true);
     expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('older-1');
   });
+
+  it('a local snapshot replay seeds the cursor when chat state was lost', () => {
+    const state = chatStateReducer(
+      initialState,
+      chatTranscriptSnapshotApplied(
+        AGENT,
+        { truncated: true, totalMessages: 20, nextToken: 'snapshot-tail', resumed: false },
+        true,
+      ),
+    );
+    expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('snapshot-tail');
+    expect(state.byAgentId[AGENT].scrollbackDiscardEpoch).toBe(0);
+  });
+
+  it.each(['older', 'gap', 'seek'] as const)(
+    'snapshot refresh preserves a %s walk even when its older cursor is null',
+    (direction) => {
+      let state = chatStateReducer(initialState, scrollbackFetchStarted(AGENT, direction));
+      if (direction === 'older') {
+        state = chatStateReducer(state, scrollbackOlderPageSettled(AGENT, null));
+      } else if (direction === 'gap') {
+        state = chatStateReducer(state, scrollbackGapPageSettled(AGENT, 'forward'));
+      } else {
+        state = chatStateReducer(
+          state,
+          scrollbackSeekSettled(AGENT, { nextToken: null, prevToken: 'forward' }),
+        );
+      }
+      // Closing a subscription drops its meta, but retains its history walk.
+      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
+      state = chatStateReducer(
+        state,
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: true,
+          totalMessages: 20,
+          nextToken: 'snapshot-tail',
+        }),
+      );
+      expect(state.byAgentId[AGENT].scrollbackOlderToken).toBeNull();
+      state = chatStateReducer(state, scrollbackContinuationReset(AGENT));
+      state = chatStateReducer(
+        state,
+        chatTranscriptSnapshotApplied(AGENT, {
+          truncated: true,
+          totalMessages: 20,
+          nextToken: 'fresh-tail',
+        }),
+      );
+      expect(state.byAgentId[AGENT].scrollbackOlderToken).toBe('fresh-tail');
+    },
+  );
 
   describe('far-flick seek state (aroundIndex)', () => {
     it('initial state carries the seek flags off', () => {

@@ -46,6 +46,55 @@ test('fills with serial five-row pages despite virtual spacers, then stays at th
   });
 });
 
+test('snapshot refresh preserves the cursor when viewport growth needs more history', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(ChatViewportFillHost, { props: { height: 900 } });
+  const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+  const result = async () => JSON.parse(await component.getByTestId('requests').innerText());
+  await expect
+    .poll(() =>
+      viewport.evaluate((node) => {
+        const first = node.querySelector<HTMLElement>('[data-message-id]');
+        return !!first && first.getBoundingClientRect().top <= node.getBoundingClientRect().top;
+      }),
+    )
+    .toBe(true);
+  await page.waitForTimeout(400);
+  const before = (await result()).requests.length;
+  expect(before).toBeGreaterThan(0);
+  await component.update({ props: { height: 1600, refreshSnapshot: true } });
+  await expect.poll(async () => (await result()).requests.length).toBeGreaterThan(before);
+  await expect
+    .poll(() =>
+      viewport.evaluate((node) => {
+        const first = node.querySelector<HTMLElement>('[data-message-id]');
+        return !!first && first.getBoundingClientRect().top <= node.getBoundingClientRect().top;
+      }),
+    )
+    .toBe(true);
+  await page.waitForTimeout(400);
+  const { requests, maxInFlight } = await result();
+  await testInfo.attach('conversation-requests', {
+    body: JSON.stringify({ requests, maxInFlight }, null, 2),
+    contentType: 'application/json',
+  });
+  expect(maxInFlight).toBe(1);
+  expect(new Set(requests.map((request: { nextToken: string }) => request.nextToken)).size).toBe(
+    requests.length,
+  );
+  for (const request of requests) {
+    expect(request).toMatchObject({
+      agentId: 'primary',
+      workspaceId: 'viewport-fill',
+      limit: 5,
+      projection: 'slim',
+    });
+    expect(request.aroundMessageId).toBeUndefined();
+  }
+});
+
 test('large hydrated rows need no history, but shrinking their content remeasures', async ({
   mount,
   page,

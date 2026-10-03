@@ -67,6 +67,7 @@ import {
   chatSendStarted,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  olderHistoryPageRequested,
   retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
@@ -88,6 +89,7 @@ import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/wor
 import {
   selectAwaitingSwitchBackSnapshot,
   selectChatLiveStreamPhase,
+  selectChatAgentState,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
   selectAgentMessages,
@@ -98,6 +100,7 @@ import {
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { chatSubscribeSaga, SWITCH_BACK_REVEAL_WAIT_MS } from './chat-subscribe-saga';
+import { chatScrollbackSaga } from './chat-scrollback-saga';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
@@ -275,6 +278,120 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       rows[0].metadata,
     );
     expect(JSON.stringify(rows)).toBe(before);
+  });
+
+  it.each(['snapshot refresh', 'hydration replay', 'discard replay'] as const)(
+    '%s does not rewind successful older-page reads during loading',
+    async (trigger) => {
+      const agentId = `load-cursor-${trigger}`;
+      seedSession(agentId);
+      const stopScrollback = appStore.runSaga(chatScrollbackSaga);
+      try {
+        const sub = openChat(agentId);
+        const snapshot: ChatTranscript = {
+          ...transcript([makeMessage('m-15', 'Newest window')]),
+          fromSnapshot: true,
+          truncated: true,
+          totalMessages: 20,
+          nextToken: 'before-15',
+          ...(trigger === 'discard replay' ? { resumed: false } : {}),
+        };
+        sub.handler(snapshot);
+        expect(appClient.agents.getConversation).not.toHaveBeenCalled();
+        vi.mocked(appClient.agents.getConversation)
+          .mockResolvedValueOnce({
+            messages: [makeMessage('m-10', 'Older page')],
+            truncated: true,
+            totalMessages: 20,
+            nextToken: 'before-10',
+            prevToken: 'after-10',
+          })
+          .mockResolvedValueOnce({
+            messages: [makeMessage('m-5', 'Next older page')],
+            truncated: true,
+            totalMessages: 20,
+            nextToken: 'before-5',
+            prevToken: 'after-5',
+          });
+        appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+        await vi.waitFor(() =>
+          expect(selectChatAgentState.select(appStore.state, agentId).fetchingOlderHistory).toBe(
+            false,
+          ),
+        );
+        if (trigger !== 'snapshot refresh') {
+          appStore.dispatch(transcriptHydrationStarted(agentId));
+          appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+        } else {
+          // A refreshed snapshot can change its newest rows while retaining
+          // the same oldest row/cursor (e.g. an in-flight turn update).
+          sub.handler({ ...snapshot, messages: [makeMessage('m-15', 'Refreshed window')] });
+        }
+        appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+        await vi.waitFor(() =>
+          expect(selectChatAgentState.select(appStore.state, agentId).fetchingOlderHistory).toBe(
+            false,
+          ),
+        );
+        expect(vi.mocked(appClient.agents.getConversation).mock.calls).toEqual([
+          [agentId, 5, 'before-15', undefined, undefined, WS],
+          [agentId, 5, 'before-10', undefined, undefined, WS],
+        ]);
+      } finally {
+        stopScrollback();
+      }
+    },
+  );
+
+  it('replaying a discard snapshot preserves an in-flight page, but a fresh discard resets it', async () => {
+    const agentId = 'load-discard-in-flight';
+    seedSession(agentId);
+    const stopScrollback = appStore.runSaga(chatScrollbackSaga);
+    try {
+      const sub = openChat(agentId);
+      const snapshot: ChatTranscript = {
+        ...transcript([makeMessage('m-15', 'Newest window')]),
+        fromSnapshot: true,
+        truncated: true,
+        totalMessages: 20,
+        nextToken: 'before-15',
+        resumed: false,
+      };
+      sub.handler(snapshot);
+      const pending = deferred<Awaited<ReturnType<typeof appClient.agents.getConversation>>>();
+      vi.mocked(appClient.agents.getConversation).mockReturnValueOnce(pending.promise);
+      appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+      const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+      appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+      expect(appClient.agents.getConversation).toHaveBeenCalledTimes(1);
+      expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+        fetchingOlderHistory: true,
+        scrollbackDiscardEpoch: epoch,
+      });
+      // The same payload freshly delivered by the daemon is still an
+      // authoritative reset; local replay identity must not suppress it.
+      sub.handler({ ...snapshot });
+      expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+        fetchingOlderHistory: false,
+        scrollbackDiscardEpoch: epoch + 1,
+        scrollbackOlderToken: 'before-15',
+      });
+      pending.resolve({
+        messages: [makeMessage('stale', 'Discarded page')],
+        truncated: true,
+        totalMessages: 20,
+        nextToken: 'stale-token',
+        prevToken: null,
+      });
+      await pending.promise;
+      expect(selectChatAgentState.select(appStore.state, agentId).scrollbackOlderToken).toBe(
+        'before-15',
+      );
+    } finally {
+      stopScrollback();
+    }
   });
 
   it('initializeChatRequested opens exactly one standing subscription per agent', () => {

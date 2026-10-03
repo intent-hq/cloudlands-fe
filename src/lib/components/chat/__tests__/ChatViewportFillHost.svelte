@@ -32,6 +32,7 @@
     scenario = 'short',
     compact = false,
     retained = false,
+    refreshSnapshot = false,
   }: {
     height?: number;
     active?: boolean;
@@ -47,6 +48,7 @@
       | 'gap-error'
       | 'gap-stalled'
       | 'seek';
+    refreshSnapshot?: boolean;
     retained?: boolean;
     compact?: boolean;
   } = $props();
@@ -217,6 +219,19 @@
           'primary',
           Array.from({ length: 5 }, (_, i) => message(95 + i)),
         ),
+      ),
+    );
+  });
+  $effect(() => {
+    if (!refreshSnapshot) return;
+    untrack(() =>
+      store.dispatch(
+        chatTranscriptSnapshotApplied('primary', {
+          truncated: true,
+          totalMessages: total,
+          oldestMessageId: `m-${total - initialCount}`,
+          nextToken: `before-${total - initialCount}`,
+        }),
       ),
     );
   });
