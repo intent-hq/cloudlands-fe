@@ -1,3 +1,4 @@
+import { hasUnresolvedQueueProcessing } from '../../pending-submissions/pending-submissions-model';
 import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
@@ -407,7 +408,7 @@ function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): Sa
   yield* delay(0);
   const [scope] = action.payload;
   const entry = yield* selectPendingSubmissionEntry.effect(scope);
-  if (!entry?.supported || !entry.refreshNeeded || entry.attemptActive) return;
+  if (!entry?.supported || !entry.refreshNeeded || hasUnresolvedQueueProcessing(entry)) return;
   const display = yield* selectAgentSubmissionDisplay.effect(scope.agentId, scope.workspaceId);
   if (!display.queue.length) return;
   // Both services retain their existing scope/connection/read fences and trailing coalescing.

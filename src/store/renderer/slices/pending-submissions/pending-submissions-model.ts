@@ -31,6 +31,11 @@ export function supportsSubmissionCorrelation(value: unknown): boolean {
   return value === 1;
 }
 
+/** Provider streaming alone does not make confirmed queue work ambiguous. */
+export function hasUnresolvedQueueProcessing(entry: PendingSubmissionEntry): boolean {
+  return entry.attemptActive && getItems(entry.processing).length > 0;
+}
+
 export function createPendingEntry(
   scope: SubmissionScope,
   capability: unknown,

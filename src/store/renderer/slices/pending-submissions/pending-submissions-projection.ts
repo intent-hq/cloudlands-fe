@@ -1,4 +1,4 @@
-import { evidenceSubmissionIds } from './pending-submissions-model';
+import { evidenceSubmissionIds, hasUnresolvedQueueProcessing } from './pending-submissions-model';
 import type { QueuedMessage } from '$shared/types';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { PendingSubmission, PendingSubmissionEntry } from './pending-submissions-types';
@@ -41,7 +41,7 @@ export function projectPendingSubmissions(
   queue: PendingQueueDisplayRow[];
 } {
   const supported = entry?.supported === true;
-  const checking = supported && (entry.refreshNeeded || entry.attemptActive);
+  const checking = supported && (entry.refreshNeeded || hasUnresolvedQueueProcessing(entry));
   const queue = confirmedQueue.map((message) => confirmedRow(message, checking));
   if (!entry) return { conversation: [], processing: [], queue };
   const seededIds = new Set(
