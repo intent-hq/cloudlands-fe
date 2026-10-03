@@ -99,7 +99,6 @@ function mockSettings({
 } = {}) {
   const entries: Record<string, Entry> = {
     'agents.maxConcurrent': { path: 'agents.maxConcurrent', value: 0, min: 0, max: 200 },
-    'agents.flushQueuedMessages': { path: 'agents.flushQueuedMessages', value: 'all' },
     [MEMORY_BUDGET_PATH]: budget
       ? {
           path: MEMORY_BUDGET_PATH,

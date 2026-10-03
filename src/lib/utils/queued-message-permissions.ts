@@ -15,7 +15,11 @@ export function queuedMessagePermissions(
     message.author?.principalId !== null &&
     authorId === ownPrincipalId;
   const owner = ownPrincipalId === ownerPrincipalId;
-  return { edit: own, remove: own || owner || isHostOwner, sendNow: own || isHostOwner };
+  return {
+    edit: own,
+    remove: own || owner || isHostOwner,
+    sendNow: (own || isHostOwner) && !isProtectedMonitorWake(message),
+  };
 }
 
 /** Resolve only an exact active editor identity, never an author/position guess. */
@@ -29,4 +33,24 @@ export function findQueuedMessageForEdit(
       ? message.editingMessageId === messageId
       : message.id === messageId,
   );
+}
+
+/** Monitor wake delivery belongs to the daemon's monitor lifecycle. */
+function isProtectedMonitorWake(message: QueuedMessage): boolean {
+  return (
+    message.messageMetadata?.type === 'script_monitor_wake' &&
+    typeof message.messageMetadata.monitorId === 'string'
+  );
+}
+
+/** Mirror the daemon's explicit-batch readiness; individual owner sends may authorize imports. */
+export function isQueuedMessageReadyForBatch(message: QueuedMessage, now = Date.now()): boolean {
+  const metadata = message.messageMetadata;
+  const principal = metadata?.fromPrincipalId;
+  const unbound =
+    metadata &&
+    Object.hasOwn(metadata, 'humanAuthor') &&
+    !(typeof principal === 'string' && principal.length > 0);
+  const held = message.holdKind !== undefined && Date.parse(message.holdUntil ?? '') > now;
+  return !message.editing && !held && !unbound && !isProtectedMonitorWake(message);
 }

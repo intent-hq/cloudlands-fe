@@ -1045,6 +1045,17 @@ export const sendQueuedMessageNowRequested = createAsyncAction<
   QueuedMessageSendOutcome
 >('chatState/sendQueuedMessageNow', 'chatState/sendQueuedMessageNowRequested');
 
+/** Snapshot bulk actions share the per-agent FIFO with individual sends/removals. */
+export const sendQueuedMessagesNowRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageIds: string[]],
+  QueuedMessageSendOutcome
+>('chatState/sendQueuedMessagesNow', 'chatState/sendQueuedMessagesNowRequested');
+
+export const clearQueuedMessagesRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageIds: string[]],
+  void
+>('chatState/clearQueuedMessages', 'chatState/clearQueuedMessagesRequested');
+
 // ============================================================================
 // Reducer
 // ============================================================================

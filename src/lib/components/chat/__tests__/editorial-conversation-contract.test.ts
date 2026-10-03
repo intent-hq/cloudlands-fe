@@ -391,9 +391,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('AuroraSofteningLayer');
     expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
     expect(panel).toContain('height: calc(100% + 10rem)');
-    expect(panel).toContain('{#snippet queueRegion()}');
-    expect(panel).toContain('<QueuedMessageList');
-    expect(panel).not.toContain('data-testid="queued-message-utility-area"');
     expect(panel).not.toContain('regular-composer-aurora-host');
   });
 });

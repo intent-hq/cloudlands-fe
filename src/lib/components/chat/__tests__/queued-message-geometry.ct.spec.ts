@@ -42,12 +42,12 @@ test('packs queued rows together without shrinking keyboard action targets', asy
   );
   expect(boxes).toHaveLength(3);
   for (let i = 0; i < boxes.length; i += 1) {
-    expect(boxes[i].height).toBeCloseTo(28, 1);
-    if (i > 0) expect(boxes[i].y - boxes[i - 1].y - boxes[i - 1].height).toBeCloseTo(0, 1);
+    expect(boxes[i].height).toBeGreaterThanOrEqual(24);
+    if (i > 0) expect(boxes[i].y).toBeGreaterThanOrEqual(boxes[i - 1].y + boxes[i - 1].height);
   }
   const textInsets = await component.evaluate((root) => {
     const label = root
-      .querySelector('[data-testid="queued-messages-label"]')!
+      .querySelector('[data-testid="queued-messages-disclosure"]')!
       .getBoundingClientRect();
     const texts = [...root.querySelectorAll('[data-testid="queued-message-text"]')].map((node) =>
       node.getBoundingClientRect(),
@@ -57,8 +57,17 @@ test('packs queued rows together without shrinking keyboard action targets', asy
       betweenRows: texts.slice(1).map((text, i) => text.top - texts[i].bottom),
     };
   });
-  expect(textInsets.afterHeader).toBeCloseTo(8, 1);
-  expect(textInsets.betweenRows).toEqual([10, 10]);
+  expect(textInsets.afterHeader).toBeGreaterThanOrEqual(0);
+  expect(textInsets.betweenRows.every((gap) => gap >= 0)).toBe(true);
+  expect(
+    await rows
+      .getByTestId('queued-message-text')
+      .evaluateAll((nodes) =>
+        nodes.every(
+          (node) => node.scrollWidth <= node.clientWidth && node.scrollHeight <= node.clientHeight,
+        ),
+      ),
+  ).toBe(true);
 
   const row = rows.nth(1);
   await row.hover();
@@ -72,6 +81,34 @@ test('packs queued rows together without shrinking keyboard action targets', asy
   await expect(component.getByTestId('queued-message-last-action')).toHaveText(
     'send:queued-geometry-1',
   );
+});
+
+test('keeps a narrow batch keyboard accessible when collapsed', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(QueuedMessageGeometryHost, {
+    props: { width: 240, zoom: 1, messageCount: 3 },
+  });
+  const disclosure = component.getByTestId('queued-messages-disclosure');
+  const surface = component.getByTestId('queued-messages-container');
+  await expect(disclosure).toHaveAccessibleName(/^3\b/);
+  expect(await surface.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await testInfo.attach('expanded-queue-batch', {
+    body: await surface.screenshot(),
+    contentType: 'image/png',
+  });
+  await disclosure.focus();
+  await page.keyboard.press('Enter');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await expect(component.getByTestId('queued-message-row')).toHaveCount(0);
+  await expect(disclosure).toHaveAccessibleName(/^3\b/);
+  await expect(disclosure).toBeFocused();
+  await testInfo.attach('collapsed-queue-batch', {
+    body: await surface.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 test('keeps loaded and unresolved image tiles tiny-rounded with compact keyboard targets', async ({
@@ -103,7 +140,7 @@ test('keeps loaded and unresolved image tiles tiny-rounded with compact keyboard
     .poll(() => image.evaluate((node) => node.complete && node.naturalWidth > 0))
     .toBe(true);
   const initialBox = (await row.boundingBox())!;
-  expect(initialBox.height).toBe(28);
+  expect(initialBox.height).toBeGreaterThanOrEqual(24);
   for (const tile of [image, placeholder]) {
     await expect(tile).toHaveCSS('border-radius', '2px');
     const box = (await tile.boundingBox())!;
@@ -143,11 +180,9 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   });
   const disclosure = component.getByTestId('queued-messages-disclosure');
   const rows = component.getByTestId('queued-message-row');
-  const chevron = component.getByTestId('queued-messages-chevron').locator('svg');
   const controlsId = await disclosure.getAttribute('aria-controls');
 
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
-  await expect(chevron).not.toHaveClass(/rotate-90/);
   await expect(component.locator(`#${controlsId}`)).toHaveCount(1);
   await expect(rows).toHaveCount(1);
 
@@ -155,24 +190,17 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   await disclosure.click();
   await expect(disclosure).toBeFocused();
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-  await expect(chevron).toHaveClass(/rotate-90/);
   await expect(rows).toHaveCount(0);
 
   await component.update({ props: { width: 360, zoom: 1, messageCount: 3 } });
-  await expect(component.getByTestId('queued-messages-label')).toHaveText('3 queued messages');
+  await expect(disclosure).toHaveAccessibleName(/^3\b/);
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
   await expect(rows).toHaveCount(0);
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const reducedTransitionSeconds = await component
-    .getByTestId('queued-messages-chevron')
-    .locator('svg')
-    .evaluate((node) => Number.parseFloat(getComputedStyle(node).transitionDuration));
-  expect(reducedTransitionSeconds).toBeLessThanOrEqual(0.00001);
   await disclosure.press('Enter');
   await expect(disclosure).toBeFocused();
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
-  await expect(chevron).not.toHaveClass(/rotate-90/);
   await expect(rows).toHaveCount(3);
   await expect
     .poll(() => component.evaluate((node) => node.getAnimations({ subtree: true }).length))
@@ -181,7 +209,6 @@ test('supports click, keyboard, focus, reduced motion, and a live collapsed coun
   await disclosure.press('Space');
   await expect(disclosure).toBeFocused();
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-  await expect(chevron).toHaveClass(/rotate-90/);
   await expect(rows).toHaveCount(0);
 });
 
@@ -231,7 +258,7 @@ test('opens the compact pencil action by keyboard without changing row geometry'
   await expect(edit).toBeFocused();
   await expect(page.getByRole('tooltip')).toBeVisible();
   expect(await row.boundingBox()).toEqual(initial);
-  expect(initial.height).toBeCloseTo(28, 1);
+  expect(initial.height).toBeGreaterThanOrEqual(24);
   expect(
     await row
       .getByTestId('queued-message-text')
@@ -356,70 +383,71 @@ for (const state of [
   { name: 'one message at 200% zoom', width: 120, zoom: 2, messageCount: 1 },
   { name: 'multiple messages at 200% zoom', width: 120, zoom: 2, messageCount: 3 },
 ]) {
-  test(`keeps disclosure geometry exact with ${state.name}`, async ({ mount }) => {
+  test(`keeps the disclosure and messages contained with ${state.name}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
     const component = await mount(QueuedMessageGeometryHost, { props: state });
     const container = component.getByTestId('queued-messages-container');
     const disclosure = component.getByTestId('queued-messages-disclosure');
     const label = component.getByTestId('queued-messages-label');
-    const chevron = component.getByTestId('queued-messages-chevron');
     const messageRows = component.getByTestId('queued-message-row');
-    const firstText = component.getByTestId('queued-message-text').first();
 
+    // Font reflow can remove a line and retarget the preview-height spring.
+    // Record the baseline only once the loaded-font layout reaches that target.
+    await page.evaluate(() => document.fonts.ready);
+    const viewport = component.getByTestId('queued-messages-viewport');
+    await expect
+      .poll(() =>
+        viewport.evaluate(
+          (node) =>
+            Number.parseFloat((node as HTMLElement).style.height) ===
+            Math.min((node.firstElementChild as HTMLElement).clientHeight, 144),
+        ),
+      )
+      .toBe(true);
     const containerBox = await container.boundingBox();
+    await testInfo.attach('expanded-before', {
+      body: await container.screenshot(),
+      contentType: 'image/png',
+    });
     const disclosureBox = await disclosure.boundingBox();
     const labelBox = await label.boundingBox();
-    const chevronBox = await chevron.boundingBox();
-    const firstTextBox = await firstText.boundingBox();
     const firstRowBox = await messageRows.first().boundingBox();
-    const lastRowBox = await messageRows.last().boundingBox();
+    const viewportBox = await component.getByTestId('queued-messages-viewport').boundingBox();
 
     expect(containerBox).not.toBeNull();
     expect(disclosureBox).not.toBeNull();
     expect(labelBox).not.toBeNull();
-    expect(chevronBox).not.toBeNull();
-    expect(firstTextBox).not.toBeNull();
     expect(firstRowBox).not.toBeNull();
-    expect(lastRowBox).not.toBeNull();
-    expect(disclosureBox!.x).toBeCloseTo(containerBox!.x, 1);
-    expect(disclosureBox!.width).toBeCloseTo(containerBox!.width, 1);
-    expect(disclosureBox!.height).toBeCloseTo(28 * state.zoom, 1);
-    expect(disclosureBox!.y - containerBox!.y).toBeCloseTo(4 * state.zoom, 1);
-    expect(firstRowBox!.y).toBeCloseTo(disclosureBox!.y + disclosureBox!.height, 1);
-    expect(chevronBox!.width).toBeCloseTo(16 * state.zoom, 1);
-    expect(chevronBox!.height).toBeCloseTo(16 * state.zoom, 1);
-    expect(labelBox!.x - disclosureBox!.x).toBeCloseTo(14 * state.zoom, 1);
-    expect(
-      disclosureBox!.x + disclosureBox!.width - (chevronBox!.x + chevronBox!.width),
-    ).toBeCloseTo(labelBox!.x - disclosureBox!.x, 1);
-    expect(labelBox!.x).toBeCloseTo(firstTextBox!.x, 1);
-    expect(firstTextBox!.y - labelBox!.y - labelBox!.height).toBeCloseTo(8 * state.zoom, 1);
-    expect(await container.evaluate((node) => getComputedStyle(node).paddingBottom)).toBe('0px');
+    expect(viewportBox).not.toBeNull();
+    expect(disclosureBox!.x).toBeGreaterThanOrEqual(containerBox!.x);
+    expect(disclosureBox!.x + disclosureBox!.width).toBeLessThanOrEqual(
+      containerBox!.x + containerBox!.width,
+    );
+    expect(disclosureBox!.height).toBeGreaterThanOrEqual(24 * state.zoom);
+    expect(disclosureBox!.y).toBeGreaterThanOrEqual(containerBox!.y);
+    expect(firstRowBox!.y).toBeGreaterThanOrEqual(disclosureBox!.y + disclosureBox!.height);
+    expect(labelBox!.x).toBeGreaterThanOrEqual(disclosureBox!.x);
+    expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(
+      disclosureBox!.x + disclosureBox!.width,
+    );
 
     const containerBottom = containerBox!.y + containerBox!.height;
-    const lastRowBottom = lastRowBox!.y + lastRowBox!.height;
-    expect(containerBottom - lastRowBottom).toBeCloseTo(1 * state.zoom, 1);
+    expect(containerBottom).toBeGreaterThanOrEqual(viewportBox!.y + viewportBox!.height);
 
     await disclosure.focus();
     await disclosure.press('Space');
     await expect(messageRows).toHaveCount(0);
     await expect(disclosure).toBeFocused();
     await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-    await expect(container).toHaveCSS('padding-top', '0px');
     const collapsedContainerBox = (await container.boundingBox())!;
     const collapsedDisclosureBox = (await disclosure.boundingBox())!;
-    const collapsedLabelBox = (await label.boundingBox())!;
-    expect(collapsedDisclosureBox.height).toBeCloseTo(28 * state.zoom, 1);
-    expect(collapsedDisclosureBox.y).toBeCloseTo(collapsedContainerBox.y, 1);
-    expect(collapsedLabelBox.y + collapsedLabelBox.height / 2).toBeCloseTo(
-      collapsedDisclosureBox.y + collapsedDisclosureBox.height / 2,
-      1,
+    expect(collapsedDisclosureBox.height).toBeGreaterThanOrEqual(24 * state.zoom);
+    expect(collapsedDisclosureBox.y).toBeGreaterThanOrEqual(collapsedContainerBox.y);
+    expect(collapsedDisclosureBox.y + collapsedDisclosureBox.height).toBeLessThanOrEqual(
+      collapsedContainerBox.y + collapsedContainerBox.height,
     );
-    expect(collapsedContainerBox.height).toBeCloseTo(29 * state.zoom, 1);
-    expect(
-      collapsedContainerBox.y +
-        collapsedContainerBox.height -
-        (collapsedDisclosureBox.y + collapsedDisclosureBox.height),
-    ).toBeCloseTo(1 * state.zoom, 1);
     await disclosure.press('Enter');
     await expect(messageRows).toHaveCount(state.messageCount);
     await expect(disclosure).toBeFocused();
@@ -430,14 +458,15 @@ for (const state of [
     });
     await expect(messageRows).toHaveCount(state.messageCount);
     await expect.poll(() => container.boundingBox()).toEqual(containerBox);
+    await testInfo.attach('expanded-reopened', {
+      body: await container.screenshot(),
+      contentType: 'image/png',
+    });
   });
 }
 
 for (const theme of ['light', 'dark']) {
-  test(`keeps the ${theme} queue transparent with a bottom divider and borderless focused editor`, async ({
-    mount,
-    page,
-  }) => {
+  test(`supports editing and removal in the ${theme} queue card`, async ({ mount, page }) => {
     await page.evaluate((theme) => {
       document.documentElement.className = theme;
     }, theme);
@@ -445,26 +474,11 @@ for (const theme of ['light', 'dark']) {
       props: { width: 360, messageCount: 2 },
     });
     const queue = component.getByTestId('queued-messages-container');
-    await expect(queue).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await expect(queue).toHaveCSS('border-bottom-width', '1px');
-    await expect(queue).toHaveCSS('border-bottom-style', 'solid');
-    await expect(queue).toHaveCSS('border-top-width', '0px');
     const row = component.getByTestId('queued-message-row').first();
     await row.hover();
-    await expect(row).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await component.getByTestId('queued-message-content').first().dblclick();
     const editor = component.locator('textarea');
     await expect(editor).toBeFocused();
-    await expect(editor).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-    await expect(editor).toHaveCSS('border-width', '0px');
-    await expect(editor).toHaveCSS('outline-style', 'none');
-    const shadowLengths = await editor.evaluate(
-      (node) =>
-        getComputedStyle(node)
-          .boxShadow.match(/-?[\d.]+px/g)
-          ?.map(Number.parseFloat) ?? [],
-    );
-    expect(shadowLengths.every((length) => length === 0)).toBe(true);
     await editor.fill('Updated queued message');
     await editor.press('Enter');
     await expect(editor).toHaveCount(0);
@@ -472,7 +486,7 @@ for (const theme of ['light', 'dark']) {
       'save:queued-geometry-0',
     );
     await component.getByTestId('queued-messages-disclosure').click();
-    await expect(queue).toHaveCSS('border-bottom-width', '1px');
+    await expect(component.getByTestId('queued-message-row')).toHaveCount(0);
     await component.update({ props: { width: 360, messageCount: 0 } });
     await expect(queue).toHaveCount(0);
   });

@@ -4,7 +4,6 @@
    *
    * Daemon-side agent configuration:
    * - agents.maxConcurrent: concurrent agent session cap
-   * - agents.flushQueuedMessages: batch-deliver queued messages when a turn ends
    * - agents.memoryBudgetMb: aggregate child-tree memory admission gate
    *   (absent = auto, a host-derived budget the catalog advertises as
    *   defaultValue; 0 = off)
@@ -40,18 +39,9 @@
     defineSettingsCustomControls,
     type SettingsControlContext,
   } from '$lib/components/patterns/settings';
-  import { Input, Select, Slider, Switch } from '$lib/components/patterns/settings/custom-controls';
-
-  type FlushQueuedMessagesMode = 'all' | 'systemOnly' | 'off';
-
-  const FLUSH_MODES: FlushQueuedMessagesMode[] = ['all', 'systemOnly', 'off'];
-
-  function isFlushMode(value: unknown): value is FlushQueuedMessagesMode {
-    return typeof value === 'string' && (FLUSH_MODES as string[]).includes(value);
-  }
+  import { Input, Slider, Switch } from '$lib/components/patterns/settings/custom-controls';
 
   const SETTING_PATH = 'agents.maxConcurrent';
-  const FLUSH_SETTING_PATH = 'agents.flushQueuedMessages';
   const MEMORY_BUDGET_PATH = 'agents.memoryBudgetMb';
   const IDLE_REAP_PATH = 'agents.idleReapMinutes';
   const ACP_HEAP_PATH = 'agents.acpNodeMaxOldSpaceMb';
@@ -90,10 +80,6 @@
   );
   let inputValue = $derived(
     String($form$?.drafts[SETTING_PATH] ?? (maxConcurrent === 0 ? '' : maxConcurrent)),
-  );
-  const flushValue = $derived($entries$[FLUSH_SETTING_PATH]?.value);
-  const flushQueuedMessages = $derived(
-    isFlushMode(flushValue) ? flushValue : flushValue === false ? 'off' : 'all',
   );
 
   const memoryBudgetEntry = $derived($entries$[MEMORY_BUDGET_PATH]);
@@ -172,17 +158,6 @@
   function positiveNumber(value: unknown, fallback: number): number {
     return typeof value === 'number' && value > 0 ? Math.round(value) : fallback;
   }
-
-  const flushModeOptions = $derived([
-    { value: 'all', label: m.settings_agentBackend_flushQueuedMessages_all_label() },
-    { value: 'systemOnly', label: m.settings_agentBackend_flushQueuedMessages_systemOnly_label() },
-    { value: 'off', label: m.settings_agentBackend_flushQueuedMessages_off_label() },
-  ]);
-
-  const flushModeLabel = $derived(
-    flushModeOptions.find((option) => option.value === flushQueuedMessages)?.label ??
-      flushQueuedMessages,
-  );
 
   onMount(() => {
     appStore.dispatch(settingsFormOpened(identity, 'agent-backend'));
@@ -341,26 +316,6 @@
   function handleAcpHeapKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') commitAcpHeapInput();
   }
-  function handleFlushModeChange(value: string) {
-    const operation = selectSettingsFormOperation.select(
-      appStore.state,
-      identity,
-      FLUSH_SETTING_PATH,
-    );
-    const entry = selectSettingsFormEntries.select(appStore.state, identity)[FLUSH_SETTING_PATH];
-    const committed = isFlushMode(entry?.value)
-      ? entry.value
-      : entry?.value === false
-        ? 'off'
-        : 'all';
-    if (!isFlushMode(value) || (value === committed && operation?.status !== 'pending')) return;
-    appStore.dispatch(
-      settingsFormSaveRequested(
-        { ...identity, resource: FLUSH_SETTING_PATH, requestId: crypto.randomUUID() },
-        [{ path: FLUSH_SETTING_PATH, value }],
-      ),
-    );
-  }
 
   function handleInput(event: Event) {
     const target = event.target as HTMLInputElement;
@@ -467,12 +422,6 @@
             },
             {
               kind: 'custom',
-              id: 'flush-queued-messages',
-              label: m.settings_agentBackend_flushQueuedMessages_label(),
-              description: m.settings_agentBackend_flushQueuedMessages_description(),
-            },
-            {
-              kind: 'custom',
               id: 'memory-budget',
               label: m.settings_agentBackend_memoryBudget_label(),
               when: () => memoryBudgetSupported,
@@ -544,27 +493,6 @@
     aria-describedby={descriptionId}
     class="w-32"
   />
-{/snippet}
-
-{#snippet flushQueuedMessagesControl({ labelId, descriptionId }: SettingsControlContext)}
-  <div class="w-32">
-    <Select.Root value={flushQueuedMessages} onchange={handleFlushModeChange}>
-      <Select.Trigger
-        id="flushQueuedMessages"
-        aria-labelledby={labelId}
-        aria-describedby={descriptionId}
-      >
-        <span class="truncate">{flushModeLabel}</span>
-      </Select.Trigger>
-      <Select.Content portal class="max-h-[300px] w-32">
-        {#each flushModeOptions as option (option.value)}
-          <Select.Item value={option.value}>
-            <span class="truncate">{option.label}</span>
-          </Select.Item>
-        {/each}
-      </Select.Content>
-    </Select.Root>
-  </div>
 {/snippet}
 
 {#snippet memoryBudgetControl({ labelId, descriptionId }: SettingsControlContext)}
@@ -656,7 +584,6 @@
   compact={false}
   custom={defineSettingsCustomControls({
     'max-concurrent-agents': maxConcurrentControl,
-    'flush-queued-messages': flushQueuedMessagesControl,
     'memory-budget': memoryBudgetControl,
     'idle-reap': idleReapControl,
     'idle-reap-minutes-row': idleReapMinutesControl,

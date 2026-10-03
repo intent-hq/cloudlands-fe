@@ -58,6 +58,7 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/lib/components/chat/EventWakeupBanner.svelte',
     'src/lib/components/chat/InlineAgentAvatar.svelte',
     'src/lib/components/chat/MessageActions.svelte',
+    'src/lib/components/chat/QueuedMessageList.svelte',
     'src/lib/components/chat/SuggestedPrompts.svelte',
     'src/lib/components/chat/input/ContextPickerButton.svelte',
     'src/lib/components/chat/input/SimpleRichInput.svelte',

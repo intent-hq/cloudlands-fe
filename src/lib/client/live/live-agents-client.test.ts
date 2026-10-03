@@ -467,6 +467,42 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result).toEqual({ success: false, error: 'not found: queued message' });
   });
 
+  it.each([
+    { queued: false, turnId: 'batch-turn' },
+    { queued: true },
+    { queued: true, quarantined: true },
+  ])('sends one snapshot batch and preserves its outcome: %j', async (outcome) => {
+    const response = { success: true, messageIds: ['first', 'second'], ...outcome };
+    backend.onRequest('agent.sendQueuedMessagesNow', () => response);
+    const result = await new LiveAgentsClient().sendQueuedMessagesNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageIds: ['first', 'second'],
+    });
+    expect(backend.requests).toEqual([
+      {
+        method: 'agent.sendQueuedMessagesNow',
+        params: { agentId: 'agent-1', workspaceId: 'ws-1', messageIds: ['first', 'second'] },
+      },
+    ]);
+    expect(result).toEqual(response);
+  });
+
+  it('preserves batch rejection without falling back to individual sends', async () => {
+    backend.onRequest('agent.sendQueuedMessagesNow', () => {
+      throw new BackendError(
+        buildErrorPayload('INVALID_PARAMS', 'message is held', { rpcCode: -32602 }),
+      );
+    });
+    const result = await new LiveAgentsClient().sendQueuedMessagesNow({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageIds: ['held'],
+    });
+    expect(result).toEqual({ success: false, error: expect.stringContaining('message is held') });
+    expect(backend.requests).toHaveLength(1);
+  });
+
   it('sendQueuedNow forwards agent.sendQueuedMessageNow with §5.5 params and folds the daemon body into success', async () => {
     // PROTOCOL §5.5: `{ agentId, workspaceId, messageId }` →
     // `{ success, queued: false, messageId }` (atomic dequeue + interrupt send).
