@@ -873,6 +873,7 @@ it('observes the first deferred snapshot and still restores its in-flight transc
         ...previous,
         ...row(a),
         role: 'user',
+        metadata: { submissionIds: [a.submission.id] },
         contentBlocks: [{ type: 'text', text: 'Deferred user' }],
       },
       live,
