@@ -1,5 +1,12 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { Input } from '$lib/components/ui/input';
+  import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { createNativeSidebarReview } from '$features/accept-changes/native-sidebar-review.svelte';
+  import NativeSidebarReview from '$features/accept-changes/components/NativeSidebarReview.svelte';
+  import type { NativeSidebarReviewIntent } from '$store/renderer/slices/changes/changes-types';
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import { selectWorkspaceActionContext } from '$store/renderer/slices/workspace/workspace-selectors';
   /**
    * PRSection - Pull request creation, push/pull/sync, force push, rebase, connect remote, PR list
    * Manages all PR-related UI state and handlers.
@@ -41,7 +48,10 @@
     selectAcceptChangesState,
   } from '$store/renderer/slices/changes/changes-selectors';
 
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectWorkspaceById,
+    selectWorkspaceListLoadedForBackend,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
@@ -67,7 +77,6 @@
     faRobot,
     faStop,
   } from '@fortawesome/free-solid-svg-icons';
-  import { untrack } from 'svelte';
   import { readable, toStore } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { slide } from '$lib/motion';
@@ -80,7 +89,14 @@
   import { store as appStore } from '$store/renderer/store';
   import type { WorkspaceId } from '$shared/types/branded-ids';
 
+  import {
+    selectPrincipalActionContext,
+    selectHostRole,
+  } from '$store/renderer/slices/principal/principal-selectors';
+
   interface Props {
+    /** Primary sidebar opts into qualified native preparation; other callers retain their existing flow. */
+    nativeReview?: boolean;
     workspaceId: string;
     activeFilePath?: string | null;
     activeFileStaged?: boolean | null;
@@ -137,6 +153,7 @@
   }
 
   let {
+    nativeReview = false,
     workspaceId,
     activeFilePath = null,
     activeFileStaged = null,
@@ -181,9 +198,24 @@
 
   // Redux selectors
   const workspaceIdStore = toStore(() => workspaceId);
+  const hostOperationContext$ = selectWorkspaceActionContext(workspaceIdStore);
+  const nativeEnabled$ = selectLabsMultiplayerEnabled();
+  const nativeAdmission$ = selectPrincipalActionContext();
+  const canHostOperations = $derived(isOwner && !!$hostOperationContext$);
+  const canAdministerHost$ = selectCanAdministerHost();
 
   const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
   const workspace$ = selectWorkspaceById(workspaceIdStore);
+  const admittedGuest$ = appStore.createSelector((state, id: string) => {
+    const admission = selectPrincipalActionContext.select(state);
+    return (
+      !!selectWorkspaceById.select(state, id) &&
+      selectHostRole.select(state) === 'guest' &&
+      admission !== null &&
+      state.workspace.capabilityContext === admission &&
+      selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
+    );
+  })(workspaceIdStore);
   // Agent attribution for monitored PR rows (PROTOCOL §6.9).
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
@@ -310,6 +342,39 @@
   });
   let authBannerKey = $state(0);
 
+  const native = createNativeSidebarReview(() => ({
+    workspaceId,
+    nativeReview,
+    listOnly,
+    isOwner,
+    hasRemote,
+    hasStaged,
+    hasCommits,
+    hasOpenPR,
+    isMergedToTrunk,
+    areAllPRsMerged,
+    hasResetToTrunk,
+    isContentMergedToTrunk,
+    hasNewWorkAfterMerge,
+    prDrawerOpen,
+    prTitle,
+    prDescription,
+    _commitMessage,
+    onMergeDrawerToggle,
+    canHostOperations,
+    admittedGuest: $admittedGuest$,
+    hostContext: $hostOperationContext$,
+    admission: $nativeAdmission$,
+    baseRef: $workspace$?.baseRef ?? '',
+    labsEnabled: $nativeEnabled$,
+  }));
+  export function observeNativeRetirement() {
+    return native.observeNativeRetirement();
+  }
+  export function triggerNativeReview(intent: NativeSidebarReviewIntent) {
+    return native.triggerNativeReview(intent);
+  }
+
   // Helper to get current workspace
   function getCurrentWorkspace() {
     return selectWorkspaceById.select(appStore.state, workspaceId);
@@ -337,6 +402,7 @@
     prTitle?: string;
     prDescription?: string;
   }) {
+    if (native.legacyBlocked) return;
     const titleToUse = (opts?.prTitle ?? prTitle).trim();
     const descriptionToUse = (opts?.prDescription ?? prDescription).trim();
     if (!titleToUse) return;
@@ -478,6 +544,8 @@
   }
 </script>
 
+<NativeSidebarReview review={native} entry />
+
 <!-- Divider with Create PR, Push Commits button, or Synced status (only when
      the primary workspace has a remote, and never in listOnly mode) -->
 {#if hasRemote && !listOnly}
@@ -494,7 +562,7 @@
           ? m.workspace_prSection_pushCommit_one()
           : m.workspace_prSection_pushCommit_many({ count: formatInteger(unpushedCount) })}
       </DividerButton>
-    {:else if isOwner && ((!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
+    {:else if (native.nativeIntent || (native.nativeMode ? canHostOperations : isOwner)) && (native.nativeIntent || (!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
       <!-- Show Create PR + Merge buttons when no open PR and not post-merge
            (accept-changes.execute / accept-changes.mergePR / github.*, owner-only) -->
       <div class="w-full flex gap-1">
@@ -503,12 +571,9 @@
           tooltipContents={!hasStaged && !hasCommits
             ? m.workspace_prSection_noChangesForPr_tooltip()
             : ''}
-          onclick={() => {
-            appStore.dispatch(setPRWorkflowDrawer(workspaceId, 'prDrawerOpen', !prDrawerOpen));
-            if (!prDrawerOpen) onMergeDrawerToggle(false);
-          }}
+          onclick={native.togglePRDrawer}
           expanded={prDrawerOpen}
-          disabled={!hasStaged && !hasCommits}
+          disabled={!native.nativeIntent && !hasStaged && !hasCommits}
         >
           {m.workspace_prSection_createPr_label()}
         </DividerButton>
@@ -519,8 +584,10 @@
             : ''}
           onclick={() => {
             onMergeDrawerToggle(!mergeDrawerOpen);
-            if (!mergeDrawerOpen)
+            if (!mergeDrawerOpen) {
               appStore.dispatch(setPRWorkflowDrawer(workspaceId, 'prDrawerOpen', false));
+              native.closeNative();
+            }
           }}
           expanded={mergeDrawerOpen}
           disabled={!hasStaged && !hasCommits}
@@ -529,7 +596,9 @@
         </DividerButton>
       </div>
       <DividerPanel open={prDrawerOpen}>
-        {#if !$githubAuthIsAuthenticated$}
+        {#if native.nativeMode}
+          <NativeSidebarReview review={native} />
+        {:else if $canAdministerHost$ && !$githubAuthIsAuthenticated$}
           <GitHubAuthBanner onSuccess={() => {}} />
         {:else}
           {@const stagedDescription = hasStaged

@@ -8,6 +8,7 @@
  * sessions and final redemption remain in the existing guest-session flow.
  */
 import { app, dialog, type MessageBoxOptions } from 'electron';
+import { isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { captureInviteAttempt, type InviteAttempt } from './invite-attempt';
 import { inspectPersonalCredential, invitedRole } from '../../backend/main/invited-principal';
 import { randomUUID } from 'node:crypto';
@@ -342,6 +343,14 @@ async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
  * rejects — failures are logged (scrubbed) and surfaced in a notice dialog.
  */
 export async function handleInviteDeepLink(url: string): Promise<void> {
+  if (isIsolatedTestBuild()) {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: m.isolatedTest_invitationUnavailable_title(),
+      message: m.isolatedTest_invitationUnavailable_description(),
+    });
+    return;
+  }
   activeInviteAttempt?.release();
   const attempt = captureInviteAttempt();
   activeInviteAttempt = attempt;

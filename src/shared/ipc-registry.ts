@@ -926,6 +926,32 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     REQUEST: 'backend:request',
+    NATIVE_REVIEW: {
+      PREPARE: 'backend:native-review:prepare',
+      EXECUTE: 'backend:native-review:execute',
+      RECONCILE: 'backend:native-review:reconcile',
+      RELEASE: 'backend:native-review:release',
+      RETIRED: 'backend:native-review:retired',
+    },
+    REPOSITORY_SELECTION: {
+      CAPTURE: 'backend:repository-selection:capture',
+      CONFIRM: 'backend:repository-selection:confirm',
+      RECONCILE: 'backend:repository-selection:reconcile',
+      RELEASE: 'backend:repository-selection:release',
+      RETIRED: 'backend:repository-selection:retired',
+    },
+    REPOSITORY_RESOURCE: {
+      CAPTURE: 'backend:repository-resource:capture',
+      DETAIL: 'backend:repository-resource:detail',
+      RELEASE: 'backend:repository-resource:release',
+      RETIRED: 'backend:repository-resource:retired',
+    },
+    REPOSITORY: {
+      CAPTURE: 'backend:repository:capture',
+      RETIRED: 'backend:repository:retired',
+      REQUEST: 'backend:repository:request',
+      RELEASE: 'backend:repository:release',
+    },
     SUBSCRIBE: 'backend:subscribe',
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',
@@ -1054,6 +1080,9 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
+  IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
+  IPC_CHANNELS.BACKEND.NATIVE_REVIEW.RETIRED,
   'event:workspace:created',
   'event:workspace:updated',
   'event:workspace:deleted',

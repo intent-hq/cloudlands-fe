@@ -19,6 +19,10 @@
  * adapter that translates between the two framings.
  */
 import net from 'node:net';
+import {
+  assertIsolatedTestEnvironment,
+  getIsolatedTestProfile,
+} from '../../../main/isolated-test-profile';
 import tls from 'node:tls';
 import { Duplex } from 'node:stream';
 import { createRequire } from 'node:module';
@@ -128,6 +132,7 @@ export function resolveBackendConfig(
   env: NodeJS.ProcessEnv = process.env,
   opts: ResolveBackendConfigOptions = {},
 ): BackendConnectionConfig {
+  assertIsolatedTestEnvironment(env);
   const platform = opts.platform ?? process.platform;
   const socketOverride = env.INTENTD_SOCKET?.trim();
   if (socketOverride) {
@@ -176,6 +181,10 @@ function normalizeWsUrl(raw: string): string {
  * and compatible framing are implemented.
  */
 export function createBackendSocket(config: BackendConnectionConfig): Duplex {
+  const profile = getIsolatedTestProfile();
+  if (profile && (config.transport !== 'uds' || config.socketPath !== profile.socket)) {
+    throw new Error('The isolated test app only connects to its private daemon');
+  }
   if (config.transport === 'uds') {
     if (!config.socketPath) throw new Error('UDS transport requires a socketPath');
     return net.connect({ path: config.socketPath });

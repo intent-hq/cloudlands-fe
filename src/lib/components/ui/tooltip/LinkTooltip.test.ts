@@ -3,11 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
+import fixture from '$shared/types/__fixtures__/repository-resource-read.json';
+import {
+  RepositoryResourceCaptureSchema,
+  RepositoryResourceResultSchema,
+} from '$shared/types/repository-resource-read';
 import { BackendError } from '$lib/client/live/backend-transport-types';
 
 const reconnect = vi.hoisted(() => new Set<() => void>());
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
+  captureBackendRepositoryResource: vi.fn(),
   onBackendReconnected: (handler: () => void) => {
     reconnect.add(handler);
     return () => reconnect.delete(handler);
@@ -18,7 +24,10 @@ vi.mock('$lib/client', async () => {
   return { appClient: { integrations: new LiveIntegrationsClient() } };
 });
 
-import { backendRequest } from '$lib/client/live/backend-transport';
+import {
+  backendRequest,
+  captureBackendRepositoryResource,
+} from '$lib/client/live/backend-transport';
 import LinkTooltip from './LinkTooltip.svelte';
 import { clearGitHubLinkPreviewCache } from './github-link-preview';
 import { hideLinkTooltip, showLinkTooltip } from './link-tooltip-state.svelte';
@@ -53,6 +62,8 @@ const PULL = {
 async function hover(url: string, workspaceId?: string) {
   const anchor = document.createElement('a');
   anchor.href = url;
+  anchor.dataset.testHoverAnchor = '';
+  document.body.append(anchor);
   showLinkTooltip(anchor, url, workspaceId);
   await vi.advanceTimersByTimeAsync(300);
   await vi.dynamicImportSettled();
@@ -72,6 +83,7 @@ describe('LinkTooltip with the live integrations seam', () => {
       },
     );
     request.mockReset();
+    vi.mocked(captureBackendRepositoryResource).mockReset();
     clearGitHubLinkPreviewCache();
     hideLinkTooltip();
   });
@@ -79,6 +91,7 @@ describe('LinkTooltip with the live integrations seam', () => {
   afterEach(() => {
     hideLinkTooltip();
     cleanup();
+    document.querySelectorAll('[data-test-hover-anchor]').forEach((anchor) => anchor.remove());
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -108,6 +121,69 @@ describe('LinkTooltip with the live integrations seam', () => {
     flushSync();
     expect(screen.getByText('Workspace B')).toBeTruthy();
     expect(screen.queryByText('Late workspace A')).toBeNull();
+  });
+
+  it.each(['mergeRequest', 'issue'] as const)(
+    'renders safe GitLab %s facts through the real client',
+    async (key) => {
+      const value = structuredClone(fixture[key]);
+      const title = '<img src=x onerror=alert(1)> Private title';
+      if ('snapshot' in value.outcome) value.outcome.snapshot.details.title = title;
+      else value.outcome.issue.title = title;
+      const result = RepositoryResourceResultSchema.parse(value);
+      const release = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(captureBackendRepositoryResource).mockResolvedValue({
+        capture: RepositoryResourceCaptureSchema.parse(fixture.capture),
+        onRetired: () => () => {},
+        detail: vi.fn().mockResolvedValue(result),
+        release,
+      });
+      render(LinkTooltip);
+      const url =
+        key === 'issue'
+          ? fixture.issue.outcome.issue.url
+          : fixture.mergeRequest.outcome.snapshot.details.url;
+      await hover(url, 'workspace-A');
+      const card = screen.getByRole('tooltip');
+      expect(within(card).getByText(title)).toBeTruthy();
+      expect(card.querySelector('img')).toBeNull();
+      expect(card.textContent).toContain(key === 'issue' ? '#42' : '!42');
+      expect(within(card).getByTestId('resource-instance').textContent?.trim()).toBe(
+        fixture.capture.instances[0].instanceBaseUrl,
+      );
+      expect(within(card).getByTestId('resource-project').textContent?.trim()).toBe(
+        fixture.issue.target.repository.projectPath,
+      );
+      expect(captureBackendRepositoryResource).toHaveBeenCalledWith('workspace-A');
+      expect(request).not.toHaveBeenCalled();
+      hideLinkTooltip();
+      expect(release).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('keeps unknown MR state neutral and omits absent author/date/branch facts', async () => {
+    const value = structuredClone(fixture.mergeRequest);
+    Object.assign(value.outcome.snapshot.details, {
+      state: null,
+      author: null,
+      createdAt: null,
+      updatedAt: null,
+      sourceBranch: null,
+      targetBranch: null,
+    });
+    vi.mocked(captureBackendRepositoryResource).mockResolvedValue({
+      capture: RepositoryResourceCaptureSchema.parse(fixture.capture),
+      onRetired: () => () => {},
+      detail: async () => RepositoryResourceResultSchema.parse(value),
+      release: async () => {},
+    });
+    render(LinkTooltip);
+    await hover(value.outcome.snapshot.details.url, 'workspace-A');
+    const card = screen.getByRole('tooltip');
+    expect(within(card).getByText(m.ui_linkTooltip_resourceUnknown_label())).toBeTruthy();
+    expect(within(card).queryByText(m.ui_linkTooltip_gitHubStateOpen_label())).toBeNull();
+    expect(card.textContent).not.toMatch(/undefined|NaN|null/);
+    expect(card.querySelector('.github-link-card-branches')).toBeNull();
   });
 
   it.each(['queued', 'merged'] as const)(

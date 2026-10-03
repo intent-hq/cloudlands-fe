@@ -32,6 +32,8 @@
     onOpen,
   }: Props = $props();
 
+  const verificationSegments = $derived(verificationUri.split(/(?<=\/)/));
+
   function handleOpenGitHub() {
     if (onOpen) {
       onOpen();
@@ -70,8 +72,10 @@
     <span>{openLabel}</span>
     <Fa icon={faArrowUpRightFromSquare} size="xs" />
   </Button>
-  <p class="text-xs text-subtle">
+  <p class="min-w-0 text-xs text-subtle">
     {m.lib_githubDeviceCode_enterCodeAt_before()}
-    <span class="font-mono break-all">{verificationUri}</span>
+    <span class="block max-w-full select-all font-mono [overflow-wrap:anywhere]">
+      {#each verificationSegments as segment, index (index)}{segment}<wbr />{/each}
+    </span>
   </p>
 </div>

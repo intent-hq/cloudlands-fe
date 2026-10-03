@@ -93,6 +93,8 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: mocks.selector(() => 'owner-context'),
+  selectWorkspaceListLoadedForBackend: mocks.selector(() => true),
   selectWorkspaceById: Object.assign(
     () => ({
       subscribe(run: (v: unknown) => void) {
@@ -102,6 +104,16 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     }),
     { select: () => mocks.workspaceEntity },
   ),
+}));
+
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalActionContext: mocks.selector(() => 'owner-context'),
+  selectCanAdministerHost: mocks.selector(() => true),
+  selectHostRole: mocks.selector(() => 'owner'),
+}));
+
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectLabsMultiplayerEnabled: mocks.selector(() => false),
 }));
 
 vi.mock(
