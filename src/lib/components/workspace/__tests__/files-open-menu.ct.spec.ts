@@ -246,6 +246,9 @@ for (const width of [360, 248]) {
     await page.mouse.up();
     await expect(page.getByRole('menu')).toBeVisible();
     await page.keyboard.press('Escape');
+    // Menu exit and focus restoration finish asynchronously; tab only once both settle.
+    await expect(page.getByRole('menu')).toHaveCount(0);
+    await expect(trigger).toBeFocused();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
     await expect(trigger).toBeFocused();
