@@ -1,8 +1,7 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 6c65eb7d57e207a8cd1f2a2ae3bb99507c405cef..111bd81681b54879d6562431df0d751fd6e607d5 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -2104,7 +2104,7 @@ function insertCells(state, dispatch, tableStart, rect, cells) {
+@@ -2104,7 +2104,7 @@
  		tr.replace(tr.mapping.slice(mapFrom).map(from + tableStart), tr.mapping.slice(mapFrom).map(to + tableStart), new prosemirror_model.Slice(cells.rows[row - top], 0, 0));
  	}
  	recomp();
@@ -11,11 +10,34 @@ index 6c65eb7d57e207a8cd1f2a2ae3bb99507c405cef..111bd81681b54879d6562431df0d751f
  	dispatch(tr);
  }
  
+@@ -2225,11 +2225,21 @@
+ 			view.dispatch(tr);
+ 		}
+ 	}
+-	function stop() {
++	function stop(event) {
+ 		view.root.removeEventListener("mouseup", stop);
+ 		view.root.removeEventListener("dragstart", stop);
+ 		view.root.removeEventListener("mousemove", move);
+-		if (tableEditingKey.getState(view.state) != null) view.dispatch(view.state.tr.setMeta(tableEditingKey, -1));
++		try {
++			if (event && event.type === "mouseup" && event.button === 0 && !view.isDestroyed && view.hasFocus() && tableEditingKey.getState(view.state) != null && view.state.selection instanceof CellSelection) {
++				// Read pending DOM observation while the current cell-drag guard still owns selection.
++				// flush() alone returns early when a native deferred observation is scheduled.
++				if (view.domObserver.flushingSoon > -1) view.domObserver.forceFlush();
++				else view.domObserver.flush();
++			}
++		} finally {
++			// Use current state: observation may have mapped ownership or replaced selection.
++			if (!view.isDestroyed && tableEditingKey.getState(view.state) != null) view.dispatch(view.state.tr.setMeta(tableEditingKey, -1));
++		}
+ 	}
+ 	function move(_event) {
+ 		const event = _event;
 diff --git a/dist/index.js b/dist/index.js
-index 5b4ac25594ba5722409332b1e5c812f108c9bf11..2e2b7d3546e7d0ada309b3f8f9c001b64c9d55d2 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -2104,7 +2104,7 @@ function insertCells(state, dispatch, tableStart, rect, cells) {
+@@ -2104,7 +2104,7 @@
  		tr.replace(tr.mapping.slice(mapFrom).map(from + tableStart), tr.mapping.slice(mapFrom).map(to + tableStart), new Slice(cells.rows[row - top], 0, 0));
  	}
  	recomp();
@@ -24,3 +46,27 @@ index 5b4ac25594ba5722409332b1e5c812f108c9bf11..2e2b7d3546e7d0ada309b3f8f9c001b6
  	dispatch(tr);
  }
  
+@@ -2225,11 +2225,21 @@
+ 			view.dispatch(tr);
+ 		}
+ 	}
+-	function stop() {
++	function stop(event) {
+ 		view.root.removeEventListener("mouseup", stop);
+ 		view.root.removeEventListener("dragstart", stop);
+ 		view.root.removeEventListener("mousemove", move);
+-		if (tableEditingKey.getState(view.state) != null) view.dispatch(view.state.tr.setMeta(tableEditingKey, -1));
++		try {
++			if (event && event.type === "mouseup" && event.button === 0 && !view.isDestroyed && view.hasFocus() && tableEditingKey.getState(view.state) != null && view.state.selection instanceof CellSelection) {
++				// Read pending DOM observation while the current cell-drag guard still owns selection.
++				// flush() alone returns early when a native deferred observation is scheduled.
++				if (view.domObserver.flushingSoon > -1) view.domObserver.forceFlush();
++				else view.domObserver.flush();
++			}
++		} finally {
++			// Use current state: observation may have mapped ownership or replaced selection.
++			if (!view.isDestroyed && tableEditingKey.getState(view.state) != null) view.dispatch(view.state.tr.setMeta(tableEditingKey, -1));
++		}
+ 	}
+ 	function move(_event) {
+ 		const event = _event;
