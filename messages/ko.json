@@ -7076,6 +7076,7 @@
   "devConsole_interval_label": "간격: {elapsed}ms",
   "chat_queuedMessages_draftConflict_description": "대기 중인 메시지가 병합, 변경 또는 삭제되었습니다. 초안은 여기에 보관됩니다. 복사하여 다시 사용하거나 삭제하세요.",
   "chat_queuedMessages_discardDraft_label": "초안 삭제",
+  "chat_scriptMonitor_command_label": "현재 스크립트 명령",
   "chat_scriptMonitor_active_label": "모니터링 중",
   "chat_scriptMonitor_stopping_label": "중지 중…",
   "chat_scriptMonitor_actions_ariaLabel": "{name} 작업",
