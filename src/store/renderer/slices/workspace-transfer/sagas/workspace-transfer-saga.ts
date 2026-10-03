@@ -15,6 +15,8 @@
 
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
+import { selectProposalLifecycleMap } from '../../proposal-lifecycle/proposal-lifecycle-selectors';
+import { proposalTransferProgress } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 import { formatDate } from '$lib/i18n/format';
@@ -119,6 +121,12 @@ function* runTransfer(): SagaGenerator<void> {
 
 /** `transfer:progress` counter frames from main → progress dispatches. */
 function* handleTransferProgress(event: TransferProgressEvent): SagaGenerator<void> {
+  const proposals = yield* selectProposalLifecycleMap.effect();
+  for (const [proposalId, entry] of Object.entries(proposals ?? {})) {
+    if (entry.status === 'applying' && entry.result?.transfer?.workspaceId === event.workspaceId) {
+      yield* put(proposalTransferProgress({ proposalId, phase: event.phase }));
+    }
+  }
   const workspaceId = yield* selectTransferWorkspaceId.effect();
   if (!workspaceId || event.workspaceId !== workspaceId) return;
   yield* put(

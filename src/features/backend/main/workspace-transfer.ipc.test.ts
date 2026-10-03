@@ -146,3 +146,59 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
     await expect(opts.helloParams()).resolves.toEqual({ clientId: 'client-1' });
   });
 });
+
+describe('inline transfer source validation', () => {
+  const params = {
+    proposalId: 'transfer-1',
+    workspaceId: 'ws-1',
+    sourceWorkspacePath: '/repo/worktree',
+    sourceConnectionId: 'source',
+    destination: { kind: 'server', connectionId: 'target' },
+  };
+  it('checks the exact source path and permits an archived project', async () => {
+    const handler = await getHandler(TRANSFER.START);
+    const client = {
+      request: vi.fn().mockResolvedValue({
+        workspace: {
+          id: 'ws-1',
+          worktreePath: '/repo/worktree',
+          status: 'Archived',
+          archived: true,
+        },
+      }),
+    };
+    getBackendClientForIpcEvent.mockReturnValue({ client, backendId: 'source' });
+    await handler(event(7), params);
+    expect(client.request).toHaveBeenCalledWith('workspace.get', { workspaceId: 'ws-1' });
+    expect(start).toHaveBeenCalledWith(params, client, 7);
+  });
+  it.each([
+    { id: 'ws-1', worktreePath: '/other' },
+    { id: 'other', worktreePath: '/repo/worktree' },
+    { id: 'ws-1', worktreePath: '/repo/worktree', pendingDeleteAt: '2026-09-27T00:00:00Z' },
+  ])('rejects stale, replaced or deleted sources before export: %j', async (workspace) => {
+    const handler = await getHandler(TRANSFER.START);
+    const client = { request: vi.fn().mockResolvedValue({ workspace }) };
+    getBackendClientForIpcEvent.mockReturnValue({ client, backendId: 'source' });
+    expect(await handler(event(7), params)).toMatchObject({
+      success: false,
+      failurePhase: 'preflight',
+    });
+    expect(start).not.toHaveBeenCalled();
+  });
+  it('rejects a different window backend and source-as-target before any request', async () => {
+    const handler = await getHandler(TRANSFER.START);
+    const client = { request: vi.fn() };
+    getBackendClientForIpcEvent.mockReturnValue({ client, backendId: 'different' });
+    expect(await handler(event(7), params)).toMatchObject({ success: false });
+    getBackendClientForIpcEvent.mockReturnValue({ client, backendId: 'source' });
+    expect(
+      await handler(event(7), {
+        ...params,
+        destination: { kind: 'server', connectionId: 'source' },
+      }),
+    ).toMatchObject({ success: false });
+    expect(client.request).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+});
