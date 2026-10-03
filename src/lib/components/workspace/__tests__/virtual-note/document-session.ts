@@ -1341,8 +1341,18 @@ export class DocumentSession {
           name: TableCommandName,
           props: CommandProps,
         ): boolean | undefined => {
-          const p = this.projection?.table,
-            logical = this.selection.table;
+          const logical = this.selection.table,
+            p =
+              this.projection?.table ??
+              this.projection?.mixed?.parts.find((part) => {
+                const table = part.projection.table?.window;
+                return (
+                  table &&
+                  logical &&
+                  logical.anchor.cell >= table.from &&
+                  logical.anchor.cell < table.to
+                );
+              })?.projection.table;
           if (!p || !logical) return undefined;
           const window = p.window;
           const complete =
@@ -2486,10 +2496,40 @@ export class DocumentSession {
       }
       return value;
     });
+    const tables = this.projection?.table
+      ? [{ pm: 0, table: this.projection.table }]
+      : (this.projection?.mixed?.parts.flatMap((part) =>
+          part.projection.table ? [{ pm: part.pm, table: part.projection.table }] : [],
+        ) ?? []);
     const tableBound =
-      this.projection?.table && this.editor ? tableResourceBound(this.editor.getJSON()) : undefined;
+      tables.length && this.editor
+        ? tableResourceBound(
+            this.projection?.table
+              ? this.editor.getJSON()
+              : {
+                  type: 'doc',
+                  content: this.editor.getJSON().content?.filter((node) => node.type === 'table'),
+                },
+          )
+        : undefined;
     const tableDOM =
-      tableBound && this.editor ? measureTableDOM(this.editor.view.dom, tableBound) : undefined;
+      tableBound && this.editor
+        ? this.projection?.table
+          ? measureTableDOM(this.editor.view.dom, tableBound)
+          : tables.reduce(
+              (total, part) => {
+                const dom = this.editor!.view.nodeDOM(part.pm);
+                if (!(dom instanceof HTMLElement))
+                  throw new Error('Missing mounted mixed table DOM');
+                const measured = measureTableDOM(dom, tableResourceBound(part.table.content));
+                return {
+                  elements: total.elements + measured.elements,
+                  textNodes: total.textNodes + measured.textNodes,
+                };
+              },
+              { elements: 0, textNodes: 0 },
+            )
+        : undefined;
     return {
       maxSourceContextBytes: this.maxSourceContextBytes,
       clipboardRelay: { ...this.clipboardRelay },
@@ -2536,7 +2576,7 @@ export class DocumentSession {
       maxTableRestoreAnchorBytes: this.maxTableRestoreAnchorBytes,
       maxTableResidentAndAssemblyBytes: this.maxTableResidentAndAssemblyBytes,
       tableColumnWidth: this.tableColumnWidth,
-      tableCells: this.projection?.table?.entries.length ?? 0,
+      tableCells: tables.reduce((n, part) => n + part.table.entries.length, 0),
       tableAnchorStateBytes: bytes(
         JSON.stringify({
           anchor: this.tableAnchor,
@@ -2550,7 +2590,7 @@ export class DocumentSession {
       maxTableCellMeasurementBytes: this.service.tableHeights.maxCellWriteBytes,
       backingTableGeometryBytes: this.service.tableHeights.backingBytes,
       backingTableGeometryScannedRows: this.service.tableHeights.scannedRows,
-      tableContextBytes: bytes(JSON.stringify(this.projection?.context?.table ?? {})),
+      tableContextBytes: bytes(JSON.stringify(tables.map((part) => part.table.window))),
       maxTableWindowBytes: this.service.maxTableWindowBytes,
       backingTableScannedBytes: this.service.backingTableScannedBytes,
       maxSeamMetadataBytes: this.maxSeamMetadataBytes,
@@ -2599,6 +2639,12 @@ export class DocumentSession {
             content: p.content,
             list: p.list,
             code: p.code,
+            table: p.table && {
+              ...p.table,
+              positions: [...p.table.positions],
+              ends: [...p.table.ends],
+              boundaries: [...p.table.boundaries],
+            },
           })) ?? [],
         ),
       ),

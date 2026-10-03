@@ -1664,6 +1664,31 @@ export class SourceJournal {
       throw new Error('Nested code context exceeds budget');
     return this.atomic(() => {
       const desired = new Map(codes.map((code) => [code.from, code]));
+      if (desired.size !== codes.length) throw new Error('Invalid duplicate nested code');
+      const retained = [...this.listCodes.values()].filter(
+        (code) => code.from >= to || code.to <= from,
+      );
+      const combined = [...retained, ...codes].sort((a, b) => a.from - b.from);
+      for (let index = 0; index < combined.length; index++) {
+        const code = combined[index];
+        if (!validListCode(code, this.length) || (index > 0 && combined[index - 1].to > code.from))
+          throw new Error('Invalid overlapping nested code');
+      }
+      for (const code of codes) {
+        const { id, start } = this.locate(code.from);
+        let source = this.region(id);
+        // Ownership comes from the existing list grammar. Mask literal bodies so
+        // their newlines and list-looking text cannot invent another owner.
+        for (const literal of combined) {
+          const left = Math.max(0, literal.from - start),
+            right = Math.min(source.length, literal.to - start);
+          if (right > left)
+            source = source.slice(0, left) + ' '.repeat(right - left) + source.slice(right);
+        }
+        const owner = scanLists(source).find((item) => item.from + start === code.item);
+        if (!owner || code.from < owner.body + start || code.to > owner.end + start)
+          throw new Error('Invalid nested code owner');
+      }
       for (const code of this.listCodes.values()) {
         if (code.from >= to || code.to <= from) continue;
         if (JSON.stringify(code) !== JSON.stringify(desired.get(code.from)))

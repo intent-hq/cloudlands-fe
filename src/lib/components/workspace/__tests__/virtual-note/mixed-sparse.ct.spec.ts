@@ -224,3 +224,83 @@ for (const edge of ['before', 'after'] as const)
         expect(restored.selectedCells).toBe(restored.cells!.length);
     });
   }
+
+for (const edge of ['before', 'after'] as const)
+  test(`sparse table ${edge}: repeated native deletion, eviction and chronological history`, async ({
+    mount,
+    page,
+  }, info) => {
+    await mount(Harness, { props: { sourceOverride: source } });
+    await page
+      .getByTestId('bounded')
+      .getByTestId('proof')
+      .evaluate(
+        async (el, at) => {
+          await (el as Host).proof.seek(at);
+        },
+        edge === 'before' ? 0 : source.length - 1,
+      );
+    const results = [];
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page
+        .getByTestId(side)
+        .getByTestId('proof')
+        .evaluate((el, edge) => {
+          const h = el as Host,
+            e = h.proof?.editor ?? h.native;
+          const roots: Array<{ pos: number; node: typeof e.state.doc }> = [];
+          e.state.doc.forEach((node, pos) => roots.push({ node, pos }));
+          const table = roots.findIndex((r) => r.node.type.name === 'table');
+          const root = roots[edge === 'before' ? table - 1 : table + 1];
+          e.commands.setTextSelection(root.pos + (edge === 'before' ? root.node.nodeSize - 1 : 1));
+        }, edge);
+      await page.keyboard.press(edge === 'before' ? 'Delete' : 'Backspace');
+      await settled(page);
+      await page.keyboard.press(edge === 'before' ? 'Delete' : 'Backspace');
+      results.push(await capture(page, side));
+    }
+    await info.attach('repeat-deletion-native.json', {
+      body: JSON.stringify(results),
+      contentType: 'application/json',
+    });
+    expect(results[1].error).toBe('');
+    expect(results[1].doc).toEqual(results[0].doc);
+    expect(results[1].logical).toEqual(results[0].logical);
+    for (const result of results) expect(result.dom).toEqual(result.pm);
+    expect(
+      await page
+        .getByTestId('bounded')
+        .getByTestId('proof')
+        .evaluate(async (el) => {
+          const p = (el as Host).proof,
+            old = p.editor!;
+          p.save();
+          await p.seek(p.selection.head);
+          return old.isDestroyed;
+        }),
+    ).toBe(true);
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.press('Control+z');
+      await settled(page);
+    }
+    const undone = await page
+      .getByTestId('bounded')
+      .getByTestId('proof')
+      .evaluate((el) => (el as Host).proof.service.region(0));
+    expect(undone).toBe(source);
+    const redone = [];
+    for (const side of ['native', 'bounded']) {
+      await focus(page, side);
+      await page.keyboard.press('Control+Shift+z');
+      redone.push(await capture(page, side));
+    }
+    await info.attach('repeat-deletion-redone.json', {
+      body: JSON.stringify(redone),
+      contentType: 'application/json',
+    });
+    expect(redone[1].error).toBe('');
+    expect(redone[1].doc).toEqual(redone[0].doc);
+    expect(redone[1].logical).toEqual(redone[0].logical);
+  });
