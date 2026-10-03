@@ -103,13 +103,16 @@ function hasSameAppMessageId(a: AgentMessage, b: AgentMessage): boolean {
   return aAppMessageId !== undefined && aAppMessageId === getAppMessageId(b);
 }
 
-/** Submission aliases mark a daemon-owned user row, regardless of its ID prefix. */
+/** Ordinary aliases and recovery leaves both mark daemon-owned user rows. */
 function hasSubmissionIdentity(message: AgentMessage): boolean {
+  if (message.role !== 'user') return false;
   const ids = message.metadata?.submissionIds;
+  if (Array.isArray(ids) && ids.some((id) => typeof id === 'string' && id.length > 0)) return true;
+  const sources = message.metadata?.recoverySources;
+  // Legacy leaves can lack aliases, but their recovery row still has authoritative identity.
   return (
-    message.role === 'user' &&
-    Array.isArray(ids) &&
-    ids.some((id) => typeof id === 'string' && id.length > 0)
+    Array.isArray(sources) &&
+    sources.some((source) => typeof source?.messageId === 'string' && source.messageId.length > 0)
   );
 }
 
