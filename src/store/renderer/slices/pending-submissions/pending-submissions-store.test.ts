@@ -4,7 +4,11 @@ import type { Workspace } from '$shared/types';
 import { createAdmittedLegacyPrincipal } from '../../../../test/fixtures/admitted-legacy-principal';
 import { reducers } from '../../reducer';
 import { admitAgentSubmission } from './pending-submissions-admission';
-import { selectPendingSubmissionDisplay } from './pending-submissions-selectors';
+import { replaceAgentQueue } from '../agent-queue/agent-queue-slice';
+import {
+  selectAgentSubmissionDisplay,
+  selectPendingSubmissionDisplay,
+} from './pending-submissions-selectors';
 import {
   bulkUpdateWorkspaceEntities,
   updateWorkspaceEntity,
@@ -34,6 +38,23 @@ function fixture() {
 }
 
 describe('pending submissions with the production renderer store', () => {
+  it('retains confirmed queue display before the first local admission', () => {
+    const store = fixture();
+    store.dispatch(
+      replaceAgentQueue(
+        'agent',
+        [{ id: 'q', content: 'confirmed', position: 0, queuedAt: '2026-10-03T12:00:00Z' }],
+        'workspace',
+      ),
+    );
+    expect(
+      selectAgentSubmissionDisplay
+        .select(store.state, 'agent', 'workspace')
+        .queue.map((row) => row.content),
+    ).toEqual(['confirmed']);
+    expect(selectAgentSubmissionDisplay.select(store.state, 'agent', 'other').queue).toEqual([]);
+  });
+
   it.each(['upsert', 'bulk'] as const)(
     'clears capability-only participation loss via %s and never revives old scope, reads or callbacks',
     (kind) => {

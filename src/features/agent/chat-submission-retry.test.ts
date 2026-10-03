@@ -28,7 +28,13 @@ import {
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
 import { requestChatMessageRetry } from './chat-submission-retry';
-import { chatLastAttemptedMessageSet } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+import {
+  sendQueuedMessageNowRequested,
+  sendQueuedMessagesNowRequested,
+  clearQueuedMessagesRequested,
+  chatLastAttemptedMessageSet,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
 import { pendingScopeReleased } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 import { submitChatMessage } from '$features/agent/chat-submission';
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
@@ -558,4 +564,36 @@ describe('live queue transport uncertainty', () => {
     expect(wire.warning).not.toHaveBeenCalled();
     expect(selectChatDraft.select(store.state, ws, agent)).toBe('newer draft');
   });
+});
+
+describe('queue mutation boundary with pending contributions', () => {
+  it.each(['send', 'send-all', 'clear', 'remove'] as const)(
+    'defers %s until the projected append is confirmed',
+    async (kind) => {
+      const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
+      emit('agent:queue:updated', { queue: [row(a, { mergeEligible: true })] });
+      admitAgentSubmission(store, agent, ws, 1, { content: 'B', destination: 'queue' });
+      startSending();
+      const result =
+        kind === 'send'
+          ? store.dispatch(sendQueuedMessageNowRequested(agent, ws, a.submission.id))
+          : kind === 'send-all'
+            ? store.dispatch(sendQueuedMessagesNowRequested(agent, ws, [a.submission.id]))
+            : kind === 'clear'
+              ? store.dispatch(clearQueuedMessagesRequested(agent, ws, [a.submission.id]))
+              : store.dispatch(removeQueuedMessageRequested(agent, a.submission.id));
+      if (kind !== 'remove') await expect(result).rejects.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(
+        wire.request.mock.calls.filter(([method]) =>
+          [
+            'agent.sendQueuedMessageNow',
+            'agent.sendQueuedMessagesNow',
+            'agent.removeQueuedMessage',
+          ].includes(method),
+        ),
+      ).toEqual([]);
+      expect(display().queue.map((r) => r.content)).toEqual(['A\n\nB']);
+    },
+  );
 });
