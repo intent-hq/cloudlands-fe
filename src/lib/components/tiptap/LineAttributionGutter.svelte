@@ -11,6 +11,7 @@
   - Updates on scroll and resize
 -->
 <script lang="ts">
+  import { isPagedNoteSession } from '$features/notes/notes-read-service';
   import { logger } from '$lib/utils/client-logger';
 
   import type { Editor } from '@tiptap/core';
@@ -181,8 +182,10 @@
    * attributions yet, in which case the gutter renders empty.
    */
   async function loadAttributions() {
+    if (isPagedNoteSession(workspaceId, noteId)) return;
     try {
       const data = await appClient.notes.lineAttribution.load(workspaceId, noteId);
+      if (isPagedNoteSession(workspaceId, noteId)) return;
 
       if (data) {
         // Convert from Record<lineNumber, AttributionInfo> to Map<number, AttributionInfo>
@@ -493,6 +496,7 @@
     // Capture current values as strings to ensure consistent comparison
     const currentWorkspaceId = String(workspaceId);
     const currentNoteId = String(noteId);
+    if (isPagedNoteSession(currentWorkspaceId, currentNoteId)) return;
 
     logger.debug('[LineAttributionGutter] Setting up line-attribution:updated listener', {
       workspaceId: currentWorkspaceId,

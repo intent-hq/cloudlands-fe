@@ -1,3 +1,5 @@
+import { readNoteTaskLinks } from '../note-task-links';
+import { LiveNotePagesClient } from './live-note-pages-client';
 /**
  * Live notes domain backed by the intentd daemon.
  *
@@ -144,6 +146,11 @@ class LiveLineAttributionClient implements LineAttributionClient {
 }
 
 export class LiveNotesClient implements NotesClient {
+  readonly pages = new LiveNotePagesClient();
+
+  listTaskLinks(workspaceId: string, noteId: string): Promise<string[] | null> {
+    return readNoteTaskLinks(this.pages, workspaceId, noteId);
+  }
   readonly lineAttribution: LineAttributionClient = new LiveLineAttributionClient();
 
   async list(workspaceId: string, options?: { projection?: 'full' | 'slim' }): Promise<Note[]> {

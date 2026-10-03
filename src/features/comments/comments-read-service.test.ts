@@ -19,6 +19,8 @@ import {
 } from '$store/renderer/slices/comments/comments-slice';
 import { applyCommentFromEvent, __resetCommentsReadServiceForTests } from './comments-read-service';
 
+beforeAll(() => appStore.init());
+
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function makeComment(id: string, noteId: string, overrides: Partial<CommentV2> = {}): CommentV2 {
@@ -49,8 +51,6 @@ function readCommentsForNote(noteId: string): CommentV2[] {
 }
 
 describe('commentsReadService (fake seam, real store)', () => {
-  beforeAll(() => appStore.init());
-
   beforeEach(() => {
     __resetCommentsReadServiceForTests();
     commentsListMock.mockReset();
@@ -174,4 +174,17 @@ describe('commentsReadService (fake seam, real store)', () => {
     expect(addDispatches).toHaveLength(0);
     spy.mockRestore();
   });
+});
+
+import {
+  pagePanelOpened,
+  pageSessionDiscarded,
+} from '$store/renderer/slices/note-pages/note-pages-slice';
+it('does not fetch a whole comment collection for an opted-in paged note', async () => {
+  appStore.dispatch(pagePanelOpened('paged-comments', 'spec', 'panel'));
+  commentsListMock.mockClear();
+  applyCommentFromEvent('paged-comments', 'spec', 'added');
+  await flush();
+  expect(commentsListMock).not.toHaveBeenCalled();
+  appStore.dispatch(pageSessionDiscarded('paged-comments', 'spec'));
 });

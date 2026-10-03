@@ -28,6 +28,7 @@ export type WorkspaceNotesWorkspaceState = {
   notesVersion: number;
   noteVersions: NoteVersionsState | null;
   readyTasks: ReadyTasksState | null;
+  specTaskLinks: string[] | null;
 };
 
 export type WorkspaceNotesState = {

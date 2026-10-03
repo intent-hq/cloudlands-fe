@@ -1,3 +1,4 @@
+import { isPagedNoteSession } from '$features/notes/notes-read-service';
 import { commentsClient } from './comments.client';
 import { Logger } from '../../shared/logger';
 import type { NoteComment } from '../../shared/types';
@@ -32,9 +33,11 @@ export async function loadComments(options: CommentLoaderOptions): Promise<NoteC
     return [];
   }
 
+  if (isPagedNoteSession(workspaceId, noteId)) return [];
   try {
     // Load comments via IPC
     const result = await commentsClient.list(workspaceId, noteId);
+    if (isPagedNoteSession(workspaceId, noteId)) return [];
 
     if (result.ok) {
       const data = result.data || [];

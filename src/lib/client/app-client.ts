@@ -1,3 +1,4 @@
+import type { NotePagesClient } from './note-pages';
 import type {
   ScriptArchiveFilter,
   ScriptArchiveResult,
@@ -1553,6 +1554,9 @@ export interface LineAttributionClient {
 }
 
 export interface NotesClient {
+  /** Explicit opt-in; complete legacy Note methods remain separate. */
+  pages?: NotePagesClient;
+  listTaskLinks?(workspaceId: string, noteId: string): Promise<string[] | null>;
   /**
    * Notes of one workspace (`note.list`, §5.2). `options.projection: "slim"`
    * requests the content-free projection — rows carry `content: ""` plus

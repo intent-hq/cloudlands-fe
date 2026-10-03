@@ -1,3 +1,4 @@
+import { notePagesReducer } from './slices/note-pages/note-pages-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
@@ -141,6 +142,7 @@ export const reducers = {
   agentMutationUi: agentMutationUiReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
+  notePages: notePagesReducer,
   workspaceTasks: workspaceTasksReducer,
   workspaceSummaries: workspaceSummariesReducer,
   workspaceOperations: workspaceOperationsReducer,

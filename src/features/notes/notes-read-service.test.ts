@@ -28,6 +28,8 @@ import {
 } from './notes-read-service';
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
+beforeAll(() => appStore.init());
+
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function deferred<T>(): {
@@ -63,8 +65,6 @@ function makeNote(id: string, wsId: string, overrides: Partial<Note> = {}): Note
 }
 
 describe('notesReadService (fake seam, real store)', () => {
-  beforeAll(() => appStore.init());
-
   beforeEach(() => {
     __resetNotesReadServiceForTests();
     notesGetMock.mockReset();
@@ -289,4 +289,37 @@ describe('notesReadService (fake seam, real store)', () => {
     const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
     expect(wsState?.notes.map['note-co']?.content).toBe('body');
   });
+});
+
+import {
+  pagePanelOpened,
+  pageSessionDiscarded,
+} from '$store/renderer/slices/note-pages/note-pages-slice';
+it('never full-loads an opted-in page session through open or note events', async () => {
+  const ws = 'paged-service',
+    id = 'spec';
+  appStore.dispatch(
+    loadWorkspaceNotesSucceeded([ws], {
+      [ws]: [makeNote(id, ws, { content: '', contentLength: 99 })],
+    }),
+  );
+  appStore.dispatch(pagePanelOpened(ws, id, 'panel'));
+  notesGetMock.mockClear();
+  applyNoteFromEvent(ws, id, 'note:updated');
+  expect(await ensureNoteContentLoaded(ws, id)).toBe(false);
+  await flush();
+  expect(notesGetMock).not.toHaveBeenCalled();
+  appStore.dispatch(pageSessionDiscarded(ws, id));
+});
+it('does not resurrect a note from a full read that finishes after deletion', async () => {
+  const ws = 'delete-race',
+    id = 'n';
+  appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [makeNote(id, ws)] }));
+  const pending = deferred<Note | null>();
+  notesGetMock.mockReturnValueOnce(pending.promise);
+  applyNoteFromEvent(ws, id, 'note:updated');
+  applyNoteFromEvent(ws, id, 'note:deleted');
+  pending.resolve(makeNote(id, ws));
+  await flush();
+  expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.ids).not.toContain(id);
 });

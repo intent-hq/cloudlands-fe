@@ -1,3 +1,5 @@
+import { pageReset } from '../../note-pages/note-pages-slice';
+import { selectNotePageSession } from '../../note-pages/note-pages-selectors';
 import { call, put, race, take } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
@@ -17,6 +19,7 @@ import {
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
   selectNote,
+  specTaskLinksReceived,
   workspaceNotesHydrationRequested,
   type NoteEventType,
 } from '../workspace-notes-slice';
@@ -34,28 +37,33 @@ function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolea
   );
 }
 
+function isDeletedNote(action: ObservedAction, workspaceId: string, noteId: string): boolean {
+  return (
+    action.type === applyNoteDeleted.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId &&
+    action.payload[1] === noteId
+  );
+}
+
 function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
   const current = yield* selectWorkspaceNotesState.effect(workspaceId);
   if (current.loading || (!force && current.initialized)) return;
   try {
-    // Slim projection (§5.2): the initial hydrate does not need full bodies —
-    // sidebar surfaces read titles/tags/metadata, and slim rows carry
-    // contentPreview/contentLength. The spec is the one structural exception
-    // (task links, ordering), so fetch it full alongside the slim list.
-    // The spec fetch is fail-soft: a workspace without a spec note must not
-    // fail the hydrate (its slim row, if any, is kept as-is).
-    const fetchSlimListAndSpec = (id: string) =>
-      Promise.all([
+    const fetchSlimListAndLinks = async (id: string) => {
+      const [rows, links] = await Promise.all([
         appClient.notes.list(id, { projection: 'slim' }),
-        appClient.notes.get(SPEC_NOTE_ID, id).catch(() => null),
+        appClient.notes.listTaskLinks?.(id, SPEC_NOTE_ID) ?? Promise.resolve(null),
       ]);
-    const [response, specNote]: Awaited<ReturnType<typeof fetchSlimListAndSpec>> = yield* call(
-      fetchSlimListAndSpec,
-      workspaceId,
-    );
-    const notes = response.map((note) =>
-      specNote && String(note.id) === SPEC_NOTE_ID ? toRuntimeNote(specNote) : toRuntimeNote(note),
-    );
+      if (links !== null) return { rows, links };
+      // Only an actually unsupported daemon may use the legacy complete-spec path.
+      const spec = await appClient.notes.get(SPEC_NOTE_ID, id).catch(() => null);
+      return { rows: rows.map((n) => (spec && String(n.id) === SPEC_NOTE_ID ? spec : n)), links };
+    };
+    const { rows, links } = yield* call(fetchSlimListAndLinks, workspaceId);
+    const notes = rows.map(toRuntimeNote);
+    if (links !== null || current.specTaskLinks !== null)
+      yield* put(specTaskLinksReceived(workspaceId, links));
     yield* put(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
     const spec = notes.find((note) => String(note.id) === SPEC_NOTE_ID);
     if (spec) yield* put(selectNote(workspaceId, String(spec.id)));
@@ -71,6 +79,28 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
 }
 
 function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEventType) {
+  if (noteId === SPEC_NOTE_ID && eventType !== 'note:deleted' && appClient.notes.listTaskLinks) {
+    try {
+      const links = yield* call(
+        [appClient.notes, appClient.notes.listTaskLinks],
+        workspaceId,
+        noteId,
+      );
+      if (links !== null) {
+        yield* put(specTaskLinksReceived(workspaceId, links));
+        return;
+      }
+    } catch (error) {
+      logger.error('Failed to refresh task links', error);
+      return;
+    }
+  }
+  const paged = yield* selectNotePageSession.effect(workspaceId, noteId);
+  if (paged && paged.status !== 'legacy' && Object.keys(paged.panels).length) {
+    // The bounded state subscription is authoritative; legacy events contain no page epochs.
+    if (eventType === 'note:deleted') yield* put(pageReset(workspaceId, noteId, 'Note deleted'));
+    return;
+  }
   if (eventType === 'note:deleted') {
     yield* put(applyNoteDeleted(workspaceId, noteId));
     return;
@@ -84,6 +114,9 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
       workspaceId,
     );
     if (!found || String(found.workspaceId) !== workspaceId) return;
+    const currentPage = yield* selectNotePageSession.effect(workspaceId, noteId);
+    if (currentPage && currentPage.status !== 'legacy' && Object.keys(currentPage.panels).length)
+      return;
     const note = toRuntimeNote(found);
     const existing = yield* selectNoteById.effect(workspaceId, noteId);
     if (eventType === 'note:created' && !existing) {
@@ -110,7 +143,10 @@ function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
   if (!workspaceId || !noteId) return;
   yield* race({
     apply: call(applyNoteEvent, workspaceId, noteId, eventType),
-    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
+    cleanup: take(
+      (cleanup: ObservedAction) =>
+        isWorkspaceCleanup(cleanup, workspaceId) || isDeletedNote(cleanup, workspaceId, noteId),
+    ),
   });
 }
 

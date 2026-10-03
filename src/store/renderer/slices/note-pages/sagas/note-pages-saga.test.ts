@@ -1,0 +1,325 @@
+import { runSaga, stdChannel } from 'redux-saga';
+import { afterEach, expect, it, vi } from 'vitest';
+import { appClient } from '$lib/client';
+import { MockNotePagesClient } from '$lib/client/mock/mock-note-pages-client';
+import type { NotePageState, NoteSourcePage } from '$lib/client/note-pages';
+import * as a from '../note-pages-slice';
+import { notePagesSaga } from './note-pages-saga';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+const scope = { backendId: 'db-a', workspaceId: 'ws-a', noteId: 'spec', noteInstanceId: 'inc-a' };
+const tuple: NotePageState = {
+  kind: 'notePageState',
+  scope,
+  stateGeneration: '10',
+  sourceRevision: 'r:7',
+  attributionGeneration: 'a:2',
+  attributionState: 'ready',
+  commentRevision: 'c:4',
+  deleted: false,
+  invalidation: 'all',
+};
+const page: NoteSourcePage = {
+  kind: 'noteSourcePage',
+  scope,
+  sourceRevision: 'r:7',
+  snapshotId: 'snap',
+  expiresAt: '2099-01-01T00:00:00.000Z',
+  sourceLength: 3,
+  range: { start: 0, end: 3 },
+  text: 'A😀',
+  nextCursor: null,
+  previousCursor: null,
+  contextRef: 'ctx',
+  metadataRef: 'meta',
+};
+const flush = async () => {
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+};
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+const original = appClient.notes.pages;
+const tasks: Array<ReturnType<typeof runSaga>> = [];
+afterEach(() => {
+  tasks.forEach((t) => t.cancel());
+  tasks.length = 0;
+  appClient.notes.pages = original;
+  vi.restoreAllMocks();
+});
+function run(client: MockNotePagesClient) {
+  appClient.notes.pages = client;
+  const channel = stdChannel();
+  let state = a.initialNotePagesState;
+  const dispatch = (action: Parameters<typeof a.notePagesReducer>[1]) => {
+    state = a.notePagesReducer(state, action);
+    channel.put(action);
+    return action;
+  };
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ notePages: state }) },
+    notePagesSaga,
+  );
+  tasks.push(task);
+  return { dispatch, state: () => state, task };
+}
+it('deduplicates panels and requests; closing one panel leaves the other subscription alive', async () => {
+  const pending = deferred<NoteSourcePage>();
+  const read = vi.fn(() => pending.promise);
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p1'));
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p2'));
+  await flush();
+  expect(client.subscriptionCount).toBe(1);
+  client.push(tuple);
+  await flush();
+  const request = {
+    kind: 'source' as const,
+    at: 0,
+    sourceRevision: 'r:7',
+    noteInstanceId: 'inc-a',
+  };
+  r.dispatch(a.pageRequested('ws-a', 'spec', request));
+  r.dispatch(a.pageRequested('ws-a', 'spec', request));
+  await flush();
+  expect(read).toHaveBeenCalledTimes(1);
+  r.dispatch(a.pagePanelClosed('ws-a', 'spec', 'p1'));
+  expect(client.subscriptionCount).toBe(1);
+  pending.resolve(page);
+  await flush();
+  expect(Object.values(r.state().byWorkspaceId['ws-a'].notes.spec.pages)).toEqual([page]);
+  r.dispatch(a.pagePanelClosed('ws-a', 'spec', 'p2'));
+  expect(client.subscriptionCount).toBe(0);
+});
+it('ignores a late read after reconnect and waits for the authoritative snapshot', async () => {
+  const pending = deferred<NoteSourcePage>();
+  const read = vi
+    .fn()
+    .mockReturnValueOnce(pending.promise)
+    .mockResolvedValue({ ...page, sourceRevision: 'r:8' });
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  client.reconnect();
+  await flush();
+  pending.resolve(page);
+  await flush();
+  expect(Object.values(r.state().byWorkspaceId['ws-a'].notes.spec.pages)).toEqual([]);
+  expect(read).toHaveBeenCalledTimes(1);
+  client.push({ ...tuple, stateGeneration: '11', sourceRevision: 'r:8' });
+  await flush();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(Object.values(r.state().byWorkspaceId['ws-a'].notes.spec.pages)[0]).toMatchObject({
+    sourceRevision: 'r:8',
+  });
+});
+it('unmount cancels subscriptions and rejects late reads while preserving drafts and uncertain saves', async () => {
+  const pending = deferred<NoteSourcePage>();
+  const save = deferred<never>();
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read: () => pending.promise,
+    save: () => save.promise,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  const draft = {
+    scope,
+    sequence: 1,
+    baseRevision: 'r:7',
+    splices: [{ start: 0, end: 1, text: 'draft' }],
+    selection: {
+      anchorAffinity: 'before' as const,
+      headAffinity: 'after' as const,
+      anchor: 0,
+      head: 1,
+    },
+  };
+  r.dispatch(a.pageDraftChanged('ws-a', 'spec', draft));
+  r.dispatch(
+    a.pageSaveRequested(
+      'ws-a',
+      'spec',
+      {
+        scope,
+        baseRevision: 'r:7',
+        operationId: 'op',
+        payloadDigest: 'digest',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        splices: draft.splices,
+      },
+      1,
+    ),
+  );
+  await flush();
+  r.dispatch(workspaceUnmounted('ws-a'));
+  pending.resolve(page);
+  await flush();
+  expect(client.subscriptionCount).toBe(0);
+  const n = r.state().byWorkspaceId['ws-a'].notes.spec;
+  expect(n.drafts).toEqual([draft]);
+  expect(n.pending?.operation.operationId).toBe('op');
+  expect(n.pages).toEqual({});
+});
+it('falls back explicitly without issuing page calls when the daemon has no capability', async () => {
+  const read = vi.fn();
+  const client = new MockNotePagesClient({ capabilities: null, read });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.status).toBe('legacy');
+  expect(read).not.toHaveBeenCalled();
+  expect(client.subscriptionCount).toBe(0);
+});
+
+it('recovers an expired read through a fresh bounded subscription and snapshot', async () => {
+  const read = vi.fn().mockRejectedValueOnce({ code: 'note-page-expired' }).mockResolvedValue(page);
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  expect(client.subscriptionCount).toBe(1);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.pages).toEqual({});
+  client.push(tuple);
+  await flush();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(Object.values(r.state().byWorkspaceId['ws-a'].notes.spec.pages)).toEqual([page]);
+});
+it('retains later typing and history when a lost save acknowledgement is recovered after switching workspace', async () => {
+  const operation = {
+    scope,
+    baseRevision: 'r:7',
+    operationId: 'op',
+    payloadDigest: 'digest',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    splices: [{ start: 0, end: 1, text: 'saved' }],
+  };
+  const receipt = {
+    kind: 'noteCommitReceipt' as const,
+    outcome: 'committed' as const,
+    scope,
+    operationId: 'op',
+    payloadDigest: 'digest',
+    beforeRevision: 'r:7',
+    afterRevision: 'r:8',
+    sourceLength: 7,
+    mappingRef: 'map',
+    effectsRef: 'effects',
+    inverseRef: 'inverse',
+    receiptExpiresAt: '2099-01-01T00:00:00.000Z',
+    invalidation: 'all' as const,
+  };
+  const save = vi.fn().mockRejectedValue(new Error('ack lost'));
+  const status = vi.fn().mockResolvedValue(receipt);
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read: async () => page,
+    save,
+    status,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  const draft = {
+    scope,
+    sequence: 1,
+    baseRevision: 'r:7',
+    splices: operation.splices,
+    selection: {
+      anchorAffinity: 'before' as const,
+      headAffinity: 'after' as const,
+      anchor: 0,
+      head: 1,
+    },
+  };
+  r.dispatch(a.pageDraftChanged('ws-a', 'spec', draft));
+  r.dispatch(a.pageSaveRequested('ws-a', 'spec', operation, 1));
+  await flush();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.pending?.status).toBe('unknown');
+  r.dispatch(a.pageDraftChanged('ws-a', 'spec', { ...draft, sequence: 2 }));
+  r.dispatch(workspaceUnmounted('ws-a'));
+  r.dispatch(a.pageSaveRetryRequested('ws-a', 'spec'));
+  await flush();
+  expect(status).toHaveBeenCalledWith(operation);
+  expect(save).toHaveBeenCalledTimes(1);
+  const n = r.state().byWorkspaceId['ws-a'].notes.spec;
+  expect(n.drafts.map((d) => d.sequence)).toEqual([2]);
+  expect(n.history).toHaveLength(2);
+  expect(n.receipts).toEqual([receipt]);
+  expect(n.needsReconcile).toBe(true);
+});
+it('isolates identical note IDs and revisions across concurrent workspaces', async () => {
+  const other = { ...scope, workspaceId: 'ws-b', noteInstanceId: 'inc-b' };
+  const read = vi.fn(async (ws: string) => ({ ...page, scope: ws === 'ws-a' ? scope : other }));
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  r.dispatch(a.pagePanelOpened('ws-b', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  client.push({ ...tuple, scope: other });
+  await flush();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(Object.values(r.state().byWorkspaceId['ws-b'].notes.spec.pages)[0].scope).toEqual(other);
+  r.dispatch(workspaceUnmounted('ws-a'));
+  expect(client.subscriptionCount).toBe(1);
+  expect(Object.values(r.state().byWorkspaceId['ws-b'].notes.spec.pages)).toHaveLength(1);
+});
+it('stops repeated stale-page recovery until explicit refresh and never falls back to full reads', async () => {
+  const read = vi
+    .fn()
+    .mockRejectedValue(Object.assign(new Error('expired'), { code: 'note-page-expired' }));
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  client.push(tuple);
+  await flush();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.status).toBe('error');
+  r.dispatch(a.pageRefreshRequested('ws-a', 'spec'));
+  await flush();
+  client.push(tuple);
+  await flush();
+  expect(read).toHaveBeenCalledTimes(3);
+});
+it('keeps capability transport failure recoverable without selecting legacy', async () => {
+  const client = new MockNotePagesClient({ capabilities: null, read: async () => page });
+  vi.spyOn(client, 'capabilities').mockRejectedValue(new Error('offline'));
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  await flush();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.status).toBe('error');
+  expect(r.task.isRunning()).toBe(true);
+});

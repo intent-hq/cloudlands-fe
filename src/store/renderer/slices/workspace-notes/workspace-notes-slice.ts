@@ -32,6 +32,7 @@ export const emptyWorkspaceNotesState: WorkspaceNotesWorkspaceState = {
   notesVersion: 0,
   noteVersions: null,
   readyTasks: null,
+  specTaskLinks: null,
 };
 
 export const initialState: WorkspaceNotesState = {
@@ -41,6 +42,9 @@ export const initialState: WorkspaceNotesState = {
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceNotesState);
 
+export const specTaskLinksReceived = createAction<[workspaceId: string, ids: string[] | null]>(
+  'workspaceNotes/specTaskLinksReceived',
+);
 export const clearWorkspaceNotesForWorkspaces = createAction<[workspaceIds: string[]]>(
   'workspaceNotes/clearWorkspaceNotesForWorkspaces',
 );
@@ -185,6 +189,10 @@ const applyReadyTasksError = createAction<[workspaceId: string, error: string]>(
 );
 
 export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialState);
+workspaceNotesReducer.with(specTaskLinksReceived, (state, { payload: [workspaceId, ids] }) => {
+  const ws = getWorkspaceState(state, workspaceId);
+  return setWorkspaceState(state, workspaceId, { ...ws, specTaskLinks: ids });
+});
 workspaceNotesReducer.with(
   clearWorkspaceNotesForWorkspaces,
   (state, { payload: [workspaceIds] }) => {
@@ -301,6 +309,7 @@ workspaceNotesReducer.with(applyNoteDeleted, (state, { payload: [workspaceId, no
   return setWorkspaceState(state, workspaceId, {
     ...workspaceState,
     notes,
+    specTaskLinks: noteId === 'spec' ? null : workspaceState.specTaskLinks,
     notesVersion: workspaceState.notesVersion + 1,
   });
 });

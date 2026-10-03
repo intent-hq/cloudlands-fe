@@ -1,3 +1,5 @@
+import { NotePageReader } from '../../../lib/client/note-page-reader';
+import { readNoteTaskLinks } from '../../../lib/client/note-task-links';
 /**
  * On-demand workspace summary computation.
  *
@@ -187,24 +189,22 @@ export async function computeWorkspaceGitSummary(
  * derive counts and groupings.
  */
 export async function getWorkspaceTasks(workspaceId: WorkspaceId): Promise<WorkspaceTask[]> {
-  // Route through the daemon (PROTOCOL.md §5.4 `note.list`); the FE presenter
-  // still runs `getSpecTaskNotes` locally to derive the spec-linked task facts.
-  // Slim projection (§5.2): only task metadata is needed from the list —
-  // except the spec's content, which drives the task-link filter, so the spec
-  // is fetched full alongside (fail-soft: a workspace without a spec keeps its
-  // slim row). Falls back to a plain full list on daemons that reject the
-  // unknown param (-32602).
+  const client = getBackendClient();
+  const reader = new NotePageReader((method, params) => client.request(method, params));
+  const linkedIds = await readNoteTaskLinks(reader, workspaceId, SPEC_NOTE_ID);
   let result: { notes?: Note[] } | undefined;
   try {
     const [listResult, specResult] = await Promise.all([
-      getBackendClient().request('note.list', { workspaceId, projection: 'slim' }) as Promise<
+      client.request('note.list', { workspaceId, projection: 'slim' }) as Promise<
         { notes?: Note[] } | undefined
       >,
-      (
-        getBackendClient().request('note.get', { workspaceId, noteId: SPEC_NOTE_ID }) as Promise<
-          { note?: Note } | Note | undefined
-        >
-      ).catch(() => undefined),
+      linkedIds === null
+        ? (
+            client.request('note.get', { workspaceId, noteId: SPEC_NOTE_ID }) as Promise<
+              { note?: Note } | Note | undefined
+            >
+          ).catch(() => undefined)
+        : Promise.resolve(undefined),
     ]);
     const spec =
       specResult && typeof specResult === 'object' && 'note' in specResult
@@ -217,13 +217,13 @@ export async function getWorkspaceTasks(workspaceId: WorkspaceId): Promise<Works
     };
   } catch (error) {
     if (!isProjectionRejected(error)) throw error;
-    result = (await getBackendClient().request('note.list', {
-      workspaceId,
-    })) as { notes?: Note[] } | undefined;
+    // Paging-capable daemons must honor slim lists; never fall back to whole bodies there.
+    if (linkedIds !== null) throw error;
+    result = (await client.request('note.list', { workspaceId })) as { notes?: Note[] } | undefined;
   }
   const notes = Array.isArray(result?.notes) ? result.notes : [];
 
-  const taskNotes = getSpecTaskNotes(notes);
+  const taskNotes = getSpecTaskNotes(notes, linkedIds ?? undefined);
   return taskNotes.map((note) => ({
     id: note.id as string,
     title: note.title || m.workspaceSummaries_untitledTask_label(),

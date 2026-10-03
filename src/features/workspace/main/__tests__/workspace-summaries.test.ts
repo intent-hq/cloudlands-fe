@@ -116,3 +116,49 @@ describe('getWorkspaceTasks', () => {
     await expect(getWorkspaceTasks(WORKSPACE_ID)).rejects.toThrow('notes unavailable');
   });
 });
+
+it('uses bounded task links for capable daemons without a whole-spec get', async () => {
+  mocks.request.mockReset();
+  const notes = ['first', 'second', 'unlinked'].map((id) =>
+    makeTaskNote(id, { metadata: { task: { status: 'not_started' } } } as Partial<Note>),
+  );
+  mocks.request.mockImplementation(async (method: string, params: any) => {
+    if (method === 'client.hello')
+      return { server: { capabilities: { notePaging: 1, notePagingBackendId: 'db' } } };
+    if (method === 'note.list') return { notes };
+    if (method === 'note.get' && params.page?.kind === 'taskIds')
+      return {
+        kind: 'noteTaskIdsPage',
+        scope: {
+          backendId: 'db',
+          workspaceId: WORKSPACE_ID,
+          noteId: 'spec',
+          noteInstanceId: 'inc',
+        },
+        sourceRevision: 'r1',
+        snapshotId: 's1',
+        expiresAt: '2099-01-01T00:00:00Z',
+        startIndex: 0,
+        totalItems: 2,
+        items: [
+          {
+            index: 0,
+            sourceRange: { start: 0, end: 6 },
+            taskNoteIdLength: 6,
+            taskNoteId: 'second',
+          },
+          {
+            index: 1,
+            sourceRange: { start: 10, end: 15 },
+            taskNoteIdLength: 5,
+            taskNoteId: 'first',
+          },
+        ],
+        nextCursor: null,
+      };
+    throw new Error('Unexpected full read');
+  });
+  const tasks = await getWorkspaceTasks(WORKSPACE_ID);
+  expect(tasks.map((t) => t.id)).toEqual(['first', 'second']);
+  expect(mocks.request.mock.calls.filter(([m, p]) => m === 'note.get' && !p.page)).toHaveLength(0);
+});

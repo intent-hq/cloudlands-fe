@@ -15,6 +15,7 @@
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
 import type { Note } from '$shared/types';
+import { SPEC_NOTE_ID } from '$shared/constants/notes';
 import { NoteId } from '$shared/types/branded-ids';
 import { isNoteContentStale } from '$shared/utils/note-content';
 import { store as appStore } from '$store/renderer/store';
@@ -22,10 +23,17 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  noteEventReceived,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('NotesReadService');
+
+export function isPagedNoteSession(workspaceId: string, noteId: string): boolean {
+  const n = appStore.state.notePages?.byWorkspaceId[workspaceId]?.notes[noteId];
+  return !!n && n.status !== 'legacy' && Object.keys(n.panels).length > 0;
+}
+const generations = new Map<string, number>();
 
 /**
  * In-flight loads keyed by `note:{workspaceId}:{noteId}`; coalesces
@@ -37,15 +45,19 @@ const logger = createLogger('NotesReadService');
  * the fetch was in flight, triggering one trailing refetch after the current
  * one settles.
  */
-const inFlight = new Map<string, { dirty: boolean; settled: Promise<void> }>();
+const inFlight = new Map<
+  string,
+  { dirty: boolean; settled: Promise<void>; run: () => Promise<void> }
+>();
 
 function coalesce(key: string, fn: () => Promise<void>): Promise<void> {
   const pending = inFlight.get(key);
   if (pending) {
     pending.dirty = true;
+    pending.run = fn;
     return pending.settled;
   }
-  const entry = { dirty: false, settled: Promise.resolve() };
+  const entry = { dirty: false, settled: Promise.resolve(), run: fn };
   inFlight.set(key, entry);
   entry.settled = (async () => {
     try {
@@ -53,11 +65,11 @@ function coalesce(key: string, fn: () => Promise<void>): Promise<void> {
     } catch (error) {
       logger.error(`Notes refresh failed for ${key}`, error);
     } finally {
-      inFlight.delete(key);
-      // The trailing refetch reuses the leading caller's `fn`; callers must
-      // pass an equivalent closure for a given key (the key fully determines
-      // the fetch here), or a mid-flight caller's fetch would be dropped.
-      if (entry.dirty) await coalesce(key, fn);
+      if (inFlight.get(key) === entry) {
+        inFlight.delete(key);
+        // Use the newest owner: deletion/recreation can supersede the leading request.
+        if (entry.dirty) await coalesce(key, entry.run);
+      }
     }
   })();
   return entry.settled;
@@ -79,13 +91,28 @@ export function applyNoteFromEvent(
   eventType: 'note:created' | 'note:updated' | 'note:deleted',
 ): void {
   if (!workspaceId || !noteId) return;
+  const key = JSON.stringify([workspaceId, noteId]);
   if (eventType === 'note:deleted') {
+    generations.set(key, (generations.get(key) ?? 0) + 1);
     appStore.dispatch(applyNoteDeleted(workspaceId, noteId));
     return;
   }
+  if (noteId === SPEC_NOTE_ID) {
+    appStore.dispatch(noteEventReceived(workspaceId, noteId, eventType));
+    return;
+  }
+  const generation = generations.get(key) ?? 0;
   coalesce(`note:${workspaceId}:${noteId}`, async () => {
+    if (generation !== (generations.get(key) ?? 0)) return;
+    if (isPagedNoteSession(workspaceId, noteId)) return;
     const note = await appClient.notes.get(noteId, workspaceId);
-    if (!note || String(note.workspaceId) !== workspaceId) return;
+    if (
+      !note ||
+      String(note.workspaceId) !== workspaceId ||
+      isPagedNoteSession(workspaceId, noteId) ||
+      generation !== (generations.get(key) ?? 0)
+    )
+      return;
     dispatchNoteApply(workspaceId, note, eventType);
   });
 }
@@ -124,14 +151,23 @@ function dispatchNoteApply(
  * error/retry state instead of waiting on a store change that never comes.
  */
 export function ensureNoteContentLoaded(workspaceId: string, noteId: string): Promise<boolean> {
-  if (!workspaceId || !noteId) return Promise.resolve(false);
+  if (!workspaceId || !noteId || isPagedNoteSession(workspaceId, noteId))
+    return Promise.resolve(false);
   const ws = appStore.state.workspaceNotes.byWorkspaceId[workspaceId];
   const cached = ws?.notes ? getItem(ws.notes, NoteId(String(noteId))) : undefined;
   if (!cached) return Promise.resolve(false);
   if (!isNoteContentStale(cached)) return Promise.resolve(true);
+  const key = JSON.stringify([workspaceId, noteId]);
+  const generation = generations.get(key) ?? 0;
   return coalesce(`note:${workspaceId}:${noteId}`, async () => {
     const note = await appClient.notes.get(noteId, workspaceId);
-    if (!note || String(note.workspaceId) !== workspaceId) return;
+    if (
+      !note ||
+      String(note.workspaceId) !== workspaceId ||
+      isPagedNoteSession(workspaceId, noteId) ||
+      generation !== (generations.get(key) ?? 0)
+    )
+      return;
     dispatchNoteApply(workspaceId, note, 'note:updated');
   }).then(() => {
     const after = appStore.state.workspaceNotes.byWorkspaceId[workspaceId];
@@ -143,4 +179,5 @@ export function ensureNoteContentLoaded(workspaceId: string, noteId: string): Pr
 /** Test-only — drop any coalesced fetches between test cases. */
 export function __resetNotesReadServiceForTests(): void {
   inFlight.clear();
+  generations.clear();
 }

@@ -66,8 +66,14 @@ export function applyCommentFromEvent(
   _kind: 'added' | 'resolved',
 ): void {
   if (!workspaceId || !noteId) return;
+  const paged = () => {
+    const n = appStore.state.notePages?.byWorkspaceId[workspaceId]?.notes[noteId];
+    return !!n && n.status !== 'legacy' && Object.keys(n.panels).length > 0;
+  };
+  if (paged()) return;
   coalesce(`comment:${workspaceId}:${noteId}`, async () => {
     const fresh = await appClient.comments.list(noteId, workspaceId);
+    if (paged()) return;
     const state = appStore.state.comments;
     // Scope the removal set by workspace too: note ids repeat across
     // workspaces, so a bare noteId filter would treat another workspace's

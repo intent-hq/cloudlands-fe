@@ -73,3 +73,8 @@ export const selectNoteVersions = store.createSelector(
   (state, workspaceId: string): NoteVersionsState | null =>
     state.workspaceNotes.byWorkspaceId[workspaceId]?.noteVersions ?? null,
 );
+
+export const selectSpecTaskLinks = store.createSelector(
+  (state, workspaceId: string): string[] | null =>
+    state.workspaceNotes.byWorkspaceId[workspaceId]?.specTaskLinks ?? null,
+);

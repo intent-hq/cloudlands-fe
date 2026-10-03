@@ -1,5 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
@@ -14,6 +14,7 @@ import {
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
   selectNote,
+  specTaskLinksReceived,
   workspaceNotesReducer,
   workspaceNotesHydrationRequested,
 } from '../workspace-notes-slice';
@@ -24,9 +25,7 @@ const NOW = '2026-01-01T00:00:00.000Z';
 const workspaceMounted = (workspaceId: string) =>
   workspaceNotesHydrationRequested(workspaceId, 1, false);
 const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 
 function deferred<T>() {
@@ -73,6 +72,9 @@ function harness(seed: Note[] = []) {
 }
 
 describe('notesReadSaga', () => {
+  beforeEach(() => {
+    vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(null);
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it('hydrates with the slim-list + full-spec requests and maps the protocol note field by field', async () => {
@@ -481,4 +483,20 @@ describe('notesReadSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+});
+
+it('uses bounded task links without hydrating a complete spec', async () => {
+  const slim = note(SPEC_NOTE_ID, { content: '', contentLength: 90000 });
+  vi.spyOn(appClient.notes, 'list').mockResolvedValue([slim]);
+  const get = vi.spyOn(appClient.notes, 'get').mockResolvedValue(slim);
+  vi.spyOn(appClient.notes, 'listTaskLinks').mockResolvedValue(['b', 'a']);
+  const run = harness();
+  run.channel.put(workspaceMounted(WS));
+  await settle();
+  await settle();
+  expect(get).not.toHaveBeenCalled();
+  expect(run.actions).toContainEqual(specTaskLinksReceived(WS, ['b', 'a']));
+  run.task.cancel();
+  await run.task.toPromise();
+  vi.restoreAllMocks();
 });
