@@ -132,6 +132,22 @@ describe('shared pending submission state', () => {
     },
   );
 
+  it('keeps individual accepted contributions when only part of a merged ACK has current evidence', () => {
+    const f = fixture();
+    f.accept('a', 'queue', { content: 'A' });
+    f.accept('b', 'queue', { content: 'B', messageMetadata: { trace: 'keep' } });
+    f.settle('a', 'accepted', queued('a', 'A\n\nB', { submissionIds: ['a', 'b'] }));
+    expect(f.display().queue.map((row) => row.content)).toEqual(['A\n\nB']);
+    f.event([queued('a', 'A')], 'history');
+    f.fresh([]);
+    expect(f.display().queue.map((row) => row.content)).toEqual(['B']);
+    expect(getItems(f.entry().submissions)[0].messageMetadata).toEqual({ trace: 'keep' });
+    expect(f.entry().refreshNeeded).toBe(true);
+    f.event([queued('b', 'B')]);
+    expect(f.display().queue.map((row) => row.content)).toEqual(['B']);
+    expect(getItems(f.entry().submissions)).toEqual([]);
+  });
+
   it.each(['ttl', 'count'] as const)(
     'retains trusted processing after queue dwell evicts its %s tombstone',
     (eviction) => {
