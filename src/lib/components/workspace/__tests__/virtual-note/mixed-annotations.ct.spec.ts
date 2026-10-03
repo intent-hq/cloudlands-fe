@@ -40,15 +40,19 @@ for (const kind of ['paragraph', 'table'] as const) {
     const initial = await page
       .getByTestId('bounded')
       .getByTestId('proof')
-      .evaluate((el) => {
+      .evaluate((el, target) => {
         const p = (el as Host).proof;
+        const cell = p.projection!.table?.window.cells.find(
+          (c) => c.first <= target && c.last > target,
+        );
         return {
-          start: p.projection!.start,
-          end: p.projection!.start + p.projection!.source.length,
+          start: cell?.first ?? p.projection!.start,
+          end: cell?.last ?? p.projection!.start + p.projection!.source.length,
           items: p.annotationPage!.items,
           stats: p.snapshot(),
+          cells: p.projection!.table?.window.cells.map((c) => ({ first: c.first, last: c.last })),
         };
-      });
+      }, target);
     expect(initial.start).toBeGreaterThan(source.indexOf(opening) + opening.length);
     expect(initial.end).toBeLessThan(source.indexOf(closing));
     expect(initial.items.map((a) => a.id)).toEqual(['cmt-cross', 'author-cross']);
