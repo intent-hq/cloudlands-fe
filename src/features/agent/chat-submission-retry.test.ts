@@ -26,6 +26,7 @@ import {
   agentSessionRetryLastMessageRequested,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
+import { chatReadSaga } from '$store/renderer/slices/chat-state/sagas/chat-read-saga';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
 import { requestChatMessageRetry } from './chat-submission-retry';
 import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
@@ -40,7 +41,10 @@ import { submitChatMessage } from '$features/agent/chat-submission';
 import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
 import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
 import { selectAgentSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
-import { announceSubmissionDelivery } from '$features/agent/submission-evidence';
+import {
+  beginSubmissionRead,
+  announceSubmissionDelivery,
+} from '$features/agent/submission-evidence';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { __resetAgentQueueReadServiceForTests } from '$features/agent/agent-queue-read-service';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
@@ -572,6 +576,8 @@ describe('queue mutation boundary with pending contributions', () => {
     async (kind) => {
       const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
       emit('agent:queue:updated', { queue: [row(a, { mergeEligible: true })] });
+      beginSubmissionRead(agent, ws, 'queue').complete([row(a, { mergeEligible: true })]);
+      beginSubmissionRead(agent, ws, 'history').complete([]);
       admitAgentSubmission(store, agent, ws, 1, { content: 'B', destination: 'queue' });
       startSending();
       const result =
@@ -596,4 +602,148 @@ describe('queue mutation boundary with pending contributions', () => {
       expect(display().queue.map((r) => r.content)).toEqual(['A\n\nB']);
     },
   );
+});
+
+describe('queue admission and command ordering through the live boundary', () => {
+  it('stages rapid identical sends before the first acknowledgement and reconciles a foreign barrier and rejected append', async () => {
+    const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
+    const initial = row(a, { mergeEligible: true });
+    emit('agent:queue:updated', { queue: [initial] });
+    beginSubmissionRead(agent, ws, 'queue').complete([initial]);
+    beginSubmissionRead(agent, ws, 'history').complete([]);
+    store.dispatch(
+      updateAgentSessionFields(agent, {
+        isProcessing: true,
+        isResponding: true,
+        isStreaming: true,
+      }),
+    );
+    let acknowledge!: (result: unknown) => void;
+    let authoritative = [initial];
+    wire.request.mockImplementation((method, params) => {
+      if (method === 'agent.queueMessage') {
+        if (queues().length === 1)
+          return new Promise((resolve) => {
+            acknowledge = resolve;
+          });
+        return Promise.resolve({ success: false, error: 'Request refused' });
+      }
+      if (method === 'agent.getQueue') return Promise.resolve({ queue: authoritative });
+      return baseReply(method, params);
+    });
+    startSending();
+    expect(
+      submitChatMessage(store, agent, { wsId: ws, text: 'same', userAppMessageId: 'app-b' }),
+    ).toBe(true);
+    expect(
+      submitChatMessage(store, agent, { wsId: ws, text: 'same', userAppMessageId: 'app-c' }),
+    ).toBe(true);
+    const contributions = display().queue.flatMap((r) => r.contributions);
+    expect(contributions.map((s) => s.appMessageId)).toEqual(['app-b', 'app-c']);
+    expect(new Set(contributions.map((s) => s.id)).size).toBe(2);
+    const [b, c] = contributions;
+    expect(display().queue.map((r) => r.content)).toEqual(['A\n\nsame\n\nsame']);
+    await vi.waitFor(() => expect(acknowledge).toBeTypeOf('function'));
+    expect(queues()).toHaveLength(1);
+    expect(queues()[0]).toEqual([
+      'agent.queueMessage',
+      { agentId: agent, workspaceId: ws, content: 'same', messageId: b.id },
+    ]);
+    authoritative = [
+      { ...initial, mergeEligible: false },
+      {
+        ...initial,
+        id: 'foreign',
+        content: 'Other participant',
+        submissionIds: ['foreign'],
+        author: { ...initial.author, principalId: 'other' },
+        mergeEligible: false,
+        position: 1,
+      },
+      { ...initial, id: b.id, content: 'same', submissionIds: [b.id], position: 2 },
+    ];
+    emit('agent:queue:updated', { queue: authoritative });
+    acknowledge({ success: true, queuedMessage: authoritative[2] });
+    await vi.waitFor(() => expect(queues()).toHaveLength(2));
+    await vi.waitFor(() => expect(display().queue.flatMap((r) => r.contributions)).toEqual([]));
+    expect(queues()[1]).toEqual([
+      'agent.queueMessage',
+      { agentId: agent, workspaceId: ws, content: 'same', messageId: c.id },
+    ]);
+    expect(display().queue.map((r) => r.content)).toEqual(['A', 'Other participant', 'same']);
+    expect(sends()).toHaveLength(0);
+  });
+
+  it('rechecks clear between removals when a new submission arrives during its first RPC', async () => {
+    const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
+    const initial = [
+      row(a, { mergeEligible: false }),
+      row(a, { id: 'second', content: 'Second', submissionIds: ['second'], mergeEligible: true }),
+    ];
+    emit('agent:queue:updated', { queue: initial });
+    beginSubmissionRead(agent, ws, 'queue').complete(initial);
+    beginSubmissionRead(agent, ws, 'history').complete([]);
+    let removed!: (result: unknown) => void;
+    wire.request.mockImplementation((method, params) =>
+      method === 'agent.removeQueuedMessage'
+        ? new Promise((resolve) => {
+            removed = resolve;
+          })
+        : baseReply(method, params),
+    );
+    startSending();
+    const clear = store.dispatch(
+      clearQueuedMessagesRequested(agent, ws, [a.submission.id, 'second']),
+    );
+    const failed = expect(clear).rejects.toThrow();
+    await vi.waitFor(() => expect(removed).toBeTypeOf('function'));
+    admitAgentSubmission(store, agent, ws, 1, {
+      content: 'New contribution',
+      destination: 'queue',
+    });
+    removed({ success: true });
+    await failed;
+    expect(
+      wire.request.mock.calls.filter(([method]) => method === 'agent.removeQueuedMessage'),
+    ).toEqual([
+      [
+        'agent.removeQueuedMessage',
+        { agentId: agent, messageId: a.submission.id, workspaceId: ws },
+      ],
+    ]);
+    expect(display().queue.map((r) => r.content)).toEqual(['Second\n\nNew contribution']);
+  });
+});
+
+describe('queue control freshness after later daemon events', () => {
+  it('refreshes both authoritative sources after a later append so confirmed controls become usable again', async () => {
+    const a = admitAgentSubmission(store, agent, ws, 1, { content: 'A', destination: 'queue' })!;
+    let authoritative = [row(a, { mergeEligible: true })];
+    emit('agent:queue:updated', { queue: authoritative });
+    beginSubmissionRead(agent, ws, 'queue').complete(authoritative);
+    beginSubmissionRead(agent, ws, 'history').complete([]);
+    expect(display().queue[0].blocksMutations).toBe(false);
+    wire.request.mockImplementation((method, params) =>
+      method === 'agent.getQueue'
+        ? Promise.resolve({ queue: authoritative })
+        : baseReply(method, params),
+    );
+    cleanups.push(store.runSaga(chatReadSaga));
+    authoritative = [
+      {
+        ...authoritative[0],
+        content: 'A plus another client append',
+        submissionIds: [a.submission.id, 'another-client'],
+      },
+    ];
+    emit('agent:queue:updated', { queue: authoritative });
+    await vi.waitFor(() => expect(display().queue[0].blocksMutations).toBe(false));
+    expect(wire.request.mock.calls.some(([method]) => method === 'agent.getQueue')).toBe(true);
+    expect(wire.request.mock.calls.some(([method]) => method === 'agent.getConversation')).toBe(
+      true,
+    );
+    expect(display().queue.map((row) => row.content)).toEqual(['A plus another client append']);
+    expect(sends()).toEqual([]);
+    expect(queues()).toEqual([]);
+  });
 });
