@@ -37,7 +37,7 @@ interface SubmissionOperation {
 export interface SubmissionTombstone {
   id: string;
   at: number;
-  reason: 'queue' | 'history' | 'rejected';
+  reason: 'queue' | 'processing' | 'history' | 'rejected';
 }
 
 export interface SubmissionEvidence extends SubmissionCorrelation, Partial<QueuedMessage> {}
