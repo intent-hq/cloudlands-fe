@@ -312,9 +312,11 @@ for (const edge of ['before', 'after'] as const)
                 expect(timer).toBeDefined();
                 expect(after.detail?.timer).toBe(timer);
                 const timerEvent = (kind: string) => {
-                  const events = events.filter((e) => e.kind === kind && e.detail?.timer === timer);
-                  expect(events).toHaveLength(1);
-                  return events[0];
+                  const matches = events.filter(
+                    (e) => e.kind === kind && e.detail?.timer === timer,
+                  );
+                  expect(matches).toHaveLength(1);
+                  return matches[0];
                 };
                 const scheduled = timerEvent('done-timer-schedule');
                 expect(scheduled.detail?.source).toContain('selectionToDOM');

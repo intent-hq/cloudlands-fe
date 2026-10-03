@@ -87,6 +87,12 @@ for (const scenario of [
       view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1)));
     if (scenario === 'ownership-cleared') view.dispatch(view.state.tr.setMeta(tableEditingKey, -1));
     if (scenario === 'destroyed') editor.destroy();
+    const dispatch = view.dispatch;
+    let staleDispatches = 0;
+    const dispatched = vi.spyOn(view, 'dispatch').mockImplementation(function (tr) {
+      if (view.isDestroyed) staleDispatches++;
+      return Reflect.apply(dispatch, view, [tr]);
+    });
     try {
       const release = new MouseEvent(scenario === 'canceled' ? 'dragstart' : 'mouseup', {
         button: scenario === 'secondary' ? 2 : 0,
@@ -104,6 +110,9 @@ for (const scenario of [
       ].includes(scenario);
       expect(flush).toHaveBeenCalledTimes(observed ? 1 : 0);
       expect(force).toHaveBeenCalledTimes(scenario === 'deferred' ? 1 : 0);
+      expect(staleDispatches).toBe(0);
+      const clears = dispatched.mock.calls.filter(([tr]) => tr.getMeta(tableEditingKey) === -1);
+      expect(clears).toHaveLength(editor.isDestroyed || scenario === 'ownership-cleared' ? 0 : 1);
       expect(view.state.doc.toJSON()).toEqual(before);
       if (!editor.isDestroyed) {
         expect(tableEditingKey.getState(view.state)).toBeNull();
@@ -114,6 +123,7 @@ for (const scenario of [
         );
       }
     } finally {
+      dispatched.mockRestore();
       view.domObserver.flushingSoon = -1;
       force.mockRestore();
       flush.mockRestore();
