@@ -1,9 +1,9 @@
 import { tableInlineSourcePatch } from './table-inline-source';
 import type { JSONContent } from '@tiptap/core';
 import { DOMSerializer, Fragment, Mark, type Node as PMNode } from '@tiptap/pm/model';
-import { TextSelection, type Transaction } from '@tiptap/pm/state';
+import { TextSelection } from '@tiptap/pm/state';
 import { CellSelection, TableMap } from '@tiptap/pm/tables';
-import { ReplaceStep, type Step } from '@tiptap/pm/transform';
+import { ReplaceStep, type Step, type Transform } from '@tiptap/pm/transform';
 import { processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 import type { SourceProjection } from './source-projection';
 import type { Splice, TablePoint, Selection } from './source-journal';
@@ -243,7 +243,7 @@ export class TableProjection {
     return source;
   }
   translateTransaction(
-    tr: Transaction,
+    tr: Transform,
     sourceAt: (pm: number, affinity?: number) => number,
   ): Splice[] {
     this.changedCells.length = 0;

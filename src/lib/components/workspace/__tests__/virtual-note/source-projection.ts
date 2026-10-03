@@ -8,6 +8,7 @@ import { scanFences, type Fence } from './fence-context';
 import type { ListItem, ListSeam } from './list-context';
 import { ListProjection } from './list-projection';
 import { TableProjection } from './table-projection';
+import { MixedProjection } from './mixed-projection';
 import type { TableWindow } from './table-source';
 
 export type Mark = {
@@ -30,6 +31,7 @@ export type InlineContext = {
   paragraphSeams?: ParagraphSeam[];
   documentEnd?: boolean;
   table?: TableWindow;
+  tables?: TableWindow[];
 };
 export const openMark = (mark: Mark) =>
   mark.type === 'bold' ? '**' : mark.type === 'italic' ? (mark.delimiter ?? '*') : '[';
@@ -101,12 +103,22 @@ export class SourceProjection {
   readonly addedParagraphSeams: ParagraphSeam[] = [];
   readonly list?: ListProjection;
   readonly table?: TableProjection;
+  readonly mixed?: MixedProjection;
   constructor(
     readonly source: string,
     readonly start = 0,
     readonly context?: InlineContext,
     indexOnly = false,
   ) {
+    if (context?.tables?.length && !indexOnly) {
+      this.mixed = new MixedProjection(source, start, context, context.tables);
+      this.content.content = this.mixed.content.content;
+      for (const [p, s] of this.mixed.positions) this.positions.set(p, s);
+      for (const [p, s] of this.mixed.ends) this.ends.set(p, s);
+      for (const [p, s] of this.mixed.boundaries) this.boundaries.set(p, s);
+      this.tokens.push(...this.mixed.tokens);
+      return;
+    }
     if (context?.table && !indexOnly) {
       this.table = new TableProjection(context.table);
       this.content.content = this.table.content.content;

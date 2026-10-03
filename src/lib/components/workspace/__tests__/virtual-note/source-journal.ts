@@ -1252,6 +1252,25 @@ export class SourceJournal {
     const window = this.tableViewportWindow(...args);
     return window && this.transferTable(window);
   }
+  mixedTableRanges(from: number, to: number) {
+    const ranges: Array<{ from: number; to: number }> = [];
+    for (let id = this.locate(from).id; id <= this.locate(to).id && id < this.count; id++) {
+      const start = this.start(id);
+      for (const table of this.tableIndex(this.region(id), start)) {
+        const range = { from: table.from + start, to: table.to + start };
+        if (
+          range.from >= from &&
+          range.to <= to &&
+          (this.slice(from, range.from).trim() || this.slice(range.to, to).trim())
+        )
+          ranges.push(range);
+      }
+    }
+    const size = bytes(JSON.stringify(ranges));
+    if (size > LIMITS.request) throw new Error('Mixed table range response exceeds budget');
+    this.log('mixed-table-ranges', from, size);
+    return ranges;
+  }
   tableWindowPages(...args: Parameters<SourceJournal['tableWindow']>) {
     const window = this.tableWindow(...args);
     return window && this.transferTable(window);

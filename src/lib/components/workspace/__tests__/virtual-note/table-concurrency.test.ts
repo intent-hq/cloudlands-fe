@@ -41,7 +41,10 @@ it('maps session structure and global history through remote prose and row inser
     session.editor!.commands.splitBlock();
     const cell = session.editor!.state.selection.$head.node(3).toJSON();
     session.remote({ from: 0, to: 0, insert: 'Remote prose\n\n' });
-    expect(session.projection!.table).toBeDefined();
+    expect(
+      session.projection!.table ??
+        session.projection!.mixed?.parts.find((part) => part.projection.table)?.projection.table,
+    ).toBeDefined();
     expect(session.error).toBe('');
     expect(session.editor!.state.selection.$head.node(3).toJSON()).toEqual(cell);
     const at = service.region(0).indexOf('| before');

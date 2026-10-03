@@ -41,6 +41,7 @@ for (const index of [0, 1, 2, 3, 4, -1]) {
       expect(await session.show(0)).toBe(true);
       expect(session.error).toBe('');
       expect(backing.region(0)).toBe(source);
+      native.commands.setTextSelection(session.editor!.state.selection.head);
       expect(session.editor!.getJSON()).toEqual(native.getJSON());
     } finally {
       session.destroy();

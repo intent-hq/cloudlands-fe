@@ -8,7 +8,7 @@ import {
   type Mark,
   type InlineContext,
 } from './source-projection';
-import type { Transaction } from '@tiptap/pm/state';
+import type { Transform } from '@tiptap/pm/transform';
 import type { ListItem, ListSeam } from './list-context';
 import type { Splice } from './source-journal';
 import type { Fence } from './fence-context';
@@ -252,7 +252,7 @@ export class ListProjection {
     this.boundaries.set(0, start);
     this.boundaries.set(pm, end);
   }
-  translateTransaction(tr: Transaction) {
+  translateTransaction(tr: Transform) {
     // TipTap's native cut command deletes and reinserts an identical immutable slice.
     // Carry that slice's exact token provenance, without searching document substrings.
     let tokens = this.tokens.map((t) => ({ ...t }));

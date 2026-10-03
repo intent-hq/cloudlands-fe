@@ -1,3 +1,4 @@
+import { MixedProjection } from './mixed-projection';
 import {
   relayClipboard,
   type ClipboardRelayStats,
@@ -284,6 +285,21 @@ export class DocumentSession {
           table,
         }
       : this.service.inlineContext(start, start + source.length);
+    if (!table) {
+      const ranges = this.service.mixedTableRanges(start, start + source.length);
+      if (ranges.length)
+        context.tables = ranges.map((range) => {
+          const part = this.receiveTable(this.service.tableWindowPages(range.from))!;
+          if (
+            part.cells.some((cell) => cell.partial) ||
+            part.cells.length !== part.rows * part.columns
+          )
+            throw new Error('Mixed table requires complete bounded admission');
+          return part;
+        });
+      if (ranges.length && bytes(source) + bytes(JSON.stringify(context)) > TABLE_ACTIVE_BYTES)
+        throw new Error('Mixed source/context exceeds admission budget');
+    }
     if (context.revision !== this.service.revision)
       throw new Error('Stale inline context response');
     this.maxSourceContextBytes = Math.max(
@@ -367,6 +383,13 @@ export class DocumentSession {
   }
   private readWindow(id: number, position?: number, selection = this.selection) {
     const at = position ?? this.service.start(id);
+    const candidate = continuationWindow(this.service, id, position);
+    if (this.service.mixedTableRanges(candidate.from, candidate.to).length) {
+      const source = this.readRange(candidate.from, candidate.to);
+      this.inFlightBytes += bytes(source);
+      this.maxInFlightBytes = Math.max(this.maxInFlightBytes, this.inFlightBytes);
+      return { ...candidate, source, table: undefined };
+    }
     const scroller = this.host.parentElement;
     const preferred = position === selection.head ? selection.table?.head : undefined;
     const pages = scroller?.clientHeight
@@ -971,9 +994,10 @@ export class DocumentSession {
     const window = this.readWindow(id, position, requestedSelection);
     try {
       const next = this.project(window.source, window.from, window.table);
-      if (next.table) {
+      if (next.table || next.mixed) {
         try {
-          tableNodeBudget(next.content);
+          if (next.mixed) MixedProjection.nodeBudget(next.content);
+          else tableNodeBudget(next.content);
         } catch (error) {
           this.error = String(error);
           this.changed();
@@ -1001,7 +1025,8 @@ export class DocumentSession {
           );
           const restored = requestedSelection ?? this.selection;
           tr.setSelection(
-            next.table?.restoreSelection(tr.doc, restored) ??
+            next.mixed?.restoreSelection(tr.doc, restored) ??
+              next.table?.restoreSelection(tr.doc, restored) ??
               TextSelection.create(
                 tr.doc,
                 next.table?.pointPM(this.selection.table?.anchor) ??
@@ -1692,6 +1717,7 @@ export class DocumentSession {
     const p = this.projection!,
       editor = this.editor!;
     const selection =
+      p.mixed?.restoreSelection(editor.state.doc, this.selection) ??
       p.table?.restoreSelection(editor.state.doc, this.selection) ??
       TextSelection.create(
         editor.state.doc,
@@ -1732,6 +1758,10 @@ export class DocumentSession {
     let anchor = p.table?.pointAt(selection.anchor),
       head = p.table?.pointAt(selection.head);
     const cells = selection instanceof CellSelection;
+    if (p.mixed) {
+      anchor = p.mixed.pointAt(cells ? selection.$anchorCell.pos : selection.anchor, cells);
+      head = p.mixed.pointAt(cells ? selection.$headCell.pos : selection.head, cells);
+    }
     if (cells && p.table) {
       const a = p.table.entries.find((e) => e.pm === selection.$anchorCell.pos),
         h = p.table.entries.find((e) => e.pm === selection.$headCell.pos);
@@ -1857,7 +1887,8 @@ export class DocumentSession {
           tr.doc.descendants(() => {
             nodes++;
           });
-          if (
+          if (this.projection?.mixed) MixedProjection.nodeBudget(tr.doc.toJSON());
+          else if (
             nodes + Number(!!this.projection?.table) >
             (this.projection?.table ? TABLE_NODE_LIMIT : LIMITS.nodes)
           )
@@ -1878,7 +1909,9 @@ export class DocumentSession {
             transactions[0].getMeta('addToHistory') !== false;
           this.service.beginChanges();
           let oldStart = this.projection!.start;
-          const tableBatch = this.projection!.table;
+          const mixedBatch = this.projection!.mixed?.translateTransaction(tr);
+          const tableBatch = this.projection!.table ?? mixedBatch?.table;
+          const listProjection = this.projection!.list ?? mixedBatch?.list;
           const terminalAppend =
             tableBatch &&
             !tr.selectionSet &&
@@ -1888,23 +1921,28 @@ export class DocumentSession {
             !tr.doc.lastChild!.content.size &&
             tr.before.firstChild!.eq(tr.doc.firstChild!);
           let terminalState: ReturnType<SourceJournal['stageTableTrailing']> | undefined;
-          const listBatch = !!this.projection!.list || !!tableBatch;
+          const listBatch = !!listProjection || !!tableBatch || !!mixedBatch;
           for (let n = 0; n < (listBatch ? 1 : tr.steps.length); n++) {
             let fences: NonNullable<InlineContext['fences']> = [];
             // Native joins may have intermediate structures with no Markdown representation.
             // Admit the final list document atomically using every step's token mapping.
-            const splices = tableBatch
-              ? tableBatch.translateTransaction(tr, (pm, affinity) =>
-                  this.projection!.sourceAt(pm, affinity),
-                )
-              : listBatch
-                ? this.projection!.list!.translateTransaction(tr)
-                : this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
-                    fences = next;
-                  });
-            if (this.projection!.list) fences = this.projection!.list.fences;
+            const splices = mixedBatch
+              ? mixedBatch.splices
+              : tableBatch
+                ? tableBatch.translateTransaction(tr, (pm, affinity) =>
+                    this.projection!.sourceAt(pm, affinity),
+                  )
+                : listBatch
+                  ? this.projection!.list!.translateTransaction(tr)
+                  : this.projection!.translate(tr.steps[n], tr.docs[n], (next) => {
+                      fences = next;
+                    });
+            if (listProjection) fences = listProjection.fences;
+            if (mixedBatch) fences = mixedBatch.fences;
             if (tableBatch?.codeChanges.length)
               splices.push(...this.service.tableCodePatches(tableBatch.codeChanges));
+            if (mixedBatch && tableBatch?.structural)
+              throw new Error('Mixed structural table admission required');
             if (tableBatch?.structural) {
               const table = this.service.stageTableStructure(
                 tableBatch.window,
@@ -1933,7 +1971,7 @@ export class DocumentSession {
                 this.tableTabDestination = tableAfter;
               }
             } else {
-              const listSeams = this.projection!.list?.seams;
+              const listSeams = listProjection?.seams;
               this.maxSeamAdmissionBytes = Math.max(
                 this.maxSeamAdmissionBytes,
                 bytes(JSON.stringify(listSeams ?? [])),
@@ -1951,7 +1989,7 @@ export class DocumentSession {
                 fences,
                 tableBatch ? this.service.revision : this.projection!.context!.revision,
                 history,
-                this.projection!.list?.indentation,
+                listProjection?.indentation,
                 (splice) => {
                   oldStart = mapPoint(oldStart, splice, -1);
                   this.windowEnd = mapPoint(this.windowEnd, splice);
@@ -2042,7 +2080,7 @@ export class DocumentSession {
                 this.projection = this.project(this.readRange(oldStart, this.windowEnd), oldStart);
             }
             if (
-              (this.projection.list || this.projection.table) &&
+              (this.projection.list || this.projection.table || this.projection.mixed) &&
               !this.editor!.schema.nodeFromJSON(this.projection.content).eq(
                 listBatch ? tr.doc : tr.steps[n].apply(tr.docs[n]).doc!,
               )
