@@ -56,6 +56,11 @@ on:
         required: false
         type: string
         default: ''
+      isolated_test:
+        description: 'Build the separate macOS GitLab test app with private state and packaged isolation proof (requires exact intentd SHA and signing).'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -71,7 +76,7 @@ jobs:
   # Copied from release-alpha.yml build-macos; the signing steps are gated on
   # the `sign` input and the version-suffix step is added before packaging.
   build-macos:
-    if: ${{ inputs.build_macos }}
+    if: ${{ inputs.build_macos || inputs.isolated_test }}
     runs-on: macos-15-xlarge
     # 120 min: 90 covered the packaging job alone; a from-source intentd
     # sidecar build (intentd_ref set) adds a cold ~15-min cargo build.
@@ -80,6 +85,16 @@ jobs:
     steps:
       - name: Checkout dispatched ref
         uses: actions/checkout@v7
+
+      - name: Validate isolated test package inputs
+        if: ${{ inputs.isolated_test }}
+        env:
+          BACKEND_REF: ${{ inputs.intentd_ref }}
+          SIGN: ${{ inputs.sign }}
+          BUILD_MACOS: ${{ inputs.build_macos }}
+          OTHER_PLATFORMS: ${{ inputs.build_windows || inputs.build_linux }}
+        run: |
+          [[ "$BACKEND_REF" =~ ^[a-f0-9]{40}$ ]] && [ "$SIGN" = true ] && [ "$BUILD_MACOS" = true ] && [ "$OTHER_PLATFORMS" = false ]
 
       - name: Select Xcode 26
         run: |
@@ -313,7 +328,13 @@ jobs:
             # Remove signing inputs entirely for an unsigned package.
             unset CSC_LINK CSC_KEY_PASSWORD
           fi
-          pnpm run dist:mac --publish never
+          if [ "${{ inputs.isolated_test }}" = true ]; then
+            export INTENT_ISOLATED_TEST_BUILD_ID="manual-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            export INTENT_ISOLATED_TEST_BACKEND_SHA="${{ steps.intentd_sha.outputs.sha }}"
+            pnpm run dist:mac --config electron-builder.isolated-test.cjs --publish never
+          else
+            pnpm run dist:mac --publish never
+          fi
         env:
           # 12288: the v2.13.0 arm64 leg's peak heap outgrew the old 8192 cap
           # even with sourcemaps disabled (monorepo#1340); same bundle here
@@ -356,7 +377,7 @@ jobs:
           # group (TEAMID.dev.intentapp.backends), matching release-alpha.yml.
           # Unsigned builds ('' here) skip helper signing entirely, so the
           # guardrail stays off for them.
-          REQUIRE_SHARED_KEYCHAIN_GROUP: ${{ inputs.sign && '1' || '' }}
+          REQUIRE_SHARED_KEYCHAIN_GROUP: ${{ inputs.sign && !inputs.isolated_test && '1' || '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List built artifacts
@@ -436,7 +457,7 @@ jobs:
   # input (release-alpha's Windows leg is still unsigned; integrated signing
   # there is a tracked follow-up).
   build-windows:
-    if: ${{ inputs.build_windows }}
+    if: ${{ inputs.build_windows && !inputs.isolated_test }}
     # gh-windows-16x: org hosted runner (16-core/64 GB, runner group 1, same
     # group as gh-linux-16x), fixed at the runner level to the Windows Server
     # 2022 image. Server 2022 (not 2025) still matters: the windows-2025
@@ -753,7 +774,7 @@ jobs:
   # Copied from release-alpha.yml build-linux. Linux packages are unsigned in
   # the release pipeline too, so the `sign` input has no effect on this leg.
   build-linux:
-    if: ${{ inputs.build_linux }}
+    if: ${{ inputs.build_linux && !inputs.isolated_test }}
     strategy:
       # Let the other arch finish (and report) even when one fails.
       fail-fast: false
@@ -1058,3 +1079,36 @@ jobs:
         env:
           INTENTD_REF: ${{ inputs.intentd_ref }}
           INTENTD_SHA: ${{ steps.intentd_sha.outputs.sha }}
+
+  verify-isolated-macos:
+    if: ${{ inputs.isolated_test && inputs.build_macos }}
+    needs: build-macos
+    runs-on: macos-15-xlarge
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v5
+        with:
+          name: manual-macos-dmg
+          path: isolated-package
+      - name: Prove packaged isolation on disposable macOS
+        env:
+          BACKEND_SHA: ${{ inputs.intentd_ref }}
+        run: |
+          mapfile_dmg=$(find isolated-package -type f -name '*.dmg')
+          test "$(printf '%s\n' "$mapfile_dmg" | wc -l | tr -d ' ')" = 1
+          node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: isolated-macos-proof
+          path: isolated-package-proof
+          if-no-files-found: error
+          retention-days: 7

@@ -4,7 +4,9 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const SCRIPT = 'generate-build-config.cjs';
 const SCRIPTS_DIR = resolve(process.cwd(), 'scripts');
@@ -34,7 +36,37 @@ function runGenerator(root: string, ...args: string[]) {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const path of temporaryPaths.splice(0)) rmSync(path, { recursive: true, force: true });
+});
+
+it('bakes an exact isolated identity only from the build environment', () => {
+  const root = fixtureRoot();
+  vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+  vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', 'a'.repeat(40));
+  expect(runGenerator(root).status).toBe(0);
+  const emitted = ts.transpileModule(readFileSync(outputPath(root), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const exports: Record<string, unknown> = {};
+  runInNewContext(emitted, { exports });
+  expect(exports.BUILD_CONFIG).toMatchObject({
+    ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+    ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+  });
+});
+
+it.each([
+  ['manual-123-1', ''],
+  ['', 'a'.repeat(40)],
+  ['../normal', 'a'.repeat(40)],
+  ['manual-123-1', 'main'],
+])('rejects incomplete or ambiguous isolated build identity %s / %s', (id, sha) => {
+  const root = fixtureRoot();
+  vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', id);
+  vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', sha);
+  expect(runGenerator(root).status).not.toBe(0);
+  expect(existsSync(outputPath(root))).toBe(false);
 });
 
 describe('generate-build-config --if-missing', () => {

@@ -1,3 +1,4 @@
+import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
 import { registerNativeReviewHandlers } from './native-review-lifecycle';
 /**
@@ -1491,6 +1492,7 @@ async function performBackendUpdateOriginal(
   id: string,
   owner?: PoolOwner,
 ): Promise<UpdateBackendResult> {
+  if (isIsolatedTestBuild()) return { ok: false, reason: 'unsupported' };
   if (id === LOCAL_CONNECTION_ID) {
     // Same predicate as captureLocalUpdateSupported: only an adopted
     // `external` daemon over UDS is self-updatable. External mode is also set
@@ -4486,6 +4488,7 @@ async function validateConnectionAddress(
   token: string,
   confirmedFingerprint?: string,
 ): Promise<TestConnectionResult> {
+  assertNormalAppOperation();
   // Trust before transmission (monorepo#3782): probe the address WITHOUT the
   // bearer token first — the saved secret must never reach a host whose
   // certificate the user has not confirmed. The unauthenticated upgrade is
@@ -4601,6 +4604,7 @@ function registerConnectionsHandlers(): void {
     createValidatedHandler(
       ConnectionsCaptureFingerprintSchema,
       async (_event, params) => {
+        assertNormalAppOperation();
         poolAuxiliary('connection-probe');
         const result = await captureFingerprint(params);
         if (!result.ok) {
@@ -4632,6 +4636,7 @@ function registerConnectionsHandlers(): void {
     createValidatedHandler(
       ConnectionsAddSchema,
       async (event, params) => {
+        assertNormalAppOperation();
         const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
         return enqueueConnectionOperation(async (owner) => {
           const remote = await inspectPersonalCredential({
@@ -4921,6 +4926,7 @@ function registerConnectionsHandlers(): void {
     createValidatedHandler(
       ConnectionsSyncSetEnabledSchema,
       async (_event, { enabled }) => {
+        assertNormalAppOperation();
         await setLocalPref(KEYCHAIN_SYNC_ENABLED_KEY, enabled);
         if (enabled) {
           // Drop the pre-disable verdict so the returned state (and any
@@ -5013,6 +5019,7 @@ async function getKeychainSyncState(): Promise<KeychainSyncStateResult> {
  * still queued, which would then delete the fresh record (PR #1781 review).
  */
 async function publishSelfBackend(): Promise<PublishSelfResult> {
+  assertNormalAppOperation();
   return enqueueConnectionOperation((owner) => performPublishSelfBackend(owner));
 }
 

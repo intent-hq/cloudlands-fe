@@ -4,7 +4,11 @@
  * Sets up all IPC handlers for the application
  */
 
-// CRITICAL: Import build-time config FIRST
+// The isolated package establishes private paths before any application dependency.
+import './isolated-test-bootstrap.js';
+import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile.js';
+
+// CRITICAL: Import build-time config before application initialization
 // These values are baked in at build time from .env (see scripts/generate-build-config.cjs)
 import { BUILD_CONFIG } from './build-config.generated.js';
 
@@ -31,7 +35,10 @@ import {
   resolveUserDataBasePath,
   shouldIsolateDevIntentdDataDir,
 } from './utils/resolve-dev-instance.js';
-app.setPath('userData', resolveUserDataBasePath(app.getPath('appData')));
+app.setPath(
+  'userData',
+  getIsolatedTestProfile()?.userData ?? resolveUserDataBasePath(app.getPath('appData')),
+);
 
 // EARLY: Support multiple dev instances by using unique userData paths.
 // Namespaced by absolute DEV_PORT so cloudlands-fe cannot collide with other Electron
@@ -1744,7 +1751,9 @@ const bootFlow = app.whenReady().then(async () => {
   // to ensure the association is set even if the installer didn't complete properly.
   // In dev mode, we pass extra args so macOS launches the Electron binary correctly.
   try {
-    if (isDev) {
+    if (isIsolatedTestBuild()) {
+      // Dedicated test packages do not claim the normal app's OS URL scheme.
+    } else if (isDev) {
       app.setAsDefaultProtocolClient('intent', process.execPath, [path.resolve(app.getAppPath())]);
       logger.info('Registered intent:// protocol handler for development mode', {
         execPath: process.execPath,

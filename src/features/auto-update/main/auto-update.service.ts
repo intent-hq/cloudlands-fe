@@ -6,6 +6,7 @@
  */
 
 import { app, powerMonitor } from 'electron';
+import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import type {
   CancellationToken,
   UpdateInfo as ElectronUpdateInfo,
@@ -104,6 +105,10 @@ class AutoUpdateService {
    * whatever windows are live at send time (`sendToRenderer`).
    */
   async initialize() {
+    if (isIsolatedTestBuild()) {
+      this.state.channel = 'disabled';
+      return;
+    }
     if (this.initialized) {
       logger.warn('AutoUpdateService already initialized');
       return;
@@ -378,6 +383,7 @@ class AutoUpdateService {
   }
 
   async setChannel(channel: UpdateChannel): Promise<void> {
+    assertNormalAppOperation();
     // Disarm quit-install synchronously, before the first await below
     // (dynamic import + prefs write): a quit landing in that window must not
     // install an artifact downloaded from the feed the user just switched
@@ -558,6 +564,7 @@ class AutoUpdateService {
    * This will send an "up to date" notification if no updates are available
    */
   async checkForUpdatesManual(): Promise<UpdateState> {
+    assertNormalAppOperation();
     // A 'downloaded' state does not early-return: a manual check must still
     // query the feed so a newer version can supersede the pending artifact.
     // A same-version answer keeps the 'downloaded' UI (no "up to date" toast,
@@ -619,6 +626,7 @@ class AutoUpdateService {
    * (check + toast) when the service was never initialized (dev mode).
    */
   async checkForUpdatesOnChannelSwitch(): Promise<UpdateState> {
+    assertNormalAppOperation();
     // Dev mode / pre-init: the updater never initializes, so a check would
     // only hit checkForUpdates()'s not-initialized fail-fast path and pollute
     // the state GET_STATE consumers read with an error on every dev channel
@@ -704,6 +712,7 @@ class AutoUpdateService {
   }
 
   async downloadUpdate(): Promise<void> {
+    assertNormalAppOperation();
     // Defense in depth: the event-handler gates keep status away from
     // 'available' while disabled, so this should be unreachable — but a
     // download of an opted-out artifact must never start regardless.
@@ -732,6 +741,7 @@ class AutoUpdateService {
   }
 
   async installUpdate(): Promise<void> {
+    assertNormalAppOperation();
     if (this.state.status !== 'downloaded') {
       throw new Error('No update downloaded to install');
     }
