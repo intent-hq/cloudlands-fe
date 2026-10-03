@@ -203,7 +203,18 @@ export const CommentAnchor = Node.create({
   addNodeView() {
     return ({ node }) => {
       const dom = document.createElement('span');
-      dom.style.display = 'none';
+      // Chromium drops display:none descendants when a native edit moves their
+      // containing paragraph (for example, into a table). Keep the live atom in
+      // the editing layout without allocating visible space. Serialization stays
+      // invisible; no transaction needs to recreate intentionally deleted anchors.
+      dom.style.display = 'inline-block';
+      dom.style.width = '0';
+      dom.style.height = '0';
+      dom.style.overflow = 'hidden';
+      // A nonempty atom keeps Chromium's composition range attached at its edge.
+      // This node-view-only character never enters the document or serialization.
+      dom.textContent = '\u2060';
+      dom.setAttribute('aria-hidden', 'true');
       dom.className = 'comment-anchor';
 
       // Add the data attributes from the node
