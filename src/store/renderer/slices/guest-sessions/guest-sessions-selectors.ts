@@ -2,8 +2,16 @@
  * Guest Sessions Selectors (multiplayer w4)
  */
 
-import { selectCollaborationReady } from '../principal/principal-selectors';
-import { selectCanManageWorkspace } from '../workspace/workspace-selectors';
+import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
+import {
+  selectCollaborationReady,
+  selectHostRole,
+  selectPrincipalSnapshot,
+} from '../principal/principal-selectors';
+import {
+  selectCanManageWorkspace,
+  selectWorkspaceListLoadedForBackend,
+} from '../workspace/workspace-selectors';
 import { store } from '../../store';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -120,19 +128,62 @@ export const selectCanManageHostedWorkspace = store.createSelector(
   },
 );
 
-/**
- * Workspaces the current window's backend shares with at least one
- * collaborator and the caller owns — the Settings "Hosting" list. Absent
- * `myRole` (older daemon) reads as owner; `memberCount` counts the owner too,
- * so a workspace is shared once it exceeds 1.
- */
+/** Active invitation summary; never infer workspace guests from total host membership. */
+export const selectHostedPendingInviteCount = store.createSelector(
+  (state, workspaceId: string): number | null => {
+    const workspace = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
+    if (workspace?.openInviteCount != null) return workspace.openInviteCount;
+    const roster = state.guestSessions.hostedRosters[workspaceId];
+    // The canonical cap counts accepted guests plus open invitations on older summaries.
+    return roster?.guestCount != null
+      ? Math.max(0, roster.guestCount - roster.members.filter(isWorkspaceGuest).length)
+      : null;
+  },
+);
+
+/** Empty sharing is meaningful only after this backend's workspace list has loaded. */
+export const selectHostedSharingLoadState = store.createSelector(
+  (state): 'loading' | 'error' | 'loaded' => {
+    if (state.workspace.error) return 'error';
+    return selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
+      ? 'loaded'
+      : 'loading';
+  },
+);
+
+/** Unknown rosters stay visible while read; proven unshared workspaces disappear. */
 export const selectHostedWorkspaces = store.createSelector((state): Workspace[] =>
-  getItems(state.workspace.workspaces).filter(
-    (ws) =>
-      selectCollaborationReady.select(state) &&
-      selectCanManageWorkspace.select(state, ws.id) &&
-      (ws.memberCount ?? 1) > 1,
-  ),
+  getItems(state.workspace.workspaces).filter((ws) => {
+    if (!selectCollaborationReady.select(state) || !selectCanManageWorkspace.select(state, ws.id))
+      return false;
+    const pending = selectHostedPendingInviteCount.select(state, ws.id);
+    if ((ws.memberCount ?? Infinity) <= 1 && pending === 0) return false;
+    const roster = state.guestSessions.hostedRosters[ws.id];
+    if (!roster || roster.status !== 'loaded') return true;
+    return roster.members.some(isWorkspaceGuest) || pending === null || pending > 0;
+  }),
+);
+
+/** Saved role is a presentation hint only; an admitted current principal supersedes it. */
+export const selectJoinedInstanceSessions = store.createSelector((state) => {
+  const current = selectWindowGuestSession.select(state);
+  const principal = selectPrincipalSnapshot.select(state);
+  return selectGuestSessions.select(state).filter((session) => {
+    const currentRole =
+      current?.id === session.id && principal?.principal.id === session.principalId
+        ? selectHostRole.select(state)
+        : null;
+    return currentRole ? currentRole !== 'guest' : session.hostRole === 'member';
+  });
+});
+export const selectJoinedWorkspaceSessions = store.createSelector((state) => {
+  const instances = new Set(
+    selectJoinedInstanceSessions.select(state).map((session) => session.id),
+  );
+  return selectGuestSessions.select(state).filter((session) => !instances.has(session.id));
+});
+export const selectGuestSessionsUnavailable = store.createSelector(
+  (state) => state.guestSessions.listUnavailable,
 );
 
 /** The roster of one hosted workspace (loading placeholder before the first read). */
@@ -171,19 +222,19 @@ export const selectIsHostedWorkspaceClearing = store.createSelector(
 );
 
 /**
- * `${workspaceId}:${memberCount}` for every workspace with a tracked roster —
+ * `${workspaceId}:${memberCount},${invalidation}` for every tracked roster —
  * the saga's change signal to refetch a roster whose daemon-side membership
- * moved. A `withheld` roster is terminal and excluded (no refetch), as is a
+ * moved, including invite-only events whose memberCount stays unchanged. A `withheld` roster is terminal and excluded (no refetch), as is a
  * workspace the caller no longer manages. Sorted so the array is
  * shallow-stable across unrelated updates.
  */
-export const selectHostedRosterMemberCounts = store.createSelector((state): string[] => {
+export const selectHostedRosterVersions = store.createSelector((state): string[] => {
   const entries: string[] = [];
   for (const [workspaceId, roster] of Object.entries(state.guestSessions.hostedRosters)) {
     if (roster.status === 'withheld') continue;
     const ws = getItem(state.workspace.workspaces, WorkspaceId(workspaceId));
     if (!ws || !selectCanManageHostedWorkspace.select(state, workspaceId)) continue;
-    entries.push(`${workspaceId}:${ws.memberCount ?? 0}`);
+    entries.push(`${workspaceId}:${ws.memberCount ?? 0},${roster.invalidation ?? 0}`);
   }
   return entries.sort();
 });

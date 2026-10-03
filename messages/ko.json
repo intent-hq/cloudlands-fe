@@ -7105,5 +7105,16 @@
   "collaboration_instanceUsers_loading_label": "상태 확인 중…",
   "collaboration_instanceUsers_unavailable_label": "상태를 확인할 수 없음",
   "inviteProgress_admission_enableButton": "Multiplayer 활성화",
-  "inviteProgress_admission_enable_error": "Multiplayer를 활성화하거나 준비 상태를 확인할 수 없습니다. 다시 시도하려면 Multiplayer 활성화를 선택하세요."
+  "inviteProgress_admission_enable_error": "Multiplayer를 활성화하거나 준비 상태를 확인할 수 없습니다. 다시 시도하려면 Multiplayer 활성화를 선택하세요.",
+  "collaboration_lists_pending_label": "대기 중인 초대: {count}",
+  "collaboration_lists_manageSharing_label": "공유 관리",
+  "collaboration_lists_sharingUnknown_label": "초대 상태를 확인할 수 없습니다.",
+  "collaboration_lists_joinedWorkspaces_title": "참여한 워크스페이스",
+  "collaboration_lists_joinedUnavailable_label": "참여한 연결을 확인할 수 없습니다.",
+  "collaboration_lists_joinedInstances_title": "참여한 인스턴스",
+  "collaboration_lists_leaveInstance_label": "인스턴스 나가기",
+  "collaboration_lists_noJoinedInstances_title": "참여한 인스턴스 없음",
+  "collaboration_lists_noJoinedInstances_description": "참여한 인스턴스가 여기에 표시됩니다.",
+  "collaboration_lists_sharingLoading_label": "워크스페이스 공유를 불러오는 중…",
+  "collaboration_lists_sharingLoad_error": "워크스페이스 공유를 불러올 수 없습니다."
 }
