@@ -17,8 +17,9 @@ async function capture(page: Page, side: string) {
       const h = el as Host,
         e = h.proof?.editor ?? h.native,
         s = e.state.selection;
-      const part = h.proof?.projection?.mixed?.parts.find((p) => p.projection.table)?.projection
-        .table;
+      const part =
+        h.proof?.projection?.table ??
+        h.proof?.projection?.mixed?.parts.find((p) => p.projection.table)?.projection.table;
       const cells = part?.window.cells.map((c) => ({ row: c.row, column: c.column, from: c.from }));
       const endpoint = (pos: number) => {
         const r = e.state.doc.resolve(pos);
@@ -41,15 +42,37 @@ async function capture(page: Page, side: string) {
         return { kind: r.parent.type.name, text: r.parent.textContent, offset: r.parentOffset };
       };
       const json = s.toJSON() as { type: string; anchor?: number; head?: number };
+      const renderedLogical = {
+        type: json.type,
+        anchor: endpoint(json.anchor ?? s.anchor),
+        head: endpoint(json.head ?? s.head),
+      };
+      let logical = renderedLogical;
+      const selected = part?.window.selected,
+        bookmark = h.proof?.selection.table;
+      if (
+        json.type === 'cell' &&
+        selected &&
+        bookmark?.kind === 'cell' &&
+        selected.anchor === bookmark.anchor.cell &&
+        selected.head === bookmark.head.cell
+      ) {
+        const point = (anchor: boolean) => ({
+          kind: 'cell',
+          row: anchor !== selected.backwardRows ? selected.top : selected.bottom - 1,
+          column: anchor !== selected.backwardColumns ? selected.left : selected.right - 1,
+          depth: 1,
+          offset: 0,
+        });
+        logical = { type: 'cell', anchor: point(true), head: point(false) };
+      }
       const dom = window.getSelection()!;
       return {
         doc: e.getJSON(),
         selection: json,
-        logical: {
-          type: json.type,
-          anchor: endpoint(json.anchor ?? s.anchor),
-          head: endpoint(json.head ?? s.head),
-        },
+        logical,
+        renderedLogical,
+        selectedCells: e.view.dom.querySelectorAll('.selectedCell').length,
         pm: { anchor: s.anchor, head: s.head },
         dom: {
           anchor: e.view.posAtDOM(dom.anchorNode!, dom.anchorOffset),
@@ -154,6 +177,19 @@ for (const edge of ['before', 'after'] as const)
       };
       expect(bounded.doc).toEqual(expected);
       expect(bounded.logical).toEqual(native.logical);
+      if (native.logical.type === 'cell') {
+        expect(bounded.selectedCells).toBe(bounded.cells!.length);
+        for (const endpoint of ['anchor', 'head'] as const) {
+          const expected = native.logical[endpoint] as { row: number; column: number };
+          const rows = bounded.cells!.map((c) => c.row),
+            columns = bounded.cells!.map((c) => c.column);
+          expect(bounded.renderedLogical[endpoint]).toEqual({
+            ...native.logical[endpoint],
+            row: Math.max(Math.min(...rows), Math.min(Math.max(...rows), expected.row)),
+            column: Math.max(Math.min(...columns), Math.min(Math.max(...columns), expected.column)),
+          });
+        }
+      }
       expect(bounded.stats!.mounted).toBe(1);
       expect(bounded.stats!.maxSourceContextBytes).toBeLessThanOrEqual(16384);
       expect(bounded.stats!.maxSourceRead).toBeLessThanOrEqual(4096);
@@ -171,6 +207,12 @@ for (const edge of ['before', 'after'] as const)
       expect(destroyed).toBe(true);
       await focus(page, 'bounded');
       const restored = await capture(page, 'bounded');
+      await info.attach('sparse-native-restored.json', {
+        body: JSON.stringify(restored),
+        contentType: 'application/json',
+      });
       expect(restored.logical).toEqual(native.logical);
+      if (native.logical.type === 'cell')
+        expect(restored.selectedCells).toBe(restored.cells!.length);
     });
   }

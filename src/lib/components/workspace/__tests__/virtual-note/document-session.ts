@@ -416,7 +416,7 @@ export class DocumentSession {
     }
     return window;
   }
-  private sparseWindow(position: number) {
+  private sparseWindow(position: number, selection = this.selection) {
     const boundary = this.service.mixedBoundary(position);
     if (!boundary) return undefined;
     let from = this.service.inlineBoundary(boundary.from, 1),
@@ -428,7 +428,9 @@ export class DocumentSession {
     to -= trailing;
     const source = raw.slice(leading, raw.length - trailing);
     const prose = { source, start: from, context: this.service.inlineContext(from, to) };
-    const table = this.receiveTable(this.service.tableWindowPages(boundary.at))!;
+    const table = this.receiveTable(
+      this.service.tableWindowPages(boundary.at, undefined, undefined, undefined, selection.table),
+    )!;
     table.trailing = false;
     const cells = {
       source: table.cells.map((c) => c.raw).join(''),
@@ -502,7 +504,7 @@ export class DocumentSession {
   }
   private readWindow(id: number, position?: number, selection = this.selection) {
     const at = position ?? this.service.start(id);
-    const sparse = this.sparseWindow(at);
+    const sparse = this.sparseWindow(at, selection);
     if (sparse) return sparse;
     const candidate = continuationWindow(this.service, id, position);
     if (this.service.mixedTableRanges(candidate.from, candidate.to).length) {
@@ -1988,6 +1990,32 @@ export class DocumentSession {
       }
       return;
     }
+    // Native tableEditing normalizes selecting the table node to its entire
+    // cell rectangle. Its source identity includes cells outside this crop.
+    const selectedTableNode = transactions.find(
+      (tr) =>
+        !tr.docChanged &&
+        tr.selection instanceof NodeSelection &&
+        tr.selection.node.type.name === 'table',
+    );
+    const wholeTable =
+      selectedTableNode &&
+      this.projection?.mixed?.parts.find((part) => part.pm === selectedTableNode.selection.from)
+        ?.projection.table;
+    const wholeSelection =
+      wholeTable &&
+      (() => {
+        const table = wholeTable.window;
+        const first = this.service.tableAddress(table.from, 0, 0),
+          last = this.service.tableAddress(table.from, table.rows - 1, table.columns - 1);
+        return {
+          anchor: first.source,
+          head: last.source,
+          affinity: 1,
+          revision: this.service.revision,
+          table: { kind: 'cell' as const, anchor: first.point, head: last.point },
+        };
+      })();
     let mixedAppended = 0;
     const mixedRootMaps = this.projection?.mixed ? transactions[0].mapping.maps.length : undefined;
     if (this.projection?.mixed && transactions.length > 1 && transactions[0].docChanged) {
@@ -2035,7 +2063,8 @@ export class DocumentSession {
           const tr = transactions[index];
           if (!tr.docChanged) {
             if (tr.selectionSet) {
-              this.selection = this.tableTabDestination ?? this.fromPM(tr.selection);
+              this.selection =
+                wholeSelection ?? this.tableTabDestination ?? this.fromPM(tr.selection);
               this.selectionGeneration++;
               if (this.service.pendingInputs && !this.replayingInput)
                 this.service.enqueueInput({
@@ -2313,6 +2342,17 @@ export class DocumentSession {
           void this.seek(destination.head);
         });
       }
+      if (wholeTable && wholeSelection)
+        wholeTable.window.selected = {
+          anchor: wholeSelection.table.anchor.cell,
+          head: wholeSelection.table.head.cell,
+          top: 0,
+          bottom: wholeTable.window.rows,
+          left: 0,
+          right: wholeTable.window.columns,
+          backwardRows: false,
+          backwardColumns: false,
+        };
       this.resizeTable(this.tableViewport);
       this.error = '';
       // Only source changes invalidate anchors. Refreshing during a selectionchange can

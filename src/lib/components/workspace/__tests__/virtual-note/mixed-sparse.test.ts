@@ -1,5 +1,6 @@
 import { beforeAll, afterAll, expect, it } from 'vitest';
 import { Editor, type JSONContent } from '@tiptap/core';
+import { NodeSelection } from '@tiptap/pm/state';
 import { store } from '$store/renderer/configured-store';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
@@ -245,3 +246,32 @@ it('paginates sparse annotations over admitted source intervals only', async () 
     session.destroy();
   }
 });
+
+for (const edge of ['before', 'after'] as const)
+  it(`retains full table identity when native normalizes a ${edge} table node selection`, async () => {
+    const service = new SourceJournal(() => source, 1),
+      session = new DocumentSession(service, document.createElement('div'));
+    try {
+      await session.seek(edge === 'before' ? 0 : source.length - 1);
+      const part = session.projection!.mixed!.parts.find((p) => p.projection.table)!;
+      session.editor!.view.dispatch(
+        session.editor!.state.tr.setSelection(
+          NodeSelection.create(session.editor!.state.doc, part.pm),
+        ),
+      );
+      expect(session.error).toBe('');
+      expect(session.selection.table).toEqual({
+        kind: 'cell',
+        anchor: { cell: prefix.length + 1, block: 0, offset: 0 },
+        head: { cell: prefix.length + table.lastIndexOf(' repeated '), block: 0, offset: 0 },
+      });
+      const logical = structuredClone(session.selection.table),
+        old = session.editor!;
+      await session.seek(session.selection.head);
+      expect(old.isDestroyed).toBe(true);
+      expect(session.selection.table).toEqual(logical);
+      expect(session.editor!.state.selection.toJSON().type).toBe('cell');
+    } finally {
+      session.destroy();
+    }
+  });

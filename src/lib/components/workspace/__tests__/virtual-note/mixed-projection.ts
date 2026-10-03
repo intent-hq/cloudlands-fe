@@ -53,21 +53,19 @@ export class MixedProjection {
   restoreSelection(doc: PMNode, selection: Selection) {
     const logical = selection.table;
     if (!logical) return undefined;
-    const part = this.parts.find((p) =>
-      p.projection.table?.entries.some((e) => e.cell.from === logical.anchor.cell),
+    const part = this.parts.find(
+      (p) =>
+        p.projection.table &&
+        logical.anchor.cell >= p.projection.table.window.from &&
+        logical.anchor.cell < p.projection.table.window.to,
     );
     const table = part?.projection.table;
     if (!part || !table) return undefined;
-    if (logical.kind === 'cell') {
-      const anchor = table.entries.find((e) => e.cell.from === logical.anchor.cell);
-      const head = table.entries.find((e) => e.cell.from === logical.head.cell);
-      if (anchor && head) return CellSelection.create(doc, part.pm + anchor.pm, part.pm + head.pm);
-    }
-    const anchor = table.pointPM(logical.anchor),
-      head = table.pointPM(logical.head);
-    if (anchor !== undefined && head !== undefined)
-      return TextSelection.create(doc, part.pm + anchor, part.pm + head);
-    return undefined;
+    const localDoc = doc.type.create(null, doc.content.cut(part.pm, part.end));
+    const local = table.restoreSelection(localDoc, selection);
+    return local instanceof CellSelection
+      ? CellSelection.create(doc, part.pm + local.$anchorCell.pos, part.pm + local.$headCell.pos)
+      : TextSelection.create(doc, part.pm + local.anchor, part.pm + local.head);
   }
   static nodeBudget(doc: JSONContent) {
     const count = (node: JSONContent): number =>
