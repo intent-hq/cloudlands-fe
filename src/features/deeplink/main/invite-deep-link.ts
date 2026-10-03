@@ -311,7 +311,7 @@ async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
   let recovery: InviteProgressHandle | undefined;
   const show = () => {
     if (!attempt.alive()) return;
-    recovery?.dismiss();
+    if (recovery?.replay()) return;
     recovery = showInviteProgress(
       { requestId, phase: 'admission' },
       {
@@ -323,7 +323,7 @@ async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
     );
     void recovery.cancelled.then(() => settle(false));
   };
-  // First policy publication also retries presentation after renderer startup. It never admits.
+  // Publication replays readiness in the original renderer. Only its acknowledged response admits.
   const offPolicy = onCollaborationPolicyPublished(attempt.parent.webContents.id, show);
   const timer = setTimeout(() => settle(false), 5 * 60_000);
   show();
