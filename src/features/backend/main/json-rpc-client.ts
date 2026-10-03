@@ -136,6 +136,8 @@ export class JsonRpcClient extends EventEmitter {
 
   private socket: Duplex | null = null;
   private protocolVersion: unknown;
+  private helloSnapshot: unknown;
+  private helloRevision = 0;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -189,6 +191,15 @@ export class JsonRpcClient extends EventEmitter {
     this.helloParams = options.helloParams;
     this.onHelloResult = options.onHelloResult;
     this.currentReconnectDelay = this.reconnectDelayMs;
+  }
+
+  /** Read connection metadata without renegotiating identity or desktop authority. */
+  async readHelloSnapshot(): Promise<unknown> {
+    if (this.disposed) throw new Error('JSON-RPC client disposed');
+    await this.ensureConnected();
+    if (this.status !== 'connected' || this.helloSnapshot === undefined)
+      throw new Error('Current backend handshake is unavailable');
+    return structuredClone(this.helloSnapshot);
   }
 
   /** Current connection status. */
@@ -272,6 +283,13 @@ export class JsonRpcClient extends EventEmitter {
     if (this.trafficObservers.size === 0) return;
     try {
       const event = { ...build(), connectionGeneration: this.connectionGeneration };
+      // Desktop authority and user input must never reach diagnostic observers,
+      // which may persist or forward their traffic payloads to renderers.
+      if (
+        event.type === 'request' &&
+        (event.method === 'desktop.control' || event.method === 'desktop.revoke')
+      )
+        event.payload = { redacted: true };
       for (const observer of this.trafficObservers) {
         try {
           void observer(event)?.catch(() => {});
@@ -367,6 +385,8 @@ export class JsonRpcClient extends EventEmitter {
    */
   private sendNow<T = unknown>(method: string, params: unknown, timeoutMs: number): Promise<T> {
     const socket = this.socket;
+    const helloRevision = method === HELLO_METHOD ? ++this.helloRevision : undefined;
+    if (method === HELLO_METHOD) this.helloSnapshot = undefined;
     const id = ++this.requestId;
     return new Promise<T>((resolve, reject) => {
       assertScopedFileReadSupport(method, params, this.protocolVersion);
@@ -389,6 +409,7 @@ export class JsonRpcClient extends EventEmitter {
           if (method === HELLO_METHOD && this.socket === socket) {
             this.protocolVersion = (result as { protocolVersion?: unknown } | null)
               ?.protocolVersion;
+            if (helloRevision === this.helloRevision) this.helloSnapshot = structuredClone(result);
           }
           resolve(result as T);
         },
@@ -427,9 +448,23 @@ export class JsonRpcClient extends EventEmitter {
   private async requestHello(params: unknown, timeoutMs: number): Promise<unknown> {
     const merged = await this.mergedHelloParams(params);
     if (this.status !== 'connected') await this.ensureConnected();
-    const result = await this.sendNow(HELLO_METHOD, merged, timeoutMs);
-    this.onHelloResult?.(result);
-    return result;
+    const socket = this.socket;
+    // A real identity handshake starts a new authority epoch even on the same
+    // socket. Revoke local execution before sending it and renew subscriptions
+    // through the normal readiness lifecycle once it completes.
+    this.stopHeartbeat();
+    this.setStatus('connecting');
+    const response = this.sendNow(HELLO_METHOD, merged, timeoutMs);
+    const revision = this.helloRevision;
+    try {
+      const result = await response;
+      if (!this.disposed && this.socket === socket && this.helloRevision === revision)
+        this.onHelloResult?.(result);
+      return result;
+    } finally {
+      if (!this.disposed && this.socket === socket && this.helloRevision === revision)
+        this.finishConnect();
+    }
   }
 
   /** Caller-supplied hello fields survive; the persisted identity wins on `clientId`. */
@@ -793,6 +828,8 @@ export class JsonRpcClient extends EventEmitter {
 
   private teardownSocket(): void {
     this.protocolVersion = undefined;
+    this.helloSnapshot = undefined;
+    this.helloRevision++;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;

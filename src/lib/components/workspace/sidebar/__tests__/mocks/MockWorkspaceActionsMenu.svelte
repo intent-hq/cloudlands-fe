@@ -5,6 +5,8 @@
     label: string;
     icon?: IconDefinition;
     dividerBefore?: boolean;
+    disabled?: boolean;
+    checked?: boolean;
     onClick: () => void;
   }
 
@@ -32,6 +34,8 @@
   {/if}
   <button
     type="button"
+    disabled={action.disabled}
+    aria-pressed={action.checked}
     data-icon-name={action.icon?.iconName ?? ''}
     onclick={() => {
       action.onClick();

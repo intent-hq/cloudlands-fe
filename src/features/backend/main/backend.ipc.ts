@@ -109,6 +109,7 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
+import { registerDesktopExecReverseHandler } from '../../desktop/main/desktop-exec-reverse';
 import {
   LOCAL_CONNECTION_ID,
   isDetectedDeviceKind,
@@ -1429,6 +1430,7 @@ function createAdditionalBackendClient(
     backendId: id,
     savedRemote: id !== LOCAL_CONNECTION_ID,
   });
+  registerDesktopExecReverseHandler(instance, id);
   if (invitedCredential) invitedClientCredentials.set(instance, invitedCredential);
   captureRegistrations.set(id, devConsoleCapture.registerClient(id, id, instance));
   instance.start();
@@ -3254,7 +3256,19 @@ export function registerBackendHandlers(): void {
           );
           return { ok: true, result };
         }
-        const result = await client.request(method, payload?.params, { timeoutMs });
+        // Renderer capability/identity reads must not renegotiate the pooled
+        // connection: a real hello invalidates desktop consent and its event epoch.
+        // Main-owned identity refreshes and explicit renderer hellos still go on wire.
+        const params = payload?.params;
+        const helloRead =
+          method === 'client.hello' &&
+          (params == null ||
+            (typeof params === 'object' &&
+              !Array.isArray(params) &&
+              Object.keys(params).length === 0));
+        const result = helloRead
+          ? await client.readHelloSnapshot()
+          : await client.request(method, params, { timeoutMs });
         const expected = invitedClientCredentials.get(client);
         if (expected && method === 'principal.me') {
           const snapshot = parsePrincipalSnapshot(invitedClientHellos.get(client), result);

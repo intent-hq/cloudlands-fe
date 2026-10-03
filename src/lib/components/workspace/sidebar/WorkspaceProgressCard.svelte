@@ -88,10 +88,12 @@
   import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
-  import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectWorkspaceHasAgentBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
+  import { selectWorkspaceActiveComputerName } from '$store/renderer/slices/desktop-control/desktop-control-selectors';
+  import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
@@ -547,46 +549,52 @@
       : null,
   );
 
-  // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
-  // indicator renders only when the workspace has a browser tab and another
-  // eligible client could take over (or the pin is offline).
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
-  const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
+  const hasBrowserTabs$ = selectWorkspaceHasAgentBrowserTabs(workspaceIdStore);
+  const activeComputerName$ = selectWorkspaceActiveComputerName(workspaceIdStore);
+  const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
   const drivingClientSwitch = $derived(resolveDrivingClientSwitch($drivingClient$));
-
-  // "Set Current Client as Primary": pin this workspace's browser to this
-  // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
-  // here (PROTOCOL §5.1 workspace.setBrowserClient). Offered only while
-  // another client drives (or the pin is offline); hidden when this app
-  // already drives or its own clientId is unknown. The menu action only opens
-  // the confirmation; the RPC is dispatched on confirm.
   let confirmingSetPrimaryClient = $state(false);
 
-  const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
-    const ownClientId = $drivingClient$.ownClientId;
-    if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
-    return {
-      id: 'set-primary-client',
-      label: m.workspace_drivingClient_setPrimary_label(),
-      icon: faGlobe,
-      dividerBefore: true,
-      onClick: () => {
+  const setPrimaryClientAction: MenuAction = $derived({
+    id: 'set-primary-client',
+    label: m.workspace_drivingClient_setPrimary_label(),
+    icon: faGlobe,
+    dividerBefore: true,
+    checked: Boolean(
+      $drivingClient$.ownClientId && $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
+    ),
+    disabled: !workspaceId || !$canSetPrimaryClient$ || !drivingClientSwitch.canSwitchHere,
+    onClick: () => {
+      if (!$canSetPrimaryClient$ || !drivingClientSwitch.canSwitchHere) return;
+      if (
+        $drivingClient$.driving &&
+        $drivingClient$.driving.clientId !== $drivingClient$.ownClientId
+      ) {
         confirmingSetPrimaryClient = true;
-      },
-    };
+      } else {
+        handleConfirmSetPrimaryClient();
+      }
+    },
   });
 
   function handleConfirmSetPrimaryClient() {
     confirmingSetPrimaryClient = false;
     const ownClientId = $drivingClient$.ownClientId;
-    if (!workspaceId || !ownClientId) return;
+    if (
+      !workspaceId ||
+      !ownClientId ||
+      !$canSetPrimaryClient$ ||
+      !drivingClientSwitch.canSwitchHere
+    )
+      return;
     appStore.dispatch(setWorkspaceBrowserClientRequested(workspaceId, ownClientId));
   }
 
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     sidebarSideAction,
-    ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
+    setPrimaryClientAction,
     ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
@@ -1162,8 +1170,12 @@
           />
         </div>
       {/if}
-      <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
-      <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
+      <!-- Active agent activity names its computer; an idle pin stays silent. -->
+      <DrivingClientIndicator
+        {...$drivingClient$}
+        hasBrowserTabs={$hasBrowserTabs$}
+        activeComputerName={$activeComputerName$}
+      />
     </div>
   </div>
 

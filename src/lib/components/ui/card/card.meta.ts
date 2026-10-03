@@ -39,6 +39,7 @@ export const cardMetadata = parseUiComponentMetadata({
   category: 'pattern',
   owner: '012-E',
   callers: [
+    'src/features/layout/tab-types/AgentTabType.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',
     'src/lib/components/patterns/collection/ListRow.svelte',

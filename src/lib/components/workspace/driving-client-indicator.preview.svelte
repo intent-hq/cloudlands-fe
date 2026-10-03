@@ -19,13 +19,7 @@
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
-  /**
-   * The live sidebar card over a seeded `browserClients` slice and panel
-   * layout (REV-2, spec Model 8): the driving-client indicator under the
-   * repository/branch row and the "Set Current Client as Primary"
-   * ellipsis-menu action. The indicator needs a browser tab in the layout
-   * (except for an offline pin), so every state seeds the layout too.
-   */
+  /** Live sidebar over a seeded client registry and agent-owned browser layout. */
   export interface DrivingClientIndicatorPreviewProps {
     width: number;
     /** Open the card's ellipsis menu once mounted (captures the switch action). */
@@ -75,6 +69,7 @@
 
   const browserTab: PanelTab = {
     id: 'preview-browser-tab',
+    ownerAgentId: 'preview-agent',
     type: 'browser',
     title: 'Preview',
     closable: true,
@@ -164,7 +159,7 @@
   let cardElement: HTMLElement | null = $state(null);
 
   // The menu is a live dropdown; the scene opens it the way a user would so
-  // the "Set Current Client as Primary" item is visible in the capture.
+  // the "Set primary client" item is visible in the capture.
   $effect(() => {
     if (!menuOpen || !cardElement) return;
     const element = cardElement;

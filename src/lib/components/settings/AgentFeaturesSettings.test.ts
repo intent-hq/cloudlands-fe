@@ -59,6 +59,7 @@ const FEATURE_PATHS = [
   'agentFeatures.scripts',
   'agentFeatures.terminalAccess',
   'agentFeatures.browserAutomation',
+  'agentFeatures.desktopControl',
   'agentFeatures.richChatBlocks',
   'agentFeatures.structuredQuestions',
   'agentFeatures.attentionRequests',
@@ -80,11 +81,11 @@ describe('AgentFeaturesSettings', () => {
     cleanup();
   });
 
-  it('renders thirteen toggles; all on when the daemon reports every path true', async () => {
+  it('renders fourteen toggles; all on when the daemon reports every path true', async () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(13);
+      expect(screen.getAllByRole('switch')).toHaveLength(14);
     });
     for (const toggle of screen.getAllByRole('switch')) {
       expect(toggle.getAttribute('aria-checked')).toBe('true');
@@ -98,7 +99,7 @@ describe('AgentFeaturesSettings', () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(13);
+      expect(screen.getAllByRole('switch')).toHaveLength(14);
       expect((screen.getAllByRole('switch')[0] as HTMLButtonElement).disabled).toBe(false);
     });
     for (const toggle of screen.getAllByRole('switch')) {
@@ -113,7 +114,7 @@ describe('AgentFeaturesSettings', () => {
   });
 
   it('renders task graph on when an older daemon does not report the key', async () => {
-    // Daemon predates agentFeatures.taskGraph — the other twelve entries are present
+    // Daemon predates agentFeatures.taskGraph — the other entries are present
     mocks.mockSettingsList.mockResolvedValue(
       FEATURE_PATHS.filter((path) => path !== 'agentFeatures.taskGraph').map((path) => ({
         path,
@@ -164,6 +165,41 @@ describe('AgentFeaturesSettings', () => {
       ]);
     });
     expect(mockToast.error).not.toHaveBeenCalled();
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+  });
+
+  it.each([true, false])('renders desktop control with daemon value %s', async (enabled) => {
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.map((path) => ({
+        path,
+        value: path === 'agentFeatures.desktopControl' ? enabled : true,
+      })),
+    );
+    await renderReady();
+    const toggle = await screen.findByRole('switch', { name: 'Desktop control' });
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe(String(enabled)));
+    expect(screen.getByText(/Your permission is still required/)).toBeTruthy();
+  });
+
+  it('defaults desktop control on without granting permission and updates only its feature setting', async () => {
+    mocks.mockSettingsList.mockResolvedValue(
+      FEATURE_PATHS.filter((path) => path !== 'agentFeatures.desktopControl').map((path) => ({
+        path,
+        value: true,
+      })),
+    );
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([
+      { path: 'agentFeatures.desktopControl', value: false },
+    ]);
+    await renderReady();
+    const toggle = await screen.findByRole('switch', { name: 'Desktop control' });
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+    await fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledExactlyOnceWith([
+        { path: 'agentFeatures.desktopControl', value: false },
+      ]),
+    );
     await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
   });
 
@@ -272,7 +308,7 @@ describe('AgentFeaturesSettings', () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(12);
+      expect(screen.getAllByText('~620 tokens/session')).toHaveLength(13);
     });
     expect(screen.getByText('~50 tokens/turn')).toBeTruthy();
   });
@@ -281,7 +317,7 @@ describe('AgentFeaturesSettings', () => {
     await renderReady();
 
     await waitFor(() => {
-      expect(screen.getAllByRole('switch')).toHaveLength(13);
+      expect(screen.getAllByRole('switch')).toHaveLength(14);
     });
     expect(screen.queryByText(/tokens\/(session|turn)/)).toBeNull();
   });

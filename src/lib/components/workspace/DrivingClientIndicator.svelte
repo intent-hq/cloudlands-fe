@@ -1,11 +1,5 @@
 <script lang="ts">
-  /**
-   * Sidebar indicator for the workspace's driving browser client (REV-2,
-   * spec Model 8). Rendered only when the workspace has a browser tab and a
-   * switch is possible (two or more eligible clients), or the pinned client
-   * is offline; a single eligible client or a workspace without browser tabs
-   * shows nothing. Presentational — the caller resolves the clients and tabs.
-   */
+  // Show the machine currently used by agent browser tabs or desktop control.
   import { faGlobe } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { TooltipRich } from '$lib/components/ui/tooltip';
@@ -14,17 +8,24 @@
 
   type Props = DrivingClientInput;
 
-  let { eligibleClients, ownClientId, driving, hasBrowserTabs }: Props = $props();
+  let { eligibleClients, ownClientId, driving, hasBrowserTabs, activeComputerName }: Props =
+    $props();
 
   const view = $derived(
-    resolveDrivingClientView({ eligibleClients, ownClientId, driving, hasBrowserTabs }),
+    resolveDrivingClientView({
+      eligibleClients,
+      ownClientId,
+      driving,
+      hasBrowserTabs,
+      activeComputerName,
+    }),
   );
 
   const label = $derived.by(() => {
     if (!view) return '';
     switch (view.mode) {
       case 'here':
-        return m.workspace_drivingClient_here_label();
+        return m.workspace_drivingClient_here_label({ host: view.hostName });
       case 'elsewhere':
         return m.workspace_drivingClient_elsewhere_label({ host: view.hostName });
       case 'offline':
@@ -34,6 +35,8 @@
 
   const description = $derived.by(() => {
     if (!view) return '';
+    if (activeComputerName)
+      return m.desktop_primary_active_description({ computer: activeComputerName });
     switch (view.mode) {
       case 'here':
         return m.workspace_drivingClient_here_description();

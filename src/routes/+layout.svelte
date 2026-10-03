@@ -14,8 +14,12 @@
   import type { Snippet } from 'svelte';
   import RootAppProviders from './RootAppProviders.svelte';
   import { isDevConsoleRoute } from '$shared/dev-console-route';
+  import { isDesktopOverlayRoute } from '$shared/desktop-overlay';
   let { children }: { children?: Snippet } = $props();
-  const diagnostic = typeof window !== 'undefined' && isDevConsoleRoute(window.location.pathname);
+  const diagnostic =
+    typeof window !== 'undefined' &&
+    (isDevConsoleRoute(window.location.pathname) ||
+      isDesktopOverlayRoute(window.location.pathname));
 </script>
 
 {#if diagnostic}

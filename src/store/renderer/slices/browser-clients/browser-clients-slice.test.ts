@@ -148,6 +148,7 @@ describe('browserClientsReducer', () => {
       eligibleClients: [],
       ownClientId: '',
       driving: null,
+      pinnedClientId: null,
     });
 
     const viewer: LiveClient = {
@@ -174,6 +175,7 @@ describe('browserClientsReducer', () => {
         { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
       ],
       ownClientId: 'cli-desk',
+      pinnedClientId: null,
       driving: { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
     });
 
@@ -199,7 +201,7 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toBeNull();
   });
 
-  it('gates the indicator on browser tabs and two clients, except for an offline pin', () => {
+  it('gates the indicator on agent activity regardless of client count', () => {
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
     state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));
     state = browserClientsReducer(
@@ -223,7 +225,7 @@ describe('browserClientsReducer', () => {
       canSwitchHere: true,
     });
 
-    // One client with a browser tab: hidden.
+    // One client with agent browser activity: shown.
     state = browserClientsReducer(state, liveClientsReceived([desk], 'ws-1'));
     state = browserClientsReducer(
       state,
@@ -233,9 +235,11 @@ describe('browserClientsReducer', () => {
       }),
     );
     const oneClient = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
-    expect(resolveDrivingClientView({ ...oneClient, hasBrowserTabs: true })).toBeNull();
+    expect(resolveDrivingClientView({ ...oneClient, hasBrowserTabs: true })).toMatchObject({
+      mode: 'here',
+    });
 
-    // Offline pin, one connected client, no browser tabs: still surfaced.
+    // An idle offline pin is silent.
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -245,10 +249,7 @@ describe('browserClientsReducer', () => {
       }),
     );
     const offlinePin = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
-    expect(resolveDrivingClientView({ ...offlinePin, hasBrowserTabs: false })).toMatchObject({
-      mode: 'offline',
-      canSwitchHere: true,
-    });
+    expect(resolveDrivingClientView({ ...offlinePin, hasBrowserTabs: false })).toBeNull();
   });
 
   it('advances the per-workspace tabsRevision on every browser:tab-* event', () => {
