@@ -10,7 +10,7 @@ import fixture from '$shared/types/__fixtures__/native-review-v1.json';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { select } from 'typed-redux-saga';
-import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { StreamingStore } from '@themislib/themis/streaming-store';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { LiveWorkspacesClient } from '$lib/client/live/live-workspaces-client';
@@ -35,6 +35,8 @@ import {
   repositoryContextRetired,
   nativeReviewReconcileRequested,
   nativeReviewObserved,
+  nativeReviewResultStarted,
+  nativeReviewResultFinished,
   nativeReviewEditCleared,
 } from '../repository-context-slice';
 vi.mock('$lib/client', () => ({
@@ -184,6 +186,10 @@ function harness() {
       state.repositoryContext.nativeReviewAttempts
         ? getItem(state.repositoryContext.nativeReviewAttempts, edit.attemptId)
         : undefined,
+    retainedAll: () =>
+      state.repositoryContext.nativeReviewAttempts
+        ? getItems(state.repositoryContext.nativeReviewAttempts)
+        : [],
     host(value: string | null) {
       state = { ...state, hostContext: value };
       listeners.forEach((l) => l());
@@ -525,6 +531,10 @@ function lateTerminalHarness() {
       store.state.repositoryContext.nativeReviewAttempts
         ? getItem(store.state.repositoryContext.nativeReviewAttempts, edit.attemptId)
         : undefined,
+    retainedAll: () =>
+      store.state.repositoryContext.nativeReviewAttempts
+        ? getItems(store.state.repositoryContext.nativeReviewAttempts)
+        : [],
     cleared: (edit: NativeReviewOwner = owner) => cleared.includes(edit.attemptId),
     onAction(handler: (type: string) => void) {
       onAction = handler;
@@ -1207,4 +1217,266 @@ it('retains two genuine facade observations through rejected checks in the actua
   expect(
     h.retained(companionOwner)?.observation?.execute?.reviewExecution?.gitReceipts,
   ).toHaveLength(0);
+});
+
+describe('bounded native review admission after settled lifetimes', () => {
+  it.each(['cancelled', 'completed', 'unmounted'] as const)(
+    'admits more than 32 sequential %s attempts while retaining bounded history',
+    async (ending) => {
+      const h = harness();
+      for (let index = 0; index < 40; index += 1) {
+        const edit = { ...owner, attemptId: `sequential-${index}` };
+        await start(h, edit);
+        if (ending === 'completed') {
+          h.dispatch(nativeReviewConfirmRequested(edit, { prTitle: 'Explicit review' }));
+          await vi.waitFor(() => expect(h.view(edit)?.observation).toEqual(observation));
+        }
+        h.dispatch(
+          ending === 'unmounted'
+            ? workspaceUnmounted(WorkspaceId(root.workspaceId))
+            : nativeReviewEditEnded(edit),
+        );
+        await vi.waitFor(() => expect(h.session.release).toHaveBeenCalledTimes(index + 1));
+        expect(h.view(edit)).toBeNull();
+        expect(h.retainedAll().length).toBeLessThanOrEqual(32);
+      }
+      expect(appClient.workspaces.beginNativeReview).toHaveBeenCalledTimes(40);
+      expect(h.retainedAll()).toHaveLength(32);
+      expect(h.retained({ ...owner, attemptId: 'sequential-0' })).toBeUndefined();
+      expect(h.retained({ ...owner, attemptId: 'sequential-39' })?.observation).toEqual(
+        ending === 'completed' ? observation : null,
+      );
+    },
+  );
+
+  it('reclaims finished parent and companion attempts without dropping their recent receipts', async () => {
+    const h = harness();
+    vi.mocked(h.session.confirm).mockResolvedValue(committedObservation);
+    h.session.prepareCompanion = vi.fn(async () => childSession());
+    for (let index = 0; index < 20; index += 1) {
+      const parent = { ...owner, attemptId: `parent-${index}` };
+      const child = { ...owner, attemptId: `companion-${index}` };
+      h.dispatch(nativeReviewEditRequested(parent, markedInput));
+      await vi.waitFor(() => expect(h.view(parent)?.status).toBe('ready'));
+      h.dispatch(nativeReviewConfirmRequested(parent, { commitMessage: 'Original commit' }));
+      await vi.waitFor(() => expect(h.view(parent)?.observation).toEqual(committedObservation));
+      h.retire('admission');
+      h.dispatch(nativeReviewCompanionRequested(parent, child));
+      await vi.waitFor(() => expect(h.view(child)?.status).toBe('ready'));
+      h.dispatch(nativeReviewConfirmRequested(child, { prTitle: 'Explicit companion' }));
+      await vi.waitFor(() => expect(h.view(child)?.observation).toEqual(observation));
+      h.dispatch(nativeReviewEditEnded(parent));
+      await vi.waitFor(() => expect(h.session.release).toHaveBeenCalledTimes(index + 1));
+      expect(h.view(parent)).toBeNull();
+      expect(h.view(child)).toBeNull();
+      expect(h.retained(parent)?.observation).toEqual(committedObservation);
+      expect(h.retained(child)?.observation).toEqual(observation);
+      expect(h.retainedAll().length).toBeLessThanOrEqual(32);
+    }
+    expect(appClient.workspaces.beginNativeReview).toHaveBeenCalledTimes(20);
+    expect(h.session.prepareCompanion).toHaveBeenCalledTimes(20);
+  });
+
+  it('refuses the 33rd simultaneous preparation, then admits it after one worker closes', async () => {
+    const h = harness();
+    vi.mocked(appClient.workspaces.beginNativeReview).mockImplementation(async (edit) => ({
+      ...h.session,
+      preview: {
+        ...preview,
+        root: edit.root,
+        reviewPreparation: { ...preview.reviewPreparation, root: edit.root },
+      },
+    }));
+    const owners = Array.from({ length: 33 }, (_, index) => ({
+      ...owner,
+      attemptId: `simultaneous-${index}`,
+      root: { workspaceId: `workspace-${index}`, kind: 'primary' as const },
+    }));
+    for (const edit of owners.slice(0, 32)) await start(h, edit);
+    const extra = owners[32];
+    h.dispatch(
+      nativeReviewEditRequested(extra, {
+        ...input,
+        workspaceId: extra.root.workspaceId,
+        review: { ...input.review, root: extra.root },
+      }),
+    );
+    await settleOriginalCallbacks();
+    expect(appClient.workspaces.beginNativeReview).toHaveBeenCalledTimes(32);
+    expect(h.view(extra)).toBeNull();
+    expect(h.retainedAll()).toHaveLength(32);
+    h.dispatch(nativeReviewEditEnded(owners[0]));
+    await vi.waitFor(() => expect(h.session.release).toHaveBeenCalledOnce());
+    await start(h, extra);
+    expect(appClient.workspaces.beginNativeReview).toHaveBeenCalledTimes(33);
+    expect(h.retainedAll()).toHaveLength(32);
+    for (const edit of owners.slice(1)) expect(h.view(edit)?.status).toBe('ready');
+  });
+
+  it('keeps a cancelled original result owned while later finished attempts are reclaimed', async () => {
+    const h = lateTerminalHarness();
+    await readyOriginal(h);
+    const original = await issueOriginal(h);
+    h.dispatch(nativeReviewEditEnded(owner));
+    await vi.waitFor(() => expect(h.cleared()).toBe(true));
+    for (let index = 0; index < 40; index += 1) {
+      const edit = { ...owner, attemptId: `later-${index}` };
+      await readyOriginal(h, edit);
+      h.dispatch(nativeReviewEditEnded(edit));
+      await vi.waitFor(() => expect(h.cleared(edit)).toBe(true));
+      expect(h.retainedAll().length).toBeLessThanOrEqual(32);
+      expect(h.retained()?.status).toBe('closed');
+    }
+    const replacement = { ...owner, attemptId: 'replacement-after-history' };
+    await readyOriginal(h, replacement);
+    const before = h.retained(replacement);
+    h.dispatch(nativeReviewEditRequested(owner, markedInput));
+    await settleOriginalCallbacks();
+    expect(h.count(nativeChannels.PREPARE)).toBe(42);
+    const expected = await fulfillOriginal(h, original);
+    expect(h.retained()?.observation).toEqual(expected);
+    expect(h.view()).toBeNull();
+    expect(h.retained(replacement)).toEqual(before);
+    expect(h.view(replacement)?.observation).toBeNull();
+    expect(h.count(nativeChannels.EXECUTE)).toBe(1);
+  });
+
+  it('does not evict 32 closed but still pending original callbacks to admit more work', async () => {
+    const h = lateTerminalHarness();
+    const originals: Awaited<ReturnType<typeof issueOriginal>>[] = [];
+    for (let index = 0; index < 32; index += 1) {
+      const edit = { ...owner, attemptId: `pending-${index}` };
+      await readyOriginal(h, edit);
+      originals.push(await issueOriginal(h, edit));
+      h.dispatch(nativeReviewEditEnded(edit));
+      await vi.waitFor(() => expect(h.cleared(edit)).toBe(true));
+    }
+    const extra = { ...owner, attemptId: 'after-pending-capacity' };
+    h.dispatch(nativeReviewEditRequested(extra, markedInput));
+    await settleOriginalCallbacks();
+    expect(h.count(nativeChannels.PREPARE)).toBe(32);
+    expect(h.view(extra)).toBeNull();
+    expect(h.retainedAll()).toHaveLength(32);
+    const first = { ...owner, attemptId: 'pending-0' };
+    const expected = await fulfillOriginal(h, originals[0]);
+    expect(h.retained(first)?.observation).toEqual(expected);
+    await readyOriginal(h, extra);
+    expect(h.count(nativeChannels.PREPARE)).toBe(33);
+    expect(h.retainedAll()).toHaveLength(32);
+    for (let index = 1; index < 32; index += 1) {
+      expect(h.retained({ ...owner, attemptId: `pending-${index}` })?.status).toBe('closed');
+    }
+  });
+
+  it('releases capacity after a rejected original reconciliation without changing replacement facts', async () => {
+    const h = harness();
+    let reject!: (reason: Error) => void;
+    originalWorkDisposers.push(async () => {
+      reject?.(new Error('Test teardown'));
+      await settleOriginalCallbacks();
+    });
+    vi.mocked(h.session.reconcile).mockImplementation(
+      () =>
+        new Promise((_, no) => {
+          reject = no;
+        }),
+    );
+    await start(h);
+    h.dispatch(nativeReviewConfirmRequested(owner, { prTitle: 'Original' }));
+    await vi.waitFor(() => expect(h.view()?.observation).toEqual(observation));
+    h.dispatch(nativeReviewReconcileRequested(owner));
+    await vi.waitFor(() => expect(h.session.reconcile).toHaveBeenCalledOnce());
+    h.dispatch(nativeReviewEditEnded(owner));
+    for (let index = 0; index < 40; index += 1) {
+      const edit = { ...owner, attemptId: `after-reconcile-${index}` };
+      await start(h, edit);
+      h.dispatch(nativeReviewEditEnded(edit));
+      expect(h.retainedAll().length).toBeLessThanOrEqual(32);
+    }
+    expect(h.retained()?.observation).toEqual(observation);
+    reject(new Error('Original reconciliation unavailable'));
+    await settleOriginalCallbacks();
+    const fresh = { ...owner, attemptId: 'after-rejection' };
+    await start(h, fresh);
+    expect(h.view(fresh)?.observation).toBeNull();
+    expect(h.retained()).toBeUndefined();
+    expect(h.session.confirm).toHaveBeenCalledOnce();
+  });
+});
+
+describe('native result recorder admission races', () => {
+  it.each(['confirm', 'reconcile'] as const)(
+    'does not issue %s after a subscriber closes the recorder admission',
+    async (command) => {
+      const h = harness();
+      await start(h);
+      h.onReduce((action) => {
+        if (action.type === nativeReviewResultStarted.type)
+          h.dispatch(nativeReviewEditEnded(owner));
+      });
+      h.dispatch(
+        command === 'confirm'
+          ? nativeReviewConfirmRequested(owner, { prTitle: 'Cancelled before dispatch' })
+          : nativeReviewReconcileRequested(owner),
+      );
+      await settleOriginalCallbacks();
+      expect(h.session.confirm).not.toHaveBeenCalled();
+      expect(h.session.reconcile).not.toHaveBeenCalled();
+      expect(h.view()).toBeNull();
+      for (let index = 0; index < 40; index += 1) {
+        const edit = { ...owner, attemptId: `after-recorder-cancel-${index}` };
+        await start(h, edit);
+        h.dispatch(nativeReviewEditEnded(edit));
+        expect(h.retainedAll().length).toBeLessThanOrEqual(32);
+      }
+      expect(h.retained()).toBeUndefined();
+    },
+  );
+
+  it('keeps a reentrant reconciliation owned after the preceding callback finishes', async () => {
+    const h = harness();
+    let resolve!: (value: NativeReviewObservation) => void;
+    const later = new Promise<NativeReviewObservation>((yes) => {
+      resolve = yes;
+    });
+    vi.mocked(h.session.reconcile).mockReturnValue(later);
+    originalWorkDisposers.push(async () => {
+      resolve(observation);
+      await settleOriginalCallbacks();
+    });
+    let opened = false;
+    h.onReduce((action) => {
+      if (action.type === nativeReviewObserved.type && !opened) {
+        opened = true;
+        h.dispatch(nativeReviewReconcileRequested(owner));
+        h.dispatch(nativeReviewEditEnded(owner));
+      }
+    });
+    await start(h);
+    h.dispatch(nativeReviewConfirmRequested(owner, { prTitle: 'Original' }));
+    await vi.waitFor(() => expect(h.session.reconcile).toHaveBeenCalledOnce());
+    await settleOriginalCallbacks();
+    for (const foreign of [
+      { ...owner, admission: 'B' },
+      { ...owner, hostContext: 'host-B' },
+      { ...owner, root: { workspaceId: 'other', kind: 'primary' as const } },
+    ])
+      h.dispatch(nativeReviewResultFinished(foreign));
+    for (let index = 0; index < 40; index += 1) {
+      const edit = { ...owner, attemptId: `after-overlap-${index}` };
+      await start(h, edit);
+      h.dispatch(nativeReviewEditEnded(edit));
+      expect(h.retainedAll().length).toBeLessThanOrEqual(32);
+    }
+    expect(h.retained()?.observation).toEqual(observation);
+    resolve(observation);
+    await later;
+    await settleOriginalCallbacks();
+    const fresh = { ...owner, attemptId: 'after-overlap-settled' };
+    await start(h, fresh);
+    expect(h.retained()).toBeUndefined();
+    expect(h.view(fresh)?.observation).toBeNull();
+    expect(h.session.confirm).toHaveBeenCalledOnce();
+    expect(h.session.reconcile).toHaveBeenCalledOnce();
+  });
 });

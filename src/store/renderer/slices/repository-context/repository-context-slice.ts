@@ -377,6 +377,12 @@ export const nativeReviewUnavailable = createAction<[owner: NativeReviewOwner]>(
 export const nativeReviewEditCleared = createAction<[owner: NativeReviewOwner]>(
   'repositoryContext/nativeReviewAttemptCleared',
 );
+export const nativeReviewResultStarted = createAction<[owner: NativeReviewOwner]>(
+  'repositoryContext/nativeReviewResultStarted',
+);
+export const nativeReviewResultFinished = createAction<[owner: NativeReviewOwner]>(
+  'repositoryContext/nativeReviewResultFinished',
+);
 const emptyNativeAttempts = createCollection<NativeReviewAttemptState, 'attemptId'>('attemptId');
 function ownedNativeAttempt(state: RepositoryContextState, owner: NativeReviewOwner) {
   const entry = getItem(state.nativeReviewAttempts ?? emptyNativeAttempts, owner.attemptId);
@@ -403,13 +409,23 @@ function updateNativeAttempt(
     : state;
 }
 repositoryContextReducer.with(nativeReviewEditStarted, (state, { payload: [owner] }) => {
-  const edits = state.nativeReviewAttempts ?? emptyNativeAttempts;
-  if (owner.admission === null || getItem(edits, owner.attemptId) || getItems(edits).length >= 32)
-    return state;
+  let edits = state.nativeReviewAttempts ?? emptyNativeAttempts;
+  if (owner.admission === null || getItem(edits, owner.attemptId)) return state;
+  if (getItems(edits).length >= 32) {
+    // Keep recent history within the original bound. A cancelled but unfinished
+    // result still owns its slot and cannot be evicted or adopted by another worker.
+    const finished = getItems(edits).find(
+      (entry) => entry.status === 'closed' && entry.workerEnded && entry.pendingResults === 0,
+    );
+    if (!finished) return state;
+    edits = removeItem(edits, finished.attemptId);
+  }
   return {
     ...state,
     nativeReviewAttempts: addItem(edits, {
       attemptId: owner.attemptId,
+      workerEnded: false,
+      pendingResults: 0,
       owner: { ...owner, root: { ...owner.root } },
       status: 'capturing',
       preview: null,
@@ -456,16 +472,33 @@ repositoryContextReducer.with(nativeReviewRetired, (state, { payload: [owner, ki
 repositoryContextReducer.with(nativeReviewUnavailable, (state, { payload: [owner] }) =>
   updateNativeAttempt(state, owner, { status: 'unavailable', preview: null }),
 );
-function closeNativeAttempt(state: RepositoryContextState, owner: NativeReviewOwner) {
+repositoryContextReducer.with(nativeReviewResultStarted, (state, { payload: [owner] }) => {
+  const original = ownedNativeAttempt(state, owner);
+  return original
+    ? updateNativeAttempt(state, owner, { pendingResults: original.pendingResults + 1 })
+    : state;
+});
+repositoryContextReducer.with(nativeReviewResultFinished, (state, { payload: [owner] }) => {
+  const original = ownedNativeAttempt(state, owner);
+  return original && original.pendingResults > 0
+    ? updateNativeAttempt(state, owner, { pendingResults: original.pendingResults - 1 })
+    : state;
+});
+function closeNativeAttempt(
+  state: RepositoryContextState,
+  owner: NativeReviewOwner,
+  workerEnded = false,
+) {
   const original = ownedNativeAttempt(state, owner);
   return updateNativeAttempt(state, owner, {
     status: 'closed',
+    ...(workerEnded ? { workerEnded: true } : {}),
     preview: null,
     observation: original?.observation ? { ...original.observation, current: false } : null,
   });
 }
 repositoryContextReducer.with(nativeReviewEditCleared, (state, { payload: [owner] }) =>
-  closeNativeAttempt(state, owner),
+  closeNativeAttempt(state, owner, true),
 );
 // Redux subscribers may end the demand before a buffered saga command is delivered.
 repositoryContextReducer.with(nativeReviewEditEnded, (state, { payload: [owner] }) =>

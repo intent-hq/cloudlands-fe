@@ -67,6 +67,9 @@ export interface RepositorySelectionEditState {
 
 export interface NativeReviewAttemptState {
   attemptId: string;
+  /** Closing presentation does not settle the original worker or its issued results. */
+  workerEnded: boolean;
+  pendingResults: number;
   owner: NativeReviewOwner;
   status: 'capturing' | 'ready' | 'pending' | 'retired' | 'closed' | 'unavailable';
   preview: NativeReviewPreparedView | null;

@@ -35,6 +35,8 @@ import {
   nativeReviewPreviewReceived,
   nativeReviewCommandStarted,
   nativeReviewObserved,
+  nativeReviewResultStarted,
+  nativeReviewResultFinished,
   nativeReviewRetired,
   nativeReviewUnavailable,
   nativeReviewEditCleared,
@@ -78,7 +80,9 @@ export function* nativeReviewSaga() {
         )
           return;
         const originalStore = yield* getContext<{
-          dispatch: (action: ReturnType<typeof nativeReviewObserved>) => unknown;
+          dispatch: (
+            action: ReturnType<typeof nativeReviewObserved | typeof nativeReviewResultFinished>,
+          ) => unknown;
         }>('reduxStore');
         const hostChanges = yield* createChannelFromSelector(
           selectWorkspaceActionContext,
@@ -345,18 +349,24 @@ export function* nativeReviewSaga() {
                 continue;
               const view = yield* selectNativeReviewForOwner.effect(activeOwner);
               if (!view || view.status === 'closed' || view.status === 'unavailable') continue;
-              let work: Promise<NativeReviewObservation>;
-              if (command.type === nativeReviewConfirmRequested.type) {
-                if ((activeChild ? activeChild.claimed : claimed) || view.status !== 'ready')
-                  continue;
-                if (activeChild) {
-                  activeChild.claimed = true;
-                  activeChild.busy = true;
-                } else {
-                  claimed = true;
-                  busy = true;
-                }
-                yield* put(nativeReviewCommandStarted(activeOwner));
+              const confirming = command.type === nativeReviewConfirmRequested.type;
+              if (
+                confirming &&
+                ((activeChild ? activeChild.claimed : claimed) || view.status !== 'ready')
+              )
+                continue;
+              if (activeChild) {
+                activeChild.busy = true;
+                if (confirming) activeChild.claimed = true;
+              } else {
+                busy = true;
+                if (confirming) claimed = true;
+              }
+              let resultHandedOff = false;
+              try {
+                // Reserve the recorder before any subscriber can close/reclaim its owner.
+                yield* put(nativeReviewResultStarted(activeOwner));
+                if (confirming) yield* put(nativeReviewCommandStarted(activeOwner));
                 const interrupted = yield* flush(commands);
                 if (
                   (yield* selectPrincipalActionContext.effect()) !== admission ||
@@ -386,44 +396,49 @@ export function* nativeReviewSaga() {
                   yield* put(nativeReviewEditCleared(activeOwner));
                   continue;
                 }
+                const current = yield* selectNativeReviewForOwner.effect(activeOwner);
                 if (
                   interrupted.length ||
-                  (yield* selectNativeReviewForOwner.effect(activeOwner))?.status !== 'pending'
+                  !current ||
+                  current.status === 'closed' ||
+                  current.status === 'unavailable' ||
+                  (confirming && current.status !== 'pending')
                 )
                   return;
+                let work: Promise<NativeReviewObservation>;
                 try {
-                  work = activeSession.confirm(
-                    (command as ReturnType<typeof nativeReviewConfirmRequested>).payload[1],
-                  );
+                  work = confirming
+                    ? activeSession.confirm(
+                        (command as ReturnType<typeof nativeReviewConfirmRequested>).payload[1],
+                      )
+                    : activeSession.reconcile();
                 } catch {
                   work = Promise.reject(new Error('NATIVE_REVIEW_UNAVAILABLE'));
                 }
-              } else {
-                if (activeChild) activeChild.busy = true;
-                else busy = true;
-                try {
-                  work = activeSession.reconcile();
-                } catch {
-                  work = Promise.reject(new Error('NATIVE_REVIEW_UNAVAILABLE'));
-                }
+                // The original future retains its own recorder after worker cancellation.
+                // Its history cannot be reclaimed until both lifetimes have finished.
+                void work
+                  .then(
+                    (observation) => {
+                      if (activeChild) activeChild.busy = false;
+                      else busy = false;
+                      originalStore.dispatch(nativeReviewObserved(activeOwner, observation));
+                    },
+                    () => {
+                      if (activeChild) activeChild.busy = false;
+                      else busy = false;
+                      send({ type: 'observation-failed', owner: activeOwner });
+                    },
+                  )
+                  .catch(() => send({ type: 'observation-failed', owner: activeOwner }))
+                  .finally(() => {
+                    originalStore.dispatch(nativeReviewResultFinished(activeOwner));
+                  });
+                resultHandedOff = true;
+              } finally {
+                // Reentrant cancellation may end the worker before any request is issued.
+                if (!resultHandedOff) yield* put(nativeReviewResultFinished(activeOwner));
               }
-              // This issued future owns only a result recorder, not the command worker's
-              // lifetime. The reducer retains the exact owner's history after closure
-              // without reopening occupancy or making it current for another owner.
-              void work
-                .then(
-                  (observation) => {
-                    if (activeChild) activeChild.busy = false;
-                    else busy = false;
-                    originalStore.dispatch(nativeReviewObserved(activeOwner, observation));
-                  },
-                  () => {
-                    if (activeChild) activeChild.busy = false;
-                    else busy = false;
-                    send({ type: 'observation-failed', owner: activeOwner });
-                  },
-                )
-                .catch(() => send({ type: 'observation-failed', owner: activeOwner }));
             }
           }
         } finally {
