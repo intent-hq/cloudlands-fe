@@ -1,4 +1,4 @@
-// @verify-changed-triggers: scripts/generate-build-config.cjs, package.json, scripts/pnpm-run.mjs, scripts/pnpm-launcher.mjs, scripts/type-check.ts, vitest.config.ts
+// @verify-changed-triggers: scripts/generate-build-config.cjs, package.json, scripts/pnpm-run.mjs, scripts/pnpm-launcher.mjs, scripts/type-check.ts, vitest.config.ts, tests/integration/vitest.integration.config.ts
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
