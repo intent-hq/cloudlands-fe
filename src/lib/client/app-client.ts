@@ -1,3 +1,4 @@
+import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type {
   ScriptArchiveFilter,
   ScriptArchiveResult,
@@ -104,7 +105,7 @@ export type Unsubscribe = () => void;
 export type SubscriptionHandler<T> = (snapshot: T) => void;
 
 /** Uniform result for mutation methods. */
-export interface MutationResult {
+export interface MutationResult extends SubmissionCorrelation {
   success: boolean;
   error?: string;
   /**
@@ -719,6 +720,8 @@ export interface AgentsClient {
     message: string,
     options?: {
       workspaceId?: string;
+      /** Canonical submission identity, distinct from appMessageId. */
+      messageId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;

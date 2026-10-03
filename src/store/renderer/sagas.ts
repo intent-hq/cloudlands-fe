@@ -1,3 +1,4 @@
+import { pendingRetentionSaga } from './slices/pending-submissions/sagas/pending-retention-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { hostOwnerServicesSaga } from './slices/principal/sagas/host-owner-services-saga';
@@ -128,6 +129,7 @@ export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
+  pendingRetentionSaga,
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,

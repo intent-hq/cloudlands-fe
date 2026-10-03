@@ -1,3 +1,4 @@
+import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
 import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
@@ -203,6 +204,7 @@ export const reducers = {
   pdfPreview: pdfPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
+  pendingSubmissions: pendingSubmissionsReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,
   onboarding: onboardingReducer,
   workspaceInitializer: workspaceInitializerReducer,

@@ -30,6 +30,44 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     resetMockBackend();
   });
 
+  it('queue forwards canonical submission identity and retains recovery correlation', async () => {
+    const recoverySources = [
+      {
+        messageId: 'source',
+        submissionIds: ['submission'],
+        author: { principalId: 'alice', login: null, displayName: null, avatarUrl: null },
+        origin: 'user',
+      },
+    ];
+    const queuedMessage = {
+      id: 'retry',
+      content: 'combined',
+      queuedAt: '2026-10-03T00:00:00Z',
+      position: 0,
+      author: null,
+      recoverySources,
+    };
+    backend.onRequest('agent.queueMessage', () => ({
+      success: true,
+      queuedMessage,
+      turnId: 'turn',
+    }));
+    const result = await new LiveAgentsClient().queue('agent-1', 'text', {
+      workspaceId: 'workspace',
+      messageId: 'submission',
+    });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.queueMessage',
+      params: {
+        agentId: 'agent-1',
+        workspaceId: 'workspace',
+        content: 'text',
+        messageId: 'submission',
+      },
+    });
+    expect(result).toEqual({ success: true, queuedMessage, turnId: 'turn' });
+  });
+
   it('create forwards agent.create with the widened P2-12a params and returns the normalized session', async () => {
     // Daemon returns the full `AgentLite` projection (P2-12a widened §5.5).
     // Unique id so the module-level agentWorkspaceIndex cache does not bleed

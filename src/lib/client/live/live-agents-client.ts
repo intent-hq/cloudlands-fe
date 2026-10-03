@@ -519,6 +519,7 @@ export class LiveAgentsClient implements AgentsClient {
     message: string,
     options?: {
       workspaceId?: string;
+      messageId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;
@@ -537,6 +538,7 @@ export class LiveAgentsClient implements AgentsClient {
         content: message,
         ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       };
+      if (options?.messageId !== undefined) params.messageId = options.messageId;
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
       if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
       if (options?.messageMetadata !== undefined) params.messageMetadata = options.messageMetadata;
