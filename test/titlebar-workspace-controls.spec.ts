@@ -134,8 +134,9 @@ test('keeps the Mac Home hit target clear of traffic lights through live zoom an
     expect(box.height).toBeCloseTo(32, 0);
     for (const activation of ['click', 'Enter', 'Space']) {
       await page.evaluate(async () => {
-        const { goto } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
+        const { goto, page } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
         await goto('/workspace/titlebar-test');
+        if (page.url.pathname !== '/workspace/titlebar-test') throw new Error('Route did not reset');
       });
       await expect(toggle).not.toHaveAttribute('aria-current');
       if (activation === 'click') await toggle.click();
