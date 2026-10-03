@@ -1,0 +1,24 @@
+{
+  "name": "@intent/test-quality",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone AST-backed Jev test quality evaluator",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "check": "tsc --noEmit",
+    "test": "node --test checks/*.check.ts",
+    "format": "prettier --write src checks *.json"
+  },
+  "dependencies": {
+    "typescript": "~6.0.3",
+    "svelte": "^5.56.10"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prettier": "^3.9.6"
+  }
+}

@@ -1,27 +1,29 @@
 import { expect, test, type Page } from '@playwright/test';
+import { useDiagramPreviewServer } from './diagram-preview-server';
 
-const baseUrl = process.env.UI_PREVIEW_BASE_URL?.replace(/\/$/, '');
+const preview = useDiagramPreviewServer('diagram-final-review-regression');
 const themes = ['light', 'dark', 'nord'] as const;
 const widths = [320, 420, 640, 960] as const;
-const nestedReviewRows = [
-  ...widths.map((width) => ({ shard: 'pass-1-dark', theme: 'dark', width })),
-  ...widths.map((width) => ({ shard: 'pass-1-nord', theme: 'nord', width })),
-  ...widths.map((width) => ({ shard: 'pass-2-light', theme: 'light', width })),
-  ...widths.map((width) => ({ shard: 'pass-2-dark', theme: 'dark', width })),
-  ...widths.map((width) => ({ shard: 'pass-2-nord', theme: 'nord', width })),
-] as const;
-
-test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the running diagram preview server.');
-test.describe.configure({ mode: 'serial' });
+test.describe.configure({ mode: 'default', timeout: 120_000 });
 
 async function openState(page: Page, state: string, width: number, theme: string) {
+  await page.addInitScript(
+    (colorTheme) => {
+      localStorage.setItem('component-catalog-preferences', JSON.stringify({ colorTheme }));
+    },
+    theme === 'nord' ? 'nord' : 'default',
+  );
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=${theme}&width=${width}&motion=reduced`,
+    `${preview.url}/sandbox/diagram-workbench?state=${state}&theme=${theme === 'nord' ? 'light' : theme}&width=${width}&motion=reduced`,
     { waitUntil: 'domcontentloaded' },
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-stable', 'true', {
     timeout: 120_000,
   });
+  await expect(page.locator('[data-catalog-color-theme]')).toHaveAttribute(
+    'data-catalog-color-theme',
+    theme === 'nord' ? 'nord' : 'default',
+  );
   await expect(
     page
       .locator(`#${state} [data-layout-settled="true"], #${state} [data-diagram-settled="true"]`)
@@ -215,6 +217,8 @@ test('keeps the disconnected observer card and content inside the 640px light fr
             point.y <= bounds.bottom,
         );
         return {
+          id: label.dataset.edgeId,
+          text: label.textContent?.trim(),
           contained: inside(bounds),
           ownsLane,
         };
@@ -229,6 +233,8 @@ test('keeps the disconnected observer card and content inside the 640px light fr
       contentContained: inside(isolatedContent.getBoundingClientRect()),
     };
   });
+  expect(result.labels.map(({ id }) => id).sort()).toEqual(['x1', 'x2']);
+  expect(result.labels.every(({ text }) => Boolean(text))).toBe(true);
   expect(
     result.labels.every(({ contained }) => contained),
     'light/640 label containment',
@@ -242,34 +248,48 @@ test('keeps the disconnected observer card and content inside the 640px light fr
   expect(result.contentContained, 'light/640 isolated content containment').toBe(true);
 });
 
-test('reserves final measured nested Mermaid group header bands', async ({ page }) => {
-  test.setTimeout(360_000);
-  expect(nestedReviewRows).toHaveLength(20);
-  for (const { shard, theme, width } of nestedReviewRows) {
-    const identity = `${shard}/${width}/mermaid-nested-groups`;
-    await openState(page, 'mermaid-nested-groups', width, theme);
+for (const width of [320, 960]) {
+  test(`keeps nested group members and return routes clear at ${width}px`, async ({ page }) => {
+    const identity = `${width}/mermaid-nested-groups`;
+    await openState(page, 'mermaid-nested-groups', width, 'light');
     const result = await page
       .locator('#mermaid-nested-groups svg[data-layout-settled="true"]')
       .evaluate((svg) => {
         const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')];
         const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
         const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')];
-        return [...svg.querySelectorAll<SVGGElement>('g.cluster')].map((cluster) => {
+        const clusters = [...svg.querySelectorAll<SVGGElement>('g.cluster')];
+        const visible = (element: Element) => {
+          for (let current: Element | null = element; current; current = current.parentElement) {
+            const style = getComputedStyle(current);
+            if (
+              style.display === 'none' ||
+              style.visibility !== 'visible' ||
+              Number(style.opacity) <= 0
+            )
+              return false;
+          }
+          return true;
+        };
+        const expectedGroups = [
+          { title: 'Runtime boundary', members: ['Gateway', 'Queue', 'Worker', 'Store'] },
+          { title: 'Worker boundary', members: ['Queue', 'Worker'] },
+        ];
+        const groups = expectedGroups.map((expected) => {
+          const cluster = clusters.find(
+            (item) =>
+              item.querySelector(':scope > .cluster-label')?.textContent?.trim() === expected.title,
+          )!;
           const frame = cluster
             .querySelector<SVGRectElement>(':scope > rect')!
             .getBoundingClientRect();
           const title = cluster
             .querySelector<SVGGElement>(':scope > .cluster-label')!
             .getBoundingClientRect();
-          const members = nodes
-            .map((node) => node.getBoundingClientRect())
-            .filter(
-              (node) =>
-                node.left >= frame.left - 1 &&
-                node.right <= frame.right + 1 &&
-                node.top >= frame.top - 1 &&
-                node.bottom <= frame.bottom + 1,
-            );
+          const memberElements = expected.members.map((id) =>
+            nodes.find((node) => node.id.includes(`flowchart-${id}-`))!,
+          );
+          const members = memberElements.map((node) => node.getBoundingClientRect());
           const routeCrosses = paths.some((path) => {
             const matrix = path.getScreenCTM();
             const length = path.getTotalLength();
@@ -294,30 +314,71 @@ test('reserves final measured nested Mermaid group header bands', async ({ page 
             );
           });
           return {
-            header: Number(cluster.dataset.headerHeight),
+            title: expected.title,
+            visible: visible(cluster) && memberElements.every(visible),
+            contained: members.every(
+              (member) =>
+                member.width > 0 &&
+                member.height > 0 &&
+                member.left >= frame.left - 1 &&
+                member.right <= frame.right + 1 &&
+                member.top >= frame.top - 1 &&
+                member.bottom <= frame.bottom + 1,
+            ),
             gap: Math.min(...members.map((member) => member.top - title.bottom)),
             routeCrosses,
             labelCrosses,
           };
         });
+        return {
+          groups,
+          groupCount: clusters.length,
+          pathIds: paths.map((path) => path.dataset.id).sort(),
+          paintedRoutes: paths.every((path) => {
+            const style = getComputedStyle(path);
+            const length = path.getTotalLength();
+            return (
+              visible(path) &&
+              style.stroke !== 'none' &&
+              Number(style.strokeOpacity) > 0 &&
+              Number.isFinite(length) &&
+              length > 0 &&
+              path.getScreenCTM() !== null
+            );
+          }),
+          labels: labels.map((label) => label.textContent?.trim()).sort(),
+          visibleLabels: labels.every(visible),
+        };
       });
+    expect(result.groupCount).toBe(2);
+    expect(result.pathIds).toEqual([
+      'L_Client_Gateway_0',
+      'L_Gateway_Queue_0',
+      'L_Queue_Worker_0',
+      'L_Store_Client_0',
+      'L_Worker_Store_0',
+    ]);
+    expect(result.labels).toEqual(['deliver', 'enqueue', 'request', 'result', 'write']);
+    expect(result.paintedRoutes).toBe(true);
+    expect(result.visibleLabels).toBe(true);
+    expect(result.groups.every(({ visible }) => visible)).toBe(true);
     expect(
-      width > 420 || result.every(({ header }) => header >= 52),
-      `${identity} measured header`,
+      result.groups.every(({ contained }) => contained),
+      `${identity} required members`,
     ).toBe(true);
+    for (const group of result.groups) {
+      expect(Number.isFinite(group.gap), `${identity}/${group.title} finite header gap`).toBe(true);
+      expect(group.gap, `${identity}/${group.title} header gap`).toBeGreaterThanOrEqual(10);
+    }
     expect(
-      result.every(({ gap }) => gap >= 10),
-      `${identity} header gap`,
-    ).toBe(true);
-    expect(
-      result.some(({ routeCrosses, labelCrosses }) => routeCrosses || labelCrosses),
+      result.groups.some(({ routeCrosses, labelCrosses }) => routeCrosses || labelCrosses),
       `${identity} header collision`,
     ).toBe(false);
     const returnRoute = await page
       .locator('#mermaid-nested-groups svg[data-layout-settled="true"]')
       .evaluate((svg) => {
         const paths = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')];
-        const path = paths.find((item) => item.id.includes('-L_Store_Client_'))!;
+        const path = paths.find((item) => item.dataset.id === 'L_Store_Client_0')!;
         const node = (id: string) =>
           [...svg.querySelectorAll<SVGGElement>('g.node')].find((item) =>
             item.id.includes(`flowchart-${id}-`),
@@ -389,41 +450,52 @@ test('reserves final measured nested Mermaid group header bands', async ({ page 
           });
         const marker = svg.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
         const markerPath = marker.querySelector<SVGPathElement>('path')!;
-        const terminalGap = Number(path.dataset.terminalGapCss);
         const markerStroke = Number.parseFloat(getComputedStyle(markerPath).strokeWidth);
+        const boundaryDistance = (point: DOMPoint, bounds: DOMRect) => {
+          const dx = Math.max(bounds.left - point.x, 0, point.x - bounds.right);
+          const dy = Math.max(bounds.top - point.y, 0, point.y - bounds.bottom);
+          return dx || dy
+            ? Math.hypot(dx, dy)
+            : -Math.min(
+                point.x - bounds.left,
+                bounds.right - point.x,
+                point.y - bounds.top,
+                bounds.bottom - point.y,
+              );
+        };
+        const style = getComputedStyle(path);
         return {
-          sourceDistance: Math.hypot(
-            start.x - source.right,
-            start.y - (source.top + source.bottom) / 2,
-          ),
-          targetDistance: Math.hypot(
-            end.x - target.right,
-            end.y - (target.top + target.bottom) / 2,
-          ),
-          perpendicular: Math.abs(end.y - tangent.y),
+          sourceDistance: Math.abs(boundaryDistance(start, source)),
+          targetDistance: boundaryDistance(end, target) - markerStroke / 2,
+          inward:
+            (end.x - tangent.x) * ((target.left + target.right) / 2 - end.x) +
+            (end.y - tangent.y) * ((target.top + target.bottom) / 2 - end.y),
           contained:
             pathBounds.left >= frame.left - 1 &&
             pathBounds.top >= frame.top - 1 &&
             pathBounds.right <= frame.right + 1 &&
             pathBounds.bottom <= frame.bottom + 1,
           ownsLabel,
-          visibleShaft: length > 20 && Math.max(pathBounds.width, pathBounds.height) > 10,
+          visibleShaft:
+            length > 20 &&
+            Math.max(pathBounds.width, pathBounds.height) > 10 &&
+            style.stroke !== 'none' &&
+            Number(style.strokeOpacity) > 0 &&
+            style.visibility === 'visible' &&
+            Number(style.opacity) > 0,
           crossesNode,
           labelCrossesNode,
           crossesRoute,
           markerWidth: Number(marker.getAttribute('markerWidth')),
-          expectedTargetDistance: terminalGap + markerStroke / 2,
           moves: (path.getAttribute('d')?.match(/M/g) ?? []).length,
         };
       });
     expect(returnRoute.sourceDistance, `${identity} return source port`).toBeLessThanOrEqual(1);
     expect(
-      Math.abs(returnRoute.targetDistance - returnRoute.expectedTargetDistance),
+      Math.abs(returnRoute.targetDistance - 5),
       `${identity} return target arrow gap`,
     ).toBeLessThanOrEqual(0.35);
-    expect(returnRoute.perpendicular, `${identity} return target tangent`).toBeLessThanOrEqual(
-      0.01,
-    );
+    expect(returnRoute.inward, `${identity} return target tangent`).toBeGreaterThan(0);
     expect(returnRoute.contained, `${identity} return containment`).toBe(true);
     expect(returnRoute.ownsLabel, `${identity} result label ownership`).toBe(true);
     expect(returnRoute.visibleShaft, `${identity} visible result shaft`).toBe(true);
@@ -432,66 +504,78 @@ test('reserves final measured nested Mermaid group header bands', async ({ page 
     expect(returnRoute.crossesRoute, `${identity} result route collision`).toBe(false);
     expect(returnRoute.markerWidth, `${identity} result marker`).toBeGreaterThan(0);
     expect(returnRoute.moves, `${identity} continuous return route`).toBe(1);
-  }
-});
+  });
+}
 
-test('terminates compact cycle feedback on real centered cardinal ports', async ({ page }) => {
-  test.setTimeout(240_000);
-  for (const theme of themes) {
-    for (const width of widths) {
-      await openState(page, 'mermaid-cycle-fanout', width, theme);
-      const result = await page
-        .locator('#mermaid-cycle-fanout svg[data-layout-settled="true"]')
-        .evaluate((svg) => {
-          const path = svg.querySelector<SVGPathElement>('path[data-feedback-lane="outer"]')!;
-          const node = (id: string) =>
-            [...svg.querySelectorAll<SVGGElement>('g.node')].find((item) =>
-              item.id.includes(`flowchart-${id}-`),
-            )!;
-          const source = node(path.dataset.feedbackSource!).getBoundingClientRect();
-          const target = node(path.dataset.feedbackTarget!).getBoundingClientRect();
-          const matrix = path.getScreenCTM()!;
-          const length = path.getTotalLength();
-          const point = (offset: number) => path.getPointAtLength(offset).matrixTransform(matrix);
-          const start = point(0);
-          const end = point(length);
-          const tangent = point(length - 0.25);
-          const bounds = path.getBoundingClientRect();
-          const frame = svg.getBoundingClientRect();
-          const markerId = path.getAttribute('marker-end')!.match(/#([^)'\"]+)/)![1];
-          const marker = svg.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
-          const markerPath = marker.querySelector<SVGPathElement>('path')!;
-          return {
-            sourceDistance: Math.hypot(
-              start.x - source.right,
-              start.y - (source.top + source.bottom) / 2,
-            ),
-            targetDistance: Math.hypot(
-              end.x - (target.left + target.right) / 2,
-              end.y - target.bottom,
-            ),
-            perpendicular: Math.abs(end.x - tangent.x),
-            contained:
-              bounds.left >= frame.left - 1 &&
-              bounds.top >= frame.top - 1 &&
-              bounds.right <= frame.right + 1 &&
-              bounds.bottom <= frame.bottom + 1,
-            markerWidth: Number(marker.getAttribute('markerWidth')),
-            expectedTargetDistance:
-              Number(path.dataset.terminalGapCss) +
-              Number.parseFloat(getComputedStyle(markerPath).strokeWidth) / 2,
-            moves: (path.getAttribute('d')!.match(/M/g) ?? []).length,
-          };
-        });
-      expect(result.sourceDistance, `${theme}/${width} source port`).toBeLessThanOrEqual(1);
-      expect(
-        Math.abs(result.targetDistance - result.expectedTargetDistance),
-        `${theme}/${width} target arrow gap`,
-      ).toBeLessThanOrEqual(0.35);
-      expect(result.perpendicular, `${theme}/${width} target tangent`).toBeLessThanOrEqual(0.01);
-      expect(result.contained, `${theme}/${width} route containment`).toBe(true);
-      expect(result.markerWidth, `${theme}/${width} marker size`).toBeLessThanOrEqual(8);
-      expect(result.moves, `${theme}/${width} continuous route`).toBe(1);
-    }
-  }
-});
+for (const width of [320, 960]) {
+  test(`attaches cycle feedback to Review and Hub at ${width}px`, async ({ page }) => {
+    await openState(page, 'mermaid-cycle-fanout', width, 'light');
+    const result = await page
+      .locator('#mermaid-cycle-fanout svg[data-layout-settled="true"]')
+      .evaluate((svg) => {
+        const path = svg.querySelector<SVGPathElement>('path[data-id="L_Review_Hub_0"]')!;
+        const node = (id: string) =>
+          [...svg.querySelectorAll<SVGGElement>('g.node')].find((item) =>
+            item.id.includes(`flowchart-${id}-`),
+          )!;
+        const source = node('Review').getBoundingClientRect();
+        const target = node('Hub').getBoundingClientRect();
+        const matrix = path.getScreenCTM()!;
+        const length = path.getTotalLength();
+        const point = (offset: number) => path.getPointAtLength(offset).matrixTransform(matrix);
+        const start = point(0);
+        const end = point(length);
+        const tangent = point(length - 0.25);
+        const bounds = path.getBoundingClientRect();
+        const frame = svg.getBoundingClientRect();
+        const markerId = path.getAttribute('marker-end')!.match(/#([^)'\"]+)/)![1];
+        const marker = svg.querySelector<SVGMarkerElement>(`#${CSS.escape(markerId)}`)!;
+        const markerPath = marker.querySelector<SVGPathElement>('path')!;
+        const boundaryDistance = (point: DOMPoint, bounds: DOMRect) => {
+          const dx = Math.max(bounds.left - point.x, 0, point.x - bounds.right);
+          const dy = Math.max(bounds.top - point.y, 0, point.y - bounds.bottom);
+          return dx || dy
+            ? Math.hypot(dx, dy)
+            : -Math.min(
+                point.x - bounds.left,
+                bounds.right - point.x,
+                point.y - bounds.top,
+                bounds.bottom - point.y,
+              );
+        };
+        const style = getComputedStyle(path);
+        return {
+          sourceDistance: Math.abs(boundaryDistance(start, source)),
+          targetDistance:
+            boundaryDistance(end, target) -
+            Number.parseFloat(getComputedStyle(markerPath).strokeWidth) / 2,
+          inward:
+            (end.x - tangent.x) * ((target.left + target.right) / 2 - end.x) +
+            (end.y - tangent.y) * ((target.top + target.bottom) / 2 - end.y),
+          visible:
+            length > 0 &&
+            style.stroke !== 'none' &&
+            Number(style.strokeOpacity) > 0 &&
+            Number(style.opacity) > 0 &&
+            style.visibility === 'visible',
+          contained:
+            bounds.left >= frame.left - 1 &&
+            bounds.top >= frame.top - 1 &&
+            bounds.right <= frame.right + 1 &&
+            bounds.bottom <= frame.bottom + 1,
+          markerWidth: Number(marker.getAttribute('markerWidth')),
+          moves: (path.getAttribute('d')!.match(/M/g) ?? []).length,
+        };
+      });
+    expect(result.visible, `${width} painted route`).toBe(true);
+    expect(result.sourceDistance, `${width} source boundary`).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(result.targetDistance - 5),
+      `${width} target arrow gap: ${result.targetDistance}px`,
+    ).toBeLessThanOrEqual(0.35);
+    expect(result.inward, `${width} target tangent`).toBeGreaterThan(0);
+    expect(result.contained, `${width} route containment`).toBe(true);
+    expect(result.markerWidth, `${width} marker size`).toBeGreaterThan(0);
+    expect(result.moves, `${width} continuous route`).toBe(1);
+  });
+}

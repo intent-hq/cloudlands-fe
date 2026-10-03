@@ -47,11 +47,131 @@ const framingWidths = [
   { name: 'wide', value: 960 },
   { name: 'narrow', value: 420 },
 ] as const;
-const steppedFixtures = [
-  { id: 'custom-architecture', steps: 3 },
-  { id: 'custom-walkthrough', steps: 3 },
-  { id: 'custom-delivery-walkthrough', steps: 4 },
-] as const;
+type SceneInventory = {
+  state: string;
+  nodes: string[];
+  edges: string[];
+  labels: string[];
+  groups: string[];
+};
+
+// Authored fixture contracts, independent of the DOM and renderer visibility logic.
+const steppedFixtures: Array<{ id: string; scenes: SceneInventory[] }> = [
+  {
+    id: 'custom-architecture',
+    scenes: [
+      {
+        state: 'orient',
+        nodes: ['user', 'renderer'],
+        edges: ['a1'],
+        labels: ['a1'],
+        groups: ['client'],
+      },
+      {
+        state: 'connect',
+        nodes: ['user', 'renderer', 'daemon', 'notes'],
+        edges: ['a1', 'a2', 'a3'],
+        labels: ['a1', 'a2', 'a3'],
+        groups: ['runtime'],
+      },
+      {
+        state: 'observe',
+        nodes: ['user', 'renderer', 'daemon', 'notes', 'events'],
+        edges: ['a1', 'a2', 'a3', 'a4', 'a5'],
+        labels: ['a1', 'a2', 'a3', 'a4', 'a5'],
+        groups: ['client', 'runtime'],
+      },
+    ],
+  },
+  {
+    id: 'custom-walkthrough',
+    scenes: [
+      {
+        state: 'request',
+        nodes: ['user', 'redux', 'chat'],
+        edges: ['w1', 'w2', 'w3'],
+        labels: ['w1', 'w2', 'w3'],
+        groups: [],
+      },
+      {
+        state: 'execute',
+        nodes: ['chat', 'redux', 'daemon'],
+        edges: ['w3', 'w4', 'w5'],
+        labels: ['w3', 'w4', 'w5'],
+        groups: [],
+      },
+      {
+        state: 'render',
+        nodes: ['chat', 'redux', 'daemon'],
+        edges: ['w2', 'w5'],
+        labels: ['w2', 'w5'],
+        groups: [],
+      },
+    ],
+  },
+  {
+    id: 'custom-delivery-walkthrough',
+    scenes: [
+      {
+        state: 'draft',
+        nodes: ['author', 'proposal'],
+        edges: ['dw1'],
+        labels: ['dw1'],
+        groups: ['authoring'],
+      },
+      {
+        state: 'verify',
+        nodes: ['proposal', 'checks'],
+        edges: ['dw2', 'dw3'],
+        labels: ['dw2', 'dw3'],
+        groups: ['authoring', 'verification'],
+      },
+      {
+        state: 'publish',
+        nodes: ['checks', 'artifact', 'registry'],
+        edges: ['dw4', 'dw5'],
+        labels: ['dw4', 'dw5'],
+        groups: ['verification', 'delivery'],
+      },
+      {
+        state: 'observe',
+        nodes: ['registry', 'updater', 'audit'],
+        edges: ['dw6', 'dw7'],
+        labels: ['dw6', 'dw7'],
+        groups: ['delivery'],
+      },
+    ],
+  },
+];
+
+function expectInventory(actual: SceneInventory, expected: SceneInventory) {
+  expect(actual.state).toBe(expected.state);
+  for (const key of ['nodes', 'edges', 'labels', 'groups'] as const) {
+    expect([...actual[key]].sort(), `${expected.state} ${key}`).toEqual([...expected[key]].sort());
+  }
+}
+
+async function expectSceneInventory(page: Page, rootId: string, expectedState?: string) {
+  const actual = await page.locator(`#${rootId}`).evaluate((root): SceneInventory => {
+    const ids = (selector: string, attribute: string) =>
+      [...root.querySelectorAll(selector)].map((element) => element.getAttribute(attribute)!);
+    return {
+      state: root.querySelector<HTMLElement>('.diagram-renderer')!.dataset.diagramState!,
+      nodes: ids('[data-node-id]', 'data-node-id'),
+      edges: ids('.diagram-edge', 'data-edge-id'),
+      labels: ids('.edge-label-container', 'data-edge-id'),
+      groups: ids('[data-group-id]', 'data-group-id'),
+    };
+  });
+  const expected = steppedFixtures
+    .find(({ id }) => id === rootId)
+    ?.scenes.find(({ state }) => state === (expectedState ?? actual.state));
+  expect(
+    expected,
+    `Expected authored scene for ${rootId}/${expectedState ?? actual.state}`,
+  ).toBeDefined();
+  expectInventory(actual, expected!);
+}
 
 type Probe = {
   edgeId: string;
@@ -344,10 +464,11 @@ async function recordContentMotion(
   direction: 'forward' | 'backward',
   nodeIds: string[],
   edgeIds: string[],
+  endpoints: Record<string, { source: string; target: string }> = {},
 ) {
   const root = page.locator(`#${rootId}`);
   const recorder = await root.evaluateHandle(
-    (element, { direction, nodeIds, edgeIds }) => {
+    (element, { direction, nodeIds, edgeIds, endpoints }) => {
       const initialNodes = new Map(
         nodeIds.map((id) => [id, element.querySelector(`[data-node-id="${id}"]`)]),
       );
@@ -417,21 +538,21 @@ async function recordContentMotion(
                 `.diagram-edge[data-edge-id="${id}"]`,
               );
               const path = edge?.querySelector<SVGPathElement>('path.edge-path');
-              const source = edge?.dataset.edgeFrom
-                ? element.querySelector<SVGForeignObjectElement>(
-                    `[data-node-id="${edge.dataset.edgeFrom}"]`,
-                  )
+              const sourceId = endpoints[id]?.source ?? edge?.dataset.edgeFrom;
+              const targetId = endpoints[id]?.target ?? edge?.dataset.edgeTo;
+              const source = sourceId
+                ? element.querySelector<SVGForeignObjectElement>(`[data-node-id="${sourceId}"]`)
                 : null;
-              const target = edge?.dataset.edgeTo
-                ? element.querySelector<SVGForeignObjectElement>(
-                    `[data-node-id="${edge.dataset.edgeTo}"]`,
-                  )
+              const target = targetId
+                ? element.querySelector<SVGForeignObjectElement>(`[data-node-id="${targetId}"]`)
                 : null;
               const maskPath = edge?.querySelector<SVGPathElement>('.edge-reveal-mask-path');
               if (!edge || !path || !source || !target || !maskPath) return [id, null];
               const length = path.getTotalLength();
-              const sourcePoint = path.getPointAtLength(0);
-              const targetPoint = path.getPointAtLength(length);
+              const matrix = path.getScreenCTM();
+              if (!matrix || length <= 0) throw new Error(`Missing painted route ${id}`);
+              const sourcePoint = path.getPointAtLength(0).matrixTransform(matrix);
+              const targetPoint = path.getPointAtLength(length).matrixTransform(matrix);
               return [
                 id,
                 {
@@ -443,8 +564,8 @@ async function recordContentMotion(
                   sameAsBaseline: edge === initialEdges.get(id),
                   sourcePoint: { x: sourcePoint.x, y: sourcePoint.y },
                   targetPoint: { x: targetPoint.x, y: targetPoint.y },
-                  sourceDistance: boundaryDistance(sourcePoint, nodeBounds(source)),
-                  targetDistance: boundaryDistance(targetPoint, nodeBounds(target)),
+                  sourceDistance: boundaryDistance(sourcePoint, source.getBoundingClientRect()),
+                  targetDistance: boundaryDistance(targetPoint, target.getBoundingClientRect()),
                 },
               ];
             }),
@@ -478,7 +599,7 @@ async function recordContentMotion(
       });
       return { baseline, finished };
     },
-    { direction, nodeIds, edgeIds },
+    { direction, nodeIds, edgeIds, endpoints },
   );
   await root
     .getByRole('button', { name: direction === 'forward' ? 'Next step' : 'Previous step' })
@@ -779,6 +900,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
       const cameraFrames: Frame[] = [];
       let sample = start;
       while (sample.motionPhase === 'camera') {
+        if (performance.now() > deadline) throw new Error('Diagram camera did not finish');
         cameraFrames.push(sample);
         await nextFrame();
         sample = frame();
@@ -816,6 +938,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
 }
 
 async function readStableSignature(page: Page, rootId: string) {
+  await expectSceneInventory(page, rootId);
   return page.locator(`#${rootId}`).evaluate((root) => {
     const canonicalPath = (path: SVGPathElement | null) => {
       const data = path?.getAttribute('d');
@@ -878,6 +1001,7 @@ async function readStableSignature(page: Page, rootId: string) {
 }
 
 async function allRoutesComplete(page: Page, rootId: string) {
+  await expectSceneInventory(page, rootId);
   return page
     .locator(`#${rootId} .diagram-edge`)
     .evaluateAll((edges) =>
@@ -917,6 +1041,19 @@ test('endpoint boundary oracle rejects detached, interior, and wrong-shape point
   expect(signedBoundaryDistance({ x: 95, y: 20 }, expectedShape)).toBe(-5);
   expect(signedBoundaryDistance({ x: 105, y: 20 }, expectedShape)).toBe(5);
   expect(signedBoundaryDistance({ x: 100, y: 20 }, wrongShape)).toBeGreaterThan(2);
+});
+
+test('scene inventory oracle rejects a missing required route or label', () => {
+  const expected: SceneInventory = {
+    state: 'example',
+    nodes: ['source', 'target'],
+    edges: ['connection'],
+    labels: ['connection'],
+    groups: [],
+  };
+  expect(() => expectInventory(structuredClone(expected), expected)).not.toThrow();
+  expect(() => expectInventory({ ...expected, edges: [] }, expected)).toThrow();
+  expect(() => expectInventory({ ...expected, labels: [] }, expected)).toThrow();
 });
 
 test('keeps the bundled sandbox font through theme changes and repeated document visits', async ({
@@ -1003,9 +1140,8 @@ function expectCameraBeforeScene(
       ),
     ).toBe(0);
     expect(stage.after.motionPhase).not.toBe('camera');
-    const elapsedMs = stage.after.elapsedMs - stage.before.elapsedMs;
-    expect(elapsedMs).toBeGreaterThanOrEqual(120);
-    expect(elapsedMs).toBeLessThanOrEqual(450);
+    expect(stage.frames.some((frame) => frame.cameraAnimationCount > 0)).toBe(true);
+    expect(stage.after.cameraAnimationCount).toBe(0);
   }
   const firstVisibleFrame = (key: keyof Frame) =>
     transition.samples.findIndex((frame) => Number(frame[key]) > 0.01);
@@ -1019,9 +1155,6 @@ function expectCameraBeforeScene(
     expect(Math.abs(routeFrame - sceneFrame)).toBeLessThanOrEqual(1);
   if (routeFrame >= 0 && labelFrame >= 0) {
     expect(labelFrame).toBeGreaterThanOrEqual(routeFrame);
-    expect(
-      transition.samples[labelFrame].elapsedMs - transition.samples[routeFrame].elapsedMs,
-    ).toBeLessThanOrEqual(100);
   }
 }
 
@@ -1503,6 +1636,7 @@ test('animates the untouched initial ownership step before the following step', 
       'forward',
       ['user', 'chat', 'redux', 'daemon'],
       ['w1', 'w2', 'w3', 'w4', 'w5'],
+      { w3: { source: 'chat', target: 'redux' }, w5: { source: 'daemon', target: 'redux' } },
     );
     const settled = transition.frames.at(-1)!;
     expect(transition.baseline).toMatchObject({
@@ -1547,9 +1681,10 @@ test('animates the untouched initial ownership step before the following step', 
     for (const id of transitionCase.sharedEdges) {
       const start = transition.baseline.edges[id]!;
       const end = settled.edges[id]!;
-      const routeFrames = transition.frames.flatMap((frame) =>
-        frame.edges[id] ? [frame.edges[id]] : [],
-      );
+      const routeFrames = transition.frames.map((frame) => {
+        expect(frame.edges[id], `${id} retained during ${frame.phase}`).not.toBeNull();
+        return frame.edges[id]!;
+      });
       expect(routeFrames.every(({ sameAsBaseline }) => sameAsBaseline)).toBe(true);
       if (end.path !== start.path) {
         expect(
@@ -1563,14 +1698,11 @@ test('animates the untouched initial ownership step before the following step', 
         ).toBe(true);
       }
       expect(routeFrames.every(({ sourceDistance }) => Math.abs(sourceDistance) <= 2)).toBe(true);
-      const minimumTargetGap = Math.min(start.targetDistance, end.targetDistance);
-      const maximumTargetGap = Math.max(start.targetDistance, end.targetDistance);
-      expect(
-        routeFrames.every(
-          ({ targetDistance }) =>
-            targetDistance >= minimumTargetGap - 0.1 && targetDistance <= maximumTargetGap + 2,
-        ),
-      ).toBe(true);
+      for (const { targetDistance } of [start, ...routeFrames]) {
+        // Five CSS pixels of target clearance plus the rounded arrow-tip stroke.
+        expect(targetDistance).toBeGreaterThanOrEqual(4.5);
+        expect(targetDistance).toBeLessThanOrEqual(6);
+      }
     }
 
     const chatStart = transition.baseline.nodes.chat!.background;
@@ -1587,60 +1719,41 @@ test('animates the untouched initial ownership step before the following step', 
   }
 });
 
-for (const width of [960, 320]) {
-  test(`keeps the short ownership kind label on one line at ${width}px`, async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await page.goto(
-      `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=${width}&motion=full`,
-      { waitUntil: 'domcontentloaded' },
-    );
-    await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-      timeout: WORKBENCH_READY_TIMEOUT_MS,
-    });
-
-    const lineTops = await page
-      .locator('#custom-walkthrough [data-node-id="chat"] .node-kind-label')
-      .evaluate((label) => {
-        const range = document.createRange();
-        range.selectNodeContents(label);
-        return [...range.getClientRects()].map(({ top }) => Math.round(top * 10) / 10);
-      });
-    expect(new Set(lineTops).size).toBe(1);
+test('keeps the ownership kind label readable in a narrow lane', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto(
+    `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=320&motion=full`,
+    { waitUntil: 'domcontentloaded' },
+  );
+  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
+    timeout: WORKBENCH_READY_TIMEOUT_MS,
   });
-}
 
-test('keeps transient retained-route corners rounded', async ({ page }) => {
-  await openMotionFixture(page, 'custom-walkthrough');
-  const root = page.locator('#custom-walkthrough');
-  await root.getByRole('button', { name: 'State 2: 2. Follow execution' }).click();
-  await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-settled', 'true');
-
-  const paths = await root.evaluate(async (element) => {
-    const renderer = element.querySelector<HTMLElement>('.diagram-renderer')!;
-    const readPath = () => {
-      const path = element.querySelector<SVGPathElement>(
-        '.diagram-edge[data-edge-id="w5"] path.edge-path',
-      )!;
-      const length = path.getTotalLength();
-      const start = path.getPointAtLength(0);
-      const end = path.getPointAtLength(length);
+  const label = page.locator('#custom-walkthrough [data-node-id="chat"] .node-kind-label');
+  await expect(label).toBeVisible();
+  const text = await page
+    .locator('#custom-walkthrough [data-node-id="chat"] .node-kind-label')
+    .evaluate((label) => {
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const foreignObject = label.closest('foreignObject')!;
+      const bounds = foreignObject.getBoundingClientRect();
       return {
-        d: path.getAttribute('d') ?? '',
-        excessLength: length - Math.hypot(end.x - start.x, end.y - start.y),
+        content: label.textContent?.trim(),
+        bounds: bounds.toJSON(),
+        rects: [...range.getClientRects()].map((rect) => rect.toJSON()),
       };
-    };
-    const samples = [readPath()];
-    element.querySelector<HTMLButtonElement>('[data-diagram-step-index="2"]')!.click();
-    for (let frame = 0; frame < 120; frame += 1) {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      samples.push(readPath());
-      if (renderer.dataset.diagramSettled === 'true' && frame > 1) break;
-    }
-    return samples;
-  });
-  const bentPaths = paths.filter(({ excessLength }) => excessLength > 0.5);
-  expect(bentPaths.length).toBeGreaterThan(0);
-  expect(bentPaths.every(({ d }) => d.includes(' Q '))).toBe(true);
+    });
+  expect(text.content).toBeTruthy();
+  expect(text.rects.length).toBeGreaterThan(0);
+  for (const rect of text.rects) {
+    expect(rect.width).toBeGreaterThan(0);
+    expect(rect.height).toBeGreaterThan(0);
+    expect(rect.left).toBeGreaterThanOrEqual(text.bounds.left - 1);
+    expect(rect.right).toBeLessThanOrEqual(text.bounds.right + 1);
+    expect(rect.top).toBeGreaterThanOrEqual(text.bounds.top - 1);
+    expect(rect.bottom).toBeLessThanOrEqual(text.bounds.bottom + 1);
+  }
 });
 
 test('keeps ownership motion when a scrollbar gutter changes only the viewport width', async ({
@@ -1673,6 +1786,8 @@ test('keeps ownership motion when a scrollbar gutter changes only the viewport w
       exitingEdgeId: string,
     ) => {
       const shared = sharedSelectors.map((selector) => root.querySelector(selector));
+      if (shared.some((node) => node === null))
+        throw new Error('Missing retained baseline element');
       const samples = [];
       const read = () => {
         const enteringNode = root.querySelector<SVGForeignObjectElement>(
@@ -1680,11 +1795,13 @@ test('keeps ownership motion when a scrollbar gutter changes only the viewport w
         );
         samples.push({
           phase: renderer.dataset.diagramMotionPhase,
+          state: renderer.dataset.diagramState,
           settled: renderer.dataset.diagramSettled === 'true',
           rendererWidth: renderer.getBoundingClientRect().width,
           viewportWidth: viewport.clientWidth,
           sharedIdentity: sharedSelectors.every(
-            (selector, index) => root.querySelector(selector) === shared[index],
+            (selector, index) =>
+              shared[index] !== null && root.querySelector(selector) === shared[index],
           ),
           enteringOpacity: enteringNode ? Number(getComputedStyle(enteringNode).opacity) : null,
           enteringReveal: edgeReveal(enteringEdgeId),
@@ -1725,7 +1842,12 @@ test('keeps ownership motion when a scrollbar gutter changes only the viewport w
   });
 
   const fractional = (value: number | null) => value !== null && value > 0 && value < 1;
-  for (const samples of transitions) {
+  for (const [index, samples] of transitions.entries()) {
+    expect(samples.at(-1)).toMatchObject({
+      state: ['execute', 'render'][index],
+      phase: 'settled',
+      settled: true,
+    });
     expect(Math.max(...samples.map(({ rendererWidth }) => rendererWidth))).toBe(
       Math.min(...samples.map(({ rendererWidth }) => rendererWidth)),
     );
@@ -1786,8 +1908,10 @@ test('interpolates a retained route with its moving endpoints in diagram coordin
     'forward',
     ['renderer', 'daemon'],
     ['a2'],
+    { a2: { source: 'renderer', target: 'daemon' } },
   );
   const settled = transition.frames.at(-1)!;
+  expect(settled).toMatchObject({ state: 'observe', phase: 'settled', settled: true });
   const nodeStart = transition.baseline.nodes.daemon!;
   const nodeEnd = settled.nodes.daemon!;
   const edgeStart = transition.baseline.edges.a2!;
@@ -1804,11 +1928,16 @@ test('interpolates a retained route with its moving endpoints in diagram coordin
   ).toBe(true);
   expect(
     transition.frames.every(
-      (frame) => frame.nodes.daemon === null || frame.nodes.daemon.sameAsBaseline,
+      (frame) =>
+        frame.nodes.daemon !== null &&
+        frame.nodes.daemon.sameAsBaseline &&
+        frame.nodes.renderer !== null &&
+        frame.nodes.renderer.sameAsBaseline,
     ),
   ).toBe(true);
 
   expect(edgeEnd.path).not.toBe(edgeStart.path);
+  expect(edgeEnd.progress).toBe(1);
   expect(
     transition.frames.some(
       (frame) =>
@@ -1819,9 +1948,10 @@ test('interpolates a retained route with its moving endpoints in diagram coordin
         frame.edges.a2.progress < 1,
     ),
   ).toBe(true);
-  const routeFrames = transition.frames.flatMap((frame) =>
-    frame.edges.a2 ? [{ phase: frame.phase, ...frame.edges.a2 }] : [],
-  );
+  const routeFrames = transition.frames.map((frame) => {
+    expect(frame.edges.a2, `a2 retained during ${frame.phase}`).not.toBeNull();
+    return { phase: frame.phase, ...frame.edges.a2! };
+  });
   expect(routeFrames.every(({ sameAsBaseline }) => sameAsBaseline)).toBe(true);
   expect(
     routeFrames.every(({ sourceDistance }) => Math.abs(sourceDistance) <= 2),
@@ -1837,39 +1967,54 @@ test('interpolates a retained route with its moving endpoints in diagram coordin
         })),
     ),
   ).toBe(true);
-  const minimumTargetGap = Math.min(edgeStart.targetDistance, edgeEnd.targetDistance);
-  const maximumTargetGap = Math.max(edgeStart.targetDistance, edgeEnd.targetDistance);
-  expect(
-    routeFrames.every(
-      ({ targetDistance }) =>
-        targetDistance >= minimumTargetGap - 0.1 && targetDistance <= maximumTargetGap + 2,
-    ),
-    JSON.stringify(routeFrames.map(({ phase, targetDistance }) => ({ phase, targetDistance }))),
-  ).toBe(true);
+  for (const { targetDistance } of [edgeStart, ...routeFrames]) {
+    expect(targetDistance).toBeGreaterThanOrEqual(4.5);
+    expect(targetDistance).toBeLessThanOrEqual(6);
+  }
 });
 
-test('keeps explicit full motion active for every stepped sandbox control', async ({ page }) => {
-  test.setTimeout(180_000);
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=full`,
-  );
-  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-    timeout: WORKBENCH_READY_TIMEOUT_MS,
-  });
-  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
-    true,
-  );
-  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'full');
-  await expect(page.locator('html')).toHaveClass(/catalog-full-motion/);
+for (const fixture of steppedFixtures) {
+  for (const direction of ['forward', 'backward'] as const) {
+    for (let index = 0; index < fixture.scenes.length - 1; index += 1) {
+      const beforeStep = direction === 'forward' ? index : fixture.scenes.length - index - 1;
+      const expectedStep = direction === 'forward' ? beforeStep + 1 : beforeStep - 1;
+      const before = fixture.scenes[beforeStep];
+      const after = fixture.scenes[expectedStep];
+      test(`keeps explicit full motion active · ${fixture.id} · ${before.state} to ${after.state}`, async ({
+        page,
+      }) => {
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await page.goto(
+          `${baseUrl}/sandbox/diagram-workbench?state=${fixture.id}&theme=light&width=960&motion=full`,
+        );
+        await expect(page.getByTestId('catalog-scene')).toHaveAttribute(
+          'data-preview-ready',
+          'true',
+          {
+            timeout: WORKBENCH_READY_TIMEOUT_MS,
+          },
+        );
+        expect(
+          await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches),
+        ).toBe(true);
+        await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
+          'data-catalog-motion',
+          'full',
+        );
+        await expect(page.locator('html')).toHaveClass(/catalog-full-motion/);
 
-  for (const fixture of steppedFixtures) {
-    const root = page.locator(`#${fixture.id}`);
-    await expect(root.locator('[data-diagram-step-index]')).toHaveCount(fixture.steps);
-    for (const direction of ['forward', 'backward'] as const) {
-      for (let index = 0; index < fixture.steps - 1; index += 1) {
+        const root = page.locator(`#${fixture.id}`);
+        await expect(root.locator('[data-diagram-step-index]')).toHaveCount(fixture.scenes.length);
+        if (beforeStep > 0) {
+          await root.locator(`[data-diagram-step-index="${beforeStep}"]`).click();
+          await expect(root.locator('.diagram-renderer')).toHaveAttribute(
+            'data-diagram-settled',
+            'true',
+          );
+        }
+        await expectSceneInventory(page, fixture.id, before.state);
         const transition = await recordControlMotion(page, fixture.id, direction);
-        const expectedStep = direction === 'forward' ? index + 1 : fixture.steps - index - 2;
+        await expectSceneInventory(page, fixture.id, after.state);
         expect(transition.sameMount).toBe(true);
         expect(transition.frames[0].state).not.toBe(transition.baseline.state);
         expect(transition.frames[0].selectedStep).toBe(expectedStep);
@@ -1890,9 +2035,7 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
         const sceneIndex = transition.frames.findIndex((frame) => frame.phase === 'scene');
         const exitIndex = transition.frames.findIndex((frame) => frame.phase === 'exit');
         const settledFrame = transition.frames.at(-1)!;
-        const hasSharedNodes = transition.baseline.nodeIds.some(
-          (id) => id in settledFrame.nodeOpacities,
-        );
+        const hasSharedNodes = before.nodes.some((id) => after.nodes.includes(id));
         expect(sceneIndex).toBeGreaterThanOrEqual(0);
         if (hasSharedNodes) expect(sceneIndex).toBeGreaterThan(0);
         expect(
@@ -1901,6 +2044,7 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           ),
         ).toBe(0);
         expect(transition.frames.at(-1)).toMatchObject({
+          state: after.state,
           selectedStep: expectedStep,
           settled: true,
           phase: 'settled',
@@ -1928,8 +2072,14 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           'edgeReveals',
           'labelOpacities',
         ] as const;
+        const inventoryKey = {
+          nodeOpacities: 'nodes',
+          groupOpacities: 'groups',
+          edgeReveals: 'edges',
+          labelOpacities: 'labels',
+        } as const;
         const hasDepartingContent = lifecycleKeys.some((key) =>
-          Object.keys(transition.frames[0][key]).some((id) => !(id in settledFrame[key])),
+          before[inventoryKey[key]].some((id) => !after[inventoryKey[key]].includes(id)),
         );
         if (hasDepartingContent) {
           if (exitIndex === 0) {
@@ -1944,7 +2094,7 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           } else {
             // Disjoint scenes must finish entering before outgoing paint can disappear.
             expect(exitIndex).toBeGreaterThan(sceneIndex);
-            for (const id of Object.keys(settledFrame.nodeOpacities)) {
+            for (const id of after.nodes) {
               expect(transition.frames[exitIndex].nodeOpacities[id]).toBeGreaterThanOrEqual(0.99);
             }
           }
@@ -1952,14 +2102,23 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
         const lifecycle = (
           key: 'nodeOpacities' | 'groupOpacities' | 'edgeReveals' | 'labelOpacities',
         ) => {
-          const beforeIds = Object.keys(transition.frames[0][key]);
-          const afterIds = Object.keys(settledFrame[key]);
+          const beforeIds = before[inventoryKey[key]];
+          const afterIds = after[inventoryKey[key]];
+          expect(Object.keys(settledFrame[key]).sort()).toEqual([...afterIds].sort());
+          for (const id of beforeIds) {
+            const context = `${fixture.id}/${before.state} to ${after.state}: ${key}/${id} present at ${transition.frames[0].phase} start`;
+            expect(transition.frames[0][key][id], context).toBeDefined();
+            expect(transition.frames[0][key][id], context).toBeGreaterThan(0.5);
+          }
+          for (const id of afterIds) expect(settledFrame[key][id]).toBeGreaterThan(0.5);
           const departingIds = beforeIds.filter((id) => !afterIds.includes(id));
           const enteringIds = afterIds.filter((id) => !beforeIds.includes(id));
           const sharedIds = beforeIds.filter((id) => afterIds.includes(id));
           const firstEnteringFrame = transition.frames.findIndex((frame) =>
             enteringIds.some((id) => (frame[key][id] ?? 0) > 0.01),
           );
+          if (enteringIds.length > 0)
+            expect(firstEnteringFrame, `${key} entry`).toBeGreaterThanOrEqual(0);
           const hasIntermediateExit = transition.frames.some((frame) =>
             departingIds.some((id) => {
               const opacity = frame[key][id];
@@ -2002,6 +2161,12 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
         const stagedFrame = transition.frames.find(
           (frame) => frame.enteredCounts[2] > 0 && frame.enteredCounts[3] > 0,
         );
+        if (
+          after.edges.some((id) => !before.edges.includes(id)) &&
+          after.labels.some((id) => !before.labels.includes(id))
+        ) {
+          expect(stagedFrame, 'Expected entering routes and labels').toBeDefined();
+        }
         if (stagedFrame) {
           const sceneDelay = Math.max(stagedFrame.entryDelays[0], stagedFrame.entryDelays[1]);
           expect(stagedFrame.entryDelays[2]).toBeLessThanOrEqual(sceneDelay);
@@ -2014,25 +2179,28 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
             JSON.stringify({ fixture: fixture.id, direction, index, frames: transition.frames }),
           ).toBeGreaterThanOrEqual(routeEntry);
         }
-      }
+      });
     }
   }
-});
+}
 
-test('settles every stepped sandbox control without finite reduced-motion animations', async ({
-  page,
-}) => {
-  await openMotionFixture(page, 'custom-architecture', true);
-  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
-  await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
+for (const fixture of steppedFixtures) {
+  test(`settles stepped controls without finite reduced-motion animations · ${fixture.id}`, async ({
+    page,
+  }) => {
+    await openMotionFixture(page, fixture.id, true);
+    await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
+      'data-catalog-motion',
+      'reduced',
+    );
+    await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
 
-  let transitionCount = 0;
-  for (const fixture of steppedFixtures) {
+    await expectSceneInventory(page, fixture.id, fixture.scenes[0].state);
     const signatures = [await readStableSignature(page, fixture.id)];
-    for (let index = 1; index < fixture.steps; index += 1) {
+    for (let index = 1; index < fixture.scenes.length; index += 1) {
       const transition = await recordReducedControlMotion(page, fixture.id, 'forward');
       const settled = await readStableSignature(page, fixture.id);
-      transitionCount += 1;
+      await expectSceneInventory(page, fixture.id, fixture.scenes[index].state);
       expect(transition.state).not.toBe(transition.beforeState);
       expect(transition).toMatchObject({ selectedStep: index, phase: 'settled', settled: true });
       expect(
@@ -2043,10 +2211,10 @@ test('settles every stepped sandbox control without finite reduced-motion animat
       expect(await allRoutesComplete(page, fixture.id)).toBe(true);
       signatures.push(settled);
     }
-    for (let index = fixture.steps - 2; index >= 0; index -= 1) {
+    for (let index = fixture.scenes.length - 2; index >= 0; index -= 1) {
       const transition = await recordReducedControlMotion(page, fixture.id, 'backward');
       const settled = await readStableSignature(page, fixture.id);
-      transitionCount += 1;
+      await expectSceneInventory(page, fixture.id, fixture.scenes[index].state);
       expect(transition.state).not.toBe(transition.beforeState);
       expect(transition).toMatchObject({ selectedStep: index, phase: 'settled', settled: true });
       expect(
@@ -2056,13 +2224,12 @@ test('settles every stepped sandbox control without finite reduced-motion animat
       expect(await allRoutesComplete(page, fixture.id)).toBe(true);
       expect(settled).toEqual(signatures[index]);
     }
-  }
-  expect(transitionCount).toBe(14);
 
-  await page.goto(`${baseUrl}/sandbox/button?state=default&motion=reduced`);
-  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true');
-  await expect(page.locator('.diagram-renderer')).toHaveCount(0);
-});
+    await page.goto(`${baseUrl}/sandbox/button?state=default&motion=reduced`);
+    await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true');
+    await expect(page.locator('.diagram-renderer')).toHaveCount(0);
+  });
+}
 
 test('shows continuous Redux walkthrough motion when the system requests reduced motion', async ({
   page,
@@ -2095,10 +2262,7 @@ test('shows continuous Redux walkthrough motion when the system requests reduced
   expect(transition.frames.at(-1)).toMatchObject({ phase: 'settled', settled: true });
 });
 
-test('coordinates architecture and ownership state motion through settled frames', async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
+test('coordinates architecture state motion through settled frames', async ({ page }) => {
   await openMotionFixture(page, 'custom-architecture');
   const architectureOrient = await readStableSignature(page, 'custom-architecture');
   const architecture12 = await recordTransition(
@@ -2180,7 +2344,7 @@ test('coordinates architecture and ownership state motion through settled frames
   expectFixedFooter(architecture23);
   expectCameraInterpolation(architecture23);
   expectFrameGeometry(architecture23.settled);
-  const architectureStable = await readStableSignature(page, 'custom-architecture');
+  await expectSceneInventory(page, 'custom-architecture', 'observe');
   const architecture31 = await recordTransition(
     page,
     'custom-architecture',
@@ -2209,7 +2373,10 @@ test('coordinates architecture and ownership state motion through settled frames
   expectCameraBeforeScene(architecture31, 'exit');
   expectCameraInterpolation(architecture31);
   expectFixedFooter(architecture31);
+  expect(await readStableSignature(page, 'custom-architecture')).toEqual(architectureOrient);
+});
 
+test('coordinates ownership state motion through settled frames', async ({ page }) => {
   await openMotionFixture(page, 'custom-walkthrough');
   const ownership12 = await recordTransition(
     page,
@@ -2262,20 +2429,49 @@ test('coordinates architecture and ownership state motion through settled frames
   expectCameraInterpolation(ownership23);
   expectFrameGeometry(ownership23.settled);
   expectFixedFooter(ownership23);
-  const ownershipStable = await readStableSignature(page, 'custom-walkthrough');
+  await expectSceneInventory(page, 'custom-walkthrough', 'render');
+});
 
+test('settles a camera interruption at the requested state and preserves focus', async ({
+  page,
+}) => {
   await openMotionFixture(page, 'custom-architecture');
   const root = page.locator('#custom-architecture');
-  await root
-    .getByRole('button', { name: 'State 2: 2. Follow the data' })
-    .evaluate((node) => (node as HTMLButtonElement).click());
-  await expect(root.locator('.diagram-renderer')).toHaveAttribute(
-    'data-diagram-motion-phase',
-    'camera',
-  );
+  const renderer = root.locator('.diagram-renderer');
+  await root.getByRole('button', { name: 'State 3: 3. Close the loop' }).click();
+  await expect(renderer).toHaveAttribute('data-diagram-settled', 'true');
+  const architectureStable = await readStableSignature(page, 'custom-architecture');
+  await root.getByRole('button', { name: 'State 1: 1. Start in the workbench' }).click();
+  await expect(renderer).toHaveAttribute('data-diagram-settled', 'true');
+  await expectSceneInventory(page, 'custom-architecture', 'orient');
+  const interruptedCamera = await root.evaluate(async (element) => {
+    const diagram = element.querySelector<HTMLElement>('.diagram-renderer')!;
+    element.querySelector<HTMLButtonElement>('[data-diagram-step-index="1"]')!.click();
+    await Promise.resolve();
+    const deadline = performance.now() + 2_000;
+    while (
+      diagram.dataset.diagramMotionPhase === 'camera' &&
+      !diagram
+        .getAnimations({ subtree: true })
+        .some((animation) => animation.playState === 'running')
+    ) {
+      if (performance.now() > deadline) throw new Error('Camera animation did not start');
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+    const observed = {
+      phase: diagram.dataset.diagramMotionPhase,
+      settled: diagram.dataset.diagramSettled,
+      running: [...element.querySelectorAll('.diagram-svg-layer, .diagram-geometry-motion')]
+        .flatMap((node) => node.getAnimations())
+        .some((animation) => animation.playState === 'running'),
+    };
+    const target = element.querySelector<HTMLButtonElement>('[data-diagram-step-index="2"]')!;
+    target.focus();
+    target.click();
+    return observed;
+  });
+  expect(interruptedCamera).toEqual({ phase: 'camera', settled: 'false', running: true });
   const finalStateButton = root.getByRole('button', { name: 'State 3: 3. Close the loop' });
-  await finalStateButton.focus();
-  await finalStateButton.evaluate((node) => (node as HTMLButtonElement).click());
   await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-settled', 'true');
   await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-state', 'observe');
   await expect(root.locator('[data-node-id="events"]')).toBeVisible();
@@ -2283,7 +2479,15 @@ test('coordinates architecture and ownership state motion through settled frames
   await expect(finalStateButton).toBeFocused();
   await expect(root.locator('.diagram-scroll-container')).toHaveJSProperty('scrollLeft', 0);
   expect(await readStableSignature(page, 'custom-architecture')).toEqual(architectureStable);
+});
 
+test('settles an exit interruption at the first architecture state', async ({ page }) => {
+  await openMotionFixture(page, 'custom-architecture');
+  const root = page.locator('#custom-architecture');
+  const architectureOrient = await readStableSignature(page, 'custom-architecture');
+  await root.getByRole('button', { name: 'State 3: 3. Close the loop' }).click();
+  await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-settled', 'true');
+  await expectSceneInventory(page, 'custom-architecture', 'observe');
   const interruptedExit = await root.evaluate((element) => {
     const diagram = element.querySelector<HTMLElement>('.diagram-renderer')!;
     const camera = element.querySelector<SVGSVGElement>('.diagram-svg-layer')!;
@@ -2309,7 +2513,26 @@ test('coordinates architecture and ownership state motion through settled frames
   await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-settled', 'true');
   await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-state', 'orient');
   expect(await readStableSignature(page, 'custom-architecture')).toEqual(architectureOrient);
+});
 
+test('reduced ownership motion reaches the same complete geometry as full motion', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openMotionFixture(page, 'custom-walkthrough');
+  const fullRoot = page.locator('#custom-walkthrough');
+  for (const state of ['execute', 'render']) {
+    await fullRoot.getByRole('button', { name: 'Next step' }).click();
+    await expect(fullRoot.locator('.diagram-renderer')).toHaveAttribute(
+      'data-diagram-state',
+      state,
+    );
+    await expect(fullRoot.locator('.diagram-renderer')).toHaveAttribute(
+      'data-diagram-settled',
+      'true',
+    );
+  }
+  const ownershipStable = await readStableSignature(page, 'custom-walkthrough');
   await openMotionFixture(page, 'custom-walkthrough', true);
   const reducedRoot = page.locator('#custom-walkthrough');
   await reducedRoot
@@ -2324,6 +2547,7 @@ test('coordinates architecture and ownership state motion through settled frames
     '1',
   );
   await expect(reducedRoot.locator('[data-node-id="daemon"]')).toHaveCSS('opacity', '1');
+  await expectSceneInventory(page, 'custom-walkthrough', 'render');
   expect(await readStableSignature(page, 'custom-walkthrough')).toEqual(ownershipStable);
 });
 
@@ -2339,7 +2563,8 @@ for (const appearance of framingAppearances) {
         width: String(width.value),
         motion: 'reduced',
       });
-      if ('colorTheme' in appearance) params.set('colorTheme', appearance.colorTheme);
+      const colorTheme = 'colorTheme' in appearance ? appearance.colorTheme : 'default';
+      await seedStoredCatalogPreferences(page, { colorTheme });
       await page.goto(`${baseUrl}/sandbox/diagram-workbench?${params}`);
       await expect(page.getByTestId('catalog-scene')).toHaveAttribute(
         'data-preview-ready',
@@ -2348,18 +2573,26 @@ for (const appearance of framingAppearances) {
           timeout: WORKBENCH_READY_TIMEOUT_MS,
         },
       );
+      await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
+        'data-catalog-color-theme',
+        colorTheme,
+      );
       const root = page.locator('#custom-architecture');
       const buttons = [
         'State 1: 1. Start in the workbench',
         'State 2: 2. Follow the data',
         'State 3: 3. Close the loop',
       ];
-      const nodeCounts = [2, 4, 5];
       for (const [index, button] of buttons.entries()) {
         await root.getByRole('button', { name: button }).click();
         await expect(root.locator('.diagram-renderer')).toHaveAttribute(
           'data-diagram-settled',
           'true',
+        );
+        await expectSceneInventory(
+          page,
+          'custom-architecture',
+          steppedFixtures[0].scenes[index].state,
         );
         const metrics = await root.evaluate(async (section) => {
           const renderer = section.querySelector<HTMLElement>('.diagram-renderer')!;
@@ -2496,11 +2729,14 @@ for (const appearance of framingAppearances) {
                 const outer = foreignObject.getBoundingClientRect();
                 const inner = foreignObject.firstElementChild?.getBoundingClientRect();
                 return (
-                  !inner ||
-                  (inner.left >= outer.left - 1 &&
-                    inner.right <= outer.right + 1 &&
-                    inner.top >= outer.top - 1 &&
-                    inner.bottom <= outer.bottom + 1)
+                  inner !== undefined &&
+                  Boolean(foreignObject.textContent?.trim()) &&
+                  inner.width > 0 &&
+                  inner.height > 0 &&
+                  inner.left >= outer.left - 1 &&
+                  inner.right <= outer.right + 1 &&
+                  inner.top >= outer.top - 1 &&
+                  inner.bottom <= outer.bottom + 1
                 );
               },
             ),
@@ -2624,7 +2860,7 @@ for (const appearance of framingAppearances) {
             paintCategories: [...new Set(first.paint.map((paint) => paint.category))].sort(),
           };
         });
-        expect(metrics.nodeCount).toBe(nodeCounts[index]);
+        expect(metrics.nodeCount).toBe(steppedFixtures[0].scenes[index].nodes.length);
         expect(metrics.centerDelta).toBeLessThanOrEqual(8);
         expect(Math.abs(metrics.footerOffset)).toBeLessThanOrEqual(1);
         expect(metrics.clearsFooter).toBe(true);

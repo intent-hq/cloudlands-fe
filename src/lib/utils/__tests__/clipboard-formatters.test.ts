@@ -200,11 +200,15 @@ describe('clipboard-formatters', () => {
       const messages = [
         {
           role: 'user',
-          toolResults: [{ toolCallId: 'tc-1', content: 'found it', isError: false }],
+          toolResults: [
+            { toolCallId: 'tc-1', content: 'found it', isError: false },
+            { toolCallId: 'tc-2', content: 'permission denied', isError: true },
+          ],
         },
       ];
       const result = formatAgentMessagesForClipboard(messages);
-      expect(result).toContain('✅ Tool Result:');
+      expect(result).toContain('✅ Tool Result:\nfound it');
+      expect(result).toContain('❌ Tool Error:\npermission denied');
     });
 
     it('labels system rows as System', () => {

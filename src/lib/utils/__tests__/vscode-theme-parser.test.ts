@@ -280,8 +280,11 @@ describe('parseVSCodeTheme', () => {
   });
 
   it('maps button.background to --primary', () => {
-    const result = parseVSCodeTheme(MINIMAL_DARK_THEME);
-    expect(result.cssVariables['--primary']).toBeDefined();
+    const result = parseVSCodeTheme({
+      type: 'dark',
+      colors: { 'editor.background': '#000000', 'button.background': '#ff0000' },
+    });
+    expect(result.cssVariables['--primary']).toBe('0 100% 50%');
   });
 
   it('maps focusBorder to --ring', () => {

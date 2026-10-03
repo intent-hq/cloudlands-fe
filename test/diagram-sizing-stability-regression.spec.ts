@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { useDiagramPreviewServer } from './diagram-preview-server';
 
-const baseUrl = process.env.UI_PREVIEW_BASE_URL?.replace(/\/$/, '');
+const preview = useDiagramPreviewServer('diagram-sizing-stability-regression');
 const CONCEPT_ADD_SOURCE = `graph LR
   A[Sidebar repo group] -->|click header| B[Project page]
   B -->|project.get| D[intentd project table]
@@ -30,11 +31,9 @@ const CYCLE_ROUTES = [
   'L_Review_Hub_0',
 ];
 
-test.skip(!baseUrl, 'Set UI_PREVIEW_BASE_URL to the running diagram preview server.');
-
 async function openState(page: Page, state: string, motion: 'full' | 'reduced' = 'reduced') {
   await page.goto(
-    `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=${motion}`,
+    `${preview.url}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=${motion}`,
     { waitUntil: 'domcontentloaded' },
   );
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-stable', 'true', {
@@ -159,8 +158,8 @@ async function mermaidGeometry(
         painted.every((element) => {
           const bounds = element.getBoundingClientRect();
           return (
-            bounds.left >= viewportBounds.left - 1 &&
-            bounds.right <= viewportBounds.right + 1 &&
+            bounds.left >= svgBounds.left - 1 &&
+            bounds.right <= svgBounds.right + 1 &&
             bounds.top >= viewportBounds.top - 1 &&
             bounds.bottom <= viewportBounds.bottom + 1
           );
@@ -174,6 +173,56 @@ async function mermaidGeometry(
       ].every(Number.isFinite),
     };
   }, expected);
+}
+
+async function expectScrollReachability(page: Page, selector: string) {
+  const viewport = page.locator(selector);
+  const read = (axis: 'x' | 'y') =>
+    viewport.evaluate((element, axis) => {
+      const frame = element.getBoundingClientRect();
+      const svg = element.querySelector('svg')!.getBoundingClientRect();
+      return {
+        overflow:
+          axis === 'x' ? getComputedStyle(element).overflowX : getComputedStyle(element).overflowY,
+        maximum:
+          axis === 'x'
+            ? element.scrollWidth - element.clientWidth
+            : element.scrollHeight - element.clientHeight,
+        position: axis === 'x' ? element.scrollLeft : element.scrollTop,
+        startVisible: axis === 'x' ? svg.left >= frame.left - 1 : svg.top >= frame.top - 1,
+        endVisible: axis === 'x' ? svg.right <= frame.right + 1 : svg.bottom <= frame.bottom + 1,
+      };
+    }, axis);
+  await viewport.hover();
+  for (const axis of ['x', 'y'] as const) {
+    const initial = await read(axis);
+    const wheel = async (amount: number) => {
+      await viewport.hover();
+      await page.mouse.wheel(axis === 'x' ? amount : 0, axis === 'y' ? amount : 0);
+    };
+    if (initial.maximum <= 1) {
+      expect(
+        initial.startVisible && initial.endVisible,
+        `${axis}: diagram fits without scrolling`,
+      ).toBe(true);
+      continue;
+    }
+    expect(['auto', 'scroll']).toContain(initial.overflow);
+    if (initial.position > 0) await wheel(-initial.maximum - 100);
+    await expect.poll(async () => (await read(axis)).position).toBe(0);
+    expect((await read(axis)).startVisible, `${axis}: wheel input reveals the diagram start`).toBe(
+      true,
+    );
+    await wheel(initial.maximum + 100);
+    await expect
+      .poll(async () => (await read(axis)).position)
+      .toBeGreaterThanOrEqual(initial.maximum - 1);
+    expect((await read(axis)).endVisible, `${axis}: wheel input reveals the diagram end`).toBe(
+      true,
+    );
+    await wheel(-initial.maximum - 100);
+    await expect.poll(async () => (await read(axis)).position).toBe(0);
+  }
 }
 
 async function waitForStable(read: () => Promise<unknown>) {
@@ -234,6 +283,8 @@ for (const motion of ['full', 'reduced'] as const) {
     await mountConceptAdd(page, motion);
     const read = () => mermaidGeometry(page, '#concept-add-test-host', expected);
     await waitForMermaidStable(read);
+    await expectScrollReachability(page, '#concept-add-test-host .mermaid-svg-viewport');
+    await waitForMermaidStable(read);
     const initial = await read();
     expectMermaidContract(initial, expected);
 
@@ -275,6 +326,8 @@ for (const motion of ['full', 'reduced'] as const) {
         .poll(async () => (await read()).generation, { timeout: 30_000 })
         .toBeGreaterThan(priorGeneration);
       await waitForMermaidStable(read);
+      await expectScrollReachability(page, '#concept-add-test-host .mermaid-svg-viewport');
+      await waitForMermaidStable(read);
       const resized = await read();
       expectMermaidContract(resized, expected);
       expect(resized.nodeViewBounds?.[2]).toBe(resized.laneBounds?.[2]);
@@ -301,6 +354,8 @@ test('keeps cycle fan-out Mermaid elements present through panel resizes', async
   await openState(page, state);
   const read = () => mermaidGeometry(page, `#${state}`, expected);
   await waitForStable(read);
+  await expectScrollReachability(page, `#${state} .mermaid-svg-viewport`);
+  await waitForStable(read);
   expectMermaidContract(await read(), expected);
 
   for (const width of [420, 960]) {
@@ -311,6 +366,8 @@ test('keeps cycle fan-out Mermaid elements present through panel resizes', async
     await expect
       .poll(async () => (await read()).generation, { timeout: 30_000 })
       .toBeGreaterThan(previousGeneration);
+    await waitForStable(read);
+    await expectScrollReachability(page, `#${state} .mermaid-svg-viewport`);
     await waitForStable(read);
     expectMermaidContract(await read(), expected);
   }
@@ -339,7 +396,8 @@ async function architectureGeometry(page: Page) {
     );
     const groups = groupIds.map((id) => section.querySelector(`[data-group-id="${id}"] .group-bg`));
     const elements = [...nodes, ...routes, ...labels, ...groups];
-    const viewportBounds = viewport.getBoundingClientRect();
+    const nodeLabels = nodes.map((node) => node?.querySelector<HTMLElement>('.node-label'));
+    const svgBounds = svg.getBoundingClientRect();
     const matrix = svg.getScreenCTM();
     return {
       state: renderer.dataset.diagramState,
@@ -351,6 +409,17 @@ async function architectureGeometry(page: Page) {
         .map((element) => element!.closest<SVGGElement>('.diagram-edge')!.dataset.edgeId),
       labelIds: labels.filter(Boolean).map((element) => element!.getAttribute('data-edge-id')),
       groupIds: groups.filter(Boolean).map((element) => element!.parentElement!.dataset.groupId),
+      nodeLabels: nodeLabels.map((label) => ({
+        id: label?.closest('[data-node-id]')?.getAttribute('data-node-id'),
+        text: label?.textContent?.trim() ?? '',
+        visible: Boolean(
+          label &&
+          label.getBoundingClientRect().width > 0 &&
+          label.getBoundingClientRect().height > 0 &&
+          getComputedStyle(label).visibility === 'visible' &&
+          Number(getComputedStyle(label).opacity) > 0,
+        ),
+      })),
       elementBounds: elements.map((element) => (element ? bounds(element) : null)),
       svgBounds: bounds(svg),
       viewportBounds: bounds(viewport),
@@ -370,22 +439,28 @@ async function architectureGeometry(page: Page) {
         if (!element) return false;
         const rect = element.getBoundingClientRect();
         return (
-          rect.left >= viewportBounds.left - 1 &&
-          rect.right <= viewportBounds.right + 1 &&
-          rect.top >= viewportBounds.top - 1 &&
-          rect.bottom <= viewportBounds.bottom + 1
+          rect.left >= svgBounds.left - 1 &&
+          rect.right <= svgBounds.right + 1 &&
+          rect.top >= svgBounds.top - 1 &&
+          rect.bottom <= svgBounds.bottom + 1
         );
       }),
       minFontSize: Math.min(
-        ...[...section.querySelectorAll<HTMLElement>('.node-label')].map((label) =>
-          Number.parseFloat(getComputedStyle(label).fontSize),
-        ),
+        ...nodeLabels.map((label) => {
+          const transform = label
+            ?.closest<SVGForeignObjectElement>('foreignObject')
+            ?.getScreenCTM();
+          return label && transform
+            ? Number.parseFloat(getComputedStyle(label).fontSize) *
+                Math.hypot(transform.c, transform.d)
+            : NaN;
+        }),
       ),
     };
   });
 }
 
-test('keeps every final architecture element contained through panel resizes', async ({ page }) => {
+test('keeps every final architecture element reachable through panel resizes', async ({ page }) => {
   test.setTimeout(120_000);
   await openState(page, 'custom-architecture');
   const root = page.locator('#custom-architecture');
@@ -396,6 +471,8 @@ test('keeps every final architecture element contained through panel resizes', a
       .getByTestId('catalog-scene-focus')
       .evaluate((element, value) => (element.style.width = `${value}px`), width);
     await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-settled', 'true');
+    await waitForStable(() => architectureGeometry(page));
+    await expectScrollReachability(page, '#custom-architecture .diagram-scroll-container');
     await waitForStable(() => architectureGeometry(page));
     const result = await architectureGeometry(page);
     expect(result).toMatchObject({
@@ -412,6 +489,15 @@ test('keeps every final architecture element contained through panel resizes', a
     });
     expect(result.ctm).toHaveLength(6);
     expect(result.ctm!.every(Number.isFinite)).toBe(true);
+    expect(result.nodeLabels.map(({ id }) => id)).toEqual([
+      'user',
+      'renderer',
+      'daemon',
+      'notes',
+      'events',
+    ]);
+    expect(result.nodeLabels.every(({ text, visible }) => text.length > 0 && visible)).toBe(true);
+    expect(Number.isFinite(result.minFontSize)).toBe(true);
     expect(result.minFontSize, `${width}px readable architecture text`).toBeGreaterThanOrEqual(12);
   }
 });
