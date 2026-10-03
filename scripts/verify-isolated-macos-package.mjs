@@ -7,6 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
+import { evaluatePackageMain } from './evaluate-package-main.mjs';
 
 const [dmg, output, backendSha, frontendSha] = process.argv.slice(2);
 assert.equal(process.platform, 'darwin');
@@ -42,7 +43,7 @@ async function closePackage(phase, originalStartedAt) {
   let stopFailed = false;
   let stopError;
   try {
-    const stopped = await application.evaluate(async ({ app }) => {
+    const stopped = await evaluatePackageMain(application, async ({ app }) => {
       const { pathToFileURL } = await import('node:url');
       const sidecar = await import(
         pathToFileURL(`${app.getAppPath()}/dist/features/backend/main/intentd-sidecar.js`).href
@@ -102,7 +103,8 @@ async function eventually(read, accept, label, timeout = 60_000) {
 }
 
 async function inspect(app) {
-  return app.evaluate(
+  return evaluatePackageMain(
+    app,
     async ({ app: instance }, expected) => {
       const { pathToFileURL } = await import('node:url');
       const inspection = await import(
@@ -125,7 +127,8 @@ const safetySettings = {
 };
 
 async function inspectSettings(app, changePreferences = false) {
-  return app.evaluate(
+  return evaluatePackageMain(
+    app,
     async ({ app: instance }, { keys, changePreferences }) => {
       const { pathToFileURL } = await import('node:url');
       const { getBackendClient } = await import(
@@ -254,7 +257,7 @@ try {
   assert.notEqual(hash(privateConfig), configBeforePreferences);
   evidence.phases.push({ phase: 'private-preferences', ...settings });
   // Execute the original shared-action entry points, all of which must reject or stay inert.
-  const policy = await application.evaluate(async ({ app }) => {
+  const policy = await evaluatePackageMain(application, async ({ app }) => {
     const { pathToFileURL } = await import('node:url');
     const module = (name) => import(pathToFileURL(`${app.getAppPath()}/dist/${name}.js`).href);
     const keys = await module('features/backend/main/keychain-sync-lifecycle');
@@ -299,7 +302,7 @@ try {
   assert.equal(policy.ghCredentialsDisabled, '1');
   assert.equal(policy.privateTestProfile, '1');
   evidence.phases.push({ phase: 'shared-actions', ...policy });
-  const recovery = await application.evaluate(async ({ app }) => {
+  const recovery = await evaluatePackageMain(application, async ({ app }) => {
     const { pathToFileURL } = await import('node:url');
     const sidecar = await import(
       pathToFileURL(`${app.getAppPath()}/dist/features/backend/main/intentd-sidecar.js`).href
