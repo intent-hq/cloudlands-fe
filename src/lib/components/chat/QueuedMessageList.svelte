@@ -1015,7 +1015,6 @@
                     {@const queuedAuthorLabel = queuedAuthor
                       ? authorship.getMessageAuthorLabel(queuedAuthor)
                       : null}
-                    <!-- Display mode -->
                     <div class="queued-message-display flex min-w-0 flex-1 items-start gap-2">
                       {#if queuedAuthor}
                         <Tooltip
