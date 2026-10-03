@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
-import type { Node as PMNode } from '@tiptap/pm/model';
+import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
 import { Mapping, ReplaceStep, type Step } from '@tiptap/pm/transform';
 import {
   SourceProjection,
@@ -88,9 +88,26 @@ export class ListProjection {
         suffix = raw.match(/\n*$/)?.[0] ?? '';
       const body = raw.slice(prefix.length, raw.length - suffix.length);
       const part = new SourceProjection(body, from + prefix.length);
+      const total = part.content.content!.reduce((n, child) => n + size(child), 0);
+      let offset = 0;
       for (const node of part.content.content!) {
+        const nodeFrom = part.boundaries.get(offset)!,
+          nodeTo = part.boundaries.get(offset + size(node))!;
+        const fragment = new SourceProjection(
+          body.slice(nodeFrom - part.start, nodeTo - part.start),
+          nodeFrom,
+        );
         this.content.content!.push(node);
-        this.prose.push({ node, part, prefix, suffix, pm: 0 });
+        this.prose.push({
+          node,
+          part: fragment,
+          prefix: offset === 0 ? prefix : '',
+          suffix:
+            (fragment.source.match(/\n*$/)?.[0] ?? '') +
+            (offset + size(node) === total ? suffix : ''),
+          pm: 0,
+        });
+        offset += size(node);
       }
       if (to === end && context.documentEnd && suffix) {
         const node: JSONContent = { type: 'paragraph' };
@@ -308,6 +325,11 @@ export class ListProjection {
         active = next;
       };
       node.forEach((child, offset) => {
+        if (child.type.name === 'commentAnchor') {
+          transition(child.marks.map((m) => ({ type: m.type.name, attrs: m.attrs })));
+          out += `<!--anchor:${child.attrs.commentId}:${child.attrs.type}-->`;
+          return;
+        }
         if (!child.isText || child.marks.some((m) => !['bold', 'link'].includes(m.type.name)))
           throw new Error('List proof inline grammar not yet admitted');
         for (let i = 0; i < child.text!.length; i++) {
@@ -426,6 +448,28 @@ export class ListProjection {
         if (index === doc.childCount - 1 && !node.content.size && this.context.documentEnd) return;
         const old = this.prose.find((p) => mapping.map(p.pm, -1) === pm);
         output += (old?.prefix ?? '\n') + text(node, pm) + (old?.suffix ?? '\n\n');
+      } else if (node.type.name === 'codeBlock') {
+        const old = this.prose.find((p) => mapping.map(p.pm, -1) === pm);
+        if (!old) throw new Error('Missing mixed code source provenance');
+        const before = doc.type.schema.nodeFromJSON(old.part.content);
+        const replacement = new ReplaceStep(
+          0,
+          before.content.size,
+          new Slice(Fragment.from(node), 0, 0),
+        );
+        let source = old.part.source;
+        for (const splice of old.part
+          .translate(replacement, before)
+          .sort((a, b) => b.from - a.from))
+          source =
+            source.slice(0, splice.from - old.part.start) +
+            splice.insert +
+            source.slice(splice.to - old.part.start);
+        output += old.prefix + source;
+        // The fragment already owns its internal separator. Only the outer
+        // list/prose gap is absent from its source.
+        const internal = old.part.source.match(/\n*$/)?.[0] ?? '';
+        output += old.suffix.slice(internal.length);
       } else {
         if (index > 0 && node.type.name === doc.child(index - 1).type.name) boundary(node, pm);
         list(node, pm, 0);

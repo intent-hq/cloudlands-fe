@@ -172,7 +172,12 @@ export class SourceProjection {
         );
         this.content.content!.push(...part.content.content!);
         for (const node of part.content.content!)
-          pm += 2 + (node.content ?? []).reduce((n, t) => n + (t.text?.length ?? 0), 0);
+          pm +=
+            2 +
+            (node.content ?? []).reduce(
+              (n, t) => n + (t.type === 'commentAnchor' ? 1 : (t.text?.length ?? 0)),
+              0,
+            );
         this.trailing = part.trailing;
         cursor = to;
       };
