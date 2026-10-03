@@ -22,7 +22,8 @@ export function sameSubmissionScope(a: SubmissionScope, b: SubmissionScope): boo
     a.authority === b.authority &&
     a.principalId === b.principalId &&
     a.participation === b.participation &&
-    a.owner === b.owner
+    a.owner === b.owner &&
+    a.lifetime === b.lifetime
   );
 }
 
@@ -107,8 +108,14 @@ export function retireSubmissions(
   );
   const matched = new Set(ids.filter((id) => known.has(id)));
   const tombstones = getItems(entry.tombstones).filter((item) => !matched.has(item.id));
-  for (const id of matched)
-    tombstones.push({ id, at: getItem(entry.tombstones, id)?.at ?? now, reason });
+  for (const id of matched) {
+    const prior = getItem(entry.tombstones, id);
+    // Processing snapshots outlive terminal retention. Do not restart an evicted
+    // terminal clock merely because another observation touches that snapshot.
+    const operation = getItem(entry.operations, id);
+    if (prior || getItem(entry.submissions, id) || (operation && !operation.observed))
+      tombstones.push({ id, at: prior?.at ?? now, reason });
+  }
   return pruneSubmissionTombstones(
     {
       ...entry,

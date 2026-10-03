@@ -1,4 +1,4 @@
-import type { QueuedMessage } from '$shared/types';
+import type { QueuedMessage, Workspace } from '$shared/types';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -15,7 +15,6 @@ import {
 import {
   removeWorkspaceEntity,
   resetWorkspaceState,
-  updateWorkspaceEntity,
   setWorkspaceEntity,
   replaceWorkspaceList,
   bulkUpdateWorkspaceEntities,
@@ -44,9 +43,9 @@ import type {
 } from './pending-submissions-types';
 
 const initialState: PendingSubmissionsState = { byAgentId: {} };
-export const pendingScopeActivated = createAction<[scope: SubmissionScope, capability: unknown]>(
-  'pendingSubmissions/scopeActivated',
-);
+export const pendingScopeActivated = createAction<
+  [scope: SubmissionScope, capability: unknown, rights?: Pick<Workspace, 'myRole' | 'canManage'>]
+>('pendingSubmissions/scopeActivated');
 export const pendingScopeReleased = createAction<[scope: SubmissionScope]>(
   'pendingSubmissions/scopeReleased',
 );
@@ -115,22 +114,15 @@ function observe(
   const next = retireSubmissions(entry, ids, kind, now);
   let processing = kind === 'queue' && entry.attemptActive ? entry.processing : next.processing;
   if (kind === 'processing') {
-    const known = new Set([
-      ...getItems(entry.submissions).map((s) => s.id),
-      ...getItems(entry.operations)
-        .filter((op) => !op.observed)
-        .map((op) => op.id),
-      ...getItems(entry.tombstones)
-        .filter((t) => t.reason === 'queue' || t.reason === 'processing')
-        .map((t) => t.id),
-    ]);
+    // A scoped full processing event is current trusted evidence in its own right,
+    // including work admitted by another view or queued longer than terminal TTL.
     const snapshots = rows.filter(
       (row): row is QueuedMessage =>
         typeof row.id === 'string' &&
         typeof row.content === 'string' &&
         typeof row.queuedAt === 'string' &&
         typeof row.position === 'number' &&
-        evidenceSubmissionIds(row, entry.scope.principalId).some((id) => known.has(id)),
+        evidenceSubmissionIds(row, entry.scope.principalId).length > 0,
     );
     processing = createCollection('id', [
       ...getItems(entry.processing).filter((row) => !snapshots.some((s) => s.id === row.id)),
@@ -142,29 +134,38 @@ function observe(
     processing,
     seeds: createCollection(
       'id',
-      kind === 'queue'
-        ? []
-        : getItems(next.seeds).filter(
-            (seed) =>
-              !evidenceSubmissionIds(seed, entry.scope.principalId).some((id) => ids.includes(id)),
-          ),
+      getItems(next.seeds).filter(
+        (seed) =>
+          !evidenceSubmissionIds(seed, entry.scope.principalId).some((id) => ids.includes(id)),
+      ),
     ),
   };
 }
 
-pendingSubmissionsReducer.with(pendingScopeActivated, (state, { payload: [scope, capability] }) => {
-  const current = state.byAgentId[scope.agentId];
-  if (
-    current &&
-    sameSubmissionScope(current.scope, scope) &&
-    current.supported === supportsSubmissionCorrelation(capability)
-  )
-    return state;
-  return {
-    ...state,
-    byAgentId: { ...state.byAgentId, [scope.agentId]: createPendingEntry(scope, capability) },
-  };
-});
+pendingSubmissionsReducer.with(
+  pendingScopeActivated,
+  (state, { payload: [scope, capability, rights] }) => {
+    const current = state.byAgentId[scope.agentId];
+    if (
+      current &&
+      sameSubmissionScope(current.scope, scope) &&
+      current.supported === supportsSubmissionCorrelation(capability)
+    )
+      return state;
+    return {
+      ...state,
+      byAgentId: {
+        ...state.byAgentId,
+        [scope.agentId]: {
+          ...createPendingEntry(scope, capability),
+          participationRights: rights
+            ? { myRole: rights.myRole, canManage: rights.canManage }
+            : undefined,
+        },
+      },
+    };
+  },
+);
 pendingSubmissionsReducer.with(pendingScopeReleased, (state, { payload: [scope] }) => {
   if (
     !state.byAgentId[scope.agentId] ||
@@ -232,6 +233,18 @@ pendingSubmissionsReducer.with(
       };
       if (operation.observed) return next;
       if (outcome === 'rejected') return retireSubmissions(next, [id], 'rejected', now);
+      if (outcome === 'accepted') {
+        // Acceptance is causally newer than every in-flight read, even when a
+        // newer observation already prevents this ACK from seeding a row.
+        next = {
+          ...next,
+          generation: entry.generation + 1,
+          queueFresh: false,
+          historyFresh: false,
+          refreshNeeded: true,
+        };
+      }
+
       next = {
         ...next,
         submissions: createCollection(
@@ -259,11 +272,28 @@ pendingSubmissionsReducer.with(
       const oldIds = existing ? evidenceSubmissionIds(existing, scope.principalId) : [];
       if (existing && !oldIds.every((alias) => aliases.includes(alias))) {
         // Older/subset echoes cannot replace a newer aggregate; ambiguous sets need a read.
-        return oldIds.includes(id)
-          ? retireSubmissions(next, [id], 'queue', now)
-          : { ...next, refreshNeeded: true };
+        return { ...next, refreshNeeded: true };
       }
-      next = retireSubmissions(next, aliases, 'queue', now);
+      // ACKs provide a display seed, not authoritative accounting for each local
+      // contribution. Keep its original content/metadata until correlated evidence.
+      const contributions = createCollection(
+        'id',
+        getItems(next.submissions).map((s) =>
+          aliases.includes(s.id)
+            ? { ...s, status: 'accepted' as const, destination: 'queue' as const }
+            : s,
+        ),
+      );
+      next = {
+        ...next,
+        submissions: contributions,
+        operations: createCollection(
+          'id',
+          getItems(next.operations).map((op) =>
+            aliases.includes(op.id) ? { ...op, observed: true } : op,
+          ),
+        ),
+      };
       const author = queued.author ?? {
         principalId: scope.principalId,
         login: null,
@@ -322,7 +352,10 @@ pendingSubmissionsReducer.with(pendingReadCompleted, (state, { payload: [read, r
       queueFresh,
       historyFresh,
       observationVersion: entry.observationVersion + 1,
-      refreshNeeded: !(queueFresh && historyFresh),
+      refreshNeeded:
+        !(queueFresh && historyFresh) ||
+        getItems(next.seeds).length > 0 ||
+        getItems(next.submissions).some((s) => s.status === 'accepted'),
       [read.kind === 'queue' ? 'queueReadId' : 'historyReadId']: null,
     };
   }),
@@ -356,29 +389,41 @@ function forgetWorkspace(
     ),
   };
 }
-function denied(changes: { myRole?: string | null; canManage?: boolean }): boolean {
-  return (
-    'myRole' in changes &&
-    changes.myRole !== 'owner' &&
-    changes.myRole !== 'collaborator' &&
-    changes.canManage !== true
-  );
+function applyParticipationRights(
+  state: PendingSubmissionsState,
+  workspaceId: string,
+  changes: Pick<Workspace, 'myRole' | 'canManage'>,
+  replace = false,
+): PendingSubmissionsState {
+  if (!replace && !('myRole' in changes) && !('canManage' in changes)) return state;
+  let next = state;
+  for (const entry of Object.values(state.byAgentId)) {
+    if (entry.scope.workspaceId !== workspaceId) continue;
+    const rights = replace ? changes : { ...entry.participationRights, ...changes };
+    if (rights.myRole !== 'owner' && rights.myRole !== 'collaborator' && rights.canManage !== true)
+      return forgetWorkspace(next, workspaceId);
+    next = update(next, entry.scope, (current) => ({
+      ...current,
+      participationRights: { myRole: rights.myRole, canManage: rights.canManage },
+    }));
+  }
+  return next;
 }
 pendingSubmissionsReducer.with(resetWorkspaceState, () => initialState);
 pendingSubmissionsReducer.with(setLabsMultiplayerEnabled, () => initialState);
 pendingSubmissionsReducer.with(toggleLabsMultiplayer, () => initialState);
-pendingSubmissionsReducer.with(updateWorkspaceEntity, (state, { payload: [id, changes] }) =>
-  denied(changes) ? forgetWorkspace(state, id) : state,
-);
+// updateWorkspaceEntity is a batching request; only its applied bulk action
+// changes effective workspace rights.
 pendingSubmissionsReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) =>
   actions.reduce(
-    (current, action) =>
-      denied(action.payload[1]) ? forgetWorkspace(current, action.payload[0]) : current,
+    (current, action) => applyParticipationRights(current, action.payload[0], action.payload[1]),
     state,
   ),
 );
-pendingSubmissionsReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) =>
-  denied(workspace) ? forgetWorkspace(state, workspace.id) : state,
+pendingSubmissionsReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options] }) =>
+  workspace.pendingDeleteAt
+    ? forgetWorkspace(state, workspace.id)
+    : applyParticipationRights(state, workspace.id, workspace, options?.detailRead === true),
 );
 pendingSubmissionsReducer.with(
   replaceWorkspaceList,
@@ -386,8 +431,8 @@ pendingSubmissionsReducer.with(
     let next = state;
     for (const entry of Object.values(state.byAgentId)) {
       const row = workspaces.find((workspace) => workspace.id === entry.scope.workspaceId);
-      if ((row && denied(row)) || (!row && projection?.complete))
-        next = forgetWorkspace(next, entry.scope.workspaceId);
+      if (row) next = applyParticipationRights(next, row.id, row, true);
+      else if (projection?.complete) next = forgetWorkspace(next, entry.scope.workspaceId);
     }
     return next;
   },

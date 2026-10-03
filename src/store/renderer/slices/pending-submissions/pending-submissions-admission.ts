@@ -2,7 +2,10 @@ import type { StoreState } from '../../types';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
 import { getPrincipalConnectionContext } from '../principal/principal-context';
 import { selectPrincipalSnapshot } from '../principal/principal-selectors';
-import { selectWorkspaceParticipationContext } from '../workspace/workspace-selectors';
+import {
+  selectWorkspaceById,
+  selectWorkspaceParticipationContext,
+} from '../workspace/workspace-selectors';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { pendingScopeActivated, pendingSubmissionAccepted } from './pending-submissions-slice';
 import { sameSubmissionScope } from './pending-submissions-model';
@@ -60,6 +63,8 @@ export function admitAgentSubmission(
     participation,
     authority,
     owner: ownership.key,
+    lifetime:
+      store.state.pendingSubmissions.byAgentId[agentId]?.scope.lifetime ?? crypto.randomUUID(),
   };
   const isCurrent = () =>
     ownership.isCurrent(store.state.agentSessions?.byAgentId[agentId]?.workspaceId) &&
@@ -67,7 +72,9 @@ export function admitAgentSubmission(
     selectPrincipalSnapshot.select(store.state)?.principal.id === principalId &&
     getPrincipalConnectionContext(store.state) === authority;
   if (!isCurrent()) return null;
-  store.dispatch(pendingScopeActivated(scope, capability));
+  store.dispatch(
+    pendingScopeActivated(scope, capability, selectWorkspaceById.select(store.state, workspaceId)),
+  );
   const submission = admitPendingSubmission(store, scope, input);
   if (!submission) return null;
   return {

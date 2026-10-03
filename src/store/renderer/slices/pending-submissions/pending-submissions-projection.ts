@@ -44,7 +44,10 @@ export function projectPendingSubmissions(
   const checking = supported && (entry.refreshNeeded || entry.attemptActive);
   const queue = confirmedQueue.map((message) => confirmedRow(message, checking));
   if (!entry) return { conversation: [], processing: [], queue };
-  const pending = getItems(entry.submissions);
+  const seededIds = new Set(
+    getItems(entry.seeds).flatMap((row) => evidenceSubmissionIds(row, entry.scope.principalId)),
+  );
+  const pending = getItems(entry.submissions).filter((s) => !seededIds.has(s.id));
   const queuedIds = new Set(
     confirmedQueue.flatMap((row) => evidenceSubmissionIds(row, entry.scope.principalId)),
   );
@@ -56,6 +59,8 @@ export function projectPendingSubmissions(
   for (const seed of getItems(entry.seeds)) {
     const index = queue.findIndex((row) => row.confirmedId === seed.id);
     const row = confirmedRow(seed, true);
+    const aliases = evidenceSubmissionIds(seed, entry.scope.principalId);
+    row.contributions = getItems(entry.submissions).filter((s) => aliases.includes(s.id));
     if (index >= 0) {
       // Mutation echoes lack serve-time author/eligibility, so preserve the full snapshot.
       row.confirmed = queue[index].confirmed;

@@ -558,6 +558,10 @@ describe('shared pending submission state', () => {
     f.store.dispatch(pendingRetentionPruned(scope, SUBMISSION_TOMBSTONE_TTL + 10));
     expect(getItems(f.entry().tombstones)).toEqual([]);
     expect(getItems(f.entry().operations).map((s) => [s.id, s.observed])).toEqual([['a', true]]);
+    f.store.dispatch(
+      pendingEvidenceObserved(scope, 'processing', [queued('a')], SUBMISSION_TOMBSTONE_TTL + 11),
+    );
+    expect(getItems(f.entry().tombstones)).toEqual([]);
     f.settle('a', 'accepted', queued('a'));
     expect(f.display().queue).toEqual([]);
     expect(getItems(f.entry().operations)).toEqual([]);

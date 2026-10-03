@@ -1,4 +1,4 @@
-import type { QueuedMessage } from '$shared/types';
+import type { QueuedMessage, Workspace } from '$shared/types';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
@@ -10,6 +10,8 @@ export interface SubmissionScope {
   principalId: string;
   participation: string;
   owner: string;
+  /** Fresh admission epoch after scope loss; never reused by asynchronous callers. */
+  lifetime?: string;
 }
 
 export interface SubmissionInput {
@@ -45,6 +47,8 @@ export interface SubmissionEvidence extends SubmissionCorrelation, Partial<Queue
 export interface PendingSubmissionEntry {
   scope: SubmissionScope;
   supported: boolean;
+  /** Captured effective rights, used only to detect loss; never grants authority. */
+  participationRights?: Pick<Workspace, 'myRole' | 'canManage'>;
   submissions: Collection<PendingSubmission, 'id'>;
   operations: Collection<SubmissionOperation, 'id'>;
   /** Consumed local content remains visible until persistence/restoration evidence. */
