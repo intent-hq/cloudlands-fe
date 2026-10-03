@@ -1,3 +1,4 @@
+import { mapListCode, touchesListCode, validListCode, type ListCode } from './list-code';
 import {
   validParagraphSeam,
   mapParagraphSeam,
@@ -77,6 +78,7 @@ export type Change = Splice & {
   removed: string;
   seam?: { before: ListSeam | null; after: ListSeam | null };
   tableState?: string;
+  listCode?: { before: ListCode | null; after: ListCode | null };
   paragraphSeam?: { before: ParagraphSeam | null; after: ParagraphSeam | null };
 };
 export type Anchor = {
@@ -1097,7 +1099,7 @@ export class SourceJournal {
     }
   }
   private tableIndex(source: string, start: number) {
-    return scanTables(source, (from) => {
+    return scanTables(this.maskListCode(source, start), (from) => {
       const value = this.tableStates.get(`cell:${from + start}`);
       return value ? JSON.parse(value) : undefined;
     });
@@ -1485,11 +1487,13 @@ export class SourceJournal {
     // mock backing index, never an alternate persisted comment format.
     const source = this.slice(0, this.length);
     this.backingMarkerScannedBytes += bytes(source);
-    const fences = scanFences(source);
+    const fences = scanFences(this.maskListCode(source));
     const markerAt = (marker: string) => {
       let at = source.indexOf(marker);
       while (at >= 0) {
-        const literal = fences.find((fence) => at >= fence.from && at < fence.to);
+        const literal = [...fences, ...this.listCodes.values()].find(
+          (fence) => at >= fence.from && at < fence.to,
+        );
         if (!literal) return at;
         at = source.indexOf(marker, literal.to);
       }
@@ -1587,6 +1591,66 @@ export class SourceJournal {
   private regions = new Map<number, string>();
   // Mock backing session state. Seam journal entries occupy individual bounded pages.
   private seams = new Map<number, ListSeam>();
+  private maskListCode(source: string, start = 0) {
+    let masked = source;
+    for (const code of this.listCodes.values()) {
+      const from = Math.max(0, code.from - start),
+        to = Math.min(source.length, code.to - start);
+      if (to > from) masked = masked.slice(0, from) + ' '.repeat(to - from) + masked.slice(to);
+    }
+    return masked;
+  }
+  maxListCodeWriteBytes = 0;
+  private listCodes = new Map<number, ListCode>();
+  private listCodeChange(before: ListCode | null, after: ListCode | null, history: boolean) {
+    const page = JSON.stringify({
+      from: 0,
+      to: 0,
+      insert: '',
+      removed: '',
+      listCode: { before, after },
+    });
+    if (bytes(page) > LIMITS.journalPage) throw new Error('List code journal page exceeds budget');
+    const next = new Map(this.listCodes);
+    if (before) next.delete(before.from);
+    if (after) next.set(after.from, { ...after });
+    this.listCodes = next;
+    this.inlineIndex.clear();
+    this.revision++;
+    if (history) this.stagedPages.push(page);
+    this.reindexCommentMarkers();
+  }
+  setListCodes(
+    from: number,
+    to: number,
+    codes: ListCode[],
+    revision = this.revision,
+    history = true,
+  ) {
+    if (revision !== this.revision) throw new Error('Stale nested code revision');
+    this.maxListCodeWriteBytes = Math.max(this.maxListCodeWriteBytes, bytes(JSON.stringify(codes)));
+    if (bytes(JSON.stringify(codes)) > LIMITS.request)
+      throw new Error('Nested code context exceeds budget');
+    return this.atomic(() => {
+      const desired = new Map(codes.map((code) => [code.from, code]));
+      for (const code of this.listCodes.values()) {
+        if (code.from >= to || code.to <= from) continue;
+        if (JSON.stringify(code) !== JSON.stringify(desired.get(code.from)))
+          this.listCodeChange(code, null, history);
+      }
+      for (const code of codes) {
+        if (
+          !validListCode(code, this.length) ||
+          code.from >= to ||
+          code.to <= from ||
+          this.slice(code.from, code.bodyFrom) !== '`' ||
+          this.slice(code.bodyTo, code.to) !== '`'
+        )
+          throw new Error('Invalid nested code source');
+        if (!this.listCodes.has(code.from)) this.listCodeChange(null, code, history);
+      }
+    });
+  }
   private paragraphSeams = new Map<number, ParagraphSeam>();
   private mappedParagraphSeams(splice: Splice, validate = true) {
     return new Map(
@@ -1711,6 +1775,12 @@ export class SourceJournal {
               insert: change.removed,
             },
       );
+    else if (change.listCode)
+      this.listCodeChange(
+        redo ? change.listCode.before : change.listCode.after,
+        redo ? change.listCode.after : change.listCode.before,
+        false,
+      );
     else if (change.paragraphSeam)
       this.paragraphSeamChange(
         redo ? change.paragraphSeam.before : change.paragraphSeam.after,
@@ -1783,9 +1853,10 @@ export class SourceJournal {
     const source = this.region(id);
     let index = this.inlineIndex.get(id);
     if (!index || index.source !== source) {
-      const fences = scanFences(source);
+      const indexed = this.maskListCode(source, this.start(id));
+      const fences = scanFences(indexed);
       const projection = new SourceProjection(
-        source,
+        indexed,
         0,
         { revision: this.revision, from: 0, to: source.length, before: [], after: [], fences },
         true,
@@ -1795,7 +1866,7 @@ export class SourceJournal {
         spans: projection.marks.sort((a, b) => a.openFrom - b.openFrom),
         anchors: projection.anchorRanges,
         fences,
-        lists: scanLists(source).filter(
+        lists: scanLists(indexed).filter(
           (i) => !fences.some((f) => i.from >= f.from && i.from < f.to),
         ),
       };
@@ -1935,6 +2006,7 @@ export class SourceJournal {
       to,
       before,
       after,
+      listCodes: [...this.listCodes.values()].filter((code) => code.to > from && code.from < to),
       ...([...this.paragraphSeams.values()].some((seam) => seam.from < to && seam.to > from)
         ? {
             paragraphSeams: [...this.paragraphSeams.values()].filter(
@@ -2107,6 +2179,14 @@ export class SourceJournal {
       throw new Error('Invalid source range');
     const nextSeams = this.mappedSeams(splice, validateSeams);
     const nextParagraphSeams = this.mappedParagraphSeams(splice, validateSeams);
+    const nextListCodes = new Map(
+      [...this.listCodes.values()]
+        .filter((code) => !validateSeams || !touchesListCode(code, splice))
+        .map((code) => {
+          const next = mapListCode(code, splice);
+          return [next.from, next];
+        }),
+    );
     const removed = this.slice(splice.from, splice.to);
     this.draftWrites++;
     this.maxSpliceBytes = Math.max(this.maxSpliceBytes, bytes(JSON.stringify(splice)));
@@ -2133,6 +2213,8 @@ export class SourceJournal {
       to: mapPoint(a.to, splice, -1),
       alive: a.alive && !(splice.from <= a.from && splice.to >= a.to && splice.to > splice.from),
     }));
+    this.listCodes = nextListCodes;
+    this.inlineIndex.clear();
     this.reindexCommentMarkers();
     this.seams = nextSeams;
     this.paragraphSeams = nextParagraphSeams;
@@ -2335,6 +2417,7 @@ export class SourceJournal {
       stagedPages: this.stagedPages.slice(),
       seams: this.seams,
       paragraphSeams: this.paragraphSeams,
+      listCodes: this.listCodes,
       tableStates: this.tableStates,
       inputInbox: this.inputInbox,
     };
@@ -2356,12 +2439,24 @@ export class SourceJournal {
         )
       )
         throw new Error('Invalid final source and paragraph seam state');
+      if (
+        this.atomicDepth === 1 &&
+        [...this.listCodes.values()].some(
+          (code) =>
+            !validListCode(code, this.length) ||
+            this.slice(code.from, code.bodyFrom) !== '`' ||
+            this.slice(code.bodyTo, code.to) !== '`',
+        )
+      )
+        throw new Error('Invalid final nested code source');
       return result;
     } catch (error) {
       this.tableHeights.rollback(state.revision);
       this.stagedPages = state.stagedPages;
       this.seams = state.seams;
       this.paragraphSeams = state.paragraphSeams;
+      this.listCodes = state.listCodes;
+      this.inlineIndex.clear();
       this.tableStates = state.tableStates;
       this.inputInbox = state.inputInbox;
       this.regions = regions;
@@ -2522,6 +2617,8 @@ export class SourceJournal {
     const pages = this.pages(change);
     for (const page of pages) {
       const bounded: Change = JSON.parse(page);
+      for (const code of this.listCodes.values())
+        if (touchesListCode(code, bounded)) this.listCodeChange(code, null, history);
       for (const seam of this.paragraphSeams.values())
         if (touchesParagraphSeam(seam, bounded)) this.paragraphSeamChange(seam, null, history);
       const mapped = this.mappedSeams(bounded);
@@ -2611,6 +2708,18 @@ export class SourceJournal {
         },
       };
     };
+    const mapCodeChange = (change: Change, through: Splice): Change => {
+      const map = (code: ListCode | null) => {
+        if (!code) return null;
+        if (touchesListCode(code, through))
+          throw new Error('Conflict: retained nested code history');
+        return mapListCode(code, through);
+      };
+      return {
+        ...change,
+        listCode: { before: map(change.listCode!.before), after: map(change.listCode!.after) },
+      };
+    };
     let remote = splice;
     for (let i = this.cursor - 1; i >= 0; i--) {
       const event = this.events[i],
@@ -2624,6 +2733,10 @@ export class SourceJournal {
           if (remote.from <= at && remote.to > at)
             throw new Error('Conflict: retained table structure history');
           pages[n] = JSON.stringify({ ...c, tableState: this.mapTableKey(c.tableState, remote) });
+          continue;
+        }
+        if (c.listCode) {
+          pages[n] = JSON.stringify(mapCodeChange(c, remote));
           continue;
         }
         if (c.paragraphSeam) {
@@ -2657,6 +2770,10 @@ export class SourceJournal {
           if (remote.from <= at && remote.to > at)
             throw new Error('Conflict: retained table structure history');
           pages.push(JSON.stringify({ ...c, tableState: this.mapTableKey(c.tableState, remote) }));
+          continue;
+        }
+        if (c.listCode) {
+          pages.push(JSON.stringify(mapCodeChange(c, remote)));
           continue;
         }
         if (c.paragraphSeam) {
@@ -2697,6 +2814,9 @@ export class SourceJournal {
       backingSeamScannedBytes: this.backingSeamScannedBytes,
       maxBackingSeamSourceBytes: this.maxBackingSeamSourceBytes,
       backingSeamCount: this.seams.size,
+      maxListCodeWriteBytes: this.maxListCodeWriteBytes,
+      backingListCodeCount: this.listCodes.size,
+      backingListCodeBytes: bytes(JSON.stringify([...this.listCodes.values()])),
       backingParagraphSeamCount: this.paragraphSeams.size,
       backingParagraphSeamBytes: bytes(JSON.stringify([...this.paragraphSeams.values()])),
       backingTableIndexBytes: [...this.tableIndexes.values()].reduce(

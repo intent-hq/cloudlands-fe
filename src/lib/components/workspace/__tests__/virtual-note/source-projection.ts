@@ -1,3 +1,4 @@
+import type { ListCode } from './list-code';
 import { mapParagraphSeam, touchesParagraphSeam, type ParagraphSeam } from './paragraph-seam';
 import { Lexer, type Token as MarkdownToken } from 'marked';
 import type { JSONContent } from '@tiptap/core';
@@ -27,6 +28,7 @@ export type InlineContext = {
   after: Mark[];
   fences?: Fence[];
   lists?: ListItem[];
+  listCodes?: ListCode[];
   seams?: ListSeam[];
   paragraphSeams?: ParagraphSeam[];
   documentEnd?: boolean;

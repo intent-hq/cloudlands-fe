@@ -2038,6 +2038,14 @@ export class DocumentSession {
                     ];
                 },
               );
+              if (listProjection)
+                this.service.setListCodes(
+                  oldStart,
+                  this.windowEnd,
+                  listProjection.codes,
+                  this.service.revision,
+                  history,
+                );
               for (const seam of this.projection!.addedParagraphSeams)
                 this.service.setParagraphSeam(seam, this.service.revision, history);
               if (listSeams)
@@ -2368,6 +2376,7 @@ export class DocumentSession {
       maxSeamAdmissionBytes: this.maxSeamAdmissionBytes,
       maxResidentAndInFlightSeamBytes: this.maxResidentAndInFlightSeamBytes,
       seamMetadataBytes: bytes(JSON.stringify(this.projection?.context?.seams ?? [])),
+      nestedCodeMetadataBytes: bytes(JSON.stringify(this.projection?.context?.listCodes ?? [])),
       listMetadataBytes: bytes(JSON.stringify(this.projection?.context?.lists ?? [])),
       syntheticListParents: this.projection?.list?.synthetic.length ?? 0,
       listProjectionPayloadBytes: bytes(
@@ -2377,6 +2386,8 @@ export class DocumentSession {
           boundaries: [...(this.projection?.list?.boundaries ?? [])],
           tokens: this.projection?.list?.tokens,
           indentation: this.projection?.list?.indentation,
+          nestedCode: this.projection?.list?.codeParts,
+          nestedCodeAdmission: this.projection?.list?.codes,
           parts: [
             ...(this.projection?.list?.entries.map((e) => e.part) ?? []),
             ...(this.projection?.list?.prose.map((e) => e.part) ?? []),

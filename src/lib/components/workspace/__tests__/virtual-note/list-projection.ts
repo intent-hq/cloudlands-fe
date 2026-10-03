@@ -1,3 +1,4 @@
+import type { ListCode } from './list-code';
 import type { JSONContent } from '@tiptap/core';
 import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
 import { Mapping, ReplaceStep, type Step } from '@tiptap/pm/transform';
@@ -31,6 +32,14 @@ const size = (node: JSONContent): number =>
 /** Structural ancestors contain no invented text. Only loaded source tokens receive caret provenance. */
 export class ListProjection {
   readonly seams: ListSeam[] = [];
+  readonly codes: ListCode[] = [];
+  readonly codeParts: Array<{
+    node: JSONContent;
+    code: ListCode;
+    from: number;
+    to: number;
+    pm: number;
+  }> = [];
   readonly fences: Fence[] = [];
   readonly indentation: Array<{ from: number; after: number; delta: number }> = [];
   readonly content: JSONContent = { type: 'doc', content: [] };
@@ -153,8 +162,10 @@ export class ListProjection {
         parent.content!.push(list);
         lists.set(item.parent, list);
       }
+      const codes = (context.listCodes ?? []).filter((code) => code.item === item.from);
+      const paragraphEnd = Math.min(item.end, codes[0]?.from ?? item.end);
       const from = Math.max(start, item.body),
-        to = Math.min(end, item.end);
+        to = Math.min(end, paragraphEnd);
       const part =
         to >= from
           ? new SourceProjection(source.slice(from - start, to - start), from, {
@@ -180,12 +191,46 @@ export class ListProjection {
           : {}),
         content: [paragraph],
       };
+      for (const code of codes) {
+        const from = Math.max(start, code.bodyFrom),
+          to = Math.min(end, code.bodyTo);
+        if (to < from) continue;
+        const text = source.slice(from - start, to - start);
+        const child: JSONContent = {
+          type: 'codeBlock',
+          attrs: { language: code.language },
+          content: text ? [{ type: 'text', text }] : [],
+        };
+        node.content!.push(child);
+        this.codeParts.push({ node: child, code, from, to, pm: 0 });
+      }
       list.content!.push(node);
       parents.set(item.from, node);
       this.entries.push({ item, node, paragraph, part, pm: 0, paragraphPM: 0 });
     }
     if (cursor < end) addProse(cursor, end);
     const visit = (node: JSONContent, pm: number) => {
+      const code = this.codeParts.find((part) => part.node === node);
+      if (code) {
+        code.pm = pm;
+        this.boundaries.set(pm, Math.max(start, code.code.from));
+        this.boundaries.set(pm + size(node), Math.min(end, code.code.to));
+        for (let i = 0; i <= code.to - code.from; i++) {
+          this.positions.set(pm + 1 + i, code.from + i);
+          this.ends.set(pm + 1 + i, code.from + i);
+          if (i < code.to - code.from) {
+            const char = source[code.from + i - start];
+            this.tokens.push({
+              pm: pm + 1 + i,
+              from: code.from + i,
+              to: code.from + i + 1,
+              text: char,
+              raw: char,
+              marks: [],
+            });
+          }
+        }
+      }
       const prose = this.prose.find((p) => p.node === node);
       if (prose) {
         prose.pm = pm;
@@ -298,6 +343,7 @@ export class ListProjection {
   ) {
     this.seams.length = 0;
     this.fences.length = 0;
+    this.codes.length = 0;
     const survivors = new Map<number, SourceProjection['tokens'][number]>();
     for (const t of this.tokens) {
       const a = mapping.mapResult(t.pm, 1),
@@ -431,6 +477,8 @@ export class ListProjection {
           prefix = canonical;
         else if (node.type.name === 'taskList')
           prefix = prefix!.replace(/\[[ xX/]\]/, `[${status}]`);
+        const itemFrom =
+          old && old.item.from < this.start ? old.item.from : this.start + output.length;
         item.forEach((child, offset, childIndex) => {
           const at = pos + 1 + offset;
           if (child.type.name === 'paragraph') {
@@ -446,6 +494,28 @@ export class ListProjection {
             if (partial && prefix !== origin.item.prefix)
               external.push({ from: origin.item.from, to: origin.item.body, insert: prefix! });
             output += (partial ? '' : prefix) + text(child, at) + (tail ? '' : '\n');
+          } else if (child.type.name === 'codeBlock') {
+            const prior = this.codeParts.find((part) => mapping.map(part.pm, -1) === at);
+            const partialStart = prior && prior.from > prior.code.bodyFrom;
+            const partialEnd = prior && prior.to < prior.code.bodyTo;
+            // Match existing native list save: raw code text between one pair of
+            // backticks. Live block type/language are revisioned session metadata.
+            if (output.endsWith('\n')) output = output.slice(0, -1);
+            const from = partialStart ? prior.code.from : this.start + output.length;
+            if (!partialStart) output += '`';
+            output += child.textContent;
+            const bodyTo = partialEnd
+              ? prior.code.bodyTo + child.textContent.length - (prior.to - prior.from)
+              : this.start + output.length;
+            if (!partialEnd) output += '`\n';
+            this.codes.push({
+              item: itemFrom,
+              from,
+              bodyFrom: from + 1,
+              bodyTo,
+              to: bodyTo + 1,
+              language: child.attrs.language ?? null,
+            });
           } else {
             if (childIndex > 0 && child.type.name === item.child(childIndex - 1).type.name)
               boundary(child, at);
@@ -457,13 +527,21 @@ export class ListProjection {
     doc.forEach((node, pm, index) => {
       if (node.type.name === 'paragraph') {
         if (index === doc.childCount - 1 && !node.content.size && this.context.documentEnd) return;
-        const old = this.prose.find((p) => mapping.map(p.pm, -1) === pm);
-        output +=
-          (old?.prefix ?? (output.endsWith('\n\n') ? '' : '\n')) +
-          text(node, pm) +
-          (old?.suffix ?? '\n\n');
+        const old = this.prose.find(
+          (p) => p.node.type === node.type.name && mapping.map(p.pm, -1) === pm,
+        );
+        let prefix = old?.prefix ?? (output.endsWith('\n\n') ? '' : '\n');
+        if (
+          index > 0 &&
+          ['bulletList', 'orderedList', 'taskList'].includes(doc.child(index - 1).type.name) &&
+          !(output + prefix).endsWith('\n\n')
+        )
+          prefix = '\n' + prefix;
+        output += prefix + text(node, pm) + (old?.suffix ?? '\n\n');
       } else if (node.type.name === 'codeBlock') {
-        const old = this.prose.find((p) => mapping.map(p.pm, -1) === pm);
+        const old = this.prose.find(
+          (p) => p.node.type === node.type.name && mapping.map(p.pm, -1) === pm,
+        );
         if (!old) throw new Error('Missing mixed code source provenance');
         const before = doc.type.schema.nodeFromJSON(old.part.content);
         const replacement = new ReplaceStep(
