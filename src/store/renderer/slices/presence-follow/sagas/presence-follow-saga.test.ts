@@ -147,9 +147,16 @@ beforeEach(() => {
       },
     );
   wire.hydrate.mockReset().mockResolvedValue(undefined);
-  wire.goto.mockReset().mockImplementation(async (path: string) => {
-    store.dispatch(openWorkspaceTab(decodeURIComponent(path.split('/').at(-1)!)));
-  });
+  wire.goto
+    .mockReset()
+    .mockImplementation(async (path: string, options: { state: App.PageState }) => {
+      store.dispatch(
+        openWorkspaceTab(
+          decodeURIComponent(path.split('/').at(-1)!),
+          options.state.presenceFollowRequestId,
+        ),
+      );
+    });
   store.dispatch(
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
@@ -206,7 +213,9 @@ describe('following authorized presence', () => {
       expect(store.state.tabState.openTabs.closed).toBeUndefined();
       click();
       await settle();
-      expect(wire.goto).toHaveBeenCalledWith('/workspace/closed');
+      expect(wire.goto).toHaveBeenCalledWith('/workspace/closed', {
+        state: { presenceFollowRequestId: 'click-1' },
+      });
       expect(views()).toEqual([
         openWorkspaceNote('closed', 'spec', {
           sourcePanelId: undefined,
@@ -248,7 +257,9 @@ describe('following authorized presence', () => {
     await settle();
     click();
     await settle();
-    expect(wire.goto).toHaveBeenCalledWith('/workspace/closed');
+    expect(wire.goto).toHaveBeenCalledWith('/workspace/closed', {
+      state: { presenceFollowRequestId: 'click-1' },
+    });
     expect(views()).toEqual([]);
     expect(wire.hydrate).not.toHaveBeenCalled();
   });
@@ -273,6 +284,52 @@ describe('following authorized presence', () => {
         .map(([, p]) => p.principalId),
     ).toEqual(['one', 'two', 'three']);
   });
+  it('rejects a route projection owned by a different request', async () => {
+    let finish!: () => void;
+    wire.goto.mockImplementation(async () => {
+      store.dispatch(openWorkspaceTab('closed', 'another-request'));
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    start();
+    await settle();
+    click();
+    await settle();
+    expect(store.state.presenceFollow.navigation).toBeNull();
+    finish();
+    await settle();
+    expect(views()).toEqual([]);
+  });
+  it.each(['before', 'after'] as const)(
+    'retires a manual destination selection %s the owned route projection',
+    async (when) => {
+      let finish!: () => void;
+      wire.goto.mockImplementation(async (_path: string, options: { state: App.PageState }) => {
+        if (when === 'after')
+          store.dispatch(openWorkspaceTab('closed', options.state.presenceFollowRequestId));
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      });
+      start();
+      await settle();
+      click();
+      await settle();
+      store.dispatch(openWorkspaceTab('closed'));
+      await settle();
+      expect(store.state.presenceFollow.navigation).toBeNull();
+      // Late/repeated projections from this history entry cannot revive the click.
+      store.dispatch(openWorkspaceTab('closed', 'click-1'));
+      store.dispatch(openWorkspaceTab('closed', 'click-1'));
+      finish();
+      await settle();
+      expect(store.state.presenceFollow.navigation).toBeNull();
+      expect(views()).toEqual([]);
+      expect(wire.goto).toHaveBeenCalledTimes(1);
+      expect(store.state.tabState.currentTabId).toBe('closed');
+    },
+  );
   it.each(['initial freshness', 'layout', 'route', 'final freshness'] as const)(
     'yields to a manual workspace choice during %s',
     async (stage) => {
@@ -285,8 +342,8 @@ describe('following authorized presence', () => {
             }),
         );
       } else if (stage === 'route') {
-        wire.goto.mockImplementation(async () => {
-          store.dispatch(openWorkspaceTab('closed'));
+        wire.goto.mockImplementation(async (_path: string, options: { state: App.PageState }) => {
+          store.dispatch(openWorkspaceTab('closed', options.state.presenceFollowRequestId));
           await new Promise<void>((resolve) => {
             finish = resolve;
           });
@@ -353,8 +410,8 @@ describe('following authorized presence', () => {
             }),
         );
       } else if (stage === 'route') {
-        wire.goto.mockImplementation(async () => {
-          store.dispatch(openWorkspaceTab('closed'));
+        wire.goto.mockImplementation(async (_path: string, options: { state: App.PageState }) => {
+          store.dispatch(openWorkspaceTab('closed', options.state.presenceFollowRequestId));
           await new Promise<void>((resolve) => {
             finish = resolve;
           });

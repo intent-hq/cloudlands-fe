@@ -130,7 +130,8 @@ function* followPerson(
           routing &&
           event.type === openWorkspaceTab.type &&
           Array.isArray(event.payload) &&
-          event.payload[0] === expected.target!.workspaceId
+          event.payload[0] === expected.target!.workspaceId &&
+          event.payload[1] === requestId
         );
       }
       return isViewSelection(event, source, expected.target!.workspaceId);
@@ -156,7 +157,9 @@ function* followPerson(
           yield* put(presenceFollowRouteStarted(requestId, target.workspaceId));
           routing = true;
           const navigated = yield* race({
-            navigated: call(goto, `/workspace/${encodeURIComponent(target.workspaceId)}`),
+            navigated: call(goto, `/workspace/${encodeURIComponent(target.workspaceId)}`, {
+              state: { presenceFollowRequestId: requestId },
+            }),
             changed: take(changed),
           });
           routing = false;

@@ -222,7 +222,11 @@ export const saveScrollPosition = createAction<[tabId: string, scrollTop: number
 export const loadScrollPositions = createAction<[positions: Record<string, number>]>(
   'tabState/loadScrollPositions',
 );
-export const openWorkspaceTab = createAction<[workspaceId: string]>('tabState/openWorkspaceTab');
+/** Route renderers may carry the originating navigation request ID. User
+ * selections leave it absent, even when reselecting the same workspace. */
+export const openWorkspaceTab = createAction<[workspaceId: string, routeRequestId?: string]>(
+  'tabState/openWorkspaceTab',
+);
 export const closeWorkspaceTab = createAction(
   'tabState/closeWorkspaceTab',
   (workspaceId: string, timestamp?: number): [workspaceId: string, timestamp: number] => [
