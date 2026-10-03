@@ -22,6 +22,7 @@ import { createAdmittedLegacyPrincipal } from '../../test/fixtures/admitted-lega
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import {
   bulkUpsertSessions,
+  updateSession as updateAgentSessionFields,
   agentSessionRetryLastMessageRequested,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
@@ -459,4 +460,62 @@ describe('daemon-owned and legacy retries', () => {
       expect(wire.warning).not.toHaveBeenCalled();
     },
   );
+});
+
+const queues = () => wire.request.mock.calls.filter(([method]) => method === 'agent.queueMessage');
+describe('live queue transport uncertainty', () => {
+  async function loseQueuedAcknowledgement() {
+    startSending();
+    store.dispatch(updateAgentSessionFields(agent, { isResponding: true }));
+    const serverRows: any[] = [];
+    wire.request.mockImplementation(async (method, params) => {
+      if (method === 'agent.queueMessage') {
+        const confirmed = {
+          id: params.messageId,
+          content: params.content,
+          position: serverRows.length,
+          queuedAt: '2026-10-03T00:00:00Z',
+          submissionIds: [params.messageId],
+          author: {
+            principalId: store.state.pendingSubmissions.byAgentId[agent].scope.principalId,
+          },
+        };
+        serverRows.push(confirmed);
+        if (serverRows.length === 1) throw new Error('connection lost after enqueue');
+        return { success: true, turnId: 'retry-turn', queuedMessage: confirmed };
+      }
+      if (method === 'agent.getQueue') return { queue: serverRows };
+      return baseReply(method, params);
+    });
+    submitChatMessage(store, agent, {
+      wsId: ws,
+      text: 'queue retry',
+      fileBlocks: [{ type: 'file', attachmentId: 'queue-file', fileName: 'queue.txt' }],
+    });
+    await vi.waitFor(() => expect(store.state.chatState.byAgentId[agent]?.error).toBeTruthy());
+    expect(queues()).toHaveLength(1);
+    return { attempt: store.state.chatState.byAgentId[agent].lastAttemptedMessage!, serverRows };
+  }
+  it('retains an uncertain contribution after the actual live queue client loses an acknowledgement', async () => {
+    const { attempt, serverRows } = await loseQueuedAcknowledgement();
+    expect(serverRows).toHaveLength(1);
+    expect.soft(attempt.submission!.outcome).toBe('uncertain');
+    expect.soft(display().queue).toHaveLength(1);
+    expect.soft(display().queue[0]?.status).toBe('uncertain');
+  });
+  it('reconciles a real lost queue acknowledgement before retry can send duplicate work', async () => {
+    const { attempt, serverRows } = await loseQueuedAcknowledgement();
+    store.dispatch(setChatDraft(ws, agent, 'keep queue-time draft'));
+    await requestChatMessageRetry(agent, ws);
+    await vi.waitFor(() =>
+      expect(wire.request.mock.calls.some(([method]) => method === 'agent.getQueue')).toBe(true),
+    );
+    expect(serverRows).toHaveLength(1);
+    expect([...queues(), ...sends()]).toHaveLength(1);
+    expect(wire.warning).not.toHaveBeenCalled();
+    expect(selectChatDraft.select(store.state, ws, agent)).toBe('keep queue-time draft');
+    expect(store.state.agentSessions.byAgentId[agent].messages.map((m) => m.id)).toEqual([
+      'previous',
+    ]);
+  });
 });

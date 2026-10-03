@@ -30,6 +30,47 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     resetMockBackend();
   });
 
+  it.each([
+    new Error('connection lost after enqueue'),
+    new BackendError(buildErrorPayload(-32603, 'unclassified server failure')),
+  ])('keeps correlated queue ambiguity throwable for reconciliation: %s', async (failure) => {
+    backend.onRequest('agent.queueMessage', () => {
+      throw failure;
+    });
+    await expect(
+      new LiveAgentsClient().queue('agent-1', 'later', { messageId: 'submission' }),
+    ).rejects.toBe(failure);
+  });
+
+  it.each([-32600, -32601, -32602, -32003])(
+    'retains proven queue rejection %s for correlated callers',
+    async (code) => {
+      backend.onRequest('agent.queueMessage', () => {
+        throw new BackendError(buildErrorPayload(code, 'request rejected'));
+      });
+      expect(
+        await new LiveAgentsClient().queue('agent-1', 'later', { messageId: 'submission' }),
+      ).toEqual({ success: false, error: 'request rejected' });
+    },
+  );
+
+  it('honors an explicit queue rejection response', async () => {
+    backend.onRequest('agent.queueMessage', () => ({ success: false, error: 'queue rejected' }));
+    expect(
+      await new LiveAgentsClient().queue('agent-1', 'later', { messageId: 'submission' }),
+    ).toEqual({ success: false, error: 'queue rejected' });
+  });
+
+  it('retains legacy queue transport failure results without a correlated ID', async () => {
+    backend.onRequest('agent.queueMessage', () => {
+      throw new Error('legacy transport failure');
+    });
+    expect(await new LiveAgentsClient().queue('agent-1', 'later')).toEqual({
+      success: false,
+      error: 'legacy transport failure',
+    });
+  });
+
   it('queue forwards canonical submission identity and retains recovery correlation', async () => {
     const recoverySources = [
       {
