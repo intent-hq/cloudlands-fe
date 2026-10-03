@@ -7106,5 +7106,16 @@
   "collaboration_instanceUsers_loading_label": "正在檢查狀態…",
   "collaboration_instanceUsers_unavailable_label": "狀態無法取得",
   "inviteProgress_admission_enableButton": "啟用 Multiplayer",
-  "inviteProgress_admission_enable_error": "無法啟用 Multiplayer 或確認就緒狀態。請選擇「啟用 Multiplayer」重試。"
+  "inviteProgress_admission_enable_error": "無法啟用 Multiplayer 或確認就緒狀態。請選擇「啟用 Multiplayer」重試。",
+  "collaboration_lists_pending_label": "待處理的邀請：{count}",
+  "collaboration_lists_manageSharing_label": "管理共用",
+  "collaboration_lists_sharingUnknown_label": "無法取得邀請狀態。",
+  "collaboration_lists_joinedWorkspaces_title": "已加入的工作區",
+  "collaboration_lists_joinedUnavailable_label": "無法取得已加入的連線。",
+  "collaboration_lists_joinedInstances_title": "已加入的執行個體",
+  "collaboration_lists_leaveInstance_label": "退出執行個體",
+  "collaboration_lists_noJoinedInstances_title": "沒有已加入的執行個體",
+  "collaboration_lists_noJoinedInstances_description": "你加入的執行個體將顯示在這裡。",
+  "collaboration_lists_sharingLoading_label": "正在載入工作區共用…",
+  "collaboration_lists_sharingLoad_error": "無法載入工作區共用。"
 }
