@@ -7,7 +7,7 @@ export interface PresenceFollowState {
   context: string | null;
   workspaceId: string | null;
   frames: Record<string, FocusFrame>;
-  navigation: { requestId: string; principalId: string } | null;
+  navigation: { requestId: string; principalId: string; routeWorkspaceId: string | null } | null;
 }
 const initialState: PresenceFollowState = {
   scope: null,
@@ -33,6 +33,9 @@ export const followPresencePersonRequested = createAction<
     adjacent?: boolean,
   ]
 >('presenceFollow/personRequested');
+export const presenceFollowRouteStarted = createAction<[requestId: string, workspaceId: string]>(
+  'presenceFollow/routeStarted',
+);
 export const presenceFollowNavigationFinished = createAction<[requestId: string]>(
   'presenceFollow/navigationFinished',
 );
@@ -64,10 +67,18 @@ presenceFollowReducer.with(
       frame?.target &&
       frame.generation === generation &&
       frame.seq === seq
-      ? { ...state, navigation: { requestId, principalId } }
+      ? { ...state, navigation: { requestId, principalId, routeWorkspaceId: null } }
       : state;
   },
 );
 presenceFollowReducer.with(presenceFollowNavigationFinished, (state, { payload: [requestId] }) =>
   state.navigation?.requestId === requestId ? { ...state, navigation: null } : state,
+);
+
+presenceFollowReducer.with(
+  presenceFollowRouteStarted,
+  (state, { payload: [requestId, workspaceId] }) =>
+    state.navigation?.requestId === requestId
+      ? { ...state, navigation: { ...state.navigation, routeWorkspaceId: workspaceId } }
+      : state,
 );

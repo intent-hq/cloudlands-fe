@@ -12,6 +12,8 @@ import {
 } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { goto } from '$app/navigation';
+import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { isViewSelection, workspaceSelectionTypes } from './presence-follow-navigation';
 import { isHudWindowRenderer } from '$lib/utils/navigation.client';
 import {
   createPresenceFocusChannel,
@@ -33,6 +35,7 @@ import {
   followPresencePersonRequested,
   presenceFollowFrameReceived,
   presenceFollowNavigationFinished,
+  presenceFollowRouteStarted,
   presenceFollowScopeChanged,
 } from '../presence-follow-slice';
 
@@ -115,46 +118,74 @@ function* followPerson(
       Array.isArray(event.payload) &&
       event.payload[0] === scope &&
       event.payload[1] === principalId;
-    const fresh = yield* call(session.refresh);
-    if (!fresh || !sameTarget(expected, fresh) || !current(fresh)) return;
-    let frame = fresh;
-    const target = frame.target;
-    if (!target) return;
-    if (target.agentId || target.noteId) {
-      const loaded = yield* race({
-        loaded: call(hydrateWorkspaceLayout, target.workspaceId),
-        changed: take(changed),
-      });
-      if (!('loaded' in loaded) || !current(frame)) return;
-    }
-    if (store.state.tabState.currentTabId !== target.workspaceId) {
-      const navigated = yield* race({
-        navigated: call(goto, `/workspace/${encodeURIComponent(target.workspaceId)}`),
-        changed: take(changed),
-      });
-      if (!('navigated' in navigated) || !current(frame)) return;
-    }
-    // One final fresh authorization after layout/route awaits; no retry loop.
-    const afterLoad = yield* call(session.refresh);
-    if (!afterLoad || !sameTarget(frame, afterLoad) || !current(afterLoad)) return;
-    frame = afterLoad;
-    if (!current(frame)) return;
-    const panel = target.workspaceId === source ? sourcePanelId : undefined;
-    if (target.agentId)
-      yield* put(
-        openAgentTabRequested(target.workspaceId, {
-          agentId: target.agentId,
-          sourcePanelId: panel,
-          openInAdjacentPanel: adjacent ?? false,
-        }),
-      );
-    else if (target.noteId)
-      yield* put(
-        openWorkspaceNote(target.workspaceId, target.noteId, {
-          sourcePanelId: panel,
-          openInAdjacentPanel: adjacent ?? false,
-        }),
-      );
+    let routing = false;
+    let committing = false;
+    const superseded = (event: { type: string; payload?: unknown }) => {
+      if (committing) return false;
+      if (store.state.presenceFollow.navigation?.requestId !== requestId) return true;
+      if (workspaceSelectionTypes.has(event.type)) {
+        // Only goto's expected route projection may retain the source. A later
+        // selection (including away-and-back or reselecting a view) cancels.
+        return !(
+          routing &&
+          event.type === openWorkspaceTab.type &&
+          Array.isArray(event.payload) &&
+          event.payload[0] === expected.target!.workspaceId
+        );
+      }
+      return isViewSelection(event, source, expected.target!.workspaceId);
+    };
+    // Arm before any request/load/route can synchronously dispatch navigation.
+    // Cancellation is permanent for this click, even if the viewer returns.
+    yield* race({
+      superseded: take(superseded),
+      followed: call(function* (): SagaGenerator<void> {
+        const fresh = yield* call(session.refresh);
+        if (!fresh || !sameTarget(expected, fresh) || !current(fresh)) return;
+        let frame = fresh;
+        const target = frame.target;
+        if (!target) return;
+        if (target.agentId || target.noteId) {
+          const loaded = yield* race({
+            loaded: call(hydrateWorkspaceLayout, target.workspaceId),
+            changed: take(changed),
+          });
+          if (!('loaded' in loaded) || !current(frame)) return;
+        }
+        if (store.state.tabState.currentTabId !== target.workspaceId) {
+          yield* put(presenceFollowRouteStarted(requestId, target.workspaceId));
+          routing = true;
+          const navigated = yield* race({
+            navigated: call(goto, `/workspace/${encodeURIComponent(target.workspaceId)}`),
+            changed: take(changed),
+          });
+          routing = false;
+          if (!('navigated' in navigated) || !current(frame)) return;
+        }
+        // One final fresh authorization after layout/route awaits; no retry loop.
+        const afterLoad = yield* call(session.refresh);
+        if (!afterLoad || !sameTarget(frame, afterLoad) || !current(afterLoad)) return;
+        frame = afterLoad;
+        if (!current(frame)) return;
+        committing = true;
+        const panel = target.workspaceId === source ? sourcePanelId : undefined;
+        if (target.agentId)
+          yield* put(
+            openAgentTabRequested(target.workspaceId, {
+              agentId: target.agentId,
+              sourcePanelId: panel,
+              openInAdjacentPanel: adjacent ?? false,
+            }),
+          );
+        else if (target.noteId)
+          yield* put(
+            openWorkspaceNote(target.workspaceId, target.noteId, {
+              sourcePanelId: panel,
+              openInAdjacentPanel: adjacent ?? false,
+            }),
+          );
+      }),
+    });
   } catch {
     // A failed/revoked read is inert. Presence updates never toast.
   } finally {

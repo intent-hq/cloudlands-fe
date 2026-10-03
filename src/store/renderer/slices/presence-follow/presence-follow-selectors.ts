@@ -13,9 +13,13 @@ export const selectPresenceFollowScope = store.createSelector((state): string | 
   const context = selectPresenceContext.select(state);
   if (!context) return null;
   const follow = state.presenceFollow;
-  // Keep the clicked source alive across our own workspace route transition.
+  // Pin only the source and this request's explicitly started destination route.
+  // A different active workspace immediately retires the source subscription scope.
   const workspaceId =
-    follow?.navigation && follow.context === context
+    follow?.navigation &&
+    follow.context === context &&
+    (state.tabState?.currentTabId === follow.workspaceId ||
+      state.tabState?.currentTabId === follow.navigation.routeWorkspaceId)
       ? follow.workspaceId
       : state.tabState?.currentTabId;
   if (!workspaceId) return null;

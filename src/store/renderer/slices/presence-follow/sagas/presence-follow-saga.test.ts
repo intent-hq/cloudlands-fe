@@ -23,7 +23,16 @@ import {
 import { followPresencePersonRequested } from '../presence-follow-slice';
 import { selectPresenceFollowTargets } from '../presence-follow-selectors';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
-import { openWorkspaceNote } from '../../workspace-navigation/workspace-navigation-slice';
+import {
+  openWorkspaceNote,
+  openWorkspaceFile,
+} from '../../workspace-navigation/workspace-navigation-slice';
+import {
+  setActiveTab,
+  focusPanel,
+  selectNextTab,
+  goBack,
+} from '../../panel-layout/panel-layout-slice';
 import { presenceFollowSaga } from './presence-follow-saga';
 
 const wire = vi.hoisted(() => ({
@@ -264,6 +273,154 @@ describe('following authorized presence', () => {
         .map(([, p]) => p.principalId),
     ).toEqual(['one', 'two', 'three']);
   });
+  it.each(['initial freshness', 'layout', 'route', 'final freshness'] as const)(
+    'yields to a manual workspace choice during %s',
+    async (stage) => {
+      let finish!: () => void;
+      if (stage === 'layout') {
+        wire.hydrate.mockImplementation(
+          () =>
+            new Promise<void>((resolve) => {
+              finish = resolve;
+            }),
+        );
+      } else if (stage === 'route') {
+        wire.goto.mockImplementation(async () => {
+          store.dispatch(openWorkspaceTab('closed'));
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+        });
+      } else {
+        const request = wire.request.getMockImplementation()!;
+        wire.request.mockImplementation(async (...args) => {
+          if (
+            args[0] === 'presence.focus.subscribe' &&
+            serial === (stage === 'initial freshness' ? 1 : 2)
+          )
+            await new Promise<void>((resolve) => {
+              finish = resolve;
+            });
+          return request(...args);
+        });
+      }
+      start();
+      await settle();
+      click();
+      await settle();
+      expect(finish).toBeTypeOf('function');
+      store.dispatch(openWorkspaceTab('manual'));
+      finish();
+      await settle();
+      expect(store.state.tabState.currentTabId).toBe('manual');
+      expect(wire.goto).toHaveBeenCalledTimes(
+        stage === 'layout' || stage === 'initial freshness' ? 0 : 1,
+      );
+      expect(views()).toEqual([]);
+      expect(store.state.presenceFollow.navigation).toBeNull();
+    },
+  );
+  it('does not revive a follow when the viewer leaves and returns during layout loading', async () => {
+    let finish!: () => void;
+    wire.hydrate.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    start();
+    await settle();
+    click();
+    await settle();
+    store.dispatch(openWorkspaceTab('manual'));
+    store.dispatch(openWorkspaceTab('source'));
+    finish();
+    await settle();
+    expect(wire.goto).not.toHaveBeenCalled();
+    expect(views()).toEqual([]);
+    expect(store.state.tabState.currentTabId).toBe('source');
+    expect(store.state.presenceFollow.navigation).toBeNull();
+  });
+  it.each(['initial freshness', 'layout', 'route', 'final freshness'] as const)(
+    'preserves a manual note choice during %s',
+    async (stage) => {
+      let finish!: () => void;
+      if (stage === 'layout') {
+        wire.hydrate.mockImplementation(
+          () =>
+            new Promise<void>((resolve) => {
+              finish = resolve;
+            }),
+        );
+      } else if (stage === 'route') {
+        wire.goto.mockImplementation(async () => {
+          store.dispatch(openWorkspaceTab('closed'));
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+        });
+      } else {
+        const request = wire.request.getMockImplementation()!;
+        wire.request.mockImplementation(async (...args) => {
+          if (
+            args[0] === 'presence.focus.subscribe' &&
+            serial === (stage === 'initial freshness' ? 1 : 2)
+          )
+            await new Promise<void>((resolve) => {
+              finish = resolve;
+            });
+          return request(...args);
+        });
+      }
+      start('guest');
+      await settle();
+      click();
+      await settle();
+      const manual = openWorkspaceNote(
+        stage === 'layout' || stage === 'initial freshness' ? 'source' : 'closed',
+        'manual-note',
+      );
+      store.dispatch(manual);
+      finish();
+      await settle();
+      expect(views()).toEqual([manual]);
+      expect(wire.goto).toHaveBeenCalledTimes(
+        stage === 'layout' || stage === 'initial freshness' ? 0 : 1,
+      );
+      expect(store.state.presenceFollow.navigation).toBeNull();
+    },
+  );
+  it.each([
+    ['workspace reselect', () => openWorkspaceTab('source')],
+    ['agent', () => openAgentTabRequested('source', { agentId: 'manual-agent' })],
+    ['file', () => openWorkspaceFile('source', 'manual.ts')],
+    ['panel tab', () => setActiveTab('source', 'manual-tab')],
+    ['panel focus', () => focusPanel('source', 'manual-panel')],
+    ['next tab', () => selectNextTab('source')],
+    ['history', () => goBack('source')],
+  ] as const)(
+    'retires the pending follow on %s intent even if selection state does not change',
+    async (_name, action) => {
+      let finish!: () => void;
+      wire.hydrate.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      start();
+      await settle();
+      click();
+      await settle();
+      store.dispatch(action());
+      await settle();
+      expect(store.state.presenceFollow.navigation).toBeNull();
+      finish();
+      await settle();
+      expect(wire.goto).not.toHaveBeenCalled();
+      expect(views().filter((a) => a.type === openWorkspaceNote.type)).toEqual([]);
+    },
+  );
   it('aborts when the person moves while the destination layout is loading', async () => {
     let finish!: () => void;
     wire.hydrate.mockImplementation(
