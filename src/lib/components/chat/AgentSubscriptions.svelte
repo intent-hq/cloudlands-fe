@@ -26,7 +26,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import { uniqueAgentIds } from './delegation-ordering';
@@ -639,6 +639,17 @@
     watchedAgentFocusTimers.clear();
     watchedAgentFocusOwner = null;
   }
+
+  onMount(() => {
+    // A later user action supersedes the focus requested when opening a watch.
+    // Capture runs before a new watch's handler schedules its own requests.
+    window.addEventListener('pointerdown', clearWatchedAgentFocusTimers, true);
+    window.addEventListener('keydown', clearWatchedAgentFocusTimers, true);
+    return () => {
+      window.removeEventListener('pointerdown', clearWatchedAgentFocusTimers, true);
+      window.removeEventListener('keydown', clearWatchedAgentFocusTimers, true);
+    };
+  });
 
   function focusWatchedAgentPanel(watchedAgentId: string) {
     clearWatchedAgentFocusTimers();

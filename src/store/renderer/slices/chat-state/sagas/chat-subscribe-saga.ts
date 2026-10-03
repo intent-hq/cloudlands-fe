@@ -201,7 +201,13 @@ interface SubscriptionEntry {
 }
 
 type ChatSubscriptionEvent =
-  | { kind: 'transcript'; agentId: string; token: object; transcript: ChatTranscript }
+  | {
+      kind: 'transcript';
+      agentId: string;
+      token: object;
+      transcript: ChatTranscript;
+      replayed?: true;
+    }
   | { kind: 'phase'; agentId: string; token: object; phase: ChatLiveStreamPhase };
 
 type MaybePromise<T> = T | Promise<T>;
@@ -612,7 +618,9 @@ function* handleSubscriptionEvent(
     // re-apply of the same transcript must not wipe the background
     // older-history pages fetched after it.
     const discardStoreOnly =
-      event.transcript.fromSnapshot === true && event.transcript.resumed === false;
+      !event.replayed &&
+      event.transcript.fromSnapshot === true &&
+      event.transcript.resumed === false;
     yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
@@ -632,21 +640,27 @@ function* handleSubscriptionEvent(
         (message) => typeof message.id === 'string' && message.id.length > 0,
       );
       yield* put(
-        chatTranscriptSnapshotApplied(event.agentId, {
-          truncated: event.transcript.truncated,
-          ...(event.transcript.nextToken !== undefined
-            ? { nextToken: event.transcript.nextToken }
-            : {}),
-          totalMessages: event.transcript.totalMessages,
-          ...(oldest ? { oldestMessageId: oldest.id } : {}),
-          ...(event.transcript.resumed === undefined ? {} : { resumed: event.transcript.resumed }),
-        }),
+        chatTranscriptSnapshotApplied(
+          event.agentId,
+          {
+            truncated: event.transcript.truncated,
+            ...(event.transcript.nextToken !== undefined
+              ? { nextToken: event.transcript.nextToken }
+              : {}),
+            totalMessages: event.transcript.totalMessages,
+            ...(oldest ? { oldestMessageId: oldest.id } : {}),
+            ...(event.transcript.resumed === undefined
+              ? {}
+              : { resumed: event.transcript.resumed }),
+          },
+          event.replayed,
+        ),
       );
       // §7.1 resume fallback: the daemon did not honor the requested
       // `sinceMessageId` (unknown/pruned anchor) and served the standard
       // newest page instead — the retained older history may be stale, so
       // trigger a full rehydration through the chat-read saga.
-      if (event.transcript.resumed === false && wsId) {
+      if (!event.replayed && event.transcript.resumed === false && wsId) {
         yield* put(refreshChatTranscriptRequested(wsId, event.agentId));
       }
     }
@@ -1368,6 +1382,7 @@ function* emitOrCycleSnapshot(
       agentId,
       token: entry.token,
       transcript: entry.lastTranscript,
+      replayed: true,
     });
     return;
   }

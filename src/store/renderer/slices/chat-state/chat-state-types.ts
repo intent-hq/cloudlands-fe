@@ -160,6 +160,8 @@ export interface TranscriptSnapshotMeta {
   oldestMessageId?: string;
   /** §7.1 resume disposition when the registration requested one. */
   resumed?: boolean;
+  /** Local hydration replay; its original discard must not reset the current viewport. */
+  replayed?: true;
   /** Monotonic per-agent counter so waiters can detect a NEW snapshot. */
   seq: number;
 }
@@ -288,6 +290,8 @@ export interface ChatAgentState {
    * oldest side, and continuing backward would skip the pruned rows).
    */
   scrollbackOlderToken: string | null;
+  /** Once paging/seek owns the window, snapshots must not reseed its cursors. */
+  scrollbackWalkStarted: boolean;
   /**
    * Opaque §5.5 forward cursor continuing the gap-refill walk toward the live
    * tail, or null when the next request must re-seek at the history segment's

@@ -74,6 +74,7 @@ export const emptyChatAgentState: ChatAgentState = {
   scrollbackGapBlocked: false,
   fetchingGapFill: false,
   scrollbackOlderToken: null,
+  scrollbackWalkStarted: false,
   scrollbackGapToken: null,
   fetchingHistorySeek: false,
   historySeekUnsupported: false,
@@ -825,10 +826,11 @@ export const transcriptHydrationFailed = createAction<[agentId: string]>(
  * to the store (single-transfer hydration). Dispatched by the chat-subscribe
  * saga with the snapshot's page metadata; the reducer stamps a per-agent
  * monotonic `seq` so waiters can both read the latest snapshot from state and
- * `take` this action for the arrival signal.
+ * `take` this action for the arrival signal. `replayed` marks a local hydration
+ * replay, which must not repeat the original snapshot's scrollback discard.
  */
 export const chatTranscriptSnapshotApplied = createAction<
-  [agentId: string, meta: Omit<TranscriptSnapshotMeta, 'seq'>]
+  [agentId: string, meta: Omit<TranscriptSnapshotMeta, 'seq' | 'replayed'>, replayed?: true]
 >('chatState/transcriptSnapshotApplied');
 
 /** Standing chat.subscribe lifecycle phase reported by the live client. */
@@ -1364,42 +1366,51 @@ chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }
 chatStateReducer.with(transcriptHydrationFailed, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { agentId, transcriptHydration: 'error' }),
 );
-chatStateReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
-  const agent = getAgent(state, agentId);
-  return updateAgent(state, agentId, {
-    agentId,
-    transcriptSnapshot: { ...meta, seq: (agent.transcriptSnapshot?.seq ?? 0) + 1 },
-    // A snapshot from the CURRENT subscription is exactly what the
-    // switch-back reveal gate waits for — reveal the transcript.
-    awaitingSwitchBackSnapshot: false,
-    scrollbackOlderBlocked: false,
-    scrollbackGapBlocked: false,
-    ...(meta.resumed !== true && meta.nextToken !== undefined
-      ? { scrollbackOlderToken: meta.nextToken }
-      : {}),
-    // §7.1 `resumed: false` discard: the retained transcript (history
-    // segment included) is dropped, so the whole scrollback walk resets
-    // ATOMICALLY with the snapshot — stranded fetching flags from a wire
-    // call that died with the socket would otherwise freeze the spacer
-    // reconcile and suppress every walk driver forever. The epoch bump
-    // invalidates workers still awaiting their wire call: a page resolving
-    // after the discard must not recreate a segment or persist a cursor
-    // minted against the discarded transcript. The saga's
-    // `clearHistorySegment` chain still runs (and is idempotent here);
-    // the `historySeekUnsupported` latch is a daemon capability, not walk
-    // state, and survives.
-    ...(meta.resumed === false
-      ? {
-          fetchingOlderHistory: false,
-          fetchingGapFill: false,
-          fetchingHistorySeek: false,
-          scrollbackOlderToken: meta.nextToken ?? null,
-          scrollbackGapToken: null,
-          scrollbackDiscardEpoch: agent.scrollbackDiscardEpoch + 1,
-        }
-      : {}),
-  });
-});
+chatStateReducer.with(
+  chatTranscriptSnapshotApplied,
+  (state, { payload: [agentId, meta, replayed] }) => {
+    const agent = getAgent(state, agentId);
+    return updateAgent(state, agentId, {
+      agentId,
+      transcriptSnapshot: {
+        ...meta,
+        ...(replayed ? { replayed } : {}),
+        seq: (agent.transcriptSnapshot?.seq ?? 0) + 1,
+      },
+      // A snapshot from the CURRENT subscription is exactly what the
+      // switch-back reveal gate waits for — reveal the transcript.
+      awaitingSwitchBackSnapshot: false,
+      // Replaying a locally retained snapshot is only a hydration signal:
+      // its original discard/cursors must not restart an existing walk.
+      ...(!replayed ? { scrollbackOlderBlocked: false, scrollbackGapBlocked: false } : {}),
+      ...(!agent.scrollbackWalkStarted && meta.resumed !== true && meta.nextToken !== undefined
+        ? { scrollbackOlderToken: meta.nextToken }
+        : {}),
+      // §7.1 `resumed: false` discard: the retained transcript (history
+      // segment included) is dropped, so the whole scrollback walk resets
+      // ATOMICALLY with the snapshot — stranded fetching flags from a wire
+      // call that died with the socket would otherwise freeze the spacer
+      // reconcile and suppress every walk driver forever. The epoch bump
+      // invalidates workers still awaiting their wire call: a page resolving
+      // after the discard must not recreate a segment or persist a cursor
+      // minted against the discarded transcript. The saga's
+      // `clearHistorySegment` chain still runs (and is idempotent here);
+      // the `historySeekUnsupported` latch is a daemon capability, not walk
+      // state, and survives.
+      ...(!replayed && meta.resumed === false
+        ? {
+            fetchingOlderHistory: false,
+            fetchingGapFill: false,
+            fetchingHistorySeek: false,
+            scrollbackWalkStarted: false,
+            scrollbackOlderToken: meta.nextToken ?? null,
+            scrollbackGapToken: null,
+            scrollbackDiscardEpoch: agent.scrollbackDiscardEpoch + 1,
+          }
+        : {}),
+    });
+  },
+);
 chatStateReducer.with(
   messageBlockHydrationRequested,
   (state, { payload: [agentId, messageId, blockId] }) => {
@@ -1490,6 +1501,7 @@ chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
 chatStateReducer.with(scrollbackFetchStarted, (state, { payload: [agentId, direction] }) =>
   updateAgent(state, agentId, {
     agentId,
+    scrollbackWalkStarted: true,
     ...(direction === 'older'
       ? { fetchingOlderHistory: true }
       : direction === 'gap'
@@ -1511,6 +1523,7 @@ chatStateReducer.with(
       agentId,
       fetchingOlderHistory: false,
       scrollbackOlderToken: nextToken,
+      scrollbackWalkStarted: true,
       scrollbackOlderBlocked: blocked === true,
       scrollbackGapToken: null,
     }),
@@ -1522,6 +1535,7 @@ chatStateReducer.with(
       agentId,
       fetchingGapFill: false,
       scrollbackGapToken: prevToken,
+      scrollbackWalkStarted: true,
       scrollbackGapBlocked: blocked === true,
       scrollbackOlderToken: null,
     }),
@@ -1533,6 +1547,7 @@ chatStateReducer.with(scrollbackSeekSettled, (state, { payload: [agentId, tokens
     scrollbackOlderBlocked: false,
     scrollbackGapBlocked: false,
     scrollbackOlderToken: tokens.nextToken,
+    scrollbackWalkStarted: true,
     scrollbackGapToken: tokens.prevToken,
     ...(unsupported ? { historySeekUnsupported: true } : {}),
   }),
@@ -1544,6 +1559,7 @@ chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] 
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
   if (
+    !agent.scrollbackWalkStarted &&
     !agent.scrollbackOlderBlocked &&
     !agent.scrollbackGapBlocked &&
     !agent.fetchingOlderHistory &&
@@ -1555,6 +1571,7 @@ chatStateReducer.with(scrollbackContinuationReset, (state, { payload: [agentId] 
     return state;
   }
   return updateAgent(state, agentId, {
+    scrollbackWalkStarted: false,
     scrollbackOlderBlocked: false,
     scrollbackGapBlocked: false,
     fetchingOlderHistory: false,

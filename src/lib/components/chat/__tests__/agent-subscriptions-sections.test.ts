@@ -934,6 +934,42 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
   });
 
   it.each([
+    ['keydown', 0],
+    ['pointerdown', 0],
+    ['keydown', 150],
+    ['pointerdown', 150],
+  ] as const)('lets a later %s supersede watched-agent focus after %dms', async (type, elapsed) => {
+    const wsId = 'ws-agent-panel-user-focus';
+    seedSession('agent-target', '2026-01-03T00:00:00.000Z', 'responding', wsId);
+    await renderWithSnapshot(
+      wsId,
+      snapshot([oneShotSubscription('watch-target', wsId, ['agent-target'])]),
+    );
+    seedWorkspace(wsId);
+    seedPanelLayout(wsId, { parent: { id: 'parent', tabs: [], activeTabId: null } }, 'parent');
+    await expandWaitingAgents();
+    const focusEvents: CustomEvent[] = [];
+    const onFocus = (event: Event) => focusEvents.push(event as CustomEvent);
+    window.addEventListener('panel:focus-content', onFocus);
+    vi.useFakeTimers();
+    try {
+      await fireEvent.click(within(agentRow('agent-target')).getAllByRole('button')[0]);
+      await vi.advanceTimersByTimeAsync(elapsed);
+      const delivered = focusEvents.length;
+      expect(delivered).toBe(elapsed === 0 ? 0 : 1);
+      // Opening Find or choosing another control is newer user intent. Neither
+      // the first pending focus nor the second retry may take that focus back.
+      if (type === 'keydown') await fireEvent.keyDown(window, { key: 'f', ctrlKey: true });
+      else await fireEvent.pointerDown(window);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(focusEvents).toHaveLength(delivered);
+    } finally {
+      vi.useRealTimers();
+      window.removeEventListener('panel:focus-content', onFocus);
+    }
+  });
+
+  it.each([
     ['input', 0],
     ['textarea', 0],
     ['select', 0],

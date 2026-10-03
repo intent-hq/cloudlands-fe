@@ -141,7 +141,7 @@ describe('TipTapEditor deferred focus ownership', () => {
     },
   );
 
-  it.each(['input', 'textarea', 'contenteditable'] as const)(
+  it.each(['input', 'textarea', 'select', 'contenteditable'] as const)(
     'does not steal %s focus acquired after the composer focus request',
     async (kind) => {
       const view = render(TipTapEditor, { value: 'draft' });
@@ -166,6 +166,36 @@ describe('TipTapEditor deferred focus ownership', () => {
       } finally {
         raf.mockRestore();
         outside.remove();
+      }
+    },
+  );
+
+  it.each(['locked', 'unmounted'] as const)(
+    'discards requested focus when the editor becomes %s before the callback',
+    async (state) => {
+      const view = render(TipTapEditor, { value: 'draft' });
+      const editor = await waitFor(() => {
+        const element = view.container.querySelector('.ProseMirror') as HTMLElement | null;
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      const frames: FrameRequestCallback[] = [];
+      const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      const nativeFocus = vi.spyOn(editor, 'focus');
+      try {
+        view.component.focus();
+        expect(frames.length).toBeGreaterThan(0);
+        if (state === 'locked') await view.rerender({ inputLocked: true });
+        else view.unmount();
+        for (const callback of frames.splice(0)) callback(performance.now());
+        expect(nativeFocus).not.toHaveBeenCalled();
+        expect(document.activeElement).not.toBe(editor);
+      } finally {
+        nativeFocus.mockRestore();
+        raf.mockRestore();
       }
     },
   );
