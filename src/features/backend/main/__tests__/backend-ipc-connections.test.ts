@@ -83,6 +83,7 @@ vi.mock('../json-rpc-client', () => {
     dispose(): void {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
+    readHelloSnapshot = vi.fn(async (): Promise<unknown> => ({}));
     request = vi.fn(async (method: string, params?: unknown, options?: { timeoutMs?: number }) => {
       rpc.calls.push(method);
       rpc.payloads.push([method, params]);
@@ -4444,6 +4445,36 @@ describe('per-window backend IPC routing', () => {
       expect.objectContaining({ activeId: 'local', windowBackendId: 'remote-1' }),
     );
     expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('reads hello metadata from the sender backend without renegotiating either connection', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const local = { clientId: 'local-client', server: { capabilities: { desktopControl: 1 } } };
+    const remote = { clientId: 'remote-client', server: { capabilities: {} } };
+    vi.mocked(localClient.readHelloSnapshot).mockResolvedValue(local);
+    vi.mocked(remoteClient.readHelloSnapshot).mockResolvedValue(remote);
+    vi.mocked(localClient.request).mockClear();
+    vi.mocked(remoteClient.request).mockClear();
+    const request = findHandler('backend:request')!;
+    await expect(
+      request({ sender: localSender }, { method: 'client.hello', params: {} }),
+    ).resolves.toEqual({ ok: true, result: local });
+    await expect(
+      request({ sender: remoteSender }, { method: 'client.hello', params: {} }),
+    ).resolves.toEqual({ ok: true, result: remote });
+    await expect(
+      request({ sender: remoteSender }, { method: 'client.hello', localMachine: true }),
+    ).resolves.toEqual({ ok: true, result: local });
+    vi.mocked(remoteClient.readHelloSnapshot).mockRejectedValue(new Error('Handshake unavailable'));
+    await expect(
+      request({ sender: remoteSender }, { method: 'client.hello', params: {} }),
+    ).resolves.toMatchObject({ ok: false });
+    expect(localClient.request).not.toHaveBeenCalled();
+    expect(remoteClient.request).not.toHaveBeenCalled();
   });
 
   it('routes requests, subscriptions, unsubscriptions, and status to the sender client', async () => {
