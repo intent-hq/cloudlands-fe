@@ -7116,5 +7116,6 @@
   "chat_scriptMonitor_expired_description": "Surveillance expirée ; le script continue",
   "chat_scriptMonitor_matched_description": "Ligne correspondante ; surveillance terminée",
   "chat_scriptMonitor_counted_description": "Seuil de lignes atteint ; surveillance terminée",
-  "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)"
+  "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)",
+  "chat_queuedMessages_sendAllUnsupported_error": "L’envoi groupé des messages en attente nécessite un backend plus récent. Utilisez les boutons Envoyer maintenant de chaque message."
 }

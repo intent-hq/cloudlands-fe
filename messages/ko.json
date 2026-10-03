@@ -7116,5 +7116,6 @@
   "chat_scriptMonitor_expired_description": "모니터링 만료, 스크립트 계속 실행",
   "chat_scriptMonitor_matched_description": "줄 일치, 모니터링 종료",
   "chat_scriptMonitor_counted_description": "줄 수 기준 도달, 모니터링 종료",
-  "chat_scriptMonitor_untrusted_description": "일치하는 줄 (신뢰할 수 없는 스크립트 출력)"
+  "chat_scriptMonitor_untrusted_description": "일치하는 줄 (신뢰할 수 없는 스크립트 출력)",
+  "chat_queuedMessages_sendAllUnsupported_error": "대기 중인 메시지를 함께 보내려면 더 최신 백엔드가 필요합니다. 각 메시지의 지금 보내기 버튼을 사용하세요."
 }

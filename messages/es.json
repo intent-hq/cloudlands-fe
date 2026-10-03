@@ -7116,5 +7116,6 @@
   "chat_scriptMonitor_expired_description": "Supervisión caducada; el script sigue ejecutándose",
   "chat_scriptMonitor_matched_description": "Línea coincidente; supervisión terminada",
   "chat_scriptMonitor_counted_description": "Umbral de líneas alcanzado; supervisión terminada",
-  "chat_scriptMonitor_untrusted_description": "Línea coincidente (salida de script no confiable)"
+  "chat_scriptMonitor_untrusted_description": "Línea coincidente (salida de script no confiable)",
+  "chat_queuedMessages_sendAllUnsupported_error": "Enviar juntos los mensajes en cola requiere un backend más reciente. Usa los botones individuales Enviar ahora."
 }

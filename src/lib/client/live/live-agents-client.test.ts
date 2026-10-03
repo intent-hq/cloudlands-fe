@@ -472,6 +472,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     { queued: true },
     { queued: true, quarantined: true },
   ])('sends one snapshot batch and preserves its outcome: %j', async (outcome) => {
+    backend.onRequest('client.hello', () => ({ server: { protocolVersion: '13.1' } }));
     const response = { success: true, messageIds: ['first', 'second'], ...outcome };
     backend.onRequest('agent.sendQueuedMessagesNow', () => response);
     const result = await new LiveAgentsClient().sendQueuedMessagesNow({
@@ -480,6 +481,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       messageIds: ['first', 'second'],
     });
     expect(backend.requests).toEqual([
+      { method: 'client.hello', params: {} },
       {
         method: 'agent.sendQueuedMessagesNow',
         params: { agentId: 'agent-1', workspaceId: 'ws-1', messageIds: ['first', 'second'] },
@@ -489,6 +491,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
   });
 
   it('preserves batch rejection without falling back to individual sends', async () => {
+    backend.onRequest('client.hello', () => ({ server: { protocolVersion: '13.1' } }));
     backend.onRequest('agent.sendQueuedMessagesNow', () => {
       throw new BackendError(
         buildErrorPayload('INVALID_PARAMS', 'message is held', { rpcCode: -32602 }),
@@ -500,7 +503,45 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       messageIds: ['held'],
     });
     expect(result).toEqual({ success: false, error: expect.stringContaining('message is held') });
-    expect(backend.requests).toHaveLength(1);
+    expect(backend.requests.map((request) => request.method)).toEqual([
+      'client.hello',
+      'agent.sendQueuedMessagesNow',
+    ]);
+  });
+
+  // protocol-version-ok: batch delivery was added in protocol 13.1; 407 uses 11.3.
+  it.each(['11.3', '13.0', undefined, '13.1-preview'])(
+    'gates batch delivery on older or unconfirmed protocol %s while keeping individual delivery',
+    async (protocolVersion) => {
+      backend.onRequest('client.hello', () => ({ server: { protocolVersion } }));
+      backend.onRequest('agent.sendQueuedMessageNow', () => ({ success: true, queued: false }));
+      const client = new LiveAgentsClient();
+      const result = await client.sendQueuedMessagesNow({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        messageIds: ['first', 'second'],
+      });
+      expect(result).toEqual({ success: false, error: expect.stringContaining('individual') });
+      expect(backend.requests.map((request) => request.method)).toEqual(['client.hello']);
+      expect(
+        await client.sendQueuedNow({ agentId: 'agent-1', workspaceId: 'ws-1', messageId: 'first' }),
+      ).toEqual({ success: true, queued: false });
+      expect(backend.requests.at(-1)?.method).toBe('agent.sendQueuedMessageNow');
+    },
+  );
+
+  it('does not attempt a batch when handshake metadata is unavailable', async () => {
+    backend.onRequest('client.hello', () => {
+      throw new Error('disconnected');
+    });
+    expect(
+      await new LiveAgentsClient().sendQueuedMessagesNow({
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        messageIds: ['first', 'second'],
+      }),
+    ).toMatchObject({ success: false });
+    expect(backend.requests.map((request) => request.method)).toEqual(['client.hello']);
   });
 
   it('sendQueuedNow forwards agent.sendQueuedMessageNow with §5.5 params and folds the daemon body into success', async () => {

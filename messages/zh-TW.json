@@ -7116,5 +7116,6 @@
   "chat_scriptMonitor_expired_description": "監控已到期；指令碼繼續執行",
   "chat_scriptMonitor_matched_description": "行已符合；監控結束",
   "chat_scriptMonitor_counted_description": "已達到行數門檻；監控結束",
-  "chat_scriptMonitor_untrusted_description": "符合的行（不可信的指令碼輸出）"
+  "chat_scriptMonitor_untrusted_description": "符合的行（不可信的指令碼輸出）",
+  "chat_queuedMessages_sendAllUnsupported_error": "一起傳送佇列訊息需要較新的後端。請使用每則訊息的「立即傳送」按鈕。"
 }

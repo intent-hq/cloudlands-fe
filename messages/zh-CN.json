@@ -7116,5 +7116,6 @@
   "chat_scriptMonitor_expired_description": "监控已到期；脚本继续运行",
   "chat_scriptMonitor_matched_description": "行已匹配；监控结束",
   "chat_scriptMonitor_counted_description": "已达到行数阈值；监控结束",
-  "chat_scriptMonitor_untrusted_description": "匹配行（不可信的脚本输出）"
+  "chat_scriptMonitor_untrusted_description": "匹配行（不可信的脚本输出）",
+  "chat_queuedMessages_sendAllUnsupported_error": "一起发送排队消息需要更新的后端。请使用每条消息的“立即发送”按钮。"
 }

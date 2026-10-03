@@ -7116,5 +7116,6 @@
   "chat_scriptMonitor_expired_description": "Monitoring expired; script left running",
   "chat_scriptMonitor_matched_description": "Line matched; monitoring ended",
   "chat_scriptMonitor_counted_description": "Line threshold reached; monitoring ended",
-  "chat_scriptMonitor_untrusted_description": "Matched line (untrusted script output)"
+  "chat_scriptMonitor_untrusted_description": "Matched line (untrusted script output)",
+  "chat_queuedMessages_sendAllUnsupported_error": "Sending queued messages together requires a newer backend. Use the individual Send now buttons."
 }

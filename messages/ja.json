@@ -7116,5 +7116,6 @@
   "chat_scriptMonitor_expired_description": "監視期限切れ・スクリプトは続行",
   "chat_scriptMonitor_matched_description": "行が一致・監視終了",
   "chat_scriptMonitor_counted_description": "行数のしきい値に到達・監視終了",
-  "chat_scriptMonitor_untrusted_description": "一致した行（信頼できないスクリプト出力）"
+  "chat_scriptMonitor_untrusted_description": "一致した行（信頼できないスクリプト出力）",
+  "chat_queuedMessages_sendAllUnsupported_error": "待機中のメッセージをまとめて送信するには、新しいバックエンドが必要です。各メッセージの「今すぐ送信」ボタンを使ってください。"
 }

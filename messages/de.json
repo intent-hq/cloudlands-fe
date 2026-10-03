@@ -7116,5 +7116,6 @@
   "chat_scriptMonitor_expired_description": "Überwachung abgelaufen; Skript läuft weiter",
   "chat_scriptMonitor_matched_description": "Zeile stimmt überein; Überwachung beendet",
   "chat_scriptMonitor_counted_description": "Zeilenschwelle erreicht; Überwachung beendet",
-  "chat_scriptMonitor_untrusted_description": "Passende Zeile (nicht vertrauenswürdige Skriptausgabe)"
+  "chat_scriptMonitor_untrusted_description": "Passende Zeile (nicht vertrauenswürdige Skriptausgabe)",
+  "chat_queuedMessages_sendAllUnsupported_error": "Zum gemeinsamen Senden vorgemerkter Nachrichten ist ein neueres Backend erforderlich. Verwenden Sie die einzelnen Schaltflächen „Jetzt senden“."
 }
