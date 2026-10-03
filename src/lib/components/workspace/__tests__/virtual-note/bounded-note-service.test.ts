@@ -8,6 +8,25 @@ import {
 } from './bounded-note-service';
 
 describe('bounded fake note contract (not daemon integration)', () => {
+  it('counts token payload bytes exactly, including control characters and isolated surrogates', () => {
+    const encoder = new TextEncoder();
+    const tokens = [
+      '',
+      ...Array.from({ length: 128 }, (_, i) => String.fromCharCode(i)),
+      '\u0080',
+      '\u07ff',
+      '\u0800',
+      '\uffff',
+      '\ud800',
+      '\udfff',
+      'café',
+      '🌍',
+      'e\u0301',
+      '\ud800x\udfff',
+      'repeated source'.repeat(1000),
+    ];
+    expect(tokens.map(bytes)).toEqual(tokens.map((token) => encoder.encode(token).length));
+  });
   it('reconstructs exact Unicode source with bounded pages at one revision', () => {
     const service = new BoundedNoteService();
     let source = '';

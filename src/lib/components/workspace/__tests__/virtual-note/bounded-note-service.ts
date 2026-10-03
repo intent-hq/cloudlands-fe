@@ -4,7 +4,12 @@ export const MAX_REGION_BYTES = 8192;
 export const MAX_PAGE_BYTES = 4096;
 export const MAX_RETAINED_REGIONS = 4;
 const encoder = new TextEncoder();
-export const bytes = (text: string) => encoder.encode(text).length;
+// Resource snapshots count individual source tokens on every native transaction.
+// Empty and single ASCII tokens need no temporary encoded buffer.
+export const bytes = (text: string) =>
+  text.length === 0 || (text.length === 1 && text.charCodeAt(0) < 0x80)
+    ? text.length
+    : encoder.encode(text).length;
 
 export function sourceFor(index: number): string {
   return `Region ${index} — café 🌍.\n\nPage one boundary.\n\nPage two boundary.\n\n- Parent\n  - Nested child\n\n| Name | Value |\n| --- | --- |\n| Cell | Editable |\n\n${'long text '.repeat(180)}\n`;
