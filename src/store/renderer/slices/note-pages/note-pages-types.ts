@@ -1,4 +1,5 @@
 import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
+import type { NoteResourceLedger } from '$features/notes/virtualized/note-resource-ledger';
 import type {
   NoteCommitReceipt,
   NoteScope,
@@ -57,6 +58,8 @@ export interface NotePagesWorkspaceState {
   notes: Record<string, NotePageSession>;
 }
 export interface NotePagesState {
+  /** Shared across workspaces; runtime leases outlive session invalidation. */
+  resourceLedger: NoteResourceLedger;
   nextGeneration: number;
   physicalReads: Record<string, { workspaceId: string; noteId: string; ticket?: string }>;
   byWorkspaceId: Record<string, NotePagesWorkspaceState>;

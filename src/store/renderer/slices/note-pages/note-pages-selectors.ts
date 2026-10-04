@@ -1,4 +1,5 @@
 import { store } from '../../store';
+export const selectNoteResourceLedger = store.createSelector((s) => s.notePages.resourceLedger);
 /** Page/session data never masquerades as complete Note content. */
 export const selectNotePageSession = store.createSelector(
   (s, ws: string, id: string) => s.notePages?.byWorkspaceId[ws]?.notes[id],

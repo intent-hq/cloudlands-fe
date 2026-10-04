@@ -5,6 +5,7 @@ import { selectNotePageSession } from '../note-pages-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import * as a from '../note-pages-slice';
 import type { NotePageRequest, NoteReadPage } from '$lib/client/note-pages';
+import type { NotePageSession } from '../note-pages-types';
 type Action = { type: string; payload?: unknown };
 const belongs = (event: Action, ws: string, id?: string) =>
   Array.isArray(event.payload) &&
@@ -36,22 +37,27 @@ function* readPage(
 }
 function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
   const [ws, id, panel] = action.payload;
-  let n = yield* selectNotePageSession.effect(ws, id);
+  let n: NotePageSession | undefined = yield* selectNotePageSession.effect(ws, id);
   while (n?.status === 'connecting') {
     yield* take((event: Action) => belongs(event, ws, id));
     n = yield* selectNotePageSession.effect(ws, id);
   }
-  const owned = n?.windows[panel];
+  let owned: NotePageSession['windows'][string] | undefined = n?.windows[panel];
   if (!n?.state || n.status !== 'ready' || !owned) return;
   const generation = n.generation,
     request = owned.request;
-  const live = Object.values(n.pages).find((p) => 'snapshotId' in p);
+  let live = Object.values(n.pages).find((p) => 'snapshotId' in p);
   const steps = noteWindowSteps({
     at: owned.at,
     scope: n.state.scope,
     sourceRevision: n.state.sourceRevision,
     ...(live && 'snapshotId' in live ? { snapshotId: live.snapshotId } : {}),
   });
+  // The iterator owns its admitted inputs. Do not keep the entire session (or
+  // previous panel window) reachable while waiting for the next physical read.
+  n = undefined;
+  owned = undefined;
+  live = undefined;
   try {
     let next = steps.next();
     while (!next.done) {

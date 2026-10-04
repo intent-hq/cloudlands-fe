@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { noteWindowSaga } from './note-window-saga';
+import type { NotePageSession } from '../note-pages-types';
 import { eventChannel, buffers } from 'redux-saga';
 import { call, put, race, take, takeEvery, fork } from 'typed-redux-saga';
 import { rejectedNoteSave } from '$lib/client/note-page-errors';
@@ -7,6 +8,7 @@ import { appClient } from '$lib/client';
 import type {
   NotePageState,
   NotePageRequest,
+  NoteReadPage,
   NotePagingCapabilities,
 } from '$lib/client/note-pages';
 import {
@@ -107,7 +109,7 @@ function* stream(ws: string, id: string) {
 }
 function* read(action: ReturnType<typeof actions.pageRequested>) {
   const [ws, id, request] = action.payload;
-  const n = yield* session(ws, id);
+  let n: NotePageSession | undefined = yield* session(ws, id);
   const client = appClient.notes.pages;
   const requestKey = JSON.stringify(
     Object.fromEntries(Object.entries(request).sort(([a], [b]) => a.localeCompare(b))),
@@ -124,13 +126,13 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
     )
       return;
   } else if (n.status !== 'ready') return;
-  const cached = n.pages[requestKey];
+  let cached: NoteReadPage | undefined = n.pages[requestKey];
   if (cached && (!('expiresAt' in cached) || Date.parse(cached.expiresAt) > Date.now())) return;
   if ((yield* selectPhysicalNoteReadCount.effect(ws, id)) >= 4) {
     yield* put(actions.pageReadDeferred(ws, id, n.generation, request));
     return;
   }
-  const live = Object.values(n.pages).find((p) => p.kind === 'noteSourcePage');
+  let live = Object.values(n.pages).find((p) => p.kind === 'noteSourcePage');
   const scopedRequest: NotePageRequest =
     request.kind === 'source' &&
     request.cursor === undefined &&
@@ -144,6 +146,11 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
         }
       : request;
   const generation = n.generation;
+  // A physical read can settle after cache invalidation. Retain only its scalar
+  // identity/request across IO, not an old session and all of its pages/windows.
+  n = undefined;
+  cached = undefined;
+  live = undefined;
   const ticket = uuid();
   yield* put(actions.pageRequestStarted(ws, id, generation, requestKey, ticket));
   if ((yield* selectPhysicalNoteReadTicket.effect(ws, id, generation, requestKey)) !== ticket) {

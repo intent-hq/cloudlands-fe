@@ -1,4 +1,12 @@
 import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
+import {
+  createNoteResourceLedger,
+  requestNoteResources,
+  releaseNoteResources,
+  transferNoteResources,
+  type NoteResourceCost,
+  type NoteResourceReservation,
+} from '$features/notes/virtualized/note-resource-ledger';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
@@ -21,6 +29,16 @@ import type {
 const emptyWorkspace: NotePagesWorkspaceState = { notes: {} };
 const { getWorkspaceState, setWorkspaceState } = createWorkspaceScopedHelpers(emptyWorkspace);
 export const initialNotePagesState: NotePagesState = {
+  // The prepared surface requires an explicit admission policy before ownership.
+  // Zero defaults never turn an absent reservation policy into unlimited credit.
+  resourceLedger: createNoteResourceLedger({
+    payloadBytes: 0,
+    stringUnits: 0,
+    objectNodes: 0,
+    domNodes: 0,
+    physicalReads: 0,
+    assemblies: 0,
+  }),
   byWorkspaceId: {},
   nextGeneration: 0,
   physicalReads: {},
@@ -45,6 +63,16 @@ const newSession = (): NotePageSession => ({
 });
 export const pagePanelOpened =
   createAction<[workspaceId: string, noteId: string, panelId: string]>('notePages/panelOpened');
+export const pageResourceLimitsConfigured = createAction<[limit: NoteResourceCost]>(
+  'notePages/resourceLimitsConfigured',
+);
+export const pageResourcesRequested = createAction<
+  [owner: string, resources: NoteResourceReservation[]]
+>('notePages/resourcesRequested');
+export const pageResourcesReleased = createAction<[owner: string]>('notePages/resourcesReleased');
+export const pageResourcesTransferred = createAction<[from: string, to: string]>(
+  'notePages/resourcesTransferred',
+);
 export const pagePanelClosed =
   createAction<[workspaceId: string, noteId: string, panelId: string]>('notePages/panelClosed');
 export const pageWindowRequested = createAction<
@@ -127,6 +155,23 @@ export const pageMappingAccepted = createAction<
   [workspaceId: string, noteId: string, operationId: string, drafts: NoteDraft[]]
 >('notePages/mappingAccepted');
 export const notePagesReducer = createReducer<NotePagesState>(initialNotePagesState);
+notePagesReducer.with(pageResourceLimitsConfigured, (state, { payload: [limit] }) => {
+  if (Object.keys(state.resourceLedger.owners).length || state.resourceLedger.pending.length)
+    return state;
+  return { ...state, resourceLedger: createNoteResourceLedger(limit) };
+});
+notePagesReducer.with(pageResourcesRequested, (state, { payload: [owner, resources] }) => ({
+  ...state,
+  resourceLedger: requestNoteResources(state.resourceLedger, owner, resources).ledger,
+}));
+notePagesReducer.with(pageResourcesReleased, (state, { payload: [owner] }) => ({
+  ...state,
+  resourceLedger: releaseNoteResources(state.resourceLedger, owner),
+}));
+notePagesReducer.with(pageResourcesTransferred, (state, { payload: [from, to] }) => ({
+  ...state,
+  resourceLedger: transferNoteResources(state.resourceLedger, from, to),
+}));
 function update(
   state: NotePagesState,
   ws: string,
