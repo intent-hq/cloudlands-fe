@@ -6939,6 +6939,7 @@
   "chat_agentCard_menu_moveToForeground_label": "移到前台",
   "agent_mutation_setBackgroundFailed_error": "无法更改智能体模式",
   "settings_aiBehavior_importedClaude_title": "从 Claude Code 导入",
+  "settings_agentSettings_ownerOnly_description": "只有实例所有者可以编辑这些设置。",
   "settings_aiBehavior_importedClaude_readOnly": "在 Intent 中为只读。请打开原始文件进行修改。",
   "settings_aiBehavior_importedClaude_unsupported": "无法在 Intent 中启动，因为不支持以下设置：{fields}。请打开原始文件，移除或调整这些设置后再启动。",
   "settings_aiBehavior_importNotices": "Claude 智能体导入提示",

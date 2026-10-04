@@ -1,5 +1,6 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runSaga, stdChannel } from 'redux-saga';
+import { runSaga as reduxRunSaga, stdChannel } from 'redux-saga';
 import type { SpecialistDef } from '$lib/client/app-client';
 
 const mocks = vi.hoisted(() => ({
@@ -84,6 +85,30 @@ import {
   workspaceCatalogRequested,
 } from '../../provider-catalog/provider-catalog-slice';
 import type { StoreAction } from '../../../types';
+
+function runSaga(
+  options: {
+    channel: ReturnType<typeof stdChannel>;
+    dispatch: (action: any) => unknown;
+    getState: () => unknown;
+  },
+  saga: typeof specialistsSaga,
+) {
+  const getState = () => withLegacyPrincipal(options.getState() as object);
+  return reduxRunSaga(
+    {
+      ...options,
+      getState,
+      context: {
+        reduxStore: { getState, subscribe: () => () => {} },
+        reportRuntimeError: (error: unknown) => {
+          throw error;
+        },
+      },
+    },
+    saga,
+  );
+}
 
 const settle = async () => {
   await Promise.resolve();

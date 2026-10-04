@@ -1,3 +1,8 @@
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
+import {
+  selectCanAdministerHost,
+  selectPrincipalActionContext,
+} from '../../principal/principal-selectors';
 import { buffers, channel, type Channel } from 'redux-saga';
 import {
   call,
@@ -55,7 +60,13 @@ function* loadRules(generation: number): SagaGenerator<void> {
 function* saveRules(generation: number): SagaGenerator<void> {
   while (true) {
     const editor = yield* selectAgentRulesEditor.effect();
-    if (!editor.active || editor.generation !== generation || editor.loading) return;
+    if (
+      !(yield* selectCanAdministerHost.effect()) ||
+      !editor.active ||
+      editor.generation !== generation ||
+      editor.loading
+    )
+      return;
     const content = editor.content.trim();
     if (editor.content.length > MAX_RULES_LENGTH) {
       yield* put(
@@ -108,16 +119,16 @@ function* consumeRulesCommands(queue: Channel<RulesCommand>): SagaGenerator<void
 }
 
 /** One resource queue survives editor remounts: a new read waits for an old write. */
-export function* agentRulesSaga(): SagaGenerator<void> {
+function* rulesSession(admission: string | null): SagaGenerator<void> {
   const queue = channel<RulesCommand>(buffers.expanding());
   try {
     yield* takeEvery(agentRulesEditorOpened, function* () {
       const editor = yield* selectAgentRulesEditor.effect();
-      yield* put(queue, { generation: editor.generation, operation: 'load' });
+      if (admission) yield* put(queue, { generation: editor.generation, operation: 'load' });
     });
     yield* takeLatest(agentRulesContentChanged, function* () {
       const editor = yield* selectAgentRulesEditor.effect();
-      if (!editor.active) return;
+      if (!editor.active || !(yield* selectCanAdministerHost.effect())) return;
       const { invalidated } = yield* race({
         elapsed: delay(1000),
         invalidated: take([
@@ -162,11 +173,28 @@ export function* agentRulesSaga(): SagaGenerator<void> {
       });
       if (!invalidated) yield* put(agentRulesSaveStatusCleared(editor.generation));
     });
+    const editor = yield* selectAgentRulesEditor.effect();
+    if (admission && editor.active)
+      yield* put(queue, { generation: editor.generation, operation: 'load' });
     yield* call(consumeRulesCommands, queue);
   } finally {
     queue.close();
-    if ((yield* cancelled()) && (yield* selectAgentRulesEditor.effect())?.active) {
+  }
+}
+
+/** Admission owns the queue: old reads, debounces and write continuations cannot cross hosts. */
+export function* agentRulesSaga(): SagaGenerator<void> {
+  try {
+    yield* takeLatestFromSelector(
+      selectPrincipalActionContext,
+      function* ({ payload }: SelectorChannelPayload<string | null>) {
+        if ((yield* selectAgentRulesEditor.effect()).active) yield* put(agentRulesEditorOpened());
+        yield* call(rulesSession, payload);
+      },
+    );
+    yield* take(() => false);
+  } finally {
+    if ((yield* cancelled()) && (yield* selectAgentRulesEditor.effect()).active)
       yield* put(agentRulesEditorClosed());
-    }
   }
 }

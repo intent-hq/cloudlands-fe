@@ -6939,6 +6939,7 @@
   "chat_agentCard_menu_moveToForeground_label": "移至前景",
   "agent_mutation_setBackgroundFailed_error": "無法變更代理程式模式",
   "settings_aiBehavior_importedClaude_title": "從 Claude Code 匯入",
+  "settings_agentSettings_ownerOnly_description": "只有執行個體擁有者可以編輯這些設定。",
   "settings_aiBehavior_importedClaude_readOnly": "在 Intent 中為唯讀。請開啟原始檔案進行修改。",
   "settings_aiBehavior_importedClaude_unsupported": "無法在 Intent 中啟動，因為不支援下列設定：{fields}。請開啟原始檔案，移除或調整這些設定後再啟動。",
   "settings_aiBehavior_importNotices": "Claude 代理匯入提示",

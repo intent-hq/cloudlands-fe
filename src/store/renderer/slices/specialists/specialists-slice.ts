@@ -271,3 +271,15 @@ specialistsReducer.with(setSpecialistCreation, (state, { payload: [context, crea
   ...state,
   creationByContext: { ...state.creationByContext, [context]: creation },
 }));
+
+/** A different admission must not inherit definitions or creation drafts from this instance. */
+export const specialistSessionEnded = createAction('specialists/sessionEnded');
+specialistsReducer.with(specialistSessionEnded, (state) => ({
+  ...state,
+  creationByContext: {},
+  importDiagnostics: initialState.importDiagnostics,
+  bundledSpecialists: [],
+  fileSpecialists: initialState.fileSpecialists,
+  bundledSpecialistsLoaded: false,
+  fileSpecialistsLoaded: false,
+}));
