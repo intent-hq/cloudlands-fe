@@ -7,6 +7,9 @@ type Descriptor = Exclude<ContextItem, { kind: 'fragment' }>;
 export const NOTE_WINDOW_LIMITS = {
   sourceBytes: 8192,
   contextBytes: 8192,
+  // Native ancestry, ordered marks and paged attributes carry opaque scoped refs.
+  // Bound this independent graph separately from lexical markup/source payloads.
+  canonicalBytes: 64 * 1024,
   sourcePages: 16,
   descriptors: 128,
   requests: 96,
@@ -45,6 +48,8 @@ export interface NoteWindow {
     wireBytes: number;
     sourceBytes: number;
     contextBytes: number;
+    canonicalBytes?: number;
+    canonicalTextBytes?: number;
     assemblyPeakBytes: number;
   };
 }
@@ -62,7 +67,15 @@ function* assembleWindowSteps(
   work: { requests: number; wireBytes: number; peak: number; snapshotId?: string },
 ): Generator<NotePageRequest, NoteWindow, NoteReadPage> {
   let snapshotId = work.snapshotId ?? address.snapshotId;
-  const cost = { requests: 0, wireBytes: 0, sourceBytes: 0, contextBytes: 0, assemblyPeakBytes: 0 };
+  const cost = {
+    requests: 0,
+    wireBytes: 0,
+    sourceBytes: 0,
+    contextBytes: 0,
+    canonicalBytes: 0,
+    canonicalTextBytes: 0,
+    assemblyPeakBytes: 0,
+  };
   const assertCurrent = () => {
     if (!current()) throw new Error('Note window superseded');
   };
@@ -93,11 +106,19 @@ function* assembleWindowSteps(
   const mapBindings: NoteWindow['mapBindings'] = [];
   let native: NoteCanonicalResources | undefined;
   let boundMaps = 0;
-  const chargeContext = (amount: number) => {
+  let lexicalBytes = 0,
+    canonicalBytes = 0;
+  const chargeContext = (amount: number, canonical = false) => {
     work.peak = Math.max(work.peak, 2 * cost.sourceBytes + 2 * cost.contextBytes + amount);
     cost.contextBytes += amount;
-    if (cost.contextBytes > NOTE_WINDOW_LIMITS.contextBytes)
-      throw new WindowAdmissionError('Note lexical context exceeds active window budget');
+    if (canonical) cost.canonicalBytes += amount;
+    if (canonical) canonicalBytes += amount;
+    else lexicalBytes += amount;
+    if (
+      lexicalBytes > NOTE_WINDOW_LIMITS.contextBytes ||
+      canonicalBytes > NOTE_WINDOW_LIMITS.canonicalBytes
+    )
+      throw new WindowAdmissionError('Note context exceeds active window budget');
   };
   function* collection(
     ref: string,
@@ -154,6 +175,20 @@ function* assembleWindowSteps(
     occurrence?: { range: SourceRange; contextRef: string },
   ): Generator<NotePageRequest, void, NoteReadPage> {
     if (item.kind === 'fragment') throw new Error('Unexpected field in source context');
+    // Context can include a predecessor used to locate the window. Its native
+    // subtree is not visible and must not acquire attributes/maps or mounted cells.
+    if (
+      occurrence &&
+      'sourceRange' in item &&
+      item.sourceRange.start !== item.sourceRange.end &&
+      !('htmlSource' in item && item.htmlSource?.provenance !== 'explicit') &&
+      (item.sourceRange.end <= occurrence.range.start ||
+        item.sourceRange.start >= occurrence.range.end)
+    )
+      return;
+    const canonical =
+      ('nativeRef' in item && !!item.nativeRef) || (item.kind === 'span' && !!item.codeSource);
+
     if ('sourceMapRef' in item && item.sourceMapRef) {
       if (!occurrence) throw new Error('Direct note owner cannot acquire a window mapping');
       const binding = { ownerId: item.id, ...occurrence, sourceMapRef: item.sourceMapRef };
@@ -162,7 +197,7 @@ function* assembleWindowSteps(
           (b) => b.ownerId === binding.ownerId && b.contextRef === binding.contextRef,
         )
       ) {
-        chargeContext(encoded(binding));
+        chargeContext(encoded(binding), true);
         mapBindings.push(binding);
       } else if (!mapBindings.some((b) => JSON.stringify(b) === JSON.stringify(binding))) {
         throw new Error('Conflicting note window map binding');
@@ -193,7 +228,7 @@ function* assembleWindowSteps(
     }
     if (context.size >= NOTE_WINDOW_LIMITS.descriptors)
       throw new WindowAdmissionError('Note descriptor budget exceeded');
-    chargeContext(encoded(item));
+    chargeContext(encoded(item), canonical);
     context.set(item.id, item);
     // Table alignment directories can contain millions of columns. Each admitted
     // cell carries its own bounded address/alignment; never enumerate that directory.
@@ -282,7 +317,16 @@ function* assembleWindowSteps(
         (item) => {
           if (context.size > NOTE_WINDOW_LIMITS.descriptors)
             throw new WindowAdmissionError('Note descriptor budget exceeded');
-          chargeContext(encoded(item));
+          if (item && typeof item === 'object' && 'text' in item && typeof item.text === 'string') {
+            cost.canonicalTextBytes += size(item.text);
+            // Raw source and materialized text fragments/joins share one payload
+            // allowance. Large reference names cannot relax the old text bound.
+            if (cost.sourceBytes + cost.canonicalTextBytes > NOTE_WINDOW_LIMITS.sourceBytes)
+              throw new WindowAdmissionError(
+                'Note source and rendered text exceed active window budget',
+              );
+          }
+          chargeContext(encoded(item), true);
         },
         native,
       );
@@ -292,7 +336,8 @@ function* assembleWindowSteps(
     if (
       !cursor ||
       (native !== undefined && Object.keys(native.texts).length > 0) ||
-      cost.contextBytes >= NOTE_WINDOW_LIMITS.contextBytes / 2 ||
+      lexicalBytes >= NOTE_WINDOW_LIMITS.contextBytes / 2 ||
+      canonicalBytes >= NOTE_WINDOW_LIMITS.canonicalBytes / 2 ||
       context.size >= NOTE_WINDOW_LIMITS.descriptors / 2
     )
       break;

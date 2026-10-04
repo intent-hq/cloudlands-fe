@@ -1,4 +1,4 @@
-import type { NotePageRequest, NoteReadPage } from '$lib/client/note-pages';
+import type { NotePageRequest, NoteReadPage, SourceRange } from '$lib/client/note-pages';
 type Item = Extract<NoteReadPage, { kind: 'noteContextPage' }>['items'][number];
 type Descriptor = Exclude<Item, { kind: 'fragment' }>;
 type Metadata = Extract<NoteReadPage, { kind: 'noteMetadataPage' }>['items'][number];
@@ -12,7 +12,12 @@ export interface NoteCanonicalResources {
  * metadata root, sibling native directory, or previous text window is traversed. */
 export function* canonicalResources(
   context: Map<string, Descriptor>,
-  bindings: Array<{ ownerId: string; sourceMapRef: string }>,
+  bindings: Array<{
+    ownerId: string;
+    sourceMapRef: string;
+    contextRef: string;
+    range: SourceRange;
+  }>,
   request: (q: NotePageRequest) => Steps<NoteReadPage>,
   charge: (item: unknown) => void,
   existing?: NoteCanonicalResources,
@@ -132,7 +137,31 @@ export function* canonicalResources(
     charge({ ref, value: result.attributes[ref] });
     resolving.delete(ref);
   }
-  for (const binding of bindings) {
+  // A table's window map already indexes all visible descendant text. Keep every
+  // occurrence/binding on the window, but do not fetch equivalent row/cell maps.
+  // Match the explicit table owner and issuing window, not raw overlap alone:
+  // repaired/implicit native ancestry remains resolved through direct references.
+  const requiredBindings = bindings.filter((binding) => {
+    const owner = context.get(binding.ownerId);
+    if (owner?.kind !== 'boundary' || !['htmlTableRow', 'htmlTableCell'].includes(owner.construct))
+      return true;
+    return !bindings.some((candidate) => {
+      if (
+        candidate.contextRef !== binding.contextRef ||
+        candidate.range.start !== binding.range.start ||
+        candidate.range.end !== binding.range.end
+      )
+        return false;
+      const table = context.get(candidate.ownerId);
+      return (
+        table?.kind === 'boundary' &&
+        table.construct === 'htmlTable' &&
+        table.htmlPosition?.tableRef !== undefined &&
+        table.htmlPosition.tableRef === owner.htmlPosition?.tableRef
+      );
+    });
+  });
+  for (const binding of requiredBindings) {
     const maps = yield* resolve(binding.sourceMapRef);
     for (const map of maps) {
       if (map.kind !== 'sourceMap') throw new Error('Expected canonical source mapping');

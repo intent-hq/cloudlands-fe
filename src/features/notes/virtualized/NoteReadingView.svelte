@@ -49,6 +49,8 @@
   $effect(() => id.set(noteId));
   const session = selectNotePageSession(ws, id);
   const current = $derived($session?.windows[panelId]);
+  const ready = $derived($session?.status === 'ready');
+  const unavailable = $derived($session?.status === 'error' || $session?.status === 'deleted');
   let element: HTMLDivElement;
   let view: NoteWindowView | undefined = $state();
   let mounted = $state(false);
@@ -72,7 +74,7 @@
       selectionChanged: (s) => onSelection(s),
       fullOperation: (kind, selection) => onFullOperation(kind, selection),
       workspace: untrack(() => workspace),
-      editing: untrack(() => editing),
+      editing: untrack(() => (ready ? editing : undefined)),
       changed: () => {
         const range = native.window?.range;
         if (range)
@@ -89,10 +91,10 @@
         appStore.dispatch(pagePanelClosed(owner.workspaceId, owner.noteId, owner.panelId));
     };
   });
-  $effect(() => view?.updateEditing(editing));
+  $effect(() => view?.updateEditing(ready ? editing : undefined));
   $effect(() => {
     const window = current?.value;
-    if (!window || !view) return;
+    if (!ready || !window || !view) return;
     try {
       view.show(window);
       renderError = false;
@@ -105,8 +107,10 @@
 <div
   class="h-full min-h-0 overflow-auto"
   bind:this={element}
+  inert={!ready}
+  aria-busy={!ready && !unavailable}
   aria-label={m.workspace_noteWithComments_editor_ariaLabel()}
 ></div>
-{#if current?.error || renderError}
+{#if unavailable || current?.error || renderError}
   <div role="alert">{m.layout_noteTab_contentLoadFailed_error()}</div>
 {/if}

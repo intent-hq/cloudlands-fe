@@ -4,6 +4,7 @@ import { AllSelection, TextSelection, Plugin, type Transaction } from '@tiptap/p
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { measureNoteProjection } from './note-view-cost';
+import { measureNoteDom } from './note-dom-cost';
 import { projectNoteWindow } from './note-window-projection';
 import type { SourceProjection } from './projection/source-projection';
 import type { NoteWindow } from './note-window-reader';
@@ -52,6 +53,7 @@ export class NoteWindowView {
   private requested = -1;
   private rate = 0.35;
   private frame = 0;
+  private domFrame = 0;
   private programmatic = false;
   private selection: NoteSourceSelection = {
     anchor: 0,
@@ -69,6 +71,10 @@ export class NoteWindowView {
     destroyedViews: 0,
     mountedViews: 0,
     mountedNodes: 0,
+    mountedDomNodes: 0,
+    domPayloadBytes: 0,
+    domPeakBytes: 0,
+    domMeasurementNodes: 0,
     sourceBytes: 0,
     contextBytes: 0,
     pendingBytes: 0,
@@ -77,6 +83,7 @@ export class NoteWindowView {
     windowAssemblyPeakBytes: 0,
   };
   private observer: ResizeObserver;
+  private domObserver: MutationObserver;
   constructor(
     readonly scroller: HTMLElement,
     private readonly options: NoteWindowViewOptions,
@@ -95,6 +102,35 @@ export class NoteWindowView {
     this.host.addEventListener('compositionend', this.compositionEnd);
     this.observer = new ResizeObserver(() => this.measure());
     this.observer.observe(this.host);
+    this.domObserver = new MutationObserver(this.scheduleDomMeasurement);
+    this.observeDom();
+  }
+  private observeDom(root: Node = this.host) {
+    this.domObserver.observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+    });
+  }
+  private scheduleDomMeasurement = () => {
+    if (this.disposed || this.domFrame) return;
+    this.domFrame = requestAnimationFrame(() => {
+      this.domFrame = 0;
+      this.measureDom();
+    });
+  };
+  private measureDom() {
+    if (this.disposed) return;
+    const measured = measureNoteDom(this.host);
+    this.cost.mountedDomNodes = measured.nodes;
+    this.cost.domPayloadBytes = measured.payloadBytes;
+    this.cost.domPeakBytes = Math.max(this.cost.domPeakBytes, measured.payloadBytes);
+    this.cost.domMeasurementNodes += measured.nodes;
+    // Releasing old roots prevents detached primitive output from staying owned.
+    this.domObserver.disconnect();
+    this.observeDom();
+    for (const root of measured.shadowRoots) this.observeDom(root);
   }
   updateEditing(editing?: NoteViewEditing) {
     const changed = !!editing !== !!this.options.editing;
@@ -384,6 +420,7 @@ export class NoteWindowView {
     this.cost.sourceBytes = window.cost.sourceBytes;
     this.cost.contextBytes = window.cost.contextBytes;
     this.cost.derivedBytes = admitted.derivedBytes;
+    this.measureDom();
     this.requested = -1;
     this.layout();
     if (anchor && anchor.source >= window.range.start && anchor.source <= window.range.end) {
@@ -419,6 +456,7 @@ export class NoteWindowView {
   }
   private measure() {
     if (!this.window || this.disposed) return;
+    this.scheduleDomMeasurement();
     const anchor = this.anchor ?? this.captureAnchor();
     const height = this.host.getBoundingClientRect().height;
     if (height > 0) {
@@ -467,6 +505,8 @@ export class NoteWindowView {
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
+    cancelAnimationFrame(this.domFrame);
+    this.domObserver.disconnect();
     this.scroller.removeEventListener('scroll', this.scroll);
     this.scroller.removeEventListener('wheel', this.physicalIntent);
     this.scroller.removeEventListener('pointerdown', this.physicalIntent);
@@ -483,6 +523,8 @@ export class NoteWindowView {
     this.host.remove();
     this.after.remove();
     this.cost.mountedNodes = 0;
+    this.cost.mountedDomNodes = 0;
+    this.cost.domPayloadBytes = 0;
     this.cost.sourceBytes = 0;
     this.cost.contextBytes = 0;
     this.cost.pendingBytes = 0;

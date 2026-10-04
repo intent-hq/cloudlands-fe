@@ -58,3 +58,45 @@ it('accounts for replacement overlap and only the latest force-mounted pending w
     vi.restoreAllMocks();
   }
 });
+
+it('accounts for asynchronous native DOM output beyond the ProseMirror tree and releases it', async () => {
+  vi.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue(null);
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const view = new NoteWindowView(document.createElement('div'), {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+  });
+  try {
+    view.show(windowAt(0));
+    const initial = { ...view.cost };
+    const output = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    output.setAttribute('aria-label', 'café 🌍');
+    text.textContent = 'λ'.repeat(4096);
+    output.append(text);
+    view.host.append(output);
+    await vi.waitFor(() =>
+      expect(view.cost.domPayloadBytes).toBeGreaterThan(initial.domPayloadBytes + 8192),
+    );
+    expect(view.cost.mountedNodes).toBe(initial.mountedNodes);
+    expect(view.cost.mountedDomNodes).toBe(initial.mountedDomNodes + 3);
+    expect(view.cost.domPeakBytes).toBe(view.cost.domPayloadBytes);
+    output.remove();
+    await vi.waitFor(() => expect(view.cost.domPayloadBytes).toBe(initial.domPayloadBytes));
+    expect(view.cost.domPeakBytes).toBeGreaterThan(view.cost.domPayloadBytes);
+    view.destroy();
+    expect(view.cost.domPayloadBytes).toBe(0);
+    expect(view.cost.mountedDomNodes).toBe(0);
+  } finally {
+    view.destroy();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  }
+});

@@ -41,7 +41,7 @@ afterEach(() => {
 });
 it('publishes newly visible annotation ranges when composition releases a queued window', async () => {
   const window = { range: { start: 2_000_000, end: 2_000_500 } };
-  state.session = writable({ windows: { panel: { value: window } } });
+  state.session = writable({ status: 'ready', windows: { panel: { value: window } } });
   render(NoteReadingView, {
     workspaceId: 'w',
     noteId: 'n',
@@ -58,6 +58,7 @@ it('publishes newly visible annotation ranges when composition releases a queued
 
 it('keeps the composing native view when workspace metadata or the editing adapter changes', async () => {
   state.session = writable({
+    status: 'ready',
     windows: { panel: { value: { range: { start: 2_000_000, end: 2_000_500 } } } },
   });
   const editing = { accept: vi.fn(), undo: vi.fn(), redo: vi.fn() };
@@ -78,4 +79,31 @@ it('keeps the composing native view when workspace metadata or the editing adapt
   });
   expect(state.view).toBe(original);
   expect(state.view.options.editing).toBe(replacement);
+});
+
+it('suspends editing and exposes session failure without destroying the retained composing view', async () => {
+  const ready = {
+    status: 'ready',
+    windows: { panel: { value: { range: { start: 0, end: 100 } } } },
+  };
+  state.session = writable(ready);
+  const editing = { accept: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+  const component = render(NoteReadingView, {
+    workspaceId: 'w',
+    noteId: 'n',
+    panelId: 'panel',
+    editing,
+    onFullOperation: vi.fn(),
+  });
+  await waitFor(() => expect(state.view?.options.editing).toBe(editing));
+  const original = state.view;
+  state.session.set({ status: 'connecting', windows: {} });
+  await waitFor(() => expect(state.view.options.editing).toBeUndefined());
+  expect(component.container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  expect(state.view).toBe(original);
+  state.session.set({ status: 'deleted', windows: {} });
+  expect(await component.findByRole('alert')).toBeTruthy();
+  state.session.set(ready);
+  await waitFor(() => expect(state.view.options.editing).toBe(editing));
+  expect(state.view).toBe(original);
 });
