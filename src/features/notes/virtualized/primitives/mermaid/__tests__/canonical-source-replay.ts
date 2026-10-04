@@ -32,7 +32,7 @@ export async function resolveCapturedMermaidSource(
   async function page(request: NotePageRequest) {
     current();
     if (++cost.requests > limits.requests) throw new Error('Captured source request limit');
-    const response = await read({ ...request, maxWireBytes: 16384, maxItems: 128 });
+    const response = await read({ ...request, maxWireBytes: 8192, maxItems: 1 });
     current();
     if (response.kind !== 'noteContextPage' && response.kind !== 'noteMetadataPage')
       throw new Error('Unexpected captured resource');
