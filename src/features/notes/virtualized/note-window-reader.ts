@@ -1,3 +1,4 @@
+import { retainCanonicalRegion, type NoteCanonicalOwner } from './note-canonical-retention';
 import { canonicalResources, type NoteCanonicalResources } from './note-canonical-resources';
 import { sameNoteScope } from '$lib/client/note-pages';
 import type { NotePageRequest, NoteReadPage, NoteScope, SourceRange } from '$lib/client/note-pages';
@@ -9,7 +10,7 @@ export const NOTE_WINDOW_LIMITS = {
   contextBytes: 8192,
   // Native ancestry, ordered marks and paged attributes carry opaque scoped refs.
   // Bound this independent graph separately from lexical markup/source payloads.
-  canonicalBytes: 64 * 1024,
+  canonicalBytes: 8192,
   sourcePages: 16,
   descriptors: 128,
   requests: 96,
@@ -42,6 +43,9 @@ export interface NoteWindow {
   }>;
   documentEnd: boolean;
   native?: NoteCanonicalResources;
+  /** Validated source owners, not complete lexical descriptors. Resolve lexical
+   * fields through a matching scoped mapBinding before dependent source edits. */
+  canonicalOwners?: NoteCanonicalOwner[];
   /** Encoded payload/work counters, never a JS heap measurement. */
   cost: {
     requests: number;
@@ -49,6 +53,7 @@ export interface NoteWindow {
     sourceBytes: number;
     contextBytes: number;
     canonicalBytes?: number;
+    canonicalWorkBytes?: number;
     canonicalTextBytes?: number;
     assemblyPeakBytes: number;
   };
@@ -59,6 +64,14 @@ export interface NoteWindow {
  * Every await checks ownership before decoding or requesting any further page.
  */
 class WindowAdmissionError extends Error {}
+/** A complete required canonical closure failed its control budget. Repeating
+ * source reads cannot justify dropping required maps or admitting this graph. */
+export class NoteWindowControlBudgetError extends Error {
+  constructor(readonly requiredBytes: number) {
+    super(`Canonical retained context exceeds active window budget (${requiredBytes} bytes)`);
+    this.name = 'NoteWindowControlBudgetError';
+  }
+}
 
 function* assembleWindowSteps(
   address: NoteWindowAddress,
@@ -73,6 +86,7 @@ function* assembleWindowSteps(
     sourceBytes: 0,
     contextBytes: 0,
     canonicalBytes: 0,
+    canonicalWorkBytes: 0,
     canonicalTextBytes: 0,
     assemblyPeakBytes: 0,
   };
@@ -111,13 +125,13 @@ function* assembleWindowSteps(
   const chargeContext = (amount: number, canonical = false) => {
     work.peak = Math.max(work.peak, 2 * cost.sourceBytes + 2 * cost.contextBytes + amount);
     cost.contextBytes += amount;
-    if (canonical) cost.canonicalBytes += amount;
+    if (canonical) cost.canonicalWorkBytes += amount;
     if (canonical) canonicalBytes += amount;
     else lexicalBytes += amount;
-    if (
-      lexicalBytes > NOTE_WINDOW_LIMITS.contextBytes ||
-      canonicalBytes > NOTE_WINDOW_LIMITS.canonicalBytes
-    )
+    // Canonical assembly has pre-reserved DATA and a fixed cumulative wire/work
+    // budget. Admit the finalized retained closure below, without treating raw
+    // metadata pages and their materialized values as simultaneous retained copies.
+    if (lexicalBytes > NOTE_WINDOW_LIMITS.contextBytes)
       throw new WindowAdmissionError('Note context exceeds active window budget');
   };
   function* collection(
@@ -342,15 +356,38 @@ function* assembleWindowSteps(
     )
       break;
   }
+  let retainedContext = [...context.values()];
+  let canonicalOwners: NoteCanonicalOwner[] | undefined;
+  if (native) {
+    const retained = retainCanonicalRegion(retainedContext, mapBindings, native, { start, end });
+    retainedContext = retained.context;
+    native = retained.native;
+    canonicalOwners = retained.owners;
+    // Exact serialized FINAL graph including reference keys, source handles,
+    // attrs, all occurrences and rendered text. This is not a heap measurement.
+    const bytes = encoded({
+      context: retainedContext,
+      details,
+      mapBindings,
+      native,
+      canonicalOwners,
+    });
+    if (bytes > NOTE_WINDOW_LIMITS.canonicalBytes) {
+      throw new NoteWindowControlBudgetError(bytes);
+    }
+    cost.canonicalBytes = bytes;
+    cost.contextBytes = bytes;
+  }
   return {
     native,
+    canonicalOwners,
     scope: address.scope,
     sourceRevision: address.sourceRevision,
     snapshotId: snapshotId!,
     range: { start, end },
     sourceLength,
     text,
-    context: [...context.values()],
+    context: retainedContext,
     details,
     mapBindings,
     documentEnd: end === sourceLength,

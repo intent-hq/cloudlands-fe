@@ -361,7 +361,17 @@ it('retains every window map separately from immutable HTML owner identity', asy
     throw new Error('Unexpected resource');
   });
   const result = await readNoteWindow((q) => transport.read('ws', 'note', q), { at, ...identity });
-  expect(result.context.filter((n) => n.kind === 'boundary')).toEqual([owner]);
+  expect(result.canonicalOwners).toEqual([
+    {
+      ownerId: owner.id,
+      nativeRef: owner.nativeRef,
+      nativeId: 'native-table',
+      sourceRange: owner.sourceRange,
+      construct: owner.construct,
+      htmlSource: owner.htmlSource,
+    },
+  ]);
+  expect(result.context.filter((n) => n.kind === 'boundary')).toEqual([]);
   expect(result.mapBindings).toEqual([
     {
       ownerId: 'html-table',
