@@ -451,7 +451,17 @@ export class SourceProjection {
         }
         // DOMParser collapses horizontal whitespace in normal paragraph text.
         // Retain the entire raw run as one token so edits preserve its bytes.
-        if (/^[ \t\r\n]$/.test(value)) {
+        // A list newline retained by a native edit is text, not parsed whitespace.
+        if (
+          /^[ \t\r\n]$/.test(value) &&
+          !(
+            value === '\n' &&
+            context?.listParagraph &&
+            context.literalNewlines?.some(
+              (range) => base + from >= range.from && base + from < range.to,
+            )
+          )
+        ) {
           value = ' ';
           const prior = this.tokens.at(-1);
           if (

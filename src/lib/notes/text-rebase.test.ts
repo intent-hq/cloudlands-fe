@@ -3439,11 +3439,11 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // the tag was read as one the renderer drops and masked, the fence
     // was one source line short of its plain-text lines, and each item
     // paired with the next one's line; 16 samples of both items wrong
-    // within the budget, in both projections.) A fence no line
-    // closes really is unclosed to the renderer, which escapes its code and
-    // shows the tag spelled out on one line, the items after it its code;
-    // the alignment follows it: the tag's source lines are that plain-text
-    // line, and each item is bounded by its own. A code span shows its line
+    // within the budget, in both projections.) An unclosed fence shields
+    // its remaining source as literal code too: the tag retains its line
+    // break and the following list-looking lines remain code. Both closed
+    // and unclosed fences must preserve exact offsets within the budget.
+    // A code span shows its line
     // break as a blank, the span one line of the plain text: past the cap
     // the scan masks the break as the renderer drops it (the escaping
     // shadowed did so by accident, cutting the span open before its closing
@@ -3487,7 +3487,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
         [
           'a tag broken over two lines of a fence no line closes',
           `${FENCE}\n<\n span>visible tk87z</span>`,
-          '&lt;span&gt;visible tk87z&lt;/span&gt;',
+          '<\n span>visible tk87z</span>',
           false,
         ],
       ];
@@ -3499,7 +3499,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
           CLOCKS.filter(([when]) => when === 'within the budget'),
         ],
       ];
-      const CELLS = SHAPES.flatMap(([shape, body, shown, asWritten]) =>
+      const CELLS = SHAPES.flatMap(([shape, body, shown, itemsAreListText]) =>
         EOLS.flatMap(([ending, eol, clocks]) =>
           PROJECTIONS.flatMap(([projection, production]) =>
             clocks.map(
@@ -3522,7 +3522,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
                 when,
                 body,
                 shown,
-                asWritten,
+                itemsAreListText,
                 eol,
                 production,
                 clock,
@@ -3542,7 +3542,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
           _when,
           body,
           shown,
-          asWritten,
+          itemsAreListText,
           eol,
           production,
           clock,
@@ -3558,21 +3558,17 @@ describe('alignment of link syntax the lexer does not account for', () => {
           const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
           expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
           expectSameLine(plain, markdown, map, 'edit one', 'edit one');
-          // Spelled out in a code block, the tag's `&lt;` and `&gt;` are
-          // letters of the plain text no source has, and where the text
-          // between them maps is not asserted: it is where a fence no line
-          // closes maps it whatever the tag holds, a line break or none.
-          if (asWritten) {
-            if (exact) expectExactRun(plain, markdown, map, 'visible tk87z', 0, 0);
-            else expectSameLine(plain, markdown, map, 'visible tk87z', 'visible tk87z');
-          }
+          // Literal code text has exact source provenance even when no
+          // closing fence follows it.
+          if (exact) expectExactRun(plain, markdown, map, 'visible tk87z', 0, 0);
+          else expectSameLine(plain, markdown, map, 'visible tk87z', 'visible tk87z');
           if (exact) {
             for (let k = 0; k < 2; k += 1) expectExactRun(plain, markdown, map, 'same item', k, k);
           } else {
             expectLinesBounded(
               map,
               linesHolding(plain, 'same item', /\n|\uFFFC/g),
-              asWritten
+              itemsAreListText
                 ? [...markdown.matchAll(/same item/g)].map((m) => [m.index, m.index + m[0].length])
                 : linesHolding(markdown, 'same item', /\n/g),
             );
