@@ -78,6 +78,8 @@ it('fresh canonical HTML strips merged attributes; live merging remains a separa
 });
 
 const canonicalSpecimens = {
+  htmlTableBeforeBacktickTail: '<table><tr><td>x</td></tr></table>\n\n`After`',
+  markdownBeforeHtmlBacktickTail: '## Before\n\n<table><tr><td>x</td></tr></table>\n\n`After`',
   markdownBeforeAndAfterHtmlTable: '## Before\n\n<table><tr><td>x</td></tr></table>\n\n**After**',
   htmlTableBeforeMarkdown: '<table><tr><td>x</td></tr></table>\n\n**After**',
   commentAnchorBeforeHtmlTable:
@@ -102,7 +104,28 @@ it.each(Object.entries(canonicalSpecimens))(
   async (name, source) => {
     const { editor, html } = await fresh(source);
     try {
+      const backtickControl =
+        name === 'htmlTableBeforeBacktickTail' || name === 'markdownBeforeHtmlBacktickTail';
+      const textPositions: Array<{ text: string; position: number; marks: string[] }> = [];
+      if (backtickControl)
+        editor.state.doc.descendants((node, position) => {
+          if (node.isText)
+            textPositions.push({
+              text: node.text ?? '',
+              position,
+              marks: node.marks.map((mark) => mark.type.name),
+            });
+        });
       expect({
+        ...(backtickControl
+          ? {
+              rawBacktickRange: {
+                start: source.indexOf('`After`'),
+                end: source.indexOf('`After`') + '`After`'.length,
+              },
+              textPositions,
+            }
+          : {}),
         source,
         html,
         native: editor.getJSON(),
