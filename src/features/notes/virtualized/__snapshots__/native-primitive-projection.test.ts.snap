@@ -427,3 +427,79 @@ flowchart LR
 **After**",
 }
 `;
+
+exports[`records raw native primitive attributes for titledDiffFence > titledDiffFence 1`] = `
+{
+  "atoms": [
+    {
+      "code": "-café & old
++世界 <new>",
+      "position": 0,
+      "type": "diffBlock",
+    },
+  ],
+  "html": "<pre><code class="language-diff title">-café &amp; old
++世界 &lt;new&gt;</code></pre>
+",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "code": "-café & old
++世界 <new>",
+        },
+        "type": "diffBlock",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<div data-diff-code="-café &amp; old
++世界 <new>" data-type="diff-block"></div>",
+  "saved": "\`\`\`diff
+-café & old
++世界 <new>
+\`\`\`",
+  "source": "\`\`\`diff title
+-café & old
++世界 <new>
+\`\`\`",
+}
+`;
+
+exports[`records raw native primitive attributes for titledMermaidFence > titledMermaidFence 1`] = `
+{
+  "atoms": [
+    {
+      "code": "flowchart LR
+ A["café & 世界"] --> B",
+      "position": 0,
+      "type": "mermaidBlock",
+    },
+  ],
+  "html": "<pre><code class="language-mermaid title">flowchart LR
+ A["café &amp; 世界"] --&gt; B</code></pre>
+",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "code": "flowchart LR
+ A["café & 世界"] --> B",
+        },
+        "type": "mermaidBlock",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<div data-mermaid-code="flowchart LR
+ A[&quot;café &amp; 世界&quot;] --> B" data-type="mermaid-block"></div>",
+  "saved": "\`\`\`mermaid
+flowchart LR
+ A["café & 世界"] --> B
+\`\`\`",
+  "source": "\`\`\`mermaid title
+flowchart LR
+ A["café & 世界"] --> B
+\`\`\`",
+}
+`;

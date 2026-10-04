@@ -101,6 +101,8 @@ const pair = (diff: string, mermaid: string) =>
 const prePair = (diff: string, mermaid: string) =>
   `<pre><code class="language-diff">${htmlText(diff)}</code></pre><pre><code class="language-mermaid">${htmlText(mermaid)}</code></pre>`;
 const primitiveEntries = {
+  titledDiffFence: '```diff title\n' + diffBody + '```',
+  titledMermaidFence: '```mermaid title\n' + mermaidBody + '```',
   mixedFences:
     '## Before\n\n```diff\n' + diffBody + '```\n\n```mermaid\n' + mermaidBody + '```\n\n**After**',
   adjacentHtmlBase64: pair(base64(diffBody), base64(mermaidBody)),
