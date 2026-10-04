@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../../test/ct-test';
 import ChatViewportFillHost from './ChatViewportFillHost.svelte';
 
@@ -273,4 +274,98 @@ test('a direct message seek keeps the live tail and fills from the sought cursor
   ).toBe(true);
   await expect(component.locator('[data-message-id="m-995"]').first()).toHaveCount(1);
   await expect(component.locator('[data-message-id="m-503"]').first()).toHaveCount(1);
+});
+
+async function sampleNewestRow(viewport: Locator) {
+  return viewport.evaluate(async (node) => {
+    const frames = [];
+    for (let i = 0; i < 30; i++) {
+      await new Promise(requestAnimationFrame);
+      frames.push({
+        bottom: node.querySelector('[data-message-id="m-99"]')!.getBoundingClientRect().bottom,
+        distance: node.scrollHeight - node.clientHeight - node.scrollTop,
+      });
+    }
+    return frames;
+  });
+}
+
+test('keeps the newest row anchored after each controlled older page', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(ChatViewportFillHost, {
+    props: { controlled: true, height: 1600 },
+  });
+  const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+  const result = async () => JSON.parse(await component.getByTestId('requests').innerText());
+  await expect.poll(async () => (await result()).requests.length).toBe(1);
+  expect(await viewport.evaluate((node) => node.scrollHeight - node.clientHeight)).toBe(0);
+  const bottom = await viewport.evaluate(
+    (node) => node.querySelector('[data-message-id="m-99"]')!.getBoundingClientRect().bottom,
+  );
+  const samples = [];
+  for (let releasedPages = 1; releasedPages <= 5; releasedPages++) {
+    await expect.poll(async () => (await result()).requests.length).toBe(releasedPages);
+    const sampling = sampleNewestRow(viewport);
+    await component.update({ props: { controlled: true, height: 1600, releasedPages } });
+    await expect(
+      component.locator(`[data-message-id="m-${95 - releasedPages * 5}"]`).first(),
+    ).toHaveCount(1);
+    samples.push(await sampling);
+  }
+  expect(await viewport.evaluate((node) => node.scrollHeight - node.clientHeight)).toBeGreaterThan(
+    0,
+  );
+  // Delayed content growth in an already-rendered row must retain the same anchor.
+  const hydration = sampleNewestRow(viewport);
+  await component.update({
+    props: { controlled: true, height: 1600, releasedPages: 5, expanded: true },
+  });
+  samples.push(await hydration);
+  await testInfo.attach('pagination-positions', {
+    body: JSON.stringify({ bottom, samples }),
+    contentType: 'application/json',
+  });
+  await page.screenshot({ path: '../../.intent/artifacts/chat-pages-after.png', fullPage: true });
+  expect(Math.max(...samples.flat().map((frame) => Math.abs(frame.bottom - bottom)))).toBeLessThan(
+    3,
+  );
+});
+
+test('keeps the reading row when the user scrolls up with an older page pending', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ChatViewportFillHost, {
+    props: { controlled: true, height: 1600 },
+  });
+  const viewport = component.getByTestId('chat-transcript-scroll-viewport');
+  const result = async () => JSON.parse(await component.getByTestId('requests').innerText());
+  await expect.poll(async () => (await result()).requests.length).toBe(1);
+  await component.update({ props: { controlled: true, height: 1600, releasedPages: 1 } });
+  await expect.poll(async () => (await result()).requests.length).toBe(2);
+  await component.update({ props: { controlled: true, height: 500, releasedPages: 1 } });
+  await page.waitForTimeout(500);
+  await viewport.hover();
+  await page.mouse.wheel(0, -60);
+  await expect
+    .poll(() => viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
+    .toBeGreaterThan(20);
+  await page.waitForTimeout(150);
+  const reading = await viewport.evaluate((node) => {
+    const top = node.getBoundingClientRect().top;
+    const row = [...node.querySelectorAll<HTMLElement>('[data-message-id]')].find(
+      (row) => row.getBoundingClientRect().top >= top,
+    )!;
+    return { id: row.dataset.messageId, top: row.getBoundingClientRect().top };
+  });
+  await component.update({ props: { controlled: true, height: 500, releasedPages: 2 } });
+  await expect(component.locator('[data-message-id="m-85"]').first()).toHaveCount(1);
+  await page.waitForTimeout(500);
+  const after = await component.locator(`[data-message-id="${reading.id}"]`).first().boundingBox();
+  expect(Math.abs(after!.y - reading.top)).toBeLessThan(5);
+  expect(
+    await viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+  ).toBeGreaterThan(20);
 });

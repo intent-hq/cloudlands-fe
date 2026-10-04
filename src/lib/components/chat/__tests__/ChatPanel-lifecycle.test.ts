@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { flushSync, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   transientUiReducer,
@@ -955,6 +955,55 @@ describe.each([
 });
 
 describe('ChatPanel mounted lifecycle', () => {
+  it.each(['following', 'reading', 'scroll-away', 'search'] as const)(
+    'settles a prepend before the next frame only while %s owns bottom follow',
+    async (owner) => {
+      mocks.draftGet.mockResolvedValue(null);
+      mocks.agentMessages.set([
+        {
+          id: 'latest',
+          role: 'assistant',
+          content: 'latest',
+          timestamp: '2026-01-01T00:01:00.000Z',
+        },
+      ]);
+      render(ChatPanel, {
+        props: {
+          workspace: workspace('workspace-a'),
+          agentId: 'agent-a',
+          isActive: true,
+          isPanelFocused: true,
+        },
+      });
+      await tick();
+      await tick();
+      flushFrame();
+      await tick();
+      if (owner === 'reading') mocks.followBottomOptions?.onFollowChange?.(false);
+      if (owner === 'search') await openChatSearch();
+      await tick();
+      vi.mocked(scrollToBottomUtil).mockClear();
+
+      flushSync(() =>
+        mocks.agentHistoryMessages.set([
+          { id: 'older', role: 'user', content: 'older', timestamp: '2026-01-01T00:00:00.000Z' },
+        ]),
+      );
+      // Input can release follow after the pre-effect captured ownership but
+      // before its tick continuation applies the newly rendered page.
+      if (owner === 'scroll-away') mocks.followBottomOptions?.onFollowChange?.(false);
+      await tick();
+      await tick();
+      if (owner === 'following') {
+        expect(scrollToBottomUtil).toHaveBeenCalledWith(
+          screen.getByTestId('chat-transcript-scroll-viewport'),
+        );
+      } else {
+        expect(scrollToBottomUtil).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it('preserves consecutive attachment edits before selector emissions catch up', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.transientUi = transientUiReducer(
