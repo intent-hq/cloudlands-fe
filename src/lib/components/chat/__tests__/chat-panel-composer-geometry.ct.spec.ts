@@ -197,6 +197,40 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
   });
 }
 
+test('keeps the first submission bottom-aligned when history confirms it', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 900, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const props = { width: 520, height: 960, submissionSupport: true };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  const text = 'Keep this first submission in place';
+  await editor.fill(text);
+  await editor.press('Enter');
+  const pending = component.locator('[data-send-app-message-id]:not([data-message-index])');
+  await expect(pending).toContainText(text);
+  const prompt = component.getByText(text, { exact: true });
+  const before = (await prompt.boundingBox())!;
+  await page.screenshot({ path: testInfo.outputPath('first-submission-pending.png') });
+
+  await component.update({ props: { ...props, settleSubmission: 'history' } });
+  await expect(pending).toHaveCount(0);
+  await expect(prompt).toHaveCount(1);
+  const after = (await prompt.boundingBox())!;
+  await page.screenshot({ path: testInfo.outputPath('first-submission-confirmed.png') });
+  await testInfo.attach('first-submission-position', {
+    body: JSON.stringify({ before, after }),
+    contentType: 'application/json',
+  });
+  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+  const utility = (await component.getByTestId('transcript-utility-stack').boundingBox())!;
+  expect(utility.y - before.y - before.height).toBeGreaterThanOrEqual(0);
+  expect(utility.y - before.y - before.height).toBeLessThan(64);
+  await expect(editor).toBeFocused();
+});
+
 test('moves the same visible submission into a queue fallback while preserving a new draft', async ({
   mount,
   page,

@@ -3427,11 +3427,26 @@
     // positions the viewport at the target; restoring the pre-landing
     // anchor would fight it.
     if (untrack(() => seekLandingPending || $fetchingHistorySeek$)) return;
-    const anchor = captureScrollAnchor(container);
+    const following = untrack(() => shouldFollowBottom && !showSearch);
+    const anchor = following ? null : captureScrollAnchor(container);
+    const navigationId = scrollNavigationId;
+    const isCurrent = () =>
+      isActive &&
+      !isComponentDestroyed &&
+      scrollContainer === container &&
+      navigationId === scrollNavigationId;
     tick().then(() => {
+      if (!isCurrent()) return;
+      if (following) {
+        // The first overflowing page has no native bottom anchor to carry
+        // its new extent. Settle in this flush, before the next frame, but
+        // never reclaim follow if input or navigation released it meanwhile.
+        if (shouldFollowBottom && !showSearch) followToBottom(container);
+        return;
+      }
       requestAnimationFrame(() => {
-        if (!isActive || isComponentDestroyed || !scrollContainer) return;
-        restoreScrollAnchor(scrollContainer, anchor);
+        if (!isCurrent() || !anchor) return;
+        restoreScrollAnchor(container, anchor);
       });
     });
   });
@@ -6637,8 +6652,9 @@
           <!-- When pendingCondition is true, we show the optimistic user message + streaming status -->
           <!-- When pendingCondition is false and we have messages, we show the actual message list -->
           {#if messagesCondition && !pendingCondition}
-            <!-- Messages container (removed in:fly to test duplicate flash issue) -->
-            <div class="w-full">
+            <!-- Consume spare viewport space above the rows so older pages grow
+                 upward even before there is a scrollable extent to follow. -->
+            <div class="mt-auto w-full">
               <!-- Virtual scrollback spacer: estimated extent of the unloaded
                    rows above the resident window, so the scrollbar represents
                    the full conversation (see estimateVirtualSpacerHeight).
@@ -7259,21 +7275,34 @@
           </div>
         {/if}
 
-        {#each pendingConversationMessages as message (message.appMessageId ?? message.id)}
-          <div
-            class="w-full mb-7"
-            data-message-id={message.id}
-            data-message-role="user"
-            data-send-app-message-id={message.appMessageId}
-            class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
-          >
-            <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+        {#if pendingConversationMessages.length > 0}
+          <!-- Match the confirmed rows' grouping and spacing so the first
+               submission stays in place when history confirms it. -->
+          <div class="w-full space-y-7" class:mt-auto={$agentMessages$.length === 0}>
+            {#each pendingConversationMessages as message (message.appMessageId ?? message.id)}
+              <div
+                class="w-full"
+                data-message-id={message.id}
+                data-message-role="user"
+                data-send-app-message-id={message.appMessageId}
+                class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
+              >
+                <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+              </div>
+            {/each}
           </div>
-        {/each}
+        {/if}
 
-        <!-- The utility stack owns short-chat surplus through its auto margin.
-             It collapses naturally when transcript or expanded disclosure content overflows. -->
-        <div class="mt-auto" data-testid="transcript-utility-stack">
+        <!-- Rendered messages own the spare space above them. Keep the utility
+             stack bottom-aligned independently for empty/loading entry states. -->
+        <div
+          class:mt-auto={pendingConversationMessages.length === 0 &&
+            ($agentMessages$.length === 0 ||
+              deferTranscriptReveal ||
+              isFirstHydrationLoading ||
+              (!!pendingMessage && !transcriptStructure.hasUserMessage))}
+          data-testid="transcript-utility-stack"
+        >
           {#key `${workspace?.id}::${agentId}`}
             <!-- Keep private edit recovery alive after the final queue row disappears. -->
             <div
