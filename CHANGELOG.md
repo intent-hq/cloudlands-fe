@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.203.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.3...v2.203.4) (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+* preserve handshake ownership during remote connection recovery ([#3168](https://github.com/intent-hq/cloudlands-fe/issues/3168)) ([35ca566](https://github.com/intent-hq/cloudlands-fe/commit/35ca566d74c1f66b2b919e3ce759f3c9107330c5))
+
 ## [2.203.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.2...v2.203.3) (2026-10-04)
 
 
