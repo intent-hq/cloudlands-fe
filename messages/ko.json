@@ -2338,6 +2338,8 @@
   "chat_modelPicker_providerDefault_label": "제공자 기본값",
   "chat_modelPicker_providerDisabled_description": "{provider}은(는) 설정 > 에이전트에서 비활성화되어 있습니다.",
   "chat_modelPicker_refreshGroup_title": "{group} 모델 새로 고침",
+  "chat_modelPicker_errorDetails_label": "세부 정보",
+  "chat_modelPicker_errorDetails_title": "{provider} 모델 로딩 세부 정보",
   "chat_modelPicker_retry_label": "다시 시도",
   "chat_modelPicker_runLoginHint_label": "터미널에서 \"{command}\"를 실행하세요.",
   "chat_modelPicker_searchModels_placeholder": "모델 검색...",

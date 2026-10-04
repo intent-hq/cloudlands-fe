@@ -32,6 +32,7 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import { createAgentModelMutator } from './agent-model-mutator';
   import {
     selectAgentModelMutationPending,
@@ -1162,11 +1163,20 @@
       .filter((error): error is ProviderLoadError => Boolean(error));
   });
 
+  // Read the workspace-scoped catalog, including degraded successful responses.
+  const activeProviderIssue = $derived.by<ProviderLoadError | null>(() => {
+    const providerId = activeBrowseProviderId || preferredBrowseProviderId;
+    const error = $providerRequests$[providerId]?.error;
+    if (error) return formatProviderLoadError(providerId, error);
+    const warning = $providerCatalogs$[providerId]?.warning;
+    if (warning) return formatProviderLoadError(providerId, warning);
+    if (loadError && providerId === effectiveProviderId)
+      return formatProviderLoadError(providerId, loadError);
+    return null;
+  });
   const nonBlockingProviderWarnings = $derived(
-    hasLoadedModelOptions
-      ? providerLoadWarnings.filter(
-          (warning) => (allProviderModels[warning.providerId]?.length ?? 0) > 0,
-        )
+    activeProviderIssue && (allProviderModels[activeProviderIssue.providerId]?.length ?? 0) > 0
+      ? [activeProviderIssue]
       : [],
   );
 
@@ -1268,6 +1278,7 @@
     return {
       providerId: 'multiple',
       providerName: m.chat_modelPicker_modelProviders_label(),
+      details: providerLoadWarnings.map((error) => error.details).join('\n\n'),
       message: providerLoadWarnings.map((error) => error.displayText).join('; '),
       displayText: providerLoadWarnings.map((error) => error.displayText).join('; '),
     };
@@ -1632,14 +1643,15 @@
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
+  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   const showDropdownFooter = $derived(
     showReasoningFooter ||
       (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
-      nonBlockingProviderWarnings.length > 0,
+      activeProviderIssue !== null ||
+      refreshingProviders.has(refreshProviderId),
   );
 
   const railProviderIds = $derived(providerTabIds);
-  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   let pointerInteraction = $state(false);
 
   function clearModelSearch(event: MouseEvent) {
@@ -1975,6 +1987,17 @@
     });
   });
 
+  let detailsError = $state<ProviderLoadError | null>(null);
+  let detailsOpen = $state(false);
+
+  function showProviderDetails(error: ProviderLoadError) {
+    // The footer is removed when its dropdown closes. Restore focus to the
+    // stable picker trigger before opening the dialog so dismissal returns there.
+    dropdownRef?.dismissAndFocusTrigger();
+    detailsError = error;
+    detailsOpen = true;
+  }
+
   /** Clear the fallback warning - call when user sends a message or explicitly selects a model */
   export function clearFallbackWarning() {
     clearFallbackInfo();
@@ -2162,6 +2185,32 @@
             />
           </div>
         {/each}
+      </div>
+    {/if}
+    {#if activeProviderIssue || refreshingProviders.has(refreshProviderId)}
+      <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={refreshingProviders.has(refreshProviderId)}
+          aria-label={m.chat_modelPicker_retry_label()}
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          onclick={() => handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}<IntentMarkLoader size={12} />{/if}
+          {m.chat_modelPicker_retry_label()}
+        </Button>
+        {#if activeProviderIssue}
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
+          >
+            {m.chat_modelPicker_errorDetails_label()}
+          </Button>
+        {/if}
       </div>
     {/if}
     {#if showReasoningFooter}
@@ -2410,7 +2459,8 @@
     {#snippet empty()}
       <ModelPickerEmptyState
         {isLoadingModels}
-        {blockingLoadError}
+        blockingLoadError={activeProviderIssue ?? blockingLoadError}
+        retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
         {hasNoAvailableProvider}
         hostManaged={$hostMember$}
         onOpenProviderSettings={openProviderSettings}
@@ -2427,6 +2477,18 @@
     class={resolvedNoticeClass}
   />
 {/if}
+
+<ContentDialog
+  bind:open={detailsOpen}
+  title={m.chat_modelPicker_errorDetails_title({ provider: detailsError?.providerName ?? '' })}
+  onCloseAutoFocus={(event) => {
+    event.preventDefault();
+    dropdownRef?.focusTrigger();
+  }}
+>
+  <pre
+    class="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] type-caption font-mono text-foreground">{detailsError?.details}</pre>
+</ContentDialog>
 
 <style>
   :global(.model-picker-panel > div:has(> input[role='searchbox'])) {
