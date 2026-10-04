@@ -2537,9 +2537,11 @@
       // Clear before navigation can unmount the form and flush its draft.
       clearForm(true);
       if (!current()) return;
-      await goto(`/workspace/${workspace.id}`);
-      if (!current()) return;
-      oncreate?.();
+      // Close the accepted form before the route loader can renegotiate the
+      // connection and retire its checkout. Admission still owns this callback.
+      const navigation = goto(`/workspace/${workspace.id}`);
+      if (current()) oncreate?.();
+      await navigation;
     } catch (err) {
       if (!current()) return;
       if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {

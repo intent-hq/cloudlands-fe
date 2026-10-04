@@ -508,6 +508,7 @@ describe('actual initializer qualified GitLab workspace creation', () => {
   async function renderCheckout(
     mode: CheckoutSelection['mode'],
     extra: Record<string, unknown> = {},
+    oncreate?: () => void,
   ) {
     sessionStorage.setItem(
       'workspace-prefill',
@@ -528,7 +529,7 @@ describe('actual initializer qualified GitLab workspace creation', () => {
         ...extra,
       }),
     );
-    return render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    return render(CompactWorkspaceInitializer, { props: { isExpanded: true, oncreate } });
   }
 
   it.each(['direct', 'cached'] as const)(
@@ -565,6 +566,60 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       expect(mocks.pull).not.toHaveBeenCalled();
       expect(mocks.settled).not.toHaveBeenCalled();
       expect(session.warm).toHaveBeenCalledTimes(mode === 'cached' ? 1 : 0);
+    },
+  );
+
+  it.each(['direct', 'cached'] as const)(
+    'closes an accepted %s create before route loading retires its checkout',
+    async (mode) => {
+      const navigation = Promise.withResolvers<void>();
+      mocks.goto.mockReturnValueOnce(navigation.promise);
+      mocks.create.mockResolvedValueOnce({
+        ok: true,
+        data: { workspace: { id: 'created-gitlab', title: '', branch: 'work/new' } },
+      });
+      const oncreate = vi.fn();
+      await renderCheckout(mode, {}, oncreate);
+      const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+      await waitFor(() => expect(button.disabled).toBe(false));
+      await fireEvent.click(button);
+      try {
+        await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/created-gitlab'));
+        // The real workspace loader renegotiates client.hello on the original
+        // socket. Its old checkout must retire even after creation succeeded.
+        await session.release();
+        navigation.resolve();
+        await waitFor(() => expect(oncreate).toHaveBeenCalledOnce());
+        expect(mocks.create).toHaveBeenCalledOnce();
+        expect(mocks.captureCheckout).toHaveBeenCalledOnce();
+      } finally {
+        navigation.resolve();
+      }
+    },
+  );
+
+  it.each(['direct', 'cached'] as const)(
+    'does not close or navigate when a %s create returns after checkout retirement',
+    async (mode) => {
+      const created = Promise.withResolvers<unknown>();
+      mocks.create.mockReturnValueOnce(created.promise);
+      const oncreate = vi.fn();
+      await renderCheckout(mode, {}, oncreate);
+      const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+      await waitFor(() => expect(button.disabled).toBe(false));
+      await fireEvent.click(button);
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+      await session.release();
+      created.resolve({
+        ok: true,
+        data: { workspace: { id: 'retired-gitlab', title: '', branch: 'work/old' } },
+      });
+      await waitFor(() =>
+        expect(Object.keys(store.state.workspaceCreateProgress.byProgressId)).toHaveLength(0),
+      );
+      expect(mocks.goto).not.toHaveBeenCalled();
+      expect(oncreate).not.toHaveBeenCalled();
+      expect(mocks.captureCheckout).toHaveBeenCalledOnce();
     },
   );
 
