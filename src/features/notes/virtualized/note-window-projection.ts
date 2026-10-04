@@ -118,7 +118,14 @@ export function projectNoteWindow(window: NoteWindow): SourceProjection {
         to: f.to,
         node: {
           type: f.language === 'mermaid' ? 'mermaidBlock' : 'diffBlock',
-          attrs: { code: btoa(unescape(encodeURIComponent(token.text))) },
+          attrs: {
+            // Exact-language fences use the native custom renderer's base64
+            // attribute. Titled fences enter through pre > code as plain text.
+            code:
+              token.lang === f.language
+                ? btoa(unescape(encodeURIComponent(token.text)))
+                : token.text,
+          },
         },
       };
     });

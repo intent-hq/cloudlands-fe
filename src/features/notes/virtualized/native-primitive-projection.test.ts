@@ -24,6 +24,8 @@ import type { NoteWindow } from './note-window-reader';
 it.each([
   ['mermaid', 'flowchart TD\n A --> B\n', 'mermaidBlock'],
   ['diff', '-old\n+new\n', 'diffBlock'],
+  ['diff title', '-café & old\n+世界 <new>\n', 'diffBlock'],
+  ['mermaid title', 'flowchart LR\n A["café & 世界"] --> B\n', 'mermaidBlock'],
 ])(
   'matches the native %s node instead of treating its payload as literal code',
   async (language, body, type) => {
