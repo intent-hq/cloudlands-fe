@@ -1,3 +1,4 @@
+import { beginSubmissionRead } from './submission-evidence';
 import { claimAgentReadOwnership } from './agent-read-ownership';
 import { onBackendReconnected } from '$lib/client/live/backend-transport';
 /**
@@ -112,9 +113,14 @@ async function runHydrateAgentQueueFetch(
   }
   appStore.dispatch(hydrateAgentQueueRequested(agentId, workspaceId));
   const seqAtFetchStart = getAgentQueueEventSnapshotSeq(agentId, workspaceId);
+  const submissionRead = beginSubmissionRead(agentId, workspaceId, 'queue');
   try {
     const queue = await appClient.agents.getQueue(agentId, workspaceId);
     if (connection !== connectionGeneration || !ownership.isCurrent()) return;
+    if (!submissionRead.isCurrent()) {
+      hydrateFollowUpWantedByAgent.add(key);
+      return;
+    }
     // Re-check after the fetch: a deletion may have become pending while
     // `agent.getQueue` was in flight (folding the response would resurrect
     // rows for a soft-hidden session), or a live event snapshot may have
@@ -125,6 +131,7 @@ async function runHydrateAgentQueueFetch(
       // superseded case the event's replaceAgentQueue already cleared it.)
       appStore.dispatch(setAgentQueueHydrating(agentId, false));
     } else if (getAgentQueueEventSnapshotSeq(agentId, workspaceId) === seqAtFetchStart) {
+      submissionRead.complete(queue);
       appStore.dispatch(replaceAgentQueue(agentId, queue, workspaceId));
       // A hydrate fold is an authoritative snapshot too: advance the seq so
       // the send paths' queued-response seed guard (monorepo#2481) yields to

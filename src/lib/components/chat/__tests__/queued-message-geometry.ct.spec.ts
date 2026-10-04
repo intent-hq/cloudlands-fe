@@ -5,8 +5,9 @@ for (const state of [
   { name: 'narrow', width: 240, zoom: 1 },
   { name: 'narrow at 200% zoom', width: 120, zoom: 2 },
 ]) {
-  test(`keeps queued-message row height stable at ${state.name}`, async ({ mount }) => {
+  test(`keeps queued-message row height stable at ${state.name}`, async ({ mount, page }) => {
     const component = await mount(QueuedMessageGeometryHost, { props: state });
+    await page.evaluate(() => document.fonts.ready);
     const row = component.getByTestId('queued-message-row');
     const content = component.getByTestId('queued-message-content');
     const actions = component.getByTestId('queued-message-actions');

@@ -34,7 +34,7 @@ function openingTagAfter(content: string, anchor: string) {
 }
 
 describe('editorial conversation presentation contract', () => {
-  it('assigns restored and streaming transcript identity to the outer row only', () => {
+  it('assigns restored, streaming and staged transcript identity to the outer row only', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
 
@@ -42,7 +42,7 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain('ownsMessageIdentity = true');
     expect(message).toContain('data-message-id={ownsMessageIdentity ? message?.id : undefined}');
     expect(message).toContain('data-message-role={ownsMessageIdentity ? role : undefined}');
-    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(4);
+    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(5);
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,120}ownsMessageIdentity/g)).toBeNull();
   });
 

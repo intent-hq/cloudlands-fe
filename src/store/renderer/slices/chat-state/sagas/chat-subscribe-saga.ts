@@ -1,3 +1,7 @@
+import {
+  observeSubmissionEvidence,
+  submissionHistoryEvidence,
+} from '$features/agent/submission-evidence';
 /**
  * Chat subscribe saga — feeds the STANDING `chat.subscribe` transcript
  * (PROTOCOL §7.1) into the agent-session slice so ChatPanel renders from the
@@ -192,6 +196,8 @@ interface SubscriptionEntry {
   wasStreaming: boolean;
   /** Last reconciled transcript, re-applied on transcriptHydrationSettled. */
   lastTranscript?: ChatTranscript;
+  /** Last transcript whose submission evidence actually reached a hydrated session. */
+  lastObservedTranscript?: ChatTranscript;
   /**
    * A seq-0 snapshot that arrived BEFORE the session shell existed (the
    * chat-read saga's `agents.get` was still pending), held back so its meta
@@ -405,6 +411,7 @@ function* applyTranscript(
   entry: SubscriptionEntry,
   transcript: ChatTranscript,
   discardStoreOnly = false,
+  restoration = false,
 ): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
   if (!isCurrentSubscription(coordinator, agentId, entry)) {
@@ -454,6 +461,19 @@ function* applyTranscript(
         ? transcript.messages
         : deduplicateAgentMessages([...retained, ...transcript.messages]);
     if (isCurrentSubscription(coordinator, agentId, entry)) {
+      // Hydration settlement restores the live transcript after a history read.
+      // Re-observing that same evidence would invalidate the read and schedule
+      // another refresh forever. New subscription deliveries still invalidate,
+      // even when the client emits the same object; deferred first applies do too.
+      if (!restoration || entry.lastObservedTranscript !== transcript) {
+        observeSubmissionEvidence(
+          agentId,
+          session.workspaceId,
+          'history',
+          submissionHistoryEvidence(transcript.messages),
+        );
+        entry.lastObservedTranscript = transcript;
+      }
       yield* put(replaceMessages(agentId, merged));
     } else {
       reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
@@ -906,7 +926,7 @@ function* applyHydrationSettled(
 ): SagaGenerator<void> {
   const entry = coordinator.subscriptions.get(agentId);
   if (entry?.hasEmitted && entry.lastTranscript) {
-    yield* applyTranscript(coordinator, agentId, entry, entry.lastTranscript);
+    yield* applyTranscript(coordinator, agentId, entry, entry.lastTranscript, false, true);
   }
 }
 
