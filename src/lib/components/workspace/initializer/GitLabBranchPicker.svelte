@@ -2,6 +2,7 @@
   import { ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/ui/button';
   import * as Popover from '$lib/components/ui/popover';
+  import { useDialogPortalTarget } from '$lib/components/ui/dialog';
   import GitLabPickerList from './GitLabPickerList.svelte';
   import type { GitLabBranchPickerProps } from './gitlab-picker-types';
 
@@ -16,6 +17,7 @@
     ...list
   }: GitLabBranchPickerProps = $props();
   let open = $state(false);
+  const dialogPortalTarget = useDialogPortalTarget();
 </script>
 
 <Popover.Root bind:open onOpenChange={(next) => onOpenChange?.(next, list.scopeKey)}>
@@ -26,7 +28,17 @@
       </Button>
     {/snippet}
   </Popover.Trigger>
-  <Popover.Content class="w-80 max-w-[calc(100vw-2rem)] space-y-2" align="start">
+  <Popover.Content
+    role="dialog"
+    aria-label={list.copy.listLabel}
+    class="w-80 max-w-[calc(100vw-2rem)] max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto space-y-2 p-3"
+    align="start"
+    portalProps={{ to: dialogPortalTarget() }}
+    strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
+    onkeydown={(event) => {
+      if (event.key === 'Enter') event.stopPropagation();
+    }}
+  >
     <p class="break-all type-caption text-foreground">{projectPath}</p>
     <GitLabPickerList
       {...list}

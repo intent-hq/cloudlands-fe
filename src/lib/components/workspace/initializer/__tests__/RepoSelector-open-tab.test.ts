@@ -248,6 +248,17 @@ describe('RepoSelector qualified GitLab tab', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, gitlab.scopeKey);
   });
+
+  it('keeps visibility stable when a search installs a new scoped page', async () => {
+    const gitlab = gitlabProps();
+    const view = await openDropdown({ gitlab, gitlabSelected: true });
+    const nextScope = 'owner/connection-a/checkout-a/query-2';
+    await view.rerender({ gitlab: { ...gitlab, scopeKey: nextScope, query: 'api' } });
+    expect(gitlab.onOpenChange).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole('option', { name: 'API group/subgroup/api' }));
+    expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', nextScope);
+    expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, nextScope);
+  });
 });
 
 describe('RepoSelector open tab derived from the value prop', () => {

@@ -299,14 +299,20 @@
   let activeTab = $state<TabId>('github');
   const gitlabTabLabel = 'GitLab'; // i18n-ignore (brand name)
 
-  // The consumer owns the draft's lease. Cleanup keeps the close notification
-  // attached to the scope that actually opened, even when its lease is retired.
+  // Report visibility changes, not page/query revisions. The consumer owns the
+  // draft's lease; loading a scoped result must not reopen and recapture it.
   $effect(() => {
-    if (!isOpen || activeTab !== 'gitlab' || !gitlab) return;
-    const scope = gitlab.scopeKey;
-    const onOpen = untrack(() => gitlab?.onOpenChange);
-    onOpen?.(true, scope);
-    return () => onOpen?.(false, scope);
+    if (!isOpen || activeTab !== 'gitlab') return;
+    return untrack(() => {
+      const opened = gitlab;
+      if (!opened) return;
+      opened.onOpenChange?.(true, opened.scopeKey);
+      return () =>
+        untrack(() => {
+          const current = gitlab ?? opened;
+          current.onOpenChange?.(false, current.scopeKey);
+        });
+    });
   });
 
   $effect(() => {
