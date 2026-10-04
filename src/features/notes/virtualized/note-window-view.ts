@@ -8,6 +8,7 @@ import { measureNoteDom } from './note-dom-cost';
 import { projectNoteWindow } from './note-window-projection';
 import type { SourceProjection } from './projection/source-projection';
 import type { NoteWindow } from './note-window-reader';
+import type { NoteResourceCost } from './note-resource-ledger';
 
 export interface NoteSourceSelection {
   anchor: number;
@@ -33,6 +34,8 @@ export interface NoteWindowViewOptions {
 /** One disposable native view. No source backing, page cache, persistence or per-view history.
  * Geometry, Editor/DOM and in-progress composition are its only runtime ownership. */
 export interface NoteReadingSurface {
+  /** Shared renderer admission policy supplied by the application rollout owner. */
+  resourceLimits: NoteResourceCost;
   /** Supplied by the document-operation owner only after rollout prerequisites pass.
    * Never use visible editor text as the implementation of this operation. */
   copyDocument(): Promise<void>;

@@ -39,6 +39,7 @@ export interface NotePageSession {
   status: 'connecting' | 'ready' | 'legacy' | 'error' | 'deleted';
   error: string | null;
   pages: Record<string, NoteReadPage>;
+  pageAllocations: Record<string, { owner: string; resource: string }>;
   pageOrder: string[];
   requests: Record<string, boolean>;
   deferredRead: NotePageRequest | null;
@@ -60,7 +61,18 @@ export interface NotePagesWorkspaceState {
 export interface NotePagesState {
   /** Shared across workspaces; runtime leases outlive session invalidation. */
   resourceLedger: NoteResourceLedger;
+  /** Only admitted clean allocations; bounded by ledger owner metadata capacity. */
+  cleanPages: Array<{ workspaceId: string; noteId: string; key: string; owner: string }>;
   nextGeneration: number;
-  physicalReads: Record<string, { workspaceId: string; noteId: string; ticket?: string }>;
+  physicalReads: Record<
+    string,
+    {
+      workspaceId: string;
+      noteId: string;
+      ticket?: string;
+      /** Includes queued admission; only ledger physicalReads counts active IO. */
+      resourceOwner?: string;
+    }
+  >;
   byWorkspaceId: Record<string, NotePagesWorkspaceState>;
 }

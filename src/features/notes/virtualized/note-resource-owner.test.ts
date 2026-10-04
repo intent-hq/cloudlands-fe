@@ -105,3 +105,27 @@ it('transfers ownership without granting reuse of the old construction ticket', 
   runtime.release('active');
   expect(state().resourceLedger.used.payloadBytes).toBe(0);
 });
+
+it('retains credit when partial native cleanup or asynchronous disposal fails', async () => {
+  const { runtime, state } = fixture();
+  const ticket = runtime.reservation('partial-native', cost);
+  expect(() =>
+    ticket.construct(
+      () => {
+        throw new Error('constructor');
+      },
+      () => {
+        throw new Error('cleanup failed');
+      },
+    ),
+  ).toThrow('cleanup failed');
+  expect(state().resourceLedger.used.payloadBytes).toBe(100);
+  await expect(
+    ticket.disposeAfter(async () => {
+      throw new Error('still mounted');
+    }),
+  ).rejects.toThrow('still mounted');
+  expect(state().resourceLedger.used.payloadBytes).toBe(100);
+  await ticket.disposeAfter(() => {});
+  expect(state().resourceLedger.used.payloadBytes).toBe(0);
+});

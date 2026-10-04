@@ -140,7 +140,12 @@ export function requestNoteResources(
       throw new Error('Shared note resource cost changed');
   }
   if (!fits(minimum, ledger.limit) || resources.length > ledger.metadataLimit.resources)
-    return { ledger, status: 'impossible' };
+    return {
+      ledger: ledger.pending.some((p) => p.owner === owner)
+        ? releaseNoteResources(ledger, owner)
+        : ledger,
+      status: 'impossible',
+    };
   const existing = own(ledger.owners, owner);
   if (existing) {
     if (existing.length !== ids.size || existing.some((id) => !ids.has(id)))
@@ -191,6 +196,31 @@ export function releaseNoteResources(
     pending: ledger.pending.filter((p) => p.owner !== owner),
   });
 }
+/** Replace pre-construction allowance with retained cost; never grant extra
+ * credit after construction. All existing leases remain live. */
+export function settleNoteResource(
+  ledger: NoteResourceLedger,
+  id: string,
+  cost: NoteResourceCost,
+): NoteResourceLedger {
+  validateCost(cost);
+  const resource = own(ledger.resources, id);
+  if (!resource || !fits(cost, resource.cost))
+    throw new Error('Retained note resource exceeds its construction allowance');
+  const used = { ...ledger.used };
+  add(used, resource.cost, -1);
+  add(used, cost);
+  return drain({
+    ...ledger,
+    used,
+    resources: { ...ledger.resources, [id]: { ...resource, cost: { ...cost } } },
+    pending: ledger.pending.map((request) => ({
+      ...request,
+      resources: request.resources.map((r) => (r.id === id ? { ...r, cost: { ...cost } } : r)),
+    })),
+  });
+}
+
 /** Atomic accepted handoff. Rejected handoffs leave the originating owner responsible. */
 export function transferNoteResources(
   ledger: NoteResourceLedger,

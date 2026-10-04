@@ -4,9 +4,11 @@ import {
   requestNoteResources,
   releaseNoteResources,
   transferNoteResources,
+  settleNoteResource,
   type NoteResourceCost,
   type NoteResourceReservation,
 } from '$features/notes/virtualized/note-resource-ledger';
+import { measureNotePageCost } from '$features/notes/virtualized/note-page-cost';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
@@ -40,6 +42,7 @@ export const initialNotePagesState: NotePagesState = {
     assemblies: 0,
   }),
   byWorkspaceId: {},
+  cleanPages: [],
   nextGeneration: 0,
   physicalReads: {},
 };
@@ -51,6 +54,7 @@ const newSession = (): NotePageSession => ({
   status: 'connecting',
   error: null,
   pages: {},
+  pageAllocations: {},
   pageOrder: [],
   requests: {},
   deferredRead: null,
@@ -70,6 +74,16 @@ export const pageResourcesRequested = createAction<
   [owner: string, resources: NoteResourceReservation[]]
 >('notePages/resourcesRequested');
 export const pageResourcesReleased = createAction<[owner: string]>('notePages/resourcesReleased');
+export const pageCachedRetained = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    generation: number,
+    key: string,
+    owner: string,
+    page: NoteReadPage,
+  ]
+>('notePages/cachedRetained');
 export const pageResourcesTransferred = createAction<[from: string, to: string]>(
   'notePages/resourcesTransferred',
 );
@@ -110,7 +124,14 @@ export const pageRequested =
     'notePages/requested',
   );
 export const pageRequestStarted = createAction<
-  [workspaceId: string, noteId: string, generation: number, key: string, ticket?: string]
+  [
+    workspaceId: string,
+    noteId: string,
+    generation: number,
+    key: string,
+    ticket?: string,
+    wireBytes?: number,
+  ]
 >('notePages/requestStarted');
 const physicalReadKey = (ws: string, id: string, generation: number, key: string) =>
   JSON.stringify([ws, id, generation, key]);
@@ -160,18 +181,38 @@ notePagesReducer.with(pageResourceLimitsConfigured, (state, { payload: [limit] }
     return state;
   return { ...state, resourceLedger: createNoteResourceLedger(limit) };
 });
-notePagesReducer.with(pageResourcesRequested, (state, { payload: [owner, resources] }) => ({
-  ...state,
-  resourceLedger: requestNoteResources(state.resourceLedger, owner, resources).ledger,
-}));
-notePagesReducer.with(pageResourcesReleased, (state, { payload: [owner] }) => ({
-  ...state,
-  resourceLedger: releaseNoteResources(state.resourceLedger, owner),
-}));
+notePagesReducer.with(pageResourcesRequested, (state, { payload: [owner, resources] }) =>
+  reclaimCleanPages({
+    ...state,
+    resourceLedger: requestNoteResources(state.resourceLedger, owner, resources).ledger,
+  }),
+);
+notePagesReducer.with(pageResourcesReleased, (state, { payload: [owner] }) =>
+  reclaimCleanPages({
+    ...state,
+    resourceLedger: releaseNoteResources(state.resourceLedger, owner),
+  }),
+);
 notePagesReducer.with(pageResourcesTransferred, (state, { payload: [from, to] }) => ({
   ...state,
   resourceLedger: transferNoteResources(state.resourceLedger, from, to),
 }));
+notePagesReducer.with(
+  pageCachedRetained,
+  (state, { payload: [ws, id, generation, key, owner, page] }) => {
+    const note = getWorkspaceState(state, ws).notes[id];
+    if (!note || note.generation !== generation || note.pages[key] !== page) return state;
+    const allocation = note.pageAllocations[key];
+    const resource = allocation && state.resourceLedger.resources[allocation.resource];
+    if (!resource) return state;
+    return {
+      ...state,
+      resourceLedger: requestNoteResources(state.resourceLedger, owner, [
+        { id: allocation.resource, cost: resource.cost },
+      ]).ledger,
+    };
+  },
+);
 function update(
   state: NotePagesState,
   ws: string,
@@ -187,7 +228,46 @@ function update(
     next = { ...next, generation: state.nextGeneration };
     owner = { ...state, nextGeneration: state.nextGeneration + 1 };
   }
+  for (const [key, allocation] of Object.entries(n.pageAllocations)) {
+    if (next.pages[key] === n.pages[key]) continue;
+    const pageAllocations = { ...next.pageAllocations };
+    delete pageAllocations[key];
+    next = { ...next, pageAllocations };
+    owner = {
+      ...owner,
+      resourceLedger: releaseNoteResources(owner.resourceLedger, allocation.owner),
+      cleanPages: owner.cleanPages.filter((entry) => entry.owner !== allocation.owner),
+    };
+  }
   return setWorkspaceState(owner, ws, { ...w, notes: { ...w.notes, [note]: next } });
+}
+/** Reclaim only cache leases, never physical/assembly/runtime owners. The bounded
+ * index avoids scanning all workspace notes for an ordinary read admission. */
+function reclaimCleanPages(initial: NotePagesState): NotePagesState {
+  let state = initial;
+  while (state.resourceLedger.pending.length && state.cleanPages.length) {
+    const next = state.resourceLedger.pending[0];
+    const physical = next.resources.reduce(
+      (sum, resource) =>
+        sum + (state.resourceLedger.resources[resource.id] ? 0 : resource.cost.physicalReads),
+      0,
+    );
+    // A cache eviction cannot finish an outstanding physical promise.
+    if (
+      state.resourceLedger.used.physicalReads + physical >
+      state.resourceLedger.limit.physicalReads
+    )
+      break;
+    const [oldest, ...remaining] = state.cleanPages;
+    state = update(state, oldest.workspaceId, oldest.noteId, (note) => {
+      if (note.pageAllocations[oldest.key]?.owner !== oldest.owner) return note;
+      const pages = { ...note.pages };
+      delete pages[oldest.key];
+      return { ...note, pages, pageOrder: note.pageOrder.filter((key) => key !== oldest.key) };
+    });
+    state = { ...state, cleanPages: remaining };
+  }
+  return state;
 }
 function invalidate(n: NotePageSession): NotePageSession {
   return {
@@ -302,41 +382,87 @@ notePagesReducer.with(pageReadDeferred, (s, { payload: [ws, id, generation, requ
 );
 notePagesReducer.with(pageReadSettled, (s, { payload: [ws, id, generation, key] }) => {
   const physicalReads = { ...s.physicalReads };
+  const owner = physicalReads[physicalReadKey(ws, id, generation, key)]?.resourceOwner;
   delete physicalReads[physicalReadKey(ws, id, generation, key)];
-  return { ...s, physicalReads };
+  return reclaimCleanPages({
+    ...s,
+    physicalReads,
+    resourceLedger: owner ? releaseNoteResources(s.resourceLedger, owner) : s.resourceLedger,
+  });
 });
-notePagesReducer.with(pageRequestStarted, (s, { payload: [ws, id, generation, key, ticket] }) => {
-  if (ticket) {
-    const n = getWorkspaceState(s, ws).notes[id];
-    if (
-      !n ||
-      n.generation !== generation ||
-      !Object.keys(n.panels).length ||
-      n.requests[key] ||
-      Object.values(s.physicalReads).filter((r) => r.workspaceId === ws && r.noteId === id)
-        .length >= 4
-    )
-      return s;
-  }
-  const updated = update(s, ws, id, (n) =>
-    generation === n.generation
-      ? { ...n, requests: { ...n.requests, [key]: true }, deferredRead: null }
-      : n,
-  );
-  return {
-    ...updated,
-    physicalReads: {
-      ...updated.physicalReads,
-      [physicalReadKey(ws, id, generation, key)]: {
-        workspaceId: ws,
-        noteId: id,
-        ...(ticket ? { ticket } : {}),
+notePagesReducer.with(
+  pageRequestStarted,
+  (s, { payload: [ws, id, generation, key, ticket, wireBytes] }) => {
+    if (ticket) {
+      const n = getWorkspaceState(s, ws).notes[id];
+      if (
+        !n ||
+        n.generation !== generation ||
+        !Object.keys(n.panels).length ||
+        n.requests[key] ||
+        Object.values(s.physicalReads).filter((r) => r.workspaceId === ws && r.noteId === id)
+          .length >= 4
+      )
+        return s;
+    }
+    const resourceOwner = ticket && wireBytes !== undefined ? `read:${ticket}` : undefined;
+    if (resourceOwner && wireBytes !== undefined) {
+      if (!Number.isSafeInteger(wireBytes) || wireBytes < 4096 || wireBytes > 65536) return s;
+      const admission = requestNoteResources(s.resourceLedger, resourceOwner, [
+        {
+          id: `frame:${ticket}`,
+          cost: {
+            // Separate logical representations: received JSON, decoded strings, and
+            // validator JSON text. This is a worst-case length allowance, not heap.
+            payloadBytes: wireBytes,
+            stringUnits: wireBytes * 3,
+            objectNodes: wireBytes,
+            domNodes: 0,
+            physicalReads: 0,
+            assemblies: 0,
+          },
+        },
+        {
+          id: `slot:${ticket}`,
+          cost: {
+            payloadBytes: 0,
+            stringUnits: 0,
+            objectNodes: 0,
+            domNodes: 0,
+            physicalReads: 1,
+            assemblies: 0,
+          },
+        },
+      ]);
+      if (admission.status === 'impossible' || admission.status === 'capacity')
+        return update(s, ws, id, (n) => ({
+          ...n,
+          error: 'Note read admission budget unavailable',
+        }));
+      s = reclaimCleanPages({ ...s, resourceLedger: admission.ledger });
+    }
+    const updated = update(s, ws, id, (n) =>
+      generation === n.generation
+        ? { ...n, requests: { ...n.requests, [key]: true }, deferredRead: null }
+        : n,
+    );
+    return {
+      ...updated,
+      physicalReads: {
+        ...updated.physicalReads,
+        [physicalReadKey(ws, id, generation, key)]: {
+          workspaceId: ws,
+          noteId: id,
+          ...(ticket ? { ticket } : {}),
+          ...(resourceOwner ? { resourceOwner } : {}),
+        },
       },
-    },
-  };
-});
-notePagesReducer.with(sourcePageReceived, (s, { payload: [ws, id, generation, key, page] }) =>
-  update(s, ws, id, (n) => {
+    };
+  },
+);
+notePagesReducer.with(sourcePageReceived, (s, { payload: [ws, id, generation, key, page] }) => {
+  const read = s.physicalReads[physicalReadKey(ws, id, generation, key)];
+  let updated = update(s, ws, id, (n) => {
     if (
       generation !== n.generation ||
       !n.requests[key] ||
@@ -373,8 +499,44 @@ notePagesReducer.with(sourcePageReceived, (s, { payload: [ws, id, generation, ke
       if (oldest !== undefined) delete pages[oldest];
     }
     return { ...n, pages, pageOrder, requests, error: null, readRecoveryAttempted: false };
-  }),
-);
+  });
+  if (!read?.resourceOwner || getWorkspaceState(updated, ws).notes[id]?.pages[key] !== page)
+    return updated;
+  const resource = `frame:${read.ticket}`,
+    owner = `cache:${read.ticket}`;
+  const reserved = updated.resourceLedger.resources[resource];
+  if (!reserved) throw new Error('Decoded note page has no physical reservation');
+  const cost = measureNotePageCost(page, reserved.cost);
+  const settled = settleNoteResource(updated.resourceLedger, resource, cost);
+  const admission = requestNoteResources(settled, owner, [{ id: resource, cost }]);
+  updated = { ...updated, resourceLedger: admission.ledger };
+  if (admission.status !== 'admitted')
+    return update(updated, ws, id, (n) => {
+      const pages = { ...n.pages };
+      delete pages[key];
+      return {
+        ...n,
+        pages,
+        pageOrder: n.pageOrder.filter((k) => k !== key),
+        error: 'Note cache ownership budget unavailable',
+      };
+    });
+  return update(
+    {
+      ...updated,
+      cleanPages: [
+        ...updated.cleanPages.filter((entry) => entry.owner !== owner),
+        { workspaceId: ws, noteId: id, key, owner },
+      ],
+    },
+    ws,
+    id,
+    (n) => ({
+      ...n,
+      pageAllocations: { ...n.pageAllocations, [key]: { owner, resource } },
+    }),
+  );
+});
 notePagesReducer.with(pageRequestFailed, (s, { payload: [ws, id, generation, key, error] }) =>
   update(s, ws, id, (n) => {
     if (generation !== n.generation) return n;
@@ -455,18 +617,46 @@ notePagesReducer.with(pageMappingAccepted, (s, { payload: [ws, id, operationId, 
 notePagesReducer.with(pageSessionDiscarded, (s, { payload: [ws, id] }) => {
   const w = getWorkspaceState(s, ws);
   const notes = { ...w.notes };
+  let resourceLedger = s.resourceLedger;
+  for (const allocation of Object.values(notes[id]?.pageAllocations ?? {}))
+    resourceLedger = releaseNoteResources(resourceLedger, allocation.owner);
   delete notes[id];
-  return setWorkspaceState(s, ws, { ...w, notes });
+  return setWorkspaceState(
+    {
+      ...s,
+      resourceLedger,
+      cleanPages: s.cleanPages.filter((entry) => entry.workspaceId !== ws || entry.noteId !== id),
+    },
+    ws,
+    { ...w, notes },
+  );
 });
 notePagesReducer.with(workspaceUnmounted, (s, { payload: [ws] }) => {
   const w = getWorkspaceState(s, ws);
   const notes: Record<string, NotePageSession> = {};
   let nextGeneration = s.nextGeneration;
+  let resourceLedger = s.resourceLedger;
   for (const [id, n] of Object.entries(w.notes)) {
+    for (const allocation of Object.values(n.pageAllocations))
+      resourceLedger = releaseNoteResources(resourceLedger, allocation.owner);
     if (n.drafts.length || n.history.length || n.pending)
-      notes[id] = { ...invalidate(n), generation: nextGeneration++, panels: {} };
+      notes[id] = {
+        ...invalidate(n),
+        generation: nextGeneration++,
+        panels: {},
+        pageAllocations: {},
+      };
   }
-  return setWorkspaceState({ ...s, nextGeneration }, ws, { ...w, notes });
+  return setWorkspaceState(
+    {
+      ...s,
+      nextGeneration,
+      resourceLedger,
+      cleanPages: s.cleanPages.filter((entry) => entry.workspaceId !== ws),
+    },
+    ws,
+    { ...w, notes },
+  );
 });
 
 notePagesReducer.with(pageWindowRequested, (s, { payload: [ws, id, panel, at] }) =>

@@ -1,7 +1,12 @@
 import { call, put, race, take, type SagaGenerator } from 'typed-redux-saga';
+import { v4 as uuid } from 'uuid';
 import { noteWindowSteps } from '$features/notes/virtualized/note-window-reader';
 import { takeLatestInContext } from '../../../utils/context-saga-effects';
-import { selectNotePageSession } from '../note-pages-selectors';
+import {
+  selectNotePageSession,
+  selectNotePageInput,
+  selectNoteResourceHeld,
+} from '../note-pages-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import * as a from '../note-pages-slice';
 import type { NotePageRequest, NoteReadPage } from '$lib/client/note-pages';
@@ -16,18 +21,26 @@ function* readPage(
   id: string,
   generation: number,
   request: NotePageRequest,
+  owner: string,
 ): SagaGenerator<NoteReadPage> {
   const key = JSON.stringify(
     Object.fromEntries(Object.entries(request).sort(([a], [b]) => a.localeCompare(b))),
   );
   yield* put(a.pageRequested(ws, id, request));
   while (true) {
-    const n = yield* selectNotePageSession.effect(ws, id);
-    if (!n || n.generation !== generation || n.status !== 'ready')
-      throw new Error('Note window superseded');
-    const page = n.pages[key];
-    if (page && (!('expiresAt' in page) || Date.parse(page.expiresAt) > Date.now())) return page;
-    if (n.error && !n.requests[key]) throw new Error(n.error);
+    let input:
+      { current: boolean; page: NoteReadPage | undefined; error: string | null } | undefined;
+    input = yield* selectNotePageInput.effect(ws, id, generation, key);
+    if (!input.current) throw new Error('Note window superseded');
+    let page = input.page;
+    if (page && (!('expiresAt' in page) || Date.parse(page.expiresAt) > Date.now())) {
+      yield* put(a.pageCachedRetained(ws, id, generation, key, owner, page));
+      if (yield* selectNoteResourceHeld.effect(owner)) return page;
+      throw new Error('Note assembly input ownership unavailable');
+    }
+    if (input.error) throw new Error(input.error);
+    input = undefined;
+    page = undefined;
     const event = yield* take((event: Action) => belongs(event, ws, id));
     // The shared reader retains only the latest speculative deferred request.
     // Every mounted panel still owns its active iterator: re-admit that iterator
@@ -58,11 +71,23 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
   n = undefined;
   owned = undefined;
   live = undefined;
+  const assemblyId = `assembly:${uuid()}`;
+  const inputOwners: string[] = [];
   try {
     let next = steps.next();
     while (!next.done) {
-      const page = yield* call(readPage, ws, id, generation, next.value);
+      const owner = `${assemblyId}:${inputOwners.length}`;
+      inputOwners.push(owner);
+      let page: NoteReadPage | undefined = yield* call(
+        readPage,
+        ws,
+        id,
+        generation,
+        next.value,
+        owner,
+      );
       next = steps.next(page);
+      page = undefined;
     }
     yield* put(a.pageWindowSettled(ws, id, panel, generation, request, next.value, null));
   } catch (error) {
@@ -79,6 +104,7 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
     );
   } finally {
     steps.return(undefined as never);
+    for (const owner of inputOwners) yield* put(a.pageResourcesReleased(owner));
   }
 }
 function* waitForUnmount(ws: string) {

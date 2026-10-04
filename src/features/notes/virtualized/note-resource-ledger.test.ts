@@ -4,6 +4,7 @@ import {
   releaseNoteResources,
   requestNoteResources,
   transferNoteResources,
+  settleNoteResource,
   type NoteResourceCost,
 } from './note-resource-ledger';
 
@@ -28,6 +29,15 @@ const resource = (id: string, bytes: number, physicalReads = 0) => ({
 });
 
 describe('shared note resource reservations', () => {
+  it('transfers unused decode allowance to queued work while keeping the retained allocation charged', () => {
+    let ledger = requestNoteResources(create(), 'reader', [resource('decoded', 100)]).ledger;
+    ledger = requestNoteResources(ledger, 'next-read', [resource('next', 60)]).ledger;
+    ledger = settleNoteResource(ledger, 'decoded', cost(30));
+    expect(ledger.used.payloadBytes).toBe(90);
+    expect(ledger.owners.reader).toEqual(['decoded']);
+    expect(ledger.owners['next-read']).toEqual(['next']);
+    expect(() => settleNoteResource(ledger, 'decoded', cost(31))).toThrow(/allowance/);
+  });
   it('reserves atomically before construction and rejects an impossible minimum without queueing', () => {
     const initial = create();
     const admitted = requestNoteResources(initial, 'note-a/candidate', [resource('a', 70)]);
@@ -115,6 +125,17 @@ describe('shared note resource reservations', () => {
     ledger = releaseNoteResources(ledger, 'composing');
     ledger = transferNoteResources(ledger, 'pending', 'active');
     expect(ledger.used.payloadBytes).toBe(50);
+  });
+
+  it('drops superseded queued demand when the latest minimum cannot ever fit', () => {
+    let ledger = requestNoteResources(create(), 'active', [resource('a', 100)]).ledger;
+    ledger = requestNoteResources(ledger, 'next', [resource('old-demand', 60)]).ledger;
+    const impossible = requestNoteResources(ledger, 'next', [resource('new-demand', 101)]);
+    expect(impossible.status).toBe('impossible');
+    ledger = releaseNoteResources(impossible.ledger, 'active');
+    expect(ledger.owners.next).toBeUndefined();
+    expect(ledger.pending).toHaveLength(0);
+    expect(ledger.used.payloadBytes).toBe(0);
   });
 
   it('rejects unsafe numbers, duplicate identities and bounds control metadata', () => {

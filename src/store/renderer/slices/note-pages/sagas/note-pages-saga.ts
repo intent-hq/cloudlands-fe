@@ -15,6 +15,8 @@ import {
   selectNotePageSession,
   selectPhysicalNoteReadCount,
   selectPhysicalNoteReadTicket,
+  selectNoteReadCurrent,
+  selectNoteReadAdmitted,
 } from '../note-pages-selectors';
 import * as actions from '../note-pages-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -152,14 +154,32 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
   cached = undefined;
   live = undefined;
   const ticket = uuid();
-  yield* put(actions.pageRequestStarted(ws, id, generation, requestKey, ticket));
+  yield* put(
+    actions.pageRequestStarted(
+      ws,
+      id,
+      generation,
+      requestKey,
+      ticket,
+      request.maxWireBytes ?? 65536,
+    ),
+  );
   if ((yield* selectPhysicalNoteReadTicket.effect(ws, id, generation, requestKey)) !== ticket) {
     const current = yield* session(ws, id);
-    if (current?.generation === generation && !current.requests[requestKey])
+    if (current?.generation === generation && !current.requests[requestKey] && !current.error)
       yield* put(actions.pageReadDeferred(ws, id, generation, request));
     return;
   }
   try {
+    while (!(yield* selectNoteReadAdmitted.effect(ticket))) {
+      if (!(yield* selectNoteReadCurrent.effect(ws, id, generation))) return;
+      // Any note may release the next global slot. Never wait only for this note.
+      yield* take(
+        (event: ObservedAction) =>
+          event.type.startsWith('notePages/') || event.type === workspaceUnmounted.type,
+      );
+    }
+    if (!(yield* selectNoteReadCurrent.effect(ws, id, generation))) return;
     const page = yield* call([client, client.read], ws, id, scopedRequest);
     yield* put(actions.sourcePageReceived(ws, id, generation, requestKey, page));
   } catch (e) {

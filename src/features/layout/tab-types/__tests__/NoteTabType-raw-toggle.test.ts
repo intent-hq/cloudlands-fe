@@ -513,6 +513,14 @@ $$\frac{1}{2}$$
   it('an explicitly supplied paged surface never fetches a complete slim-note body', async () => {
     mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
     const surface = {
+      resourceLimits: {
+        payloadBytes: 262144,
+        stringUnits: 786432,
+        objectNodes: 262144,
+        domNodes: 0,
+        physicalReads: 4,
+        assemblies: 0,
+      },
       copyDocument: vi.fn(async () => {}),
       selectionChanged: vi.fn(),
       fullOperation: vi.fn(),
@@ -523,6 +531,11 @@ $$\frac{1}{2}$$
     });
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(mockState.loadContent).not.toHaveBeenCalled();
+    const actionTypes = mockState.dispatch.mock.calls.map(([action]) => action.type);
+    expect(actionTypes.indexOf('notePages/resourceLimitsConfigured')).toBeGreaterThanOrEqual(0);
+    expect(actionTypes.indexOf('notePages/resourceLimitsConfigured')).toBeLessThan(
+      actionTypes.indexOf('notePages/panelOpened'),
+    );
     const clipboard = { writeText: vi.fn(async () => {}) };
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
     await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
@@ -534,6 +547,14 @@ $$\frac{1}{2}$$
     mockState.pageSession.set({ status: 'legacy' });
     mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });
     const surface = {
+      resourceLimits: {
+        payloadBytes: 262144,
+        stringUnits: 786432,
+        objectNodes: 262144,
+        domNodes: 0,
+        physicalReads: 4,
+        assemblies: 0,
+      },
       copyDocument: vi.fn(async () => {}),
       selectionChanged: vi.fn(),
       fullOperation: vi.fn(),
@@ -549,6 +570,14 @@ $$\frac{1}{2}$$
       await import('$store/renderer/slices/note-pages/note-pages-slice');
     mockState.pageSession.set({ status: 'legacy' });
     const surface = {
+      resourceLimits: {
+        payloadBytes: 262144,
+        stringUnits: 786432,
+        objectNodes: 262144,
+        domNodes: 0,
+        physicalReads: 4,
+        assemblies: 0,
+      },
       copyDocument: vi.fn(async () => {}),
       selectionChanged: vi.fn(),
       fullOperation: vi.fn(),

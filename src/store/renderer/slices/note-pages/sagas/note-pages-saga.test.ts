@@ -53,7 +53,17 @@ afterEach(() => {
 function run(client: MockNotePagesClient) {
   appClient.notes.pages = client;
   const channel = stdChannel();
-  let state = a.initialNotePagesState;
+  let state = a.notePagesReducer(
+    a.initialNotePagesState,
+    a.pageResourceLimitsConfigured({
+      payloadBytes: 4 * 65536,
+      stringUnits: 12 * 65536,
+      objectNodes: 4 * 65536,
+      domNodes: 0,
+      physicalReads: 4,
+      assemblies: 0,
+    }),
+  );
   const dispatch = (action: Parameters<typeof a.notePagesReducer>[1]) => {
     state = a.notePagesReducer(state, action);
     channel.put(action);
@@ -66,6 +76,69 @@ function run(client: MockNotePagesClient) {
   tasks.push(task);
   return { dispatch, state: () => state, task };
 }
+
+it('reserves physical reads across notes and wakes another note after real settlement', async () => {
+  const pending = Array.from({ length: 3 }, () => deferred<NoteSourcePage>());
+  const read = vi.fn((_ws: string, note: string) => pending[Number(note)].promise);
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(
+    a.pageResourceLimitsConfigured({ ...r.state().resourceLedger.limit, physicalReads: 2 }),
+  );
+  for (let i = 0; i < 3; i++) r.dispatch(a.pagePanelOpened('ws-a', String(i), 'p'));
+  await flush();
+  for (let i = 0; i < 3; i++) client.push({ ...tuple, scope: { ...scope, noteId: String(i) } });
+  await flush();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(2);
+  r.dispatch(a.pagePanelClosed('ws-a', '0', 'p'));
+  await flush();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(2);
+  pending[0].resolve({ ...page, scope: { ...scope, noteId: '0' } });
+  await flush();
+  expect(read).toHaveBeenCalledTimes(3);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(2);
+  for (let i = 1; i < 3; i++)
+    pending[i].resolve({ ...page, scope: { ...scope, noteId: String(i) } });
+  await flush();
+  expect(r.state().resourceLedger.used.physicalReads).toBe(0);
+  expect(r.state().resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+  r.dispatch(workspaceUnmounted('ws-a'));
+  await flush();
+  expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
+});
+
+it('cancels a queued read on workspace closure without starting physical IO', async () => {
+  const pending = deferred<NoteSourcePage>();
+  const read = vi.fn(() => pending.promise);
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(
+    a.pageResourceLimitsConfigured({ ...r.state().resourceLedger.limit, physicalReads: 1 }),
+  );
+  for (const note of ['0', '1']) r.dispatch(a.pagePanelOpened('ws-a', note, 'p'));
+  await flush();
+  for (const note of ['0', '1']) client.push({ ...tuple, scope: { ...scope, noteId: note } });
+  await flush();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(r.state().resourceLedger.pending).toHaveLength(1);
+  r.dispatch(workspaceUnmounted('ws-a'));
+  await flush();
+  expect(r.state().resourceLedger.pending).toHaveLength(0);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(1);
+  pending.resolve({ ...page, scope: { ...scope, noteId: '0' } });
+  await flush();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(0);
+  expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
+});
 it('deduplicates panels and requests; closing one panel leaves the other subscription alive', async () => {
   const pending = deferred<NoteSourcePage>();
   const read = vi.fn(() => pending.promise);
@@ -565,7 +638,7 @@ it('assembles a renderer window through real page ownership and bounded context 
   ).toBeLessThanOrEqual(4);
 });
 
-it('does not publish an assembled window after its panel closes while context is pending', async () => {
+it('retains assembly inputs until cancellation and never publishes after its panel closes', async () => {
   const pending = deferred<any>();
   const client = new MockNotePagesClient({
     capabilities: { backendId: 'db-a', annotations: false },
@@ -579,7 +652,15 @@ it('does not publish an assembled window after its panel closes while context is
   r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
   await flush();
   expect(Object.keys(r.state().physicalReads)).toHaveLength(1);
+  expect(
+    Object.keys(r.state().resourceLedger.owners).some((owner) => owner.startsWith('assembly:')),
+  ).toBe(true);
   r.dispatch(a.pagePanelClosed('ws-a', 'spec', 'p'));
+  await flush();
+  expect(
+    Object.keys(r.state().resourceLedger.owners).some((owner) => owner.startsWith('assembly:')),
+  ).toBe(false);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(1);
   pending.resolve({
     kind: 'noteContextPage',
     scope,

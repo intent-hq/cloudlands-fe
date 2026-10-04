@@ -34,6 +34,7 @@
   import {
     pagePanelOpened,
     pagePanelClosed,
+    pageResourceLimitsConfigured,
   } from '$store/renderer/slices/note-pages/note-pages-slice';
   import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
   import type { NoteReadingSurface } from '$features/notes/virtualized/note-window-view';
@@ -102,6 +103,7 @@
   $effect(() => {
     if (!readingSurface || !workspaceId || !tab.noteId) return;
     const owner = { workspaceId, noteId: tab.noteId, panelId: tab.id };
+    appStore.dispatch(pageResourceLimitsConfigured(readingSurface.resourceLimits));
     appStore.dispatch(pagePanelOpened(owner.workspaceId, owner.noteId, owner.panelId));
     return () => appStore.dispatch(pagePanelClosed(owner.workspaceId, owner.noteId, owner.panelId));
   });
