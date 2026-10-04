@@ -1,5 +1,6 @@
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { OnboardingStep } from '../onboarding/onboarding-types';
+import type { RepositoryCheckoutDraft } from '../repository-checkout/repository-checkout-types';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
@@ -52,7 +53,8 @@ export interface WorkspaceInitializerAgentSettings {
 
 export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializerAgentSettings {
   repoPath?: string;
-  repoType?: WorkspaceInitializerRepoType;
+  repoType?: WorkspaceInitializerRepoType | 'gitlab';
+  repositoryCheckoutDraft?: RepositoryCheckoutDraft;
   githubUrl?: string;
   branch?: string;
   isNewRepo?: boolean;

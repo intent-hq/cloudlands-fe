@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => {
     send: vi.fn(),
     gitCheck: vi.fn(),
     create: vi.fn(),
+    captureCheckout: vi.fn(),
     update: vi.fn(),
     getBranches: vi.fn(),
     branchStatus: vi.fn(),
@@ -164,6 +165,7 @@ vi.mock('$lib/config/debug', () => ({
 
 vi.mock('$lib/client', () => ({
   appClient: {
+    integrations: { captureRepositoryCheckout: mocks.captureCheckout },
     agents: { setReasoningEffort: mocks.setReasoningEffort },
     git: {
       pull: mocks.pull,
@@ -250,10 +252,21 @@ import {
   principalReceived,
 } from '$store/renderer/slices/principal/principal-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import {
+  setLabsGitLabEnabled,
+  setLabsMultiplayerEnabled,
+} from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { repositoryCheckoutSaga } from '$store/renderer/slices/repository-checkout/sagas/repository-checkout-saga';
+import type {
+  RepositoryCheckoutSession,
+  CheckoutSelection,
+} from '$shared/types/repository-checkout';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { gitlabAuthChanged } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
 let dispose: () => void;
 let stopGit: () => void;
+let stopCheckout: (() => void) | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
@@ -289,6 +302,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   stopGit();
+  stopCheckout?.();
+  stopCheckout = undefined;
   dispose();
   sessionStorage.clear();
 });
@@ -421,4 +436,199 @@ it('verifies Git for an admitted shared-instance member without a phantom connec
   render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
   await waitFor(() => expect(mocks.gitCheck).toHaveBeenCalledOnce());
   expect(screen.queryByText('Unable to verify Git (connection issue)')).toBeNull();
+});
+
+describe('actual initializer qualified GitLab workspace creation', () => {
+  const instanceBaseUrl = 'https://forge.example:8443/Forge';
+  const projectPath = 'nested/team/target';
+  const sha = 'c'.repeat(40);
+  const contextUrl = `${instanceBaseUrl}/${projectPath}/-/merge_requests/17/diffs?view=parallel#note_42`;
+  let session: RepositoryCheckoutSession;
+  beforeEach(() => {
+    mocks.compactFormState$.set(null);
+    store.dispatch(setLabsGitLabEnabled(true));
+    const listeners = new Set<() => void>();
+    session = {
+      capture: {
+        checkoutId: 'original-lease',
+        revision: 'original-account',
+        provider: 'gitlab',
+        instanceBaseUrl,
+        expiresAfterMs: 600000,
+      },
+      onRetired: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      projects: vi.fn(async () => ({ status: 'ready', value: { items: [] } })),
+      project: vi.fn(async (query) => ({
+        status: 'ready',
+        value: {
+          project: {
+            projectPath,
+            name: 'target',
+            namespace: 'nested/team',
+            webUrl: `${instanceBaseUrl}/${projectPath}`,
+            cloneUrl: `${instanceBaseUrl}/${projectPath}.git`,
+            defaultBranch: 'trunk',
+          },
+          ...('url' in query ? { contextUrl: query.url } : {}),
+        },
+      })),
+      branches: vi.fn(async (query) => ({
+        status: 'ready',
+        value: {
+          items: [{ name: query.query || 'trunk', commitSha: sha }],
+          cached: query.cached === true,
+        },
+      })),
+      warm: vi.fn(async (selection) => ({
+        status: 'ready',
+        value: {
+          projectPath: selection.projectPath,
+          branch: selection.branch,
+          commitSha: selection.commitSha,
+          cached: true,
+        },
+      })),
+      release: vi.fn(async () => {
+        for (const listener of [...listeners]) listener();
+        listeners.clear();
+      }),
+    };
+    mocks.captureCheckout.mockResolvedValue({ status: 'ready', value: session });
+    stopCheckout = store.runSaga(repositoryCheckoutSaga);
+  });
+
+  async function renderCheckout(
+    mode: CheckoutSelection['mode'],
+    extra: Record<string, unknown> = {},
+  ) {
+    sessionStorage.setItem(
+      'workspace-prefill',
+      JSON.stringify({
+        prompt: 'Build the selected project',
+        repoPath: '/stale/local',
+        githubUrl: 'https://github.com/stale/repository',
+        branch: 'github-pr-head',
+        repositoryCheckoutDraft: {
+          instanceBaseUrl,
+          projectPath,
+          mode,
+          branch: 'release/next',
+          checkoutId: 'stale-lease',
+          revision: 'stale-account',
+          commitSha: '0'.repeat(40),
+        },
+        ...extra,
+      }),
+    );
+    return render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+  }
+
+  it.each(['direct', 'cached'] as const)(
+    'creates %s with only the freshly qualified branch and SHA',
+    async (mode) => {
+      await renderCheckout(mode);
+      const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+      await waitFor(() => expect(button.disabled).toBe(false));
+      await fireEvent.click(button);
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+      const request = mocks.create.mock.calls[0][0];
+      expect(request.repositoryCheckout).toEqual({
+        checkoutId: 'original-lease',
+        revision: 'original-account',
+        projectPath,
+        branch: 'release/next',
+        commitSha: sha,
+        mode,
+      });
+      for (const key of [
+        'repositoryPath',
+        'githubUrl',
+        'branch',
+        'baseRef',
+        'environmentConfig',
+        'remote',
+        'isNewRepo',
+        'skipIsolation',
+      ])
+        expect(request).not.toHaveProperty(key);
+      expect(request.progressId).toEqual(expect.any(String));
+      expect(mocks.validate).not.toHaveBeenCalled();
+      expect(mocks.getBranches).not.toHaveBeenCalled();
+      expect(mocks.pull).not.toHaveBeenCalled();
+      expect(mocks.settled).not.toHaveBeenCalled();
+      expect(session.warm).toHaveBeenCalledTimes(mode === 'cached' ? 1 : 0);
+    },
+  );
+
+  it('keeps an MR URL intact as context while creating from its target project default', async () => {
+    await renderCheckout('direct', {
+      repositoryCheckoutDraft: { instanceBaseUrl, contextUrl, mode: 'direct' },
+    });
+    const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+    await waitFor(() => expect(button.disabled).toBe(false));
+    await fireEvent.click(button);
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+    const request = mocks.create.mock.calls[0][0];
+    expect(session.project).toHaveBeenCalledWith({ url: contextUrl });
+    expect(request.repositoryCheckout).toMatchObject({
+      projectPath,
+      branch: 'trunk',
+      commitSha: sha,
+    });
+    expect(request.initialAgent.contextReferences).toContainEqual(
+      expect.objectContaining({ provider: 'gitlab', url: contextUrl, content: contextUrl }),
+    );
+    expect(request.contextLinks).toContainEqual({
+      kind: 'pr',
+      url: contextUrl,
+      owner: 'nested/team',
+      repo: 'target',
+      number: 17,
+    });
+    expect(request).not.toHaveProperty('branch');
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps cached creation disabled during warming and retires a late completion on account change', async () => {
+    const held = Promise.withResolvers<Awaited<ReturnType<RepositoryCheckoutSession['warm']>>>();
+    vi.mocked(session.warm).mockReturnValue(held.promise);
+    await renderCheckout('cached');
+    await waitFor(() => expect(session.warm).toHaveBeenCalledOnce());
+    const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+    expect(button.disabled).toBe(true);
+    store.dispatch(gitlabAuthChanged('revoked', 'forge.example:8443'));
+    held.resolve({
+      status: 'ready',
+      value: { projectPath, branch: 'release/next', commitSha: sha, cached: true },
+    });
+    await waitFor(() => expect(session.release).toHaveBeenCalled());
+    expect(button.disabled).toBe(true);
+    expect(getItems(store.state.repositoryCheckout.forms)[0].project).toBeNull();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a malformed explicit checkout prefill without falling back to its local path', async () => {
+    await renderCheckout('direct', {
+      repositoryCheckoutDraft: {
+        instanceBaseUrl: 'https://unknown.example/Forge',
+        contextUrl,
+        mode: 'direct',
+      },
+    });
+    await waitFor(() =>
+      expect(getItems(store.state.repositoryCheckout.forms)[0]?.unavailable?.reason).toBe(
+        'invalid-target',
+      ),
+    );
+    expect(mocks.captureCheckout).not.toHaveBeenCalled();
+    const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+    expect(button.disabled).toBe(true);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.validate).not.toHaveBeenCalled();
+  });
 });

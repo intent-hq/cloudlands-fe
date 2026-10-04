@@ -1632,6 +1632,7 @@ export interface ContextLink {
 }
 
 export interface CreateWorkspaceRequest {
+  repositoryCheckout?: import('./types/repository-checkout').CheckoutSelection;
   idempotencyKey?: string;
   title?: string;
   statusMessage?: string;

@@ -124,6 +124,13 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  captureRepositoryCheckout?(
+    query: import('$shared/types/repository-checkout').CheckoutCaptureQuery,
+  ): Promise<
+    import('$shared/types/repository-checkout').CheckoutResult<
+      import('$shared/types/repository-checkout').RepositoryCheckoutSession
+    >
+  >;
   captureRepositoryResource?(workspaceId: string): Promise<RepositoryResourceSession>;
   prepareNativeReview?(input: NativeReviewInput): Promise<NativeReviewSession>;
   captureRepositorySelection?(root: RepositoryRootIdentity): Promise<RepositorySelectionSession>;

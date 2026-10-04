@@ -1,3 +1,4 @@
+import type { CheckoutCaptureQuery } from '$shared/types/repository-checkout';
 import type { NativeReviewInput } from '$shared/types/native-review-operation';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { BackendError } from './backend-transport-types';
@@ -171,4 +172,17 @@ export function prepareBackendNativeReview(input: NativeReviewInput) {
       }),
     );
   return transport.prepareNativeReview(input);
+}
+
+/** Pre-workspace browsing requires the original admitted transport. */
+export function captureBackendRepositoryCheckout(query: CheckoutCaptureQuery) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositoryCheckout)
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+        message: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+      }),
+    );
+  return transport.captureRepositoryCheckout(query);
 }
