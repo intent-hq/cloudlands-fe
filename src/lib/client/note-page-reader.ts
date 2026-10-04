@@ -70,7 +70,8 @@ function canonicalItem(i: Record<string, unknown>): boolean {
       !token(i.ownerRef) ||
       !['identity', 'entity', 'normalized', 'omitted', 'projection'].includes(String(i.mapping)) ||
       (i.mapping === 'identity' && sourceLength !== renderedLength) ||
-      (i.mapping === 'projection' && sourceLength !== 0) ||
+      (i.mapping === 'projection' ? sourceLength !== 0 : sourceLength === 0) ||
+      (i.mapping !== 'omitted' && renderedLength === 0) ||
       (i.mapping === 'omitted' && (renderedLength !== 0 || i.textRef !== null)) ||
       (i.textNodeId === null
         ? i.textNodeRef !== null || i.mapping !== 'omitted' || r.start !== 0 || r.end !== 0

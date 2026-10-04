@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { storeTableFixture } from './__tests__/store-table-fixture';
-import { NOTE_WINDOW_LIMITS, NoteWindowControlBudgetError } from './note-window-reader';
+import { NOTE_WINDOW_LIMITS } from './note-window-reader';
 import { projectNoteWindow } from './note-window-projection';
 import { canonicalTableFixture, nativeFixtureEditor } from './__tests__/canonical-table-fixture';
 
@@ -67,14 +67,16 @@ it('keeps canonical control admission at the original 8 KiB budget', () => {
 // Their former success required the rejected 64 KiB exploration limit. Producer
 // provenance and original red logs are retained in the task/PR context artifacts.
 for (const role of ['td', 'th'] as const) {
-  it(`rejects historical prototype ${role} control without retrying or fetching a full note`, async () => {
+  it(`rejects historical prototype ${role} malformed omitted endpoints before admission`, async () => {
     const fixture = storeTableFixture(role, 'original');
     const failure = await fixture.read().then(
       () => undefined,
       (error: unknown) => error,
     );
-    expect(failure).toBeInstanceOf(NoteWindowControlBudgetError);
-    expect((failure as NoteWindowControlBudgetError).requiredBytes).toBeGreaterThan(8192);
+    // Original8KiB rejection logs and exact59-call captures remain immutable.
+    // Strict9b886 validation now catches their zero-length omitted maps earlier.
+    // This is malformed-producer evidence, not successful retry/paint admission.
+    expect(failure).toEqual(new Error('Invalid canonical source map'));
     expect(fixture.requests.filter((request) => request.kind === 'source')).toHaveLength(1);
     expect(fixture.requests.length).toBeLessThanOrEqual(NOTE_WINDOW_LIMITS.requests);
     expect(fixture.requests.every((request) => request.maxWireBytes === 8192)).toBe(true);
