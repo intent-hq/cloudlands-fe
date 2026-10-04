@@ -1,3 +1,4 @@
+import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
 import { pendingRetentionSaga } from './slices/pending-submissions/sagas/pending-retention-saga';
 import { invitationAccountSearchSaga } from './slices/invitation-account-search/sagas/invitation-account-search-saga';
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
@@ -133,6 +134,7 @@ export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 
 /** App-owned sagas in audited startup order. Each production owner appears once. */
 export const sagas = [
+  modelNameCacheSaga,
   pendingRetentionSaga,
   daemonEventsSaga,
   daemonHealthSaga,

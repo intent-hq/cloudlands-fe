@@ -23,6 +23,7 @@ const mockModelState = vi.hoisted(() => ({
 // exposed through the store mock, for the cache-hydration tests. Empty by
 // default so every existing test keeps the uncached first-boot path.
 const mockProviderModelsState = vi.hoisted((): ProviderModelsState => ({
+  learnedNames: {},
   byProviderId: {} as Record<
     string,
     {
