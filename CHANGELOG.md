@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.203.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.5...v2.203.6) (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.12 ([#3175](https://github.com/intent-hq/cloudlands-fe/issues/3175)) ([7a71a4e](https://github.com/intent-hq/cloudlands-fe/commit/7a71a4e12fe73ae3a500b50c9ceb5d924ac27936))
+* keep non-owner agent settings read-only ([#3171](https://github.com/intent-hq/cloudlands-fe/issues/3171)) ([6b14350](https://github.com/intent-hq/cloudlands-fe/commit/6b14350ecd78b305dfc50107a52f1eb12156003e))
+
 ## [2.203.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.4...v2.203.5) (2026-10-04)
 
 
