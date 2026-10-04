@@ -599,6 +599,173 @@ exports[`records the production HTML normalization for markdownBeforeHtmlBacktic
 }
 `;
 
+exports[`records the production HTML normalization for markdownCrLfHtmlBlock > markdownCrLfHtmlBlock 1`] = `
+{
+  "html": "<h2>Before</h2>
+<p>&lt;div&gt;one<br>two&lt;/div&gt;</p>
+",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "level": 2,
+        },
+        "content": [
+          {
+            "text": "Before",
+            "type": "text",
+          },
+        ],
+        "type": "heading",
+      },
+      {
+        "content": [
+          {
+            "text": "<div>one",
+            "type": "text",
+          },
+          {
+            "type": "hardBreak",
+          },
+          {
+            "text": "two</div>",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<h2>Before</h2><p>&lt;div&gt;one<br>two&lt;/div&gt;</p>",
+  "saved": "## Before
+
+<div>one
+two</div>",
+  "source": "## Before
+
+<div>one
+two</div>",
+}
+`;
+
+exports[`records the production HTML normalization for markdownInsideHtmlBlock > markdownInsideHtmlBlock 1`] = `
+{
+  "html": "<h2>Before</h2>
+<p>&lt;div&gt;<strong>bold</strong> <code>code</code> &amp; * &lt;/div&gt;</p>
+",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "level": 2,
+        },
+        "content": [
+          {
+            "text": "Before",
+            "type": "text",
+          },
+        ],
+        "type": "heading",
+      },
+      {
+        "content": [
+          {
+            "text": "<div>",
+            "type": "text",
+          },
+          {
+            "marks": [
+              {
+                "type": "bold",
+              },
+            ],
+            "text": "bold",
+            "type": "text",
+          },
+          {
+            "text": " ",
+            "type": "text",
+          },
+          {
+            "marks": [
+              {
+                "type": "code",
+              },
+            ],
+            "text": "code",
+            "type": "text",
+          },
+          {
+            "text": " & * </div>",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<h2>Before</h2><p>&lt;div&gt;<strong>bold</strong> <code spellcheck="false">code</code> &amp; * &lt;/div&gt;</p>",
+  "saved": "## Before
+
+<div>**bold** \`code\` & * </div>",
+  "source": "## Before
+
+<div>**bold** \`code\` &amp; \\* </div>",
+}
+`;
+
+exports[`records the production HTML normalization for markdownMultilineHtmlBlock > markdownMultilineHtmlBlock 1`] = `
+{
+  "html": "<h2>Before</h2>
+<p>&lt;div&gt;one<br>two&lt;/div&gt;</p>
+",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "level": 2,
+        },
+        "content": [
+          {
+            "text": "Before",
+            "type": "text",
+          },
+        ],
+        "type": "heading",
+      },
+      {
+        "content": [
+          {
+            "text": "<div>one",
+            "type": "text",
+          },
+          {
+            "type": "hardBreak",
+          },
+          {
+            "text": "two</div>",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<h2>Before</h2><p>&lt;div&gt;one<br>two&lt;/div&gt;</p>",
+  "saved": "## Before
+
+<div>one
+two</div>",
+  "source": "## Before
+
+<div>one
+two</div>",
+}
+`;
+
 exports[`records the production HTML normalization for nestedTable > nestedTable 1`] = `
 {
   "html": "<table><tbody><tr><td>OUTER<table><tbody><tr><th>INNER</th></tr></tbody></table>AFTER</td><td>LAST</td></tr></tbody></table>",

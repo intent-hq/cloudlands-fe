@@ -78,6 +78,9 @@ it('fresh canonical HTML strips merged attributes; live merging remains a separa
 });
 
 const canonicalSpecimens = {
+  markdownInsideHtmlBlock: '## Before\n\n<div>**bold** `code` &amp; \\* </div>',
+  markdownMultilineHtmlBlock: '## Before\n\n<div>one\ntwo</div>',
+  markdownCrLfHtmlBlock: '## Before\r\n\r\n<div>one\r\ntwo</div>',
   htmlTableBeforeBacktickTail: '<table><tr><td>x</td></tr></table>\n\n`After`',
   markdownBeforeHtmlBacktickTail: '## Before\n\n<table><tr><td>x</td></tr></table>\n\n`After`',
   markdownBeforeAndAfterHtmlTable: '## Before\n\n<table><tr><td>x</td></tr></table>\n\n**After**',
