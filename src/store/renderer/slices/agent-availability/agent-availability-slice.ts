@@ -313,3 +313,8 @@ agentAvailabilityReducer.with(hostExecutionConnectionChanged, (state) => ({
     Object.entries(state.providerCheckEpochMap).map(([id, epoch]) => [id, epoch + 1]),
   ),
 }));
+
+/** Optional first-run discovery runs independently of authentication checks. */
+export const prepareOnboardingAdaptersRequested = createAction(
+  'agentAvailability/prepareOnboardingAdaptersRequested',
+);

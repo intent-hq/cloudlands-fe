@@ -1,3 +1,4 @@
+import { providerAdapterPreparationSaga } from './slices/agent-availability/sagas/provider-adapter-preparation-saga';
 import { pendingRetentionSaga } from './slices/pending-submissions/sagas/pending-retention-saga';
 import { invitationAccountSearchSaga } from './slices/invitation-account-search/sagas/invitation-account-search-saga';
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
@@ -198,6 +199,7 @@ export const sagas = [
   modelBootSaga,
   modelReloadSaga,
   providerAvailabilitySaga,
+  providerAdapterPreparationSaga,
   setupPromptSaga,
   backgroundHooksSaga,
   hostOwnerServicesSaga,

@@ -256,6 +256,7 @@ export const IPC_CHANNELS = {
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
+    PREPARE_ADAPTERS: 'providers:prepare-adapters',
     GET_PATHS: 'providers:get-paths',
     CHECK_SINGLE: 'providers:check-single',
   },

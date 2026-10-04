@@ -19,7 +19,8 @@ import {
 } from '../../../shared/main/provider-auth-status';
 import type { ProviderAuthVerdict } from '../../../shared/provider-auth-status';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, getBackendClientForIpcEvent } from '../../backend/main/backend.ipc';
+import { createProviderAdapterPreparer } from '../../../shared/provider-adapter-preparation';
 import { findBinaryStrict } from '../../../shared/main/find-binary';
 import { findAuggiePathStrict } from '../../auggie/main/auggie-path';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '../../../shared/constants/claude-code';
@@ -485,6 +486,16 @@ export async function getProviderPaths(): Promise<ProviderPathsResult> {
  * Setup IPC handlers for provider availability
  */
 export function setupProviderAvailabilityIPC(): void {
+  const prepareAdapters = createProviderAdapterPreparer();
+  ipcMain.handle(PROVIDERS_CHANNELS.PREPARE_ADAPTERS, async (event, context: unknown) => {
+    if (typeof context !== 'string' || !context) return;
+    try {
+      const { client } = getBackendClientForIpcEvent(event);
+      await prepareAdapters(client, context);
+    } catch {
+      // A missing/disconnected captured route is not an onboarding failure.
+    }
+  });
   ipcMain.handle(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
     try {
       const result = await getProviderAvailability();
