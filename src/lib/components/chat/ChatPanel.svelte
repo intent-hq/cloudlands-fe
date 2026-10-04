@@ -7275,25 +7275,32 @@
           </div>
         {/if}
 
-        {#each pendingConversationMessages as message (message.appMessageId ?? message.id)}
-          <div
-            class="w-full mb-7"
-            data-message-id={message.id}
-            data-message-role="user"
-            data-send-app-message-id={message.appMessageId}
-            class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
-          >
-            <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+        {#if pendingConversationMessages.length > 0}
+          <!-- Match the confirmed rows' grouping and spacing so the first
+               submission stays in place when history confirms it. -->
+          <div class="w-full space-y-7" class:mt-auto={$agentMessages$.length === 0}>
+            {#each pendingConversationMessages as message (message.appMessageId ?? message.id)}
+              <div
+                class="w-full"
+                data-message-id={message.id}
+                data-message-role="user"
+                data-send-app-message-id={message.appMessageId}
+                class:invisible={pendingSendMessageIds.has(String(message.appMessageId ?? ''))}
+              >
+                <ChatMessage {agentId} {message} {workspace} ownsMessageIdentity={false} />
+              </div>
+            {/each}
           </div>
-        {/each}
+        {/if}
 
         <!-- Rendered messages own the spare space above them. Keep the utility
              stack bottom-aligned independently for empty/loading entry states. -->
         <div
-          class:mt-auto={$agentMessages$.length === 0 ||
-            deferTranscriptReveal ||
-            isFirstHydrationLoading ||
-            (!!pendingMessage && !transcriptStructure.hasUserMessage)}
+          class:mt-auto={pendingConversationMessages.length === 0 &&
+            ($agentMessages$.length === 0 ||
+              deferTranscriptReveal ||
+              isFirstHydrationLoading ||
+              (!!pendingMessage && !transcriptStructure.hasUserMessage))}
           data-testid="transcript-utility-stack"
         >
           {#key `${workspace?.id}::${agentId}`}
