@@ -7267,5 +7267,6 @@
   "gitlabCheckout_invalidTarget_description": "請使用已連線 GitLab 執行個體的專案或合併請求 URL。",
   "gitlabCheckout_emptyRepository_description": "此儲存庫尚無可簽出的分支。",
   "gitlabCheckout_branchChanged_description": "分支已變更。請重新整理並確認目前的提交。",
+  "gitlabCheckout_createRecovery_description": "無法取出。請重新整理並確認專案、分支和提交，然後再次選擇「建立」。",
   "gitlabCheckout_useLink_label": "使用連結"
 }

@@ -33,7 +33,7 @@ let socketSequence = 0,
   leaseSequence = 0;
 let capability: unknown = 1;
 let refusal: string | undefined;
-let branchChanged = false;
+let nativeCheckoutUnavailable = false;
 let holdCreateError = false;
 let held: (() => void) | undefined;
 const ready = (value: unknown) => ({ status: 'ready', value });
@@ -118,15 +118,15 @@ const producer = createSocketServer((socket) => {
                 },
               }) + '\n',
             );
-        } else if (branchChanged)
+        } else if (nativeCheckoutUnavailable)
           socket.write(
             JSON.stringify({
               jsonrpc: '2.0',
               id: message.id,
               error: {
-                code: -32000,
-                message: 'CHECKOUT_BRANCH_CHANGED',
-                data: { code: 'CHECKOUT_BRANCH_CHANGED' },
+                code: -32003,
+                message: 'Forbidden',
+                data: { code: 'forbidden', detail: 'Repository checkout unavailable' },
               },
             }) + '\n',
           );
@@ -227,8 +227,8 @@ async function run() {
     setRefusal(reason?: string) {
       refusal = reason;
     },
-    setBranchChanged(value: boolean) {
-      branchChanged = value;
+    setNativeCheckoutUnavailable(value: boolean) {
+      nativeCheckoutUnavailable = value;
     },
     holdCreateError(value: boolean) {
       holdCreateError = value;

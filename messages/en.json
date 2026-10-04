@@ -7267,5 +7267,6 @@
   "gitlabCheckout_invalidTarget_description": "Use a project or merge request URL from the connected GitLab instance.",
   "gitlabCheckout_emptyRepository_description": "This repository has no branch to check out yet.",
   "gitlabCheckout_branchChanged_description": "The branch changed. Refresh and confirm its current commit.",
+  "gitlabCheckout_createRecovery_description": "Checkout is unavailable. Refresh to review the project, branch and commit before choosing Create again.",
   "gitlabCheckout_useLink_label": "Use link"
 }

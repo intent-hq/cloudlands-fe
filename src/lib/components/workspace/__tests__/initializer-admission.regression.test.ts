@@ -598,6 +598,67 @@ describe('actual initializer qualified GitLab workspace creation', () => {
   });
 
   it.each(['direct', 'cached'] as const)(
+    'refreshes a failed %s checkout only on request and requires another explicit create',
+    async (mode) => {
+      mocks.create.mockResolvedValue({ ok: false, error: 'Forbidden', errorCode: 'forbidden' });
+      await renderCheckout(mode);
+      const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+      await waitFor(() => expect(button.disabled).toBe(false));
+      await fireEvent.click(button);
+      await screen.findByText('Forbidden');
+      expect(screen.getByText(/Refresh to review the project, branch and commit/)).toBeTruthy();
+      expect(mocks.create).toHaveBeenCalledOnce();
+      expect(mocks.captureCheckout).toHaveBeenCalledOnce();
+      expect(session.release).not.toHaveBeenCalled();
+      await waitFor(() => expect(button.disabled).toBe(false));
+
+      const nextSha = 'd'.repeat(40);
+      const refreshed: RepositoryCheckoutSession = {
+        ...session,
+        capture: { ...session.capture, checkoutId: 'refreshed-lease', revision: 'refreshed' },
+        onRetired: () => () => {},
+        branches: vi.fn(async (query) => ({
+          status: 'ready',
+          value: {
+            items: [{ name: query.query || 'trunk', commitSha: nextSha }],
+            cached: query.cached === true,
+          },
+        })),
+        release: vi.fn(async () => {}),
+      };
+      mocks.captureCheckout.mockResolvedValue({ status: 'ready', value: refreshed });
+      await fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+      await waitFor(() => expect(session.release).toHaveBeenCalled());
+      await waitFor(() => expect(mocks.captureCheckout).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(getItems(store.state.repositoryCheckout.forms)[0]?.branch).toEqual({
+          name: 'release/next',
+          commitSha: nextSha,
+        }),
+      );
+      await waitFor(() => expect(screen.queryByText('Forbidden')).toBeNull());
+      expect(mocks.create).toHaveBeenCalledOnce();
+      await waitFor(() =>
+        expect(
+          document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')?.disabled,
+        ).toBe(false),
+      );
+      await fireEvent.click(document.querySelector('[data-dialog-primary-action]')!);
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+      expect(mocks.create.mock.calls[1][0].repositoryCheckout).toEqual({
+        checkoutId: 'refreshed-lease',
+        revision: 'refreshed',
+        projectPath,
+        branch: 'release/next',
+        commitSha: nextSha,
+        mode,
+      });
+      expect(mocks.validate).not.toHaveBeenCalled();
+      expect(mocks.getBranches).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['direct', 'cached'] as const)(
     'restores a saved plain project URL and %s selection through a fresh checkout',
     async (mode) => {
       const projectUrl = `${instanceBaseUrl}/${projectPath}?ref=release%2Fnext#readme`;

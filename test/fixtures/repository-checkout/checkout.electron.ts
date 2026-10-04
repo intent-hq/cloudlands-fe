@@ -322,11 +322,15 @@ test('checkout consumer retains original document, socket and selected branch ac
     const recaptured = await original.evaluate(() => (window as any).checkoutConsumer.capture());
     selected.checkoutId = recaptured.capture.checkoutId;
     selected.revision = recaptured.capture.revision;
-    await app.evaluate(() => (globalThis as any).checkoutElectronFixture.setBranchChanged(true));
+    await app.evaluate(() =>
+      (globalThis as any).checkoutElectronFixture.setNativeCheckoutUnavailable(true),
+    );
     expect(
       await original.evaluate((s) => (window as any).checkoutConsumer.create(s), selected),
-    ).toMatchObject({ success: false, errorCode: 'CHECKOUT_BRANCH_CHANGED' });
-    await app.evaluate(() => (globalThis as any).checkoutElectronFixture.setBranchChanged(false));
+    ).toMatchObject({ success: false, error: 'Forbidden', errorCode: 'forbidden' });
+    await app.evaluate(() =>
+      (globalThis as any).checkoutElectronFixture.setNativeCheckoutUnavailable(false),
+    );
     await original.evaluate(() => (window as any).checkoutConsumer.capture());
     await original.evaluate(() => (window as any).checkoutConsumer.beginHeld());
     await expect

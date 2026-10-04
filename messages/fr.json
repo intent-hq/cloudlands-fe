@@ -7267,5 +7267,6 @@
   "gitlabCheckout_invalidTarget_description": "Utilisez une URL de projet ou de merge request de l’instance GitLab connectée.",
   "gitlabCheckout_emptyRepository_description": "Ce dépôt ne contient pas encore de branche à extraire.",
   "gitlabCheckout_branchChanged_description": "La branche a changé. Actualisez et confirmez son commit actuel.",
+  "gitlabCheckout_createRecovery_description": "Le checkout est indisponible. Actualisez pour vérifier le projet, la branche et le commit avant de choisir à nouveau Créer.",
   "gitlabCheckout_useLink_label": "Utiliser le lien"
 }

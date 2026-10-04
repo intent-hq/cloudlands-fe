@@ -552,6 +552,7 @@
   function recoverCheckout(scopeKey: string) {
     const form = selectCheckoutForm.select(appStore.state, checkoutFormId);
     if ((form?.scopeKey ?? '') !== scopeKey) return;
+    error = null;
     if (form?.scopeKey) appStore.dispatch(recoveryRequested(checkoutFormId, scopeKey));
     else appStore.dispatch(checkoutOpened(checkoutFormId, form?.draft ?? undefined));
   }
@@ -3689,6 +3690,12 @@
         >
           {error}
         </div>
+        {#if repoType === 'gitlab' && $checkoutForm$?.status === 'ready' && !isCreating}
+          <p class="text-sm text-subtle">{m.gitlabCheckout_createRecovery_description()}</p>
+          <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
+            >{m.collaboration_host_refresh_label()}</Button
+          >
+        {/if}
       {/if}
       <!-- Validation hint -->
       {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitAvailable !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}

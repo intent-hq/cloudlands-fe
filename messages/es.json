@@ -7267,5 +7267,6 @@
   "gitlabCheckout_invalidTarget_description": "Usa una URL de proyecto o solicitud de fusión de la instancia de GitLab conectada.",
   "gitlabCheckout_emptyRepository_description": "Este repositorio aún no tiene una rama para copiar.",
   "gitlabCheckout_branchChanged_description": "La rama cambió. Actualiza y confirma su commit actual.",
+  "gitlabCheckout_createRecovery_description": "El checkout no está disponible. Actualiza para revisar el proyecto, la rama y el commit antes de volver a elegir Crear.",
   "gitlabCheckout_useLink_label": "Usar enlace"
 }
