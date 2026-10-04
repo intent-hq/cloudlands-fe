@@ -7,6 +7,7 @@ import {
 } from '@playwright/test';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import { comparePersistedOracle, readPersistedPage } from './electron-persisted-read';
 const owned = 'src/features/notes/virtualized/primitives/mermaid/__tests__';
 const evidence = resolve(process.env.MERMAID_PERSISTED_EVIDENCE ?? 'missing-explicit-evidence');
 async function launch(
@@ -107,10 +108,7 @@ for (const dark of [false, true])
           let decoded = 0,
             encoded = 0;
           for (let band = 0; band < 4; band++) {
-            const page = await app.evaluate(
-              ({ at }) => (globalThis as any).persistedPaint.read('tile', at, 1),
-              { at: camera * 4 + band },
-            );
+            const page = await readPersistedPage(app, 'tile', camera * 4 + band, 1);
             expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(16384);
             const tile = page.records[0];
             expect(tile.camera).toBe(camera);
@@ -118,10 +116,7 @@ for (const dark of [false, true])
             expect(tile.identity).toEqual(initial.state.result.identity);
             let base64 = '';
             for (let at = tile.chunkStart; at < tile.chunkStart + tile.chunks; at++) {
-              const chunk = await app.evaluate(
-                (at) => (globalThis as any).persistedPaint.read('tile-chunk', at, 1),
-                at,
-              );
+              const chunk = await readPersistedPage(app, 'tile-chunk', at, 1);
               expect(Buffer.byteLength(JSON.stringify(chunk))).toBeLessThanOrEqual(16384);
               base64 += chunk.records[0].base64;
             }
@@ -148,10 +143,7 @@ for (const dark of [false, true])
                 requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
               ),
           );
-          const comparison = await app.evaluate(
-            (camera) => (globalThis as any).persistedPaint.compareOracle(camera),
-            camera,
-          );
+          const comparison = await comparePersistedOracle(app, camera);
           expect(comparison.meanChannelError).toBeLessThanOrEqual(0.5);
           expect(comparison.differentFraction).toBeLessThanOrEqual(0.01);
           expect(decoded).toBe(262144);
