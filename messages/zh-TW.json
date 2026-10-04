@@ -7231,5 +7231,7 @@
   "collaboration_lists_noJoinedInstances_title": "沒有已加入的執行個體",
   "collaboration_lists_noJoinedInstances_description": "你加入的執行個體將顯示在這裡。",
   "collaboration_lists_sharingLoading_label": "正在載入工作區共用…",
-  "collaboration_lists_sharingLoad_error": "無法載入工作區共用。"
+  "collaboration_lists_sharingLoad_error": "無法載入工作區共用。",
+  "agent_chatSend_uncertainRetry_description": "尚未確認訊息是否已送達。再次傳送可能導致此訊息重複送達。",
+  "agent_chatSend_resend_label": "再次傳送"
 }

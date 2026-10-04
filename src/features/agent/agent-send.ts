@@ -1,3 +1,11 @@
+import { loadChatTranscript } from './chat-read-service';
+import {
+  selectSubmissionIsCurrent,
+  selectSubmissionObserved,
+  selectPendingSubmissionEntry,
+} from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+import type { SubmissionReference } from '$store/renderer/slices/pending-submissions/pending-submissions-types';
 import { reconcileQueuedMessage } from './utils/reconcile-queued-message';
 import { selectWorkspaceParticipationContext } from '$store/renderer/slices/workspace/workspace-selectors';
 import { captureAgentMutationOwnership } from '$features/agent/agent-read-ownership';
@@ -92,6 +100,7 @@ export async function sendMessage(
   content: string,
   workspace: Workspace,
   options: {
+    submission?: SubmissionReference;
     contextReferences?: Array<{
       type: string;
       filePath?: string;
@@ -150,12 +159,37 @@ export async function sendMessage(
   const admission = selectWorkspaceParticipationContext.select(appStore.state, workspace.id);
   if (!admission) return;
   const ownership = captureAgentMutationOwnership(agentId, workspace.id);
+  const submission = options.submission;
+  const supported =
+    !!submission &&
+    selectPendingSubmissionEntry.select(appStore.state, submission.scope)?.supported === true;
+  const settle = (
+    outcome: 'accepted' | 'rejected' | 'uncertain',
+    queued?: QueuedMessage,
+    fallback = false,
+  ) => {
+    if (submission)
+      dispatchRedux(
+        pendingSubmissionSettled(
+          submission.scope,
+          submission.id,
+          outcome,
+          Date.now(),
+          queued,
+          fallback,
+        ),
+      );
+  };
+  let legacySubmissionReleased = false;
   const isCurrent = () =>
+    (!submission ||
+      legacySubmissionReleased ||
+      selectSubmissionIsCurrent.select(appStore.state, submission)) &&
     admission === selectWorkspaceParticipationContext.select(appStore.state, workspace.id) &&
     ownership.isCurrent(appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId);
   // Wrap entire sendMessage operation with performance tracking
   return performanceOptimizer.track(
-    `sendMessage:${ownership.key}:${agentId}`,
+    `sendMessage:${ownership.key}:${agentId}:${submission?.id ?? 'legacy'}`,
     async () => {
       if (!isCurrent()) return;
       logger.debug(`Sending message to agent ${agentId}`, {
@@ -294,19 +328,27 @@ export async function sendMessage(
           },
         };
 
-        dispatchRedux(addAgentSessionMessage(session.id, userMessage));
+        if (!supported) {
+          if (submission) {
+            settle('rejected');
+            legacySubmissionReleased = true;
+          }
+          dispatchRedux(addAgentSessionMessage(session.id, userMessage));
+        }
         dispatchRedux(setAgentStreaming(session.id, true));
 
+        let wireRejected = false;
         try {
           // Save the session immediately after adding the user message
           // This ensures the message persists even if the app crashes or refreshes
           // For edit/regenerate flows (resetHistory), allow truncation since messages
           // were intentionally removed before this save
-          await appStore.dispatch(
-            saveAgentSessionRequested(workspace.id, agentId, true, {
-              allowTruncation: options.resetHistory,
-            }),
-          );
+          if (!supported)
+            await appStore.dispatch(
+              saveAgentSessionRequested(workspace.id, agentId, true, {
+                allowTruncation: options.resetHistory,
+              }),
+            );
 
           // Pre-assign the assistant message ID BEFORE the retry boundary
           // so that retries reuse the same ID instead of minting a new one.
@@ -315,237 +357,281 @@ export async function sendMessage(
           const assistantAppMessageId = createAppMessageId();
 
           // --- Retry boundary: only wraps the backend send ---
-          const result = await errorRecovery.executeWithRecovery(
-            async () =>
-              errorBoundary.wrap(
-                async () => {
-                  if (!isCurrent()) return;
-                  // Streaming and terminal state for this turn arrive via the
-                  // standing chat.subscribe delta stream (PROTOCOL §7.1,
-                  // chat-subscribe saga) and the daemon events bridge
-                  // (events.subscribe → agent:stream:* / agent:idle, §7) —
-                  // no transcript state is assembled here.
-                  //
-                  // NOTE: The frontend no longer imposes a wall-clock timeout on the
-                  // stream, and no client-side stall detection remains (the former
-                  // chat-state stall saga was removed). The daemon (intentd) owns
-                  // turn lifetime and will emit a terminal event (complete with
-                  // finishReason, or error) when the turn ends.
+          const sendAttempt = async () =>
+            errorBoundary.wrap(
+              async () => {
+                if (!isCurrent()) return;
+                // Streaming and terminal state for this turn arrive via the
+                // standing chat.subscribe delta stream (PROTOCOL §7.1,
+                // chat-subscribe saga) and the daemon events bridge
+                // (events.subscribe → agent:stream:* / agent:idle, §7) —
+                // no transcript state is assembled here.
+                //
+                // NOTE: The frontend no longer imposes a wall-clock timeout on the
+                // stream, and no client-side stall detection remains (the former
+                // chat-state stall saga was removed). The daemon (intentd) owns
+                // turn lifetime and will emit a terminal event (complete with
+                // finishReason, or error) when the turn ends.
 
-                  // Send message to backend
-                  logger.info(
-                    // i18n-ignore (log line)
-                    'Agent Service: Sending message to backend with image and file blocks',
-                    {
-                      agentId,
-                      sessionId: session.id,
-                      hasImageBlocks: !!options.imageBlocks,
-                      imageBlocksCount: options.imageBlocks?.length || 0,
-                      imageBlockDetails:
-                        options.imageBlocks?.map((b) => ({
-                          type: b.type,
-                          mimeType: b.mimeType,
-                          dataLength: b.data?.length || 0,
-                        })) || [],
-                      hasFileBlocks: !!options.fileBlocks,
-                      fileBlocksCount: options.fileBlocks?.length || 0,
-                      fileBlockDetails:
-                        options.fileBlocks?.map((b) => ({
-                          type: b.type,
-                          fileName: b.fileName,
-                          mimeType: b.mimeType,
-                          attachmentId: b.attachmentId,
-                          size: b.size,
-                        })) || [],
-                    },
-                  );
+                // Send message to backend
+                logger.info(
+                  // i18n-ignore (log line)
+                  'Agent Service: Sending message to backend with image and file blocks',
+                  {
+                    agentId,
+                    sessionId: session.id,
+                    hasImageBlocks: !!options.imageBlocks,
+                    imageBlocksCount: options.imageBlocks?.length || 0,
+                    imageBlockDetails:
+                      options.imageBlocks?.map((b) => ({
+                        type: b.type,
+                        mimeType: b.mimeType,
+                        dataLength: b.data?.length || 0,
+                      })) || [],
+                    hasFileBlocks: !!options.fileBlocks,
+                    fileBlocksCount: options.fileBlocks?.length || 0,
+                    fileBlockDetails:
+                      options.fileBlocks?.map((b) => ({
+                        type: b.type,
+                        fileName: b.fileName,
+                        mimeType: b.mimeType,
+                        attachmentId: b.attachmentId,
+                        size: b.size,
+                      })) || [],
+                  },
+                );
 
-                  const wireModel = options.model ?? options.modelId ?? session.model ?? undefined;
-                  // Captured BEFORE the wire call: an authoritative snapshot
-                  // folded while the RPC is in flight — a live
-                  // agent:queue:updated fold (monorepo#2481) or a
-                  // hydrate-reconciled fold (monorepo#2486) — advances this
-                  // seq, and the queued-response queue seed below must then
-                  // yield to it.
-                  dispatchRedux(chatQueuedSendStarted(agentId));
-                  const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
-                  const attemptGenerationAtSend =
-                    appStore.state.chatState?.byAgentId[agentId]?.attemptGeneration ?? 0;
-                  // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
-                  // the BackendTransport seam. History is daemon-owned (loaded from
-                  // persistence); legacy-only fields (messages, resetHistory,
-                  // behaviorPrompt, specialist, personality) are no longer sent —
-                  // edit/regenerate flows go through `agent.editAndRegenerate`.
-                  const response = await backendRequest<Record<string, unknown>>(
-                    'agent.sendMessage',
-                    {
-                      agentId,
-                      workspaceId: workspace.id,
-                      content,
-                      model: wireModel,
-                      contextReferences: options.contextReferences,
-                      imageBlocks: options.imageBlocks,
-                      fileBlocks: options.fileBlocks,
-                      noteIds: options.noteIds,
-                      stdinContext: options.stdinContext,
-                      // Pre-assigned assistant message ID so backend uses the same ID as the renderer
-                      assistantMessageId,
-                      userAppMessageId,
-                      assistantAppMessageId,
-                      // Message priority for force-send interrupt (PROTOCOL.md §5.5)
-                      priority: options.priority,
-                      // Opaque per-message tag persisted on the user row
-                      // (PROTOCOL.md §5.5) — omitted entirely when absent so
-                      // ordinary sends keep their exact request shape.
-                      ...(options.messageMetadata
-                        ? { messageMetadata: options.messageMetadata }
-                        : {}),
-                    },
-                  ).catch((error: unknown) => {
-                    if (isCurrent()) throw error;
-                    return undefined;
+                const wireModel = options.model ?? options.modelId ?? session.model ?? undefined;
+                // Captured BEFORE the wire call: an authoritative snapshot
+                // folded while the RPC is in flight — a live
+                // agent:queue:updated fold (monorepo#2481) or a
+                // hydrate-reconciled fold (monorepo#2486) — advances this
+                // seq, and the queued-response queue seed below must then
+                // yield to it.
+                dispatchRedux(chatQueuedSendStarted(agentId));
+                const queueSeqAtSend = getAgentQueueEventSnapshotSeq(agentId, workspace.id);
+                const attemptGenerationAtSend =
+                  appStore.state.chatState?.byAgentId[agentId]?.attemptGeneration ?? 0;
+                // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
+                // the BackendTransport seam. History is daemon-owned (loaded from
+                // persistence); legacy-only fields (messages, resetHistory,
+                // behaviorPrompt, specialist, personality) are no longer sent —
+                // edit/regenerate flows go through `agent.editAndRegenerate`.
+                const response = await backendRequest<Record<string, unknown>>(
+                  'agent.sendMessage',
+                  {
+                    agentId,
+                    ...(supported && submission ? { messageId: submission.id } : {}),
+                    workspaceId: workspace.id,
+                    content,
+                    model: wireModel,
+                    contextReferences: options.contextReferences,
+                    imageBlocks: options.imageBlocks,
+                    fileBlocks: options.fileBlocks,
+                    noteIds: options.noteIds,
+                    stdinContext: options.stdinContext,
+                    // Pre-assigned assistant message ID so backend uses the same ID as the renderer
+                    assistantMessageId,
+                    userAppMessageId,
+                    assistantAppMessageId,
+                    // Message priority for force-send interrupt (PROTOCOL.md §5.5)
+                    priority: options.priority,
+                    // Opaque per-message tag persisted on the user row
+                    // (PROTOCOL.md §5.5) — omitted entirely when absent so
+                    // ordinary sends keep their exact request shape.
+                    ...(options.messageMetadata
+                      ? { messageMetadata: options.messageMetadata }
+                      : {}),
+                  },
+                ).catch((error: unknown) => {
+                  if (isCurrent()) throw error;
+                  return undefined;
+                });
+                if (!isCurrent()) return;
+
+                if (isInFlightPromptDedupResponse(response)) {
+                  logger.info('Backend dropped duplicate in-flight prompt', {
+                    agentId,
+                    sessionId: session.id,
                   });
-                  if (!isCurrent()) return;
+                  settle('rejected');
+                  return;
+                }
 
-                  if (isInFlightPromptDedupResponse(response)) {
-                    logger.info('Backend dropped duplicate in-flight prompt', {
-                      agentId,
-                      sessionId: session.id,
-                    });
-                    return;
+                // Raw daemon envelope (PROTOCOL.md §5.5): { success, queued, messageId? }
+                if (response && typeof response === 'object' && 'success' in response) {
+                  if (!response.success) {
+                    // The daemon surfaces errors as a plain string; legacy
+                    // IpcResponse envelopes use { message }.
+                    const rawError = (response as { error?: unknown }).error;
+                    const errorMessage =
+                      typeof rawError === 'string'
+                        ? rawError
+                        : (rawError as { message?: string } | undefined)?.message;
+                    wireRejected = true;
+                    throw new Error(
+                      errorMessage || m.agent_streamLifecycle_sendToBackendFailed_error(),
+                    );
                   }
 
-                  // Raw daemon envelope (PROTOCOL.md §5.5): { success, queued, messageId? }
-                  if (response && typeof response === 'object' && 'success' in response) {
-                    if (!response.success) {
-                      // The daemon surfaces errors as a plain string; legacy
-                      // IpcResponse envelopes use { message }.
-                      const rawError = (response as { error?: unknown }).error;
-                      const errorMessage =
-                        typeof rawError === 'string'
-                          ? rawError
-                          : (rawError as { message?: string } | undefined)?.message;
-                      throw new Error(
-                        errorMessage || m.agent_streamLifecycle_sendToBackendFailed_error(),
-                      );
-                    }
+                  // Handle queued responses (agent mid-turn, or the auto-queue race
+                  // when priority: "interrupt" arrives during turn startup). The
+                  // daemon returns { success: true, queued: true, messageId? }
+                  // instead of preempting. Clear the streaming flag so the UI
+                  // doesn't stay in "Thinking", and seed the local queue when the
+                  // daemon echoes the queued entry (agent:queue:updated reconciles
+                  // either way).
+                  if ('queued' in response && response.queued === true) {
+                    logger.info(
+                      'sendMessage auto-queued by daemon (mid-turn or turn-startup race)',
+                      {
+                        agentId,
+                        sessionId: session.id,
+                        queuedMessageId: (response.queuedMessage as QueuedMessage | undefined)?.id,
+                      },
+                    );
 
-                    // Handle queued responses (agent mid-turn, or the auto-queue race
-                    // when priority: "interrupt" arrives during turn startup). The
-                    // daemon returns { success: true, queued: true, messageId? }
-                    // instead of preempting. Clear the streaming flag so the UI
-                    // doesn't stay in "Thinking", and seed the local queue when the
-                    // daemon echoes the queued entry (agent:queue:updated reconciles
-                    // either way).
-                    if ('queued' in response && response.queued === true) {
-                      logger.info(
-                        'sendMessage auto-queued by daemon (mid-turn or turn-startup race)',
-                        {
-                          agentId,
-                          sessionId: session.id,
-                          queuedMessageId: (response.queuedMessage as QueuedMessage | undefined)
-                            ?.id,
-                        },
-                      );
-
-                      // Reset streaming flag so UI doesn't stay in "Thinking"
+                    // Reset streaming flag so UI doesn't stay in "Thinking"
+                    if (
+                      !supported ||
+                      !submission ||
+                      !selectSubmissionObserved.select(appStore.state, submission)
+                    )
                       dispatchRedux(setAgentStreaming(session.id, false));
+                    if (!supported)
                       dispatchRedux(removeAgentSessionMessage(session.id, userMessage.id));
-
-                      // Seed the local queue from queuedMessage (like chat-send-service
-                      // queue-on-send path does) so the UI immediately shows queued state
+                    if (supported) {
                       const queuedMessage = response.queuedMessage as QueuedMessage | undefined;
-                      if (queuedMessage) {
-                        const rawTurnId = (response as { turnId?: unknown }).turnId;
-                        const turnId =
-                          typeof rawTurnId === 'string' ? rawTurnId : queuedMessage.turnId;
-                        let retryMessage: QueuedMessage | undefined = queuedMessage;
-                        // Seed only when no authoritative snapshot — live
-                        // agent:queue:updated fold or hydrate-reconciled fold
-                        // — landed since the send started: a snapshot
-                        // (including the shrunk-after-drain one) is at least
-                        // as fresh as this echo, so seeding over it would
-                        // re-add a just-drained row (monorepo#2481).
-                        if (
-                          isCurrent() &&
-                          getAgentQueueEventSnapshotSeq(agentId, workspace.id) === queueSeqAtSend
-                        ) {
-                          const existing = selectAgentQueueMessages.select(
-                            appStore.state,
+                      const rawTurnId = (response as { turnId?: unknown }).turnId;
+                      const turnId =
+                        typeof rawTurnId === 'string' ? rawTurnId : queuedMessage?.turnId;
+                      if (queuedMessage && typeof turnId === 'string') {
+                        const attempt = buildRecordedAttempt(content, options);
+                        const confirmed = selectAgentQueueMessages
+                          .select(appStore.state, agentId, workspace.id)
+                          .find((row) => row.id === queuedMessage.id || row.turnId === turnId);
+                        dispatchRedux(
+                          chatQueuedRetryRecordParked(
                             agentId,
-                            workspace.id,
-                          );
-                          const next = reconcileQueuedMessage(existing, queuedMessage);
-                          dispatchRedux(replaceAgentQueue(agentId, next, workspace.id));
-                        } else if (isCurrent()) {
-                          logger.debug(
-                            'queued-response queue seed superseded by an authoritative snapshot; reconciling via hydrate',
-                            { agentId, queuedMessageId: queuedMessage.id },
-                          );
-                          // Client-side apply order cannot rank the superseding
-                          // snapshot against this echo — a hydrate whose
-                          // getQueue the daemon served BEFORE this send would
-                          // wrongly suppress a still-queued row (monorepo#2486
-                          // review). By now the daemon has processed the send,
-                          // so one reconciling hydrate returns the true queue
-                          // in both directions: the row if still queued,
-                          // without it if drained. Swallowed on failure — the
-                          // send itself succeeded, and the service leaves the
-                          // prior mirror intact on error.
-                          await hydrateAgentQueue(agentId, workspace.id).catch(() => undefined);
-                          retryMessage = selectAgentQueueMessages
-                            .select(appStore.state, agentId, workspace.id)
-                            .find(
-                              (message) =>
-                                message.id === queuedMessage.id || message.turnId === turnId,
-                            );
-                        }
-                        if (isCurrent() && typeof turnId === 'string') {
-                          const attempt = buildRecordedAttempt(content, options);
-                          // A superseding snapshot may already have promoted this turn.
-                          // Clear our optimistic attempt without re-parking a stale echo.
-                          dispatchRedux(
-                            chatQueuedRetryRecordParked(
-                              agentId,
-                              queuedMessage.id,
-                              attempt,
-                              turnId,
-                              buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, attempt),
-                              !retryMessage,
-                              attemptGenerationAtSend,
-                            ),
-                          );
-                        } else if (isCurrent()) {
-                          logger.warn(
-                            'auto-queued sendMessage response carried no turnId; retry record not parked',
-                            { agentId, queuedMessageId: queuedMessage.id },
-                          );
-                        }
+                            queuedMessage.id,
+                            attempt,
+                            turnId,
+                            buildQueuedRecordedAttempt(confirmed ?? queuedMessage, attempt),
+                            !confirmed &&
+                              !!submission &&
+                              selectSubmissionObserved.select(appStore.state, submission),
+                            attemptGenerationAtSend,
+                          ),
+                        );
                       }
-
-                      // Exit early — no stream is starting
+                      settle('accepted', queuedMessage, true);
+                      void hydrateAgentQueue(agentId, workspace.id);
                       return;
                     }
-                  }
-                  // NOTE: Do NOT clear streaming flags for send failures here — a
-                  // backendRequest error propagates to the retry boundary, and a
-                  // per-attempt clear would flash isStreaming false→true→false
-                  // on each retry. The cleanup happens AFTER all retries are
-                  // exhausted (see the catch block below).
 
-                  // Track metrics
-                  workspaceMetrics.incrementMessageSent(workspace.id);
-                },
-                'send message',
-                {
-                  retries: 2,
-                  notify: false,
-                  context: { agentId, workspace: workspace.id },
-                },
-              ),
-            DEFAULT_STRATEGIES.streaming,
-            `send-message-${agentId}`,
-          );
+                    // Seed the local queue from queuedMessage (like chat-send-service
+                    // queue-on-send path does) so the UI immediately shows queued state
+                    const queuedMessage = response.queuedMessage as QueuedMessage | undefined;
+                    if (queuedMessage) {
+                      const rawTurnId = (response as { turnId?: unknown }).turnId;
+                      const turnId =
+                        typeof rawTurnId === 'string' ? rawTurnId : queuedMessage.turnId;
+                      let retryMessage: QueuedMessage | undefined = queuedMessage;
+                      // Seed only when no authoritative snapshot — live
+                      // agent:queue:updated fold or hydrate-reconciled fold
+                      // — landed since the send started: a snapshot
+                      // (including the shrunk-after-drain one) is at least
+                      // as fresh as this echo, so seeding over it would
+                      // re-add a just-drained row (monorepo#2481).
+                      if (
+                        isCurrent() &&
+                        getAgentQueueEventSnapshotSeq(agentId, workspace.id) === queueSeqAtSend
+                      ) {
+                        const existing = selectAgentQueueMessages.select(
+                          appStore.state,
+                          agentId,
+                          workspace.id,
+                        );
+                        const next = reconcileQueuedMessage(existing, queuedMessage);
+                        dispatchRedux(replaceAgentQueue(agentId, next, workspace.id));
+                      } else if (isCurrent()) {
+                        logger.debug(
+                          'queued-response queue seed superseded by an authoritative snapshot; reconciling via hydrate',
+                          { agentId, queuedMessageId: queuedMessage.id },
+                        );
+                        // Client-side apply order cannot rank the superseding
+                        // snapshot against this echo — a hydrate whose
+                        // getQueue the daemon served BEFORE this send would
+                        // wrongly suppress a still-queued row (monorepo#2486
+                        // review). By now the daemon has processed the send,
+                        // so one reconciling hydrate returns the true queue
+                        // in both directions: the row if still queued,
+                        // without it if drained. Swallowed on failure — the
+                        // send itself succeeded, and the service leaves the
+                        // prior mirror intact on error.
+                        await hydrateAgentQueue(agentId, workspace.id).catch(() => undefined);
+                        retryMessage = selectAgentQueueMessages
+                          .select(appStore.state, agentId, workspace.id)
+                          .find(
+                            (message) =>
+                              message.id === queuedMessage.id || message.turnId === turnId,
+                          );
+                      }
+                      if (isCurrent() && typeof turnId === 'string') {
+                        const attempt = buildRecordedAttempt(content, options);
+                        // A superseding snapshot may already have promoted this turn.
+                        // Clear our optimistic attempt without re-parking a stale echo.
+                        dispatchRedux(
+                          chatQueuedRetryRecordParked(
+                            agentId,
+                            queuedMessage.id,
+                            attempt,
+                            turnId,
+                            buildQueuedRecordedAttempt(retryMessage ?? queuedMessage, attempt),
+                            !retryMessage,
+                            attemptGenerationAtSend,
+                          ),
+                        );
+                      } else if (isCurrent()) {
+                        logger.warn(
+                          'auto-queued sendMessage response carried no turnId; retry record not parked',
+                          { agentId, queuedMessageId: queuedMessage.id },
+                        );
+                      }
+                    }
+
+                    // Exit early — no stream is starting
+                    return;
+                  }
+                }
+                // NOTE: Do NOT clear streaming flags for send failures here — a
+                // backendRequest error propagates to the retry boundary, and a
+                // per-attempt clear would flash isStreaming false→true→false
+                // on each retry. The cleanup happens AFTER all retries are
+                // exhausted (see the catch block below).
+
+                if (supported) {
+                  settle('accepted');
+                  void hydrateAgentQueue(agentId, workspace.id);
+                  void loadChatTranscript(agentId, workspace.id);
+                }
+                // Track metrics
+                workspaceMetrics.incrementMessageSent(workspace.id);
+              },
+              'send message',
+              {
+                retries: supported ? 0 : 2,
+                notify: false,
+                context: { agentId, workspace: workspace.id },
+              },
+            );
+          const result = supported
+            ? await sendAttempt().then(() => ({ success: true, error: undefined }))
+            : await errorRecovery.executeWithRecovery(
+                sendAttempt,
+                DEFAULT_STRATEGIES.streaming,
+                `send-message-${agentId}`,
+              );
 
           if (!result.success) {
             // Don't re-wrap - the error already has a clean user-facing message
@@ -562,13 +648,14 @@ export async function sendMessage(
           // mirrored onto it would resolve the wizard's pending set even though
           // the daemon never accepted the answer. Strip it back to the
           // pre-send metadata; "Try again" re-mirrors it on the next attempt.
-          if (options.messageMetadata) {
+          if (!supported && options.messageMetadata) {
             dispatchRedux(
               updateAgentSessionMessage(session.id, userMessage.id, {
                 metadata: baseUserMetadata,
               }),
             );
           }
+          if (supported) settle(wireRejected ? 'rejected' : 'uncertain');
           throw streamingError;
         }
       }

@@ -177,7 +177,8 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectAcceptChangesStatusLoading: mocks.selector(() => false),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
   removeWorkspaceEntity: Object.assign(
     vi.fn((id: string) => ({ type: 'workspace/removeWorkspaceEntity', payload: [id] })),

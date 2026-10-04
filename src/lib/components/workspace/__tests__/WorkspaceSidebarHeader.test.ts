@@ -99,7 +99,8 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
   })),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
   beginWorkspaceTitleMutation: vi.fn(
     (id: string, token: number, optimisticTitle: string, previousTitle: string) => ({
       type: 'workspace/beginWorkspaceTitleMutation',

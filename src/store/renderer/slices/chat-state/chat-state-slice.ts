@@ -1,3 +1,5 @@
+import { pendingSubmissionSettled } from '../pending-submissions/pending-submissions-slice';
+import { sameSubmissionScope } from '../pending-submissions/pending-submissions-model';
 import {
   buildQueuedRecordedAttempt,
   buildProcessedRecordedAttempt,
@@ -1669,4 +1671,17 @@ chatStateReducer.with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
     }
   }
   return changed ? { ...state, byAgentId } : state;
+});
+
+// Keep local delivery provenance without advancing the provider-turn retry generation.
+chatStateReducer.with(pendingSubmissionSettled, (state, { payload: [scope, id, outcome] }) => {
+  const current = getAgent(state, scope.agentId);
+  const attempt = current.lastAttemptedMessage;
+  const prior = attempt?.submission;
+  if (!prior || prior.reference.id !== id || !sameSubmissionScope(prior.reference.scope, scope))
+    return state;
+  return updateAgent(state, scope.agentId, {
+    lastAttemptedMessage: { ...attempt, submission: { ...prior, outcome } },
+    attemptGeneration: current.attemptGeneration,
+  });
 });

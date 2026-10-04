@@ -7231,5 +7231,7 @@
   "collaboration_lists_noJoinedInstances_title": "参加中のインスタンスはありません",
   "collaboration_lists_noJoinedInstances_description": "参加したインスタンスがここに表示されます。",
   "collaboration_lists_sharingLoading_label": "ワークスペースの共有を読み込み中…",
-  "collaboration_lists_sharingLoad_error": "ワークスペースの共有を読み込めませんでした。"
+  "collaboration_lists_sharingLoad_error": "ワークスペースの共有を読み込めませんでした。",
+  "agent_chatSend_uncertainRetry_description": "配信は確認できていません。再送すると、このメッセージが重複して届く可能性があります。",
+  "agent_chatSend_resend_label": "再送する"
 }

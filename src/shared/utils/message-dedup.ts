@@ -103,6 +103,19 @@ function hasSameAppMessageId(a: AgentMessage, b: AgentMessage): boolean {
   return aAppMessageId !== undefined && aAppMessageId === getAppMessageId(b);
 }
 
+/** Ordinary aliases and recovery leaves both mark daemon-owned user rows. */
+function hasSubmissionIdentity(message: AgentMessage): boolean {
+  if (message.role !== 'user') return false;
+  const ids = message.metadata?.submissionIds;
+  if (Array.isArray(ids) && ids.some((id) => typeof id === 'string' && id.length > 0)) return true;
+  const sources = message.metadata?.recoverySources;
+  // Legacy leaves can lack aliases, but their recovery row still has authoritative identity.
+  return (
+    Array.isArray(sources) &&
+    sources.some((source) => typeof source?.messageId === 'string' && source.messageId.length > 0)
+  );
+}
+
 /**
  * Content-hash matching is a FALLBACK for pairs where id-based matching is
  * impossible: at least one side lacks an `appMessageId` (e.g. rows from older
@@ -113,6 +126,9 @@ function hasSameAppMessageId(a: AgentMessage, b: AgentMessage): boolean {
  * content, so content fallback must never collapse them.
  */
 function canUseLegacyContentFallback(a: AgentMessage, b: AgentMessage): boolean {
+  // Two authoritative submissions can share text and a timestamp. Their row
+  // or app identity can reconcile echoes; content alone cannot join them.
+  if (hasSubmissionIdentity(a) && hasSubmissionIdentity(b)) return false;
   return getAppMessageId(a) === undefined || getAppMessageId(b) === undefined;
 }
 

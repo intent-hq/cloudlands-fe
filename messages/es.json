@@ -7231,5 +7231,7 @@
   "collaboration_lists_noJoinedInstances_title": "No hay instancias unidas",
   "collaboration_lists_noJoinedInstances_description": "Las instancias a las que te unas aparecerán aquí.",
   "collaboration_lists_sharingLoading_label": "Cargando los espacios de trabajo compartidos…",
-  "collaboration_lists_sharingLoad_error": "No se pudieron cargar los espacios de trabajo compartidos."
+  "collaboration_lists_sharingLoad_error": "No se pudieron cargar los espacios de trabajo compartidos.",
+  "agent_chatSend_uncertainRetry_description": "La entrega no está confirmada. Si lo envías de nuevo, el mensaje podría entregarse dos veces.",
+  "agent_chatSend_resend_label": "Enviar de nuevo"
 }
