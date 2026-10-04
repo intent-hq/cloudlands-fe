@@ -24,7 +24,7 @@
   style:background={dark ? '#171717' : '#ffffff'}
   style="width:256px;height:256px;overflow:hidden;position:relative"
 >
-  <div bind:this={construction} style="width:900px;transform-origin:0 0">
+  <div bind:this={construction} style="width:900px;transform-origin:0 0;transition-property:none">
     <MermaidRenderer
       {code}
       showExpandButton={false}

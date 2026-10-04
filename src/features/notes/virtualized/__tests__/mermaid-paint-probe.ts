@@ -10,6 +10,7 @@ export interface MermaidPaintProbe {
   label: string;
   nativeNodes: number;
   nativeLabelVisible: boolean;
+  geometry: Record<string, unknown>;
   serializedSvgUnits: number;
   imageUrlUnits: number;
   decodedPixels: number;
@@ -112,6 +113,14 @@ export async function probeNativeMermaidPaint(
     }
     context.drawImage(image, 0, 0);
     const png = canvas.toDataURL('image/png');
+    // Capture the synchronous camera transition as well as the final native clip.
+    const beforeCamera = {
+      label: label.getBoundingClientRect().toJSON(),
+      connected: label.isConnected && svg.isConnected && scroller.isConnected,
+      transform: getComputedStyle(construction).transform,
+      transitionProperty: getComputedStyle(construction).transitionProperty,
+      transitionDuration: getComputedStyle(construction).transitionDuration,
+    };
     construction.style.transformOrigin = '0 0';
     construction.style.transform = `translate(${-(pannedRect.left - hostRect.left + x) * scale}px, ${-(pannedRect.top - hostRect.top + y) * scale}px) scale(${scale})`;
     const shown = label.getBoundingClientRect(),
@@ -125,6 +134,22 @@ export async function probeNativeMermaidPaint(
     return {
       png,
       nativeLabelVisible,
+      geometry: {
+        beforeCamera,
+        label: shown.toJSON(),
+        camera: cameraRect.toJSON(),
+        clip: nativeClip.toJSON(),
+        connected: label.isConnected && svg.isConnected && scroller.isConnected,
+        currentSvg: svg === construction.querySelector('.mermaid-svg > svg'),
+        currentLabel: svg.contains(label),
+        requestedTransform: construction.style.transform,
+        computedTransform: getComputedStyle(construction).transform,
+        source: sourceRect.toJSON(),
+        panned: pannedRect.toJSON(),
+        host: hostRect.toJSON(),
+        scrollLeft: scroller.scrollLeft,
+        scrollTop: scroller.scrollTop,
+      },
       width,
       height,
       x,
