@@ -41,16 +41,19 @@ export async function probeNativeMermaidPaint(
   const sourceRect = svg.getBoundingClientRect(),
     labelRect = label.getBoundingClientRect();
   const hostRect = construction.getBoundingClientRect();
-  const x = Math.max(0, labelRect.left - sourceRect.left - 50);
-  const y = Math.max(0, labelRect.top - sourceRect.top - 50);
+  // The camera margin is measured in output pixels, including at higher zoom.
+  const x = Math.max(0, labelRect.left - sourceRect.left - 50 / scale);
+  const y = Math.max(0, labelRect.top - sourceRect.top - 50 / scale);
   // Pan through the renderer's own scroll viewport before moving the camera.
   // Translating only the outer host leaves a far node clipped by inner overflow.
   scroller.scrollLeft = x;
   scroller.scrollTop = y;
   const pannedRect = svg.getBoundingClientRect();
+  // A nested SVG camera does not reproduce the native root SVG CSS background.
+  // Include that exact painted box, along with the surrounding native surfaces.
   const backdrops: Array<{ color: string; rect: DOMRect }> = [];
   for (
-    let ancestor = svg.parentElement;
+    let ancestor: Element | null = svg;
     ancestor && ancestor !== viewport;
     ancestor = ancestor.parentElement
   ) {
@@ -136,6 +139,7 @@ export async function probeNativeMermaidPaint(
       nativeLabelVisible,
       geometry: {
         beforeCamera,
+        backdrops: backdrops.map((layer) => ({ color: layer.color, rect: layer.rect.toJSON() })),
         label: shown.toJSON(),
         camera: cameraRect.toJSON(),
         clip: nativeClip.toJSON(),
