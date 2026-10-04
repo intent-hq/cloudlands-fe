@@ -129,6 +129,12 @@
       'remote-expanded': { props: { expanded: true }, setup: () => setup(true) },
       'remote-access-disabled': { props: { accessEnabled: false }, setup: () => setup(true) },
       'access-disabled': { props: { accessEnabled: false }, setup: () => setup() },
+      mobile: { props: { mobilePage: true }, setup: () => setup() },
+      'mobile-disabled': {
+        props: { mobilePage: true, accessEnabled: false },
+        setup: () => setup(),
+      },
+      'mobile-remote': { props: { mobilePage: true }, setup: () => setup(true) },
     },
   });
 </script>
@@ -137,9 +143,13 @@
   import { onDestroy, untrack } from 'svelte';
   import { appClient, localMachineClient, type SettingDefinitionWithValue } from '$lib/client';
   import DevicesSettings from './DevicesSettings.svelte';
+  import MobileSettings from '$features/settings/MobileSettings.svelte';
 
-  let { expanded = false, accessEnabled = true }: { expanded?: boolean; accessEnabled?: boolean } =
-    $props();
+  let {
+    expanded = false,
+    accessEnabled = true,
+    mobilePage = false,
+  }: { expanded?: boolean; accessEnabled?: boolean; mobilePage?: boolean } = $props();
   const previous = {
     list: appClient.settings.list,
     update: appClient.settings.update,
@@ -192,4 +202,7 @@
   });
 </script>
 
-<div class="bg-background p-4"><DevicesSettings localSettingsRequested={expanded ? 1 : 0} /></div>
+<div class="bg-background p-4">
+  {#if mobilePage}<MobileSettings />
+  {:else}<DevicesSettings initialEditedMachine={expanded ? 'local' : undefined} />{/if}
+</div>

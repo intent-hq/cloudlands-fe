@@ -8,9 +8,10 @@ import {
   principalContextChanged,
   principalReceived,
 } from '$store/renderer/slices/principal/principal-slice';
-import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
+import { admitLegacyPrincipal, withHostPrincipal } from '../../test/fixtures/principal-state';
 import { m } from '$shared/paraglide/messages.js';
-import DevicesSettings from './DevicesSettings.svelte';
+import { tick } from 'svelte';
+import MobileSettings from './MobileSettings.svelte';
 
 const mocks = vi.hoisted(() => ({
   qr: vi.fn(),
@@ -129,7 +130,11 @@ beforeEach(() => {
   invoke = vi.fn(
     async (
       channel: string,
-      payload?: { method: string; params?: unknown; localMachine?: boolean },
+      payload?: {
+        method: string;
+        params?: { changes: { path: string; value: boolean }[] };
+        localMachine?: boolean;
+      },
     ) => {
       if (channel !== 'backend:request') throw new Error(`Unexpected channel ${channel}`);
       if (payload?.method === 'settings.list')
@@ -152,6 +157,16 @@ beforeEach(() => {
           },
         };
       if (payload?.method === 'pairing.getSelfInfo') return { ok: true, result: await pairing() };
+      if (payload?.method === 'settings.update') {
+        enabled = payload.params!.changes[0].value;
+        return {
+          ok: true,
+          result: {
+            revision: 2,
+            applied: [{ path: 'server.wsApi.enabled', value: enabled, origin: 'file' }],
+          },
+        };
+      }
       throw new Error(`Unexpected method ${payload?.method}`);
     },
   );
@@ -168,7 +183,7 @@ afterEach(() => {
 });
 
 it('copies and encodes the connected device’s exact pairing URI without reading the local daemon', async () => {
-  render(DevicesSettings);
+  render(MobileSettings);
   await waitFor(() => expect(copyButton().disabled).toBe(false));
   expect(invoke.mock.calls).toEqual([
     ['backend:request', { method: 'settings.list', params: undefined }],
@@ -184,7 +199,7 @@ it('copies and encodes the connected device’s exact pairing URI without readin
 
 it('disables mobile actions when the connected device has remote access off', async () => {
   enabled = false;
-  render(DevicesSettings);
+  render(MobileSettings);
   await waitFor(() => expect(invoke).toHaveBeenCalledOnce());
   expect(copyButton().disabled).toBe(true);
   expect(qrButton().disabled).toBe(true);
@@ -194,6 +209,88 @@ it('disables mobile actions when the connected device has remote access off', as
   expect(clipboard).not.toHaveBeenCalled();
   expect(mocks.qr).not.toHaveBeenCalled();
 });
+
+it('enables and disables remote access on the connected machine and refreshes its pairing details', async () => {
+  enabled = false;
+  render(MobileSettings);
+  const toggle = screen.getByRole('switch', {
+    name: m.settings_wsApi_enable_label(),
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(copyButton().disabled).toBe(true);
+  await fireEvent.click(toggle);
+  await waitFor(() => expect(copyButton().disabled).toBe(false));
+  expect(invoke).toHaveBeenCalledWith('backend:request', {
+    method: 'settings.update',
+    params: { changes: [{ path: 'server.wsApi.enabled', value: true }] },
+  });
+  await fireEvent.click(copyButton());
+  await waitFor(() => expect(clipboard).toHaveBeenCalledWith(remoteUri));
+  await fireEvent.click(toggle);
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+  expect(invoke).toHaveBeenCalledWith('backend:request', {
+    method: 'settings.update',
+    params: { changes: [{ path: 'server.wsApi.enabled', value: false }] },
+  });
+  expect(copyButton().disabled).toBe(true);
+  expect(qrButton().disabled).toBe(true);
+  expect(invoke.mock.calls.every(([, payload]) => !payload.localMachine)).toBe(true);
+});
+
+it('keeps pairing disabled when the connected machine rolls back enabling remote access', async () => {
+  enabled = false;
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (channel, payload) =>
+    payload?.method === 'settings.update'
+      ? {
+          ok: true,
+          result: {
+            revision: 2,
+            applied: [{ path: 'server.wsApi.enabled', value: false, origin: 'file' }],
+          },
+        }
+      : original(channel, payload),
+  );
+  render(MobileSettings);
+  const toggle = screen.getByRole('switch', {
+    name: m.settings_wsApi_enable_label(),
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  await fireEvent.click(toggle);
+  await waitFor(() => expect(mocks.error).toHaveBeenCalled());
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+  expect(copyButton().disabled).toBe(true);
+  expect(pairing).not.toHaveBeenCalled();
+});
+
+it.each(['member', 'guest'] as const)(
+  'does not expose owner remote-access controls to a %s',
+  async (role) => {
+    const state = store.state.principal;
+    store.dispatch(
+      principalReceived(
+        {
+          context: state.context!,
+          invalidation: state.invalidation,
+          presentationVersion: state.presentationVersion,
+        },
+        {
+          ...state.snapshot!,
+          principal: {
+            ...principal,
+            hostRole: role,
+            isAdministrator: false,
+            hostMembershipRevision: 2,
+          },
+        },
+      ),
+    );
+    render(MobileSettings);
+    await tick();
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+  },
+);
 
 it('discards a delayed pairing response after switching devices and closes the QR on a switch to local', async () => {
   const pending = deferred<typeof response>();
@@ -208,7 +305,7 @@ it('discards a delayed pairing response after switching devices and closes the Q
       hosts: ['192.0.2.9'],
       token: 'synthetic-next',
     });
-  render(DevicesSettings);
+  render(MobileSettings);
   await waitFor(() => expect(pairing).toHaveBeenCalledOnce());
   connect('remote-b');
   await waitFor(() => expect(copyButton().disabled).toBe(false));
@@ -228,7 +325,7 @@ it('discards a delayed pairing response after switching devices and closes the Q
 it('ignores QR generation that finishes after the device changes', async () => {
   const pending = deferred<string>();
   mocks.qr.mockReturnValueOnce(pending.promise);
-  render(DevicesSettings);
+  render(MobileSettings);
   await waitFor(() => expect(qrButton().disabled).toBe(false));
   await fireEvent.click(qrButton());
   await waitFor(() => expect(mocks.qr).toHaveBeenCalledOnce());
@@ -242,7 +339,7 @@ it('ignores QR generation that finishes after the device changes', async () => {
 
 it('keeps pairing unavailable after an error and retries without exposing credentials or falling back locally', async () => {
   pairing.mockRejectedValueOnce(new Error('secret-response-token'));
-  render(DevicesSettings);
+  render(MobileSettings);
   const retry = await screen.findByRole('button', { name: m.settings_devices_retry_label() });
   expect(copyButton().disabled).toBe(true);
   expect(JSON.stringify(mocks.error.mock.calls)).not.toContain('secret-response-token');

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
-  import { onDestroy, untrack, type Snippet } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import {
     Button,
     Input,
@@ -63,11 +63,9 @@
     onOpenPanel: (panel: Exclude<DevicePanelMode, null>) => void;
     onClosePanel: () => void;
     onRequestRemove: (device: ConnectionRecord) => void;
-    connectionSettings?: Snippet<[Snippet?]>;
   }
 
-  let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove, connectionSettings }: Props =
-    $props();
+  let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
   const currentConnectionId$ = selectCurrentConnectionId();
@@ -556,25 +554,19 @@
     </p>
   {/if}
 
-  {#if device.isLocal}
-    <div
-      class="px-4 pb-4 sm:px-5"
-      hidden={$currentConnectionId$ !== device.id && panelMode !== 'edit'}
-    >
-      {#snippet localIcon()}
-        <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
-          {#snippet control()}
-            <DeviceIconPicker
-              record={device}
-              bind:value={localDeviceIcon}
-              disabled={busy !== null}
-              portal={true}
-              onchange={(value) => void updateLocalDeviceIcon(value)}
-            />
-          {/snippet}
-        </SettingsFieldRow>
-      {/snippet}
-      {@render connectionSettings?.(localIcon)}
+  {#if device.isLocal && panelMode === 'edit'}
+    <div class="px-4 pb-4 sm:px-5">
+      <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
+        {#snippet control()}
+          <DeviceIconPicker
+            record={device}
+            bind:value={localDeviceIcon}
+            disabled={busy !== null}
+            portal={true}
+            onchange={(value) => void updateLocalDeviceIcon(value)}
+          />
+        {/snippet}
+      </SettingsFieldRow>
     </div>
   {/if}
 

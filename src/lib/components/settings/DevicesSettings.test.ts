@@ -48,10 +48,7 @@ const mocks = vi.hoisted(() => ({
   localSettingsList: vi.fn(),
   settingsUpdate: vi.fn(),
   pairingInfo: vi.fn(),
-  qrCode: vi.fn().mockResolvedValue('data:image/png;base64,'),
 }));
-
-vi.mock('qrcode', () => ({ default: { toDataURL: mocks.qrCode } }));
 
 vi.mock('$lib/client', () => ({
   localMachineClient: {
@@ -242,60 +239,6 @@ describe('DevicesSettings', () => {
     store.dispose();
   });
 
-  it('enables mobile pairing with remote access and disables it again when access is turned off', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
-    render(DevicesSettings);
-    const mobile = screen.getByRole('region', { name: m.settings_devices_mobile_title() });
-    const qr = within(mobile).getByRole('button', { name: m.settings_wsApi_showQrCode() });
-    const copy = within(mobile).getByRole('button', { name: m.settings_wsApi_shareLink_label() });
-    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
-    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
-    expect(qr.hasAttribute('disabled')).toBe(true);
-    expect(copy.hasAttribute('disabled')).toBe(true);
-    await fireEvent.click(qr);
-    await fireEvent.click(copy);
-    expect(mocks.qrCode).not.toHaveBeenCalled();
-    expect(writeText).not.toHaveBeenCalled();
-
-    await fireEvent.click(toggle);
-    await waitFor(() => expect(copy.hasAttribute('disabled')).toBe(false));
-    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
-      { path: 'server.wsApi.enabled', value: true },
-    ]);
-    await fireEvent.click(copy);
-    const expected =
-      'intent://pair?token=test-token&host=127.0.0.1&port=5181&path=/ws&certFingerprint=AA%3ABB';
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expected));
-    await fireEvent.click(qr);
-    await waitFor(() => expect(mocks.qrCode).toHaveBeenCalledWith(expected, expect.anything()));
-    const dialog = await screen.findByRole('dialog');
-    await fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-
-    await fireEvent.click(toggle);
-    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
-    expect(qr.hasAttribute('disabled')).toBe(true);
-    expect(copy.hasAttribute('disabled')).toBe(true);
-  });
-
-  it('keeps mobile pairing disabled for a remote with access off even if the local listener is enabled', async () => {
-    mocks.currentConnectionId = remote.id;
-    mocks.localSettingsList.mockResolvedValue([
-      { path: 'server.wsApi.enabled', value: true },
-      { path: 'server.wsApi.port', value: 5181 },
-    ]);
-    render(DevicesSettings);
-    const mobile = screen.getByRole('region', { name: m.settings_devices_mobile_title() });
-    const qr = within(mobile).getByRole('button', { name: m.settings_wsApi_showQrCode() });
-    await waitFor(() => expect(mocks.settingsList).toHaveBeenCalled());
-    expect(qr.hasAttribute('disabled')).toBe(true);
-    await fireEvent.click(qr);
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(mocks.pairingInfo).not.toHaveBeenCalled();
-    expect(mocks.localSettingsList).not.toHaveBeenCalled();
-  });
-
   it('shows named remotes without duplicating their address or visible status text', () => {
     render(DevicesSettings);
 
@@ -443,7 +386,7 @@ describe('DevicesSettings', () => {
   it('renders accessible loading and empty states', () => {
     mocks.loaded = false;
     const loading = render(DevicesSettings);
-    expect(screen.getByRole('status').textContent).toContain('Loading devices');
+    expect(screen.getByRole('status').textContent).toContain(m.settings_devices_loading_label());
     loading.unmount();
 
     // The local row alone suppresses the empty-state box — the two must not
@@ -451,12 +394,12 @@ describe('DevicesSettings', () => {
     mocks.loaded = true;
     mocks.connections = [local];
     const withLocal = render(DevicesSettings);
-    expect(screen.queryByText('No remote devices saved')).toBeNull();
+    expect(screen.queryByText(m.settings_devices_empty_title())).toBeNull();
     withLocal.unmount();
 
     mocks.connections = [];
     render(DevicesSettings);
-    expect(screen.getByText('No remote devices saved')).toBeTruthy();
+    expect(screen.getByText(m.settings_devices_empty_title())).toBeTruthy();
   });
 
   it('cycles automatic accents through only the selectable palette', async () => {
@@ -468,7 +411,7 @@ describe('DevicesSettings', () => {
     ];
     render(DevicesSettings);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Add device' }));
+    await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
 
     expect(
       screen.getByRole('button', { name: 'Use Teal accent' }).getAttribute('aria-pressed'),
@@ -645,8 +588,7 @@ describe('DevicesSettings', () => {
       expect(screen.queryByRole('menuitem', { name: 'Connect' })).toBeNull();
       expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
       await fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit' }));
-      await fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
-      expect(screen.getByRole('spinbutton', { name: 'Port' })).toBeTruthy();
+      expect(screen.getByTestId('device-icon-picker-trigger')).toBeTruthy();
     });
 
     it('shows no badge or Update affordance for the sidecar local row', async () => {
@@ -748,39 +690,12 @@ describe('DevicesSettings', () => {
     );
   });
 
-  it('enabling remote access from the collapsed local row opens configuration', async () => {
-    mocks.connections = [local];
-    render(DevicesSettings);
-    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
-    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
-    await fireEvent.click(toggle);
-    await waitFor(() =>
-      expect(mocks.settingsUpdate).toHaveBeenCalledWith([
-        { path: 'server.wsApi.enabled', value: true },
-      ]),
-    );
-    await waitFor(() => expect(mocks.pairingInfo).toHaveBeenCalled());
-    expect(await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeTruthy();
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-  });
-
-  it('keeps local configuration closed if enabling remote access fails', async () => {
-    mocks.connections = [local];
-    mocks.settingsUpdate.mockRejectedValueOnce(new Error('listener failed'));
-    render(DevicesSettings);
-    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
-    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
-    await fireEvent.click(toggle);
-    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
-    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
-    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
-  });
-
-  it('opens local configuration when requested by the remote-access deep link', async () => {
-    render(DevicesSettings, { localSettingsRequested: 1 });
-    expect(
-      screen.getByRole('button', { name: 'Advanced', exact: true }).getAttribute('aria-expanded'),
-    ).toBe('false');
+  it('opens the requested machine icon editor and lets Edit close it', async () => {
+    render(DevicesSettings, { initialEditedMachine: local.id });
+    expect(screen.getByTestId('device-icon-picker-trigger')).toBeTruthy();
+    await openAction('Edit', m.layout_daemonStatus_localConnection_label());
+    expect(screen.queryByTestId('device-icon-picker-trigger')).toBeNull();
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('persists a local icon override through connections:update', async () => {
@@ -788,10 +703,6 @@ describe('DevicesSettings', () => {
     render(DevicesSettings);
 
     await openAction('Edit', m.layout_daemonStatus_localConnection_label());
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
-    );
-
     const picker = screen.getByTestId('device-icon-picker-trigger');
     expect(picker.getAttribute('aria-label')).toContain('Automatic (Laptop)');
     picker.focus();
@@ -822,10 +733,6 @@ describe('DevicesSettings', () => {
     render(DevicesSettings);
 
     await openAction('Edit', m.layout_daemonStatus_localConnection_label());
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
-    );
-
     const picker = screen.getByTestId('device-icon-picker-trigger');
     expect(picker.getAttribute('aria-label')).toContain('Robot');
     picker.focus();
@@ -1102,39 +1009,18 @@ describe('DevicesSettings', () => {
     });
   });
 
-  it('reveals host settings only after Edit from a remote window', async () => {
+  it('edits the host machine icon from a remote window without opening host settings', async () => {
     mocks.currentConnectionId = 'remote-1';
     render(DevicesSettings);
     const name = m.settings_devices_hostMachine_label();
+    expect(screen.queryByTestId('device-icon-picker-trigger')).toBeNull();
+    await openAction('Edit', name);
+    expect(screen.getByTestId('device-icon-picker-trigger')).toBeTruthy();
     expect(screen.queryByRole('switch', { name: m.settings_wsApi_enable_label() })).toBeNull();
+    expect(mocks.localSettingsList).not.toHaveBeenCalled();
+    expect(mocks.pairingInfo).not.toHaveBeenCalled();
     await openAction('Edit', name);
-    expect(
-      await screen.findByRole('switch', { name: m.settings_wsApi_enable_label() }),
-    ).toBeTruthy();
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
-    );
-    expect(await screen.findByRole('spinbutton', { name: 'Port' })).toBeTruthy();
-    await openAction('Edit', name);
-    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
-    expect(screen.queryByRole('switch', { name: m.settings_wsApi_enable_label() })).toBeNull();
-  });
-
-  it('immediately hides Advanced when closing enabled local settings', async () => {
-    mocks.settingsList.mockResolvedValue([
-      { path: 'server.wsApi.enabled', value: true },
-      { path: 'server.wsApi.port', value: 5181 },
-      { path: 'server.tunnel.enabled', value: true },
-    ]);
-    render(DevicesSettings);
-    const name = m.layout_daemonStatus_localConnection_label();
-    await openAction('Edit', name);
-    await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() });
-    await fireEvent.click(
-      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
-    );
-    await openAction('Edit', name);
-    expect(screen.queryByRole('button', { name: m.settings_devices_advanced_label() })).toBeNull();
+    expect(screen.queryByTestId('device-icon-picker-trigger')).toBeNull();
   });
 
   it.each(['local', 'remote'])('toggles the %s editor with the Edit action', async (kind) => {
@@ -1142,7 +1028,7 @@ describe('DevicesSettings', () => {
     const name = kind === 'local' ? m.layout_daemonStatus_localConnection_label() : 'Studio Mac';
     const editor = () =>
       kind === 'local'
-        ? screen.queryByRole('button', { name: 'Advanced', exact: true })
+        ? screen.queryByTestId('device-icon-picker-trigger')
         : screen.queryByRole('form', { name: 'Edit Studio Mac' });
 
     await openAction('Edit', name);
@@ -1272,7 +1158,7 @@ describe('DevicesSettings', () => {
       target: { value: '70000' },
     });
 
-    expect(screen.getByText('Enter a device name.')).toBeTruthy();
+    expect(screen.getByText(m.settings_devices_nameRequired_error())).toBeTruthy();
     expect(screen.getByText('Enter a hostname or IP address.')).toBeTruthy();
     expect(screen.getByText('Enter a port from 1 to 65535.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Test connection' }).hasAttribute('disabled')).toBe(
@@ -1353,14 +1239,14 @@ describe('DevicesSettings', () => {
 
     await openAction('Remove');
     expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(screen.getByText('Remove device?')).toBeTruthy();
+    expect(screen.getByText(m.settings_devices_removeConfirm_title())).toBeTruthy();
     expect(mocks.forget).not.toHaveBeenCalled();
 
     const removeButtons = screen.getAllByRole('button', { name: 'Remove' });
     await fireEvent.click(removeButtons[removeButtons.length - 1]);
     expect(mocks.forget).toHaveBeenCalledWith('remote-1');
     expect((await screen.findByRole('alert')).textContent).toContain(
-      'Could not remove the device.',
+      m.settings_devices_remove_error(),
     );
 
     mocks.forget.mockImplementationOnce((id) => ({

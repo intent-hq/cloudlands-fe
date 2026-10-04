@@ -47,7 +47,6 @@ import {
   selectPrincipalSnapshot,
   selectCanAdministerHost,
 } from '../../principal/principal-selectors';
-import { store } from '../../../store';
 
 type RequestAction = ReturnType<typeof websocketApiRequested>;
 
@@ -142,44 +141,67 @@ function pairingUri(
   return `intent://pair?token=${encodeURIComponent(readWebsocketToken(request))}&host=${snapshot.localIps.map(encodeURIComponent).join(',')}&port=${snapshot.port}&path=/ws${snapshot.certFingerprint ? `&certFingerprint=${encodeURIComponent(snapshot.certFingerprint)}` : ''}${snapshot.tcAddress ? `&tc=${encodeURIComponent(snapshot.tcAddress)}` : ''}`;
 }
 
+function* requestCurrent(request: SettingsFormRequest, context?: string): SagaGenerator<boolean> {
+  return (
+    (yield* selectSettingsFormRequestCurrent.effect(request)) &&
+    (!context || context === (yield* selectPrincipalActionContext.effect()))
+  );
+}
+
+function* loadMobile(
+  request: SettingsFormRequest,
+  context: string,
+): SagaGenerator<{ enabled: boolean }> {
+  const principal = yield* selectPrincipalSnapshot.effect();
+  if (!(yield* selectCanAdministerHost.effect()) || !principal)
+    throw new Error(m.settings_personalDevices_pairing_error());
+  const settings = yield* call([appClient.settings, appClient.settings.list]);
+  if (!(yield* requestCurrent(request, context))) return { enabled: false };
+  const enabled = settings.find((entry) => entry.path === 'server.wsApi.enabled')?.value;
+  if (typeof enabled !== 'boolean') throw new Error(m.settings_personalDevices_pairing_error());
+  yield* put(settingsFormRequestProgressed(request, { enabled }));
+  if (enabled) {
+    if (!principal.capabilities.personalPairing)
+      throw new Error(m.settings_personalDevices_pairing_error());
+    let uri = '';
+    yield* call(async () => {
+      try {
+        uri = await readSelfPairing(principal.principal);
+      } catch {
+        throw new Error(m.settings_personalDevices_pairing_error());
+      }
+    });
+    if (yield* requestCurrent(request, context))
+      receiveWebsocketCredentials(request, { pairingUri: uri });
+  } else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
+  return { enabled };
+}
+
 function* runRequest(action: RequestAction): SagaGenerator<void> {
   const [request, intent] = action.payload;
   const context = 'context' in intent ? intent.context : undefined;
-  const dispatch = store.dispatch;
-  const current = () =>
-    !context ||
-    (dispatch === store.dispatch &&
-      selectSettingsFormRequestCurrent.select(store.state, request) &&
-      context === selectPrincipalActionContext.select(store.state));
   const client = intent.connectionId === LOCAL_CONNECTION_ID ? appClient : localMachineClient;
   let snapshot = yield* selectWebsocketApiSnapshot.effect(request);
   let values: Record<string, SettingsFormValue> = {};
   let error: string | undefined;
   try {
-    if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
-    if (context && context !== (yield* selectPrincipalActionContext.effect())) return;
+    if (!(yield* requestCurrent(request, context))) return;
     if (intent.kind === 'loadMobile') {
-      const principal = yield* selectPrincipalSnapshot.effect();
-      if (!(yield* selectCanAdministerHost.effect()) || !principal)
+      values = yield* loadMobile(request, intent.context);
+    } else if (intent.kind === 'toggle' && context) {
+      if (!(yield* selectCanAdministerHost.effect()))
         throw new Error(m.settings_personalDevices_pairing_error());
-      const settings = yield* call([appClient.settings, appClient.settings.list]);
-      if (context !== (yield* selectPrincipalActionContext.effect())) return;
-      const enabled = settings.find((entry) => entry.path === 'server.wsApi.enabled')?.value;
-      if (typeof enabled !== 'boolean') throw new Error(m.settings_personalDevices_pairing_error());
-      yield* put(settingsFormRequestProgressed(request, { enabled }));
-      if (enabled) {
-        if (!principal.capabilities.personalPairing)
-          throw new Error(m.settings_personalDevices_pairing_error());
-        yield* call(async () => {
-          try {
-            const uri = await readSelfPairing(principal.principal);
-            if (current()) receiveWebsocketCredentials(request, { pairingUri: uri });
-          } catch {
-            throw new Error(m.settings_personalDevices_pairing_error());
-          }
-        });
-      }
+      const result = yield* call(
+        [appClient.settings, appClient.settings.update],
+        [{ path: 'server.wsApi.enabled', value: intent.enabled }],
+      );
+      if (!(yield* requestCurrent(request, context))) return;
+      const enabled = result.find((entry) => entry.path === 'server.wsApi.enabled')?.value;
+      if (typeof enabled !== 'boolean') throw new Error(m.settings_wsApi_startListenerError());
+      if (enabled !== intent.enabled) error = m.settings_wsApi_startListenerError();
       values = { enabled };
+      if (enabled) values = yield* loadMobile(request, context);
+      else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
     } else if (intent.kind === 'load') {
       snapshot = yield* call(loadSnapshot, client, request);
       values = { ...snapshot, portResetId: request.requestId };
@@ -324,12 +346,12 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
                 ? snapshot.tcAddress
                 : pairingUri(request, snapshot, !!context);
         try {
-          if (current()) await navigator.clipboard.writeText(text);
+          await navigator.clipboard.writeText(text);
         } catch {
           throw new Error(m.settings_wsApi_tokenCopyError());
         }
       });
-      if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+      if (!(yield* requestCurrent(request, context))) return;
       yield* call(
         notify.success,
         intent.target === 'token'
@@ -342,23 +364,25 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       );
     } else if (intent.kind === 'qr') {
       if (!snapshot.port && !context) throw new Error(m.settings_wsApi_serverNotRunning());
+      let qrDataUrl = '';
       yield* call(async () => {
         try {
           const QRCode = (await import('qrcode')).default;
-          const qrDataUrl = await QRCode.toDataURL(pairingUri(request, snapshot, !!context), {
+          qrDataUrl = await QRCode.toDataURL(pairingUri(request, snapshot, !!context), {
             width: 544,
             margin: 2,
             color: { dark: '#000000', light: '#ffffff' },
           });
-          if (current()) receiveWebsocketCredentials(request, { qrDataUrl });
         } catch {
           throw new Error(m.settings_wsApi_qrGenerateError());
         }
       });
-      if (yield* selectSettingsFormRequestCurrent.effect(request))
+      if (yield* requestCurrent(request, context)) {
+        receiveWebsocketCredentials(request, { qrDataUrl });
         yield* put(websocketApiQrOpened(request));
+      }
     }
-    if (yield* selectSettingsFormRequestCurrent.effect(request)) {
+    if (yield* requestCurrent(request, context)) {
       if (error) yield* call(notify.error, error);
       yield* put(
         settingsFormRequestSettled(request, {
@@ -369,7 +393,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       );
     }
   } catch (cause) {
-    if (yield* selectSettingsFormRequestCurrent.effect(request)) {
+    if (yield* requestCurrent(request, context)) {
       const message = cause instanceof Error ? cause.message : String(cause);
       error =
         intent.kind === 'loadMobile'
@@ -416,11 +440,16 @@ export function* websocketApiSaga(): SagaGenerator<void> {
     buffers.expanding(),
   );
   try {
-    yield* takeEveryByContextFIFO(writes, () => 'local-api', runRequest, {
-      onDiscardPending: function* (action) {
-        yield* put(settingsFormRequestSettled(action.payload[0], { status: 'cancelled' }));
+    yield* takeEveryByContextFIFO(
+      writes,
+      ({ payload: [, intent] }) => ('context' in intent && intent.context) || 'local-api',
+      runRequest,
+      {
+        onDiscardPending: function* (action) {
+          yield* put(settingsFormRequestSettled(action.payload[0], { status: 'cancelled' }));
+        },
       },
-    });
+    );
     yield* takeLatestInContext(
       reads,
       ({ payload: [request] }) => `${request.formId}:${request.sessionId}:${request.resource}`,

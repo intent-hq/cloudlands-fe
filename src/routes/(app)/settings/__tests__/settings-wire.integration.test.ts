@@ -27,7 +27,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
-import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
+import MobileSettings from '$features/settings/MobileSettings.svelte';
 
 type BackendStep = { request: unknown; response: unknown };
 
@@ -245,7 +245,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     },
   );
 
-  it('persists the explicit WebSocket port Save through documented settings methods', async () => {
+  it('persists Mobile advanced port changes through documented settings methods', async () => {
     const list = SHIPPED_WEBSOCKET_SETTING_FIXTURES.list;
     const update = {
       request: {
@@ -259,7 +259,7 @@ describe('Settings deterministic mock-BE contracts', () => {
       update,
     ]);
 
-    render(WebSocketApiSettings);
+    render(MobileSettings);
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
     );
@@ -292,7 +292,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     });
   });
 
-  it('persists multiselect networks through settings.update and renders the refreshed daemon selection', async () => {
+  it('persists Mobile advanced networks through settings.update and renders the refreshed daemon selection', async () => {
     let bound = ['192.0.2.10', '127.0.0.1'];
     const expectedChanges = [
       { path: 'server.bindAddress', value: ['192.0.2.10', '127.0.0.1', '198.51.100.7'] },
@@ -330,7 +330,7 @@ describe('Settings deterministic mock-BE contracts', () => {
       bound = ['192.0.2.10', '127.0.0.1', '198.51.100.7'];
       return { ok: true, result: { applied: expectedChanges } };
     });
-    render(WebSocketApiSettings);
+    render(MobileSettings);
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
     );
