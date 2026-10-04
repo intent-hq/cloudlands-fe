@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.203.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.202.0...v2.203.0) (2026-10-04)
+
+
+### 🚀 Features
+
+* display chat submissions immediately with authoritative queue reconciliation ([#3155](https://github.com/intent-hq/cloudlands-fe/issues/3155)) ([a6c106c](https://github.com/intent-hq/cloudlands-fe/commit/a6c106ce1b2f0f762735b28bce05f334b830980e))
+* **gitlab:** add native review and qualified resource previews ([#3142](https://github.com/intent-hq/cloudlands-fe/issues/3142)) ([b5ef649](https://github.com/intent-hq/cloudlands-fe/commit/b5ef649c73edf00cffa215969ce87e33c04a51a8))
+* show and copy commands in script subscriptions ([#3153](https://github.com/intent-hq/cloudlands-fe/issues/3153)) ([2689f33](https://github.com/intent-hq/cloudlands-fe/commit/2689f33811affbfd52dff2b306d23085d392835e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.10 ([#3160](https://github.com/intent-hq/cloudlands-fe/issues/3160)) ([b611698](https://github.com/intent-hq/cloudlands-fe/commit/b611698f3555df66fc2fce05ed5af4367d46fcd6))
+* bump intentd sidecar to v0.10.9 ([#3159](https://github.com/intent-hq/cloudlands-fe/issues/3159)) ([0c22415](https://github.com/intent-hq/cloudlands-fe/commit/0c22415c175f8fe75894e9b058dba02f76a66b2b))
+
 ## [2.202.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.201.2...v2.202.0) (2026-10-03)
 
 
