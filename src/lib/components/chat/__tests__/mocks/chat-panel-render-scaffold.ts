@@ -77,6 +77,7 @@ export function chatStateSelectors() {
     selectChatError: null,
     selectChatFailureCorrelation: undefined,
     selectChatLastChunkTime: null,
+    selectChatLastAttemptedMessage: null,
     selectChatLiveStreamPhase: null,
     selectChatModelUnavailable: null,
     selectChatQuotaExceeded: null,
