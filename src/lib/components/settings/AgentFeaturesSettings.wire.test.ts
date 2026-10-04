@@ -31,10 +31,12 @@ import AgentFeaturesSettings from './AgentFeaturesSettings.svelte';
 import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
 import { store } from '$store/renderer/store';
 import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 
 let stop: () => void;
 beforeEach(() => {
   store.init();
+  admitLegacyPrincipal();
   stop = store.runSaga(settingsFormSaga);
 });
 afterEach(() => {
