@@ -15,9 +15,13 @@ export function readPersistedPage(
   );
 }
 
-export function comparePersistedOracle(app: ElectronApplication, camera: number) {
+export function comparePersistedOracle(
+  app: ElectronApplication,
+  camera: number,
+  clip?: { x: number; y: number; width: number; height: number },
+) {
   return app.evaluate(
-    (_electron, camera) => (globalThis as any).persistedPaint.compareOracle(camera),
-    camera,
+    (_electron, { camera, clip }) => (globalThis as any).persistedPaint.compareOracle(camera, clip),
+    { camera, clip },
   );
 }

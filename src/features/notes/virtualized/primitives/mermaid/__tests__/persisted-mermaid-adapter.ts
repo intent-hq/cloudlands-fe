@@ -118,7 +118,7 @@ async function construct(context: NativeConstructionContext, lifetime: AbortSign
         viewport.y !== 0 ||
         viewport.width !== 256 ||
         viewport.height !== 256 ||
-        devicePixelRatio !== 1
+        devicePixelRatio !== context.job.profile.devicePixelRatio
       )
         throw new Error('Test camera profile mismatch');
       if (
@@ -137,6 +137,20 @@ async function construct(context: NativeConstructionContext, lifetime: AbortSign
         identity: context.job.identity,
         profile: context.job.profile,
         text,
+        transform: {
+          originX: plan.x,
+          originY: plan.y,
+          scale,
+          svgViewBox: svg.getAttribute('viewBox'),
+        },
+        binding: {
+          identity: context.job.identity,
+          profile: context.job.profile,
+          zoom: scale,
+          resolvedFont: getComputedStyle(label).font,
+          dpr: devicePixelRatio,
+          nativeConfig: 'unchanged-MermaidRenderer',
+        },
         geometry: {
           source: source.toJSON(),
           target: shown.toJSON(),
@@ -180,7 +194,7 @@ async function construct(context: NativeConstructionContext, lifetime: AbortSign
           profile: context.job.profile,
           limitations: [
             'test-only native paint',
-            'DPR1 only, CSS zoom1 and2',
+            'DPR1/2 fixture profiles, CSS zoom1 and2; bounded captured regions only',
             'no semantic, accessibility, interaction or source-map acceptance',
             'full parser/layout/DOM remain construction work',
           ],
