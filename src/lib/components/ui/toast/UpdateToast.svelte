@@ -194,7 +194,7 @@
         in:springIn={{ tier: 'slow', y: 30, scale: 1 }}
         out:crispOut={{ tier: 'slow' }}
       >
-        <ToastGlyph variant="update" />
+        <ToastGlyph variant="celebrate" />
       </div>
       <div class="title">{m.ui_updateToast_updateReady_label()}</div>
       <Button variant="primary" size="compact" class="toast-action" onclick={handleInstall}>
@@ -212,7 +212,7 @@
     </div>
   {:else if status === 'not-available'}
     <div class="toast-row">
-      <ToastGlyph variant="update" />
+      <ToastGlyph variant="celebrate" />
       <div class="title">{m.ui_updateToast_upToDate_label()}</div>
     </div>
     <div class="description">
