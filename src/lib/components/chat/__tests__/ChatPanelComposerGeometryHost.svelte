@@ -349,17 +349,24 @@
     const pending = selectAgentSubmissionDisplay.select(store.state, agentId, workspaceId)
       .conversation[0];
     const scope = store.state.pendingSubmissions.byAgentId[agentId]?.scope;
-    if (!pending || !scope) return;
-    // The direct-send saga records ownership before the request can emit stream-start.
-    store.dispatch(chatSendStarted(agentId, workspaceId));
-    store.dispatch(
-      chatLastAttemptedMessageSet(
-        agentId,
-        buildRecordedAttempt(pending.content, { submission: { scope, id: pending.id } }),
-      ),
-    );
-    if (submissionStage === 'ack')
-      store.dispatch(pendingSubmissionSettled(scope, pending.id, 'accepted', Date.now()));
+    if (submissionStage === 'started') {
+      if (!pending || !scope) return;
+      // The direct-send saga records ownership before the request can emit stream-start.
+      store.dispatch(chatSendStarted(agentId, workspaceId));
+      store.dispatch(
+        chatLastAttemptedMessageSet(
+          agentId,
+          buildRecordedAttempt(pending.content, { submission: { scope, id: pending.id } }),
+        ),
+      );
+    } else {
+      const reference =
+        store.state.chatState.byAgentId[agentId]?.lastAttemptedMessage?.submission?.reference;
+      if (reference)
+        store.dispatch(
+          pendingSubmissionSettled(reference.scope, reference.id, 'accepted', Date.now()),
+        );
+    }
   });
   $effect(() => {
     if (!settleSubmission) return;
