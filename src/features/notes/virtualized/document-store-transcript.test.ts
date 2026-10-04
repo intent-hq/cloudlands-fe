@@ -1,3 +1,6 @@
+import markdownCRLF from './__tests__/fixtures/store-markdown-html-crlf-compacted-windows.json';
+import markdownLF from './__tests__/fixtures/store-markdown-html-lf-compacted-windows.json';
+import markdownMARKS from './__tests__/fixtures/store-markdown-html-marks-compacted-windows.json';
 import stableMarkdownBackticks from './__tests__/fixtures/store-entry-backtick-markdown-stable-parent.json';
 import headingClosure from './__tests__/fixtures/store-entry-mixed-entry-heading-first.json';
 import anchorClosure from './__tests__/fixtures/store-entry-mixed-entry-anchor-first.json';
@@ -22,7 +25,7 @@ type Transcript = {
 };
 // Frozen actual Store responses, including original expiry. Replay is not a live
 // authenticated lease and never fabricates missing dependencies or smaller reads.
-function replay(raw: unknown) {
+function replay(raw: unknown, terminalReply = false) {
   const t = raw as Transcript;
   const identity = t.calls[0].response;
   if (identity.kind !== 'noteSourcePage') throw new Error('Missing source');
@@ -31,18 +34,23 @@ function replay(raw: unknown) {
     const q = params.page as NotePageRequest;
     requests.push(q);
     const found = t.calls.find(
-      ({ request: r }) =>
+      ({ request: r, response }) =>
         r.kind === q.kind &&
         r.cursor === q.cursor &&
         ('contextRef' in q
           ? r.contextRef === q.contextRef
           : 'ref' in q
             ? r.ref === q.ref
-            : q.kind === 'source' && r.at === q.at),
+            : q.kind === 'source' &&
+              r.at === q.at &&
+              (r.maxSourceBytes === q.maxSourceBytes ||
+                (terminalReply &&
+                  response.kind === 'noteSourcePage' &&
+                  response.nextCursor === null &&
+                  response.range.end === response.sourceLength &&
+                  q.maxSourceBytes === 4096))),
     );
     if (!found) throw new Error('Uncaptured Store request: ' + JSON.stringify(q));
-    if (q.kind === 'source' && q.maxSourceBytes !== 4096)
-      throw new Error('Uncaptured source budget');
     return found.response;
   });
   return {
@@ -131,7 +139,10 @@ for (const [name, capture, partialLiteral] of [
   ['Markdown-backticks', stableMarkdownBackticks, false],
 ] as const) {
   it(`replays complete ${name} Store closure with native entry semantics`, async () => {
-    const fixture = replay(capture);
+    // Historical tiny terminal captures requested32; their complete terminal
+    // response is valid under4096 too. This is response replay, not an exact
+    // request transcript. New admission captures always match exact budgets.
+    const fixture = replay(capture, true);
     const w = await fixture.read();
     const projection = projectNoteWindow(w);
     const expected = nativeFixtureEditor(
@@ -173,5 +184,48 @@ for (const [name, capture] of [
 }
 
 it('rejects the original Store code owner whose parent changes on direct resolution', async () => {
-  await expect(replay(markdownBackticks).read()).rejects.toThrow(/Conflicting canonical identity/);
+  await expect(replay(markdownBackticks, true).read()).rejects.toThrow(
+    /Conflicting canonical identity/,
+  );
 });
+
+for (const [name, capture] of [
+  ['marks', markdownMARKS],
+  ['LF', markdownLF],
+  ['CRLF', markdownCRLF],
+] as const) {
+  it(`replays actual Store Markdown paragraph ${name} into the unchanged native paragraph`, async () => {
+    const f = replay(capture);
+    const w = await f.read();
+    const projected = projectNoteWindow(w);
+    const expected = nativeFixtureEditor(
+      await processMarkdownToHTML(f.t.source, { workspaceId: 'w', preserveAnchors: true }),
+    );
+    const actual = nativeFixtureEditor(projected.content);
+    try {
+      const paragraph = expected.state.doc.lastChild!;
+      // The marked 36-byte source closure retries at16 and admits exactly the
+      // first11 native text units: <div>, bold, space, and the first code letter.
+      expect(actual.getJSON().content).toEqual([
+        name === 'marks' ? paragraph.cut(0, 11).toJSON() : paragraph.toJSON(),
+      ]);
+      if (name === 'marks') {
+        expect(w.range).toEqual({ start: 11, end: 27 });
+        expect(w.text).toBe('<div>**bold** `c');
+      }
+      expect(w.canonicalOwners).toContainEqual(
+        expect.objectContaining({ construct: 'markdownBlock' }),
+      );
+      expect(f.requests.filter((q) => q.kind === 'source').map((q) => q.maxSourceBytes)).toEqual(
+        name === 'marks' ? [4096, 16] : [4096],
+      );
+      expect(w.cost.sourceBytes).toBeLessThan(128);
+      expect(w.cost.canonicalBytes).toBeLessThanOrEqual(8192);
+      expect(w.cost.requests).toBeLessThanOrEqual(96);
+      console.info('Actual Store Markdown block costs', name, w.cost);
+    } finally {
+      expected.destroy();
+      actual.destroy();
+    }
+  });
+}

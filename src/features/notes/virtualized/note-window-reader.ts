@@ -64,10 +64,14 @@ export interface NoteWindow {
  * Every await checks ownership before decoding or requesting any further page.
  */
 class WindowAdmissionError extends Error {}
-/** A complete required canonical closure failed its control budget. Repeating
- * source reads cannot justify dropping required maps or admitting this graph. */
+/** A complete required canonical closure failed its control budget. Only a truly
+ * smaller source extent may be retried; required maps are never dropped. */
 export class NoteWindowControlBudgetError extends Error {
-  constructor(readonly requiredBytes: number) {
+  constructor(
+    readonly requiredBytes: number,
+    readonly sourceBytes = 0,
+    readonly sourceRange?: SourceRange,
+  ) {
     super(`Canonical retained context exceeds active window budget (${requiredBytes} bytes)`);
     this.name = 'NoteWindowControlBudgetError';
   }
@@ -77,7 +81,13 @@ function* assembleWindowSteps(
   address: NoteWindowAddress,
   current: () => boolean,
   pageBytes: number,
-  work: { requests: number; wireBytes: number; peak: number; snapshotId?: string },
+  work: {
+    requests: number;
+    wireBytes: number;
+    peak: number;
+    canonicalWorkBytes: number;
+    snapshotId?: string;
+  },
 ): Generator<NotePageRequest, NoteWindow, NoteReadPage> {
   let snapshotId = work.snapshotId ?? address.snapshotId;
   const cost = {
@@ -125,7 +135,10 @@ function* assembleWindowSteps(
   const chargeContext = (amount: number, canonical = false) => {
     work.peak = Math.max(work.peak, 2 * cost.sourceBytes + 2 * cost.contextBytes + amount);
     cost.contextBytes += amount;
-    if (canonical) cost.canonicalWorkBytes += amount;
+    if (canonical) {
+      cost.canonicalWorkBytes += amount;
+      work.canonicalWorkBytes += amount;
+    }
     if (canonical) canonicalBytes += amount;
     else lexicalBytes += amount;
     // Canonical assembly has pre-reserved DATA and a fixed cumulative wire/work
@@ -385,7 +398,7 @@ function* assembleWindowSteps(
       canonicalOwners,
     });
     if (bytes > NOTE_WINDOW_LIMITS.canonicalBytes) {
-      throw new NoteWindowControlBudgetError(bytes);
+      throw new NoteWindowControlBudgetError(bytes, cost.sourceBytes, { start, end });
     }
     cost.canonicalBytes = bytes;
     cost.contextBytes = bytes;
@@ -405,6 +418,7 @@ function* assembleWindowSteps(
     documentEnd: end === sourceLength,
     cost: {
       ...cost,
+      canonicalWorkBytes: work.canonicalWorkBytes,
       requests: work.requests,
       wireBytes: work.wireBytes,
       assemblyPeakBytes: Math.max(work.peak, cost.assemblyPeakBytes),
@@ -413,23 +427,40 @@ function* assembleWindowSteps(
 }
 
 /** Dense markup admits a smaller source slice, with one shared request budget
- * across attempts. Failed attempts release their local source/context before retry;
- * snapshot identity and cumulative work survive so retries cannot hide stale data
- * or turn admission into an unbounded scan. */
+ * across attempts. Failed generators unwind before retry; cache/reservation
+ * lifetimes remain with the caller. Snapshot identity and cumulative work survive
+ * so retries cannot hide stale data or turn admission into an unbounded scan. */
 export function* noteWindowSteps(
   address: NoteWindowAddress,
   current: () => boolean = () => true,
 ): Generator<NotePageRequest, NoteWindow, NoteReadPage> {
-  const work = { requests: 0, wireBytes: 0, peak: 0, snapshotId: address.snapshotId };
-  for (
-    let pageBytes: number = NOTE_WINDOW_LIMITS.requestSourceBytes;
-    pageBytes >= 4;
-    pageBytes /= 2
-  ) {
+  const work = {
+    requests: 0,
+    wireBytes: 0,
+    peak: 0,
+    canonicalWorkBytes: 0,
+    snapshotId: address.snapshotId,
+  };
+  const failedRanges = new Set<string>();
+  let pageBytes: number = NOTE_WINDOW_LIMITS.requestSourceBytes;
+  while (pageBytes >= 4) {
     try {
       return yield* assembleWindowSteps(address, current, pageBytes, work);
     } catch (error) {
-      if (!(error instanceof WindowAdmissionError) || pageBytes === 4) throw error;
+      if (error instanceof NoteWindowControlBudgetError) {
+        // A 36-byte tail returned to a 4096-byte request must shrink from 36,
+        // rather than repeatedly fetching it at 2048/1024/etc. The failed
+        // generator retains no graph in this error; only scalar diagnostics.
+        if (!error.sourceRange || error.sourceBytes <= 4 || pageBytes === 4) throw error;
+        const key = `${error.sourceRange.start}:${error.sourceRange.end}`;
+        if (failedRanges.has(key)) throw error;
+        failedRanges.add(key);
+        const smaller = Math.min(pageBytes / 2, error.sourceBytes / 2);
+        pageBytes = Math.max(4, 2 ** Math.floor(Math.log2(smaller)));
+      } else {
+        if (!(error instanceof WindowAdmissionError) || pageBytes === 4) throw error;
+        pageBytes = Math.max(4, Math.floor(pageBytes / 2));
+      }
     }
   }
   throw new Error('Note source cannot fit an active window');

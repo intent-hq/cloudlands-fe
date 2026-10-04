@@ -198,3 +198,48 @@ it('never substitutes a stale owner or a full-note read after an expired owner h
   expect(() => expired.throw(failure)).toThrow(failure);
   expect(expired.next().done).toBe(true);
 });
+
+it('compacts an entirely indexed Markdown paragraph while preserving code owners and window maps', () => {
+  const f = fixture();
+  const owner = f.context[0];
+  const paragraph = f.context[1];
+  if (owner.kind !== 'boundary' || paragraph.kind !== 'nativeNode') throw new Error('fixture');
+  owner.construct = 'markdownBlock';
+  owner.profile = 'canonicalNote';
+  owner.profileVersion = 1;
+  owner.entryPath = 'markdown';
+  owner.attributesRef = 'table-attrs';
+  delete owner.htmlSource;
+  delete owner.detailRef;
+  paragraph.nodeType = 'paragraph';
+  f.context.splice(2, 1);
+  const code = {
+    kind: 'span' as const,
+    id: 'code',
+    role: 'code',
+    sourceRange: { start: 60, end: 64 },
+    nativeRef: 'code-ref',
+    codeSource: {
+      profile: 'canonicalNote' as const,
+      profileVersion: 1 as const,
+      openingRange: { start: 60, end: 61 },
+      bodyRange: { start: 61, end: 63 },
+      closingRange: { start: 63, end: 64 },
+    },
+  };
+  f.context.push(code);
+  f.native.references['code-owner'] = ['code'];
+  const r = retainCanonicalRegion(f.context, f.bindings, f.native, { start: 60, end: 68 });
+  expect(r.owners?.[0]).toMatchObject({
+    ownerId: 'table-owner',
+    construct: 'markdownBlock',
+    nativeId: 'table',
+  });
+  expect(r.context).toContain(code);
+  expect(r.context).toContain(f.context[2]);
+  expect(r.native.references['code-owner']).toEqual(['code']);
+  expect(f.bindings).toHaveLength(2);
+  expect(
+    retainCanonicalRegion(f.context, f.bindings, f.native, { start: 90, end: 110 }).context,
+  ).toBe(f.context);
+});

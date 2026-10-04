@@ -166,7 +166,15 @@ describe('canonical Markdown paragraph owner assembly', () => {
     const p = provider();
     const result = await p.read();
     expect(result.text).toBe('**Tail**');
-    expect(result.context).toContainEqual(owner);
+    expect(result.canonicalOwners).toContainEqual(
+      expect.objectContaining({
+        ownerId: owner.id,
+        construct: 'markdownBlock',
+        nativeRef: 'root',
+        nativeId: 'paragraph',
+        sourceRange: blockRange,
+      }),
+    );
     expect(result.mapBindings).toHaveLength(1);
     expect(p.seen.filter((q) => q.kind === 'source')).toHaveLength(1);
     expect(p.seen).toHaveLength(8);
