@@ -145,6 +145,7 @@
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import {
     selectGuestSessions,
+    selectWindowGuestSession,
     selectGuestSessionsConnectedIds,
     selectGuestSessionsOpenIds,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
@@ -167,6 +168,7 @@
   const connections$ = selectConnections();
   const currentConnectionId$ = selectCurrentConnectionId();
   const currentConnection$ = selectCurrentConnection();
+  const windowGuestSession$ = selectWindowGuestSession();
   const certMismatch$ = selectConnectionCertMismatch();
   const certWarningsById$ = selectCertWarningsByConnectionId();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
@@ -383,6 +385,7 @@
   // connection is remote (name only, no host:port — same preference order as
   // formatConnectionLabel). Null when local/unknown → dot-only trigger.
   const currentRemoteName = $derived.by(() => {
+    if ($windowGuestSession$) return formatGuestSessionLabel($windowGuestSession$);
     const conn = $currentConnection$;
     if (!conn || conn.isLocal) return null;
     return formatConnectionLabel(conn);

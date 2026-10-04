@@ -11,6 +11,8 @@
 
   import { page } from '$app/state';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -119,6 +121,7 @@
   const zoomFactor = selectZoomFactor();
   const counterScale = selectCounterScale();
   const workspaceItems = selectWorkspaceItems();
+  const windowGuestSession$ = selectWindowGuestSession();
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -166,7 +169,10 @@
 
   // Update the native window title when displayText changes
   $effect(() => {
-    const title = displayText || 'Intent';
+    const workspaceTitle = displayText || 'Intent';
+    const title = $windowGuestSession$
+      ? `${workspaceTitle} [${formatGuestSessionLabel($windowGuestSession$)}]`
+      : workspaceTitle;
     // Update the native window title via IPC
     invoke(IPC_CHANNELS.WINDOW.SET_TITLE, { title }).catch(() => {
       // Silently ignore errors (e.g., if not in Electron context)
