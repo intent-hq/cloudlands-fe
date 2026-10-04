@@ -1,0 +1,429 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`records raw native primitive attributes for adjacentHtmlBase64 > adjacentHtmlBase64 1`] = `
+{
+  "atoms": [
+    {
+      "code": "LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K",
+      "position": 0,
+      "type": "diffBlock",
+    },
+    {
+      "code": "Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg==",
+      "position": 1,
+      "type": "mermaidBlock",
+    },
+  ],
+  "html": "<div data-type="diff-block" data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K"></div><div data-type="mermaid-block" data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg=="></div>",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "code": "LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K",
+        },
+        "type": "diffBlock",
+      },
+      {
+        "attrs": {
+          "code": "Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg==",
+        },
+        "type": "mermaidBlock",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<div data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K" data-type="diff-block"></div><div data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg==" data-type="mermaid-block"></div>",
+  "saved": "\`\`\`diff
+-café & old
++世界 <new>
+
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+ A["café & 世界"] --> B
+
+\`\`\`",
+  "source": "<div data-type="diff-block" data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K"></div><div data-type="mermaid-block" data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg=="></div>",
+}
+`;
+
+exports[`records raw native primitive attributes for adjacentHtmlPlainAttributes > adjacentHtmlPlainAttributes 1`] = `
+{
+  "atoms": [
+    {
+      "code": "-café & old
++世界 <new>",
+      "position": 0,
+      "type": "diffBlock",
+    },
+    {
+      "code": "",
+      "position": 1,
+      "type": "mermaidBlock",
+    },
+  ],
+  "html": "<div data-type="diff-block" data-diff-code="-café &amp; old
++世界 <new>"></div><div data-type="mermaid-block"></div>",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "code": "-café & old
++世界 <new>",
+        },
+        "type": "diffBlock",
+      },
+      {
+        "attrs": {
+          "code": "",
+        },
+        "type": "mermaidBlock",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<div data-diff-code="-café &amp; old
++世界 <new>" data-type="diff-block"></div><div data-mermaid-code="" data-type="mermaid-block"></div>",
+  "saved": "\`\`\`diff
+-café & old
++世界 <new>
+\`\`\`
+
+\`\`\`mermaid
+
+\`\`\`",
+  "source": "<div data-type="diff-block" data-diff-code="-café &amp; old
++世界 &lt;new&gt;
+"></div><div data-type="mermaid-block" data-mermaid-code="flowchart LR
+ A[&quot;café &amp; 世界&quot;] --&gt; B
+"></div>",
+}
+`;
+
+exports[`records raw native primitive attributes for adjacentHtmlPlainWithoutArrow > adjacentHtmlPlainWithoutArrow 1`] = `
+{
+  "atoms": [
+    {
+      "code": "-old
++new",
+      "position": 0,
+      "type": "diffBlock",
+    },
+    {
+      "code": "graph TD
+ A[Alpha]",
+      "position": 1,
+      "type": "mermaidBlock",
+    },
+  ],
+  "html": "<div data-type="diff-block" data-diff-code="-old
++new"></div><div data-type="mermaid-block" data-mermaid-code="graph TD
+ A[Alpha]"></div>",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "code": "-old
++new",
+        },
+        "type": "diffBlock",
+      },
+      {
+        "attrs": {
+          "code": "graph TD
+ A[Alpha]",
+        },
+        "type": "mermaidBlock",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<div data-diff-code="-old
++new" data-type="diff-block"></div><div data-mermaid-code="graph TD
+ A[Alpha]" data-type="mermaid-block"></div>",
+  "saved": "\`\`\`diff
+-old
++new
+\`\`\`
+
+\`\`\`mermaid
+graph TD
+ A[Alpha]
+\`\`\`",
+  "source": "<div data-type="diff-block" data-diff-code="-old
++new
+"></div><div data-type="mermaid-block" data-mermaid-code="graph TD
+ A[Alpha]
+"></div>",
+}
+`;
+
+exports[`records raw native primitive attributes for adjacentHtmlPreCodeBase64 > adjacentHtmlPreCodeBase64 1`] = `
+{
+  "atoms": [
+    {
+      "code": "LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K",
+      "position": 0,
+      "type": "diffBlock",
+    },
+    {
+      "code": "Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg==",
+      "position": 1,
+      "type": "mermaidBlock",
+    },
+  ],
+  "html": "<pre><code class="language-diff">LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K</code></pre><pre><code class="language-mermaid">Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg==</code></pre>",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "code": "LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K",
+        },
+        "type": "diffBlock",
+      },
+      {
+        "attrs": {
+          "code": "Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg==",
+        },
+        "type": "mermaidBlock",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<div data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K" data-type="diff-block"></div><div data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg==" data-type="mermaid-block"></div>",
+  "saved": "\`\`\`diff
+-café & old
++世界 <new>
+
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+ A["café & 世界"] --> B
+
+\`\`\`",
+  "source": "<pre><code class="language-diff">LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K</code></pre><pre><code class="language-mermaid">Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg==</code></pre>",
+}
+`;
+
+exports[`records raw native primitive attributes for adjacentHtmlPreCodePlain > adjacentHtmlPreCodePlain 1`] = `
+{
+  "atoms": [
+    {
+      "code": "-café & old
++世界 <new>
+",
+      "position": 0,
+      "type": "diffBlock",
+    },
+    {
+      "code": "flowchart LR
+ A["café & 世界"] --> B
+",
+      "position": 1,
+      "type": "mermaidBlock",
+    },
+  ],
+  "html": "<pre><code class="language-diff">-café &amp; old
++世界 &lt;new&gt;
+</code></pre><pre><code class="language-mermaid">flowchart LR
+ A["café &amp; 世界"] --&gt; B
+</code></pre>",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "code": "-café & old
++世界 <new>
+",
+        },
+        "type": "diffBlock",
+      },
+      {
+        "attrs": {
+          "code": "flowchart LR
+ A["café & 世界"] --> B
+",
+        },
+        "type": "mermaidBlock",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<div data-diff-code="-café &amp; old
++世界 <new>
+" data-type="diff-block"></div><div data-mermaid-code="flowchart LR
+ A[&quot;café &amp; 世界&quot;] --> B
+" data-type="mermaid-block"></div>",
+  "saved": "\`\`\`diff
+-café & old
++世界 <new>
+
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+ A["café & 世界"] --> B
+
+\`\`\`",
+  "source": "<pre><code class="language-diff">-café &amp; old
++世界 &lt;new&gt;
+</code></pre><pre><code class="language-mermaid">flowchart LR
+ A["café &amp; 世界"] --&gt; B
+</code></pre>",
+}
+`;
+
+exports[`records raw native primitive attributes for markdownBeforeHtmlAtoms > markdownBeforeHtmlAtoms 1`] = `
+{
+  "atoms": [],
+  "html": "<h2>Before</h2>
+<p>&lt;div data-type="diff-block" data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K"&gt;&lt;/div&gt;&lt;div data-type="mermaid-block" data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg=="&gt;&lt;/div&gt;</p>
+<p><strong>After</strong></p>
+",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "level": 2,
+        },
+        "content": [
+          {
+            "text": "Before",
+            "type": "text",
+          },
+        ],
+        "type": "heading",
+      },
+      {
+        "content": [
+          {
+            "text": "<div data-type="diff-block" data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K"></div><div data-type="mermaid-block" data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg=="></div>",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+      {
+        "content": [
+          {
+            "marks": [
+              {
+                "type": "bold",
+              },
+            ],
+            "text": "After",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<h2>Before</h2><p>&lt;div data-type="diff-block" data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K"&gt;&lt;/div&gt;&lt;div data-type="mermaid-block" data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg=="&gt;&lt;/div&gt;</p><p><strong>After</strong></p>",
+  "saved": "## Before
+
+<div data-type="diff-block" data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K"></div><div data-type="mermaid-block" data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg=="></div>
+
+**After**",
+  "source": "## Before
+
+<div data-type="diff-block" data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4K"></div><div data-type="mermaid-block" data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBCCg=="></div>
+
+**After**",
+}
+`;
+
+exports[`records raw native primitive attributes for mixedFences > mixedFences 1`] = `
+{
+  "atoms": [
+    {
+      "code": "LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4=",
+      "position": 8,
+      "type": "diffBlock",
+    },
+    {
+      "code": "Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBC",
+      "position": 9,
+      "type": "mermaidBlock",
+    },
+  ],
+  "html": "<h2>Before</h2>
+<div data-type="diff-block" data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4="></div>
+<div data-type="mermaid-block" data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBC"></div>
+<p><strong>After</strong></p>
+",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "level": 2,
+        },
+        "content": [
+          {
+            "text": "Before",
+            "type": "text",
+          },
+        ],
+        "type": "heading",
+      },
+      {
+        "attrs": {
+          "code": "LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4=",
+        },
+        "type": "diffBlock",
+      },
+      {
+        "attrs": {
+          "code": "Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBC",
+        },
+        "type": "mermaidBlock",
+      },
+      {
+        "content": [
+          {
+            "marks": [
+              {
+                "type": "bold",
+              },
+            ],
+            "text": "After",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<h2>Before</h2><div data-diff-code="LWNhZsOpICYgb2xkCivkuJbnlYwgPG5ldz4=" data-type="diff-block"></div><div data-mermaid-code="Zmxvd2NoYXJ0IExSCiBBWyJjYWbDqSAmIOS4lueVjCJdIC0tPiBC" data-type="mermaid-block"></div><p><strong>After</strong></p>",
+  "saved": "## Before
+
+\`\`\`diff
+-café & old
++世界 <new>
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+ A["café & 世界"] --> B
+\`\`\`
+
+**After**",
+  "source": "## Before
+
+\`\`\`diff
+-café & old
++世界 <new>
+\`\`\`
+
+\`\`\`mermaid
+flowchart LR
+ A["café & 世界"] --> B
+\`\`\`
+
+**After**",
+}
+`;
