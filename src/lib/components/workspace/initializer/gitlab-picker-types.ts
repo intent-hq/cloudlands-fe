@@ -26,6 +26,9 @@ export interface GitLabPickerProps<T> {
   page: GitLabPickerPage<T>;
   copy: GitLabPickerCopy;
   onSearch: (query: string, scopeKey: string) => void;
+  /** Optional explicit action, separate from server search and list selection. */
+  onSubmit?: (query: string, scopeKey: string) => void;
+  submitLabel?: string;
   onMore: (scopeKey: string) => void;
   onRecover?: (scopeKey: string) => void;
 }

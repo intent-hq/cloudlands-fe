@@ -14,6 +14,8 @@
     page,
     copy,
     onSearch,
+    onSubmit,
+    submitLabel,
     onMore,
     onRecover,
     selectedKey,
@@ -72,6 +74,18 @@
         />
       {/snippet}
     </FormField>
+
+    {#if onSubmit && submitLabel}
+      <Button
+        type="button"
+        variant="secondary"
+        class="w-full"
+        disabled={!query.trim() || page.status === 'loading' || page.loadingMore}
+        onclick={() => onSubmit?.(query, scopeKey)}
+      >
+        {submitLabel}
+      </Button>
+    {/if}
 
     {#if page.status === 'loading'}
       <LoadingState label={copy.loadingLabel} density="compact" />

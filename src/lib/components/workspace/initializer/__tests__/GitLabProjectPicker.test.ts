@@ -74,15 +74,84 @@ describe('GitLab project presentation', () => {
   });
 
   it('supports moving from search to results and selecting with the keyboard', async () => {
-    const input = props();
+    const input = { ...props(), onSubmit: vi.fn(), submitLabel: 'Use GitLab link' };
     render(GitLabProjectPicker, input);
     const search = screen.getByRole('searchbox');
     search.focus();
+    await fireEvent.keyDown(search, { key: 'Enter' });
+    expect(input.onSubmit).not.toHaveBeenCalled();
     await fireEvent.keyDown(search, { key: 'ArrowDown' });
     const option = screen.getByRole('option');
     expect(document.activeElement).toBe(option);
     await fireEvent.keyDown(option, { key: 'Enter' });
     expect(input.onSelect).toHaveBeenCalledWith(project.projectPath, input.scopeKey);
+    expect(input.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('offers explicit submission only when the consumer supplies both action and label', async () => {
+    const view = render(GitLabProjectPicker, props());
+    expect(screen.queryByRole('button', { name: 'Use GitLab link' })).toBeNull();
+    await view.rerender({ submitLabel: 'Use GitLab link' });
+    expect(screen.queryByRole('button', { name: 'Use GitLab link' })).toBeNull();
+    await view.rerender({ submitLabel: undefined, onSubmit: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Use GitLab link' })).toBeNull();
+    await view.rerender({ submitLabel: 'Use GitLab link' });
+    expect(screen.getByRole('button', { name: 'Use GitLab link' })).toBeTruthy();
+  });
+
+  it('keeps typing as search and submits the current query and scope only on explicit activation', async () => {
+    const input = { ...props(), onSubmit: vi.fn(), submitLabel: 'Use GitLab link' };
+    const view = render(GitLabProjectPicker, input);
+    const partial = 'https://git.example.test:8443/Forge/team/platform/api/-/merge_requests/';
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: partial } });
+    expect(input.onSearch).toHaveBeenCalledWith(partial, input.scopeKey);
+    expect(input.onSubmit).not.toHaveBeenCalled();
+
+    const query = `${partial}42`;
+    const scopeKey = 'host-b/connection-b/lease-2';
+    await view.rerender({ query, scopeKey });
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Use GitLab link' });
+    expect(submit.type).toBe('button');
+    await fireEvent.click(submit);
+
+    expect(input.onSubmit).toHaveBeenCalledExactlyOnceWith(query, scopeKey);
+    expect(input.onSelect).not.toHaveBeenCalled();
+    expect(input.onMore).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { query: '', page: props().page },
+    { query: ' \t ', page: props().page },
+    { query: 'https://git.example.test/team/api', page: { status: 'loading' as const } },
+    {
+      query: 'https://git.example.test/team/api',
+      page: { status: 'ready' as const, items: [project], hasMore: true, loadingMore: true },
+    },
+  ])('disables explicit submission for empty queries or loading: %j', ({ query, page }) => {
+    render(GitLabProjectPicker, {
+      ...props(),
+      query,
+      page,
+      onSubmit: vi.fn(),
+      submitLabel: 'Use GitLab link',
+    });
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Use GitLab link' }).disabled,
+    ).toBe(true);
+  });
+
+  it('withdraws explicit submission when the connection becomes unavailable', async () => {
+    const view = render(GitLabProjectPicker, {
+      ...props(),
+      query: 'https://git.example.test/team/api',
+      onSubmit: vi.fn(),
+      submitLabel: 'Use GitLab link',
+    });
+    expect(screen.getByRole('button', { name: 'Use GitLab link' })).toBeTruthy();
+    await view.rerender({
+      page: { status: 'unavailable', message: 'The GitLab connection changed.' },
+    });
+    expect(screen.queryByRole('button', { name: 'Use GitLab link' })).toBeNull();
   });
 
   it('keeps the current page while loading more and prevents repeated page requests', () => {
