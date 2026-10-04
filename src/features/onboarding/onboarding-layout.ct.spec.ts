@@ -1,6 +1,53 @@
 import { expect, test } from '../../test/ct-test';
 import Preview from './onboarding-layout.preview.svelte';
 
+for (const width of [360, 960]) {
+  for (const supported of [false, true]) {
+    test(`full-instance setup ${supported ? 'supported' : 'requires update'} at ${width}px`, async ({
+      mount,
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      const instance = 'https://gitlab.example.test:8443/Parent/Forge';
+      const component = await mount(Preview, {
+        props: {
+          step: 'forge',
+          gitlabEnabled: true,
+          gitlabSetupSupported: supported,
+          gitlabInstanceBaseUrl: instance,
+        },
+      });
+      await component.getByRole('button', { name: 'Connect GitLab', exact: true }).click();
+      const form = component.getByTestId('gitlab-connect-form');
+      const address = form.getByLabel('GitLab instance URL');
+      await expect(address).toHaveValue(instance);
+      await expect(form.getByRole('button', { name: 'Connect GitLab', exact: true })).toBeEnabled({
+        enabled: supported,
+      });
+      await expect(address).toBeEnabled({ enabled: supported });
+      const explanation = form.getByTestId('gitlab-instance-update-required');
+      if (supported) {
+        await expect(explanation).toHaveCount(0);
+        await address.focus();
+        await page.keyboard.press('Tab');
+        await expect(
+          form.getByRole('button', { name: 'Connect GitLab', exact: true }),
+        ).toBeFocused();
+      } else {
+        await expect(explanation).toBeVisible();
+        await expect(explanation).toContainText('Update this host');
+      }
+      expect(
+        await form.evaluate((element) => element.scrollWidth - element.clientWidth),
+      ).toBeLessThanOrEqual(1);
+      await testInfo.attach('full-instance-setup', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+    });
+  }
+}
+
 for (const scenario of [
   {
     name: 'GitHub onboarding',
