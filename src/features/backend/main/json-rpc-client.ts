@@ -40,6 +40,7 @@ export interface RepositoryConnection {
   readonly identity: object;
   readonly repositoryContext: boolean;
   readonly repositoryResourceRead?: boolean;
+  readonly gitlabCheckout?: boolean;
   readonly repositorySelection: boolean;
   readonly nativeReview: boolean;
   readonly nativeReviewCompanion: boolean;
@@ -566,6 +567,9 @@ export class JsonRpcClient extends EventEmitter {
       repositoryResourceRead:
         (result as { server?: { capabilities?: { repositoryResourceRead?: unknown } } }).server
           ?.capabilities?.repositoryResourceRead === 1,
+      gitlabCheckout:
+        (result as { server?: { capabilities?: { gitlabCheckout?: unknown } } }).server
+          ?.capabilities?.gitlabCheckout === 1,
       repositoryContext:
         (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
           ?.capabilities?.repositoryContext === 1,
@@ -746,6 +750,38 @@ export class JsonRpcClient extends EventEmitter {
     parent?: object,
   ): Promise<T> {
     if (this.disposed) return Promise.reject(new Error('JSON-RPC client disposed'));
+    if (
+      [
+        'sourceControl.authStatus',
+        'sourceControl.connect',
+        'sourceControl.cancelAuth',
+        'sourceControl.revoke',
+        'sourceControl.getUser',
+      ].includes(method) &&
+      params !== null &&
+      typeof params === 'object' &&
+      (params as { provider?: unknown }).provider === 'gitlab' &&
+      Object.prototype.hasOwnProperty.call(params, 'instanceBaseUrl')
+    ) {
+      const connection = this.getRepositoryConnection();
+      if (connection?.gitlabCheckout !== true) {
+        return Promise.reject(
+          Object.assign(new Error('GITLAB_INSTANCE_SETUP_UNSUPPORTED'), {
+            code: 'gitlab-instance-unsupported',
+          }),
+        );
+      }
+      // New full-root operands must never be ignored by an older parser or
+      // migrate onto a replacement socket after capability admission.
+      return this.requestOnCapturedConnectionOriginal<T>(connection, method, params, options).then(
+        (result) => {
+          if (connection !== this.getRepositoryConnection()) {
+            throw new Error('GITLAB_INSTANCE_SETUP_RETIRED');
+          }
+          return result;
+        },
+      );
+    }
     const override = options?.timeoutMs;
     const timeoutMs =
       typeof override === 'number' && Number.isFinite(override) && override > 0

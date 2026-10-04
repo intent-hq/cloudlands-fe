@@ -6,6 +6,7 @@ import type {
   ForgeDeviceFlow,
   ForgeProvider,
 } from '$features/forge-auth/types';
+import { normalizeGitLabInstanceUrl } from '$lib/utils/gitlab-host';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -27,7 +28,8 @@ import {
 import {
   selectGitLabAuthIsAuthenticating,
   selectGitLabAuthDeviceFlow,
-  selectGitLabAuthHost,
+  selectGitLabAuthTarget,
+  selectGitLabAuthIsCancelling,
 } from '../gitlab-auth-selectors';
 import {
   cancelGitLabAuth,
@@ -42,6 +44,8 @@ import {
   initializeGitLabAuth,
   logoutGitLab,
   setGitLabAuthenticating,
+  setGitLabCancelling,
+  setGitLabCancelOutcome,
   setGitLabAuthError,
   setGitLabAuthStatus,
   setGitLabDeviceFlowInfo,
@@ -66,10 +70,24 @@ function validPendingFlow(value: ForgeDeviceFlow | null | undefined): value is F
 }
 
 /** Field-by-field copy of the wire status into the slice's hydrate payload. */
-function statusPayload(status: ForgeAuthStatus, fallbackHost: string) {
+function statusPayload(status: ForgeAuthStatus, fallbackHost: string, allowDefault = false) {
+  const target = normalizeGitLabInstanceUrl(fallbackHost);
+  const root =
+    status.instanceBaseUrl === undefined
+      ? null
+      : normalizeGitLabInstanceUrl(status.instanceBaseUrl);
+  if (status.instanceBaseUrl !== undefined && !root) return null;
+  const host = status.host || (target ? new URL(target).host : fallbackHost);
+  if (root && new URL(root).host !== host.toLowerCase()) return null;
+  if (!allowDefault && target) {
+    if (new URL(target).host !== host.toLowerCase()) return null;
+    if (fallbackHost.includes('://') && target !== (root ?? normalizeGitLabInstanceUrl(host)))
+      return null;
+  }
   const user = status.user;
   return {
-    host: typeof status.host === 'string' && status.host ? status.host : fallbackHost,
+    host,
+    ...(root ? { instanceBaseUrl: root } : {}),
     isConfigured: status.isConfigured === true,
     deviceGrantSupported: status.deviceGrantSupported === true,
     user:
@@ -90,7 +108,7 @@ function statusPayload(status: ForgeAuthStatus, fallbackHost: string) {
 
 /** Host names compare case-insensitively (`host[:port]`, no scheme). */
 function sameHost(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return normalizeGitLabInstanceUrl(a) === normalizeGitLabInstanceUrl(b);
 }
 
 /**
@@ -98,7 +116,11 @@ function sameHost(a: string, b: string): boolean {
  * host; an event without one is treated as ours rather than dropped.
  */
 function eventForHost(eventHost: string | undefined, host: string): boolean {
-  return eventHost === undefined || sameHost(eventHost, host);
+  return (
+    eventHost === undefined ||
+    new URL(normalizeGitLabInstanceUrl(eventHost) ?? 'https://invalid').host ===
+      new URL(normalizeGitLabInstanceUrl(host) ?? 'https://invalid').host
+  );
 }
 
 function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
@@ -167,6 +189,8 @@ function* checkAuthComplete(
     if (superseded(fence, generation)) return 'superseded';
     if (status?.isConfigured === true && !status.deviceFlow) {
       const payload = statusPayload(status, host);
+      if (!payload) return 'pending';
+      if (payload.instanceBaseUrl) yield* put(setGitLabAuthStatus(payload));
       yield* put(gitlabAuthCompleted({ user: payload.user, method: payload.method }));
       return 'completed';
     }
@@ -202,16 +226,14 @@ function* pollForCompletion(
  * Resolves on cancel/logout, or on a daemon transition for `host` only —
  * another instance's event must not tear down an in-flight grant.
  */
-function* waitForPollEnd(host: string): SagaGenerator<void> {
-  while (true) {
-    const { changed } = yield* race({
-      ended: take([cancelGitLabAuth, logoutGitLab]),
-      changed: take(gitlabAuthChanged),
-    });
-    if (!changed) return;
-    const [, eventHost] = changed.payload;
-    if (eventForHost(eventHost, host)) return;
-  }
+function* waitForPollEnd(_host: string): SagaGenerator<void> {
+  yield* take([
+    gitlabAuthCancelled,
+    logoutGitLab,
+    gitlabAuthCompleted,
+    gitlabLogoutCompleted,
+    setGitLabAuthError,
+  ]);
 }
 
 function* pollDeviceFlowWorker(
@@ -226,7 +248,7 @@ function* pollDeviceFlowWorker(
   }
   // The poll belongs to the intent that produced the flow, not a new one.
   const generation = fence.generation;
-  const host = yield* selectGitLabAuthHost.effect();
+  const host = yield* selectGitLabAuthTarget.effect();
   yield* race({
     completed: call(
       pollForCompletion,
@@ -261,11 +283,12 @@ function* initialize(
 ): SagaGenerator<void> {
   try {
     if (host !== undefined) yield* put(setGitLabHost(host));
-    const target = host ?? (yield* selectGitLabAuthHost.effect());
+    const target = host ?? (yield* selectGitLabAuthTarget.effect());
     const status = yield* call(readStatus, host);
     if (!status || superseded(fence, generation)) return;
-    const payload = statusPayload(status, target);
-    if (!sameHost(payload.host, target)) bumpIntent(fence);
+    const payload = statusPayload(status, target, host === undefined);
+    if (!payload) return;
+    if (!sameHost(payload.instanceBaseUrl ?? payload.host, target)) bumpIntent(fence);
     yield* put(setGitLabAuthStatus(payload));
     // Admission hydration must never resume, cancel, or poll an existing grant.
     if (mode === 'status-only') return;
@@ -298,7 +321,7 @@ function* startDeviceAuth(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<void> {
-  const hostKey = host.trim().toLowerCase();
+  const hostKey = normalizeGitLabInstanceUrl(host) ?? host;
   const ownership = fence.deviceIntents.get(hostKey) ?? {
     activeGeneration: null,
     cancelledThrough: 0,
@@ -329,7 +352,13 @@ function* startDeviceAuth(
           gitlabDeviceGrantUnsupported(m.gitlabAuth_service_deviceGrantUnsupported_error()),
         );
       } else {
-        yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_startFailed_error()));
+        yield* put(
+          setGitLabAuthError(
+            result.code === 'gitlab-instance-unsupported'
+              ? m.lib_gitlabConnect_updateRequired_description()
+              : result.error || m.gitlabAuth_service_startFailed_error(),
+          ),
+        );
       }
       return;
     }
@@ -405,13 +434,24 @@ function* connectWithToken(
     const result = yield* call(connectStagedToken, host, tokenRef);
     if (superseded(fence, generation)) return;
     if (!result.success) {
-      yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_tokenRejected_error()));
+      yield* put(
+        setGitLabAuthError(
+          result.code === 'gitlab-instance-unsupported'
+            ? m.lib_gitlabConnect_updateRequired_description()
+            : result.error || m.gitlabAuth_service_tokenRejected_error(),
+        ),
+      );
       return;
     }
     // The PAT never round-trips; the daemon's status is the only identity source.
     const status = yield* call(readStatus, host);
     if (superseded(fence, generation)) return;
     const payload = status ? statusPayload(status, host) : null;
+    if (status && !payload) {
+      yield* put(setGitLabAuthError(m.gitlabAuth_service_failed_error()));
+      return;
+    }
+    if (payload?.instanceBaseUrl) yield* put(setGitLabAuthStatus(payload));
     yield* put(
       gitlabAuthCompleted({ user: payload?.user ?? null, method: payload?.method ?? 'pat' }),
     );
@@ -424,27 +464,38 @@ function* connectWithToken(
 }
 
 function* cancelAuth(fence: IntentFence, generation: number): SagaGenerator<void> {
+  if (yield* selectGitLabAuthIsCancelling.effect()) return;
+  const host = yield* selectGitLabAuthTarget.effect();
+  yield* put(setGitLabCancelling(true));
   try {
-    const host = yield* selectGitLabAuthHost.effect();
-    const ownership = fence.deviceIntents.get(host.trim().toLowerCase());
-    if (ownership) {
-      ownership.cancelledThrough = generation;
-      ownership.activeGeneration = null;
-    }
     const result = yield* call([forgeAuthClient, forgeAuthClient.cancelAuth], PROVIDER, host);
     if (superseded(fence, generation)) return;
-    if (result.success) yield* put(gitlabAuthCancelled());
-    else yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_cancelFailed_error()));
+    if (result.success && result.cancelled === true) {
+      const ownership = fence.deviceIntents.get(normalizeGitLabInstanceUrl(host) ?? host);
+      if (ownership) {
+        ownership.cancelledThrough = generation;
+        ownership.activeGeneration = null;
+      }
+      bumpIntent(fence);
+      yield* put(gitlabAuthCancelled());
+      yield* put(setGitLabCancelOutcome('cancelled'));
+    } else {
+      // A begun PAT can still commit. Keep its original worker and status visible.
+      yield* put(
+        setGitLabCancelOutcome(
+          result.success && result.cancelled === false ? 'already-started' : 'failed',
+        ),
+      );
+    }
   } catch (error) {
     logger.error('Failed to cancel GitLab auth', error);
-    if (superseded(fence, generation)) return;
-    yield* put(setGitLabAuthError(m.gitlabAuth_service_cancelFailed_error()));
+    if (!superseded(fence, generation)) yield* put(setGitLabCancelOutcome('failed'));
   }
 }
 
 function* logout(fence: IntentFence, generation: number): SagaGenerator<void> {
   try {
-    const host = yield* selectGitLabAuthHost.effect();
+    const host = yield* selectGitLabAuthTarget.effect();
     const result = yield* call([forgeAuthClient, forgeAuthClient.revoke], PROVIDER, host);
     if (superseded(fence, generation)) return;
     if (result.success) yield* put(gitlabLogoutCompleted());
@@ -470,7 +521,8 @@ function* reconcileStatus(
   try {
     const status = yield* call(readStatus, host);
     if (!status || superseded(fence, generation)) return;
-    yield* put(setGitLabAuthStatus(statusPayload(status, host)));
+    const payload = statusPayload(status, host);
+    if (payload) yield* put(setGitLabAuthStatus(payload));
   } catch (error) {
     logger.error('Failed to reconcile GitLab auth status', error);
   }
@@ -481,11 +533,17 @@ function* authChanged(
   status: ReturnType<typeof gitlabAuthChanged>['payload'][0],
   eventHost: string | undefined,
 ): SagaGenerator<void> {
-  const host = yield* selectGitLabAuthHost.effect();
+  const host = yield* selectGitLabAuthTarget.effect();
   // The daemon emits for every instance; only the selected one is reflected
   // here — an event for the host being left must not cancel a pending
   // selection of the next one (which is already published, see IntentFence).
   if (!eventForHost(eventHost, host)) return;
+  if (host.includes('://')) {
+    // Events carry only an authority. /Forge and /forge can share it; the
+    // selected full-root status, not this ambiguous event, owns identity.
+    yield* call(reconcileStatus, host, fence, fence.generation);
+    return;
+  }
   // A transition for the selected host outdates every read begun before it.
   const generation = bumpIntent(fence);
   if (status === 'authorized') {
@@ -540,7 +598,7 @@ function* checkGitLabAuthStatusWorker(
   _action: ReturnType<typeof checkGitLabAuthStatus>,
 ): SagaGenerator<void> {
   // A focus re-check reads on behalf of the current intent; it is not a new one.
-  const host = yield* selectGitLabAuthHost.effect();
+  const host = yield* selectGitLabAuthTarget.effect();
   yield* call(checkAuthComplete, host, fence, fence.generation);
 }
 
@@ -548,7 +606,7 @@ function* cancelGitLabAuthWorker(
   fence: IntentFence,
   _action: ReturnType<typeof cancelGitLabAuth>,
 ): SagaGenerator<void> {
-  yield* call(cancelAuth, fence, bumpIntent(fence));
+  yield* call(cancelAuth, fence, fence.generation);
 }
 
 function* logoutGitLabWorker(

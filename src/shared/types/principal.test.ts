@@ -12,6 +12,16 @@ const principal = {
 };
 
 describe('principal discovery wire contract', () => {
+  it.each([undefined, false, true, 0, 1, 2, '1', null])(
+    'admits full-instance setup only for exact server gitlabCheckout 1 (%j)',
+    (flag) => {
+      const snapshot = parsePrincipalSnapshot(
+        { capabilities: { gitlabCheckout: 1 }, server: { capabilities: { gitlabCheckout: flag } } },
+        principal,
+      );
+      expect(snapshot?.capabilities.gitlabCheckout).toBe(flag === 1);
+    },
+  );
   it('preserves simultaneous submission and invitation capabilities', () => {
     const snapshot = parsePrincipalSnapshot(
       { server: { capabilities: { submissionCorrelation: 1, invitationAccountSearch: 1 } } },

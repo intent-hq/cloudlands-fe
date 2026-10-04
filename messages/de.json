@@ -5457,7 +5457,7 @@
   "lib_githubDeviceCode_openGithub_label": "GitHub öffnen",
   "lib_githubDeviceCode_enterCodeAt_before": "Geben Sie diesen Code ein auf",
   "lib_gitlabConnect_host_label": "GitLab-Instanz-URL",
-  "lib_gitlabConnect_host_description": "gitlab.com beibehalten oder Ihre selbstverwaltete Instanz eingeben.",
+  "lib_gitlabConnect_host_description": "Verwende die vollständige HTTPS-Adresse der Instanz, einschließlich Port oder Pfadpräfix.",
   "lib_gitlabConnect_token_label": "Persönliches Zugriffstoken",
   "lib_gitlabConnect_token_description": "Fügen Sie ein Token mit dem Scope api ein.",
   "lib_gitlabConnect_createToken_label": "Auf {host} erstellen",
@@ -7233,5 +7233,12 @@
   "collaboration_lists_sharingLoading_label": "Workspace-Freigaben werden geladen…",
   "collaboration_lists_sharingLoad_error": "Workspace-Freigaben konnten nicht geladen werden.",
   "agent_chatSend_uncertainRetry_description": "Die Zustellung ist nicht bestätigt. Erneutes Senden könnte diese Nachricht doppelt zustellen.",
-  "agent_chatSend_resend_label": "Erneut senden"
+  "agent_chatSend_resend_label": "Erneut senden",
+  "lib_gitlabConnect_invalidInstance_error": "Gib eine gültige HTTPS-Adresse der GitLab-Instanz ein, einschließlich Port oder Pfadpräfix.",
+  "lib_gitlabConnect_cancelling_label": "Wird abgebrochen…",
+  "lib_gitlabConnect_cancelled_label": "Verbindung abgebrochen.",
+  "lib_gitlabConnect_alreadyStarted_description": "Die Verbindung wurde bereits gespeichert. Prüfe ihren Status.",
+  "lib_gitlabConnect_cancelFailed_description": "Der Abbruch konnte nicht bestätigt werden. Prüfe vor einem erneuten Versuch den Verbindungsstatus.",
+  "lib_gitlabConnect_checkStatus_label": "Verbindungsstatus prüfen",
+  "lib_gitlabConnect_updateRequired_description": "Aktualisiere diesen Host, um eine GitLab-Instanz über ihre vollständige Adresse zu verbinden."
 }

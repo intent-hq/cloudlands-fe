@@ -5457,7 +5457,7 @@
   "lib_githubDeviceCode_openGithub_label": "Ouvrir GitHub",
   "lib_githubDeviceCode_enterCodeAt_before": "Saisissez ce code sur",
   "lib_gitlabConnect_host_label": "URL de l'instance GitLab",
-  "lib_gitlabConnect_host_description": "Conservez gitlab.com ou saisissez votre instance auto-hébergée.",
+  "lib_gitlabConnect_host_description": "Utilisez l’adresse HTTPS complète de l’instance, avec son port ou préfixe de chemin.",
   "lib_gitlabConnect_token_label": "Jeton d'accès personnel",
   "lib_gitlabConnect_token_description": "Collez un jeton avec la portée api.",
   "lib_gitlabConnect_createToken_label": "En créer un sur {host}",
@@ -7233,5 +7233,12 @@
   "collaboration_lists_sharingLoading_label": "Chargement du partage des espaces de travail…",
   "collaboration_lists_sharingLoad_error": "Impossible de charger le partage des espaces de travail.",
   "agent_chatSend_uncertainRetry_description": "La réception du message n’est pas confirmée. Un nouvel envoi pourrait le livrer deux fois.",
-  "agent_chatSend_resend_label": "Envoyer à nouveau"
+  "agent_chatSend_resend_label": "Envoyer à nouveau",
+  "lib_gitlabConnect_invalidInstance_error": "Saisissez une adresse HTTPS valide de l’instance GitLab, avec son port ou préfixe de chemin.",
+  "lib_gitlabConnect_cancelling_label": "Annulation…",
+  "lib_gitlabConnect_cancelled_label": "Connexion annulée.",
+  "lib_gitlabConnect_alreadyStarted_description": "La connexion était déjà en cours d’enregistrement. Vérifiez son état.",
+  "lib_gitlabConnect_cancelFailed_description": "Impossible de confirmer l’annulation. Vérifiez l’état de la connexion avant de réessayer.",
+  "lib_gitlabConnect_checkStatus_label": "Vérifier l’état de la connexion",
+  "lib_gitlabConnect_updateRequired_description": "Mettez cet hôte à jour pour connecter une instance GitLab avec son adresse complète."
 }

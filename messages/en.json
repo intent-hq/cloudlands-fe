@@ -5457,7 +5457,7 @@
   "lib_githubDeviceCode_openGithub_label": "Open GitHub",
   "lib_githubDeviceCode_enterCodeAt_before": "Enter this code at",
   "lib_gitlabConnect_host_label": "GitLab instance URL",
-  "lib_gitlabConnect_host_description": "Leave as gitlab.com or enter your self-managed instance.",
+  "lib_gitlabConnect_host_description": "Use the complete HTTPS instance address, including any port or path prefix.",
   "lib_gitlabConnect_token_label": "Personal access token",
   "lib_gitlabConnect_token_description": "Paste a token with the api scope.",
   "lib_gitlabConnect_createToken_label": "Create one on {host}",
@@ -7233,5 +7233,12 @@
   "collaboration_lists_sharingLoading_label": "Loading workspace sharing…",
   "collaboration_lists_sharingLoad_error": "Workspace sharing could not be loaded.",
   "agent_chatSend_uncertainRetry_description": "Delivery is unconfirmed. Sending again may deliver this message twice.",
-  "agent_chatSend_resend_label": "Send again"
+  "agent_chatSend_resend_label": "Send again",
+  "lib_gitlabConnect_invalidInstance_error": "Enter a valid HTTPS GitLab instance address, including any port or path prefix.",
+  "lib_gitlabConnect_cancelling_label": "Cancelling…",
+  "lib_gitlabConnect_cancelled_label": "Connection cancelled.",
+  "lib_gitlabConnect_alreadyStarted_description": "The connection was already being saved. Check its status.",
+  "lib_gitlabConnect_cancelFailed_description": "Could not confirm cancellation. Check the connection status before trying again.",
+  "lib_gitlabConnect_checkStatus_label": "Check connection status",
+  "lib_gitlabConnect_updateRequired_description": "Update this host to connect a GitLab instance using its full address."
 }

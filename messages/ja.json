@@ -5457,7 +5457,7 @@
   "lib_githubDeviceCode_openGithub_label": "GitHub を開く",
   "lib_githubDeviceCode_enterCodeAt_before": "次の場所でこのコードを入力:",
   "lib_gitlabConnect_host_label": "GitLab インスタンスの URL",
-  "lib_gitlabConnect_host_description": "gitlab.com のままにするか、セルフマネージドのインスタンスを入力してください。",
+  "lib_gitlabConnect_host_description": "ポートやパスの接頭辞を含む、インスタンスの完全な HTTPS アドレスを使用してください。",
   "lib_gitlabConnect_token_label": "パーソナルアクセストークン",
   "lib_gitlabConnect_token_description": "api スコープ付きのトークンを貼り付けてください。",
   "lib_gitlabConnect_createToken_label": "{host} で作成",
@@ -7233,5 +7233,12 @@
   "collaboration_lists_sharingLoading_label": "ワークスペースの共有を読み込み中…",
   "collaboration_lists_sharingLoad_error": "ワークスペースの共有を読み込めませんでした。",
   "agent_chatSend_uncertainRetry_description": "配信は確認できていません。再送すると、このメッセージが重複して届く可能性があります。",
-  "agent_chatSend_resend_label": "再送する"
+  "agent_chatSend_resend_label": "再送する",
+  "lib_gitlabConnect_invalidInstance_error": "ポートやパスの接頭辞を含む、有効な GitLab インスタンスの HTTPS アドレスを入力してください。",
+  "lib_gitlabConnect_cancelling_label": "キャンセル中…",
+  "lib_gitlabConnect_cancelled_label": "接続をキャンセルしました。",
+  "lib_gitlabConnect_alreadyStarted_description": "接続の保存はすでに開始されています。状態を確認してください。",
+  "lib_gitlabConnect_cancelFailed_description": "キャンセルを確認できませんでした。再試行する前に接続状態を確認してください。",
+  "lib_gitlabConnect_checkStatus_label": "接続状態を確認",
+  "lib_gitlabConnect_updateRequired_description": "完全なアドレスで GitLab インスタンスに接続するには、このホストを更新してください。"
 }

@@ -5457,7 +5457,7 @@
   "lib_githubDeviceCode_openGithub_label": "Abrir GitHub",
   "lib_githubDeviceCode_enterCodeAt_before": "Introduzca este código en",
   "lib_gitlabConnect_host_label": "URL de la instancia de GitLab",
-  "lib_gitlabConnect_host_description": "Deje gitlab.com o introduzca su instancia autogestionada.",
+  "lib_gitlabConnect_host_description": "Usa la dirección HTTPS completa de la instancia, incluido el puerto o prefijo de ruta.",
   "lib_gitlabConnect_token_label": "Token de acceso personal",
   "lib_gitlabConnect_token_description": "Pegue un token con el ámbito api.",
   "lib_gitlabConnect_createToken_label": "Crear uno en {host}",
@@ -7233,5 +7233,12 @@
   "collaboration_lists_sharingLoading_label": "Cargando los espacios de trabajo compartidos…",
   "collaboration_lists_sharingLoad_error": "No se pudieron cargar los espacios de trabajo compartidos.",
   "agent_chatSend_uncertainRetry_description": "La entrega no está confirmada. Si lo envías de nuevo, el mensaje podría entregarse dos veces.",
-  "agent_chatSend_resend_label": "Enviar de nuevo"
+  "agent_chatSend_resend_label": "Enviar de nuevo",
+  "lib_gitlabConnect_invalidInstance_error": "Introduce una dirección HTTPS válida de la instancia de GitLab, incluido el puerto o prefijo de ruta.",
+  "lib_gitlabConnect_cancelling_label": "Cancelando…",
+  "lib_gitlabConnect_cancelled_label": "Conexión cancelada.",
+  "lib_gitlabConnect_alreadyStarted_description": "La conexión ya se estaba guardando. Comprueba su estado.",
+  "lib_gitlabConnect_cancelFailed_description": "No se pudo confirmar la cancelación. Comprueba el estado de la conexión antes de volver a intentarlo.",
+  "lib_gitlabConnect_checkStatus_label": "Comprobar estado de la conexión",
+  "lib_gitlabConnect_updateRequired_description": "Actualiza este host para conectar una instancia de GitLab con su dirección completa."
 }

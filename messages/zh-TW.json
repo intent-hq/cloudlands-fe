@@ -5457,7 +5457,7 @@
   "lib_githubDeviceCode_openGithub_label": "開啟 GitHub",
   "lib_githubDeviceCode_enterCodeAt_before": "輸入此程式碼，位置：",
   "lib_gitlabConnect_host_label": "GitLab 執行個體 URL",
-  "lib_gitlabConnect_host_description": "保留 gitlab.com 或輸入你的自架執行個體。",
+  "lib_gitlabConnect_host_description": "請使用完整的執行個體 HTTPS 位址，包括連接埠或路徑前綴。",
   "lib_gitlabConnect_token_label": "個人存取權杖",
   "lib_gitlabConnect_token_description": "貼上具有 api 範圍的權杖。",
   "lib_gitlabConnect_createToken_label": "在 {host} 上建立",
@@ -7233,5 +7233,12 @@
   "collaboration_lists_sharingLoading_label": "正在載入工作區共用…",
   "collaboration_lists_sharingLoad_error": "無法載入工作區共用。",
   "agent_chatSend_uncertainRetry_description": "尚未確認訊息是否已送達。再次傳送可能導致此訊息重複送達。",
-  "agent_chatSend_resend_label": "再次傳送"
+  "agent_chatSend_resend_label": "再次傳送",
+  "lib_gitlabConnect_invalidInstance_error": "請輸入有效的 GitLab 執行個體 HTTPS 位址，包括連接埠或路徑前綴。",
+  "lib_gitlabConnect_cancelling_label": "正在取消…",
+  "lib_gitlabConnect_cancelled_label": "連線已取消。",
+  "lib_gitlabConnect_alreadyStarted_description": "連線已開始儲存。請檢查其狀態。",
+  "lib_gitlabConnect_cancelFailed_description": "無法確認取消。請先檢查連線狀態，再重試。",
+  "lib_gitlabConnect_checkStatus_label": "檢查連線狀態",
+  "lib_gitlabConnect_updateRequired_description": "請更新此主機，以使用完整位址連線至 GitLab 執行個體。"
 }

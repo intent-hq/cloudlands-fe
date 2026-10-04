@@ -5457,7 +5457,7 @@
   "lib_githubDeviceCode_openGithub_label": "打开 GitHub",
   "lib_githubDeviceCode_enterCodeAt_before": "输入此代码，位置：",
   "lib_gitlabConnect_host_label": "GitLab 实例 URL",
-  "lib_gitlabConnect_host_description": "保留 gitlab.com 或输入你的自托管实例。",
+  "lib_gitlabConnect_host_description": "请使用完整的实例 HTTPS 地址，包括端口或路径前缀。",
   "lib_gitlabConnect_token_label": "个人访问令牌",
   "lib_gitlabConnect_token_description": "粘贴一个具有 api 范围的令牌。",
   "lib_gitlabConnect_createToken_label": "在 {host} 上创建",
@@ -7233,5 +7233,12 @@
   "collaboration_lists_sharingLoading_label": "正在加载工作区共享…",
   "collaboration_lists_sharingLoad_error": "无法加载工作区共享。",
   "agent_chatSend_uncertainRetry_description": "尚未确认消息是否已送达。再次发送可能导致此消息重复送达。",
-  "agent_chatSend_resend_label": "再次发送"
+  "agent_chatSend_resend_label": "再次发送",
+  "lib_gitlabConnect_invalidInstance_error": "请输入有效的 GitLab 实例 HTTPS 地址，包括端口或路径前缀。",
+  "lib_gitlabConnect_cancelling_label": "正在取消…",
+  "lib_gitlabConnect_cancelled_label": "连接已取消。",
+  "lib_gitlabConnect_alreadyStarted_description": "连接已开始保存。请检查其状态。",
+  "lib_gitlabConnect_cancelFailed_description": "无法确认取消。请先检查连接状态，再重试。",
+  "lib_gitlabConnect_checkStatus_label": "检查连接状态",
+  "lib_gitlabConnect_updateRequired_description": "请更新此主机，以使用完整地址连接 GitLab 实例。"
 }

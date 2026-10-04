@@ -15,6 +15,7 @@ interface PrincipalMe {
 
 /** Individually supported server features, never the client's hello capability bag. */
 interface HostCapabilities {
+  gitlabCheckout?: boolean;
   submissionCorrelation?: 1;
   invitationAccountSearch?: boolean;
   hostMembership: boolean;
@@ -57,6 +58,7 @@ export function parsePrincipalSnapshot(hello: unknown, value: unknown): Principa
   if (!record(hello) || !record(hello.server) || !record(value)) return null;
   const bag = record(hello.server.capabilities) ? hello.server.capabilities : {};
   const capabilities: HostCapabilities = {
+    gitlabCheckout: bag.gitlabCheckout === 1,
     ...(bag.submissionCorrelation === 1 ? { submissionCorrelation: 1 as const } : {}),
     invitationAccountSearch: bag.invitationAccountSearch === 1,
     hostMembership: bag.hostMembership === 1,
