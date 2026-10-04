@@ -7076,6 +7076,7 @@
   "devConsole_interval_label": "Intervall: {elapsed} ms",
   "chat_queuedMessages_draftConflict_description": "Diese Nachricht wurde zusammengeführt, geändert oder entfernt. Dein Entwurf bleibt hier erhalten. Kopiere ihn, um ihn erneut zu verwenden, oder verwirf ihn.",
   "chat_queuedMessages_discardDraft_label": "Entwurf verwerfen",
+  "chat_scriptMonitor_command_label": "Aktueller Skriptbefehl",
   "chat_scriptMonitor_active_label": "Wird überwacht",
   "chat_scriptMonitor_stopping_label": "Wird beendet…",
   "chat_scriptMonitor_actions_ariaLabel": "Aktionen für {name}",

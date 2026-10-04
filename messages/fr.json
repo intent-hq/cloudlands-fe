@@ -7076,6 +7076,7 @@
   "devConsole_interval_label": "Intervalle : {elapsed} ms",
   "chat_queuedMessages_draftConflict_description": "Ce message en attente a été combiné, modifié ou supprimé. Votre brouillon est conservé ici. Copiez-le pour le réutiliser ou abandonnez-le.",
   "chat_queuedMessages_discardDraft_label": "Abandonner le brouillon",
+  "chat_scriptMonitor_command_label": "Commande actuelle du script",
   "chat_scriptMonitor_active_label": "Surveillance",
   "chat_scriptMonitor_stopping_label": "Arrêt en cours…",
   "chat_scriptMonitor_actions_ariaLabel": "Actions pour {name}",

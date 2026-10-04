@@ -7076,6 +7076,7 @@
   "devConsole_interval_label": "Interval: {elapsed} ms",
   "chat_queuedMessages_draftConflict_description": "This queued message was combined, changed, or removed. Your draft is kept here. Copy it to reapply it, or discard it.",
   "chat_queuedMessages_discardDraft_label": "Discard draft",
+  "chat_scriptMonitor_command_label": "Current script command",
   "chat_scriptMonitor_active_label": "Monitoring",
   "chat_scriptMonitor_stopping_label": "Stopping…",
   "chat_scriptMonitor_actions_ariaLabel": "Actions for {name}",

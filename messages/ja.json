@@ -7076,6 +7076,7 @@
   "devConsole_interval_label": "間隔: {elapsed} ミリ秒",
   "chat_queuedMessages_draftConflict_description": "この待機中のメッセージは統合、変更、または削除されました。下書きはここに保持されています。コピーして再利用するか、破棄してください。",
   "chat_queuedMessages_discardDraft_label": "下書きを破棄",
+  "chat_scriptMonitor_command_label": "現在のスクリプトコマンド",
   "chat_scriptMonitor_active_label": "監視中",
   "chat_scriptMonitor_stopping_label": "停止中…",
   "chat_scriptMonitor_actions_ariaLabel": "{name} の操作",

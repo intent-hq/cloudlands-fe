@@ -7076,6 +7076,7 @@
   "devConsole_interval_label": "Intervalo: {elapsed} ms",
   "chat_queuedMessages_draftConflict_description": "Este mensaje en cola se combinó, cambió o eliminó. Tu borrador se conserva aquí. Cópialo para volver a usarlo o descártalo.",
   "chat_queuedMessages_discardDraft_label": "Descartar borrador",
+  "chat_scriptMonitor_command_label": "Comando actual del script",
   "chat_scriptMonitor_active_label": "En seguimiento",
   "chat_scriptMonitor_stopping_label": "Deteniendo…",
   "chat_scriptMonitor_actions_ariaLabel": "Acciones para {name}",
