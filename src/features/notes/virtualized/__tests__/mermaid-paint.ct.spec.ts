@@ -84,6 +84,7 @@ for (const dark of [false, true]) {
           body: JSON.stringify({ ...result, png: undefined, comparison, sourceUnits: code.length }),
           contentType: 'application/json',
         });
+        expect(result.nativeLabelVisible).toBe(true);
         expect(result.decodedPixels).toBe(256 * 256);
         expect(result.png.length).toBeLessThan(1024 * 1024);
         expect(result.label).toContain(kind === 'large-comment' ? 'Finish' : 'Node 199');

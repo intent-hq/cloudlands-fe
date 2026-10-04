@@ -9,6 +9,7 @@ export interface MermaidPaintProbe {
   scale: number;
   label: string;
   nativeNodes: number;
+  nativeLabelVisible: boolean;
   serializedSvgUnits: number;
   imageUrlUnits: number;
   decodedPixels: number;
@@ -26,6 +27,10 @@ export async function probeNativeMermaidPaint(
     throw new Error('Paint probe requires an isolated browser test context');
   if (!Number.isFinite(scale) || scale < 0.25 || scale > 8) throw new Error('Invalid probe zoom');
   construction.style.transform = '';
+  const scroller = construction.querySelector<HTMLElement>('.mermaid-svg-viewport');
+  if (!scroller) throw new Error('Native Mermaid viewport is missing');
+  scroller.scrollLeft = 0;
+  scroller.scrollTop = 0;
   await document.fonts.ready;
   const svg = construction.querySelector<SVGSVGElement>('.mermaid-svg > svg');
   if (!svg) throw new Error('Native Mermaid SVG is missing');
@@ -37,6 +42,21 @@ export async function probeNativeMermaidPaint(
   const hostRect = construction.getBoundingClientRect();
   const x = Math.max(0, labelRect.left - sourceRect.left - 50);
   const y = Math.max(0, labelRect.top - sourceRect.top - 50);
+  // Pan through the renderer's own scroll viewport before moving the camera.
+  // Translating only the outer host leaves a far node clipped by inner overflow.
+  scroller.scrollLeft = x;
+  scroller.scrollTop = y;
+  const pannedRect = svg.getBoundingClientRect();
+  const backdrops: Array<{ color: string; rect: DOMRect }> = [];
+  for (
+    let ancestor = svg.parentElement;
+    ancestor && ancestor !== viewport;
+    ancestor = ancestor.parentElement
+  ) {
+    const color = getComputedStyle(ancestor).backgroundColor;
+    if (color !== 'transparent' && color !== 'rgba(0, 0, 0, 0)')
+      backdrops.unshift({ color, rect: ancestor.getBoundingClientRect() });
+  }
   let xml = '';
   const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
   Object.defineProperty(navigator, 'clipboard', {
@@ -81,12 +101,30 @@ export async function probeNativeMermaidPaint(
     if (!context) throw new Error('Canvas context unavailable');
     context.fillStyle = getComputedStyle(viewport).backgroundColor;
     context.fillRect(0, 0, width, height);
+    for (const backdrop of backdrops) {
+      context.fillStyle = backdrop.color;
+      context.fillRect(
+        (backdrop.rect.left - pannedRect.left - x) * scale,
+        (backdrop.rect.top - pannedRect.top - y) * scale,
+        backdrop.rect.width * scale,
+        backdrop.rect.height * scale,
+      );
+    }
     context.drawImage(image, 0, 0);
     const png = canvas.toDataURL('image/png');
     construction.style.transformOrigin = '0 0';
-    construction.style.transform = `translate(${-(sourceRect.left - hostRect.left + x) * scale}px, ${-(sourceRect.top - hostRect.top + y) * scale}px) scale(${scale})`;
+    construction.style.transform = `translate(${-(pannedRect.left - hostRect.left + x) * scale}px, ${-(pannedRect.top - hostRect.top + y) * scale}px) scale(${scale})`;
+    const shown = label.getBoundingClientRect(),
+      cameraRect = viewport.getBoundingClientRect();
+    const nativeClip = scroller.getBoundingClientRect();
+    const nativeLabelVisible =
+      shown.left >= Math.max(cameraRect.left, nativeClip.left) &&
+      shown.right <= Math.min(cameraRect.right, nativeClip.right) &&
+      shown.top >= Math.max(cameraRect.top, nativeClip.top) &&
+      shown.bottom <= Math.min(cameraRect.bottom, nativeClip.bottom);
     return {
       png,
+      nativeLabelVisible,
       width,
       height,
       x,
