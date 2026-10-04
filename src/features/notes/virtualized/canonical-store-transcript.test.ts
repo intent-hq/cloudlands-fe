@@ -6,7 +6,7 @@ import { canonicalTableFixture, nativeFixtureEditor } from './__tests__/canonica
 
 // Verbatim Store capture from the daemon's real SQLite note index. Expiry is part
 // of the frozen response, not a live resource lease. No consumer data is repaired.
-for (const version of ['corrected'] as const)
+for (const version of ['halfopen'] as const)
   for (const role of ['td', 'th'] as const) {
     it(`replays the real Store ${version} ${role} resources into the same far native cell`, async () => {
       const fixture = storeTableFixture(role, version);
@@ -22,6 +22,8 @@ for (const version of ['corrected'] as const)
         expect(window.text).toBe('TARGET</strong></' + role + '></tr></table>');
         expect(requests.filter((q) => q.kind === 'source')).toHaveLength(1);
         expect(window.cost.sourceBytes).toBeLessThan(64);
+        expect(window.cost.requests).toBe(requests.length);
+        expect(window.cost.requests).toBeLessThanOrEqual(96);
         expect(window.mapBindings).toHaveLength(3);
         const mapRefs = new Set(window.mapBindings.map((b) => b.sourceMapRef));
         expect(
@@ -66,19 +68,20 @@ it('keeps canonical control admission at the original 8 KiB budget', () => {
 // Historical unadvertised prototype captures are immutable negative controls.
 // Their former success required the rejected 64 KiB exploration limit. Producer
 // provenance and original red logs are retained in the task/PR context artifacts.
-for (const role of ['td', 'th'] as const) {
-  it(`rejects historical prototype ${role} malformed omitted endpoints before admission`, async () => {
-    const fixture = storeTableFixture(role, 'original');
-    const failure = await fixture.read().then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-    // Original8KiB rejection logs and exact59-call captures remain immutable.
-    // Strict9b886 validation now catches their zero-length omitted maps earlier.
-    // This is malformed-producer evidence, not successful retry/paint admission.
-    expect(failure).toEqual(new Error('Invalid canonical source map'));
-    expect(fixture.requests.filter((request) => request.kind === 'source')).toHaveLength(1);
-    expect(fixture.requests.length).toBeLessThanOrEqual(NOTE_WINDOW_LIMITS.requests);
-    expect(fixture.requests.every((request) => request.maxWireBytes === 8192)).toBe(true);
-  });
-}
+for (const version of ['original', 'corrected'] as const)
+  for (const role of ['td', 'th'] as const) {
+    it(`rejects historical ${version} ${role} malformed omitted endpoints before admission`, async () => {
+      const fixture = storeTableFixture(role, version);
+      const failure = await fixture.read().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      // Original8KiB rejection logs and exact59-call captures remain immutable.
+      // Strict9b886 validation now catches their zero-length omitted maps earlier.
+      // This is malformed-producer evidence, not successful retry/paint admission.
+      expect(failure).toEqual(new Error('Invalid canonical source map'));
+      expect(fixture.requests.filter((request) => request.kind === 'source')).toHaveLength(1);
+      expect(fixture.requests.length).toBeLessThanOrEqual(NOTE_WINDOW_LIMITS.requests);
+      expect(fixture.requests.every((request) => request.maxWireBytes === 8192)).toBe(true);
+    });
+  }

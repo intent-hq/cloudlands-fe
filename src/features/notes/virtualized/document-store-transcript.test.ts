@@ -1,3 +1,6 @@
+import halfopenMarks from './__tests__/fixtures/store-markdown-html-marks-halfopen-windows.json';
+import halfopenLF from './__tests__/fixtures/store-markdown-html-lf-halfopen-windows.json';
+import halfopenCRLF from './__tests__/fixtures/store-markdown-html-crlf-halfopen-windows.json';
 import markdownCRLF from './__tests__/fixtures/store-markdown-html-crlf-compacted-windows.json';
 import markdownLF from './__tests__/fixtures/store-markdown-html-lf-compacted-windows.json';
 import markdownMARKS from './__tests__/fixtures/store-markdown-html-marks-compacted-windows.json';
@@ -56,10 +59,10 @@ function replay(raw: unknown, terminalReply = false) {
   return {
     t,
     requests,
-    read: () =>
+    read: (at = t.at) =>
       readNoteWindow((q) => reader.read(identity.scope.workspaceId, identity.scope.noteId, q), {
         ...identity,
-        at: t.at,
+        at,
       }),
   };
 }
@@ -223,6 +226,46 @@ for (const [name, capture] of [
       expect(w.cost.canonicalBytes).toBeLessThanOrEqual(8192);
       expect(w.cost.requests).toBeLessThanOrEqual(96);
       console.info('Actual Store Markdown block costs', name, w.cost);
+    } finally {
+      expected.destroy();
+      actual.destroy();
+    }
+  });
+}
+
+// All ordinary reads start at4096 using actual captured requests at these starts.
+// The marked first window may shrink; no fixture response is synthesized.
+for (const [name, capture, at, nativeStart, nativeEnd] of [
+  ['marks-first', halfopenMarks, 11, 0, 11],
+  ['marks-middle', halfopenMarks, 27, 11, undefined],
+  ['marks-tail', halfopenMarks, 43, 21, undefined],
+  ['LF-first', halfopenLF, 11, 0, undefined],
+  ['LF-tail', halfopenLF, 27, 16, undefined],
+  ['CRLF-first', halfopenCRLF, 13, 0, undefined],
+  ['CRLF-tail', halfopenCRLF, 29, 15, undefined],
+] as const) {
+  it(`replays strict Store ordinary navigation ${name}`, async () => {
+    const fixture = replay(capture);
+    const window = await fixture.read(at);
+    const expected = nativeFixtureEditor(
+      await processMarkdownToHTML(fixture.t.source, {
+        workspaceId: 'w',
+        preserveAnchors: true,
+      }),
+    );
+    const projection = projectNoteWindow(window);
+    const actual = nativeFixtureEditor(projection.content);
+    try {
+      expect(actual.getJSON().content).toEqual([
+        expected.state.doc.lastChild!.cut(nativeStart, nativeEnd).toJSON(),
+      ]);
+      expect(window.range.start).toBe(at);
+      expect(window.text).toBe(fixture.t.source.slice(at, window.range.end));
+      expect(fixture.requests[0]).toMatchObject({ kind: 'source', at, maxSourceBytes: 4096 });
+      expect(window.cost.requests).toBe(fixture.requests.length);
+      expect(window.cost.requests).toBeLessThanOrEqual(96);
+      expect(window.cost.canonicalBytes).toBeLessThanOrEqual(8192);
+      console.info('Strict actual navigation costs', name, window.range, window.cost);
     } finally {
       expected.destroy();
       actual.destroy();

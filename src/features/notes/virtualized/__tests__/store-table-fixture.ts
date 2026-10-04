@@ -1,3 +1,5 @@
+import halfopenTd from './fixtures/store-table-td-halfopen.json';
+import halfopenTh from './fixtures/store-table-th-halfopen.json';
 import td from './fixtures/store-table-td.json';
 import th from './fixtures/store-table-th.json';
 import correctedTd from './fixtures/store-table-td-corrected.json';
@@ -10,9 +12,14 @@ import { readNoteWindow } from '../note-window-reader';
  * source in the browser. Test transport only; no response contents are repaired. */
 export function storeTableFixture(
   role: 'td' | 'th',
-  version: 'original' | 'corrected' = 'corrected',
+  version: 'original' | 'corrected' | 'halfopen' = 'halfopen',
 ) {
-  const captures = version === 'original' ? { td, th } : { td: correctedTd, th: correctedTh };
+  const captures =
+    version === 'original'
+      ? { td, th }
+      : version === 'corrected'
+        ? { td: correctedTd, th: correctedTh }
+        : { td: halfopenTd, th: halfopenTh };
   const transcript = captures[role] as unknown as {
     at: number;
     sourceLength: number;
@@ -31,7 +38,7 @@ export function storeTableFixture(
           ? r.contextRef === q.contextRef
           : 'ref' in q
             ? r.ref === q.ref
-            : q.kind === 'source' && r.at === q.at) &&
+            : q.kind === 'source' && r.at === q.at && r.maxSourceBytes === q.maxSourceBytes) &&
         r.cursor === q.cursor,
     );
     if (!match) throw new Error('Uncaptured Store request: ' + JSON.stringify(q));
