@@ -38,10 +38,36 @@ export class NoteCanonicalProjection extends SourceProjection {
     const resources = window.native;
     if (!resources) throw new Error('Missing canonical note resources');
     const allMaps = window.context.filter((m): m is Mapping => m.kind === 'sourceMap');
+    // Explicit newline atoms carry source provenance instead of rendered text
+    // maps. Only their verified raw newline extent contributes coverage; an
+    // ancestor/container envelope never fills an unmapped source gap.
+    const newlineAtoms = window.context.filter((n): n is Native => {
+      if (
+        n.kind !== 'nativeNode' ||
+        n.nodeClass !== 'atom' ||
+        n.nodeType !== 'hardBreak' ||
+        n.provenance !== 'explicit'
+      )
+        return false;
+      const length = n.sourceRange.end - n.sourceRange.start;
+      if (length !== 1 && length !== 2) return false;
+      const start = Math.max(n.sourceRange.start, window.range.start);
+      const end = Math.min(n.sourceRange.end, window.range.end);
+      const expected = length === 1 ? '\n' : '\r\n';
+      return (
+        start < end &&
+        window.text.slice(start - window.range.start, end - window.range.start) ===
+          expected.slice(start - n.sourceRange.start, end - n.sourceRange.start)
+      );
+    });
     let covered = window.range.start;
-    for (const map of [...allMaps].sort((a, b) => a.sourceRange.start - b.sourceRange.start)) {
-      if (map.sourceRange.start > covered) break;
-      covered = Math.max(covered, map.sourceRange.end);
+    for (const item of [...allMaps, ...newlineAtoms].sort(
+      (a, b) => a.sourceRange.start - b.sourceRange.start,
+    )) {
+      if (item.sourceRange.start > covered) break;
+      covered = Math.max(covered, item.sourceRange.end);
+    }
+    for (const map of allMaps) {
       if (
         map.mapping === 'identity' &&
         map.sourceRange.start >= window.range.start &&
@@ -172,6 +198,13 @@ export class NoteCanonicalProjection extends SourceProjection {
         return node.text!.length;
       }
       if (origin.nodeClass === 'atom') {
+        this.segments.push({
+          sourceStart: origin.sourceRange.start,
+          sourceEnd: origin.sourceRange.end,
+          pmStart: pos,
+          pmEnd: pos + 1,
+          identity: false,
+        });
         this.positions.set(pos, origin.sourceRange.start);
         this.positions.set(pos + 1, origin.sourceRange.end);
         entry.to = pos + 1;

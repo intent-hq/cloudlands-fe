@@ -72,7 +72,7 @@ type NoteContextItem =
       construct: string;
       profile?: 'canonicalNote';
       profileVersion?: 1;
-      entryPath?: 'html';
+      entryPath?: 'html' | 'markdown';
       parentRef?: string;
       continuationBefore?: boolean;
       continuationAfter?: boolean;

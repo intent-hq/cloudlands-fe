@@ -186,6 +186,20 @@ export function* canonicalResources(
       const nodes = yield* resolve(item.nativeRef);
       if (nodes.length !== 1 || nodes[0].kind !== 'nativeNode')
         throw new Error('Invalid canonical native owner');
+      if (item.kind === 'boundary' && item.construct === 'markdownBlock') {
+        const paragraph = nodes[0];
+        if (
+          paragraph.nodeType !== 'paragraph' ||
+          paragraph.nodeClass !== 'container' ||
+          paragraph.parentRef === null ||
+          paragraph.sourceRange.start !== item.sourceRange.start ||
+          paragraph.sourceRange.end !== item.sourceRange.end ||
+          paragraph.attributesRef !== item.attributesRef ||
+          paragraph.profile !== item.profile ||
+          paragraph.profileVersion !== item.profileVersion
+        )
+          throw new Error('Canonical Markdown paragraph owner mismatch');
+      }
       if (item.kind === 'boundary' && item.construct === 'htmlDocument') {
         const root = nodes[0];
         if (
