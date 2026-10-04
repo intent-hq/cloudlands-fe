@@ -65,6 +65,51 @@ exports[`records the production HTML normalization for cellRoles > cellRoles 1`]
 }
 `;
 
+exports[`records the production HTML normalization for commentAnchorBeforeHtmlTable > commentAnchorBeforeHtmlTable 1`] = `
+{
+  "html": "<span data-anchor-id="comment-a:point" data-anchor-type="point" data-comment-id="comment-a"></span><p>&lt;table&gt;&lt;tr&gt;&lt;td&gt;x&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</p>
+<p><strong>After</strong></p>
+",
+  "native": {
+    "content": [
+      {
+        "content": [
+          {
+            "text": "<table><tr><td>x</td></tr></table>",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+      {
+        "content": [
+          {
+            "marks": [
+              {
+                "type": "bold",
+              },
+            ],
+            "text": "After",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<p>&lt;table&gt;&lt;tr&gt;&lt;td&gt;x&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</p><p><strong>After</strong></p>",
+  "saved": "<table><tr><td>x</td></tr></table>
+
+**After**",
+  "source": "<!--anchor:comment-a:point-->
+
+<table><tr><td>x</td></tr></table>
+
+**After**",
+}
+`;
+
 exports[`records the production HTML normalization for entitiesAndWhitespace > entitiesAndWhitespace 1`] = `
 {
   "html": "<table><tbody><tr><td> A &amp; B🚀
@@ -116,6 +161,66 @@ exports[`records the production HTML normalization for entitiesAndWhitespace > e
 | --- |",
   "source": "<table><tr><td> A &amp; B&#x1f680;
   C	 D&nbsp;E<br>F </td></tr></table>",
+}
+`;
+
+exports[`records the production HTML normalization for htmlTableBeforeMarkdown > htmlTableBeforeMarkdown 1`] = `
+{
+  "html": "<table><tbody><tr><td>x</td></tr></tbody></table>
+
+**After**",
+  "native": {
+    "content": [
+      {
+        "content": [
+          {
+            "content": [
+              {
+                "attrs": {
+                  "align": null,
+                  "colspan": 1,
+                  "colwidth": null,
+                  "rowspan": 1,
+                },
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "x",
+                        "type": "text",
+                      },
+                    ],
+                    "type": "paragraph",
+                  },
+                ],
+                "type": "tableCell",
+              },
+            ],
+            "type": "tableRow",
+          },
+        ],
+        "type": "table",
+      },
+      {
+        "content": [
+          {
+            "text": " **After**",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<div class="tableWrapper"><table class="note-table" style="min-width: 25px;"><colgroup><col style="min-width: 25px;"></colgroup><tbody><tr><td class="note-table-cell" colspan="1" rowspan="1"><p>x</p></td></tr></tbody></table></div><p> **After**</p>",
+  "saved": "| x |
+| --- |
+
+ **After**",
+  "source": "<table><tr><td>x</td></tr></table>
+
+**After**",
 }
 `;
 
@@ -272,6 +377,66 @@ exports[`records the production HTML normalization for malformedSpans > malforme
   "saved": "| ZERO | BAD |
 | --- | --- |",
   "source": "<table><tr><td rowspan="0" colspan="-2">ZERO</td><td rowspan="wat" colspan="999999999999999999999">BAD</td></tr></table>",
+}
+`;
+
+exports[`records the production HTML normalization for markdownBeforeAndAfterHtmlTable > markdownBeforeAndAfterHtmlTable 1`] = `
+{
+  "html": "<h2>Before</h2>
+<p>&lt;table&gt;&lt;tr&gt;&lt;td&gt;x&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</p>
+<p><strong>After</strong></p>
+",
+  "native": {
+    "content": [
+      {
+        "attrs": {
+          "level": 2,
+        },
+        "content": [
+          {
+            "text": "Before",
+            "type": "text",
+          },
+        ],
+        "type": "heading",
+      },
+      {
+        "content": [
+          {
+            "text": "<table><tr><td>x</td></tr></table>",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+      {
+        "content": [
+          {
+            "marks": [
+              {
+                "type": "bold",
+              },
+            ],
+            "text": "After",
+            "type": "text",
+          },
+        ],
+        "type": "paragraph",
+      },
+    ],
+    "type": "doc",
+  },
+  "rendered": "<h2>Before</h2><p>&lt;table&gt;&lt;tr&gt;&lt;td&gt;x&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</p><p><strong>After</strong></p>",
+  "saved": "## Before
+
+<table><tr><td>x</td></tr></table>
+
+**After**",
+  "source": "## Before
+
+<table><tr><td>x</td></tr></table>
+
+**After**",
 }
 `;
 

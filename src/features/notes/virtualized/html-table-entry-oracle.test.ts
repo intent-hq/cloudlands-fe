@@ -78,6 +78,10 @@ it('fresh canonical HTML strips merged attributes; live merging remains a separa
 });
 
 const canonicalSpecimens = {
+  markdownBeforeAndAfterHtmlTable: '## Before\n\n<table><tr><td>x</td></tr></table>\n\n**After**',
+  htmlTableBeforeMarkdown: '<table><tr><td>x</td></tr></table>\n\n**After**',
+  commentAnchorBeforeHtmlTable:
+    '<!--anchor:comment-a:point-->\n\n<table><tr><td>x</td></tr></table>\n\n**After**',
   cellRoles: '<table><tr><th>HEADER</th><td>DATA</td></tr></table>',
   implicitBodiesAndEnds: '<table><tr><td>ONE<td>TWO<tr><td>THREE</table>',
   entitiesAndWhitespace:
