@@ -22,6 +22,7 @@ describe('renderer app saga registry', () => {
       'principalSaga',
       'hostExecutionSaga',
       'repositoryContextSaga',
+      'repositoryCheckoutSaga',
       'settingsHydrationSaga',
       'activeStreamsSaga',
       'agentReadSaga',

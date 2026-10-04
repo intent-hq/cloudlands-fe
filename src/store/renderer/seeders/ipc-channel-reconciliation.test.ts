@@ -555,6 +555,11 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:repository-resource:capture',
   'backend:repository-resource:detail',
   'backend:repository-resource:release',
+  // Checkout sessions bind the original real preload bridge and host connection.
+  // Mock bridging would bypass capture/currentness; preview clients report unavailable.
+  'backend:repository-checkout:capture',
+  'backend:repository-checkout:request',
+  'backend:repository-checkout:release',
   // Console-owner status query (#1928): main-process-owned state (which
   // window is the last-focused non-HUD window) invoked directly on the real
   // preload bridge (console-owner-status.ts guards on its presence; without
