@@ -2431,8 +2431,8 @@ function toErrorPayload(error: unknown): {
 // ============================================================================
 
 /**
- * Pull the hostname out of a `host.status` result (PROTOCOL §5.14 — returns
- * `{ hostname, prettyHostname?, os, arch, ... }`). Prefers a trimmed non-empty
+ * Pull the hostname out of a `host.status` or guest-safe `system.status`
+ * result. Both carry `{ hostname, prettyHostname?, ... }`. Prefers a trimmed non-empty
  * `prettyHostname` (the human-friendly machine name, e.g. macOS ComputerName)
  * over the network `hostname`; returns `null` when neither is present so
  * callers keep the `host:port` fallback.
@@ -2454,13 +2454,13 @@ function extractHostname(result: unknown): string | null {
 
 /**
  * Label a freshly-connected remote by its hostname (T14). Reuses the live
- * client's `host.status` capability probe — the same call the heartbeat issues —
- * to read the remote machine's hostname, persists it on the connection record,
- * and re-broadcasts the list so the menu upgrades `host:port` to
+ * client's `host.status` capability probe (guest sessions use the admitted
+ * `system.status` projection instead) to read the remote machine's hostname,
+ * persists it on the connection record, and re-broadcasts the list so the menu upgrades `host:port` to
  * `hostname (host:port)`.
  *
  * Fire-and-forget by design: it must never block or fail an open. The
- * `host.status` request queues until the fresh socket connects, so awaiting it
+ * status request queues until the fresh socket connects, so awaiting it
  * inline would stall the open on a slow/unreachable remote — instead the
  * label upgrades asynchronously once the hostname arrives. Any failure
  * (unreachable, malformed result, store write error) is swallowed with a warn;
@@ -2483,7 +2483,7 @@ async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Pro
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
     const result = await observeStatus(client, 'captureRemoteHostname', owner, () =>
-      poolRequest(owner, client, 'host.status'),
+      poolRequest(owner, client, guest ? 'system.status' : 'host.status'),
     );
     const hostname = extractHostname(result);
     const deviceKind = extractDeviceKind(result);
@@ -3365,6 +3365,8 @@ function broadcastGuestSessionsChangedOwned(parent?: PoolOwner): Promise<void> {
 
 async function broadcastGuestSessionsChangedOriginal(owner?: PoolOwner): Promise<void> {
   const payload = await buildGuestSessionsListResult();
+  // Native Window-menu entries use the same guest labels as renderer chrome.
+  app.emit('guest-sessions-changed');
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {

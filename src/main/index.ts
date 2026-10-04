@@ -336,6 +336,7 @@ import {
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
+import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
 import { getActiveId, list as listConnections } from '../features/backend/main/connections-store';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import {
@@ -1028,6 +1029,12 @@ const bootFlow = app.whenReady().then(async () => {
       } catch {
         // Fall back to backend ids as labels
       }
+      let guests: Awaited<ReturnType<typeof listGuestSessions>> = [];
+      try {
+        guests = await listGuestSessions();
+      } catch {
+        // Guest storage failure must not hide paired windows from the menu.
+      }
       const entries = buildWindowMenuEntries(
         liveWindows.map((w) => ({
           windowId: w.id,
@@ -1041,6 +1048,7 @@ const bootFlow = app.whenReady().then(async () => {
           hudLabel: m.menu_window_hud_label(),
           localBackendLabel: m.menu_window_localBackend_label(),
         },
+        guests,
       );
 
       windowMenuItems.push({ type: 'separator' });
@@ -1416,6 +1424,9 @@ const bootFlow = app.whenReady().then(async () => {
   // Rebuild menu when connection records change (add/forget/rename/hostname
   // capture) so window entries pick up fresh backend labels
   app.on('connections-changed', () => {
+    void rebuildMenu();
+  });
+  app.on('guest-sessions-changed', () => {
     void rebuildMenu();
   });
 
