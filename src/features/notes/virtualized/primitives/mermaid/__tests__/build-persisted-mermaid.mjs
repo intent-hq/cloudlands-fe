@@ -71,6 +71,8 @@ await build({
     alias: [
       { find: './adapters', replacement: registry },
       { find: '$lib', replacement: resolve('src/lib') },
+      { find: '$store', replacement: resolve('src/store') },
+      { find: '$features', replacement: resolve('src/features') },
       { find: '$shared', replacement: resolve('src/shared') },
       { find: '$app', replacement: resolve('playwright/app-stubs') },
       {
