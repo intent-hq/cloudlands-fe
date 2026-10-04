@@ -33,6 +33,26 @@ export function isCanonicalGitLabInstance(value: string): boolean {
   );
 }
 
+/** A project web URL is selection intent under an already configured logical root. */
+export function parseGitLabProjectLink(
+  value: string,
+  instanceBaseUrl: string,
+): GitLabResourceTarget['repository'] | null {
+  if (!isCanonicalGitLabInstance(instanceBaseUrl)) return null;
+  const parsed = parts(value);
+  const base = parts(instanceBaseUrl);
+  if (
+    !parsed ||
+    !base ||
+    base.url.origin !== parsed.url.origin ||
+    !base.path.every((part, index) => parsed.path[index] === part)
+  )
+    return null;
+  const path = parsed.path.slice(base.path.length);
+  if (path.length < 2 || path[0] === 'groups' || path.includes('-')) return null;
+  return { provider: 'gitlab', instanceBaseUrl, projectPath: path.join('/') };
+}
+
 /**
  * Adapted from the accepted qualified-link parser. Only confirmed URL routes
  * are recognized here; work items, groups and aliases remain ordinary links.

@@ -64,6 +64,7 @@ const mocks = vi.hoisted(() => {
       isValidPath?: boolean;
       isNewRepo?: boolean;
       branch?: string;
+      repositoryCheckoutDraft?: import('$store/renderer/slices/repository-checkout/repository-checkout-types').RepositoryCheckoutDraft;
     } | null>(null),
     lastSubmittedAgent$: writable<{
       selectedSpecialist: string | null;
@@ -264,6 +265,8 @@ import type {
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { gitlabAuthChanged } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
+import { urlSubmitted } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
+import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 let dispose: () => void;
 let stopGit: () => void;
 let stopCheckout: (() => void) | undefined;
@@ -593,6 +596,63 @@ describe('actual initializer qualified GitLab workspace creation', () => {
     expect(request).not.toHaveProperty('branch');
     expect(mocks.update).not.toHaveBeenCalled();
   });
+
+  it.each(['direct', 'cached'] as const)(
+    'restores a saved plain project URL and %s selection through a fresh checkout',
+    async (mode) => {
+      const projectUrl = `${instanceBaseUrl}/${projectPath}?ref=release%2Fnext#readme`;
+      const view = await renderCheckout(mode);
+      await waitFor(() =>
+        expect(getItems(store.state.repositoryCheckout.forms)[0]?.branch?.name).toBe(
+          'release/next',
+        ),
+      );
+      const form = getItems(store.state.repositoryCheckout.forms)[0];
+      store.dispatch(urlSubmitted(form.formId, form.scopeKey!, projectUrl));
+      await waitFor(() => expect(session.project).toHaveBeenCalledWith({ url: projectUrl }));
+      await waitFor(() =>
+        expect(store.state.workspaceInitializer.compactFormState?.repositoryCheckoutDraft).toEqual({
+          instanceBaseUrl,
+          projectPath,
+          branch: 'release/next',
+          mode,
+          contextUrl: projectUrl,
+        }),
+      );
+      const saved = store.state.workspaceInitializer.compactFormState;
+      expect(JSON.stringify(saved)).not.toMatch(/checkoutId|revision|commitSha/);
+      view.unmount();
+      await waitFor(() => expect(session.release).toHaveBeenCalled());
+      session.capture = {
+        ...session.capture,
+        checkoutId: 'restored-lease',
+        revision: 'new-account',
+      };
+      store.dispatch(hydrateWorkspaceInitializer({ compactFormState: saved }));
+      mocks.compactFormState$.set(store.state.workspaceInitializer.compactFormState);
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({ prompt: 'Reopen selected project' }),
+      );
+      render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+      await waitFor(() => expect(mocks.captureCheckout).toHaveBeenCalledTimes(2));
+      const button = document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!;
+      await waitFor(() => expect(button.disabled).toBe(false));
+      await fireEvent.click(button);
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+      expect(mocks.create.mock.calls[0][0].repositoryCheckout).toEqual({
+        checkoutId: 'restored-lease',
+        revision: 'new-account',
+        projectPath,
+        branch: 'release/next',
+        commitSha: sha,
+        mode,
+      });
+      expect(session.project).toHaveBeenLastCalledWith({ url: projectUrl });
+      expect(mocks.validate).not.toHaveBeenCalled();
+      expect(mocks.getBranches).not.toHaveBeenCalled();
+    },
+  );
 
   it('keeps cached creation disabled during warming and retires a late completion on account change', async () => {
     const held = Promise.withResolvers<Awaited<ReturnType<RepositoryCheckoutSession['warm']>>>();

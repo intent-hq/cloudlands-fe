@@ -27,7 +27,7 @@ const project = {
   defaultBranch: 'trunk',
 };
 const wire: Array<{ socket: number; method: string; params: any }> = [];
-const ipc: Array<{ channel: string; sender: number; main: boolean }> = [];
+const ipc: Array<{ channel: string; sender: number; main: boolean; result?: unknown }> = [];
 const sockets = new Set<Socket>();
 let socketSequence = 0,
   leaseSequence = 0;
@@ -167,14 +167,18 @@ async function run() {
   await app.whenReady();
   const originalHandle = ipcMain.handle.bind(ipcMain);
   ipcMain.handle = (channel, listener) =>
-    originalHandle(channel, (event, ...args) => {
+    originalHandle(channel, async (event, ...args) => {
+      const record: (typeof ipc)[number] = {
+        channel,
+        sender: event.sender.id,
+        main: event.senderFrame === event.sender.mainFrame,
+      };
       if (channel.startsWith('backend:repository-checkout:') || channel === 'backend:request')
-        ipc.push({
-          channel,
-          sender: event.sender.id,
-          main: event.senderFrame === event.sender.mainFrame,
-        });
-      return listener(event, ...args);
+        ipc.push(record);
+      const result = await listener(event, ...args);
+      if (channel === 'backend:request' && args[0]?.method === 'workspace.create')
+        record.result = result;
+      return result;
     });
   const backend = await import('../../../src/features/backend/main/backend.ipc');
   backend.registerBackendHandlers();

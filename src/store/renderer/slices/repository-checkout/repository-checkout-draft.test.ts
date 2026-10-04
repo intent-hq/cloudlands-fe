@@ -45,12 +45,49 @@ describe('qualified checkout intent persistence', () => {
       repositoryCheckoutDraft: { ...draft, contextUrl },
     });
   });
+  it.each(['', '/'])('persists a plain project URL%s with intent but no authority', (suffix) => {
+    const contextUrl = `${instanceBaseUrl}/${draft.projectPath}${suffix}?ref=release%2Fnext#readme`;
+    const value = {
+      ...draft,
+      contextUrl,
+      checkoutId: 'old-lease',
+      revision: 'old-account',
+      commitSha: 'a'.repeat(40),
+    };
+    const saved = workspaceInitializerReducer(
+      initialState,
+      setCompactWorkspaceInitializerFormState({
+        repoType: 'gitlab',
+        repositoryCheckoutDraft: value,
+      }),
+    ).compactFormState;
+    expect(saved?.repositoryCheckoutDraft).toEqual({ ...draft, contextUrl });
+    const restored = workspaceInitializerReducer(
+      initialState,
+      hydrateWorkspaceInitializer({ compactFormState: saved }),
+    ).compactFormState;
+    expect(restored?.repositoryCheckoutDraft).toEqual({ ...draft, contextUrl });
+    expect(mapInitialRepoToFormState({ repositoryCheckoutDraft: value })).toMatchObject({
+      repoType: 'gitlab',
+      repositoryCheckoutDraft: { ...draft, contextUrl },
+    });
+    expect(readRepositoryCheckoutDraft({ instanceBaseUrl, contextUrl })?.projectPath).toBe(
+      draft.projectPath,
+    );
+  });
   it.each([
     { ...draft, instanceBaseUrl: 'http://git.example' },
     { ...draft, instanceBaseUrl: instanceBaseUrl + '/../other' },
     { ...draft, contextUrl: 'https://unknown.example/group/subgroup/project/-/issues/4' },
     { ...draft, contextUrl: instanceBaseUrl.toLowerCase() + '/group/subgroup/project/-/issues/4' },
     { ...draft, contextUrl: instanceBaseUrl + '/other/project/-/issues/4' },
+    { ...draft, contextUrl: 'https://unknown.example/group/subgroup/project' },
+    { ...draft, contextUrl: instanceBaseUrl.toLowerCase() + '/group/subgroup/project' },
+    { ...draft, contextUrl: instanceBaseUrl + '/other/project' },
+    { ...draft, contextUrl: instanceBaseUrl + '/group/../subgroup/project' },
+    { ...draft, contextUrl: instanceBaseUrl + '/group/%2e%2e/subgroup/project' },
+    { ...draft, contextUrl: instanceBaseUrl + '/group/subgroup/project/-/work_items/4' },
+    { ...draft, contextUrl: instanceBaseUrl + '/groups/subgroup/project' },
   ])('rejects malformed or foreign instance intent %j', (value) => {
     expect(readRepositoryCheckoutDraft(value)).toBeUndefined();
   });

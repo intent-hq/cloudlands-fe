@@ -273,9 +273,23 @@ test('checkout consumer retains original document, socket and selected branch ac
       fixture.holdCreateError(false);
     });
     const oldCreate = await original.evaluate(() => (window as any).checkoutConsumer.pending);
-    expect(oldCreate).toMatchObject({
+    expect(oldCreate).toEqual({
       success: false,
-      errorCode: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+      error: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+    });
+    expect(
+      await app.evaluate(() => {
+        const fixture = (globalThis as unknown as { checkoutElectronFixture: Fixture })
+          .checkoutElectronFixture;
+        return fixture.ipc.findLast((call) => call.result !== undefined)?.result;
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+        message: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+        rpcCode: -32003,
+      },
     });
     expect(JSON.stringify(oldCreate)).not.toContain('/A/private');
     expect(JSON.stringify(oldCreate)).not.toContain('original private creation error');

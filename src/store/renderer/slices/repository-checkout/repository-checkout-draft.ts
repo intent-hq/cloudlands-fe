@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   isCanonicalGitLabInstance,
+  parseGitLabProjectLink,
   parseGitLabResourceLink,
 } from '$shared/utils/gitlab-resource-link';
 import { CheckoutProjectSchema } from '$shared/types/repository-checkout';
@@ -26,12 +27,17 @@ export function readRepositoryCheckoutDraft(value: unknown): RepositoryCheckoutD
   if (!parsed.success) return undefined;
   const draft = parsed.data;
   if (draft.contextUrl) {
-    const target = parseGitLabResourceLink(draft.contextUrl, [
-      { provider: 'gitlab', instanceBaseUrl: draft.instanceBaseUrl },
-    ]);
-    if (!target || (draft.projectPath && target.repository.projectPath !== draft.projectPath))
+    const target =
+      parseGitLabResourceLink(draft.contextUrl, [
+        { provider: 'gitlab', instanceBaseUrl: draft.instanceBaseUrl },
+      ])?.repository ?? parseGitLabProjectLink(draft.contextUrl, draft.instanceBaseUrl);
+    if (
+      !target ||
+      !CheckoutProjectSchema.shape.projectPath.safeParse(target.projectPath).success ||
+      (draft.projectPath && target.projectPath !== draft.projectPath)
+    )
       return undefined;
-    return { ...draft, projectPath: target.repository.projectPath };
+    return { ...draft, projectPath: target.projectPath };
   }
   return draft;
 }
