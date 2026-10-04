@@ -206,6 +206,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   }),
   selectChatIsStalled: mocks.selector(false),
   selectChatLastChunkTime: mocks.selector(null),
+  selectChatLastAttemptedMessage: mocks.selector(null),
   selectChatLiveStreamPhase: mocks.selector(null),
   selectChatModelUnavailable: mocks.selector(null),
   selectChatQuotaExceeded: Object.assign(() => mocks.chatQuotaExceeded, { select: () => null }),
