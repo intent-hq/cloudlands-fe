@@ -1,4 +1,5 @@
 import type { NotePageRequest, NoteReadPage, NotePagingCapabilities } from './note-pages';
+import { deadlineNanoseconds } from '../../shared/source-session-expiry';
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 const token = (s: unknown): s is string =>
   typeof s === 'string' && s.length > 0 && new TextEncoder().encode(s).length <= 256;
@@ -294,6 +295,7 @@ function readPage(
   workspaceId: string,
   noteId: string,
   request: NotePageRequest,
+  validExpiry: (raw: string) => boolean = (raw) => Number.isFinite(Date.parse(raw)),
 ): NoteReadPage {
   const p = object(value);
   scope(p.scope, workspaceId, noteId);
@@ -324,7 +326,7 @@ function readPage(
     !token(p.sourceRevision) ||
     !token(p.snapshotId) ||
     typeof p.expiresAt !== 'string' ||
-    !Number.isFinite(Date.parse(p.expiresAt))
+    !validExpiry(p.expiresAt)
   )
     throw new Error('Invalid note snapshot');
   if (request.kind === 'source') {
@@ -418,4 +420,18 @@ export class NotePageReader {
       page,
     );
   }
+}
+
+/** Validate a canonical source page using the exact shared daemon expiry grammar.
+ * This does not issue a request, authenticate a source session or settle delivery ownership. */
+export function validateCanonicalSourcePage(
+  value: unknown,
+  workspaceId: string,
+  noteId: string,
+  request: NotePageRequest,
+): NoteReadPage {
+  if (request.kind !== 'context' && request.kind !== 'metadata')
+    throw new Error('Invalid canonical source page request');
+  validateRequest(request);
+  return readPage(value, workspaceId, noteId, request, (raw) => deadlineNanoseconds(raw) !== undefined);
 }
