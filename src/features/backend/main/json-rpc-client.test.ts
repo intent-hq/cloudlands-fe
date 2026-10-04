@@ -1353,6 +1353,66 @@ describe('captured repository socket dispatch', () => {
 });
 
 describe('queued hello repository eligibility', () => {
+  it('finishes startup when a caller hello arrives while the startup reply is pending', async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const onHelloResult = vi.fn();
+    const client = new JsonRpcClient({
+      socketFactory: () => socket as unknown as Duplex,
+      helloParams: () => ({ clientId: 'desktop' }),
+      onHelloResult,
+      heartbeatIntervalMs: 0,
+    });
+    try {
+      client.start();
+      socket.open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(JSON.parse(socket.writes[0])).toEqual({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'client.hello',
+        params: { clientId: 'desktop' },
+      });
+
+      // A renderer capability probe joins AFTER the physical handshake began.
+      // The existing test below covers the opposite ordering (caller first).
+      const probe = client.request('client.hello', {});
+      void probe.catch(() => {});
+      const queued = client.request('workspace.list');
+      void queued.catch(() => {});
+      await vi.advanceTimersByTimeAsync(0);
+      expect(socket.writes).toHaveLength(1);
+      socket.receive('{"jsonrpc":"2.0","id":1,"result":{"clientId":"desktop"}}\n');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(client.getStatus()).toBe('connected');
+      const frames = socket.writes.slice(1).map((line) => JSON.parse(line));
+      const hello = frames.find((frame) => frame.method === 'client.hello');
+      const work = frames.find((frame) => frame.method === 'workspace.list');
+      expect(hello).toEqual({
+        jsonrpc: '2.0',
+        id: expect.any(Number),
+        method: 'client.hello',
+        params: { clientId: 'desktop' },
+      });
+      expect(work).toEqual({ jsonrpc: '2.0', id: expect.any(Number), method: 'workspace.list' });
+      expect(client.getRepositoryConnection()).toBeNull();
+      socket.receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: { clientId: 'desktop' } })}\n`,
+      );
+      socket.receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: work.id, result: { workspaces: [] } })}\n`,
+      );
+      await expect(probe).resolves.toEqual({ clientId: 'desktop' });
+      await expect(queued).resolves.toEqual({ workspaces: [] });
+      expect(onHelloResult).toHaveBeenCalled();
+      expect(client.getRepositoryConnection()).not.toBeNull();
+    } finally {
+      client.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it('does not borrow the initial handshake identity while a queued caller hello runs', async () => {
     const socket = new FakeSocket();
     const client = new JsonRpcClient({
