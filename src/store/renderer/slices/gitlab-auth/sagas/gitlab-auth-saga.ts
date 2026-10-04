@@ -148,6 +148,9 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
  */
 type IntentFence = {
   generation: number;
+  // Authority-only events invalidate earlier status reads, but cannot retire
+  // an already-started PAT write for one of several roots on that authority.
+  statusRevision: number;
   // Cleanup history only, not the selected slice host. A settled newer owner
   // still protects older calls; release the record once all starts finish.
   deviceIntents: Map<
@@ -184,9 +187,11 @@ function* checkAuthComplete(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<CompletionCheck> {
+  const statusRevision = fence.statusRevision;
   try {
     const status = yield* call(readStatus, host);
     if (superseded(fence, generation)) return 'superseded';
+    if (fence.statusRevision !== statusRevision) return 'pending';
     if (status?.isConfigured === true && !status.deviceFlow) {
       const payload = statusPayload(status, host);
       if (!payload) return 'pending';
@@ -281,11 +286,12 @@ function* initialize(
   generation: number,
   mode: 'resume' | 'status-only' = 'resume',
 ): SagaGenerator<void> {
+  const statusRevision = fence.statusRevision;
   try {
     if (host !== undefined) yield* put(setGitLabHost(host));
     const target = host ?? (yield* selectGitLabAuthTarget.effect());
     const status = yield* call(readStatus, host);
-    if (!status || superseded(fence, generation)) return;
+    if (!status || superseded(fence, generation) || fence.statusRevision !== statusRevision) return;
     const payload = statusPayload(status, target, host === undefined);
     if (!payload) return;
     if (!sameHost(payload.instanceBaseUrl ?? payload.host, target)) bumpIntent(fence);
@@ -444,8 +450,15 @@ function* connectWithToken(
       return;
     }
     // The PAT never round-trips; the daemon's status is the only identity source.
+    const statusRevision = fence.statusRevision;
     const status = yield* call(readStatus, host);
     if (superseded(fence, generation)) return;
+    if (fence.statusRevision !== statusRevision) {
+      // The original write settled, but the newer root reconciliation owns
+      // identity. Do not revive the older status or leave a completed write busy.
+      yield* put(setGitLabAuthenticating(false));
+      return;
+    }
     const payload = status ? statusPayload(status, host) : null;
     if (status && !payload) {
       yield* put(setGitLabAuthError(m.gitlabAuth_service_failed_error()));
@@ -518,9 +531,10 @@ function* reconcileStatus(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<void> {
+  const statusRevision = fence.statusRevision;
   try {
     const status = yield* call(readStatus, host);
-    if (!status || superseded(fence, generation)) return;
+    if (!status || superseded(fence, generation) || fence.statusRevision !== statusRevision) return;
     const payload = statusPayload(status, host);
     if (payload) yield* put(setGitLabAuthStatus(payload));
   } catch (error) {
@@ -541,6 +555,7 @@ function* authChanged(
   if (host.includes('://')) {
     // Events carry only an authority. /Forge and /forge can share it; the
     // selected full-root status, not this ambiguous event, owns identity.
+    fence.statusRevision += 1;
     yield* call(reconcileStatus, host, fence, fence.generation);
     return;
   }
@@ -635,7 +650,7 @@ function* gitlabLabChangedWorker(): SagaGenerator<void> {
 }
 
 export function* gitlabAuthSaga(): SagaGenerator<void> {
-  const fence: IntentFence = { generation: 0, deviceIntents: new Map() };
+  const fence: IntentFence = { generation: 0, statusRevision: 0, deviceIntents: new Map() };
   // Only the latest initialize may hydrate: an older read (mount-time default
   // host) that resolved after a newer one would otherwise overwrite it.
   yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker, fence);

@@ -244,9 +244,17 @@ export function createRepositoryCheckoutFeed(client: JsonRpcClient) {
           async create(params: Record<string, unknown>, timeoutMs?: number) {
             selection(CheckoutSelectionSchema.parse(params.repositoryCheckout));
             if (!current() || denied) throw new Error('REPOSITORY_CHECKOUT_RETIRED');
-            const result = await request('workspace.create', params, timeoutMs);
-            if (!current() || denied) throw new Error('REPOSITORY_CHECKOUT_RETIRED');
-            return result;
+            try {
+              const result = await request('workspace.create', params, timeoutMs);
+              if (!current() || denied) throw new Error('REPOSITORY_CHECKOUT_RETIRED');
+              return result;
+            } catch (error) {
+              if (!current() || denied) {
+                owner.retire();
+                throw new Error('REPOSITORY_CHECKOUT_RETIRED');
+              }
+              throw error;
+            }
           },
         };
         return { status: 'ready' as const, value: lifetime };

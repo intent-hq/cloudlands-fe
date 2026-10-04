@@ -88,7 +88,11 @@ async function harness(capability: unknown = 1) {
     {
       readBackend: (id) => (id === 'target-A' ? client : undefined),
       capture: (_, connection, query) => feed.capture(connection, query),
-      errorPayload: () => ({ code: 'TEST_REFUSAL', message: 'TEST_REFUSAL' }),
+      errorPayload: (error) => ({
+        code: 'TEST_REFUSAL',
+        message: error instanceof Error ? error.message : String(error),
+        data: (error as { data?: unknown }).data,
+      }),
     },
   );
   cleanup.push(() => registry.dispose());
@@ -231,6 +235,67 @@ describe('pre-workspace checkout on the original Electron document and target so
       ok: false,
     });
   });
+  it.each(['current', 'host-remapped', 'hello-retired', 'document-retired', 'denied'])(
+    'transfers an original create rejection only while its owner is current: %s',
+    async (lifetime) => {
+      const h = await harness();
+      const id = await h.acquire();
+      const pending = h.registry.create(h.event, { repositoryCheckout: selection });
+      const createId = h.socket.frames.at(-1)!.id;
+      if (lifetime === 'host-remapped') {
+        stampWindowWithBackend(h.window as unknown as BrowserWindow, 'target-B');
+        stampWindowWithBackend(h.window as unknown as BrowserWindow, 'target-A');
+      } else if (lifetime === 'hello-retired') {
+        const hello = h.client.request('client.hello', { clientId: 'original' });
+        await vi.waitFor(() => expect(h.socket.frames.at(-1)?.method).toBe('client.hello'));
+        h.socket.reply({ clientId: 'original', server: { capabilities: { gitlabCheckout: 1 } } });
+        await hello;
+      } else if (lifetime === 'document-retired') {
+        h.sender.emit('did-start-navigation', {}, 'next', false, true);
+      } else if (lifetime === 'denied') {
+        const branches = h.call(channels.REQUEST, {
+          id,
+          kind: 'branches',
+          params: { projectPath: selection.projectPath },
+        });
+        h.socket.reply({ status: 'unavailable', reason: 'access-denied' });
+        await branches;
+      }
+      h.socket.emit(
+        'data',
+        Buffer.from(
+          JSON.stringify({
+            id: createId,
+            error: {
+              code: -32000,
+              message: 'private original create detail',
+              data: { privatePath: '/A/private' },
+            },
+          }) + '\n',
+        ),
+      );
+      const result = await pending;
+      if (lifetime === 'current') {
+        expect(result).toMatchObject({
+          ok: false,
+          error: {
+            code: 'TEST_REFUSAL',
+            message: 'private original create detail',
+            data: { privatePath: '/A/private' },
+          },
+        });
+      } else {
+        expect(result).toEqual({
+          ok: false,
+          error: {
+            code: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+            message: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+            rpcCode: -32003,
+          },
+        });
+      }
+    },
+  );
   it('delivers known denial and prevents a same-lease cached-content request', async () => {
     const h = await harness();
     const id = await h.acquire();

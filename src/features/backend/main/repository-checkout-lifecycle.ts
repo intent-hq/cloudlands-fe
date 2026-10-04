@@ -252,6 +252,7 @@ export function registerRepositoryCheckoutHandlers(
           if (owned(event, id) !== entry) return unavailable();
           return { ok: true as const, result };
         } catch (error) {
+          if (owned(event, id) !== entry) return unavailable();
           drop(id, entry);
           return { ok: false as const, error: deps.errorPayload(error) };
         }

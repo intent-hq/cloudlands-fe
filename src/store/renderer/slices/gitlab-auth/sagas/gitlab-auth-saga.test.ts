@@ -1575,6 +1575,83 @@ describe('full-instance and PAT cancellation ownership', () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
+  it.each(['initialize', 'focus', 'reconcile', 'pat-status'])(
+    'does not let an old %s read restore identity after a full-root revoke reconciliation',
+    async (reader) => {
+      const old = Promise.withResolvers<unknown>();
+      mocks.getStatus.mockReturnValueOnce(old.promise).mockResolvedValue({
+        ...status,
+        isConfigured: false,
+        method: null,
+        user: null,
+      });
+      mocks.connect.mockResolvedValue({ success: true });
+      const run = harness({ ...initialState, host: status.host, instanceBaseUrl: root }, true);
+      try {
+        if (reader === 'initialize') run.dispatch(initializeGitLabAuth(root) as never);
+        else if (reader === 'focus') run.dispatch(checkGitLabAuthStatus() as never);
+        else if (reader === 'reconcile')
+          run.dispatch(gitlabAuthChanged('authorized', status.host) as never);
+        else run.dispatch(connectGitLabWithToken(root, 'private-token') as never);
+        await settle();
+        run.dispatch(gitlabAuthChanged('revoked', status.host) as never);
+        await settle();
+        expect(run.state()).toMatchObject({
+          instanceBaseUrl: root,
+          isConfigured: false,
+          user: null,
+        });
+        const count = run.dispatched.length;
+        old.resolve(status);
+        await settle();
+        expect(run.state()).toMatchObject({
+          instanceBaseUrl: root,
+          isConfigured: false,
+          user: null,
+        });
+        expect(run.dispatched.slice(count).map((a) => (a as { type: string }).type)).not.toContain(
+          'gitlabAuth/authCompleted',
+        );
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+  it('keeps a begun PAT outcome across ambiguous authority events and a refused cancellation', async () => {
+    const connect = Promise.withResolvers<ForgeConnectResult>();
+    mocks.connect.mockReturnValue(connect.promise);
+    mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: false });
+    mocks.getStatus
+      .mockResolvedValueOnce({ ...status, isConfigured: false, user: null, method: null })
+      .mockResolvedValue(status);
+    const run = harness(initialState, true);
+    try {
+      run.dispatch(connectGitLabWithToken(root, 'private-token') as never);
+      await settle();
+      run.dispatch(gitlabAuthChanged('revoked', status.host) as never);
+      await settle();
+      run.dispatch(cancelGitLabAuth() as never);
+      await settle();
+      expect(run.state()).toMatchObject({
+        isAuthenticating: true,
+        cancelOutcome: 'already-started',
+      });
+      connect.resolve({ success: true });
+      await settle();
+      await settle();
+      expect(run.state()).toMatchObject({
+        instanceBaseUrl: root,
+        isConfigured: true,
+        user: WIRE_USER,
+        isAuthenticating: false,
+      });
+      expect(mocks.revoke).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
   it('hydrates the exact configured prefix and rechecks that same prefix', async () => {
     mocks.getStatus.mockResolvedValue(status);
     const run = harness(initialState, true);
