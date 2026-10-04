@@ -164,6 +164,7 @@
     const form = selectSettingsForm.select(appStore.state, identity);
     const entries = selectSettingsFormEntries.select(appStore.state, identity);
     if (
+      !selectCanAdministerHost.select(appStore.state) ||
       !form?.loaded ||
       !entries['agentFeatures.peerAgents'] ||
       !coerceValue(
@@ -257,7 +258,7 @@
           variant="secondary"
           size="xs"
           onclick={handleDebounceSave}
-          disabled={debounceSaving || !valid || !values['agentFeatures.prMonitor']}
+          disabled={loading || debounceSaving || !valid || !values['agentFeatures.prMonitor']}
         >
           {debounceSaving
             ? m.settings_agentFeatures_prMonitorDebounce_saving()
@@ -295,7 +296,7 @@
           variant="secondary"
           size="xs"
           onclick={handleMaxAgentsSave}
-          disabled={maxAgentsSaving || !valid || !peerAgentsEnabled}
+          disabled={loading || maxAgentsSaving || !valid || !peerAgentsEnabled}
         >
           {maxAgentsSaving
             ? m.settings_agentFeatures_maxTopLevelAgents_saving()

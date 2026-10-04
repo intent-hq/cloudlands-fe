@@ -7,6 +7,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import AgentFeaturesSettings from './AgentFeaturesSettings.svelte';
 import { store } from '$store/renderer/store';
 import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+import { settingsFormSaveRequested } from '$store/renderer/slices/settings-events/settings-events-slice';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 let stop: () => void;
 beforeEach(() => {
@@ -90,6 +92,30 @@ describe('AgentFeaturesSettings', () => {
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-checked')).toBe('true');
     expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Maximum top-level agents per workspace', 'agents.maxTopLevelAgents', '30'],
+    ['PR monitor change debounce in seconds', 'prMonitor.debounceSeconds', '90'],
+  ])('locks an unsaved owner draft for %s after joining as a guest', async (name, path, value) => {
+    await renderReady();
+    const input = screen.getByRole('spinbutton', { name }) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value } });
+    const save = (await screen.findByRole('button', { name: 'Save' })) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    admitLegacyPrincipal('guest');
+    await waitFor(() => expect(input.disabled).toBe(true));
+    const dispatch = vi.spyOn(store, 'dispatch');
+    await fireEvent.click(save);
+    const requests = dispatch.mock.calls.filter(
+      ([action]) => action.type === settingsFormSaveRequested.type,
+    );
+    dispatch.mockRestore();
+    expect.soft(save.disabled).toBe(true);
+    expect.soft(requests).toHaveLength(0);
+    expect.soft(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    const form = getItems(store.state.settingsEvents.forms)[0];
+    expect(getItems(form.operations).some((operation) => operation.resource === path)).toBe(false);
   });
 
   it('renders thirteen toggles; all on when the daemon reports every path true', async () => {
