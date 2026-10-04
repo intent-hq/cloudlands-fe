@@ -6939,6 +6939,7 @@
   "chat_agentCard_menu_moveToForeground_label": "In den Vordergrund verschieben",
   "agent_mutation_setBackgroundFailed_error": "Agentenmodus konnte nicht geändert werden",
   "settings_aiBehavior_importedClaude_title": "Aus Claude Code importiert",
+  "settings_agentSettings_ownerOnly_description": "Nur der Instanzinhaber kann diese Einstellungen bearbeiten.",
   "settings_aiBehavior_importedClaude_readOnly": "In Intent schreibgeschützt. Öffne die Originaldatei, um Änderungen vorzunehmen.",
   "settings_aiBehavior_importedClaude_unsupported": "Start in Intent nicht möglich, da diese Einstellungen nicht unterstützt werden: {fields}. Öffne die Originaldatei und entferne oder passe diese Einstellungen vor dem Start an.",
   "settings_aiBehavior_importNotices": "Hinweise zum Claude-Agentenimport",

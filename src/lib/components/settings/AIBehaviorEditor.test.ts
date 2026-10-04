@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -102,11 +103,12 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   const { select } = await import('typed-redux-saga');
   const module = createAppStoreMockModule({
-    state: () => ({
-      ...mocks.storeState.value,
-      userPreferences: mocks.rulesState,
-      specialists: mocks.creationState,
-    }),
+    state: () =>
+      withLegacyPrincipal({
+        ...mocks.storeState.value,
+        userPreferences: mocks.rulesState,
+        specialists: mocks.creationState,
+      }),
     dispatch: (action: { type: string; payload: unknown[] }) => {
       mocks.creationState = specialistsReducer(mocks.creationState as never, action as never);
       mocks.dispatched.push(action);
@@ -293,7 +295,20 @@ beforeEach(() => {
     channel.put(action);
   };
   rulesTask = runSaga(
-    { channel, dispatch: mocks.rulesDispatch, getState: () => ({ userPreferences }) },
+    {
+      channel,
+      dispatch: mocks.rulesDispatch,
+      getState: () => withLegacyPrincipal({ userPreferences }),
+      context: {
+        reduxStore: {
+          getState: () => withLegacyPrincipal({ userPreferences }),
+          subscribe: () => () => {},
+        },
+        reportRuntimeError: (error: unknown) => {
+          throw error;
+        },
+      },
+    },
     agentRulesSaga,
   );
 });

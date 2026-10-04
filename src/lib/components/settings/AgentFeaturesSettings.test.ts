@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  */
@@ -10,6 +11,7 @@ import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/s
 let stop: () => void;
 beforeEach(() => {
   store.init();
+  admitLegacyPrincipal();
   stop = store.runSaga(settingsFormSaga);
 });
 afterEach(() => {
@@ -78,6 +80,16 @@ describe('AgentFeaturesSettings', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('locks a previously loaded owner form after joining as a guest', async () => {
+    await renderReady();
+    const toggle = screen.getByRole('switch', { name: 'Background hooks' }) as HTMLButtonElement;
+    admitLegacyPrincipal('guest');
+    await waitFor(() => expect(toggle.disabled).toBe(true));
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
   });
 
   it('renders thirteen toggles; all on when the daemon reports every path true', async () => {

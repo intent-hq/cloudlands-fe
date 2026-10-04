@@ -7,6 +7,10 @@
     defaultState: 'modified',
     states: {
       modified: { props: {} },
+      guest: { props: { role: 'guest' } },
+      'guest-rules': { props: { role: 'guest', rules: true } },
+      member: { props: { role: 'member' } },
+      'guest-create': { props: { role: 'guest', create: true } },
       create: { props: { create: true } },
       'create-flow': { props: { create: true, creationFlow: true } },
       imported: { props: { imported: true } },
@@ -24,6 +28,8 @@
 </script>
 
 <script lang="ts">
+  import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
+  import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import type {
@@ -54,12 +60,15 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
   import {
     startSpecialistCatalogPreview,
+    startRulesPreview,
     interceptSpecialistEditorLaunches,
     diagnosticWorkspaceId,
     installDiagnosticWorkspace,
   } from './__tests__/specialist-detail.fixture';
 
   let {
+    rules = false,
+    role = 'owner',
     create = false,
     imported = false,
     unsupported = false,
@@ -72,6 +81,8 @@
     catalogFlow = false,
     creationFlow = false,
   }: {
+    rules?: boolean;
+    role?: 'owner' | 'member' | 'guest';
     create?: boolean;
     imported?: boolean;
     unsupported?: boolean;
@@ -85,6 +96,14 @@
     creationFlow?: boolean;
   } = $props();
 
+  admitLegacyPrincipal();
+  const admitted = withHostPrincipal(appStore.state, role);
+  appStore.dispatch(
+    principalReceived(
+      { context: admitted.principal.context!, invalidation: 0, presentationVersion: 0 },
+      admitted.principal.snapshot!,
+    ),
+  );
   const resolvedSpecialists = selectSpecialists();
   let catalogRequests = $state(0);
   let showEditor = $state(true);
@@ -301,8 +320,10 @@
     };
     stopCatalog = startSpecialistCatalogPreview();
   }
+  const stopRules = rules ? startRulesPreview() : undefined;
   if (creationFlow) stopCatalog = startSpecialistCatalogPreview();
   onDestroy(() => {
+    stopRules?.();
     stopCatalog?.();
     releaseWrite?.();
     releaseCatalog?.();
@@ -371,7 +392,11 @@
   {#if showEditor}
     <AIBehaviorEditor
       activeView={createdView ??
-        (create ? { type: 'create-specialist' } : { type: 'specialist', id: 'preview-detail' })}
+        (rules
+          ? { type: 'system-prompt' }
+          : create
+            ? { type: 'create-specialist' }
+            : { type: 'specialist', id: 'preview-detail' })}
       workspaceId={null}
       onSpecialistCreated={(id) => {
         createdView = { type: 'specialist', id };

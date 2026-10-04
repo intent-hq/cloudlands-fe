@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -55,6 +56,7 @@ function publishWorkspace(def: SpecialistDef) {
 
 async function setup(def = initial, workspaceDef = def) {
   disposers.push(store.init());
+  admitLegacyPrincipal();
   const restore = preview.states.reasoning.setup?.();
   if (restore) disposers.push(restore);
   let saved = def;

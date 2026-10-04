@@ -6939,6 +6939,7 @@
   "chat_agentCard_menu_moveToForeground_label": "Mover al primer plano",
   "agent_mutation_setBackgroundFailed_error": "No se pudo cambiar el modo del agente",
   "settings_aiBehavior_importedClaude_title": "Importado de Claude Code",
+  "settings_agentSettings_ownerOnly_description": "Solo el propietario de la instancia puede editar estos ajustes.",
   "settings_aiBehavior_importedClaude_readOnly": "Solo lectura en Intent. Abre el archivo original para realizar cambios.",
   "settings_aiBehavior_importedClaude_unsupported": "No se puede iniciar en Intent porque estos ajustes no son compatibles: {fields}. Abre el archivo original y elimina o adapta estos ajustes antes de iniciar.",
   "settings_aiBehavior_importNotices": "Avisos de importación de agentes de Claude",
