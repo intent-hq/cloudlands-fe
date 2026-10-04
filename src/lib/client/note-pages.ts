@@ -70,6 +70,9 @@ type NoteContextItem =
       id: string;
       sourceRange: SourceRange;
       construct: string;
+      profile?: 'canonicalNote';
+      profileVersion?: 1;
+      entryPath?: 'html';
       parentRef?: string;
       continuationBefore?: boolean;
       continuationAfter?: boolean;

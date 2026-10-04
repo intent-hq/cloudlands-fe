@@ -219,11 +219,26 @@ function pageItem(value: unknown, kind: NotePageRequest['kind']) {
     if (i.kind === 'boundary') {
       if (
         typeof i.construct !== 'string' ||
-        (i.sourceMapRef === undefined && String(i.construct).startsWith('htmlTable')
+        (i.sourceMapRef === undefined &&
+        (String(i.construct).startsWith('htmlTable') || i.construct === 'htmlDocument')
           ? i.continuationBefore !== undefined || i.continuationAfter !== undefined
           : typeof i.continuationBefore !== 'boolean' || typeof i.continuationAfter !== 'boolean')
       )
         throw new Error('Invalid context boundary');
+      if (i.construct === 'htmlDocument') {
+        canonicalProfile(i);
+        if (
+          i.entryPath !== 'html' ||
+          object(i.sourceRange).start !== 0 ||
+          !token(i.nativeRef) ||
+          !token(i.attributesRef) ||
+          (i.sourceMapRef !== undefined && !token(i.sourceMapRef)) ||
+          ['parentRef', 'detailRef', 'htmlPosition', 'htmlSource'].some(
+            (key) => i[key] !== undefined,
+          )
+        )
+          throw new Error('Invalid canonical HTML document owner');
+      }
       if (['htmlTable', 'htmlTableRow', 'htmlTableCell'].includes(String(i.construct)))
         htmlBoundary(i);
       if (['tableHead', 'tableRow', 'tableCell'].includes(String(i.construct))) {

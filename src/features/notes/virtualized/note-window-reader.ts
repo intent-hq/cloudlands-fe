@@ -189,6 +189,12 @@ function* assembleWindowSteps(
     occurrence?: { range: SourceRange; contextRef: string },
   ): Generator<NotePageRequest, void, NoteReadPage> {
     if (item.kind === 'fragment') throw new Error('Unexpected field in source context');
+    if (item.kind === 'boundary' && item.construct === 'htmlDocument') {
+      if (item.sourceRange.start !== 0 || item.sourceRange.end !== sourceLength)
+        throw new Error('Canonical HTML document range mismatch');
+      if (occurrence && !item.sourceMapRef)
+        throw new Error('Canonical HTML document window mapping missing');
+    }
     // Context can include a predecessor used to locate the window. Its native
     // subtree is not visible and must not acquire attributes/maps or mounted cells.
     if (

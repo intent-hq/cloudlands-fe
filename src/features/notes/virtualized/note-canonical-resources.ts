@@ -186,6 +186,19 @@ export function* canonicalResources(
       const nodes = yield* resolve(item.nativeRef);
       if (nodes.length !== 1 || nodes[0].kind !== 'nativeNode')
         throw new Error('Invalid canonical native owner');
+      if (item.kind === 'boundary' && item.construct === 'htmlDocument') {
+        const root = nodes[0];
+        if (
+          root.nodeType !== 'doc' ||
+          root.nodeClass !== 'container' ||
+          root.parentRef !== null ||
+          root.childIndex !== 0 ||
+          root.attributesRef !== item.attributesRef ||
+          root.profile !== item.profile ||
+          root.profileVersion !== item.profileVersion
+        )
+          throw new Error('Canonical HTML document root mismatch');
+      }
     }
     if (item.kind !== 'nativeNode') continue;
     if (item.parentRef) {
