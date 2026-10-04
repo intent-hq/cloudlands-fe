@@ -834,9 +834,14 @@ export class JsonRpcClient extends EventEmitter {
     timeoutMs: number,
     parent?: object,
   ): Promise<unknown> {
-    this.beginHello();
+    // A queued hello must not supersede the startup/reconnect handshake it
+    // needs to finish. An already-connected renegotiation retires immediately,
+    // before even awaiting the persisted identity provider.
+    if (this.status === 'connected') this.beginHello();
     const merged = await this.mergedHelloParams(params);
+    if (this.disposed) throw new Error('JSON-RPC client disposed');
     if (this.status !== 'connected') await this.ensureConnected();
+    if (this.disposed) throw new Error('JSON-RPC client disposed');
     // ensureConnected may itself have completed a handshake while this caller
     // waited. Retire that identity too, immediately before this renegotiation.
     const attempt = this.beginHello();
