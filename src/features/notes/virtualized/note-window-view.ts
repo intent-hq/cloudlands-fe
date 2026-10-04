@@ -302,6 +302,7 @@ export class NoteWindowView {
       return false;
     }
     const lease = this.pending === window ? this.pendingLease : this.options.retainWindow?.(window);
+    if (this.pending !== window) this.pendingLease?.();
     this.pending = undefined;
     this.pendingLease = undefined;
     const lifetime = new NoteNativeLifetime();

@@ -73,3 +73,43 @@ it('retains a pinned window until it is replaced or its actual view is destroyed
   view.destroy();
   expect(releaseSecond).toHaveBeenCalledTimes(1);
 });
+
+it('releases a superseded composition candidate when a different replacement fails', async () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const releasePending = vi.fn(),
+    releaseReplacement = vi.fn(),
+    destroy = vi.fn();
+  const retainWindow = vi
+    .fn()
+    .mockReturnValueOnce(releasePending)
+    .mockReturnValueOnce(releaseReplacement);
+  const view = new NoteWindowView(document.createElement('div'), {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+    retainWindow,
+  });
+  views.push(view);
+  const editor = { view: { composing: true }, destroy } as unknown as NonNullable<
+    NoteWindowView['editor']
+  >;
+  view.editor = editor;
+  const pending = { cost: { sourceBytes: 10, contextBytes: 0 } } as NoteWindow;
+  view.show(pending);
+  Object.assign(editor.view, { composing: false });
+  const unsupported = {
+    context: [{ kind: 'boundary', construct: 'unsupported' }],
+  } as unknown as NoteWindow;
+  expect(() => view.show(unsupported)).toThrow('Unsupported note construct');
+  await Promise.resolve();
+  expect(view.editor).toBe(editor);
+  expect(destroy).not.toHaveBeenCalled();
+  expect(releasePending).toHaveBeenCalledOnce();
+  expect(releaseReplacement).toHaveBeenCalledOnce();
+});
