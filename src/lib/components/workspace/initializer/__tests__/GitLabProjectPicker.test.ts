@@ -73,6 +73,29 @@ describe('GitLab project presentation', () => {
     ).toEqual(['API team/mobile/api', 'API team/platform/api']);
   });
 
+  it('waits for an admitted capture before accepting search input', async () => {
+    const input = props();
+    const view = render(GitLabProjectPicker, {
+      ...input,
+      scopeKey: '',
+      page: { status: 'loading' },
+    });
+    const search = screen.getByRole<HTMLInputElement>('searchbox');
+    expect(search.disabled).toBe(true);
+    expect(input.onSearch).not.toHaveBeenCalled();
+
+    // An admitted capture can search while its current result page is still loading.
+    await view.rerender({ scopeKey: input.scopeKey });
+    expect(search.disabled).toBe(false);
+    const url = 'https://git.example.test:8443/Forge/team/platform/api/-/merge_requests/42';
+    await fireEvent.input(search, { target: { value: url } });
+    expect(input.onSearch).toHaveBeenCalledExactlyOnceWith(url, input.scopeKey);
+
+    // A replacement connection must obtain its own capture before taking new input.
+    await view.rerender({ scopeKey: '' });
+    expect(search.disabled).toBe(true);
+  });
+
   it('supports moving from search to results and selecting with the keyboard', async () => {
     const input = { ...props(), onSubmit: vi.fn(), submitLabel: 'Use GitLab link' };
     render(GitLabProjectPicker, input);

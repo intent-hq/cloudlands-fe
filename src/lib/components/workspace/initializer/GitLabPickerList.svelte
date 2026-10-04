@@ -68,6 +68,7 @@
           {...controlProps}
           type="search"
           value={query}
+          disabled={!scopeKey}
           placeholder={copy.searchPlaceholder}
           oninput={(event) => onSearch(event.currentTarget.value, scopeKey)}
           onkeydown={focusResults}
