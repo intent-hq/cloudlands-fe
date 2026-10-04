@@ -319,6 +319,42 @@ describe('pre-workspace checkout on the original Electron document and target so
     ).toMatchObject({ result: { reason: 'access-denied' } });
     expect(h.socket.frames).toHaveLength(count);
   });
+  it.each(['direct', 'cached'] as const)(
+    'keeps the current %s selection usable after an ordinary create error',
+    async (mode) => {
+      const h = await harness();
+      const id = await h.acquire();
+      const params = { repositoryCheckout: { ...selection, mode } };
+      const pending = h.registry.create(h.event, params);
+      const createId = h.socket.frames.at(-1)!.id;
+      h.socket.emit(
+        'data',
+        Buffer.from(
+          JSON.stringify({
+            id: createId,
+            error: { code: -32000, message: 'current checkout failed; try again' },
+          }) + '\n',
+        ),
+      );
+      expect(await pending).toMatchObject({
+        ok: false,
+        error: { message: 'current checkout failed; try again' },
+      });
+      expect(h.sender.mainFrame.send).not.toHaveBeenCalled();
+      expect(
+        h.socket.frames.filter((frame) => frame.method === 'sourceControl.checkout.release'),
+      ).toHaveLength(0);
+      const retry = h.registry.create(h.event, params);
+      expect(h.socket.frames.at(-1)).toMatchObject({ method: 'workspace.create', params });
+      h.socket.reply({ workspace: { id: 'created-after-retry' } });
+      expect(await retry).toEqual({
+        ok: true,
+        result: { workspace: { id: 'created-after-retry' } },
+      });
+      await h.call(channels.RELEASE, { id });
+      expect(h.sender.mainFrame.send).toHaveBeenCalledOnce();
+    },
+  );
   it('recovers admission after release while retaining the simultaneous lease bound', async () => {
     const h = await harness();
     const ids: string[] = [];

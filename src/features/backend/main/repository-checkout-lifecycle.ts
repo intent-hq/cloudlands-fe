@@ -253,7 +253,8 @@ export function registerRepositoryCheckoutHandlers(
           return { ok: true as const, result };
         } catch (error) {
           if (owned(event, id) !== entry) return unavailable();
-          drop(id, entry);
+          // A current operation failure is not an ownership change. Retiring here
+          // would invalidate the renderer before it can display the original error.
           return { ok: false as const, error: deps.errorPayload(error) };
         }
       }

@@ -257,6 +257,32 @@ test('checkout consumer retains original document, socket and selected branch ac
     await expect(
       frame.evaluate(() => (window as any).checkoutConsumer.capture()),
     ).rejects.toThrow();
+    const retiredBeforeError = await original.evaluate(
+      () => (window as any).checkoutConsumer.retired,
+    );
+    await app.evaluate(() => (globalThis as any).checkoutElectronFixture.holdCreateError(true));
+    await original.evaluate((s) => {
+      const consumer = (window as any).checkoutConsumer;
+      consumer.pending = consumer.create(s);
+    }, selected);
+    await expect
+      .poll(() => app.evaluate(() => (globalThis as any).checkoutElectronFixture.held))
+      .toBe(true);
+    await app.evaluate(() => {
+      const fixture = (globalThis as any).checkoutElectronFixture;
+      fixture.releaseHeld();
+      fixture.holdCreateError(false);
+    });
+    expect(await original.evaluate(() => (window as any).checkoutConsumer.pending)).toMatchObject({
+      success: false,
+      error: 'original private creation error',
+    });
+    expect(await original.evaluate(() => (window as any).checkoutConsumer.retired)).toBe(
+      retiredBeforeError,
+    );
+    expect(
+      await original.evaluate((s) => (window as any).checkoutConsumer.create(s), selected),
+    ).toMatchObject({ success: true, workspace: { id: 'created-direct' } });
     await app.evaluate(() => (globalThis as any).checkoutElectronFixture.holdCreateError(true));
     await original.evaluate((s) => {
       const consumer = (window as any).checkoutConsumer;
