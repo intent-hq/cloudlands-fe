@@ -71,8 +71,8 @@
         appStore.dispatch(pageWindowRequested(owner.workspaceId, owner.noteId, owner.panelId, at)),
       selectionChanged: (s) => onSelection(s),
       fullOperation: (kind, selection) => onFullOperation(kind, selection),
-      workspace,
-      editing,
+      workspace: untrack(() => workspace),
+      editing: untrack(() => editing),
       changed: () => {
         const range = native.window?.range;
         if (range)
@@ -89,6 +89,7 @@
         appStore.dispatch(pagePanelClosed(owner.workspaceId, owner.noteId, owner.panelId));
     };
   });
+  $effect(() => view?.updateEditing(editing));
   $effect(() => {
     const window = current?.value;
     if (!window || !view) return;

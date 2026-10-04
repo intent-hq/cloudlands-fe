@@ -1,3 +1,4 @@
+import { NoteCanonicalProjection } from './note-canonical-projection';
 import { Lexer } from 'marked';
 import type { TableWindow, TableFragment } from './projection/table-source';
 import { tableRuns } from './projection/table-source';
@@ -30,6 +31,7 @@ const supported = new Set([
  * This module never scans or reconstructs an unloaded prefix/body.
  */
 export function projectNoteWindow(window: NoteWindow): SourceProjection {
+  if (window.native) return new NoteCanonicalProjection(window);
   const boundaries = window.context
     .filter((i): i is Boundary => i.kind === 'boundary')
     .sort(

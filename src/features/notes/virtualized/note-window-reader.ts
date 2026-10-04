@@ -1,3 +1,4 @@
+import { canonicalResources, type NoteCanonicalResources } from './note-canonical-resources';
 import { sameNoteScope } from '$lib/client/note-pages';
 import type { NotePageRequest, NoteReadPage, NoteScope, SourceRange } from '$lib/client/note-pages';
 
@@ -37,6 +38,7 @@ export interface NoteWindow {
     sourceMapRef: string;
   }>;
   documentEnd: boolean;
+  native?: NoteCanonicalResources;
   /** Encoded payload/work counters, never a JS heap measurement. */
   cost: {
     requests: number;
@@ -89,6 +91,8 @@ function* assembleWindowSteps(
   const refs = new Set<string>();
   const details: NoteWindow['details'] = {};
   const mapBindings: NoteWindow['mapBindings'] = [];
+  let native: NoteCanonicalResources | undefined;
+  let boundMaps = 0;
   const chargeContext = (amount: number) => {
     work.peak = Math.max(work.peak, 2 * cost.sourceBytes + 2 * cost.contextBytes + amount);
     cost.contextBytes += amount;
@@ -270,15 +274,31 @@ function* assembleWindowSteps(
         descriptor(item, { range: page.range, contextRef: page.contextRef }),
       );
     }
+    if (mapBindings.length > boundMaps) {
+      native = yield* canonicalResources(
+        context,
+        mapBindings.slice(boundMaps),
+        request,
+        (item) => {
+          if (context.size > NOTE_WINDOW_LIMITS.descriptors)
+            throw new WindowAdmissionError('Note descriptor budget exceeded');
+          chargeContext(encoded(item));
+        },
+        native,
+      );
+      boundMaps = mapBindings.length;
+    }
     cursor = page.nextCursor ?? undefined;
     if (
       !cursor ||
+      (native !== undefined && Object.keys(native.texts).length > 0) ||
       cost.contextBytes >= NOTE_WINDOW_LIMITS.contextBytes / 2 ||
       context.size >= NOTE_WINDOW_LIMITS.descriptors / 2
     )
       break;
   }
   return {
+    native,
     scope: address.scope,
     sourceRevision: address.sourceRevision,
     snapshotId: snapshotId!,

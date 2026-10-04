@@ -24,6 +24,7 @@ export type Mark = {
 type Token = { pm: number; from: number; to: number; text: string; raw: string; marks: Mark[] };
 const key = (mark: Mark) => `${mark.type}:${mark.type === 'link' ? mark.attrs?.href : ''}`;
 export type InlineContext = {
+  canonical?: boolean;
   atomic?: { from: number; to: number; node: JSONContent };
   atoms?: Array<{ from: number; to: number; node: JSONContent }>;
   headings?: Array<{ from: number; to: number; bodyFrom: number; bodyTo: number; level: number }>;
@@ -155,6 +156,7 @@ export class SourceProjection {
         throw new Error('Copied source cannot use packed cell source accounting');
       this.source = source;
     }
+    if (context?.canonical) return;
     if (context?.atomic && !indexOnly) {
       this.content.content = [context.atomic.node];
       this.positions.set(0, context.atomic.from);
@@ -449,20 +451,24 @@ export class SourceProjection {
         }
         // DOMParser collapses horizontal whitespace in normal paragraph text.
         // Retain the entire raw run as one token so edits preserve its bytes.
-        if (/^[ \t]$/.test(value) && !stack.some((mark) => mark.type === 'code')) {
+        if (/^[ \t\r\n]$/.test(value)) {
           value = ' ';
           const prior = this.tokens.at(-1);
           if (
             prior?.text === ' ' &&
             prior.pm + 1 === pm &&
-            prior.to === base + from &&
+            (prior.to === base + from ||
+              stack.some((m) => m.type === 'code') ||
+              prior.marks.some((m) => m.type === 'code')) &&
             !context?.paragraphSeams?.some(
               (seam) => seam.kind === 'space' && seam.from === base + from,
             ) &&
-            JSON.stringify(prior.marks) === JSON.stringify(stack)
+            (JSON.stringify(prior.marks) === JSON.stringify(stack) ||
+              stack.some((m) => m.type === 'code') ||
+              prior.marks.some((m) => m.type === 'code'))
           ) {
             prior.to = base + to;
-            prior.raw += raw.slice(from, to);
+            prior.raw = raw.slice(prior.from - base, to);
             this.positions.set(pm, base + to);
             this.ends.set(pm, base + to);
             return;
@@ -660,10 +666,22 @@ export class SourceProjection {
             const body = code.raw.slice(delimiter.length, -delimiter.length).replace(/\r?\n/g, ' ');
             const trim = body.startsWith(' ') && body.endsWith(' ') && /[^ ]/.test(body) ? 1 : 0;
             let cursor = i + delimiter.length + trim;
-            for (const value of code.text.split('')) {
+            const bodyEnd = i + code.raw.length - delimiter.length - trim;
+            const beforeCode = pm;
+            while (cursor < bodyEnd) {
               const width = raw.startsWith('\r\n', cursor) ? 2 : 1;
-              text(value, cursor, cursor + width, [...stack, { type: 'code', delimiter }]);
+              text(/[\r\n]/.test(raw[cursor]) ? ' ' : raw[cursor], cursor, cursor + width, [
+                ...stack,
+                { type: 'code', delimiter },
+              ]);
               cursor += width;
+            }
+            const prior = this.tokens.at(-1);
+            if (!indexOnly && pm === beforeCode && prior?.text === ' ') {
+              prior.to = base + i + code.raw.length;
+              prior.raw = raw.slice(prior.from - base, prior.to - base);
+              this.positions.set(pm, prior.to);
+              this.ends.set(pm, prior.to);
             }
             i += code.raw.length;
             continue;
@@ -811,8 +829,8 @@ export class SourceProjection {
     return nearest;
   }
   translate(step: Step, before: PMNode, codeContext?: (fences: Fence[]) => void): Splice[] {
-    if (this.context?.atomic)
-      throw new Error('Atomic node edits require the document operation owner');
+    if (this.context?.canonical || this.context?.atomic)
+      throw new Error('Canonical native edits require the document operation owner');
     if (this.table)
       return this.table.translate(step, before, (pm, affinity) => this.sourceAt(pm, affinity));
     if (this.list) return this.list.translate(step, before);

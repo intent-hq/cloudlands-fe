@@ -307,7 +307,40 @@ it('retains every window map separately from immutable HTML owner identity', asy
         nextCursor: start === at ? String(end) : null,
       };
     }
+    if (q.kind === 'metadata')
+      return {
+        ...identity,
+        kind: 'noteMetadataPage',
+        nextCursor: null,
+        items:
+          q.ref === 'attrs'
+            ? [{ id: 'attrs-root', parentId: null, type: 'object', childrenRef: 'attrs-empty' }]
+            : [],
+      };
     if (q.kind === 'context') {
+      if (q.contextRef.startsWith('map-'))
+        return { ...identity, kind: 'noteContextPage', nextCursor: null, items: [] };
+      if (q.contextRef === 'native-table' || q.contextRef === 'native-root')
+        return {
+          ...identity,
+          kind: 'noteContextPage',
+          nextCursor: null,
+          items: [
+            {
+              kind: 'nativeNode',
+              id: q.contextRef,
+              profile: 'canonicalNote',
+              profileVersion: 1,
+              nodeType: q.contextRef === 'native-table' ? 'table' : 'doc',
+              nodeClass: 'container',
+              parentRef: q.contextRef === 'native-table' ? 'native-root' : null,
+              childIndex: 0,
+              sourceRange: owner.sourceRange,
+              provenance: 'explicit',
+              attributesRef: 'attrs',
+            },
+          ],
+        };
       const occurrence = q.contextRef.startsWith('window-');
       return {
         ...identity,
@@ -328,7 +361,7 @@ it('retains every window map separately from immutable HTML owner identity', asy
     throw new Error('Unexpected resource');
   });
   const result = await readNoteWindow((q) => transport.read('ws', 'note', q), { at, ...identity });
-  expect(result.context).toEqual([owner]);
+  expect(result.context.filter((n) => n.kind === 'boundary')).toEqual([owner]);
   expect(result.mapBindings).toEqual([
     {
       ownerId: 'html-table',

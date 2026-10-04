@@ -96,6 +96,11 @@ export class NoteWindowView {
     this.observer = new ResizeObserver(() => this.measure());
     this.observer.observe(this.host);
   }
+  updateEditing(editing?: NoteViewEditing) {
+    const changed = !!editing !== !!this.options.editing;
+    this.options.editing = editing;
+    if (changed) this.editor?.setEditable(!!editing, false);
+  }
   getSelection(): NoteSourceSelection {
     return { ...this.selection };
   }
@@ -260,7 +265,7 @@ export class NoteWindowView {
       editable: !!this.options.editing,
       useMarkdown: true,
       enableComments: false,
-      enableMentions: false,
+      enableMentions: true,
       enableNotePrimitives: true,
       onUpdate: () => {},
     });

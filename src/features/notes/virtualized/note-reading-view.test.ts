@@ -21,6 +21,9 @@ vi.mock('./note-window-view', () => ({
       this.options = options;
       state.view = this;
     }
+    updateEditing(editing: any) {
+      this.options.editing = editing;
+    }
     show(window: any) {
       this.pending = window;
       return false;
@@ -51,4 +54,28 @@ it('publishes newly visible annotation ranges when composition releases a queued
   expect(state.dispatch).toHaveBeenCalledWith(
     pageVisibleRangesChanged('w', 'n', 'panel', [window.range]),
   );
+});
+
+it('keeps the composing native view when workspace metadata or the editing adapter changes', async () => {
+  state.session = writable({
+    windows: { panel: { value: { range: { start: 2_000_000, end: 2_000_500 } } } },
+  });
+  const editing = { accept: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+  const component = render(NoteReadingView, {
+    workspaceId: 'w',
+    workspace: { id: 'w' } as any,
+    noteId: 'n',
+    panelId: 'panel',
+    editing,
+    onFullOperation: vi.fn(),
+  });
+  await waitFor(() => expect(state.view?.pending).toBeDefined());
+  const original = state.view;
+  const replacement = { accept: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+  await component.rerender({
+    workspace: { id: 'w', name: 'Renamed' } as any,
+    editing: replacement,
+  });
+  expect(state.view).toBe(original);
+  expect(state.view.options.editing).toBe(replacement);
 });
