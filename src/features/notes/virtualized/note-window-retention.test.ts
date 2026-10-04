@@ -40,3 +40,36 @@ it('keeps a pending window mounted until every independent owner releases, once 
   releaseSecondFocus();
   expect(show).toHaveBeenCalledTimes(1);
 });
+
+it('retains a pinned window until it is replaced or its actual view is destroyed', () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const releaseFirst = vi.fn(),
+    releaseSecond = vi.fn();
+  const retainWindow = vi.fn().mockReturnValueOnce(releaseFirst).mockReturnValueOnce(releaseSecond);
+  const view = new NoteWindowView(document.createElement('div'), {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+    retainWindow,
+  });
+  views.push(view);
+  view.forceMount('composition');
+  const first = { cost: { sourceBytes: 10, contextBytes: 0 } } as NoteWindow;
+  const second = { cost: { sourceBytes: 20, contextBytes: 0 } } as NoteWindow;
+  view.show(first);
+  expect(retainWindow).toHaveBeenCalledExactlyOnceWith(first);
+  view.show(first);
+  expect(retainWindow).toHaveBeenCalledTimes(1);
+  expect(releaseFirst).not.toHaveBeenCalled();
+  view.show(second);
+  expect(releaseFirst).toHaveBeenCalledTimes(1);
+  expect(releaseSecond).not.toHaveBeenCalled();
+  view.destroy();
+  expect(releaseSecond).toHaveBeenCalledTimes(1);
+});

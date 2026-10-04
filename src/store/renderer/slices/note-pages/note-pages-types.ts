@@ -1,3 +1,4 @@
+import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
 import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
 import type { NoteResourceLedger } from '$features/notes/virtualized/note-resource-ledger';
 import type {
@@ -32,6 +33,7 @@ export interface NotePageSession {
       value: NoteWindow | null;
       error: string | null;
       loading: boolean;
+      resourceOwner?: string;
     }
   >;
   generation: number;
@@ -72,6 +74,8 @@ export interface NotePagesState {
       ticket?: string;
       /** Includes queued admission; only ledger physicalReads counts active IO. */
       resourceOwner?: string;
+      assembly?: NoteAssemblyLease;
+      wireBytes?: number;
     }
   >;
   byWorkspaceId: Record<string, NotePagesWorkspaceState>;

@@ -14,6 +14,7 @@ export interface NoteResourceReservation {
 }
 interface PendingReservation {
   owner: string;
+  ownerSlots: number;
   resources: NoteResourceReservation[];
 }
 export interface NoteResourceLedger {
@@ -22,6 +23,9 @@ export interface NoteResourceLedger {
   metadataLimit: { owners: number; resources: number; pending: number };
   resources: Record<string, { cost: NoteResourceCost; owners: string[] }>;
   owners: Record<string, string[]>;
+  /** Includes pre-admitted subordinate ownership slots. */
+  ownerSlots: Record<string, number>;
+  ownerParents: Record<string, string>;
   pending: PendingReservation[];
 }
 const dimensions = [
@@ -69,6 +73,8 @@ export function createNoteResourceLedger(
     metadataLimit: { ...metadataLimit },
     resources: {},
     owners: {},
+    ownerSlots: {},
+    ownerParents: {},
     pending: [],
   };
 }
@@ -87,7 +93,8 @@ function canAdmit(ledger: NoteResourceLedger, request: PendingReservation) {
   return (
     fits(cost, ledger.limit) &&
     resources <= ledger.metadataLimit.resources &&
-    Object.keys(ledger.owners).length < ledger.metadataLimit.owners
+    Object.values(ledger.ownerSlots).reduce((sum, slots) => sum + slots, 0) + request.ownerSlots <=
+      ledger.metadataLimit.owners
   );
 }
 function admit(ledger: NoteResourceLedger, request: PendingReservation): NoteResourceLedger {
@@ -106,6 +113,7 @@ function admit(ledger: NoteResourceLedger, request: PendingReservation): NoteRes
     used,
     resources,
     owners: { ...ledger.owners, [request.owner]: request.resources.map((r) => r.id) },
+    ownerSlots: { ...ledger.ownerSlots, [request.owner]: request.ownerSlots },
   };
 }
 function drain(initial: NoteResourceLedger): NoteResourceLedger {
@@ -121,8 +129,11 @@ export function requestNoteResources(
   ledger: NoteResourceLedger,
   owner: string,
   resources: NoteResourceReservation[],
+  ownerSlots = 1,
 ): { ledger: NoteResourceLedger; status: 'admitted' | 'queued' | 'impossible' | 'capacity' } {
   validateId(owner);
+  if (!Number.isSafeInteger(ownerSlots) || ownerSlots < 1)
+    throw new Error('Invalid note ownership slot reservation');
   const minimum = zero();
   const ids = new Set<string>();
   for (const resource of resources) {
@@ -139,7 +150,11 @@ export function requestNoteResources(
     )
       throw new Error('Shared note resource cost changed');
   }
-  if (!fits(minimum, ledger.limit) || resources.length > ledger.metadataLimit.resources)
+  if (
+    !fits(minimum, ledger.limit) ||
+    resources.length > ledger.metadataLimit.resources ||
+    ownerSlots > ledger.metadataLimit.owners
+  )
     return {
       ledger: ledger.pending.some((p) => p.owner === owner)
         ? releaseNoteResources(ledger, owner)
@@ -152,7 +167,11 @@ export function requestNoteResources(
       throw new Error('Dispose and release note resources before replacing an owner');
     return { ledger, status: 'admitted' };
   }
-  const request = { owner, resources: resources.map((r) => ({ id: r.id, cost: { ...r.cost } })) };
+  const request = {
+    owner,
+    ownerSlots,
+    resources: resources.map((r) => ({ id: r.id, cost: { ...r.cost } })),
+  };
   const pendingIndex = ledger.pending.findIndex((p) => p.owner === owner);
   // Retaining an existing object must not wait behind a request for new allocations.
   const sharesOnly = resources.every((r) => own(ledger.resources, r.id));
@@ -188,11 +207,21 @@ export function releaseNoteResources(
     }
   }
   delete owners[owner];
+  const ownerSlots = { ...ledger.ownerSlots };
+  const ownerParents = { ...ledger.ownerParents };
+  const sponsor = own(ownerParents, owner);
+  if (sponsor && own(owners, sponsor)) ownerSlots[sponsor] += ownerSlots[owner];
+  delete ownerSlots[owner];
+  delete ownerParents[owner];
+  for (const [child, parent] of Object.entries(ownerParents))
+    if (parent === owner) delete ownerParents[child];
   return drain({
     ...ledger,
     used,
     resources,
     owners,
+    ownerSlots,
+    ownerParents,
     pending: ledger.pending.filter((p) => p.owner !== owner),
   });
 }
@@ -240,5 +269,48 @@ export function transferNoteResources(
   }
   const owners = { ...ledger.owners, [to]: held };
   delete owners[from];
-  return { ...ledger, resources, owners };
+  const ownerSlots = { ...ledger.ownerSlots, [to]: ledger.ownerSlots[from] };
+  delete ownerSlots[from];
+  const ownerParents = Object.fromEntries(
+    Object.entries(ledger.ownerParents).map(([child, parent]) => [
+      child === from ? to : child,
+      parent === from ? to : parent,
+    ]),
+  );
+  return { ...ledger, resources, owners, ownerSlots, ownerParents };
+}
+
+/** Attach an actual shared allocation using metadata reserved before construction.
+ * This cannot queue: completion must not wait for another global owner slot. */
+export function retainNoteResourcesFrom(
+  ledger: NoteResourceLedger,
+  sponsor: string,
+  owner: string,
+  ids: string[],
+  slots = 1,
+): NoteResourceLedger {
+  validateId(owner);
+  const held = own(ledger.owners, sponsor);
+  if (!held) throw new Error('Shared note allocation sponsor no longer exists');
+  if (!Number.isSafeInteger(slots) || slots < 1 || !ids.length || new Set(ids).size !== ids.length)
+    throw new Error('Invalid shared note allocation lease');
+  if (ids.some((id) => !held.includes(id)))
+    throw new Error('Shared note allocation is not held by its sponsor');
+  const existing = own(ledger.owners, owner);
+  if (existing) {
+    if (existing.length === ids.length && ids.every((id) => existing.includes(id))) return ledger;
+    throw new Error('Shared note allocation owner is occupied');
+  }
+  if (
+    ledger.pending.some((request) => request.owner === owner) ||
+    ledger.ownerSlots[sponsor] <= slots
+  )
+    throw new Error('Note ownership metadata was not reserved');
+  const resources = ids.map((id) => ({ id, cost: ledger.resources[id].cost }));
+  const next = admit(ledger, { owner, ownerSlots: slots, resources });
+  return {
+    ...next,
+    ownerSlots: { ...next.ownerSlots, [sponsor]: next.ownerSlots[sponsor] - slots },
+    ownerParents: { ...next.ownerParents, [owner]: sponsor },
+  };
 }

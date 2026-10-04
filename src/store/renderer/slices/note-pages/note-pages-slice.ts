@@ -1,3 +1,4 @@
+import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
 import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
 import {
   createNoteResourceLedger,
@@ -5,6 +6,7 @@ import {
   releaseNoteResources,
   transferNoteResources,
   settleNoteResource,
+  retainNoteResourcesFrom,
   type NoteResourceCost,
   type NoteResourceReservation,
 } from '$features/notes/virtualized/note-resource-ledger';
@@ -71,7 +73,7 @@ export const pageResourceLimitsConfigured = createAction<[limit: NoteResourceCos
   'notePages/resourceLimitsConfigured',
 );
 export const pageResourcesRequested = createAction<
-  [owner: string, resources: NoteResourceReservation[]]
+  [owner: string, resources: NoteResourceReservation[], ownerSlots?: number]
 >('notePages/resourcesRequested');
 export const pageResourcesReleased = createAction<[owner: string]>('notePages/resourcesReleased');
 export const pageCachedRetained = createAction<
@@ -92,6 +94,19 @@ export const pagePanelClosed =
 export const pageWindowRequested = createAction<
   [workspaceId: string, noteId: string, panelId: string, at: number]
 >('notePages/windowRequested');
+export const pageWindowRetained = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    panelId: string,
+    generation: number,
+    value: NoteWindow,
+    owner: string,
+  ]
+>('notePages/windowRetained');
+export const pageWindowAssemblyStarted = createAction<
+  [workspaceId: string, noteId: string, panelId: string, generation: number, request: number]
+>('notePages/windowAssemblyStarted');
 export const pageWindowSettled =
   createAction<
     [
@@ -102,6 +117,7 @@ export const pageWindowSettled =
       request: number,
       value: NoteWindow | null,
       error: string | null,
+      allocation?: { sponsor: string; resource: string; owner: string },
     ]
   >('notePages/windowSettled');
 export const pageVisibleRangesChanged = createAction<
@@ -120,9 +136,9 @@ export const pageLegacySelected = createAction<[workspaceId: string, noteId: str
   'notePages/legacySelected',
 );
 export const pageRequested =
-  createAction<[workspaceId: string, noteId: string, request: NotePageRequest]>(
-    'notePages/requested',
-  );
+  createAction<
+    [workspaceId: string, noteId: string, request: NotePageRequest, assembly?: NoteAssemblyLease]
+  >('notePages/requested');
 export const pageRequestStarted = createAction<
   [
     workspaceId: string,
@@ -131,6 +147,7 @@ export const pageRequestStarted = createAction<
     key: string,
     ticket?: string,
     wireBytes?: number,
+    assembly?: NoteAssemblyLease,
   ]
 >('notePages/requestStarted');
 const physicalReadKey = (ws: string, id: string, generation: number, key: string) =>
@@ -181,11 +198,14 @@ notePagesReducer.with(pageResourceLimitsConfigured, (state, { payload: [limit] }
     return state;
   return { ...state, resourceLedger: createNoteResourceLedger(limit) };
 });
-notePagesReducer.with(pageResourcesRequested, (state, { payload: [owner, resources] }) =>
-  reclaimCleanPages({
-    ...state,
-    resourceLedger: requestNoteResources(state.resourceLedger, owner, resources).ledger,
-  }),
+notePagesReducer.with(
+  pageResourcesRequested,
+  (state, { payload: [owner, resources, ownerSlots] }) =>
+    reclaimCleanPages({
+      ...state,
+      resourceLedger: requestNoteResources(state.resourceLedger, owner, resources, ownerSlots)
+        .ledger,
+    }),
 );
 notePagesReducer.with(pageResourcesReleased, (state, { payload: [owner] }) =>
   reclaimCleanPages({
@@ -239,6 +259,14 @@ function update(
       cleanPages: owner.cleanPages.filter((entry) => entry.owner !== allocation.owner),
     };
   }
+  for (const [panel, window] of Object.entries(n.windows)) {
+    if (!window.resourceOwner || next.windows[panel]?.resourceOwner === window.resourceOwner)
+      continue;
+    owner = {
+      ...owner,
+      resourceLedger: releaseNoteResources(owner.resourceLedger, window.resourceOwner),
+    };
+  }
   return setWorkspaceState(owner, ws, { ...w, notes: { ...w.notes, [note]: next } });
 }
 /** Reclaim only cache leases, never physical/assembly/runtime owners. The bounded
@@ -274,7 +302,10 @@ function invalidate(n: NotePageSession): NotePageSession {
     ...n,
     generation: n.generation + 1,
     windows: Object.fromEntries(
-      Object.entries(n.windows).map(([id, w]) => [id, { ...w, value: null, loading: false }]),
+      Object.entries(n.windows).map(([id, w]) => [
+        id,
+        { ...w, value: null, resourceOwner: undefined, loading: false },
+      ]),
     ),
     pages: {},
     pageOrder: [],
@@ -392,7 +423,7 @@ notePagesReducer.with(pageReadSettled, (s, { payload: [ws, id, generation, key] 
 });
 notePagesReducer.with(
   pageRequestStarted,
-  (s, { payload: [ws, id, generation, key, ticket, wireBytes] }) => {
+  (s, { payload: [ws, id, generation, key, ticket, wireBytes, assembly] }) => {
     if (ticket) {
       const n = getWorkspaceState(s, ws).notes[id];
       if (
@@ -400,13 +431,28 @@ notePagesReducer.with(
         n.generation !== generation ||
         !Object.keys(n.panels).length ||
         n.requests[key] ||
-        Object.values(s.physicalReads).filter((r) => r.workspaceId === ws && r.noteId === id)
-          .length >= 4
+        (!assembly &&
+          Object.values(s.physicalReads).filter((r) => r.workspaceId === ws && r.noteId === id)
+            .length >= 4)
       )
         return s;
     }
     const resourceOwner = ticket && wireBytes !== undefined ? `read:${ticket}` : undefined;
-    if (resourceOwner && wireBytes !== undefined) {
+    if (resourceOwner && assembly) {
+      if (
+        !wireBytes ||
+        !Object.hasOwn(s.resourceLedger.owners, assembly.owner) ||
+        Object.values(s.physicalReads).some((read) => read.assembly?.owner === assembly.owner)
+      )
+        return s;
+      s = {
+        ...s,
+        resourceLedger: retainNoteResourcesFrom(s.resourceLedger, assembly.owner, resourceOwner, [
+          assembly.data,
+          assembly.control,
+        ]),
+      };
+    } else if (resourceOwner && wireBytes !== undefined) {
       if (!Number.isSafeInteger(wireBytes) || wireBytes < 4096 || wireBytes > 65536) return s;
       const admission = requestNoteResources(s.resourceLedger, resourceOwner, [
         {
@@ -455,6 +501,8 @@ notePagesReducer.with(
           noteId: id,
           ...(ticket ? { ticket } : {}),
           ...(resourceOwner ? { resourceOwner } : {}),
+          ...(assembly ? { assembly } : {}),
+          ...(wireBytes !== undefined ? { wireBytes } : {}),
         },
       },
     };
@@ -462,6 +510,13 @@ notePagesReducer.with(
 );
 notePagesReducer.with(sourcePageReceived, (s, { payload: [ws, id, generation, key, page] }) => {
   const read = s.physicalReads[physicalReadKey(ws, id, generation, key)];
+  if (read?.assembly && !Object.hasOwn(s.resourceLedger.owners, read.assembly.owner))
+    return update(s, ws, id, (n) => {
+      if (n.generation !== generation) return n;
+      const requests = { ...n.requests };
+      delete requests[key];
+      return { ...n, requests };
+    });
   let updated = update(s, ws, id, (n) => {
     if (
       generation !== n.generation ||
@@ -502,13 +557,33 @@ notePagesReducer.with(sourcePageReceived, (s, { payload: [ws, id, generation, ke
   });
   if (!read?.resourceOwner || getWorkspaceState(updated, ws).notes[id]?.pages[key] !== page)
     return updated;
-  const resource = `frame:${read.ticket}`,
+  const resource = read.assembly?.data ?? `frame:${read.ticket}`,
     owner = `cache:${read.ticket}`;
   const reserved = updated.resourceLedger.resources[resource];
   if (!reserved) throw new Error('Decoded note page has no physical reservation');
-  const cost = measureNotePageCost(page, reserved.cost);
-  const settled = settleNoteResource(updated.resourceLedger, resource, cost);
-  const admission = requestNoteResources(settled, owner, [{ id: resource, cost }]);
+  const measured = measureNotePageCost(
+    page,
+    read.assembly
+      ? {
+          payloadBytes: read.wireBytes!,
+          stringUnits: read.wireBytes! * 3,
+          objectNodes: read.wireBytes!,
+          domNodes: 0,
+          physicalReads: 0,
+          assemblies: 0,
+        }
+      : reserved.cost,
+  );
+  const cost = read.assembly ? reserved.cost : measured;
+  const settled = read.assembly
+    ? updated.resourceLedger
+    : settleNoteResource(updated.resourceLedger, resource, cost);
+  const admission = read.assembly
+    ? {
+        status: 'admitted' as const,
+        ledger: retainNoteResourcesFrom(settled, read.assembly.owner, owner, [resource]),
+      }
+    : requestNoteResources(settled, owner, [{ id: resource, cost }]);
   updated = { ...updated, resourceLedger: admission.ledger };
   if (admission.status !== 'admitted')
     return update(updated, ws, id, (n) => {
@@ -620,6 +695,9 @@ notePagesReducer.with(pageSessionDiscarded, (s, { payload: [ws, id] }) => {
   let resourceLedger = s.resourceLedger;
   for (const allocation of Object.values(notes[id]?.pageAllocations ?? {}))
     resourceLedger = releaseNoteResources(resourceLedger, allocation.owner);
+  for (const window of Object.values(notes[id]?.windows ?? {}))
+    if (window.resourceOwner)
+      resourceLedger = releaseNoteResources(resourceLedger, window.resourceOwner);
   delete notes[id];
   return setWorkspaceState(
     {
@@ -639,6 +717,9 @@ notePagesReducer.with(workspaceUnmounted, (s, { payload: [ws] }) => {
   for (const [id, n] of Object.entries(w.notes)) {
     for (const allocation of Object.values(n.pageAllocations))
       resourceLedger = releaseNoteResources(resourceLedger, allocation.owner);
+    for (const window of Object.values(n.windows))
+      if (window.resourceOwner)
+        resourceLedger = releaseNoteResources(resourceLedger, window.resourceOwner);
     if (n.drafts.length || n.history.length || n.pending)
       notes[id] = {
         ...invalidate(n),
@@ -671,6 +752,7 @@ notePagesReducer.with(pageWindowRequested, (s, { payload: [ws, id, panel, at] })
           at,
           request: (prior?.request ?? 0) + 1,
           value: prior?.value ?? null,
+          resourceOwner: prior?.resourceOwner,
           error: null,
           loading: true,
         },
@@ -679,18 +761,70 @@ notePagesReducer.with(pageWindowRequested, (s, { payload: [ws, id, panel, at] })
   }),
 );
 notePagesReducer.with(
-  pageWindowSettled,
-  (s, { payload: [ws, id, panel, generation, request, value, error] }) =>
+  pageWindowRetained,
+  (s, { payload: [ws, id, panel, generation, value, owner] }) => {
+    const note = getWorkspaceState(s, ws).notes[id];
+    const window = note?.windows[panel];
+    if (!note || note.generation !== generation || window?.value !== value || !window.resourceOwner)
+      return s;
+    const resources = s.resourceLedger.owners[window.resourceOwner];
+    if (!resources) return s;
+    return {
+      ...s,
+      resourceLedger: retainNoteResourcesFrom(
+        s.resourceLedger,
+        window.resourceOwner,
+        owner,
+        resources,
+      ),
+    };
+  },
+);
+notePagesReducer.with(
+  pageWindowAssemblyStarted,
+  (s, { payload: [ws, id, panel, generation, request] }) =>
     update(s, ws, id, (n) => {
       const w = n.windows[panel];
-      if (!w || generation !== n.generation || request !== w.request) return n;
-      if (
-        value &&
-        (!n.state ||
-          value.sourceRevision !== n.state.sourceRevision ||
-          !sameNoteScope(value.scope, n.state.scope))
-      )
-        return n;
-      return { ...n, windows: { ...n.windows, [panel]: { ...w, value, error, loading: false } } };
+      if (n.generation !== generation || !w || w.request !== request) return n;
+      return { ...n, windows: { ...n.windows, [panel]: { ...w, loading: true } } };
     }),
+);
+notePagesReducer.with(
+  pageWindowSettled,
+  (s, { payload: [ws, id, panel, generation, request, value, error, allocation] }) => {
+    const n = getWorkspaceState(s, ws).notes[id];
+    const w = n?.windows[panel];
+    if (!n || !w || generation !== n.generation || request !== w.request) return s;
+    if (
+      value &&
+      (!n.state ||
+        value.sourceRevision !== n.state.sourceRevision ||
+        !sameNoteScope(value.scope, n.state.scope))
+    )
+      return s;
+    if (value && allocation)
+      s = {
+        ...s,
+        resourceLedger: retainNoteResourcesFrom(
+          s.resourceLedger,
+          allocation.sponsor,
+          allocation.owner,
+          [allocation.resource],
+          3,
+        ),
+      };
+    return update(s, ws, id, (note) => ({
+      ...note,
+      windows: {
+        ...note.windows,
+        [panel]: {
+          ...w,
+          value,
+          error,
+          loading: false,
+          resourceOwner: value ? allocation?.owner : undefined,
+        },
+      },
+    }));
+  },
 );

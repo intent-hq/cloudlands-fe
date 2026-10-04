@@ -1,11 +1,18 @@
 import { call, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 import { v4 as uuid } from 'uuid';
 import { noteWindowSteps } from '$features/notes/virtualized/note-window-reader';
+import {
+  noteAssemblyResources,
+  notePageRequestKey,
+  NOTE_ASSEMBLY_OWNER_SLOTS,
+  type NoteAssemblyLease,
+} from '$features/notes/virtualized/note-assembly-reservation';
 import { takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
   selectNotePageSession,
   selectNotePageInput,
-  selectNoteResourceHeld,
+  selectNoteAssemblyStatus,
+  selectNoteAssemblyReadBusy,
 } from '../note-pages-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import * as a from '../note-pages-slice';
@@ -21,37 +28,44 @@ function* readPage(
   id: string,
   generation: number,
   request: NotePageRequest,
-  owner: string,
+  assembly: NoteAssemblyLease,
 ): SagaGenerator<NoteReadPage> {
-  const key = JSON.stringify(
-    Object.fromEntries(Object.entries(request).sort(([a], [b]) => a.localeCompare(b))),
-  );
-  yield* put(a.pageRequested(ws, id, request));
+  const key = notePageRequestKey(request, assembly);
+  yield* put(a.pageRequested(ws, id, request, assembly));
   while (true) {
     let input:
-      { current: boolean; page: NoteReadPage | undefined; error: string | null } | undefined;
-    input = yield* selectNotePageInput.effect(ws, id, generation, key);
+      | {
+          current: boolean;
+          page: NoteReadPage | undefined;
+          resource: string | undefined;
+          error: string | null;
+        }
+      | undefined = yield* selectNotePageInput.effect(ws, id, generation, key);
     if (!input.current) throw new Error('Note window superseded');
     let page = input.page;
     if (page && (!('expiresAt' in page) || Date.parse(page.expiresAt) > Date.now())) {
-      yield* put(a.pageCachedRetained(ws, id, generation, key, owner, page));
-      if (yield* selectNoteResourceHeld.effect(owner)) return page;
-      throw new Error('Note assembly input ownership unavailable');
+      if (input.resource !== assembly.data)
+        throw new Error('Note assembly input has another sponsor');
+      input = undefined;
+      // The DATA reservation covers the retained page even if its cache lease is
+      // evicted here. CONTROL cannot back the next read before this one settles.
+      while (yield* selectNoteAssemblyReadBusy.effect(assembly.owner))
+        yield* take(
+          (event: Action) => event.type === a.pageReadSettled.type && belongs(event, ws, id),
+        );
+      return page;
     }
     if (input.error) throw new Error(input.error);
     input = undefined;
     page = undefined;
-    const event = yield* take((event: Action) => belongs(event, ws, id));
-    // The shared reader retains only the latest speculative deferred request.
-    // Every mounted panel still owns its active iterator: re-admit that iterator
-    // when a physical slot drains, so another panel cannot overwrite its demand.
-    if (event.type === a.pageReadSettled.type) yield* put(a.pageRequested(ws, id, request));
+    yield* take((event: Action) => belongs(event, ws, id));
   }
 }
 function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
   const [ws, id, panel] = action.payload;
   let n: NotePageSession | undefined = yield* selectNotePageSession.effect(ws, id);
   while (n?.status === 'connecting') {
+    n = undefined;
     yield* take((event: Action) => belongs(event, ws, id));
     n = yield* selectNotePageSession.effect(ws, id);
   }
@@ -60,36 +74,71 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
   const generation = n.generation,
     request = owned.request;
   let live = Object.values(n.pages).find((p) => 'snapshotId' in p);
-  const steps = noteWindowSteps({
+  const address = {
     at: owned.at,
     scope: n.state.scope,
     sourceRevision: n.state.sourceRevision,
     ...(live && 'snapshotId' in live ? { snapshotId: live.snapshotId } : {}),
-  });
-  // The iterator owns its admitted inputs. Do not keep the entire session (or
-  // previous panel window) reachable while waiting for the next physical read.
+  };
   n = undefined;
   owned = undefined;
   live = undefined;
-  const assemblyId = `assembly:${uuid()}`;
-  const inputOwners: string[] = [];
+  const token = uuid();
+  const assembly: NoteAssemblyLease = {
+    owner: `assembly:${token}`,
+    data: `assembly-data:${token}`,
+    control: `assembly-control:${token}`,
+  };
+  let steps: ReturnType<typeof noteWindowSteps> | undefined;
   try {
+    yield* put(a.pageWindowAssemblyStarted(ws, id, panel, generation, request));
+    yield* put(
+      a.pageResourcesRequested(
+        assembly.owner,
+        noteAssemblyResources(assembly),
+        NOTE_ASSEMBLY_OWNER_SLOTS,
+      ),
+    );
+    while (true) {
+      const status = yield* selectNoteAssemblyStatus.effect(
+        ws,
+        id,
+        panel,
+        generation,
+        request,
+        assembly.owner,
+      );
+      if (status === 'admitted') break;
+      if (status !== 'queued')
+        throw new Error(
+          status === 'stale' ? 'Note window superseded' : 'Note assembly reservation unavailable',
+        );
+      yield* take(
+        (event: Action) =>
+          event.type.startsWith('notePages/') || event.type === workspaceUnmounted.type,
+      );
+    }
+    steps = noteWindowSteps(address);
     let next = steps.next();
     while (!next.done) {
-      const owner = `${assemblyId}:${inputOwners.length}`;
-      inputOwners.push(owner);
       let page: NoteReadPage | undefined = yield* call(
         readPage,
         ws,
         id,
         generation,
         next.value,
-        owner,
+        assembly,
       );
       next = steps.next(page);
       page = undefined;
     }
-    yield* put(a.pageWindowSettled(ws, id, panel, generation, request, next.value, null));
+    yield* put(
+      a.pageWindowSettled(ws, id, panel, generation, request, next.value, null, {
+        sponsor: assembly.owner,
+        resource: assembly.data,
+        owner: `window:${token}`,
+      }),
+    );
   } catch (error) {
     yield* put(
       a.pageWindowSettled(
@@ -103,8 +152,8 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
       ),
     );
   } finally {
-    steps.return(undefined as never);
-    for (const owner of inputOwners) yield* put(a.pageResourcesReleased(owner));
+    steps?.return(undefined as never);
+    yield* put(a.pageResourcesReleased(assembly.owner));
   }
 }
 function* waitForUnmount(ws: string) {

@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid';
+import { notePageRequestKey } from '$features/notes/virtualized/note-assembly-reservation';
 import { noteWindowSaga } from './note-window-saga';
 import type { NotePageSession } from '../note-pages-types';
 import { eventChannel, buffers } from 'redux-saga';
@@ -17,6 +18,8 @@ import {
   selectPhysicalNoteReadTicket,
   selectNoteReadCurrent,
   selectNoteReadAdmitted,
+  selectNoteResourceHeld,
+  selectNoteWindowNeedsLoad,
 } from '../note-pages-selectors';
 import * as actions from '../note-pages-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -89,9 +92,9 @@ function* stream(ws: string, id: string) {
       yield* put(actions.pageStateReceived(ws, id, n.generation, event.state));
       const after = yield* session(ws, id);
       if (after?.status === 'ready') {
-        for (const [panel, window] of Object.entries(after.windows)) {
-          if (!window.loading && !window.value)
-            yield* put(actions.pageWindowRequested(ws, id, panel, window.at));
+        for (const panel of Object.keys(after.windows)) {
+          const demand = yield* selectNoteWindowNeedsLoad.effect(ws, id, panel);
+          if (demand) yield* put(actions.pageWindowRequested(ws, id, panel, demand.at));
         }
       }
       if (after?.status === 'ready' && after.state && !Object.keys(after.pages).length)
@@ -110,12 +113,10 @@ function* stream(ws: string, id: string) {
   }
 }
 function* read(action: ReturnType<typeof actions.pageRequested>) {
-  const [ws, id, request] = action.payload;
+  const [ws, id, request, assembly] = action.payload;
   let n: NotePageSession | undefined = yield* session(ws, id);
   const client = appClient.notes.pages;
-  const requestKey = JSON.stringify(
-    Object.fromEntries(Object.entries(request).sort(([a], [b]) => a.localeCompare(b))),
-  );
+  const requestKey = notePageRequestKey(request, assembly);
   if (!client || !n || !Object.keys(n.panels).length || n.requests[requestKey]) return;
   const receiptRead = request.kind === 'mapping' || request.kind === 'effects';
   if (receiptRead) {
@@ -130,7 +131,7 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
   } else if (n.status !== 'ready') return;
   let cached: NoteReadPage | undefined = n.pages[requestKey];
   if (cached && (!('expiresAt' in cached) || Date.parse(cached.expiresAt) > Date.now())) return;
-  if ((yield* selectPhysicalNoteReadCount.effect(ws, id)) >= 4) {
+  if (!assembly && (yield* selectPhysicalNoteReadCount.effect(ws, id)) >= 4) {
     yield* put(actions.pageReadDeferred(ws, id, n.generation, request));
     return;
   }
@@ -162,9 +163,11 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
       requestKey,
       ticket,
       request.maxWireBytes ?? 65536,
+      assembly,
     ),
   );
   if ((yield* selectPhysicalNoteReadTicket.effect(ws, id, generation, requestKey)) !== ticket) {
+    if (assembly) return;
     const current = yield* session(ws, id);
     if (current?.generation === generation && !current.requests[requestKey] && !current.error)
       yield* put(actions.pageReadDeferred(ws, id, generation, request));
@@ -183,6 +186,7 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
     const page = yield* call([client, client.read], ws, id, scopedRequest);
     yield* put(actions.sourcePageReceived(ws, id, generation, requestKey, page));
   } catch (e) {
+    if (assembly && !(yield* selectNoteResourceHeld.effect(assembly.owner))) return;
     const current = yield* session(ws, id);
     if (current?.generation !== generation) return;
     const code = e && typeof e === 'object' && 'code' in e ? e.code : null;

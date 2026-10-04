@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createNoteResourceLedger,
+  retainNoteResourcesFrom,
   releaseNoteResources,
   requestNoteResources,
   transferNoteResources,
@@ -150,4 +151,41 @@ describe('shared note resource reservations', () => {
     expect(requestNoteResources(ledger, 'c', [resource('c', 1)]).status).toBe('capacity');
     expect(ledger.pending).toHaveLength(1);
   });
+});
+
+it('reserves metadata for completion and attaches children without new global admission', () => {
+  const initial = createNoteResourceLedger(
+    { ...cost(100, 1), objectNodes: 20, assemblies: 1 },
+    { owners: 4, resources: 8, pending: 4 },
+  );
+  let ledger = requestNoteResources(initial, 'assembly', [resource('data', 90)], 4).ledger;
+  ledger = requestNoteResources(ledger, 'unrelated', [resource('other', 1)]).ledger;
+  expect(ledger.owners.unrelated).toBeUndefined();
+  ledger = retainNoteResourcesFrom(ledger, 'assembly', 'cache', ['data']);
+  ledger = retainNoteResourcesFrom(ledger, 'assembly', 'window', ['data'], 2);
+  expect(ledger.ownerSlots).toEqual({ assembly: 1, cache: 1, window: 2 });
+  ledger = retainNoteResourcesFrom(ledger, 'window', 'view', ['data']);
+  expect(ledger.used.payloadBytes).toBe(90);
+  ledger = releaseNoteResources(ledger, 'cache');
+  expect(ledger.ownerSlots.assembly).toBe(2);
+  expect(ledger.owners.unrelated).toBeUndefined();
+  ledger = releaseNoteResources(ledger, 'assembly');
+  expect(ledger.owners.unrelated).toEqual(['other']);
+  expect(ledger.resources.data.owners).toEqual(['window', 'view']);
+  ledger = releaseNoteResources(ledger, 'window');
+  expect(ledger.resources.data.owners).toEqual(['view']);
+  ledger = releaseNoteResources(ledger, 'view');
+  expect(ledger.used.payloadBytes).toBe(1);
+});
+
+it('rejects unreserved child ownership and preserves sponsor relations through transfer', () => {
+  let ledger = requestNoteResources(create(), 'assembly', [resource('data', 90)], 2).ledger;
+  expect(() => retainNoteResourcesFrom(ledger, 'assembly', 'bad', ['unowned'])).toThrow();
+  ledger = retainNoteResourcesFrom(ledger, 'assembly', 'cache', ['data']);
+  expect(() => retainNoteResourcesFrom(ledger, 'assembly', 'extra', ['data'])).toThrow();
+  ledger = transferNoteResources(ledger, 'assembly', 'accepted');
+  ledger = releaseNoteResources(ledger, 'cache');
+  expect(ledger.ownerSlots.accepted).toBe(2);
+  expect(ledger.ownerSlots.assembly).toBeUndefined();
+  expect(ledger.used.payloadBytes).toBe(90);
 });

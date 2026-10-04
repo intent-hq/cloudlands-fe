@@ -3,6 +3,8 @@ import { Editor, Extension } from '@tiptap/core';
 import { AllSelection, TextSelection, Plugin, type Transaction } from '@tiptap/pm/state';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { createEditorConfig } from '$lib/utils/editor-config';
+import { NoteNativeLifetime } from './note-native-lifetime';
+import { logger } from '$lib/utils/client-logger';
 import { measureNoteProjection } from './note-view-cost';
 import { measureNoteDom } from './note-dom-cost';
 import { projectNoteWindow } from './note-window-projection';
@@ -30,6 +32,8 @@ export interface NoteWindowViewOptions {
   fullOperation(kind: 'copy' | 'search' | 'selectAll', selection: NoteSourceSelection): void;
   editing?: NoteViewEditing;
   changed?(): void;
+  /** Retain the actual admitted DATA graph until this view releases its reference. */
+  retainWindow?(window: NoteWindow): () => void;
 }
 /** One disposable native view. No source backing, page cache, persistence or per-view history.
  * Geometry, Editor/DOM and in-progress composition are its only runtime ownership. */
@@ -49,6 +53,9 @@ export class NoteWindowView {
   projection?: SourceProjection;
   window?: NoteWindow;
   private pending?: NoteWindow;
+  private currentLease?: () => void;
+  private lifetime?: NoteNativeLifetime;
+  private pendingLease?: () => void;
   private pins = new Set<string | symbol>();
   private readonly compositionPin = Symbol('native composition');
   private disposed = false;
@@ -94,6 +101,7 @@ export class NoteWindowView {
     this.before.setAttribute('aria-hidden', 'true');
     this.after.setAttribute('aria-hidden', 'true');
     this.host.className = 'note-window-native';
+    this.host.style.position = 'relative';
     scroller.append(this.before, this.host, this.after);
     scroller.style.overflowAnchor = 'none';
     scroller.addEventListener('scroll', this.scroll, { passive: true });
@@ -222,7 +230,6 @@ export class NoteWindowView {
     if (!this.pins.delete(reason)) return;
     if (!this.pins.size && this.pending) {
       const pending = this.pending;
-      this.pending = undefined;
       this.show(pending);
     }
   }
@@ -279,163 +286,205 @@ export class NoteWindowView {
   }
   show(window: NoteWindow) {
     if (this.disposed) return false;
-    if (this.window === window) return true;
+    if (this.window === window) {
+      this.pending = undefined;
+      this.pendingLease?.();
+      this.pendingLease = undefined;
+      return true;
+    }
     if (this.pins.size || this.editor?.view.composing) {
+      if (this.pending === window) return false;
+      const lease = this.options.retainWindow?.(window);
+      this.pendingLease?.();
+      this.pendingLease = lease;
       this.pending = window;
       this.cost.pendingBytes = window.cost.sourceBytes + window.cost.contextBytes;
       return false;
     }
-    const anchor = this.navigationAnchor ?? this.captureAnchor();
-    // Build/admit first; unsupported context must leave the existing view intact.
-    const projection = projectNoteWindow(window);
-    const admitted = measureNoteProjection(projection);
-    this.cost.projectionPeakBytes = Math.max(
-      this.cost.projectionPeakBytes,
-      this.cost.derivedBytes + admitted.derivedBytes,
-    );
-    this.cost.windowAssemblyPeakBytes = Math.max(
-      this.cost.windowAssemblyPeakBytes,
-      window.cost.assemblyPeakBytes,
-    );
-    const config = createEditorConfig({
-      element: this.host,
-      content: '',
-      workspace: this.options.workspace,
-      editable: !!this.options.editing,
-      useMarkdown: true,
-      enableComments: false,
-      enableMentions: true,
-      enableNotePrimitives: true,
-      onUpdate: () => {},
-    });
-    const extensions = (config.extensions ?? []).map((e) =>
-      e.name === 'starterKit' ? e.configure({ undoRedo: false }) : e,
-    );
-    const relay = Extension.create({
-      name: 'noteDocumentCommands',
-      priority: 2000,
-      addProseMirrorPlugins: () => [
-        new Plugin({
-          filterTransaction: (tr) =>
-            !tr.docChanged || !!this.options.editing?.accept(tr, projection),
-        }),
-      ],
-      addKeyboardShortcuts: () => ({
-        'Mod-z': () => {
-          this.options.editing?.undo();
-          return true;
-        },
-        'Mod-Shift-z': () => {
-          this.options.editing?.redo();
-          return true;
-        },
-        'Mod-a': () => {
-          this.command('selectAll');
-          return true;
-        },
-        'Mod-f': () => {
-          this.command('search');
-          return true;
-        },
-      }),
-    });
-    this.destroyEditor();
-    this.projection = projection;
-    this.window = window;
+    const lease = this.pending === window ? this.pendingLease : this.options.retainWindow?.(window);
     this.pending = undefined;
-    this.cost.pendingBytes = 0;
-    this.editor = new Editor({
-      ...config,
-      content: projection.content,
-      extensions: [...extensions, CommentAnchor, relay],
-      editorProps: {
-        ...config.editorProps,
-        handleDOMEvents: {
-          ...config.editorProps?.handleDOMEvents,
-          copy: (_view, event) => {
+    this.pendingLease = undefined;
+    const lifetime = new NoteNativeLifetime();
+    let candidate: Editor | undefined;
+    let candidateHost: HTMLDivElement | undefined;
+    let published = false;
+    try {
+      const anchor = this.navigationAnchor ?? this.captureAnchor();
+      // Build/admit first; unsupported context must leave the existing view intact.
+      const projection = projectNoteWindow(window);
+      const admitted = measureNoteProjection(projection);
+      this.cost.projectionPeakBytes = Math.max(
+        this.cost.projectionPeakBytes,
+        this.cost.derivedBytes + admitted.derivedBytes,
+      );
+      this.cost.windowAssemblyPeakBytes = Math.max(
+        this.cost.windowAssemblyPeakBytes,
+        window.cost.assemblyPeakBytes,
+      );
+      const config = createEditorConfig({
+        element: this.host,
+        content: '',
+        workspace: this.options.workspace,
+        editable: !!this.options.editing,
+        useMarkdown: true,
+        enableComments: false,
+        enableMentions: true,
+        enableNotePrimitives: true,
+        onUpdate: () => {},
+      });
+      const extensions = (config.extensions ?? []).map((e) =>
+        e.name === 'starterKit' ? e.configure({ undoRedo: false }) : e,
+      );
+      const relay = Extension.create({
+        name: 'noteDocumentCommands',
+        priority: 2000,
+        addProseMirrorPlugins: () => [
+          new Plugin({
+            filterTransaction: (tr) =>
+              !tr.docChanged || !!this.options.editing?.accept(tr, projection),
+          }),
+        ],
+        addKeyboardShortcuts: () => ({
+          'Mod-z': () => {
+            this.options.editing?.undo();
+            return true;
+          },
+          'Mod-Shift-z': () => {
+            this.options.editing?.redo();
+            return true;
+          },
+          'Mod-a': () => {
+            this.command('selectAll');
+            return true;
+          },
+          'Mod-f': () => {
+            this.command('search');
+            return true;
+          },
+        }),
+      });
+      candidateHost = document.createElement('div');
+      candidateHost.style.cssText =
+        'position:absolute;visibility:hidden;inset:0 auto auto 0;width:100%';
+      this.host.append(candidateHost);
+      candidate = new Editor({
+        ...config,
+        element: null,
+        content: projection.content,
+        extensions: lifetime.extensions([...extensions, CommentAnchor, relay]),
+        editorProps: {
+          ...config.editorProps,
+          handleDOMEvents: {
+            ...config.editorProps?.handleDOMEvents,
+            copy: (_view, event) => {
+              if (
+                this.selection.anchor < window.range.start ||
+                this.selection.anchor > window.range.end ||
+                this.selection.head < window.range.start ||
+                this.selection.head > window.range.end
+              ) {
+                event.preventDefault();
+                this.command('copy');
+                return true;
+              }
+              return false;
+            },
+          },
+          handleKeyDown: (_view, event) => {
             if (
-              this.selection.anchor < window.range.start ||
-              this.selection.anchor > window.range.end ||
-              this.selection.head < window.range.start ||
-              this.selection.head > window.range.end
+              event.key === 'ArrowDown' ||
+              event.key === 'ArrowRight' ||
+              event.key === 'ArrowUp' ||
+              event.key === 'ArrowLeft'
             ) {
-              event.preventDefault();
-              this.command('copy');
-              return true;
+              const direction = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1;
+              const edge = direction > 0 ? window.range.end : window.range.start;
+              if (
+                Math.abs(this.selection.head - edge) < 2 &&
+                edge > 0 &&
+                edge < window.sourceLength
+              ) {
+                const head = Math.min(
+                  window.sourceLength,
+                  Math.max(0, this.selection.head + direction),
+                );
+                this.selection = {
+                  ...this.selection,
+                  anchor: event.shiftKey ? this.selection.anchor : head,
+                  head,
+                };
+                this.options.selectionChanged(this.selection);
+                this.options.seek(head);
+                event.preventDefault();
+                return true;
+              }
             }
             return false;
           },
         },
-        handleKeyDown: (_view, event) => {
-          if (
-            event.key === 'ArrowDown' ||
-            event.key === 'ArrowRight' ||
-            event.key === 'ArrowUp' ||
-            event.key === 'ArrowLeft'
-          ) {
-            const direction = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1;
-            const edge = direction > 0 ? window.range.end : window.range.start;
-            if (
-              Math.abs(this.selection.head - edge) < 2 &&
-              edge > 0 &&
-              edge < window.sourceLength
-            ) {
-              const head = Math.min(
-                window.sourceLength,
-                Math.max(0, this.selection.head + direction),
-              );
-              this.selection = {
-                ...this.selection,
-                anchor: event.shiftKey ? this.selection.anchor : head,
-                head,
-              };
+        onTransaction: ({ transaction }) => {
+          if (this.applying || this.editor !== candidate) return;
+          if (transaction.selectionSet && this.projection) {
+            try {
+              const anchor = this.projection.sourceAt(transaction.selection.anchor),
+                head = this.projection.sourceAt(transaction.selection.head);
+              this.selection = { anchor, head, anchorAffinity: 1, headAffinity: 1 };
               this.options.selectionChanged(this.selection);
-              this.options.seek(head);
-              event.preventDefault();
-              return true;
+            } catch {
+              /* Structural atoms report their bounded source range through navigation. */
             }
           }
-          return false;
         },
-      },
-      onTransaction: ({ transaction }) => {
-        if (this.applying) return;
-        if (transaction.selectionSet && this.projection) {
-          try {
-            const anchor = this.projection.sourceAt(transaction.selection.anchor),
-              head = this.projection.sourceAt(transaction.selection.head);
-            this.selection = { anchor, head, anchorAffinity: 1, headAffinity: 1 };
-            this.options.selectionChanged(this.selection);
-          } catch {
-            /* Structural atoms report their bounded source range through navigation. */
-          }
-        }
-      },
-    });
-    const editor = this.editor;
-    this.cost.createdViews++;
-    this.cost.mountedViews = 1;
-    let nodes = 0;
-    editor.state.doc.descendants(() => {
-      nodes++;
-    });
-    this.cost.mountedNodes = nodes;
-    this.cost.sourceBytes = window.cost.sourceBytes;
-    this.cost.contextBytes = window.cost.contextBytes;
-    this.cost.derivedBytes = admitted.derivedBytes;
-    this.measureDom();
-    this.requested = -1;
-    this.layout();
-    if (anchor && anchor.source >= window.range.start && anchor.source <= window.range.end) {
-      this.anchor = anchor;
-      this.navigationAnchor = undefined;
-      this.restoreAnchor();
+      });
+      candidate.mount(candidateHost);
+      this.destroyEditor();
+      this.host.replaceChildren(candidateHost);
+      candidateHost.removeAttribute('style');
+      this.projection = projection;
+      this.window = window;
+      this.editor = candidate;
+      this.currentLease = lease;
+      this.lifetime = lifetime;
+      this.cost.pendingBytes = 0;
+      published = true;
+      const editor = candidate;
+      this.cost.createdViews++;
+      this.cost.mountedViews = 1;
+      let nodes = 0;
+      editor.state.doc.descendants(() => {
+        nodes++;
+      });
+      this.cost.mountedNodes = nodes;
+      this.cost.sourceBytes = window.cost.sourceBytes;
+      this.cost.contextBytes = window.cost.contextBytes;
+      this.cost.derivedBytes = admitted.derivedBytes;
+      this.measureDom();
+      this.requested = -1;
+      this.layout();
+      if (anchor && anchor.source >= window.range.start && anchor.source <= window.range.end) {
+        this.anchor = anchor;
+        this.navigationAnchor = undefined;
+        this.restoreAnchor();
+      }
+      if (this.selection.head >= window.range.start && this.selection.head <= window.range.end) {
+        this.setSelection(this.selection);
+      }
+      this.options.changed?.();
+      return true;
+    } catch (error) {
+      if (!published) {
+        void lifetime
+          .dispose(
+            () => candidate?.destroy(),
+            () => lease?.(),
+          )
+          .catch((cleanupError) =>
+            logger.error('Failed to dispose candidate note view', cleanupError),
+          );
+        candidateHost?.remove();
+      }
+      throw error;
     }
-    if (this.selection.head >= window.range.start && this.selection.head <= window.range.end) {
-      this.setSelection(this.selection);
-    }
-    this.options.changed?.();
-    return true;
   }
   private layout() {
     const w = this.window;
@@ -497,9 +546,26 @@ export class NoteWindowView {
     }
   };
   private destroyEditor() {
-    if (this.editor) {
-      this.editor.destroy();
-      this.editor = undefined;
+    const editor = this.editor,
+      lifetime = this.lifetime,
+      lease = this.currentLease;
+    this.editor = undefined;
+    this.lifetime = undefined;
+    this.currentLease = undefined;
+    this.projection = undefined;
+    this.window = undefined;
+    if (lifetime) {
+      void lifetime
+        .dispose(
+          () => editor?.destroy(),
+          () => lease?.(),
+        )
+        .catch((error) => logger.error('Failed to dispose native note view', error));
+    } else {
+      editor?.destroy();
+      lease?.();
+    }
+    if (editor) {
       this.cost.destroyedViews++;
       this.cost.mountedViews = 0;
     }
@@ -521,6 +587,8 @@ export class NoteWindowView {
     this.projection = undefined;
     this.window = undefined;
     this.pending = undefined;
+    this.pendingLease?.();
+    this.pendingLease = undefined;
     this.pins.clear();
     this.before.remove();
     this.host.remove();

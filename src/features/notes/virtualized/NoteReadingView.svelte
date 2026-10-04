@@ -1,14 +1,20 @@
 <script lang="ts">
   import type { Workspace } from '$shared/types';
   import { onMount, untrack } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { writable, get } from 'svelte/store';
+  import { v4 as uuid } from 'uuid';
   import { store as appStore } from '$store/renderer/store';
-  import { selectNotePageSession } from '$store/renderer/slices/note-pages/note-pages-selectors';
+  import {
+    selectNotePageSession,
+    selectNoteResourceHeld,
+  } from '$store/renderer/slices/note-pages/note-pages-selectors';
   import {
     pagePanelOpened,
     pagePanelClosed,
     pageWindowRequested,
     pageVisibleRangesChanged,
+    pageWindowRetained,
+    pageResourcesReleased,
   } from '$store/renderer/slices/note-pages/note-pages-slice';
   import {
     NoteWindowView,
@@ -71,6 +77,24 @@
     const native = new NoteWindowView(element, {
       seek: (at) =>
         appStore.dispatch(pageWindowRequested(owner.workspaceId, owner.noteId, owner.panelId, at)),
+      retainWindow: (value) => {
+        const generation = untrack(() => $session?.generation);
+        if (generation === undefined) throw new Error('Note window owner is unavailable');
+        const lease = `runtime-window:${uuid()}`;
+        appStore.dispatch(
+          pageWindowRetained(
+            owner.workspaceId,
+            owner.noteId,
+            owner.panelId,
+            generation,
+            value,
+            lease,
+          ),
+        );
+        if (!get(selectNoteResourceHeld(lease)))
+          throw new Error('Note window data admission was lost');
+        return () => appStore.dispatch(pageResourcesReleased(lease));
+      },
       selectionChanged: (s) => onSelection(s),
       fullOperation: (kind, selection) => onFullOperation(kind, selection),
       workspace: untrack(() => workspace),

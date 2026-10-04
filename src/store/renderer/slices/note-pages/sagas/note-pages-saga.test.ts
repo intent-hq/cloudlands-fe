@@ -56,12 +56,12 @@ function run(client: MockNotePagesClient) {
   let state = a.notePagesReducer(
     a.initialNotePagesState,
     a.pageResourceLimitsConfigured({
-      payloadBytes: 4 * 65536,
-      stringUnits: 12 * 65536,
-      objectNodes: 4 * 65536,
+      payloadBytes: 64 * 1024 * 1024,
+      stringUnits: 64 * 1024 * 1024,
+      objectNodes: 64 * 1024 * 1024,
       domNodes: 0,
       physicalReads: 4,
-      assemblies: 0,
+      assemblies: 1,
     }),
   );
   const dispatch = (action: Parameters<typeof a.notePagesReducer>[1]) => {
@@ -675,6 +675,57 @@ it('retains assembly inputs until cancellation and never publishes after its pan
   expect(Object.keys(r.state().physicalReads)).toHaveLength(0);
 });
 
+it('reserves window completion before reading and transfers data ownership after assembly', async () => {
+  const pending = deferred<any>();
+  const read = vi.fn(async (_ws, _id, q) => (q.kind === 'context' ? pending.promise : page));
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    read,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  await flush();
+  client.push(tuple);
+  await flush();
+  expect(r.state().resourceLedger.used.assemblies).toBe(1);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(1);
+  expect(read.mock.calls).toHaveLength(2);
+  pending.resolve({
+    kind: 'noteContextPage',
+    scope,
+    sourceRevision: 'r:7',
+    snapshotId: 'snap',
+    expiresAt: page.expiresAt,
+    items: [],
+    nextCursor: null,
+  });
+  await flush();
+  await flush();
+  const note = r.state().byWorkspaceId['ws-a'].notes.spec;
+  expect(note.windows.p.value?.text).toBe('A😀');
+  expect(note.windows.p.resourceOwner).toMatch(/^window:/);
+  expect(r.state().resourceLedger.used.assemblies).toBe(0);
+  expect(r.state().resourceLedger.used.physicalReads).toBe(0);
+  expect(r.state().resourceLedger.owners[note.windows.p.resourceOwner!]).toHaveLength(1);
+  r.dispatch(
+    a.pageWindowRetained(
+      'ws-a',
+      'spec',
+      'p',
+      note.generation,
+      note.windows.p.value!,
+      'runtime-view',
+    ),
+  );
+  r.dispatch(workspaceUnmounted('ws-a'));
+  await flush();
+  expect(r.state().resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+  expect(Object.keys(r.state().resourceLedger.owners)).toEqual(['runtime-view']);
+  r.dispatch(a.pageResourcesReleased('runtime-view'));
+  expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
+});
+
 it('refreshes an open window at its retained position after authoritative revision changes', async () => {
   let revision = 'r:7';
   const client = new MockNotePagesClient({
@@ -759,6 +810,7 @@ it('finishes every visible panel window after saturated physical reads drain', a
   }
   const windows = Object.values(r.state().byWorkspaceId['ws-a'].notes.spec.windows);
   expect(windows).toHaveLength(6);
+  expect(windows.map((window) => window.error)).toEqual(Array(6).fill(null));
   expect(windows.map((w) => w.value?.range.start).sort((a, b) => a! - b!)).toEqual([
     0, 10, 20, 30, 40, 50,
   ]);
