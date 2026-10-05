@@ -72,6 +72,7 @@ export class NoteWindowControlBudgetError extends Error {
     readonly sourceBytes = 0,
     readonly sourceRange?: SourceRange,
   ) {
+    // i18n-ignore (internal admission diagnostic; NoteReadingView displays a localized load error)
     super(`Canonical retained context exceeds active window budget (${requiredBytes} bytes)`);
     this.name = 'NoteWindowControlBudgetError';
   }
@@ -362,6 +363,7 @@ function* assembleWindowSteps(
             // allowance. Large reference names cannot relax the old text bound.
             if (cost.sourceBytes + cost.canonicalTextBytes > NOTE_WINDOW_LIMITS.sourceBytes)
               throw new WindowAdmissionError(
+                // i18n-ignore (internal admission diagnostic; NoteReadingView displays a localized load error)
                 'Note source and rendered text exceed active window budget',
               );
           }
