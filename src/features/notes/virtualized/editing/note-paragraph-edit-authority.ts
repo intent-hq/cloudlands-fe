@@ -28,6 +28,8 @@ export interface NoteParagraphEditGrant {
     descriptors: number;
     wireBytes: number;
   }>;
+  /** DATA atomically consumes this grant once; failure and cancellation do not refund it. */
+  claim(): boolean;
   current(): boolean;
 }
 
@@ -106,6 +108,7 @@ export function* noteParagraphEditContextSteps(
     return current();
   };
   assertIdentity(window, original, admitted, now);
+  if (!grant.claim()) throw new Error('Paragraph edit resource grant already claimed');
   const identity = { ...original, scope: { ...original.scope } };
   const source = window.text,
     start = window.range.start,

@@ -32,10 +32,16 @@ function controlledGrant(
   window: NoteParagraphEditGrant['window'],
   identity: NoteParagraphEditGrant['identity'],
 ): NoteParagraphEditGrant {
+  let claimed = false;
   return {
     window,
     identity,
     allowance: { retainedBytes: 8192, requests: 96, descriptors: 128, wireBytes: 8192 },
+    claim: () => {
+      if (claimed) return false;
+      claimed = true;
+      return true;
+    },
     current: () => true,
   };
 }
@@ -616,5 +622,51 @@ it('edits the actual Store far paragraph without fetching its untouched prefix',
     }
   } finally {
     f.editor.destroy();
+  }
+});
+
+it('claims a resource grant once before the first detail read', () => {
+  const f = controlledDetails();
+  let claims = 0;
+  const claim = f.grant.claim;
+  f.grant.claim = () => {
+    claims++;
+    return claim();
+  };
+  const first = f.steps();
+  expect(first.next().done).toBe(false);
+  expect(claims).toBe(1);
+  expect(() => f.steps().next()).toThrow('resource grant already claimed');
+  expect(claims).toBe(2);
+  expect(first.next(f.replies['opaque-directory']).done).toBe(false);
+  expect(claims).toBe(2);
+});
+
+it('does not refund the resource grant after resolver cancellation', () => {
+  const f = controlledDetails(),
+    iterator = f.steps();
+  expect(iterator.next().done).toBe(false);
+  iterator.return(undefined as never);
+  expect(() => f.steps().next()).toThrow('resource grant already claimed');
+});
+
+it('does not claim again when constructing an authority from the completed receipt', () => {
+  const f = controlledDetails();
+  let claims = 0;
+  const claim = f.grant.claim;
+  f.grant.claim = () => {
+    claims++;
+    return claim();
+  };
+  const receipt = f.finish(f.steps());
+  const projection = projectNoteWindow(f.window),
+    editor = nativeFixtureEditor(projection.content);
+  try {
+    expect(
+      createNoteParagraphEditAuthority(f.window, projection, receipt, editor.state.doc).source,
+    ).toBe('abc\r\n');
+    expect(claims).toBe(1);
+  } finally {
+    editor.destroy();
   }
 });
