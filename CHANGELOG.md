@@ -4,6 +4,23 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.206.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.205.0...v2.206.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* expose and bound resolved unit test selections ([#3203](https://github.com/intent-hq/cloudlands-fe/issues/3203)) ([92adafe](https://github.com/intent-hq/cloudlands-fe/commit/92adafef9a6ddf9738355a14e930f2cb86333fd8))
+* unify authenticated repository picker ([#3204](https://github.com/intent-hq/cloudlands-fe/issues/3204)) ([222c1df](https://github.com/intent-hq/cloudlands-fe/commit/222c1dfa106490630994e79c4817c3c370e24fb5))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.17 ([#3214](https://github.com/intent-hq/cloudlands-fe/issues/3214)) ([c08fc5f](https://github.com/intent-hq/cloudlands-fe/commit/c08fc5f1118dd04097da44c0eaa2de1644a55ca5))
+* isolate desktop identity persistence by authenticated connection ([#3201](https://github.com/intent-hq/cloudlands-fe/issues/3201)) ([ba3b5b1](https://github.com/intent-hq/cloudlands-fe/commit/ba3b5b1f8fe3455e7c512e80865ea3da833fc8a3))
+* make semantic tooltips opaque over workspace content ([#3199](https://github.com/intent-hq/cloudlands-fe/issues/3199)) ([dbe08cf](https://github.com/intent-hq/cloudlands-fe/commit/dbe08cf66954d8ac26315a3dcf249b2f26e870e7))
+* refresh generated build inputs before unit tests ([#3202](https://github.com/intent-hq/cloudlands-fe/issues/3202)) ([f27bd52](https://github.com/intent-hq/cloudlands-fe/commit/f27bd52d315a5a81b8846ca01325a340b76b0963))
+* restore default agent and spec panels for existing workspaces ([#3206](https://github.com/intent-hq/cloudlands-fe/issues/3206)) ([9e9d2bc](https://github.com/intent-hq/cloudlands-fe/commit/9e9d2bc1b04859e23d0fe97a80ee075824e6357c))
+
 ## [2.205.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.204.0...v2.205.0) (2026-10-05)
 
 
