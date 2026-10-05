@@ -105,7 +105,11 @@ desktopControlReducer.with(
             ...snapshot,
             pending: snapshot.pending,
             loading: false,
-            error: snapshot.state.status === 'active' ? undefined : entry.error,
+            error:
+              snapshot.state.status === 'active' ||
+              (snapshot.pending && snapshot.pending.requestId !== entry.pending?.requestId)
+                ? undefined
+                : entry.error,
           },
     );
   },
@@ -164,7 +168,9 @@ desktopControlReducer.with(desktopEventReceived, (state, { payload: [event] }) =
                     entry.state.sessionId !== event.data.state.sessionId)
                 ? entry.state
                 : event.data.state,
-          error: event.data.error?.detail,
+          error:
+            event.data.error?.detail ??
+            (event.data.outcome === 'expired' ? entry.error : undefined),
         };
       }
       case 'desktop:permission-changed':
@@ -176,6 +182,7 @@ desktopControlReducer.with(desktopEventReceived, (state, { payload: [event] }) =
           if (entry.endedSessions.includes(event.data.sessionId)) return base;
           return {
             ...base,
+            error: undefined,
             state: {
               status: 'active',
               sessionId: event.data.sessionId,

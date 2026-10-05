@@ -30,6 +30,7 @@ import {
   desktopEventReceived,
   desktopDecisionRequested,
   desktopPermissionRequested,
+  desktopRequestExpired,
 } from '../desktop-control-slice';
 import { desktopKey } from '../desktop-control-types';
 import {
@@ -120,6 +121,67 @@ describe('desktop consent wire lifecycle', () => {
     expect(h.entry()?.error).toBeUndefined();
     expect(mocks.start).not.toHaveBeenCalled();
   });
+  it.each(['daemon-first', 'timer-first'] as const)(
+    'retains setup guidance after %s expiry without retaining consent authority',
+    async (order) => {
+      mocks.permissions.mockResolvedValue({
+        ok: true,
+        result: { platform: 'macos', accessibility: false, screenRecording: false },
+      });
+      const h = start();
+      h.dispatch(requested());
+      await settle();
+      h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+      await settle();
+      const guidance = h.entry()?.error;
+      expect(guidance).toContain('Accessibility');
+      expect(guidance).toContain('Screen Recording');
+      const localExpiry = desktopRequestExpired('workspace', 'agent', request.requestId);
+      const daemonExpiry = desktopEventReceived({
+        id: 'daemon-expired',
+        type: 'desktop:permission-resolved',
+        data: {
+          workspaceId: 'workspace',
+          agentId: 'agent',
+          requestId: request.requestId,
+          outcome: 'expired',
+          state: { status: 'inactive' },
+        },
+      });
+      for (const action of order === 'daemon-first'
+        ? [daemonExpiry, localExpiry]
+        : [localExpiry, daemonExpiry]) {
+        h.dispatch(action);
+        await settle();
+        expect(h.entry()?.error).toBe(guidance);
+        expect(h.entry()?.pending).toBeUndefined();
+        expect(h.entry()?.submitting).toBe(false);
+        expect(h.entry()?.state.status).toBe('inactive');
+      }
+      h.dispatch(desktopReadRequested('workspace', 'agent'));
+      await settle();
+      h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+      await settle();
+      expect(h.entry()?.error).toBe(guidance);
+      expect(mocks.permissions).toHaveBeenCalledTimes(1);
+      expect(mocks.request).not.toHaveBeenCalledWith(
+        'desktop.respondPermission',
+        expect.anything(),
+      );
+      h.dispatch(
+        desktopEventReceived({
+          id: 'fresh-request',
+          type: 'desktop:permission-requested',
+          data: { ...request, requestId: 'fresh-request' },
+        }),
+      );
+      await settle();
+      expect(h.entry()?.error).toBeUndefined();
+      expect(h.entry()?.pending?.requestId).toBe('fresh-request');
+      expect(mocks.permissions).toHaveBeenCalledTimes(1);
+      expect(mocks.start).not.toHaveBeenCalled();
+    },
+  );
   it('does not request OS permissions on Deny', async () => {
     const h = start();
     h.dispatch(requested());

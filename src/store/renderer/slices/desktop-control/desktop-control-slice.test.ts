@@ -71,6 +71,28 @@ describe('desktop permission mirror', () => {
     expect(entry(state).pending).toBeUndefined();
     expect(entry(state).error).toContain('Screen Recording');
   });
+  it.each(['new event', 'new snapshot', 'active event', 'disconnect'])(
+    'clears prior setup guidance on %s',
+    (transition) => {
+      let state = reduce(undefined, requested);
+      state = reduce(state, patch('workspace', 'agent', 0, { error: 'Enable Accessibility.' }));
+      const nextRequest = { ...request, requestId: 'next-request' };
+      const action =
+        transition === 'new event'
+          ? event({ id: 'next', type: 'desktop:permission-requested', data: nextRequest })
+          : transition === 'new snapshot'
+            ? snapshot('workspace', 'agent', 0, entry(state).revision, {
+                state: { status: 'pending_permission', requestId: nextRequest.requestId },
+                permission,
+                pending: nextRequest,
+              })
+            : transition === 'active event'
+              ? active()
+              : connectionStatusChanged('disconnected');
+      state = reduce(state, action);
+      expect(entry(state).error).toBeUndefined();
+    },
+  );
   it('deduplicates requests and preserves a submitted decision', () => {
     let state = reduce(undefined, requested);
     state = reduce(state, patch('workspace', 'agent', 0, { submitting: true }));
