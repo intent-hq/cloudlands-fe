@@ -13,7 +13,10 @@
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import { Select } from '$lib/components/ui/select';
   import { store as appStore } from '$store/renderer/store';
-  import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import {
+    closePanel,
+    setChiefActiveAgentId,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectChiefActiveAgentId,
     selectCurrentChiefThread,
@@ -181,6 +184,7 @@
     if (!isWorkspaceRegistered) return;
     chiefMountCount = Math.max(0, chiefMountCount - 1);
     if (chiefMountCount === 0) {
+      appStore.dispatch(closePanel());
       appStore.dispatch(workspaceUnmounted(CHIEF_WORKSPACE_ID));
     }
   });
