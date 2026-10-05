@@ -72,3 +72,4 @@ src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragra
 src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-html-tail.json
 src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-one.json
 src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-two.json
+src/features/notes/virtualized/editing/__fixtures__/note-local-point/plain-paragraph-ab.json
