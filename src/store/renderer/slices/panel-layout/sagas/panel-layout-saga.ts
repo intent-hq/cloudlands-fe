@@ -507,6 +507,8 @@ const DEFAULT_LAYOUT_USER_ACTION_TYPES: ReadonlySet<string> = new Set(
     openTabInAdjacentOrSplit,
     openTabInNewRootColumn,
     openTabInRightmostColumn,
+    revealHiddenTabAvoidingPanel,
+    restoreHiddenTab,
     closeTab,
     closeActiveTab,
     closeFocusedPanelTab,
@@ -546,6 +548,12 @@ function* cancelExistingWorkspaceDefaults(action: {
   payload?: unknown;
 }): SagaGenerator<void> {
   if (!DEFAULT_LAYOUT_USER_ACTION_TYPES.has(action.type)) return;
+  // Registry and agent background reveals preserve focus and are not user edits.
+  if (
+    action.type === restoreHiddenTab.type &&
+    (action.payload as ReturnType<typeof restoreHiddenTab>['payload']).focus === false
+  )
+    return;
   if (
     action.type === openTabInAdjacentOrSplit.type &&
     (action.payload as ReturnType<typeof openTabInAdjacentOrSplit>['payload']).origin ===
@@ -782,6 +790,9 @@ function* handleWorkspaceMountedRestore(
     // workspaceDeleted, clearPanelLayout or a full workspaceUnmounted voids
     // the provenance and still restores from storage.
     restoredWorkspaceIds.add(wsId);
+    // Notes or agents can finish loading while the panel scope is parked.
+    // Resume pending defaults without replacing the live layout from storage.
+    yield* call(reconcileEmptyRestoredLayout, wsId);
     return;
   }
   restoredWorkspaceIds.add(wsId);

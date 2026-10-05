@@ -2385,6 +2385,89 @@ describe('panelLayoutSaga', () => {
         await cancelSaga(run.task);
       });
 
+      it('finishes pending defaults when notes arrive while the panel scope is unmounted', async () => {
+        const run = startRestoreSaga(undefined, [coordinator]);
+        try {
+          await settle();
+          run.dispatch(panelLayoutScopeUnmounted(WS_1));
+          loadSpec(run);
+          expect(tabs(run)).toHaveLength(1);
+          run.dispatch(panelLayoutScopeMounted(WS_1));
+          await settle();
+          expectPair(run, 'coordinator');
+          run.dispatch(panelLayoutScopeUnmounted(WS_1));
+          run.dispatch(panelLayoutScopeMounted(WS_1));
+          await settle();
+          expectPair(run, 'coordinator');
+        } finally {
+          await cancelSaga(run.task);
+        }
+      });
+
+      it.each(['sidebar reveal', 'navigation restore'])(
+        'cancels pending defaults after a user %s, including after remount',
+        async (kind) => {
+          const run = startRestoreSaga(undefined, [coordinator]);
+          try {
+            await settle();
+            const source = run.getState().panelLayout.byWorkspaceId[WS_1].focusedPanelId;
+            run.dispatch(
+              openHiddenTab(
+                WS_1,
+                {
+                  type: 'browser',
+                  title: 'Browser',
+                  browserUrl: 'https://example.test',
+                  closable: true,
+                  workspaceId: WS_1,
+                  ownerAgentId: 'coordinator',
+                },
+                'browser-tab',
+              ),
+            );
+            run.dispatch(
+              kind === 'sidebar reveal'
+                ? revealHiddenTabAvoidingPanel(WS_1, 'browser-tab', source)
+                : restoreHiddenTab(WS_1, 'browser-tab'),
+            );
+            const edited = run.getState().panelLayout.byWorkspaceId[WS_1];
+            loadSpec(run);
+            expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toBe(edited);
+            run.dispatch(panelLayoutScopeUnmounted(WS_1));
+            run.dispatch(panelLayoutScopeMounted(WS_1));
+            await settle();
+            loadSpec(run);
+            expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toBe(edited);
+          } finally {
+            await cancelSaga(run.task);
+          }
+        },
+      );
+
+      it('allows a pending spec after a background browser restore without focus', async () => {
+        const run = startRestoreSaga(undefined, [coordinator]);
+        try {
+          await settle();
+          run.dispatch(
+            openHiddenTab(
+              WS_1,
+              {
+                type: 'browser',
+                title: 'Browser',
+                browserUrl: 'https://example.test',
+                closable: true,
+              },
+              'browser-tab',
+            ),
+          );
+          run.dispatch(restoreHiddenTab(WS_1, 'browser-tab', undefined, false));
+          loadSpec(run);
+          expect(tabs(run).some((tab: PanelTab) => tab.noteId === 'spec')).toBe(true);
+        } finally {
+          await cancelSaga(run.task);
+        }
+      });
+
       it('never reopens a spec closed after default panels settle', async () => {
         const run = startRestoreSaga(undefined, [coordinator]);
         await settle();
