@@ -13,7 +13,7 @@ import { validateNoteNativeOutput } from './note-native-output-validation';
 import { measureNoteDom } from './note-dom-cost';
 import { projectNoteWindow } from './note-window-projection';
 import type { SourceProjection } from './projection/source-projection';
-import type { NoteWindow } from './note-window-reader';
+import { NOTE_WINDOW_LIMITS, type NoteWindow } from './note-window-reader';
 import type { NoteResourceCost } from './note-resource-ledger';
 import { createNoteTransactionRelay, type NoteTransactionOwner } from './note-transaction-relay';
 
@@ -66,6 +66,95 @@ export interface NoteWindowViewOptions {
 }
 /** One disposable native view. No source backing, page cache, persistence or per-view history.
  * Geometry, Editor/DOM and in-progress composition are its only runtime ownership. */
+/** Admitted reader data only, not arbitrary proxies. Never invoke context
+ * getters or serializers: a later owner callback may install either. */
+function markerContextWitness(context: NoteWindow['context']) {
+  const refs: { object: object; keys: string[]; values: unknown[]; array: boolean }[] = [];
+  let bytes = 0;
+  const visit = (value: unknown, depth: number): unknown => {
+    if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
+      if (typeof value === 'string' && value.length > NOTE_WINDOW_LIMITS.contextBytes)
+        throw new Error('Marker context exceeds budget');
+      if (typeof value === 'number' && !Number.isFinite(value))
+        throw new Error('Invalid marker context number');
+      bytes += new TextEncoder().encode(JSON.stringify(value)).length;
+      if (bytes > NOTE_WINDOW_LIMITS.contextBytes) throw new Error('Marker context exceeds budget');
+      return value;
+    }
+    if (!value || typeof value !== 'object' || depth > 2)
+      throw new Error('Invalid marker context data');
+    const array = Array.isArray(value),
+      proto = Object.getPrototypeOf(value);
+    if (array ? proto !== Array.prototype : proto !== Object.prototype && proto !== null)
+      throw new Error('Invalid marker context prototype');
+    if (Object.getOwnPropertyDescriptor(value, 'toJSON'))
+      throw new Error('Executable marker context');
+    const length = array ? Object.getOwnPropertyDescriptor(value, 'length') : undefined;
+    if (
+      array &&
+      (!length ||
+        !('value' in length) ||
+        !Number.isSafeInteger(length.value) ||
+        length.value < 0 ||
+        length.value > NOTE_WINDOW_LIMITS.descriptors)
+    )
+      throw new Error('Marker context count exceeded');
+    const keys = Reflect.ownKeys(value);
+    if (keys.length > (array ? length!.value + 1 : 16) || keys.some((k) => typeof k !== 'string'))
+      throw new Error('Marker context fields exceeded');
+    const fields = keys as string[],
+      values: unknown[] = [];
+    if (
+      array &&
+      (fields.length !== length!.value + 1 ||
+        fields.some(
+          (k) => k !== 'length' && (!/^(0|[1-9][0-9]*)$/.test(k) || Number(k) >= length!.value),
+        ))
+    )
+      throw new Error('Invalid marker context array');
+    bytes += 2;
+    for (const key of fields) {
+      const d = Object.getOwnPropertyDescriptor(value, key);
+      if (!d || !('value' in d) || (key !== 'length' && !d.enumerable))
+        throw new Error('Executable marker context property');
+      values.push(d.value);
+      if (array && key === 'length') continue;
+      bytes += 1 + (array ? 0 : new TextEncoder().encode(JSON.stringify(key)).length + 1);
+      visit(d.value, depth + 1);
+    }
+    refs.push({ object: value, keys: fields, values, array });
+    return undefined;
+  };
+  visit(context, 0);
+  if (bytes > NOTE_WINDOW_LIMITS.contextBytes) throw new Error('Marker context exceeds budget');
+  return () => {
+    for (const { object, keys, values, array } of refs) {
+      const proto = Object.getPrototypeOf(object);
+      if (array ? proto !== Array.prototype : proto !== Object.prototype && proto !== null)
+        return false;
+      if (Object.getOwnPropertyDescriptor(object, 'toJSON')) return false;
+      // Bounded enumeration aborts before traversal of any unexpected field.
+      let count = 0;
+      for (const key in object) {
+        if (!Object.hasOwn(object, key) || ++count > keys.length || !keys.includes(key))
+          return false;
+      }
+      if (count + (array ? 1 : 0) !== keys.length) return false;
+      for (let i = 0; i < keys.length; i++) {
+        const d = Object.getOwnPropertyDescriptor(object, keys[i]);
+        if (
+          !d ||
+          !('value' in d) ||
+          d.value !== values[i] ||
+          (keys[i] !== 'length' && !d.enumerable)
+        )
+          return false;
+      }
+    }
+    return true;
+  };
+}
+
 export interface NoteReadingSurface {
   /** Shared renderer admission policy supplied by the application rollout owner. */
   resourceLimits: NoteResourceCost;
@@ -173,7 +262,10 @@ export class NoteWindowView {
       window = this.window,
       projection = this.committedProjection,
       lease = this.currentLease;
-    const boundary = window?.context[0];
+    const contextCurrent = window ? markerContextWitness(window.context) : undefined;
+    const boundaries = window?.context.filter((item) => item.kind === 'boundary');
+    const boundary = boundaries?.[0];
+
     if (
       !editor ||
       !window ||
@@ -187,11 +279,30 @@ export class NoteWindowView {
       projection instanceof NoteEditAuthority ||
       window.native ||
       window.canonicalOwners?.length ||
-      window.context.length !== 1 ||
+      boundaries?.length !== 1 ||
+      window.context.length > NOTE_WINDOW_LIMITS.descriptors ||
+      window.context.some(
+        (item) =>
+          item !== boundary &&
+          (item.kind !== 'span' ||
+            !['text', 'commentMarker'].includes(item.role) ||
+            item.nativeRef ||
+            item.sourceMapRef ||
+            item.codeSource ||
+            item.sourceRange.start < window.range.start ||
+            item.sourceRange.end > window.range.end),
+      ) ||
       boundary?.kind !== 'boundary' ||
       boundary.construct !== 'paragraph' ||
       boundary.entryPath !== 'markdown' ||
       boundary.parentRef ||
+      boundary.nativeRef ||
+      boundary.sourceMapRef ||
+      boundary.attributesRef ||
+      boundary.profile ||
+      boundary.htmlPosition ||
+      boundary.htmlSource ||
+      boundary.tablePosition ||
       boundary.sourceRange.start !== window.range.start ||
       boundary.sourceRange.end !== window.range.end ||
       boundary.continuationBefore ||
@@ -289,9 +400,8 @@ export class NoteWindowView {
       s.projection.start === s.start &&
       !s.window.native &&
       !s.window.canonicalOwners?.length &&
-      s.window.context === s.context &&
-      s.context.length === 1 &&
-      s.context[0] === s.boundary &&
+      Object.getOwnPropertyDescriptor(s.window, 'context')?.value === s.context &&
+      contextCurrent?.() === true &&
       s.boundary.kind === 'boundary' &&
       s.boundary.id === s.boundaryId &&
       s.boundary.construct === 'paragraph' &&

@@ -286,3 +286,80 @@ it('holds actual Redux window and capture DATA through unmount until pending wor
     await work;
   }
 });
+
+it('retains authentic lexical spans beside the complete paragraph and pins their values', () => {
+  const f = fixture();
+  f.window.context.push({
+    kind: 'span',
+    id: 'text',
+    role: 'text',
+    sourceRange: { start: 100, end: 102 },
+    parentRef: 'paragraph-ref',
+  });
+  const marker = {
+    kind: 'span' as const,
+    id: 'marker',
+    role: 'commentMarker',
+    sourceRange: { start: 102, end: f.window.range.end - 2 },
+    parentRef: 'paragraph-ref',
+  };
+  f.window.context.push(marker);
+  const lease = f.view.borrowMarkerOccurrence(f.identity, f.position, () => true);
+  expect(lease.current()).toBe(true);
+  marker.parentRef = 'changed';
+  expect(lease.current()).toBe(false);
+  marker.parentRef = 'paragraph-ref';
+  expect(lease.current()).toBe(false);
+  lease.release();
+});
+it('refuses richer span context instead of discarding it', () => {
+  const f = fixture();
+  f.window.context.push({
+    kind: 'span',
+    id: 'rich',
+    role: 'code',
+    sourceRange: { ...f.window.range },
+  });
+  expect(() => f.view.borrowMarkerOccurrence(f.identity, f.position, () => true)).toThrow();
+});
+
+it('refuses callback-installed matching serializers without invoking them or allowing revival', () => {
+  const f = fixture(),
+    original = JSON.stringify(f.window.context);
+  let install = false,
+    calls = 0;
+  const serialize = vi.fn(() => {
+    // Under the old comparison this second call was AFTER native mapping proof.
+    if (++calls === 2) f.view.projection!.positions.set(f.position, 999);
+    return JSON.parse(original);
+  });
+  const lease = f.view.borrowMarkerOccurrence(f.identity, f.position, () => {
+    if (install)
+      Object.defineProperty(f.window.context, 'toJSON', { configurable: true, value: serialize });
+    return true;
+  });
+  install = true;
+  expect(lease.current()).toBe(false);
+  expect(serialize).not.toHaveBeenCalled();
+  install = false;
+  delete (f.window.context as unknown as { toJSON?: unknown }).toJSON;
+  expect(lease.current()).toBe(false);
+  lease.release();
+});
+it('rejects context range getters before invoking them', () => {
+  const f = fixture(),
+    lease = f.view.borrowMarkerOccurrence(f.identity, f.position, () => true);
+  const item = f.window.context[0],
+    range = item.sourceRange,
+    get = vi.fn(() => range);
+  Object.defineProperty(item, 'sourceRange', { configurable: true, enumerable: true, get });
+  expect(lease.current()).toBe(false);
+  expect(get).not.toHaveBeenCalled();
+  Object.defineProperty(item, 'sourceRange', {
+    configurable: true,
+    enumerable: true,
+    value: range,
+  });
+  expect(lease.current()).toBe(false);
+  lease.release();
+});
