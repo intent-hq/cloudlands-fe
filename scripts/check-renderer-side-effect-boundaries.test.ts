@@ -1,3 +1,4 @@
+// @verify-changed-triggers: src/store/renderer/seeders/source-clipboard-bridge-seeder.ts, scripts/check-renderer-side-effect-boundaries.mjs
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
