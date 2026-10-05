@@ -585,3 +585,31 @@ describe('accepted native transaction ownership', () => {
     expect(f.commits).not.toHaveBeenCalled();
   });
 });
+
+it.each(['root', 'appended'] as const)(
+  'validates %s prepared output before native acceptance or adoption',
+  (kind) => {
+    const append = new Plugin({
+      appendTransaction(transactions, _old, state) {
+        return transactions.some((tr) => tr.getMeta('root')) ? state.tr.insertText('Y', 3) : null;
+      },
+    });
+    const f = fixture([append]);
+    f.prepare.mockImplementation((tr) => {
+      const projection = new SourceProjection(tr.doc.textContent, 100);
+      if (kind === 'root' || tr.doc.textContent.includes('Y')) {
+        projection.content.content![0].attrs = { unexpected: 'discarded by constructor' };
+        expect(schema.nodeFromJSON(projection.content).eq(tr.doc)).toBe(true);
+      }
+      return { doc: tr.doc, projection };
+    });
+    const result = f.state.applyTransaction(f.state.tr.insertText('X', 2).setMeta('root', true));
+    expect(f.prepare).toHaveBeenCalledTimes(kind === 'root' ? 1 : 2);
+    expect(result.transactions).toHaveLength(kind === 'root' ? 0 : 1);
+    expect(result.state.doc.textContent).toBe(kind === 'root' ? 'abc' : 'aXbc');
+    expect(f.commit).not.toHaveBeenCalled();
+    f.relay.adopt(result.transactions, result.state);
+    expect(f.commit).toHaveBeenCalledTimes(kind === 'root' ? 0 : 1);
+    if (kind === 'appended') expect(f.commit.mock.calls[0][0].after.doc.textContent).toBe('aXbc');
+  },
+);

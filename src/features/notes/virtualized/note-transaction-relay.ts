@@ -11,6 +11,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import type { Editor } from '@tiptap/core';
 import type { SourceProjection } from './projection/source-projection';
 import { measureNoteProjection } from './note-view-cost';
+import { validateNoteNativeOutput } from './note-native-output-validation';
 
 interface Candidate {
   readonly doc: PMNode;
@@ -112,6 +113,16 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
         if (!before.doc.eq(state.doc)) return false;
         const after = owner.prepare(transaction, before);
         if (!after || !after.doc.eq(transaction.doc) || !current(owner)) return false;
+        if (
+          after.doc.type.schema !== state.schema ||
+          !after.doc.eq(
+            validateNoteNativeOutput(state.schema, after.projection.content, {
+              current: () => current(owner),
+            }),
+          ) ||
+          !current(owner)
+        )
+          return false;
         const cost = measureNoteProjection(after.projection);
         prepared.set(transaction, { owner, before, after, cost });
       } catch {

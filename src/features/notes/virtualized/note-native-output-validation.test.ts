@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, expect, it } from 'vitest';
+import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 import { Editor } from '@tiptap/core';
 import { Schema } from '@tiptap/pm/model';
 import { store } from '$store/renderer/configured-store';
@@ -219,4 +219,95 @@ it('refuses unbounded configured defaults instead of silently allocating them', 
   expect(() => validateNoteNativeOutput(schema, doc([{ type: 'paragraph' }]), admission)).toThrow(
     'byte budget',
   );
+});
+
+it('rejects huge flat data records without constructing an own-key array or reading excess properties', () => {
+  const input = Object.fromEntries(Array.from({ length: 100_000 }, (_, i) => [`key${i}`, 0]));
+  const ownNames = Object.getOwnPropertyNames,
+    ownSymbols = Object.getOwnPropertySymbols;
+  const names = vi.spyOn(Object, 'getOwnPropertyNames').mockImplementation((value) => {
+    if (value === input) throw new Error('eager keys');
+    return ownNames(value);
+  });
+  const symbols = vi.spyOn(Object, 'getOwnPropertySymbols').mockImplementation((value) => {
+    if (value === input) throw new Error('eager symbols');
+    return ownSymbols(value);
+  });
+  const descriptor = vi.spyOn(Object, 'getOwnPropertyDescriptor');
+  let failure: unknown,
+    calls = 0;
+  try {
+    try {
+      validateNoteNativeOutput(editor.schema, input, admission);
+    } catch (error) {
+      failure = error;
+    }
+    calls = descriptor.mock.calls.filter(([value]) => value === input).length;
+  } finally {
+    names.mockRestore();
+    symbols.mockRestore();
+    descriptor.mockRestore();
+  }
+  expect(failure).toEqual(new Error('Native output property budget'));
+  expect(calls).toBe(64);
+});
+
+it.each(['text', 'depth', 'graph'] as const)(
+  'isolates later %s input from executable schema validator mutation',
+  (kind) => {
+    const later = paragraph('original');
+    const input = doc([
+      { type: 'paragraph', attrs: { inspect: true }, content: [{ type: 'text', text: 'first' }] },
+      later,
+    ]);
+    let callbacks = 0;
+    const schema = new Schema({
+      nodes: {
+        doc: { content: 'paragraph*' },
+        paragraph: {
+          content: 'text*',
+          attrs: {
+            inspect: {
+              default: false,
+              validate(value) {
+                if (!value) return;
+                callbacks++;
+                if (kind === 'text') later.content[0].text = 'x'.repeat(4 * 1024 * 1024 + 1);
+                if (kind === 'depth') {
+                  let nested: unknown = {};
+                  for (let i = 0; i < 100; i++) nested = { nested };
+                  Object.assign(later, { injected: nested });
+                }
+                if (kind === 'graph') Object.assign(later, { cycle: input });
+              },
+            },
+          },
+        },
+        text: {},
+      },
+    });
+    const result = validateNoteNativeOutput(schema, input, admission);
+    expect(callbacks).toBeGreaterThan(0);
+    expect(result.textContent).toBe('firstoriginal');
+    expect(result.childCount).toBe(2);
+  },
+);
+
+it('never copies or invokes properties outside the own enumerable JSON data contract', () => {
+  const input = doc([paragraph()]);
+  let calls = 0;
+  Object.defineProperty(input, 'hidden', {
+    get() {
+      calls++;
+      throw new Error('hidden');
+    },
+  });
+  Object.defineProperty(input, Symbol('hidden'), {
+    get() {
+      calls++;
+      throw new Error('symbol');
+    },
+  });
+  expect(validateNoteNativeOutput(editor.schema, input, admission).textContent).toBe('abc');
+  expect(calls).toBe(0);
 });

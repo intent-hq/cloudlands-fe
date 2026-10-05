@@ -21,11 +21,12 @@ export function validateNoteNativeOutput(
     if (!admission.current()) throw new Error('Stale native output admission');
   };
   current();
-  // Preflight the entire JSON tree before constructing ProseMirror nodes. No
-  // getter is evaluated, shared/cyclic objects are refused, and work/temporary
-  // references stay bounded independently of note size.
+  // Snapshot only own enumerable string-keyed data (the JSON transport domain).
+  // Symbols/nonenumerable properties are inert: never inspected or copied. This
+  // avoids eagerly materializing an unbounded own-key array. Producers supply
+  // ordinary data records, not executable Proxy objects. The snapshot is frozen
+  // before schema callbacks run; callbacks cannot change later input via closures.
   const seen = new Set<object>();
-  const pending = [{ value: input, depth: 0 }];
   let bytes = 0,
     entries = 0;
   const encoder = new TextEncoder();
@@ -34,45 +35,57 @@ export function validateNoteNativeOutput(
     bytes += encoder.encode(value).length;
     if (bytes > limits.derivedBytes) throw new Error('Native output byte budget');
   };
-  while (pending.length) {
-    const { value, depth } = pending.pop()!;
+  const snapshot = (value: unknown, depth: number): unknown => {
     if (++entries > limits.derivedObjects || depth > limits.depth)
       throw new Error('Native output graph budget');
-    if (typeof value === 'string') textBytes(value);
-    else if (value === null || typeof value === 'boolean') bytes += 8;
-    else if (typeof value === 'number' && Number.isFinite(value)) bytes += 8;
-    else if (value && typeof value === 'object') {
-      if (seen.has(value)) throw new Error('Native output must be a tree');
-      seen.add(value);
-      const array = Array.isArray(value);
-      if (array && value.length > limits.derivedObjects)
-        throw new Error('Native output graph budget');
-      if (
-        !array &&
-        Object.getPrototypeOf(value) !== Object.prototype &&
-        Object.getPrototypeOf(value) !== null
-      )
-        throw new Error('Invalid native output object');
-      if (Object.getOwnPropertySymbols(value).length) throw new Error('Invalid native output key');
-      let count = 0;
-      for (const key of Object.getOwnPropertyNames(value)) {
-        if (array && key === 'length') continue;
-        if (++count + entries + pending.length > limits.derivedObjects)
-          throw new Error('Native output graph budget');
-        if (array && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length))
-          throw new Error('Invalid native output array');
-        if (key === '__proto__' || key === 'constructor' || key === 'prototype')
-          throw new Error('Invalid native output key');
-        const property = Object.getOwnPropertyDescriptor(value, key)!;
-        if (!('value' in property) || !property.enumerable)
-          throw new Error('Invalid native output property');
-        textBytes(key);
-        pending.push({ value: property.value, depth: depth + 1 });
-      }
-      if (array && count !== value.length) throw new Error('Sparse native output array');
-    } else throw new Error('Non-JSON native output');
-    if (bytes > limits.derivedBytes) throw new Error('Native output byte budget');
-  }
+    if (typeof value === 'string') {
+      textBytes(value);
+      return value;
+    }
+    if (
+      value === null ||
+      typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value))
+    ) {
+      bytes += 8;
+      if (bytes > limits.derivedBytes) throw new Error('Native output byte budget');
+      return value;
+    }
+    if (!value || typeof value !== 'object') throw new Error('Non-JSON native output');
+    if (seen.has(value)) throw new Error('Native output must be a tree');
+    seen.add(value);
+    const array = Array.isArray(value);
+    if (array && value.length > limits.derivedObjects)
+      throw new Error('Native output graph budget');
+    if (
+      !array &&
+      Object.getPrototypeOf(value) !== Object.prototype &&
+      Object.getPrototypeOf(value) !== null
+    )
+      throw new Error('Invalid native output object');
+    const copy: Record<string, unknown> = array
+      ? ([] as unknown as Record<string, unknown>)
+      : Object.create(null);
+    let count = 0;
+    for (const key in value) {
+      if (!Object.hasOwn(value, key)) throw new Error('Inherited native output property');
+      if (++count > (array ? limits.derivedObjects : limits.attributes))
+        throw new Error('Native output property budget');
+      if (array && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length))
+        throw new Error('Invalid native output array');
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype')
+        throw new Error('Invalid native output key');
+      const property = Object.getOwnPropertyDescriptor(value, key);
+      if (!property || !('value' in property) || !property.enumerable)
+        throw new Error('Invalid native output property');
+      textBytes(key);
+      copy[key] = snapshot(property.value, depth + 1);
+    }
+    if (array && count !== value.length) throw new Error('Sparse native output array');
+    return Object.freeze(copy);
+  };
+  const captured = snapshot(input, 0);
+  current();
   const object = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value))
       throw new Error('Invalid native output record');
@@ -174,7 +187,7 @@ export function validateNoteNativeOutput(
     // attribute domains and mark exclusion were explicitly checked above.
     return type.createChecked(attributes, children, marks);
   };
-  const result = build(input);
+  const result = build(captured);
   if (result.type !== schema.topNodeType || result.marks.length)
     throw new Error('Invalid native root');
   current();
