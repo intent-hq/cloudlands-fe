@@ -1,6 +1,7 @@
 import type { Workspace } from '$shared/types';
 import { Editor, Extension } from '@tiptap/core';
-import { AllSelection, TextSelection, Plugin, type Transaction } from '@tiptap/pm/state';
+import { AllSelection, TextSelection } from '@tiptap/pm/state';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { createEditorConfig } from '$lib/utils/editor-config';
 import { NoteNativeLifetime } from './note-native-lifetime';
@@ -11,6 +12,7 @@ import { projectNoteWindow } from './note-window-projection';
 import type { SourceProjection } from './projection/source-projection';
 import type { NoteWindow } from './note-window-reader';
 import type { NoteResourceCost } from './note-resource-ledger';
+import { createNoteTransactionRelay, type NoteTransactionOwner } from './note-transaction-relay';
 
 export interface NoteSourceSelection {
   anchor: number;
@@ -19,9 +21,13 @@ export interface NoteSourceSelection {
   headAffinity: -1 | 1;
 }
 export interface NoteViewEditing {
-  /** Document-session owner accepts bounded native transactions and owns chronological
-   * history/source writes. A disposable view must never create its own undo history. */
-  accept(transaction: Transaction, projection: SourceProjection): boolean;
+  /** Resolve a current document-owned authority for this mounted window. Binding is
+   * pure; an unsupported or stale window remains read-only. */
+  bind(
+    window: NoteWindow,
+    projection: SourceProjection,
+    doc: PMNode,
+  ): NoteTransactionOwner | undefined;
   undo(): void;
   redo(): void;
 }
@@ -32,6 +38,7 @@ export interface NoteWindowViewOptions {
   fullOperation(kind: 'copy' | 'search' | 'selectAll', selection: NoteSourceSelection): void;
   editing?: NoteViewEditing;
   changed?(): void;
+  failed?(): void;
   /** Retain the actual admitted DATA graph until this view releases its reference. */
   retainWindow?(window: NoteWindow): () => void;
 }
@@ -50,11 +57,18 @@ export interface NoteReadingSurface {
 }
 export class NoteWindowView {
   editor?: Editor;
-  projection?: SourceProjection;
+  private committedProjection?: SourceProjection;
+  private transactionRelay?: ReturnType<typeof createNoteTransactionRelay>;
+  get projection() {
+    if (this.transactionRelay?.busy && this.editor)
+      return this.transactionRelay.projectionAt(this.editor.state) ?? this.committedProjection;
+    return this.committedProjection;
+  }
   window?: NoteWindow;
   private pending?: NoteWindow;
   private currentLease?: () => void;
   private lifetime?: NoteNativeLifetime;
+  private bindEditing?: (editing: NoteViewEditing | undefined) => boolean;
   private pendingLease?: () => void;
   private pins = new Set<string | symbol>();
   private readonly compositionPin = Symbol('native composition');
@@ -144,9 +158,10 @@ export class NoteWindowView {
     for (const root of measured.shadowRoots) this.observeDom(root);
   }
   updateEditing(editing?: NoteViewEditing) {
-    const changed = !!editing !== !!this.options.editing;
+    if (this.transactionRelay?.defer('owner', () => this.updateEditing(editing))) return;
+    const changed = editing !== this.options.editing;
     this.options.editing = editing;
-    if (changed) this.editor?.setEditable(!!editing, false);
+    if (changed) this.editor?.setEditable(this.bindEditing?.(editing) ?? false, false);
   }
   getSelection(): NoteSourceSelection {
     return { ...this.selection };
@@ -193,6 +208,10 @@ export class NoteWindowView {
     }
   };
   private copy = (event: Event) => {
+    if (this.transactionRelay?.busy) {
+      event.preventDefault();
+      return;
+    }
     const w = this.window,
       s = this.selection;
     if (
@@ -242,6 +261,7 @@ export class NoteWindowView {
     } else this.options.seek(Math.max(0, position - 1024));
   }
   setSelection(selection: NoteSourceSelection) {
+    if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
     this.selection = { ...selection };
     const w = this.window,
       p = this.projection,
@@ -286,6 +306,19 @@ export class NoteWindowView {
   }
   show(window: NoteWindow) {
     if (this.disposed) return false;
+    if (this.transactionRelay?.busy) {
+      if (this.pending !== window) {
+        const lease = this.options.retainWindow?.(window);
+        this.pendingLease?.();
+        this.pending = window;
+        this.pendingLease = lease;
+        this.cost.pendingBytes = window.cost.sourceBytes + window.cost.contextBytes;
+      }
+      this.transactionRelay.defer('window', () => {
+        if (this.pending) this.show(this.pending);
+      });
+      return false;
+    }
     if (this.window === window) {
       this.pending = undefined;
       this.pendingLease?.();
@@ -336,15 +369,39 @@ export class NoteWindowView {
       const extensions = (config.extensions ?? []).map((e) =>
         e.name === 'starterKit' ? e.configure({ undoRedo: false }) : e,
       );
+      let boundEditing = this.options.editing;
+      let editOwner: NoteTransactionOwner | undefined;
+      let currentProjection = projection;
+      const transactions = createNoteTransactionRelay(() =>
+        this.editor === candidate && this.options.editing === boundEditing ? editOwner : undefined,
+      );
+      const retireFailedView = () => {
+        if (this.editor !== candidate) return;
+        this.destroyEditor();
+        this.pending = undefined;
+        this.pendingLease?.();
+        this.pendingLease = undefined;
+        this.cost.pendingBytes = 0;
+        this.options.failed?.();
+      };
       const relay = Extension.create({
         name: 'noteDocumentCommands',
         priority: 2000,
-        addProseMirrorPlugins: () => [
-          new Plugin({
-            filterTransaction: (tr) =>
-              !tr.docChanged || !!this.options.editing?.accept(tr, projection),
-          }),
-        ],
+        addProseMirrorPlugins: () => [transactions.plugin],
+        dispatchTransaction({ transaction, next }) {
+          try {
+            transactions.dispatch(transaction, next, this.editor);
+          } catch (error) {
+            try {
+              retireFailedView();
+            } catch (cleanup) {
+              throw new AggregateError([error, cleanup], 'Native note view retirement failed', {
+                cause: error,
+              });
+            }
+            throw error;
+          }
+        },
         addKeyboardShortcuts: () => ({
           'Mod-z': () => {
             this.options.editing?.undo();
@@ -378,6 +435,10 @@ export class NoteWindowView {
           handleDOMEvents: {
             ...config.editorProps?.handleDOMEvents,
             copy: (_view, event) => {
+              if (transactions.busy) {
+                event.preventDefault();
+                return true;
+              }
               if (
                 this.selection.anchor < window.range.start ||
                 this.selection.anchor > window.range.end ||
@@ -423,12 +484,35 @@ export class NoteWindowView {
             return false;
           },
         },
-        onTransaction: ({ transaction }) => {
-          if (this.applying || this.editor !== candidate) return;
-          if (transaction.selectionSet && this.projection) {
+        onTransaction: ({ transaction, appendedTransactions }) => {
+          if (!candidate || this.applying || this.editor !== candidate) return;
+          const chain = [transaction, ...appendedTransactions];
+          if (chain.some((step) => step.docChanged)) {
+            const accepted = transactions.adopt(chain, this.editor.state);
+            if (!accepted) {
+              // A replaced owner may not adopt a stale native result.
+              editOwner = undefined;
+              this.editor.setEditable(false, false);
+              return;
+            }
+            currentProjection = accepted.projection;
+            this.committedProjection = accepted.projection;
+            this.cost.projectionPeakBytes = Math.max(
+              this.cost.projectionPeakBytes,
+              this.cost.derivedBytes + accepted.cost.derivedBytes,
+            );
+            this.cost.derivedBytes = accepted.cost.derivedBytes;
+            let nodes = 0;
+            this.editor.state.doc.descendants(() => {
+              nodes++;
+            });
+            this.cost.mountedNodes = nodes;
+          }
+          if (chain.some((step) => step.selectionSet || step.docChanged) && this.projection) {
             try {
-              const anchor = this.projection.sourceAt(transaction.selection.anchor),
-                head = this.projection.sourceAt(transaction.selection.head);
+              const selection = this.editor.state.selection;
+              const anchor = this.projection.sourceAt(selection.anchor),
+                head = this.projection.sourceAt(selection.head);
               this.selection = { anchor, head, anchorAffinity: 1, headAffinity: 1 };
               this.options.selectionChanged(this.selection);
             } catch {
@@ -437,13 +521,21 @@ export class NoteWindowView {
           }
         },
       });
+      editOwner = boundEditing?.bind(window, projection, candidate.state.doc);
+      candidate.setEditable(!!editOwner, false);
       candidate.mount(candidateHost);
       this.destroyEditor();
       this.host.replaceChildren(candidateHost);
       candidateHost.removeAttribute('style');
-      this.projection = projection;
+      this.committedProjection = projection;
       this.window = window;
       this.editor = candidate;
+      this.transactionRelay = transactions;
+      this.bindEditing = (editing) => {
+        boundEditing = editing;
+        editOwner = editing?.bind(window, currentProjection, editor.state.doc);
+        return !!editOwner;
+      };
       this.currentLease = lease;
       this.lifetime = lifetime;
       this.cost.pendingBytes = 0;
@@ -551,9 +643,11 @@ export class NoteWindowView {
       lifetime = this.lifetime,
       lease = this.currentLease;
     this.editor = undefined;
+    this.bindEditing = undefined;
     this.lifetime = undefined;
     this.currentLease = undefined;
-    this.projection = undefined;
+    this.committedProjection = undefined;
+    this.transactionRelay = undefined;
     this.window = undefined;
     if (lifetime) {
       void lifetime
@@ -572,6 +666,7 @@ export class NoteWindowView {
     }
   }
   destroy() {
+    if (this.transactionRelay?.defer('destroy', () => this.destroy())) return;
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
@@ -585,7 +680,7 @@ export class NoteWindowView {
     this.host.removeEventListener('compositionstart', this.compositionStart);
     this.host.removeEventListener('compositionend', this.compositionEnd);
     this.destroyEditor();
-    this.projection = undefined;
+    this.committedProjection = undefined;
     this.window = undefined;
     this.pending = undefined;
     this.pendingLease?.();

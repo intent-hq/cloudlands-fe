@@ -99,6 +99,9 @@
       fullOperation: (kind, selection) => onFullOperation(kind, selection),
       workspace: untrack(() => workspace),
       editing: untrack(() => (ready ? editing : undefined)),
+      failed: () => {
+        renderError = true;
+      },
       changed: () => {
         const range = native.window?.range;
         if (range)

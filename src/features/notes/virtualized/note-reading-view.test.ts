@@ -61,7 +61,7 @@ it('keeps the composing native view when workspace metadata or the editing adapt
     status: 'ready',
     windows: { panel: { value: { range: { start: 2_000_000, end: 2_000_500 } } } },
   });
-  const editing = { accept: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+  const editing = { bind: vi.fn(), undo: vi.fn(), redo: vi.fn() };
   const component = render(NoteReadingView, {
     workspaceId: 'w',
     workspace: { id: 'w' } as any,
@@ -72,7 +72,7 @@ it('keeps the composing native view when workspace metadata or the editing adapt
   });
   await waitFor(() => expect(state.view?.pending).toBeDefined());
   const original = state.view;
-  const replacement = { accept: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+  const replacement = { bind: vi.fn(), undo: vi.fn(), redo: vi.fn() };
   await component.rerender({
     workspace: { id: 'w', name: 'Renamed' } as any,
     editing: replacement,
@@ -87,7 +87,7 @@ it('suspends editing and exposes session failure without destroying the retained
     windows: { panel: { value: { range: { start: 0, end: 100 } } } },
   };
   state.session = writable(ready);
-  const editing = { accept: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+  const editing = { bind: vi.fn(), undo: vi.fn(), redo: vi.fn() };
   const component = render(NoteReadingView, {
     workspaceId: 'w',
     noteId: 'n',
@@ -106,4 +106,23 @@ it('suspends editing and exposes session failure without destroying the retained
   state.session.set(ready);
   await waitFor(() => expect(state.view.options.editing).toBe(editing));
   expect(state.view).toBe(original);
+});
+
+it('exposes a retired native transaction failure without clearing the document session', async () => {
+  const ready = {
+    status: 'ready',
+    windows: { panel: { value: { range: { start: 0, end: 100 } } } },
+  };
+  state.session = writable(ready);
+  const component = render(NoteReadingView, {
+    workspaceId: 'w',
+    noteId: 'n',
+    panelId: 'panel',
+    onFullOperation: vi.fn(),
+  });
+  await waitFor(() => expect(state.view?.pending).toBeDefined());
+  state.dispatch.mockClear();
+  state.view.options.failed();
+  expect(await component.findByRole('alert')).toBeTruthy();
+  expect(state.dispatch).not.toHaveBeenCalled();
 });
