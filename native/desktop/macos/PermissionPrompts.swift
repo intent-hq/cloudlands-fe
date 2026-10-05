@@ -28,28 +28,46 @@ struct PermissionReadiness {
     private(set) var generation: UInt64 = 0
     private(set) var state = "unavailable"
     private var lastPoll: UInt64 = 0
-    private var started = false
+    private var inFlight: UInt64?
+    private var completed: [String: (state: String, at: UInt64)] = [:]
+    func status(for id: String) -> String {
+        completed[id]?.state ?? (requestId == id ? state : "pending")
+    }
     mutating func observe(requestId: String, granted: Bool, now: UInt64) -> UInt64? {
-        if self.requestId != requestId {
-            self.requestId = requestId; generation += 1; started = false; state = "unavailable"
-        }
-        lastPoll = now
+        // A daemon request expires within five minutes. This is only OS setup
+        // bookkeeping; the authenticated caller still checks the actual expiry.
+        completed = completed.filter { now - $0.value.at < 300000 }
         if !granted {
-            if started { generation += 1 }
-            started = false; state = "unavailable"
+            completed = completed.filter { $0.value.state != "ready" }
+            if state == "pending" { abandon() }
             return nil
         }
-        guard !started else { return nil }
-        started = true; generation += 1; state = "pending"
+        if completed[requestId] != nil { return nil }
+        // Do not cancel another user-approved request or launch overlapping OS
+        // calls. Cancellation is cooperative: retain a canceled probe until its
+        // OS callback returns, even though its result can no longer be used.
+        if inFlight != nil {
+            if self.requestId == requestId && state == "pending" { lastPoll = now }
+            return nil
+        }
+        self.requestId = requestId; lastPoll = now
+        generation += 1; state = "pending"; inFlight = generation
         return generation
     }
     mutating func complete(_ token: UInt64, ready: Bool) {
-        guard token == generation, state == "pending" else { return }
+        guard inFlight == token else { return }
+        inFlight = nil
+        guard token == generation, state == "pending", let id = requestId else { return }
         state = ready ? "ready" : "unavailable"
+        completed[id] = (state, lastPoll)
+    }
+    private mutating func abandon() {
+        if let id = requestId { completed[id] = ("unavailable", lastPoll) }
+        generation += 1; state = "unavailable"
     }
     mutating func expire(now: UInt64) -> Bool {
-        guard started, state == "pending", now - lastPoll >= 3000 else { return false }
-        generation += 1; state = "unavailable"
+        guard state == "pending", now - lastPoll >= 3000 else { return false }
+        abandon()
         return true
     }
 }

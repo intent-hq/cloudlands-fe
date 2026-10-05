@@ -123,6 +123,8 @@ export const desktopClient = {
       (result.accessibility && result.screenRecording && result.screenCapture === 'ready')
     )
       return;
+    if (result.accessibility && result.screenRecording && result.screenCapture === 'unavailable')
+      return m.desktop_os_captureRetry_description();
     return [
       !result.accessibility ? m.desktop_os_accessibility_description() : undefined,
       !result.screenRecording ? m.desktop_os_screenRecording_description() : undefined,

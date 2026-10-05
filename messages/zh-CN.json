@@ -7120,5 +7120,6 @@
   "chat_queuedMessages_sendAllUnsupported_error": "一起发送排队消息需要更新的后端。请使用每条消息的“立即发送”按钮。",
   "desktop_os_accessibility_description": "缺少 macOS 辅助功能权限。",
   "desktop_os_screenRecording_description": "缺少 macOS 屏幕录制权限。",
-  "desktop_os_setup_description": "控制尚未开始。正在等待 macOS 权限检查；您可以拒绝此请求以取消。在系统设置 → 隐私与安全性中，先为 macOS 显示的 Intent 项目启用辅助功能，再启用屏幕录制。如果没有对话框或访问被拒绝，请使用系统设置。如果 macOS 要求退出并重新打开 Intent，请按提示操作。仅在此请求仍有效时继续授权；过期或重新打开后，请请求新会话并再次允许。"
+  "desktop_os_setup_description": "控制尚未开始。正在等待 macOS 权限检查；您可以拒绝此请求以取消。在系统设置 → 隐私与安全性中，先为 macOS 显示的 Intent 项目启用辅助功能，再启用屏幕录制。如果没有对话框或访问被拒绝，请使用系统设置。如果 macOS 要求退出并重新打开 Intent，请按提示操作。仅在此请求仍有效时继续授权；过期或重新打开后，请请求新会话并再次允许。",
+  "desktop_os_captureRetry_description": "控制尚未开始。macOS 截取准备检查已结束，但未确认访问权限。此次设置不会自动重试。请完成 macOS 权限步骤，并按提示退出和重新打开 Intent。拒绝此请求，然后请求新会话并再次允许。"
 }

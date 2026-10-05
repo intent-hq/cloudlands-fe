@@ -55,7 +55,7 @@ actor Desktop {
     }
     func watchdog() {
         if permissionReadiness.expire(now: milliseconds()) {
-            permissionProbe?.cancel(); permissionProbe = nil
+            permissionProbe?.cancel()
         }
         if lockFD >= 0 && milliseconds() - lastStep >= 15000 { release() }
     }
@@ -146,7 +146,7 @@ actor Desktop {
             }
             let previous = permissionReadiness.generation
             let token = permissionReadiness.observe(requestId: requestId, granted: accessibility && screenRecording, now: milliseconds())
-            if previous != permissionReadiness.generation { permissionProbe?.cancel(); permissionProbe = nil }
+            if previous != permissionReadiness.generation { permissionProbe?.cancel() }
             if let token = token {
                 // First SCK enumeration can require an asynchronous OS decision.
                 // Do it before Allow/start, without holding up the command pipe,
@@ -154,13 +154,14 @@ actor Desktop {
                 permissionProbe = Task {
                     do {
                         _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-                        if !Task.isCancelled { self.permissionReadiness.complete(token, ready: true) }
+                        self.permissionReadiness.complete(token, ready: !Task.isCancelled)
                     } catch {
-                        if !Task.isCancelled { self.permissionReadiness.complete(token, ready: false) }
+                        self.permissionReadiness.complete(token, ready: false)
                     }
+                    self.permissionProbe = nil
                 }
             }
-            return ["accessibility": accessibility, "screenRecording": screenRecording, "screenCapture": permissionReadiness.state]
+            return ["accessibility": accessibility, "screenRecording": screenRecording, "screenCapture": permissionReadiness.status(for: requestId)]
         }
         if op == "release" { release(); return ["ok": true] }
         if op == "releaseInput" { releaseInput(); return ["ok": true] }

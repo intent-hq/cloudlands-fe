@@ -7120,5 +7120,6 @@
   "chat_queuedMessages_sendAllUnsupported_error": "대기 중인 메시지를 함께 보내려면 더 최신 백엔드가 필요합니다. 각 메시지의 지금 보내기 버튼을 사용하세요.",
   "desktop_os_accessibility_description": "macOS 손쉬운 사용 권한이 없습니다.",
   "desktop_os_screenRecording_description": "macOS 화면 기록 권한이 없습니다.",
-  "desktop_os_setup_description": "제어가 시작되지 않았습니다. macOS 권한 확인을 기다리는 중입니다. 취소하려면 이 요청을 거부하세요. 시스템 설정 → 개인정보 보호 및 보안에서 macOS가 표시하는 Intent 항목의 손쉬운 사용, 화면 기록 순서로 권한을 활성화하세요. 대화상자가 나타나지 않거나 접근을 거부했다면 시스템 설정을 사용하세요. macOS가 Intent 종료 및 다시 열기를 요청하면 따르세요. 이 요청이 유효한 동안에만 승인이 계속됩니다. 만료되거나 다시 연 후에는 새 세션을 요청하고 다시 허용하세요."
+  "desktop_os_setup_description": "제어가 시작되지 않았습니다. macOS 권한 확인을 기다리는 중입니다. 취소하려면 이 요청을 거부하세요. 시스템 설정 → 개인정보 보호 및 보안에서 macOS가 표시하는 Intent 항목의 손쉬운 사용, 화면 기록 순서로 권한을 활성화하세요. 대화상자가 나타나지 않거나 접근을 거부했다면 시스템 설정을 사용하세요. macOS가 Intent 종료 및 다시 열기를 요청하면 따르세요. 이 요청이 유효한 동안에만 승인이 계속됩니다. 만료되거나 다시 연 후에는 새 세션을 요청하고 다시 허용하세요.",
+  "desktop_os_captureRetry_description": "제어가 시작되지 않았습니다. macOS 캡처 준비 확인이 접근을 확인하지 못한 채 종료되었습니다. 이 설정 시도는 자동으로 반복되지 않습니다. macOS 권한 설정을 완료하고 Intent 종료 및 다시 열기 요청이 있으면 따르세요. 이 요청을 거부한 뒤 새 세션을 요청하고 다시 허용하세요."
 }
