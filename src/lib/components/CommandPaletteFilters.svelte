@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { ButtonGroup } from '$lib/components/ui/button-group';
   import { m } from '$shared/paraglide/messages.js';
   import type { PaletteFilter } from '$store/renderer/slices/command-palette/command-palette-utils';
 
@@ -53,22 +54,22 @@
 
 <div
   bind:this={filterStrip}
-  role="group"
-  aria-label={m.lib_commandPalette_filters_ariaLabel()}
-  class="flex min-w-0 shrink-0 scroll-px-3 items-center gap-1 overflow-x-auto overscroll-x-contain border-b border-border px-3 py-2"
+  class="min-w-0 shrink-0 scroll-px-3 overflow-x-auto overscroll-x-contain px-3 py-2"
 >
-  {#each filters as filter (filter.prefix)}
-    <Button
-      variant="ghost"
-      size="sm"
-      active={activeFilter === filter.filter}
-      aria-pressed={activeFilter === filter.filter}
-      data-filter={filter.filter ?? 'all'}
-      tabindex={-1}
-      class={activeFilter === filter.filter ? 'text-foreground' : 'text-muted-foreground'}
-      onclick={() => onFilter(filter.prefix)}
-    >
-      {filter.label}
-    </Button>
-  {/each}
+  <ButtonGroup aria-label={m.lib_commandPalette_filters_ariaLabel()} class="w-max">
+    {#each filters as filter (filter.prefix)}
+      <Button
+        variant="ghost"
+        size="sm"
+        active={activeFilter === filter.filter}
+        aria-pressed={activeFilter === filter.filter}
+        data-filter={filter.filter ?? 'all'}
+        tabindex={-1}
+        class={activeFilter === filter.filter ? 'text-foreground' : 'text-muted-foreground'}
+        onclick={() => onFilter(filter.prefix)}
+      >
+        {filter.label}
+      </Button>
+    {/each}
+  </ButtonGroup>
 </div>
