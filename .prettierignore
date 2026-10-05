@@ -66,3 +66,9 @@ src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-s
 src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-adjacentHtmlPreCodePlain.json
 src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-mixedFences.json
 src/features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/mermaid-titledMermaidFence.json
+
+# Byte-identical paragraph Store captures; producer hashes live in provenance.json.
+src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-far.json
+src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-html-tail.json
+src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-one.json
+src/features/notes/virtualized/editing/__fixtures__/note-paragraph/plain-paragraph-two.json
