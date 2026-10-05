@@ -902,6 +902,42 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(state.providerSettings.enabledProviders).toEqual({ auggie: true, codex: true });
     expect(selectEnabledProviderIds.select(appStore.state)).toContain('codex');
   });
+
+  it('invalidates existing model catalogs on host settings invalidation without another reader', async () => {
+    const { providerModelsLoaded, providerModelsObserved, providerModelsReleased } =
+      await import('$store/renderer/slices/provider-models/provider-models-slice');
+    const { selectProviderModelsCacheEntry } =
+      await import('$store/renderer/slices/provider-models/provider-models-selectors');
+    const epoch = appStore.state.providerModels.clearEpoch;
+    appStore.dispatch(providerModelsObserved('settings-picker', ['codex']));
+    appStore.dispatch(providerModelsObserved('composer-picker', ['codex']));
+    appStore.dispatch(
+      providerModelsLoaded('codex', { models: [{ value: 'old', label: 'Old' }] }, epoch),
+    );
+    const observers = appStore.state.providerModels.observers;
+    try {
+      await primeBridge();
+      expect(selectProviderModelsCacheEntry.select(appStore.state, 'codex')).toBeDefined();
+      capturedHandlers[0]!({
+        method: 'events.event',
+        params: {
+          event: {
+            id: 'evt-host-settings',
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'host:execution-context-changed',
+            actor: { type: 'system' },
+            data: {},
+          },
+        },
+      });
+      expect(selectProviderModelsCacheEntry.select(appStore.state, 'codex')).toBeUndefined();
+      expect(appStore.state.providerModels.clearEpoch).toBe(epoch + 1);
+      expect(appStore.state.providerModels.observers).toBe(observers);
+    } finally {
+      appStore.dispatch(providerModelsReleased('settings-picker'));
+      appStore.dispatch(providerModelsReleased('composer-picker'));
+    }
+  });
 });
 
 describe('daemonEventsBridge (live stream wire contract — agent:stream:* → transcript)', () => {

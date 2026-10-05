@@ -706,6 +706,27 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     });
   });
 
+  it('preserves the snapshot cursor for the first older page after five-message hydration', () => {
+    const agentId = 'agent-sub-five-cursor';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    // A variable permits the wire's existing nextToken without inventing a
+    // production type/API before the implementation task adds its handoff.
+    const snapshot = {
+      ...transcript(Array.from({ length: 5 }, (_, i) => makeMessage(`m-${115 + i}`, 'short'))),
+      truncated: true,
+      totalMessages: 120,
+      fromSnapshot: true,
+      nextToken: 'opaque-before-newest-five',
+    };
+    sub.handler(snapshot);
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
+      nextToken: snapshot.nextToken,
+      oldestMessageId: 'm-115',
+      totalMessages: 120,
+    });
+  });
+
   it("seeds the stream accumulator from the snapshot's in-flight assistant message", () => {
     const agentId = 'agent-sub-seed';
     seedSession(agentId);

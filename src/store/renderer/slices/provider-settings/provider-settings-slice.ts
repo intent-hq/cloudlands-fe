@@ -128,10 +128,10 @@ function canBeDisabled(state: ProviderSettingsState, providerId: string): boolea
 
 /**
  * Request a default provider (the provider leg of the default model
- * triple). The state lives in the model slice (`ModelState.defaultProviderId`
- * with a `pendingDefaultProviderId` hydration guard); the persistence saga
- * validates the quick-action snapshot before emitting activeProviderAccepted,
- * then writes `model.defaultProvider` (PROTOCOL §5.12).
+ * triple). The state lives in the model slice (`ModelState.defaultProviderId`)
+ * and changes only from daemon receipts. The persistence saga validates the
+ * quick-action snapshot before emitting activeProviderAccepted, then writes
+ * `model.defaultProvider` (PROTOCOL §5.12).
  */
 export const setActiveProvider = createAction<
   [providerId: string, request?: ProviderSettingsRequestContext]
@@ -166,15 +166,6 @@ export const loadEnabledProvidersFromStorage = createAction<[providers: Record<s
  */
 export const enablementPersistRejected = createAction<[providerId: string, revision?: number]>(
   'providerSettings/enablementPersistRejected',
-);
-
-/**
- * Dispatched by the persistence sagas when the daemon rejects a
- * `model.defaultProvider` write. Handled in the model slice: retires the
- * matching pending default provider so later hydrations apply verbatim.
- */
-export const activeProviderPersistRejected = createAction<[providerId: string]>(
-  'providerSettings/activeProviderPersistRejected',
 );
 
 export const providerSettingsReducer = createReducer<ProviderSettingsState>(initialState);

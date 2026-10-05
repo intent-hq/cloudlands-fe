@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_PAGE_SIZE } from '$shared/constants';
   import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
@@ -316,6 +317,7 @@
   import { createPendingSendTransitions } from './pending-send-transitions';
 
   import LazyTurn from './LazyTurn.svelte';
+  import { fillChatViewport } from './chat-viewport-fill';
   import PinnedTurnPrompt from './PinnedTurnPrompt.svelte';
   import {
     attachPinnedPromptMessage,
@@ -2480,12 +2482,46 @@
   // Near-top px distance that requests one older-history page.
   const SCROLLBACK_TOP_THRESHOLD_PX = 240;
 
+  function requestViewportFill() {
+    if (!isActive || !agentId || !workspace?.id || !$transcriptSnapshotMeta$) return;
+    const chat = selectChatAgentState.select(appStore.state, agentId);
+    if (
+      chat.scrollbackOlderBlocked ||
+      chat.fetchingOlderHistory ||
+      chat.fetchingGapFill ||
+      chat.fetchingHistorySeek ||
+      seekLandingPending ||
+      $historySegmentMeta$.gapToTail ||
+      $historyExhausted$
+    )
+      return;
+    if (
+      !shouldRequestOlderHistory({
+        scrollTop: 0,
+        threshold: 0,
+        canScroll: false,
+        fetching: false,
+        exhausted: $historyExhausted$,
+        historyCount: $agentHistoryMessages$.length,
+        tailCount: $agentMessages$.length,
+        tailTruncated: $transcriptSnapshotMeta$.truncated || $agentTailCapPruned$,
+        totalMessages: $transcriptSnapshotMeta$.totalMessages,
+      })
+    )
+      return;
+    appStore.dispatch(olderHistoryPageRequested(workspace.id, agentId));
+  }
+
   function maybeRequestOlderHistory() {
     const container = scrollContainer;
     if (!isActive || !container || !workspace?.id || !agentId) return;
     // A far-flick seek owns the transcript while in flight / landing: its
     // landing REPLACES the segment, so no serial page may race it.
-    if ($fetchingHistorySeek$ || seekLandingPending) return;
+    if ($fetchingHistorySeek$ || $fetchingGapFill$ || seekLandingPending) return;
+    if (selectChatAgentState.select(appStore.state, agentId).scrollbackOlderBlocked) return;
+    // Automatic fill owns short content; programmatic bottom positioning must
+    // not turn into near-top prefetch while hydration is still settling.
+    if (shouldFollowBottom) return;
     const request = shouldRequestOlderHistory({
       scrollTop: container.scrollTop,
       threshold: SCROLLBACK_TOP_THRESHOLD_PX,
@@ -2518,7 +2554,7 @@
   // Set from debounce fire until the landing is applied: suppresses the
   // serial trigger, the prepend anchor restore, and the frozen-phase
   // absorption (the landing handler owns spacers + scroll position).
-  let seekLandingPending = false;
+  let seekLandingPending = $state(false);
   let pendingSeekTargetOrdinal: number | null = null;
 
   // Estimated unloaded-row split for the current segment (above vs below).
@@ -3265,9 +3301,17 @@
     });
   });
 
-  function requestHistoryGapFill() {
+  function requestHistoryGapFill(trigger: 'automatic' | 'explicit' = 'automatic') {
     if (!isActive || !workspace?.id || !agentId) return;
-    if ($fetchingGapFill$ || !$historySegmentMeta$.gapToTail) return;
+    if ($fetchingGapFill$ || $fetchingOlderHistory$ || !$historySegmentMeta$.gapToTail) return;
+    // A failed or stalled page stops automatic continuation, but the visible
+    // load button must still allow a deliberate retry. Keep the latch until
+    // that request settles so observers cannot restart the stopped chain.
+    if (
+      trigger === 'automatic' &&
+      selectChatAgentState.select(appStore.state, agentId).scrollbackGapBlocked
+    )
+      return;
     // Never race a settling seek (mirror of maybeRequestOlderHistory): the
     // seek REPLACES the segment, so a gap page anchored at the pre-seek
     // segment must not go to the wire. The saga carries the same guard;
@@ -4606,7 +4650,9 @@
       handledOpenMessageRequestIds.add(detail.requestId);
       const match = detail.query
         ? findChatSearchMatches(
-            $agentMessages$.filter((message) => message.id === detail.messageId),
+            [...$agentHistoryMessages$, ...$agentMessages$].filter(
+              (message) => message.id === detail.messageId,
+            ),
             detail.query,
             messageIdToTurnKey,
             workspace?.ownerPrincipalId,
@@ -4752,7 +4798,7 @@
     const getContainer = beginScrollNavigation();
     const originAgentId = agentId;
     const originWorkspaceId = workspace.id;
-    const epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
+    let epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
     let cancelled = false;
     let ownsSeek = false;
     let tokens = { nextToken: null as string | null, prevToken: null as string | null };
@@ -4802,6 +4848,7 @@
         ownsSeek = true;
         seekLandingPending = true;
         appStore.dispatch(scrollbackFetchStarted(originAgentId, 'seek'));
+        epoch = selectChatAgentState.select(appStore.state, originAgentId).scrollbackDiscardEpoch;
         const historyIndex = $agentHistoryMessages$.findIndex(
           (message) => message.id === currentMessageId,
         );
@@ -4822,7 +4869,7 @@
           (token, anchor) =>
             appClient.agents.getConversation(
               originAgentId,
-              200,
+              CHAT_PAGE_SIZE,
               token,
               anchor,
               undefined,
@@ -5791,8 +5838,8 @@
     const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither
     // the loaded scrollback nor the live tail — messageIdToTurnKey spans
-    // both). Seek the page containing it (§5.5 aroundMessageId) and replace
-    // the session, same as the deep-open helper; on failure (message deleted
+    // both). Seek the page containing it (§5.5 aroundMessageId) into the
+    // history segment, same as the deep-open helper; on failure (message deleted
     // / seek rejected) the helper logs and we bail, leaving the conversation
     // where it is. Resident rows scroll directly, keeping the tail intact.
     if (agentId && !messageIdToTurnKey.has(messageId)) {
@@ -5963,6 +6010,7 @@
   bind:this={panelElement}
   bind:clientHeight={panelHeight}
   class="chat-panel-container group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  class:chief-chat-panel={isChiefWorkspace}
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
@@ -6040,34 +6088,38 @@
            clears it on a later animation frame after the turns unmount), so it
            would otherwise paint stale message content above the skeleton. -->
       {#if pinnedPrompt && !deferTranscriptReveal}
-        <!-- Mirror the conversation column's horizontal padding plus the chief
-             variant's user-row inset so the pinned bubble aligns with
-             in-conversation user bubbles. -->
+        <!-- Share the transcript inset so the pinned bubble aligns with its source. -->
         <div
-          class="chat-content-measure mx-auto w-full min-w-0 {isChiefWorkspace
-            ? 'px-0'
-            : 'px-4 sm:px-6'}"
+          class="chat-content-measure mx-auto w-full min-w-0"
           class:regular-chat-content-inset={!isChiefWorkspace}
-          style:--subscription-card-max-bleed={isChiefWorkspace ? '0px' : undefined}
           data-testid="pinned-prompt-overlay-lane"
         >
-          <div
-            class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}
-            style:--subscription-card-max-bleed={isChiefWorkspace ? '0.25rem' : undefined}
-          >
-            <PinnedTurnPrompt
-              message={pinnedPrompt.message}
-              surface={pinnedPrompt.surface}
-              {workspace}
-              onActivate={handlePinnedPromptClick}
-            />
-          </div>
+          <PinnedTurnPrompt
+            message={pinnedPrompt.message}
+            surface={pinnedPrompt.surface}
+            {workspace}
+            onActivate={handlePinnedPromptClick}
+          />
         </div>
       {/if}
     </div>
     <!-- followBottom, native anchoring, and the LazyTurn ledger own scroll compensation. -->
     <div
       bind:this={scrollContainer}
+      use:fillChatViewport={{
+        enabled:
+          isActive &&
+          !!$transcriptSnapshotMeta$ &&
+          !isFirstHydrationLoading &&
+          !$awaitingSwitchBackSnapshot$ &&
+          !$fetchingOlderHistory$ &&
+          !$fetchingGapFill$ &&
+          !$fetchingHistorySeek$ &&
+          !seekLandingPending,
+        revision: `${agentId}:${$transcriptSnapshotMeta$?.seq}:${$agentHistoryMessages$.length}:${$agentMessages$.length}`,
+        hydrate: (id) => messageHydrationPolicy.setForced(id, true),
+        requestOlder: requestViewportFill,
+      }}
       use:trackPinnedPrompt={{
         enabled: isActive && containerHeight >= 400,
         onChange: setPinnedPrompt,
@@ -6095,10 +6147,9 @@
     >
       <div
         class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
-          ? 'px-0'
-          : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
+          ? ''
+          : 'pt-8'} {transcriptBottomInsetClass}"
         class:regular-chat-content-inset={!isChiefWorkspace}
-        style:--subscription-card-max-bleed={isChiefWorkspace ? '0px' : undefined}
         data-testid="chat-transcript-inner"
         data-structural-recompute-count={transcriptStructure.recomputeCount}
       >
@@ -6601,7 +6652,7 @@
                         size="sm"
                         class="text-xs text-muted-foreground"
                         data-testid="chat-history-gap-load-button"
-                        onclick={requestHistoryGapFill}
+                        onclick={() => requestHistoryGapFill('explicit')}
                       >
                         {m.chat_chatPanel_historyGapLoad_label()}
                       </Button>
@@ -6804,33 +6855,26 @@
                           estimatedHeight={USER_ROW_ESTIMATED_HEIGHT}
                         >
                           {#snippet children()}
-                            <div
-                              class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}
-                              style:--subscription-card-max-bleed={isChiefWorkspace
-                                ? '0.25rem'
-                                : undefined}
-                            >
-                              <ChatMessage
-                                {agentId}
-                                messageId={message.id}
-                                ownsMessageIdentity={false}
-                                {workspace}
-                                ownPrincipalId={$presenceOwnPrincipalId$}
-                                onEditSubmit={isRetiredSession
-                                  ? undefined
-                                  : (newText, model, blocks) =>
-                                      handleEditMessage(message.id, newText, model, blocks)}
-                                onEditStateChange={(isEditing) =>
-                                  handleTurnEditStateChange(turnKey, isEditing)}
-                                editModel={turn.assistantMessages[0]?.metadata?.model ??
-                                  hydratedInputModel}
-                                onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
-                                previousMessageLoading={previousMessageLoadingId === message.id}
-                                backendSessionId={auggieSessionId}
-                                suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
-                                  cardSpacingOwnedBefore}
-                              />
-                            </div>
+                            <ChatMessage
+                              {agentId}
+                              messageId={message.id}
+                              ownsMessageIdentity={false}
+                              {workspace}
+                              ownPrincipalId={$presenceOwnPrincipalId$}
+                              onEditSubmit={isRetiredSession
+                                ? undefined
+                                : (newText, model, blocks) =>
+                                    handleEditMessage(message.id, newText, model, blocks)}
+                              onEditStateChange={(isEditing) =>
+                                handleTurnEditStateChange(turnKey, isEditing)}
+                              editModel={turn.assistantMessages[0]?.metadata?.model ??
+                                hydratedInputModel}
+                              onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
+                              previousMessageLoading={previousMessageLoadingId === message.id}
+                              backendSessionId={auggieSessionId}
+                              suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
+                                cardSpacingOwnedBefore}
+                            />
                           {/snippet}
                         </LazyTurn>
                       </div>
@@ -7165,7 +7209,6 @@
   <div
     bind:this={composerElement}
     class="conversation-composer relative z-10 w-full"
-    class:chief-composer={isChiefWorkspace}
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
     data-testid="chat-composer-shell"
@@ -7348,12 +7391,6 @@
     container: chat-panel / inline-size;
   }
 
-  .regular-chat-content-inset {
-    --subscription-card-max-bleed: 1rem;
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
-
   .workspace-setup-card-alignment {
     --chat-operational-row-inline-padding: 0.5rem;
     --chat-operational-leading-gap: 0.5rem;
@@ -7372,20 +7409,19 @@
     }
   }
 
-  @container chat-panel (min-width: 640px) {
-    .regular-chat-content-inset {
-      padding-left: 3.1rem;
-      padding-right: 3.1rem;
-    }
-  }
-
   .regular-panel-aurora-host {
     border-bottom-left-radius: var(--panel-shell-radius);
     border-bottom-right-radius: var(--panel-shell-radius);
   }
 
   .chat-content-measure {
+    --chat-content-inset: 1rem;
     max-width: 140em;
+    padding-inline: var(--chat-content-inset);
+  }
+
+  .chief-chat-panel .chat-content-measure {
+    --chat-content-inset: 0px;
   }
 
   /* Keep style invalidation local without paint-containing sticky descendants. */
@@ -7443,29 +7479,21 @@
     animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
-  .conversation-composer {
-    --composer-lane-inset-x: 1rem;
-    --composer-lane-inset-bottom: 1rem;
-  }
-
-  .conversation-composer.chief-composer {
-    --composer-lane-inset-x: 0;
-    --composer-lane-inset-bottom: 0.25rem;
-  }
-
   .composer-prompt-lane {
-    padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
+    padding-block: 0.5rem var(--chat-content-inset);
+  }
+
+  .chief-chat-panel .composer-prompt-lane {
+    padding-bottom: 0.25rem;
   }
 
   @container chat-panel (min-width: 640px) {
-    .conversation-composer {
-      --composer-lane-inset-x: 1.5rem;
-      --composer-lane-inset-bottom: 1.5rem;
+    .chat-content-measure {
+      --chat-content-inset: 1.5rem;
     }
 
-    .conversation-composer.chief-composer {
-      --composer-lane-inset-x: 0;
-      --composer-lane-inset-bottom: 0.5rem;
+    .chief-chat-panel .composer-prompt-lane {
+      padding-bottom: 0.5rem;
     }
   }
 

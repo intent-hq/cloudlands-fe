@@ -237,7 +237,7 @@
       if (
         requestedAgentId !== agentId ||
         requestedWorkspaceId !== workspaceId ||
-        limit !== 200 ||
+        limit !== 5 ||
         ordinal !== undefined
       )
         throw new Error('Unexpected conversation request');
