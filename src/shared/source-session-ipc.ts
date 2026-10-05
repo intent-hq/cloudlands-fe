@@ -1,5 +1,5 @@
 /** Prepared unregistered main/preload contract. Identity labels are not source authority. */
-export interface PreparedSourceBinding {
+interface PreparedSourceBinding {
   readonly scope: Readonly<{
     backendId: string;
     workspaceId: string;
@@ -37,7 +37,7 @@ export type PreparedSourceRead = Readonly<
     | { readonly kind: 'metadata'; readonly ref: string; readonly cursor?: string }
   )
 >;
-export type PreparedSourceDisposition = 'consume' | 'discard';
+type PreparedSourceDisposition = 'consume' | 'discard';
 export interface PreparedSourceRelease extends PreparedSourceStamp {
   readonly kind: 'released';
   readonly sequence: number;
