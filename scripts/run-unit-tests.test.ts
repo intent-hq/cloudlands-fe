@@ -56,6 +56,17 @@ if (process.env.PREP_SIGNAL) process.kill(process.pid, process.env.PREP_SIGNAL);
 else process.exitCode = Number(process.env.PREP_EXIT || 0);
 `,
   );
+  write(
+    'scripts/table-paste-owner.test.mjs',
+    `import { appendFileSync } from 'node:fs';
+import test from 'node:test';
+test('Node-owned contract', () => {
+  appendFileSync('children.jsonl', JSON.stringify({ child: 'node-test', args: process.argv.slice(2) }) + '\\n');
+  if (process.env.NODE_TEST_SIGNAL) process.kill(process.pid, process.env.NODE_TEST_SIGNAL);
+  if (process.env.NODE_TEST_FAIL) throw new Error('Node-owned contract failure');
+});
+`,
+  );
   const launcher = join(repo, 'scripts/run-unit-tests.mjs');
   copyFileSync(launcher, join(root, 'scripts/run-unit-tests.mjs'));
   for (const file of ['transfer-selection-fixtures.mjs', 'unit-test-prerequisites.mjs']) {
@@ -180,6 +191,7 @@ describe('test:unit package-script boundary', () => {
     expect(result.status, result.output).toBe(0);
     expect(result.children).toEqual([
       { child: 'prepare', args: [] },
+      { child: 'node-test', args: [] },
       { child: 'vitest', args: ['run', '--config', 'vitest.config.ts', ...args] },
     ]);
   });
@@ -190,6 +202,7 @@ describe('test:unit package-script boundary', () => {
     expect(result.status, result.output).toBe(0);
     expect(result.children).toEqual([
       { child: 'prepare', args: [] },
+      { child: 'node-test', args: [] },
       { child: 'vitest', args: ['run', '--config', 'vitest.config.ts'] },
     ]);
   });
@@ -198,7 +211,7 @@ describe('test:unit package-script boundary', () => {
     const { root } = fixture();
     const result = run(root, ['selected.test.ts', '-t', '--']);
     expect(result.status, result.output).toBe(0);
-    expect(result.children[1].args).toEqual([
+    expect(result.children[2].args).toEqual([
       'run',
       '--config',
       'vitest.config.ts',
@@ -215,11 +228,32 @@ describe('test:unit package-script boundary', () => {
     expect(result.children).toEqual([{ child: 'prepare', args: [] }]);
   });
 
+  it.each(['NODE_TEST_FAIL', 'NODE_TEST_SIGNAL'])(
+    'stops before Vitest when the Node-owned suite fails (%s)',
+    (key) => {
+      const { root } = fixture();
+      const result = run(root, [], { [key]: key === 'NODE_TEST_SIGNAL' ? 'SIGTERM' : '1' });
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.children.map((child) => child.child)).toEqual(['prepare', 'node-test']);
+    },
+  );
+
+  it('does not forward CI shard options to the Node-owned suite', () => {
+    const { root } = fixture();
+    const result = run(root, ['--shard=1/2']);
+    expect(result.status, result.output).toBe(0);
+    expect(result.children).toEqual([
+      { child: 'prepare', args: [] },
+      { child: 'node-test', args: [] },
+      { child: 'vitest', args: ['run', '--config', 'vitest.config.ts', '--shard=1/2'] },
+    ]);
+  });
+
   it('retains the Vitest failure code', () => {
     const { root } = fixture();
     const result = run(root, [], { TEST_EXIT: '9' });
     expect(result.status).toBe(9);
-    expect(result.children.map((child) => child.child)).toEqual(['prepare', 'vitest']);
+    expect(result.children.map((child) => child.child)).toEqual(['prepare', 'node-test', 'vitest']);
   });
 
   it.each(['PREP_SIGNAL', 'TEST_SIGNAL'])(
@@ -229,7 +263,7 @@ describe('test:unit package-script boundary', () => {
       const result = run(root, [], { [key]: 'SIGTERM' });
       expect(result.status).not.toBe(0);
       expect(result.children.map((child) => child.child)).toEqual(
-        key === 'PREP_SIGNAL' ? ['prepare'] : ['prepare', 'vitest'],
+        key === 'PREP_SIGNAL' ? ['prepare'] : ['prepare', 'node-test', 'vitest'],
       );
     },
   );
@@ -244,7 +278,10 @@ describe('test:unit package-script boundary', () => {
     ]);
     expect(result.status, result.output).toBe(0);
     expect(readFileSync(join(root, 'selected-ran'), 'utf8')).toBe('yes');
-    expect(result.children).toEqual([{ child: 'prepare', args: [] }]);
+    expect(result.children).toEqual([
+      { child: 'prepare', args: [] },
+      { child: 'node-test', args: [] },
+    ]);
   });
 });
 
@@ -265,7 +302,10 @@ describe('canonical fixture preflight before Vitest', () => {
       const env = { TRANSFER_SELECTION_FIXTURE_ROOT: fixtureRoot };
       rmSync(join(fixtureRoot, 'public-sessions.json'));
       const missing = run(root, args, env);
-      expect(missing.children, missing.output).toEqual([{ child: 'prepare', args: [] }]);
+      expect(missing.children, missing.output).toEqual([
+        { child: 'prepare', args: [] },
+        { child: 'node-test', args: [] },
+      ]);
       expect(missing.status).toBe(1);
       expect(missing.output).toContain(join(fixtureRoot, 'public-sessions.json'));
 
@@ -275,6 +315,7 @@ describe('canonical fixture preflight before Vitest', () => {
       expect(valid.status, valid.output).toBe(0);
       expect(valid.children).toEqual([
         { child: 'prepare', args: [] },
+        { child: 'node-test', args: [] },
         { child: 'vitest', args: ['run', '--config', 'vitest.config.ts', ...args] },
       ]);
     },
@@ -304,7 +345,10 @@ describe('canonical fixture preflight before Vitest', () => {
     const { root, fixtureRoot } = fixture();
     rmSync(join(fixtureRoot, 'public-sessions.json'));
     const missing = run(root, args);
-    expect(missing.children, missing.output).toEqual([{ child: 'prepare', args: [] }]);
+    expect(missing.children, missing.output).toEqual([
+      { child: 'prepare', args: [] },
+      { child: 'node-test', args: [] },
+    ]);
     expect(missing.status).toBe(1);
     expect(missing.output).toContain(join(fixtureRoot, 'public-sessions.json'));
     expect(missing.output).toContain('TRANSFER_SELECTION_FIXTURE_ROOT=');
@@ -315,6 +359,7 @@ describe('canonical fixture preflight before Vitest', () => {
     expect(valid.status, valid.output).toBe(0);
     expect(valid.children).toEqual([
       { child: 'prepare', args: [] },
+      { child: 'node-test', args: [] },
       { child: 'vitest', args: ['run', '--config', 'vitest.config.ts', ...args] },
     ]);
   });
@@ -377,6 +422,7 @@ describe('canonical fixture preflight before Vitest', () => {
     expect(result.status, result.output).toBe(0);
     expect(result.children).toEqual([
       { child: 'prepare', args: [] },
+      { child: 'node-test', args: [] },
       { child: 'vitest', args: ['run', '--config', 'vitest.config.ts', ...args] },
     ]);
   });
@@ -428,7 +474,7 @@ describe('canonical fixture preflight before Vitest', () => {
     const { root } = fixture(false, true);
     const result = run(root, [contractTest], { TRANSFER_SELECTION_FIXTURE_ROOT: undefined });
     expect(result.status, result.output).toBe(0);
-    expect(result.children.map((child) => child.child)).toEqual(['prepare', 'vitest']);
+    expect(result.children.map((child) => child.child)).toEqual(['prepare', 'node-test', 'vitest']);
   });
 
   it('validates a supplied generated output without requiring the golden', () => {
@@ -438,7 +484,7 @@ describe('canonical fixture preflight before Vitest', () => {
     rmSync(join(fixtureRoot, 'public-sessions.json'));
     const result = run(root, [contractTest], { TRANSFER_SELECTION_GENERATED: generated });
     expect(result.status, result.output).toBe(0);
-    expect(result.children.map((child) => child.child)).toEqual(['prepare', 'vitest']);
+    expect(result.children.map((child) => child.child)).toEqual(['prepare', 'node-test', 'vitest']);
   });
 
   it.each(['', 'missing.json'])('does not fall back from generated override %j', (generated) => {

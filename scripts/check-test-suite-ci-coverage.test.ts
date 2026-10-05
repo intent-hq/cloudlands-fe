@@ -35,8 +35,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { basename, join, posix } from 'node:path';
+import { basename, dirname, join, posix } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
@@ -954,6 +955,36 @@ describe(`${WORKFLOWS_DIR} reaches every test-runner suite`, () => {
     readLauncher: fileReader(process.cwd()),
   };
   const report = auditCoverage(input);
+
+  it('reaches the unit launcher in required CI and runs the Node-owned table contract', () => {
+    const workflow = readFileSync('.github/workflows/intent-pr.yml', 'utf8');
+    const commands = expandCommands(scripts, workflowRunSteps(workflow));
+    // The launcher boundary tests exercise child ordering and failure propagation;
+    // this establishes that the required workflow actually reaches that launcher.
+    expect(commands.flatMap(commandSegments).map(launcherFile)).toContain(
+      'scripts/run-unit-tests.mjs',
+    );
+    const output = execFileSync(
+      process.execPath,
+      ['--test-reporter=tap', '--test', 'scripts/table-paste-owner.test.mjs'],
+      { encoding: 'utf8', timeout: 15_000 },
+    );
+    expect(Number(output.match(/^# tests (\d+)$/m)?.[1])).toBeGreaterThanOrEqual(56);
+    expect(output).toMatch(/^# fail 0$/m);
+    expect(output).toMatch(/^ok \d+ - esm /m);
+    expect(output).toMatch(/^ok \d+ - cjs /m);
+  });
+
+  it('does not collect the Node-owned table-paste suite in Vitest', () => {
+    const require = createRequire(import.meta.url);
+    const cli = join(dirname(require.resolve('vitest/package.json')), 'vitest.mjs');
+    const output = execFileSync(
+      process.execPath,
+      [cli, 'list', 'scripts/table-paste-owner.test.mjs', '--filesOnly', '--json'],
+      { encoding: 'utf8', timeout: 15_000 },
+    );
+    expect(JSON.parse(output)).toEqual([]);
+  });
 
   it('enumerates at least the root vitest and playwright configs', () => {
     expect(suites).toContain('vitest.config.ts');

@@ -21,6 +21,8 @@ if (args[0] === '--') {
   // Keep the existing Node/dependency checks and stale-aware i18n preparation.
   for (const childArgs of [
     ['scripts/check-deps-fresh.mjs'],
+    // This dependency contract uses node:test, not Vitest. Keep it in the required gate.
+    ['--test', 'scripts/table-paste-owner.test.mjs'],
     ['node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.config.ts', ...args],
   ]) {
     if (
