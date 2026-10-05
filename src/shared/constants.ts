@@ -465,3 +465,6 @@ export function isAtWarningThreshold(activeCount: number): boolean {
 export function isSessionTooLarge(sizeInBytes: number): boolean {
   return sizeInBytes > LIMITS.MAX_SESSION_SIZE;
 }
+
+/** Transcript request budget; independent of resident-history retention caps. */
+export const CHAT_PAGE_SIZE = 5;

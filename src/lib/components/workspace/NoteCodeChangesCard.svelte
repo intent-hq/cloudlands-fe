@@ -90,9 +90,7 @@
             agentId,
           );
           if (!agent && workspace) {
-            const restoreAction = restoreAgentSessionRequested(workspace.id, agentId);
-            appStore.dispatch(restoreAction);
-            agent = await restoreAction.promise;
+            agent = await appStore.dispatch(restoreAgentSessionRequested(workspace.id, agentId));
           }
           if (agent?.messages) {
             allMessages.push(...agent.messages);

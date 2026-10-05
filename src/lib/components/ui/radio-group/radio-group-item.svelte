@@ -50,23 +50,25 @@
   onfocus={handleFocus}
   class={cn(
     OPTION_LIST_ROW_CLASS,
-    'relative z-10 flex min-w-0 cursor-pointer items-center gap-2 border border-transparent bg-transparent text-left text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-focus-ring focus-visible:shadow-none disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
+    'relative z-10 flex min-w-0 cursor-pointer items-start gap-2 border border-transparent bg-transparent text-left text-muted-foreground transition-[color,font-weight] duration-spring-fast ease-spring-fast focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-focus-ring focus-visible:shadow-none disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none',
     selected && 'font-medium text-foreground',
     className,
   )}
   {...restProps as any}
 >
-  <span
-    class={cn(
-      'border-border flex size-4 shrink-0 items-center justify-center rounded-full border',
-      selected ? 'border-transparent bg-transparent' : 'bg-transparent',
-    )}
-  >
-    {#if marker}
-      {@render marker({ selected, index })}
-    {:else if selected}
-      <span class="bg-foreground size-2 rounded-full"></span>
-    {/if}
+  <span class="first-line-icon">
+    <span
+      class={cn(
+        'border-border flex size-4 shrink-0 items-center justify-center rounded-full border',
+        selected ? 'border-transparent bg-transparent' : 'bg-transparent',
+      )}
+    >
+      {#if marker}
+        {@render marker({ selected, index })}
+      {:else if selected}
+        <span class="bg-foreground size-2 rounded-full"></span>
+      {/if}
+    </span>
   </span>
   <span class="min-w-0">
     <span class="block">{title}</span>

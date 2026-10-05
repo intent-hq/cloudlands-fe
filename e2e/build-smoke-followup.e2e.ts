@@ -26,6 +26,9 @@ import {
   archiveAndGoHome,
   setMockAgentBehavior,
   sendFollowUpMessage,
+  exitPackagedApp,
+  openAgentsSidebarPanel,
+  openAgentChat,
 } from './build-smoke-helpers';
 
 const SCREENSHOT_DIR = path.join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -70,27 +73,7 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
   });
 
   test.afterAll(async () => {
-    if (app) {
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.exit(0));
-      } catch {
-        // app may already be closed
-      }
-      await new Promise((r) => setTimeout(r, 2_000));
-      try {
-        const { execSync } = await import('child_process');
-        if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent.exe"', {
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-        } else {
-          execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
-        }
-      } catch {
-        // No matching processes
-      }
-    }
+    await exitPackagedApp(app);
     if (repoCleanup) {
       try {
         repoCleanup();
@@ -119,20 +102,19 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
 
     try {
       // Open the agent chat panel (the onboarding saga skips auto-opening)
+      await openAgentsSidebarPanel(page);
       const agentCard = page.locator('[data-testid="agent-list-item"]').first();
       await agentCard.waitFor({ state: 'visible', timeout: 15_000 });
       const agentId = await agentCard.getAttribute('data-agent-id');
-      await page.evaluate((id) => {
-        window.dispatchEvent(new CustomEvent('workspace:open-agent', { detail: { agentId: id } }));
-      }, agentId);
+      await openAgentChat(page, agentId!);
       console.log('✅ Agent panel opened');
 
       // Measure initial message counts (the workspace creation flow may
       // produce more than 1 user message, e.g. spec note or system messages)
-      // Each message renders a .message-nav-target wrapper with data-message-role.
-      // For user messages, there's also a .user-message child with the same attribute.
-      // Use .user-message for users and .message-nav-target for assistants (only one element each).
-      const userMessages = page.locator('[data-message-role="user"].user-message:visible');
+      // Each message renders a .message-nav-target wrapper with data-message-role;
+      // the inner ChatMessage is mounted with ownsMessageIdentity={false}, so the
+      // wrapper is the only element carrying the role (one element per message).
+      const userMessages = page.locator('[data-message-role="user"].message-nav-target:visible');
       const assistantMessages = page.locator(
         '[data-message-role="assistant"].message-nav-target:visible',
       );
@@ -216,7 +198,7 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
                 const ctx = (window as any).intent?.reduxContext;
                 const store = Array.isArray(ctx) ? ctx[0]?.store : ctx?.store;
                 if (!store) return { error: 'no-store' };
-                const state = store.getState();
+                const state = typeof store.getState === 'function' ? store.getState() : store.state;
                 const wsState = state?.workspaceAgents?.byWorkspaceId?.[wsId];
                 const agentIds: string[] = wsState?.agentIds || [];
                 const byAgentId = state?.agentSessions?.byAgentId || {};

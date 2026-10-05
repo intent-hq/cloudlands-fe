@@ -12,17 +12,18 @@
  *   npx playwright test --config=e2e/build-smoke.config.ts e2e/build-smoke-commit.e2e.ts --reporter=list
  */
 
-import { test, Page, ElectronApplication } from '@playwright/test';
+import { test, expect, Page, ElectronApplication } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { execSync } from 'child_process';
+import { execFileSync } from 'node:child_process';
 import {
   launchPackagedApp,
   createTempRepo,
   setMockAgentBehavior,
   createWorkspaceWithPrompt,
-  waitForAgentCompletion,
+  getSmokeWorkspace,
   archiveAndGoHome,
+  exitPackagedApp,
 } from './build-smoke-helpers';
 
 const TEST_TIMEOUT = 3 * 60 * 1000;
@@ -62,26 +63,7 @@ test.describe('Build Smoke — Local Commit', () => {
   });
 
   test.afterAll(async () => {
-    if (app) {
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.exit(0));
-      } catch {
-        // app may have already exited
-      }
-      await new Promise((r) => setTimeout(r, 2_000));
-      try {
-        if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent.exe"', {
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-        } else {
-          execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
-        }
-      } catch {
-        // no matching processes
-      }
-    }
+    await exitPackagedApp(app);
     if (repoCleanup) {
       try {
         repoCleanup();
@@ -107,17 +89,31 @@ test.describe('Build Smoke — Local Commit', () => {
       console.log(`📁 Workspace created: ${workspaceId}`);
 
       // 2. Wait for mock agent to complete
-      await waitForAgentCompletion(page, workspaceId, 60_000);
+      await expect(page.locator('[data-message-role="assistant"]:visible').last()).toContainText(
+        'TASK_COMPLETE',
+        { timeout: 60_000 },
+      );
+      const workspace = await getSmokeWorkspace(page, workspaceId);
+      const git = (...args: string[]) =>
+        execFileSync('git', args, {
+          cwd: workspace.worktreePath,
+          encoding: 'utf8',
+          timeout: 10_000,
+        }).trim();
+      const before = git('rev-parse', 'HEAD');
+      await expect
+        .poll(() => fs.readFile(path.join(workspace.worktreePath, 'README.md'), 'utf8'))
+        .toBe('hello world');
       await takeScreenshot(page, 'commit-agent-complete');
       console.log('✅ Agent completed');
 
       // 3. Navigate to Changes tab and stage all files
-      const changesTab = page.locator('button', { hasText: 'Changes' }).first();
+      const changesTab = page.locator('[data-sidebar-launcher="changes"]');
       await changesTab.waitFor({ state: 'visible', timeout: 10_000 });
       await changesTab.click();
       await page.waitForTimeout(1_000);
 
-      const stageAllButton = page.locator('button').filter({ hasText: 'Stage all' }).first();
+      const stageAllButton = page.getByTestId('stage-all-button');
       await stageAllButton.waitFor({ state: 'visible', timeout: 15_000 });
       await stageAllButton.click();
       console.log('📥 Clicked Stage all');
@@ -125,6 +121,8 @@ test.describe('Build Smoke — Local Commit', () => {
 
       const stagedRows = page.locator('[data-file-key^="staged:"]');
       await stagedRows.first().waitFor({ state: 'visible', timeout: 10_000 });
+      await expect(stagedRows).toHaveCount(1);
+      expect(git('diff', '--cached', '--name-only')).toBe('README.md');
       const stagedCount = await stagedRows.count();
       console.log(`✅ ${stagedCount} file(s) now staged`);
       await takeScreenshot(page, 'commit-files-staged');
@@ -154,7 +152,7 @@ test.describe('Build Smoke — Local Commit', () => {
       await takeScreenshot(page, 'commit-drawer-open');
       console.log('📝 Commit drawer opened');
 
-      const commitTextarea = page.locator('textarea[placeholder="Commit message..."]').first();
+      const commitTextarea = page.getByTestId('commit-message-input');
       await commitTextarea.waitFor({ state: 'visible', timeout: 10_000 });
       await commitTextarea.click();
       await page.waitForTimeout(200);
@@ -167,18 +165,22 @@ test.describe('Build Smoke — Local Commit', () => {
       await commitSubmitButton.click();
       console.log('🚀 Clicked commit submit button');
 
-      // 5. Verify commit succeeds (drawer closes or message clears)
-      await page.waitForFunction(
-        () => {
-          const textarea = document.querySelector(
-            'textarea[placeholder="Commit message..."]',
-          ) as HTMLTextAreaElement | null;
-          return !textarea || textarea.value === '';
-        },
-        undefined,
-        { timeout: 30_000 },
-      );
-      await page.waitForTimeout(1_000);
+      // The UI must produce a real commit in the workspace's Git repository.
+      await expect.poll(() => git('rev-parse', 'HEAD'), { timeout: 30_000 }).not.toBe(before);
+      expect(git('show', '-s', '--format=%P', 'HEAD')).toBe(before);
+      expect(git('show', '-s', '--format=%s', 'HEAD')).toBe('test: e2e smoke test local commit');
+      expect(git('show', 'HEAD:README.md')).toBe('hello world');
+      expect(git('status', '--porcelain')).toBe('');
+      await expect(stagedRows).toHaveCount(0);
+      await test.info().attach('commit-result', {
+        body: JSON.stringify({
+          workspaceId,
+          path: workspace.worktreePath,
+          before,
+          after: git('rev-parse', 'HEAD'),
+        }),
+        contentType: 'application/json',
+      });
       await takeScreenshot(page, 'commit-success');
 
       const durationMs = Date.now() - start;

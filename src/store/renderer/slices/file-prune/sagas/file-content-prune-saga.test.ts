@@ -1,3 +1,5 @@
+import { selectFileContentPrunePayload } from '../../panel-layout/panel-layout-selectors';
+import { fileContentKey } from '$features/file/utils/file-content-key';
 import { describe, expect, it } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
@@ -368,4 +370,14 @@ describe('fileContentPruneSaga', () => {
     harness.task.cancel();
     await harness.task.toPromise();
   });
+});
+
+it('retains an open root-scoped cache entry while pruning a closed ordinary editor', () => {
+  const path = '/external/a/new.md';
+  const key = fileContentKey(path, 'root-a');
+  const state = stateForWorkspaces('ws-1', {
+    'ws-1': { openPathsByPanel: [[path]], contentPaths: [path, key] },
+  });
+  state.panelLayout.byWorkspaceId['ws-1'].panels['panel-0'].tabs[0].data = { gitRootId: 'root-a' };
+  expect(selectFileContentPrunePayload.select(state, 'ws-1')).toEqual([path]);
 });

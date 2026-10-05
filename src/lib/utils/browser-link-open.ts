@@ -3,8 +3,9 @@
  * detected-URL clicks, terminal links): resolves the URL through
  * `browser:resolve-url` (rewrite → probe → tunnel) BEFORE the tab is opened,
  * surfacing resolver warnings/errors as toasts (intent-hq/monorepo#2404).
- * The embedded browser itself never resolves — it loads exactly the URL it
- * is given.
+ * The embedded browser itself loads exactly the URL it is given; its address
+ * bar resolves only an explicit `daemon.localhost` / `client.localhost`
+ * alias (intent-hq/intent#5710).
  */
 
 import { notify } from '$lib/components/patterns/notify';

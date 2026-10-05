@@ -1,4 +1,4 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Workspace } from '$shared/types';
@@ -97,12 +97,6 @@ function workspaceMountFanOut(
   force = false,
 ): ObservedAction[] {
   return [
-    {
-      type: force
-        ? 'workspaceTasks/loadWorkspaceTasksRequested'
-        : 'workspaceTasks/ensureWorkspaceTasksLoaded',
-      payload: [workspaceId],
-    },
     { type: 'workspaceAgents/hydrateAgentsRequested', payload: [workspaceId] },
     { type: 'terminals/hydrateTerminalsRequested', payload: [workspaceId] },
     {
@@ -665,7 +659,7 @@ describe('lifecycleIpcReadSaga', () => {
     const run = start(state(), (action, channel) => {
       if (
         !injectedSecondMount &&
-        action.type === 'workspaceTasks/ensureWorkspaceTasksLoaded' &&
+        action.type === 'workspaceAgents/hydrateAgentsRequested' &&
         action.payload?.[0] === WS
       ) {
         injectedSecondMount = true;

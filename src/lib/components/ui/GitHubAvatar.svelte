@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: owner avatar decorative by default, with image-failure fallback covered by __tests__/GitHubAvatar.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   /**
    * GitHub owner avatar with a load-failure fallback.
@@ -12,6 +14,8 @@
   interface Props {
     /** GitHub login (user or organization) whose avatar is rendered. */
     identity: string;
+    /** Avatar URL supplied by GitHub; required for bot/app identities without profile PNGs. */
+    avatarUrl?: string | null;
     /** Rendered size in CSS px; the image is requested at 2x for HiDPI screens. */
     size?: number;
     /** Layout classes for the `<img>` (dimensions, rounding, object-fit). */
@@ -26,13 +30,16 @@
     fallback?: Snippet;
   }
 
-  let { identity, size = 16, class: className = '', alt, fallback }: Props = $props();
+  let { identity, avatarUrl, size = 16, class: className = '', alt, fallback }: Props = $props();
 
   let failed = $state(false);
-  const src = $derived(`https://github.com/${identity}.png?size=${size * 2}`);
+  const src = $derived(
+    avatarUrl || `https://github.com/${encodeURIComponent(identity)}.png?size=${size * 2}`,
+  );
 
   $effect.pre(() => {
     void identity;
+    void src;
     failed = false;
   });
 </script>

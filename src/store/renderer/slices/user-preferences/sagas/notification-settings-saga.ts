@@ -5,12 +5,14 @@ import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
   selectNotificationVolume,
+  selectNotificationVolumeWrite,
   selectSoundEnabled,
   selectSoundPath,
   selectSoundOnlyWhenUnfocused,
 } from '../user-preferences-selectors';
 import {
   pickNotificationSoundRequested,
+  notificationVolumeWriteSettled,
   resetNotificationSettings,
   setNotificationEnabled,
   setSoundEnabled,
@@ -40,8 +42,10 @@ function* persistNotificationSettingsWorker() {
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
   const volume = yield* selectNotificationVolume.effect();
   const soundPath = yield* selectSoundPath.effect();
+  const { editId, hydrationEpoch } = yield* selectNotificationVolumeWrite.effect();
+  let revision: number | undefined;
   try {
-    yield* call(updateSettings, [
+    const result = yield* call(updateSettings, [
       { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
       { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
       {
@@ -51,9 +55,13 @@ function* persistNotificationSettingsWorker() {
       { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
       { path: NOTIFICATION_PATHS.soundPath, value: soundPath },
     ]);
+    revision = result.revision;
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }
+  // A cancelled older save must not release a newer edit's hydration guard.
+  // Success and failure both settle the matching write; cancellation skips this put.
+  if (editId != null) yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch, revision));
 }
 
 export function* pickNotificationSoundWorker(

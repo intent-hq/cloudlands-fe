@@ -99,12 +99,12 @@ describe('design token audit', () => {
     }
   });
 
-  it('recognizes the Bits UI menu available size without exempting other menu properties', () => {
+  it('recognizes Bits UI menu sizing without exempting other menu properties', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
     try {
       writeFileSync(
         path.join(directory, 'product.svelte'),
-        '<div style="max-width: var(--bits-dropdown-menu-content-available-width); max-height: var(--bits-menu-content-available-height); transform-origin: var(--bits-dropdown-menu-content-transform-origin)" />',
+        '<div style="width: var(--bits-dropdown-menu-anchor-width); min-width: var(--bits-dropdown-menu-anchor-wdith); max-width: var(--bits-dropdown-menu-content-available-width); max-height: var(--bits-menu-content-available-height); transform-origin: var(--bits-dropdown-menu-content-transform-origin)" />',
       );
       const output = execFileSync(process.execPath, [script, 'undefined'], {
         encoding: 'utf8',
@@ -112,6 +112,8 @@ describe('design token audit', () => {
       });
       expect(output).not.toContain('--bits-dropdown-menu-content-available-width');
       expect(output).not.toContain('--bits-menu-content-available-height');
+      expect(output).not.toContain('--bits-dropdown-menu-anchor-width');
+      expect(output).toContain('--bits-dropdown-menu-anchor-wdith');
       expect(output).toContain('--bits-dropdown-menu-content-transform-origin');
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -152,6 +154,45 @@ describe('design token audit', () => {
         env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
       });
       expect(output.trim()).toBe('');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a component-scoped redeclaration of a shared sidebar token', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'design-token-audit-'));
+    try {
+      writeFileSync(
+        path.join(directory, 'provider.svelte'),
+        '<div data-slot="sidebar-wrapper"></div>\n<style>\n  [data-slot=sidebar-wrapper] {\n    --sidebar: 0 0% 100%;\n  }\n</style>',
+      );
+      writeFileSync(
+        path.join(directory, 'shell.svelte'),
+        '<script lang="ts">\n  let { tone } = $props();\n</script>\n<aside style:--sidebar-foreground={tone} style="--sidebar-border: 0 0% 90%"></aside>',
+      );
+      writeFileSync(
+        path.join(directory, 'runtime.ts'),
+        "document.body.style.setProperty('--sidebar-accent', '0 0% 50%');",
+      );
+      writeFileSync(
+        path.join(directory, 'shell.ct.spec.ts'),
+        "root.style.setProperty('--sidebar', '0 0% 100%');",
+      );
+      const result = spawnSync(process.execPath, [script, 'check'], {
+        encoding: 'utf8',
+        env: { ...process.env, DESIGN_TOKEN_AUDIT_SOURCE_ROOT: directory },
+      });
+      expect(result.status).toBe(1);
+      const lines = result.stderr.trim().split('\n');
+      expect(lines).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/provider\.svelte: redeclares --sidebar;/),
+          expect.stringMatching(/shell\.svelte: redeclares --sidebar-foreground;/),
+          expect.stringMatching(/shell\.svelte: redeclares --sidebar-border;/),
+          expect.stringMatching(/runtime\.ts: redeclares --sidebar-accent;/),
+        ]),
+      );
+      expect(lines.filter((line) => line.includes('redeclares'))).toHaveLength(4);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

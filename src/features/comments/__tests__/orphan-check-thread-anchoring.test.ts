@@ -77,6 +77,7 @@ const base = {
   createdAt: now,
   updatedAt: now,
   noteId: 'spec',
+  workspaceId: 'test-workspace',
 };
 
 /** Thread root whose markers are present in the document. */

@@ -174,6 +174,50 @@ describe('openInviteConnection', () => {
     daemon.upgradeUrls = [];
   });
 
+  it('sends host scope on every invite RPC without requiring a workspace', async () => {
+    const preview = {
+      scope: 'host',
+      role: 'member',
+      hostname: 'studio',
+      pinIdentity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+    };
+    const credential = {
+      status: 'authorized',
+      scope: 'host',
+      hostRole: 'member',
+      identity: preview.pinIdentity,
+      principalId: 'remote-42',
+      login: 'octocat',
+      token: 'member-token',
+    };
+    daemon.handler = (req) => ({
+      result:
+        req.method === 'invite.challenge'
+          ? { ...preview, nonce: CHALLENGE.nonce, nonceExpiresAt: CHALLENGE.nonceExpiresAt }
+          : req.method === 'invite.inspect'
+            ? preview
+            : credential,
+    });
+    const { openInviteConnection } = await import('../invite-connection');
+    const conn = await openInviteConnection({
+      hosts: ['127.0.0.1'],
+      port: daemon.port,
+      fingerprint: daemon.fingerprint,
+      scope: 'host',
+    });
+    try {
+      expect(await conn.inspect('host-invite', 'secret')).toEqual(preview);
+      await conn.challenge('host-invite', 'secret');
+      expect(await conn.prove('host-invite', 'secret', PROOF)).toEqual(credential);
+      expect(await conn.accept('host-invite', 'secret', 'member-token')).toEqual(credential);
+      expect(daemon.requests).toHaveLength(4);
+      expect(daemon.requests.every((r) => r.params?.scope === 'host')).toBe(true);
+      expect(daemon.requests.some((r) => r.method === 'client.hello')).toBe(false);
+    } finally {
+      conn.close();
+    }
+  });
+
   it('dials /invite and runs invite.challenge then invite.prove with the documented params', async () => {
     daemon.handler = (req) => {
       if (req.method === 'invite.challenge') return { result: CHALLENGE };
@@ -208,6 +252,68 @@ describe('openInviteConnection', () => {
       conn.close();
     }
   });
+
+  it.each([
+    {}, // Legacy host: pinIdentity intentionally absent.
+    { pinIdentity: null },
+    {
+      pinIdentity: { provider: 'gitlab', host: 'gitlab.example.com:8443', externalUserId: '4711' },
+    },
+  ])(
+    'preserves inspect/challenge identity requirements %j and sends the GitLab proof fields',
+    async (metadata) => {
+      const inspection = {
+        workspaceId: 'ws_1',
+        workspaceTitle: 'Shared',
+        hostname: 'studio.local',
+        prettyHostname: null,
+        ...metadata,
+      };
+      const challenge = { ...CHALLENGE, ...inspection };
+      daemon.handler = (req) => {
+        if (req.method === 'invite.inspect') return { result: inspection };
+        if (req.method === 'invite.challenge') return { result: challenge };
+        if (req.method === 'invite.prove') return { result: CREDENTIAL };
+        return { error: { code: -32601, message: 'unknown' } };
+      };
+      const { openInviteConnection } = await import('../invite-connection');
+      const conn = await openInviteConnection({
+        hosts: ['127.0.0.1'],
+        port: daemon.port,
+        fingerprint: daemon.fingerprint,
+      });
+      const proof = {
+        nonce: CHALLENGE.nonce,
+        provider: 'gitlab' as const,
+        host: 'gitlab.example.com:8443',
+        proofId: '101',
+        login: 'gl-user',
+      };
+      try {
+        await expect(conn.inspect('inv_1', 's3cret')).resolves.toEqual(inspection);
+        await expect(conn.challenge('inv_1', 's3cret')).resolves.toEqual(challenge);
+        await expect(conn.prove('inv_1', 's3cret', proof)).resolves.toEqual(CREDENTIAL);
+        expect(daemon.requests.map((r) => [r.method, r.params])).toEqual([
+          ['invite.inspect', { inviteId: 'inv_1', secret: 's3cret' }],
+          ['invite.challenge', { inviteId: 'inv_1', secret: 's3cret' }],
+          [
+            'invite.prove',
+            {
+              inviteId: 'inv_1',
+              secret: 's3cret',
+              nonce: CHALLENGE.nonce,
+              provider: 'gitlab',
+              host: 'gitlab.example.com:8443',
+              proofId: '101',
+              login: 'gl-user',
+            },
+          ],
+        ]);
+      } finally {
+        conn.close();
+      }
+    },
+  );
 
   // The host's own proof refusals (intentd #1967) and the owner's self-join
   // refusal (intentd #1986) route on `error.data.code` like every other

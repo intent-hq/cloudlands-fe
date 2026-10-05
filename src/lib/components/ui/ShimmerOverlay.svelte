@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: decorative text shimmer with no interactive DOM; covered by __tests__/shimmer-overlay.ct.spec.ts -->
+
 <script lang="ts">
   /**
    * ShimmerOverlay — A reusable shimmer effect for text content.

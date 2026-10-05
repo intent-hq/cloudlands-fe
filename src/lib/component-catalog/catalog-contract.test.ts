@@ -6,6 +6,7 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import axe from 'axe-core';
 import { tick } from 'svelte';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { formatRelativeTime } from '$lib/i18n/format';
 import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
@@ -16,12 +17,21 @@ import type { CatalogRendererId } from './catalog-renderers';
 import { waitForCaptureStability } from './capture-stability';
 import '../../app.css';
 
-// Pin only this suite's absolute timestamps, independent of host TZ and formatter caches (#5200).
+// Pin this suite's timestamp timezone and relative-time reference, keeping real timers.
 vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
   const actual = await importOriginal();
   const { getActiveLocale } = await import('$lib/i18n/locale');
   return {
     ...actual,
+    formatRelativeTime(
+      input: Parameters<typeof actual.formatRelativeTime>[0],
+      options?: Parameters<typeof actual.formatRelativeTime>[1],
+    ) {
+      return actual.formatRelativeTime(input, {
+        ...options,
+        now: options?.now ?? new Date('2026-09-01T12:00:00.000Z'),
+      });
+    },
     formatDateTime(input: Parameters<typeof actual.formatDateTime>[0]) {
       const date = input instanceof Date ? input : new Date(input);
       if (Number.isNaN(date.getTime())) return '';
@@ -133,7 +143,7 @@ function normalizeValue(value: string): string {
   return value
     .replace(/\bsvelte-[a-z0-9]+\b/g, 'svelte-<scope>')
     .replace(/\bbits-[a-z0-9-]+/g, 'bits-<id>')
-    .replace(/\bc[0-9]+(?=-)/g, 'c<id>')
+    .replace(/\bc[0-9]+(?=[-\s"']|$)/g, 'c<id>')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -231,19 +241,68 @@ async function verifyCatalogContract(testCase: ContractCase) {
   await tick();
   await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
 
-  expect({
-    declaredStates: testCase.fixture.states,
-    dom: stableDom(document.body),
-  }).toMatchSnapshot();
+  // A stale snapshot must not prevent the independent accessibility check from running.
+  expect
+    .soft({
+      declaredStates: testCase.fixture.states,
+      dom: stableDom(document.body),
+    })
+    .toMatchSnapshot();
 
   rendered.container.setAttribute('role', 'main');
   const result = await axe.run(document.body, { rules: axeRules });
   const allowed = intentionalAxeAllowlist[testCase.key] ?? [];
   expect(allowed.every(({ reason }) => reason.trim().length > 0)).toBe(true);
-  expect(result.violations.map(({ id }) => id).sort()).toEqual(
+  const violations = result.violations.map(({ id, nodes }) => ({
+    id,
+    nodes: nodes.map(({ target, failureSummary }) => ({ target, failureSummary })),
+  }));
+  expect(violations.map(({ id }) => id).sort(), JSON.stringify(violations, null, 2)).toEqual(
     allowed.map(({ rule }) => rule).sort(),
   );
 }
+
+describe('catalog relative-time reference', () => {
+  it.each(['2026-09-29T13:59:59.000Z', '2026-09-29T14:00:01.000Z', '2030-03-15T12:00:00.000Z'])(
+    'keeps fixture time stable when the host date is %s',
+    async (hostDate) => {
+      const actual = await vi.importActual<typeof import('$lib/i18n/format')>('$lib/i18n/format');
+      // Mock Date only: catalog imports, capture stability and cleanup use real timers.
+      vi.setSystemTime(new Date(hostDate));
+      try {
+        expect(vi.isFakeTimers()).toBe(false);
+        expect(new Date().toISOString()).toBe(hostDate);
+        const fixtureDate = '2026-01-02T14:00:00.000Z';
+        expect(formatRelativeTime(fixtureDate)).toBe('8 months ago');
+        const options = { now: new Date('2026-01-02T14:05:00.000Z'), style: 'narrow' as const };
+        expect(formatRelativeTime(fixtureDate, options)).toBe(
+          actual.formatRelativeTime(fixtureDate, options),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+});
+
+describe('catalog generated identity normalization', () => {
+  it.each([
+    ['c123', 'c<id>'],
+    ['c123 c124', 'c<id> c<id>'],
+    ['c123\tc124\nc125', 'c<id> c<id> c<id>'],
+    ['"c123"', '"c<id>"'],
+    ["'c123'", "'c<id>'"],
+    [
+      'id="c123" aria-labelledby="c123 c124-label"',
+      'id="c<id>" aria-labelledby="c<id> c<id>-label"',
+    ],
+    ['c123-trigger', 'c<id>-trigger'],
+    ['c123-group-0 c124-group-1', 'c<id>-group-0 c<id>-group-1'],
+    ['c123label', 'c123label'],
+  ])('normalizes %s without changing its semantic suffix', (value, expected) => {
+    expect(normalizeValue(value)).toBe(expected);
+  });
+});
 
 describe.sequential('catalog DOM, token, and accessibility contracts', () => {
   it.each(standardCases)('$key', verifyCatalogContract);

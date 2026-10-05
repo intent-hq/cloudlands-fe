@@ -29,3 +29,9 @@ export interface LocalChangesWarning {
   hasUnpushedCommits: boolean;
   hasUncommittedChanges: boolean;
 }
+
+/** Guests an archive/delete removes: workspace-only guests (excluding inherited instance members) and unredeemed invites. */
+export interface GuestsWarning {
+  collaboratorCount: number;
+  openInviteCount: number;
+}

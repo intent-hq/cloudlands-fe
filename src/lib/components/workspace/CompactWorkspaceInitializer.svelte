@@ -1,4 +1,11 @@
 <script lang="ts">
+  import {
+    selectWorkspaceCreationVisible,
+    selectPrincipalActionContext,
+    selectHostRole,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
+  const currentHostRole$ = selectHostRole();
   /* eslint-disable max-lines */
   import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
@@ -10,6 +17,7 @@
   } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
+  import SetupScriptTrigger from './initializer/SetupScriptTrigger.svelte';
   import {
     SETUP_SCRIPT_TEMPLATES,
     getTemplateContent,
@@ -25,6 +33,7 @@
     recordLastUsedSetupScript,
   } from '$features/setup-scripts/last-used';
   import {
+    workspaceInitializerGitCheckRequested,
     setCompactWorkspaceInitializerFormState,
     clearWorkspaceInitializerPendingGitHubPrefill,
     setWorkspaceInitializerBranchForRepo,
@@ -35,12 +44,14 @@
     clearWorkspaceCreateProgress,
   } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import {
+    selectWorkspaceInitializerGitAvailability,
     selectCompactWorkspaceInitializerFormState,
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerLastSelectedRepo,
     selectWorkspaceInitializerLastSubmittedAgent,
     selectWorkspaceInitializerPendingGitHubPrefill,
     selectWorkspaceInitializerRecentRepos,
+    selectWorkspaceInitializerDefaultParentPath,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
@@ -122,6 +133,45 @@
     type IssueSelectionData,
   } from './initializer/IssueSuggestions.svelte';
   import RepoAndBranchPicker from './initializer/RepoAndBranchPicker.svelte';
+  import { Select } from '$lib/components/ui/select';
+  import type {
+    GitLabProjectPickerProps,
+    GitLabBranchPickerProps,
+  } from './initializer/gitlab-picker-types';
+  import {
+    checkoutPickerCopy,
+    checkoutPickerPage,
+    checkoutFailureMessage,
+  } from './initializer/gitlab-checkout-presentation';
+  import { readRepositoryCheckoutDraft } from '$store/renderer/slices/repository-checkout/repository-checkout-draft';
+  import type { RepositoryCheckoutDraft } from '$store/renderer/slices/repository-checkout/repository-checkout-types';
+  import {
+    opened as checkoutOpened,
+    closed as checkoutClosed,
+    invalidDraftOpened,
+    projectQueryChanged,
+    projectsMoreRequested,
+    projectSelected,
+    urlSubmitted,
+    branchQueryChanged,
+    branchesMoreRequested,
+    branchSelected,
+    modeChanged,
+    recoveryRequested,
+  } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
+  import {
+    selectCheckoutForm,
+    selectCheckoutProjects,
+    selectCheckoutBranches,
+    selectCheckoutSelection,
+    selectCheckoutCanCreate,
+  } from '$store/renderer/slices/repository-checkout/repository-checkout-selectors';
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectGitLabAuthInstanceBaseUrl,
+    selectGitLabAuthIsConfigured,
+    selectGitLabStatusReady,
+  } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -264,6 +314,8 @@
     isExpanded: boolean;
     initialRepo?: InitialRepoInfo;
     oncreate?: () => void;
+    /** Let a containing dialog own initial focus instead of focusing the prompt. */
+    autoFocus?: boolean;
     /** Show contextual hints for first-time users */
     showFirstTimeHints?: boolean;
   }
@@ -271,6 +323,7 @@
     isExpanded = $bindable(false),
     initialRepo,
     oncreate,
+    autoFocus = true,
     showFirstTimeHints = false,
   }: Props = $props();
 
@@ -314,6 +367,9 @@
   export async function applyPrefill() {
     const prefillData = sessionStorage.getItem(PREFILL_KEY);
     if (prefillData) {
+      submissionGeneration++;
+      pendingFirstMessage = null;
+      pullContinuation = null;
       try {
         const data = JSON.parse(prefillData);
         logger.debug('Applying prefill data from sessionStorage', { data });
@@ -321,7 +377,10 @@
         // Apply repo and branch settings. An explicit prefill wins over form
         // state restored from persistence, so no `!repoPath` guard here — the
         // onMount reader applies the same data first, making this idempotent.
-        if (data.repoPath) {
+        const hasCheckoutDraft = data.repositoryCheckoutDraft !== undefined;
+        const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
+        if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
+        else if (data.repoPath) {
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
@@ -379,10 +438,10 @@
             logger.warn('Failed to resolve githubUrl via repo registry IPC', { error: e });
           }
         }
-        if (data.branch) branch = data.branch;
+        if (!hasCheckoutDraft && data.branch) branch = data.branch;
 
         // Apply remote environment settings
-        if (data.environmentType === 'remote' && data.sshConfig) {
+        if (!hasCheckoutDraft && data.environmentType === 'remote' && data.sshConfig) {
           remoteSetup = {
             type: 'remote',
             ssh: data.sshConfig,
@@ -432,7 +491,7 @@
         if (data.autoCreate === true || data.autoCreate === 'true') {
           logger.info('autoCreate is set, will auto-submit once form is valid');
           pendingAutoCreate = true;
-        } else {
+        } else if (autoFocus) {
           // Focus the prompt textarea so the user can immediately type what to do
           setTimeout(() => {
             richTextarea?.focus();
@@ -454,18 +513,128 @@
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
   const recentRepos$ = selectWorkspaceInitializerRecentRepos();
+  const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const pendingGitHubPrefill$ = selectWorkspaceInitializerPendingGitHubPrefill();
 
   const savedState = $compactFormState$;
-  const lastSubmittedAgent = $lastSubmittedAgent$;
+  const savedAgentSettings = savedState ?? $lastSubmittedAgent$;
 
   // Form state - initialize from saved state if available
   let repoPath = $state(savedState?.repoPath ?? '');
-  let repoType: 'local' | 'github' | 'remote' = $state(savedState?.repoType ?? 'local');
+  let repoType: 'local' | 'github' | 'gitlab' | 'remote' = $state(savedState?.repoType ?? 'local');
   let githubUrl = $state(savedState?.githubUrl ?? '');
   let branch = $state(savedState?.branch ?? '');
   let isNewRepo = $state(savedState?.isNewRepo ?? false);
   let isValidPath = $state(savedState?.isValidPath ?? false);
+  const checkoutFormId = uuidv4();
+  const labsGitLab$ = selectLabsGitLabEnabled();
+  const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
+  const gitlabConfigured$ = selectGitLabAuthIsConfigured();
+  const gitlabStatusReady$ = selectGitLabStatusReady();
+  const checkoutForm$ = selectCheckoutForm(checkoutFormId);
+  const checkoutProjects$ = selectCheckoutProjects(checkoutFormId);
+  const checkoutBranches$ = selectCheckoutBranches(checkoutFormId);
+  const checkoutCanCreate$ = selectCheckoutCanCreate(checkoutFormId);
+  const checkoutScope = $derived($checkoutForm$?.scopeKey ?? '');
+  function restoreCheckout(draft: RepositoryCheckoutDraft | undefined, invalid = false) {
+    repoType = 'gitlab';
+    repoPath = '';
+    branch = '';
+    githubUrl = '';
+    remoteSetup = null;
+    isNewRepo = false;
+    isValidPath = false;
+    scope = '';
+    skipIsolation = false;
+    selectedPRBranch = '';
+    selectedPRTargetBranch = '';
+    selectedPRNumber = null;
+    appStore.dispatch(
+      invalid ? invalidDraftOpened(checkoutFormId) : checkoutOpened(checkoutFormId, draft),
+    );
+  }
+  function ensureCheckout() {
+    if (!selectCheckoutForm.select(appStore.state, checkoutFormId))
+      appStore.dispatch(checkoutOpened(checkoutFormId));
+  }
+  function recoverCheckout(scopeKey: string) {
+    const form = selectCheckoutForm.select(appStore.state, checkoutFormId);
+    if ((form?.scopeKey ?? '') !== scopeKey) return;
+    error = null;
+    if (form?.scopeKey) appStore.dispatch(recoveryRequested(checkoutFormId, scopeKey));
+    else appStore.dispatch(checkoutOpened(checkoutFormId, form?.draft ?? undefined));
+  }
+  function pickCheckoutProject(path: string, scopeKey: string) {
+    if (selectCheckoutForm.select(appStore.state, checkoutFormId)?.scopeKey !== scopeKey) return;
+    repoType = 'gitlab';
+    repoPath = path;
+    githubUrl = '';
+    remoteSetup = null;
+    branch = '';
+    scope = '';
+    isNewRepo = false;
+    isValidPath = false;
+    skipIsolation = false;
+    selectedPRBranch = '';
+    selectedPRTargetBranch = '';
+    selectedPRNumber = null;
+    appStore.dispatch(projectSelected(checkoutFormId, scopeKey, path));
+  }
+  const gitlabPicker = $derived<GitLabProjectPickerProps>({
+    authenticated: $gitlabStatusReady$ && $gitlabConfigured$,
+    scopeKey: checkoutScope,
+    instanceBaseUrl: $gitlabInstance$,
+    query: $checkoutForm$?.projectQuery ?? '',
+    page: checkoutPickerPage($checkoutForm$, $checkoutProjects$, 'projects'),
+    copy: checkoutPickerCopy('projects'),
+    selectedProjectPath: $checkoutForm$?.project?.projectPath,
+    onOpenChange: (open) => {
+      if (open) ensureCheckout();
+    },
+    onSearch: (query, scopeKey) =>
+      appStore.dispatch(projectQueryChanged(checkoutFormId, scopeKey, query)),
+    submitLabel: m.gitlabCheckout_useLink_label(),
+    onSubmit: /^https?:\/\//i.test($checkoutForm$?.projectQuery.trim() ?? '')
+      ? (query, scopeKey) => {
+          if (selectCheckoutForm.select(appStore.state, checkoutFormId)?.scopeKey !== scopeKey)
+            return;
+          repoType = 'gitlab';
+          repoPath = '';
+          githubUrl = '';
+          remoteSetup = null;
+          branch = '';
+          scope = '';
+          isNewRepo = false;
+          isValidPath = false;
+          skipIsolation = false;
+          selectedPRBranch = '';
+          selectedPRTargetBranch = '';
+          selectedPRNumber = null;
+          appStore.dispatch(urlSubmitted(checkoutFormId, scopeKey, query.trim()));
+        }
+      : undefined,
+    onMore: (scopeKey) => appStore.dispatch(projectsMoreRequested(checkoutFormId, scopeKey)),
+    onSelect: pickCheckoutProject,
+    onRecover: recoverCheckout,
+  });
+  const gitlabBranchPicker = $derived<GitLabBranchPickerProps>({
+    scopeKey: checkoutScope,
+    instanceBaseUrl: $checkoutForm$?.capture?.instanceBaseUrl,
+    projectPath: $checkoutForm$?.project?.projectPath ?? '',
+    query: $checkoutForm$?.branchQuery ?? '',
+    page: checkoutPickerPage($checkoutForm$, $checkoutBranches$, 'branches'),
+    copy: checkoutPickerCopy('branches'),
+    selectedBranch: $checkoutForm$?.branch ?? undefined,
+    placeholder: m.workspace_branchSelector_selectBranch_label(),
+    protectedLabel: m.gitlabCheckout_protected_label(),
+    onSearch: (query, scopeKey) =>
+      appStore.dispatch(branchQueryChanged(checkoutFormId, scopeKey, query)),
+    onMore: (scopeKey) => appStore.dispatch(branchesMoreRequested(checkoutFormId, scopeKey)),
+    onSelect: (choice, scopeKey) =>
+      appStore.dispatch(branchSelected(checkoutFormId, scopeKey, choice)),
+    onRecover: recoverCheckout,
+  });
+  onDestroy(() => appStore.dispatch(checkoutClosed(checkoutFormId)));
   // Scope is repo-specific - only restore if saved for the same repo
   let scope = $state(
     savedState?.scope && savedState?.repoPath === savedState?.scopeRepoPath ? savedState.scope : '',
@@ -492,21 +661,17 @@
   let selectedSpecialist = $state<string | null>(
     savedState?.selectedSpecialist !== undefined
       ? savedState.selectedSpecialist
-      : lastSubmittedAgent?.selectedSpecialist !== undefined
-        ? lastSubmittedAgent.selectedSpecialist
+      : savedAgentSettings?.selectedSpecialist !== undefined
+        ? savedAgentSettings.selectedSpecialist
         : defaultSingleAgentSpecialist,
   );
-  // Validate saved model against current provider - stale models from a different provider
-  // (e.g., a claude-code pick when active provider is now 'opencode') should be discarded
-  // since they won't exist in the current model list and cause a flash of the wrong model.
+  // Restore agent settings as one record so an absent/cleared override cannot
+  // fall through to a stale last-submitted effort for a different model.
   // A persisted bare model id is attributed to the provider persisted alongside it;
   // only a legacy pre-triple compound id carries its own prefix.
-  const restoredModel = savedState?.selectedModel ?? lastSubmittedAgent?.selectedModel;
-  const restoredModelProvider =
-    savedState?.selectedModel !== undefined
-      ? savedState?.selectedProvider
-      : lastSubmittedAgent?.selectedProvider;
-  const currentProviderAtInit = $activeProviderId$ || $defaultProviderId$;
+  const restoredModel = savedAgentSettings?.selectedModel;
+  const restoredModelProvider = savedAgentSettings?.selectedProvider;
+  const currentProviderAtInit = restoredModelProvider || $activeProviderId$ || $defaultProviderId$;
   const isModelForCurrentProvider =
     !restoredModel ||
     (splitLegacyCompoundId(restoredModel).providerId ??
@@ -518,20 +683,14 @@
   );
   // Track if user explicitly overrode the model (vs using specialist default)
   let modelWasOverridden = $state<boolean>(
-    isModelForCurrentProvider
-      ? (savedState?.modelWasOverridden ?? lastSubmittedAgent?.modelWasOverridden ?? false)
-      : false,
+    isModelForCurrentProvider ? (savedAgentSettings?.modelWasOverridden ?? false) : false,
   );
   let selectedReasoningEffort = $state<string | undefined>(
-    isModelForCurrentProvider
-      ? (savedState?.selectedReasoningEffort ?? lastSubmittedAgent?.selectedReasoningEffort)
-      : undefined,
+    isModelForCurrentProvider ? savedAgentSettings?.selectedReasoningEffort : undefined,
   );
   // Track if team mode is selected (the orchestrator specialist coordinates).
   // Defaults to single-agent mode on first launch; a remembered choice wins.
-  let isTeamMode = $state<boolean>(
-    savedState?.isTeamMode ?? lastSubmittedAgent?.isTeamMode ?? false,
-  );
+  let isTeamMode = $state<boolean>(savedAgentSettings?.isTeamMode ?? false);
 
   function resetUnavailableSpecialist(): void {
     selectedSpecialist = isTeamMode
@@ -539,11 +698,9 @@
       : null;
   }
   // Track which provider the user selected for the initial agent
-  // Priority: active provider store takes precedence since it's the user's
-  // explicit choice, else the settings-derived effective default. '' when
-  // neither has resolved (honestly unselected — never a fabricated auggie);
-  // the $effect below adopts the provider once settings hydration lands.
-  let selectedProvider = $state<string>($activeProviderId$ || $defaultProviderId$);
+  // Keep the remembered provider/model pair; otherwise inherit Settings.
+  // The effect below adopts a default after Settings hydration when unselected.
+  let selectedProvider = $state<string>(currentProviderAtInit);
   let prefillTitle = $state('');
 
   // Funnel tracking — fires at most once per form session, reset in clearForm()
@@ -607,7 +764,8 @@
 
   // Git availability state: null = checking, true = found, false = not found,
   // 'unknown' = the probe couldn't run (transport failure / daemon unreachable)
-  let gitAvailable: boolean | 'unknown' | null = $state(null);
+  const gitAvailability$ = selectWorkspaceInitializerGitAvailability();
+  const gitAvailable = $derived($gitAvailability$);
 
   // GitHub auth state - tracks if user needs to authenticate for private repos
   let githubAuthNeeded = $state<'none' | 'not-authenticated' | 'no-access'>('none');
@@ -634,12 +792,13 @@
   // hydration (the applyAgentSettings re-application below) must not
   // overwrite an in-session pick with restored state (intent-hq/monorepo#2678).
   let modelPickedThisSession = $state(false);
+  let effortPickedThisSession = $state(false);
 
   function applyAgentSettings(settings: CompactWorkspaceInitializerFormState | null | undefined) {
-    if (!settings) return;
+    if (!settings || modelPickedThisSession || effortPickedThisSession) return;
     if (settings.selectedSpecialist !== undefined) selectedSpecialist = settings.selectedSpecialist;
     if (settings.isTeamMode !== undefined) isTeamMode = settings.isTeamMode;
-    if (modelPickedThisSession) return;
+    selectedProvider = settings.selectedProvider ?? selectedProvider;
     const model = settings.selectedModel;
     // A persisted bare model id belongs to the provider persisted with it;
     // only a legacy pre-triple compound id carries its own prefix.
@@ -647,7 +806,7 @@
       !!model &&
       (splitLegacyCompoundId(model).providerId ??
         settings.selectedProvider ??
-        $defaultProviderId$) === ($activeProviderId$ || $defaultProviderId$);
+        $defaultProviderId$) === selectedProvider;
     if (savedModelAccepted) {
       selectedModel = model;
       modelWasOverridden = settings.modelWasOverridden ?? modelWasOverridden;
@@ -657,6 +816,8 @@
   }
 
   function applyCompactFormState(formState: CompactWorkspaceInitializerFormState) {
+    if (formState.repoType === 'gitlab')
+      restoreCheckout(readRepositoryCheckoutDraft(formState.repositoryCheckoutDraft));
     repoPath = formState.repoPath ?? repoPath;
     repoType = formState.repoType ?? repoType;
     githubUrl = formState.githubUrl ?? githubUrl;
@@ -668,7 +829,7 @@
     remoteSetup = formState.remoteSetup ?? remoteSetup;
     // Keep the provider paired with an in-session pick: restoring a different
     // provider would trip the picker's provider-mismatch effect and clear it.
-    if (!modelPickedThisSession) {
+    if (!modelPickedThisSession && !effortPickedThisSession) {
       selectedProvider = formState.selectedProvider ?? selectedProvider;
     }
     skipIsolation = readSkipIsolation(formState) ?? skipIsolation;
@@ -676,6 +837,7 @@
   }
 
   function applyLastSelectedRepo(data: WorkspaceInitializerRepoSelection) {
+    appStore.dispatch(checkoutClosed(checkoutFormId));
     repoPath = data.path || '';
     repoType = data.type || 'local';
     githubUrl = data.githubUrl || '';
@@ -686,8 +848,9 @@
 
   $effect(() => {
     if (!$workspaceInitializerHydrated$ || didApplyHydratedCompactState) return;
-    if ($compactFormState$ && !repoPath) {
-      applyCompactFormState($compactFormState$);
+    if ($compactFormState$) {
+      if (!repoPath) applyCompactFormState($compactFormState$);
+      else applyAgentSettings($compactFormState$);
     } else if ($lastSubmittedAgent$) {
       applyAgentSettings($lastSubmittedAgent$);
     }
@@ -702,9 +865,10 @@
       alreadyHandled: didApplyHydratedLastSelectedRepo,
       hasPrefillData: hasInitialPrefillData,
       isFormPersistenceEnabled: debugConfig.get('enableFormPersistence'),
-      currentRepoPath: repoPath,
+      currentRepoPath: repoType === 'gitlab' ? 'gitlab' : repoPath,
       hasLastSelectedRepo: !!lastSelectedRepo,
       recentRepos,
+      canCreateMember: $currentHostRole$ === 'member' && $canCreateWorkspace$,
     });
 
     if (hydrationAction === 'wait') return;
@@ -715,6 +879,17 @@
     } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
       // Fall back to the most recently used repository
       applyLastSelectedRepo(mapRecentRepoToSelection(recentRepos[0]));
+    } else if (hydrationAction === 'create-member-default') {
+      // Ordinary editable New selection, under the member's local default.
+      // Workspace and agent IDs still come only from the daemon's create reply.
+      const parent = $defaultParentPath$ || '~/Developer';
+      const separator = parent.includes('\\') ? '\\' : '/';
+      applyLastSelectedRepo({
+        path: `${parent.replace(/[\\/]+$/, '')}${separator}workspace-${crypto.randomUUID()}`,
+        type: 'local',
+        isNewRepo: true,
+        isValidPath: true,
+      });
     }
   });
 
@@ -724,9 +899,14 @@
   // initial empty save cannot clear a not-yet-restored draft. Non-fatal.
   let draftRestored = $state(false);
   let draftRestoreFailed = false;
+  let draftRestoreCancelled = false;
+  onDestroy(() => {
+    draftRestoreCancelled = true;
+  });
   (async () => {
     try {
       const restore = await restoreNewWorkspaceDraft(appClient.drafts);
+      if (draftRestoreCancelled) return;
       draftRestoreFailed = restore.status === 'error';
       if (restore.status === 'restored') {
         if (restore.contextItems.length > 0 && contextItems.length === 0) {
@@ -735,7 +915,7 @@
         if (restore.text && !initialPrompt) {
           initialPrompt = restore.text;
           setTimeout(() => {
-            richTextarea?.setContent(restore.text);
+            if (!draftRestoreCancelled) richTextarea?.setContent(restore.text);
           }, 50);
         }
       }
@@ -780,10 +960,13 @@
 
   // Save form state through Redux whenever it changes. Persistence is handled by the saga.
   $effect(() => {
-    if (!$workspaceInitializerHydrated$) return;
+    if (!$workspaceInitializerHydrated$ && !modelPickedThisSession && !effortPickedThisSession)
+      return;
     // Only save if there's meaningful state to preserve
-    if (repoPath || selectedSpecialist || selectedModel) {
-      const formState = {
+    if (repoPath || selectedSpecialist || selectedModel || selectedReasoningEffort !== undefined) {
+      const formState: CompactWorkspaceInitializerFormState = {
+        repositoryCheckoutDraft:
+          repoType === 'gitlab' ? readRepositoryCheckoutDraft($checkoutForm$?.draft) : undefined,
         repoPath,
         repoType,
         githubUrl,
@@ -809,12 +992,18 @@
 
   // When the active provider changes externally (e.g. user switches in settings),
   // update the form's selected provider and clear the stale model selection.
+  let previousActiveProvider = $activeProviderId$;
   $effect(() => {
     const newProviderId = $activeProviderId$;
     const currentProvider = untrack(() => selectedProvider);
-    if (newProviderId && newProviderId !== currentProvider) {
+    if (
+      newProviderId &&
+      newProviderId !== currentProvider &&
+      (!currentProvider || (previousActiveProvider && newProviderId !== previousActiveProvider))
+    ) {
       selectedProvider = newProviderId;
     }
+    previousActiveProvider = newProviderId;
   });
 
   // A specialist can disappear while this form is closed. Only discard a
@@ -845,34 +1034,12 @@
   // so they're ready when the user expands the form
   onMount(() => {
     appStore.dispatch(refetchSpecialistsRequested());
+    if (repoType === 'gitlab' && !selectCheckoutForm.select(appStore.state, checkoutFormId))
+      restoreCheckout(readRepositoryCheckoutDraft(savedState?.repositoryCheckoutDraft));
     logger.debug('Preloading issues on mount');
     preloadIssues();
 
-    // Check git availability
-    (async () => {
-      try {
-        const result =
-          typeof window !== 'undefined' && window.electronAPI
-            ? await invoke<any>('system:check-git')
-            : undefined;
-        if (result?.success && result.data) {
-          gitAvailable = result.data.available;
-          if (result.data.available === true) {
-            logger.debug('Git available', { version: result.data.version });
-          } else if (result.data.available === 'unknown') {
-            logger.warn('Git availability could not be verified (transport failure)');
-          } else {
-            logger.warn('Git is not available on this system');
-          }
-        } else {
-          // No probe answer at all — treat as unverifiable, not missing.
-          gitAvailable = 'unknown';
-        }
-      } catch (err) {
-        logger.error('Failed to check git availability', err);
-        gitAvailable = 'unknown';
-      }
-    })();
+    appStore.dispatch(workspaceInitializerGitCheckRequested());
 
     // First check for prefill data from sessionStorage (takes priority over persisted Redux state)
     // This is set when:
@@ -888,7 +1055,10 @@
         // Apply repo and branch settings — a repoPath prefill is always a
         // local repo, so set the full selection (clearing any restored
         // github state) so the picker opens on the Copy local repo tab
-        if (data.repoPath) {
+        const hasCheckoutDraft = data.repositoryCheckoutDraft !== undefined;
+        const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
+        if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
+        else if (data.repoPath) {
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
@@ -904,10 +1074,10 @@
           remoteSetup = null;
           branch = '';
         }
-        if (data.branch) branch = data.branch;
+        if (!hasCheckoutDraft && data.branch) branch = data.branch;
 
         // Apply remote environment settings
-        if (data.environmentType === 'remote' && data.sshConfig) {
+        if (!hasCheckoutDraft && data.environmentType === 'remote' && data.sshConfig) {
           remoteSetup = {
             type: 'remote',
             ssh: data.sshConfig,
@@ -1021,7 +1191,7 @@
     isStale?: () => boolean,
   ) {
     const candidates: GitHubPrefillRepoCandidate[] = [];
-    if (repoPath && repoType !== 'remote') {
+    if (repoPath && repoType !== 'remote' && repoType !== 'gitlab') {
       candidates.push({ path: repoPath, type: repoType, githubUrl: githubUrl || undefined });
     }
     for (const recent of $recentRepos$) {
@@ -1094,7 +1264,14 @@
           const selection = await resolveGitHubPrefillSelection(snapshot);
           if (isStale()) return;
           handleIssueSelect(`#${prefill.number}`, selection);
-          richTextarea?.focus();
+          // Home already read the PR head. Reflect that exact branch in the form
+          // as well as selectedPRBranch, which the create request submits.
+          if (snapshot.kind === 'pr' && snapshot.sourceBranch) {
+            handleBranchChange(
+              new CustomEvent('branchChange', { detail: { branch: snapshot.sourceBranch } }),
+            );
+          }
+          if (autoFocus) richTextarea?.focus();
         } catch (err) {
           logger.error('Failed to apply GitHub prefill', err);
         }
@@ -1121,6 +1298,8 @@
       queueMicrotask(() => {
         lastAppliedInitialRepoKey = repoKey;
         const formState = mapInitialRepoToFormState(repo);
+        if (formState.repoType === 'gitlab')
+          restoreCheckout(formState.repositoryCheckoutDraft, formState.invalidCheckoutDraft);
 
         if (formState.repoPath !== undefined) repoPath = formState.repoPath;
         if (formState.isValidPath !== undefined) isValidPath = formState.isValidPath;
@@ -1138,11 +1317,12 @@
   });
 
   $effect(() => {
-    if (!isExpanded) return;
+    if (!isExpanded || !autoFocus) return;
     // Focus the prompt input after the form expands
-    setTimeout(() => {
+    const focusTimer = setTimeout(() => {
       richTextarea?.focus();
     }, 100);
+    return () => clearTimeout(focusTimer);
   });
 
   // Listen for global enhance prompt shortcut (Cmd+/)
@@ -1392,7 +1572,8 @@
     const type = repoType;
     // Only read githubUrl for GitHub selections so the effect doesn't track
     // it (and re-run) while a local/remote repo is selected.
-    repoCacheWarmer.warm({ repoType: type, githubUrl: type === 'github' ? githubUrl : '' });
+    if (type !== 'gitlab')
+      repoCacheWarmer.warm({ repoType: type, githubUrl: type === 'github' ? githubUrl : '' });
   });
 
   // Auto-restore last used setup script when the repo changes, and re-probe
@@ -1404,8 +1585,8 @@
   const setupScriptProbeScheduler = createRepoConfigProbeScheduler();
   onDestroy(() => setupScriptProbeScheduler.dispose());
   $effect(() => {
-    const path = repoPath;
-    const type = repoType;
+    const path = repoType === 'gitlab' ? '' : repoPath;
+    const type = repoType === 'gitlab' ? 'local' : repoType;
     // Only read githubUrl/branch for GitHub selections so the effect doesn't
     // track them (and re-run) while a local repo is selected.
     const identity = {
@@ -1437,7 +1618,10 @@
           }
         }
       },
-      getCurrentIdentity: () => ({ path: repoPath, type: repoType, githubUrl, branch }),
+      getCurrentIdentity: () =>
+        repoType === 'gitlab'
+          ? { path: '', type: 'local', githubUrl: null, branch: null }
+          : { path: repoPath, type: repoType, githubUrl, branch },
       getSetupScript: () => setupScript,
       isSetupScriptModalOpen: () => showSetupScript,
       isCustomSetupScript: () => isCustomSetupScript,
@@ -1461,16 +1645,20 @@
   // daemon-confirmed missing git (false) or a still-pending probe (null) gates.
   // A failed/placing attachment pill also blocks (retry or remove to proceed).
   const isValid = $derived(
-    (gitAvailable === true || gitAvailable === 'unknown') &&
-      !!repoPath &&
-      isValidPath &&
-      (isNewRepo || !!branch || repoType === 'remote') &&
-      (repoType !== 'github' || githubAuthNeeded === 'none') &&
+    $canCreateWorkspace$ &&
+      (gitAvailable === true || gitAvailable === 'unknown') &&
+      (repoType === 'gitlab'
+        ? $checkoutCanCreate$
+        : !!repoPath &&
+          isValidPath &&
+          (isNewRepo || !!branch || repoType === 'remote') &&
+          (repoType !== 'github' || githubAuthNeeded === 'none')) &&
       !hasBlockingAttachments(contextItems),
   );
 
   // Derived GitHub repo info for IssueSuggestions
   const githubRepoInfo = $derived.by(() => {
+    if (repoType === 'gitlab') return null;
     // First try the explicit GitHub URL
     if (githubUrl) {
       return parseGitHubUrl(githubUrl);
@@ -1564,6 +1752,7 @@
       remoteSetup?: any;
     }>,
   ) {
+    appStore.dispatch(checkoutClosed(checkoutFormId));
     repoPath = event.detail.path;
     repoType = event.detail.type === 'remote' ? 'remote' : event.detail.type;
     isNewRepo = event.detail.isNewRepo || false;
@@ -1677,18 +1866,63 @@
     return parts.join('\n');
   }
 
+  let submissionGeneration = 0;
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+    submissionGeneration++;
+  });
+
+  let pullContinuation: (() => boolean) | null = null;
+
   async function handleSubmit() {
-    if (!isValid || isCreating || isEnhancing || isProcessingImages) return;
-    // Attachments still placing or failed block the create: a failed pill
-    // must be retried or removed first (no silent drop, no base64 fallback).
-    if (hasBlockingAttachments(contextItems)) return;
-    // A previous submit already created the workspace but attachment
-    // placement failed — resume that flow instead of creating again.
+    await submitWorkspace();
+  }
+
+  async function submitWorkspace(continuation?: () => boolean) {
+    if (continuation && !continuation()) return;
     if (pendingFirstMessage) {
-      await retryPendingFirstMessage();
+      if (pendingFirstMessage.current()) await retryPendingFirstMessage();
       return;
     }
-
+    const admission = selectPrincipalActionContext.select(appStore.state);
+    if (
+      admission === null ||
+      !selectWorkspaceCreationVisible.select(appStore.state) ||
+      !isValid ||
+      isCreating ||
+      isEnhancing ||
+      isProcessingImages ||
+      hasBlockingAttachments(contextItems)
+    )
+      return;
+    const repositoryCheckout =
+      repoType === 'gitlab' ? selectCheckoutSelection.select(appStore.state, checkoutFormId) : null;
+    if (repoType === 'gitlab' && !repositoryCheckout) return;
+    const checkoutContextUrl = repositoryCheckout
+      ? selectCheckoutForm.select(appStore.state, checkoutFormId)?.contextUrl
+      : null;
+    const generation = continuation ? submissionGeneration : ++submissionGeneration;
+    const dispatch = appStore.dispatch;
+    const current =
+      continuation ??
+      (() => {
+        try {
+          return (
+            mounted &&
+            generation === submissionGeneration &&
+            appStore.dispatch === dispatch &&
+            admission === selectPrincipalActionContext.select(appStore.state) &&
+            (!repositoryCheckout ||
+              JSON.stringify(repositoryCheckout) ===
+                JSON.stringify(selectCheckoutSelection.select(appStore.state, checkoutFormId))) &&
+            selectWorkspaceCreationVisible.select(appStore.state)
+          );
+        } catch {
+          return false;
+        }
+      });
+    pullContinuation = null;
     isCreating = true;
     error = null;
 
@@ -1703,7 +1937,7 @@
 
     try {
       // Validate
-      if (!isNewRepo && repoType !== 'remote') {
+      if (!repositoryCheckout && !isNewRepo && repoType !== 'remote') {
         const branchValidation = validateBranchName(branch);
         if (!branchValidation.valid) throw new Error(branchValidation.error);
       }
@@ -1715,14 +1949,16 @@
       // path the destination won't exist until after cloning
       if (repoType === 'github' && githubUrl) {
         const repoValidation = await validateRepoPath(githubUrl, false);
+        if (!current()) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
         // Note: We don't validate the parent directory here because:
         // 1. The backend will create it if it doesn't exist (using mkdir with recursive: true)
         // 2. Paths starting with ~ need to be expanded by the backend first
-      } else if (repoType !== 'remote') {
+      } else if (!repositoryCheckout && repoType !== 'remote') {
         // Skip local path validation for remote repos - the path is on the remote server,
         // not the local machine. The connection test already verified the repo exists.
         const repoValidation = await validateRepoPath(repoPath, isNewRepo);
+        if (!current()) return;
         if (!repoValidation.valid) throw new Error(repoValidation.error);
       }
 
@@ -1752,8 +1988,10 @@
             typeof window !== 'undefined' && window.electronAPI
               ? await appClient.git.pull(repoPath, branch)
               : undefined;
+          if (!current()) return;
           if (!pullResult?.success) {
             pullError = pullResult?.error || m.workspace_compactInitializer_pullFailed_error();
+            pullContinuation = current;
             showPullConflictDialog = true;
             isPulling = false;
             isCreating = false;
@@ -1765,8 +2003,10 @@
             branch,
           });
         } catch (err) {
+          if (!current()) return;
           pullError =
             err instanceof Error ? err.message : m.workspace_compactInitializer_pullFailed_error();
+          pullContinuation = current;
           showPullConflictDialog = true;
           isPulling = false;
           isCreating = false;
@@ -1780,11 +2020,12 @@
       // PR's target branch as baseRef (PROTOCOL §5.1). Send `branch` = PR head and
       // `baseRef` = PR target when known (omitted → the daemon derives it from the
       // PR). Non-PR creates keep sending the selected branch as `baseRef` only.
-      const prBranchActive = !!selectedPRBranch && !isNewRepo;
-      const baseBranch = isNewRepo ? 'main' : branch;
+      const prBranchActive = !repositoryCheckout && !!selectedPRBranch && !isNewRepo;
+      const baseBranch = repositoryCheckout?.branch ?? (isNewRepo ? 'main' : branch);
 
       // Build environment config if remote setup is selected
-      const remoteSetupSnapshot = remoteSetup ? $state.snapshot(remoteSetup) : null;
+      const remoteSetupSnapshot =
+        !repositoryCheckout && remoteSetup ? $state.snapshot(remoteSetup) : null;
       const environmentConfig = remoteSetupSnapshot
         ? {
             type: 'remote' as const,
@@ -1839,7 +2080,15 @@
       });
 
       // Convert context mentions to context references for the agent
-      const contextReferences: any[] = remoteSetup ? [$state.snapshot(remoteSetup)] : [];
+      const contextReferences: any[] = remoteSetupSnapshot ? [remoteSetupSnapshot] : [];
+      if (checkoutContextUrl)
+        contextReferences.push({
+          type: 'url',
+          provider: 'gitlab',
+          url: checkoutContextUrl,
+          title: checkoutContextUrl,
+          content: checkoutContextUrl,
+        });
       for (const mention of contextMentions) {
         // Parse metadata back from JSON if present
         let parsedMetadata: Record<string, any> = {};
@@ -1916,8 +2165,10 @@
         if (mention.type === 'terminal') {
           try {
             const { terminalManager } = await import('$features/terminal/terminal-manager.svelte');
+            if (!current()) return;
             const wsId = (mention.meta?.workspaceId as string) || '';
             const bufferContent = await terminalManager.getBufferContent(mention.id, wsId);
+            if (!current()) return;
             if (bufferContent) {
               const contextRef: Record<string, any> = {
                 type: 'terminal',
@@ -1937,7 +2188,9 @@
           try {
             const { selectScriptOutput, selectScriptById, selectScriptRuntime } =
               await import('$store/renderer/slices/scripts/scripts-selectors');
+            if (!current()) return;
             const { scriptOutputToLines } = await import('$lib/utils/script-output-text');
+            if (!current()) return;
             const scriptId = mention.id;
             const wsId = (mention.meta?.workspaceId as string) || null;
             const state = appStore.state;
@@ -2052,8 +2305,16 @@
       // and returns it on the create result (supersedes the fresh-id-per-
       // attempt fix — with no client id there is nothing to poison retries).
       const initialAgent = {
-        name: agentName,
+        // General uses the daemon placeholder so naming does not depend on UI locale.
+        ...(specialistId !== undefined ? { name: agentName } : {}),
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
         model: resolvedModel,
+        // Omission inherits the daemon's defaults; blank explicitly clears.
+        // Persist with creation so prompt/attachment turns cannot race an update.
+        ...(selectedReasoningEffort !== undefined
+          ? { reasoningEffort: selectedReasoningEffort }
+          : {}),
         specialist: specialistId, // Now accepts any specialist ID (not restricted to enum)
         behaviorPrompt: resolvedBehaviorPrompt, // Pass to IPC for workspace creation
         prompt: hasStagedFiles ? undefined : initialPrompt.trim() || undefined,
@@ -2072,9 +2333,16 @@
         },
       };
 
+      if (!current()) return;
       // Save branch per repo for persistence - ensures branch is remembered even if user
       // didn't explicitly click a branch in the dropdown (accepting the auto-selected default)
-      if (debugConfig.get('enableFormPersistence') && repoPath && baseBranch && !isNewRepo) {
+      if (
+        !repositoryCheckout &&
+        debugConfig.get('enableFormPersistence') &&
+        repoPath &&
+        baseBranch &&
+        !isNewRepo
+      ) {
         appStore.dispatch(setWorkspaceInitializerBranchForRepo(repoPath, baseBranch));
         logger.debug('Saved branch per repo', { repoPath, branch: baseBranch });
       }
@@ -2088,7 +2356,8 @@
       // Await any in-flight repo-config probe (bounded, sub-second) so the
       // setup-script decision below sees the committed `.intent/config.json`
       // instead of racing the probe (monorepo#1862).
-      await setupScriptProbeScheduler.settled();
+      if (!repositoryCheckout) await setupScriptProbeScheduler.settled();
+      if (!current()) return;
 
       // The shown script is what runs: send it as-is, EXCEPT the unedited
       // repo-config script — the daemon persists an explicit setupScript into
@@ -2102,29 +2371,46 @@
         repoConfigScriptRepo,
       });
 
-      const requestContextLinks = buildContextLinks(contextMentions);
+      const checkoutInstance = selectCheckoutForm.select(appStore.state, checkoutFormId)?.capture
+        ?.instanceBaseUrl;
+      const requestContextLinks = buildContextLinks(
+        contextMentions,
+        checkoutContextUrl && repositoryCheckout && checkoutInstance
+          ? {
+              url: checkoutContextUrl,
+              instanceBaseUrl: checkoutInstance,
+              projectPath: repositoryCheckout.projectPath,
+            }
+          : undefined,
+      );
 
+      if (!current()) return;
       const result = await workspaceClient.create({
         title: prefillTitle || '', // Use deep-link title if provided, otherwise agent will set it
-        repositoryPath: isGithubPick
-          ? undefined
-          : String(remoteSetupSnapshot?.workspacePath || repoPath),
-        githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL of the picked repo
-        // PR-started workspace: branch = PR head (daemon checks it out), baseRef =
-        // PR target when known (omitted → the daemon derives it from the PR).
-        // Otherwise the selected branch rides as baseRef only (PROTOCOL §5.1).
-        branch: prBranchActive ? selectedPRBranch : undefined,
-        baseRef: prBranchActive ? selectedPRTargetBranch || undefined : String(baseBranch),
+        ...(repositoryCheckout
+          ? { repositoryCheckout }
+          : {
+              repositoryPath: isGithubPick
+                ? undefined
+                : String(remoteSetupSnapshot?.workspacePath || repoPath),
+              githubUrl: repoType === 'github' && githubUrl ? githubUrl : undefined, // GitHub URL of the picked repo
+              // PR-started workspace: branch = PR head (daemon checks it out), baseRef =
+              // PR target when known (omitted → the daemon derives it from the PR).
+              // Otherwise the selected branch rides as baseRef only (PROTOCOL §5.1).
+              branch: prBranchActive ? selectedPRBranch : undefined,
+              baseRef: prBranchActive ? selectedPRTargetBranch || undefined : String(baseBranch),
+              environmentConfig,
+              isNewRepo: Boolean(isNewRepo),
+              skipIsolation: skipIsolation || undefined,
+            }),
         contextLinks: requestContextLinks,
         setupScript: setupScriptParam,
-        environmentConfig,
-        isNewRepo: Boolean(isNewRepo),
-        skipIsolation: skipIsolation || undefined,
         scope: scope || undefined, // Scope for subdirectories of git repos
         initialAgent,
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
       });
 
+      if (!current()) return;
       if (!result.ok) throw new Error(result.error || 'Failed to create workspace');
 
       const workspace = result.data.workspace;
@@ -2132,31 +2418,12 @@
       // create result; the FE no longer pre-mints one.
       const initialAgentId = result.data.initialAgent?.id;
 
-      // workspace.create does not accept reasoningEffort on initialAgent. Apply
-      // an explicit user pick to the daemon-minted session through agent.update;
-      // omitting this mutation preserves the daemon's normal resolution chain.
-      if (selectedReasoningEffort && initialAgentId) {
-        try {
-          const effortResult = await appClient.agents.setReasoningEffort({
-            agentId: initialAgentId,
-            workspaceId: workspace.id,
-            reasoningEffort: selectedReasoningEffort,
-          });
-          if (!effortResult.success) {
-            logger.warn('Failed to set reasoning effort on initial agent', {
-              error: effortResult.error,
-            });
-          }
-        } catch (effortError) {
-          logger.warn('Failed to set reasoning effort on initial agent', { error: effortError });
-        }
-      }
-
       // Clear reused-ID state before installing the authoritative first-frame
       // layout. The panel seed owns the initial agent identity; legacy
       // navigation stays an empty shell so drawer migration cannot compete.
       try {
         const { getPanelLayoutManager } = await import('$features/layout/panel-layout-adapter');
+        if (!current()) return;
         getPanelLayoutManager(workspace.id).clearLayout();
       } catch (error) {
         logger.debug('Could not clear panel layout', { error });
@@ -2164,11 +2431,13 @@
       try {
         const { workspaceStorageManager } =
           await import('$store/renderer/slices/workspace/utils/workspace-storage-manager');
+        if (!current()) return;
         workspaceStorageManager.clearState(workspace.id);
       } catch (error) {
         logger.debug('Could not clear workspace storage state', { error });
       }
 
+      if (!current()) return;
       appStore.dispatch(setWorkspaceEntity(workspace));
       if (initialAgentId) {
         appStore.dispatch(setInitialAgentId(workspace.id, initialAgentId));
@@ -2203,6 +2472,7 @@
       // this flow — the created workspace itself is never rolled back.
       if (hasStagedFiles) {
         pendingFirstMessage = {
+          current,
           workspaceId: workspace.id,
           agentId: initialAgentId,
           content: initialPrompt.trim(),
@@ -2215,6 +2485,7 @@
           return;
         }
       }
+      if (!current()) return;
 
       // Register a picked repo as a path-less GitHub recent so re-picking it
       // prefills the tab (keyed by the owner/repo shorthand, no local path).
@@ -2236,7 +2507,7 @@
       // so PR discovery can find the right PR later. Daemon-backed
       // (`workspace.update`, PROTOCOL §5.1) via workspaceClient — the legacy
       // `workspace:update` IPC channel is unbridged in this build.
-      if (selectedPRNumber && workspace.id) {
+      if (!repositoryCheckout && selectedPRNumber && workspace.id) {
         void workspaceClient
           .update({ id: workspace.id, prNumber: selectedPRNumber })
           .then((updateResult) => {
@@ -2254,7 +2525,7 @@
         setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
         repoConfigScriptRepo === repoPath &&
         setupScript.trim() === (repoConfigScript ?? '').trim();
-      if (setupScript.trim() && !isUneditedRepoConfigScript) {
+      if (!repositoryCheckout && setupScript.trim() && !isUneditedRepoConfigScript) {
         recordLastUsedSetupScript(
           repoPath,
           {
@@ -2265,8 +2536,6 @@
           repoType === 'github' ? githubUrl : undefined,
         );
       }
-
-      await goto(`/workspace/${workspace.id}`);
 
       // Save last submitted agent settings before clearing form.
       // This allows the form to restore these values after submission.
@@ -2281,9 +2550,16 @@
         }),
       );
 
-      clearForm();
-      oncreate?.();
+      // Clear before navigation can unmount the form and flush its draft.
+      clearForm(true);
+      if (!current()) return;
+      // Close the accepted form before the route loader can renegotiate the
+      // connection and retire its checkout. Admission still owns this callback.
+      const navigation = goto(`/workspace/${workspace.id}`);
+      if (current()) oncreate?.();
+      await navigation;
     } catch (err) {
+      if (!current()) return;
       if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
@@ -2295,15 +2571,22 @@
             : m.workspace_compactInitializer_createFailed_error();
       }
     } finally {
-      isCreating = false;
+      if (mounted && generation === submissionGeneration) {
+        isCreating = false;
+        activeCreateProgressId = null;
+      }
       // The create settled (success, failure, or early return) — drop the
       // transient progress entry so the slice never accumulates stale ids.
-      activeCreateProgressId = null;
-      appStore.dispatch(clearWorkspaceCreateProgress(createProgressId));
+      // Dispatch belongs to the captured Redux instance, never a replacement store.
+      dispatch(clearWorkspaceCreateProgress(createProgressId));
     }
   }
 
-  function clearForm() {
+  function clearForm(preserveSubmission = false) {
+    if (!preserveSubmission) {
+      submissionGeneration++;
+      pendingFirstMessage = null;
+    }
     // Note: NOT resetting the repo selection (repoPath, repoType, githubUrl,
     // branch, isNewRepo, isValidPath, scope) — it is preserved so the next
     // new-workspace form re-opens on the same repo (intent-hq/monorepo#2148).
@@ -2323,13 +2606,18 @@
       scope = '';
     }
     remoteSetup = null;
+    // A late drafts.get or its delayed editor update must not refill the form.
+    draftRestoreCancelled = true;
     initialPrompt = '';
     contextItems = []; // Clear attachment items
     richTextarea?.clear(); // Clear the TipTap editor content
+    // Cancel the queued save before clearing: an immediate close/unmount can
+    // flush the submitted prompt before the empty-state effect runs (#5569).
+    draftSaver.cancel();
     // Immediately clear the persisted daemon draft (drafts.clear under the
-    // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage key
+    // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage keys.
     clearNewWorkspaceDraft(appClient.drafts);
-    // Note: NOT resetting selectedSpecialist, selectedModel, modelWasOverridden, isTeamMode
+    // Keep selectedSpecialist, selectedModel, modelWasOverridden, selectedReasoningEffort, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
     setupScript = '';
     showSetupScript = false;
@@ -2339,7 +2627,7 @@
 
     // Restore the last used setup script for the preserved repo so the next
     // workspace creation defaults to the same script
-    if (repoPath) {
+    if (repoPath && repoType !== 'gitlab') {
       restoreLastUsedSetupScript(repoPath);
     }
 
@@ -2357,6 +2645,12 @@
     // happens right after oncreate?.()), stale remoteSetup state won't be
     // restored and the preserved repo selection is persisted.
     const cleanedState: CompactWorkspaceInitializerFormState = {
+      repositoryCheckoutDraft:
+        repoType === 'gitlab'
+          ? readRepositoryCheckoutDraft(
+              selectCheckoutForm.select(appStore.state, checkoutFormId)?.draft,
+            )
+          : undefined,
       // Agent prefs — always preserved
       selectedSpecialist,
       selectedModel,
@@ -2646,7 +2940,9 @@
   // the first-message send) failed: the workspace exists, the modal stays
   // open with failed pills, and the create button resumes this flow instead
   // of creating a second workspace.
-  let pendingFirstMessage = $state<HeldFirstMessage | null>(null);
+  let pendingFirstMessage = $state.raw<(HeldFirstMessage & { current: () => boolean }) | null>(
+    null,
+  );
 
   /**
    * Place all staged attachments into the created workspace (sourcePath-only,
@@ -2659,8 +2955,17 @@
   async function placeAndSendFirstMessage(): Promise<boolean> {
     const pending = pendingFirstMessage;
     if (!pending) return true;
+    const current = pending.current;
+    if (!current()) return false;
 
-    const redemption = await redeemStagedAttachments(pending.workspaceId, contextItems);
+    const redemption = await redeemStagedAttachments(
+      pending.workspaceId,
+      contextItems,
+      undefined,
+      undefined,
+      current,
+    );
+    if (!current()) return false;
     contextItems = redemption.items;
     if (redemption.failedCount > 0) {
       error = m.workspace_compactInitializer_attachmentPlacementFailed_error();
@@ -2672,7 +2977,20 @@
     // Electron's structured clone rejects outright — passing it through
     // verbatim made every staged-attachment first send fail before reaching
     // the daemon (monorepo#2576).
-    const sendResult = await sendHeldFirstMessage($state.snapshot(pending), redemption.fileBlocks);
+    const sendResult = await sendHeldFirstMessage(
+      {
+        workspaceId: pending.workspaceId,
+        agentId: pending.agentId,
+        content: pending.content,
+        imageBlocks: pending.imageBlocks,
+        contextReferences: pending.contextReferences,
+      },
+      redemption.fileBlocks,
+      undefined,
+      undefined,
+      current,
+    );
+    if (!current()) return false;
     if (!sendResult.sent) {
       logger.error('First-message send failed after attachment placement', {
         error: sendResult.errorDetail,
@@ -2687,7 +3005,7 @@
         : m.workspace_compactInitializer_firstMessageSendFailed_error();
       return false;
     }
-    pendingFirstMessage = null;
+    if (pendingFirstMessage === pending) pendingFirstMessage = null;
     return true;
   }
 
@@ -2698,17 +3016,17 @@
    */
   async function retryPendingFirstMessage(): Promise<void> {
     const pending = pendingFirstMessage;
-    if (!pending) return;
+    if (!pending || !pending.current()) return;
     isCreating = true;
     error = null;
     try {
       const sent = await placeAndSendFirstMessage();
-      if (!sent) return;
+      if (!sent || !pending.current()) return;
+      clearForm(true);
       await goto(`/workspace/${pending.workspaceId}`);
-      clearForm();
-      oncreate?.();
+      if (pending.current()) oncreate?.();
     } finally {
-      isCreating = false;
+      if (pending.current()) isCreating = false;
     }
   }
 
@@ -2723,6 +3041,7 @@
     const item = contextItems.find((i) => i.id === id);
     if (!item) return;
     if (pendingFirstMessage) {
+      if (!pendingFirstMessage.current()) return;
       // Workspace exists: reset this pill to staged and re-run the flow.
       contextItems = contextItems.map((i) =>
         i.id === id ? { ...i, placementStatus: undefined } : i,
@@ -3251,8 +3570,12 @@
             <div class="repo-picker-row" transition:slide={{ axis: 'y', tier: 'moderate' }}>
               <RepoAndBranchPicker
                 bind:this={repoAndBranchPicker}
-                {repoPath}
-                {branch}
+                repoPath={repoType === 'gitlab'
+                  ? ($checkoutForm$?.project?.projectPath ?? '')
+                  : repoPath}
+                branch={repoType === 'gitlab' ? ($checkoutForm$?.branch?.name ?? '') : branch}
+                gitlab={$labsGitLab$ || repoType === 'gitlab' ? gitlabPicker : undefined}
+                gitlabBranch={gitlabBranchPicker}
                 {repoType}
                 {githubUrl}
                 {skipIsolation}
@@ -3275,6 +3598,7 @@
         {#snippet createButton(progressLabel?: Snippet)}
           <Button
             variant="primary"
+            data-dialog-primary-action
             onclick={handleSubmit}
             disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
           >
@@ -3325,6 +3649,57 @@
         </div>
       </div>
 
+      {#if isExpanded && repoType === 'gitlab'}
+        <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
+          <div class="w-48 max-w-full">
+            <Select.Root
+              value={$checkoutForm$?.mode ?? 'cached'}
+              disabled={isCreating || $checkoutForm$?.status !== 'ready'}
+              onchange={(value) => {
+                if (value === 'direct' || value === 'cached')
+                  appStore.dispatch(modeChanged(checkoutFormId, checkoutScope, value));
+              }}
+              items={[
+                { value: 'direct', label: m.gitlabCheckout_direct_label() },
+                { value: 'cached', label: m.gitlabCheckout_cached_label() },
+              ]}
+            >
+              <Select.Trigger aria-label={m.gitlabCheckout_mode_label()}
+                ><Select.Value /></Select.Trigger
+              >
+              <Select.Content
+                ><Select.Item value="direct" label={m.gitlabCheckout_direct_label()}
+                  >{m.gitlabCheckout_direct_label()}</Select.Item
+                ><Select.Item value="cached" label={m.gitlabCheckout_cached_label()}
+                  >{m.gitlabCheckout_cached_label()}</Select.Item
+                ></Select.Content
+              >
+            </Select.Root>
+          </div>
+          {#if $checkoutForm$?.status === 'unavailable' && $checkoutForm$.unavailable}
+            <p class="text-subtle">{checkoutFailureMessage($checkoutForm$.unavailable)}</p>
+            <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
+              >{m.collaboration_host_refresh_label()}</Button
+            >
+          {:else if $checkoutForm$?.warmStatus === 'warming'}
+            <p class="text-subtle">{m.gitlabCheckout_warming_description()}</p>
+          {:else if $checkoutForm$?.branch}
+            <p class="text-subtle">
+              {m.gitlabCheckout_exactCommit_description({
+                branch: $checkoutForm$.branch.name,
+                sha: $checkoutForm$.branch.commitSha.slice(0, 12),
+              })}
+            </p>
+          {/if}
+          {#if $checkoutForm$?.contextUrl}<a
+              class="min-w-0 truncate text-primary-ink"
+              href={$checkoutForm$.contextUrl}
+              target="_blank"
+              rel="noopener noreferrer">{$checkoutForm$.contextUrl}</a
+            >{/if}
+        </div>
+      {/if}
+
       <!-- Error message -->
       {#if error}
         <div
@@ -3333,9 +3708,15 @@
         >
           {error}
         </div>
+        {#if repoType === 'gitlab' && $checkoutForm$?.status === 'ready' && !isCreating}
+          <p class="text-sm text-subtle">{m.gitlabCheckout_createRecovery_description()}</p>
+          <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
+            >{m.collaboration_host_refresh_label()}</Button
+          >
+        {/if}
       {/if}
       <!-- Validation hint -->
-      {#if isExpanded && !isValid && !isCreating && !error && (gitAvailable !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
+      {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitAvailable !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
         <div
           class="mt-2 px-4.5 text-sm text-subtle"
           transition:slide={{ axis: 'y', tier: 'moderate' }}
@@ -3354,7 +3735,7 @@
         </div>
       {/if}
       <!-- Use PR branch suggestion - show when a PR is selected but branch doesn't match -->
-      {#if selectedPRBranch && branch !== selectedPRBranch && !isNewRepo}
+      {#if repoType !== 'gitlab' && selectedPRBranch && branch !== selectedPRBranch && !isNewRepo}
         <div class="mt-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
           <Button
             variant="plain"
@@ -3390,43 +3771,20 @@
               if (model) modelPickedThisSession = true;
             }}
             bind:selectedReasoningEffort
+            onReasoningEffortChange={() => (effortPickedThisSession = true)}
             bind:modelWasOverridden
             bind:isTeamMode
             bind:selectedProvider
           />
         </div>
         <!-- Setup script -->
-        <div class="space-y-2 border-t border-border pt-3">
-          <div class="flex items-center justify-between flex-wrap gap-2 w-full">
-            <!-- Left: setup script button -->
-            <Button
-              variant="ghost"
-              type="button"
-              wrapContent={false}
-              class="group flex h-auto min-h-9 w-full min-w-0 cursor-pointer flex-wrap items-center justify-start gap-1.5 rounded-md px-2.5 py-2 text-left text-sm whitespace-normal text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              onclick={() => (showSetupScript = !showSetupScript)}
-            >
-              <span>{m.workspace_compactInitializer_setupDevEnvWith_before()}</span>
-              <!-- The pill and trailing suffix render in both states (spinner
-                   inside the pill while loading) so the row keeps the same
-                   structure and height when the probe resolves. -->
-              <span
-                class="min-w-0 max-w-full rounded-md border border-border bg-background px-2 py-0.5 font-medium wrap-break-word text-foreground"
-              >
-                {#if isRepoConfigLoading}
-                  <IntentMarkLoader size={14} />
-                  <span class="sr-only"
-                    >{m.workspace_compactInitializer_detectingSetupScript_label()}</span
-                  >
-                {:else}
-                  {setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
-                {/if}
-              </span>
-              <span class="text-sm text-subtle">
-                {m.workspace_compactInitializer_setupDevEnvWith_after()}
-              </span>
-            </Button>
-          </div>
+        <div class="space-y-2">
+          <SetupScriptTrigger
+            value={setupScriptDisplayName(setupScriptName, setupScriptNameSource)}
+            loading={isRepoConfigLoading}
+            expanded={showSetupScript}
+            onOpen={() => (showSetupScript = true)}
+          />
           <SetupScriptModal
             bind:open={showSetupScript}
             {repoPath}
@@ -3451,6 +3809,9 @@
   {repoPath}
   branchName={branch}
   onCreateWorkspace={(options) => {
+    const continuation = pullContinuation;
+    if (!continuation?.()) return;
+    pullContinuation = null;
     // Proceed with workspace creation without pulling - user will resolve conflicts in workspace
     shouldPullBeforeCreate = false;
     showPullConflictDialog = false;
@@ -3493,9 +3854,12 @@
       richTextarea?.setContent(getResolutionPrompt(options.errorType));
     }
 
-    handleSubmit();
+    submitWorkspace(continuation);
   }}
   onCancel={() => {
+    submissionGeneration++;
+    pendingFirstMessage = null;
+    pullContinuation = null;
     showPullConflictDialog = false;
     pullError = null;
   }}

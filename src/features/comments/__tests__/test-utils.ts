@@ -86,6 +86,7 @@ export function createTestComment(overrides: Partial<CommentV2> = {}): CommentV2
     createdAt: overrides.createdAt || new Date().toISOString(),
     updatedAt: overrides.updatedAt || new Date().toISOString(),
     noteId: overrides.noteId || 'test-note',
+    workspaceId: overrides.workspaceId || 'test-workspace',
     anchor: overrides.anchor || {
       type: 'range' as const,
       startId: `${id}:start`,

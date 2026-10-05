@@ -13,8 +13,8 @@
    * Uses the canonical dialog primitive for focus trapping, focus
    * restoration, Escape handling, and outside dismissal.
    */
-  import { Button } from '$lib/components/ui/button';
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { FormDialog } from '$lib/components/patterns/confirm';
+  import * as Accordion from '$lib/components/ui/accordion';
   import { Textarea } from '$lib/components/ui/textarea';
   import { m } from '$shared/paraglide/messages.js';
   import { buildReplaceAgentHandoffMessage } from '$shared/utils/replace-agent-handoff';
@@ -60,36 +60,35 @@
   }
 </script>
 
-<Dialog.Root {open} {staticPosition} onOpenChange={(nextOpen) => !nextOpen && close()}>
-  <Dialog.Content
-    class="max-w-xl gap-0 overflow-hidden p-0"
-    closeLabel={m.modals_replaceAgent_close_ariaLabel()}
-  >
-    <div class="space-y-4 p-5 pr-12">
-      <Dialog.Header class="gap-2 pr-0">
-        <Dialog.Title>{m.modals_replaceAgent_title()}</Dialog.Title>
-      </Dialog.Header>
-
-      <p class="type-body">{m.modals_replaceAgent_description({ name: agentName })}</p>
-
-      <Textarea
-        bind:value={text}
-        aria-label={m.modals_replaceAgent_instruction_ariaLabel()}
-        class="max-h-72 min-h-48 w-full text-xs leading-5"
-      />
-
-      <p class="text-sm leading-5 text-subtle">
-        {m.modals_replaceAgent_editHint_description()}
-      </p>
-    </div>
-
-    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button variant="ghost-light" onclick={close}>
-        {m.modals_replaceAgent_cancel_label()}
-      </Button>
-      <Button variant="primary" onclick={handleSend} disabled={!canSend}>
-        {m.modals_replaceAgent_send_label()}
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+<FormDialog
+  bind:open
+  static={staticPosition}
+  title={m.modals_replaceAgent_title()}
+  description={m.modals_replaceAgent_description({ name: agentName })}
+  closeLabel={m.modals_replaceAgent_close_ariaLabel()}
+  submitLabel={m.modals_replaceAgent_send_label()}
+  cancelLabel={m.modals_replaceAgent_cancel_label()}
+  canSubmit={canSend}
+  enterKey="ignore"
+  focusContent
+  onSubmit={handleSend}
+  onCancel={close}
+>
+  <Accordion.Root type="single">
+    <Accordion.Item value="instructions">
+      <Accordion.Trigger inset={false}
+        >{m.modals_replaceAgent_instruction_ariaLabel()}</Accordion.Trigger
+      >
+      <Accordion.Content inset={false}>
+        <p class="type-caption mb-3 text-muted-foreground">
+          {m.modals_replaceAgent_editHint_description()}
+        </p>
+        <Textarea
+          bind:value={text}
+          aria-label={m.modals_replaceAgent_instruction_ariaLabel()}
+          class="max-h-72 min-h-48 w-full type-body"
+        />
+      </Accordion.Content>
+    </Accordion.Item>
+  </Accordion.Root>
+</FormDialog>

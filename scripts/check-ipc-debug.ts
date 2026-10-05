@@ -146,10 +146,9 @@ function showErrors() {
   // Group by channel
   const byChannel = new Map<string, any[]>();
   errors.forEach((error) => {
-    if (!byChannel.has(error.channel)) {
-      byChannel.set(error.channel, []);
-    }
-    byChannel.get(error.channel)!.push(error);
+    const channelErrors = byChannel.get(error.channel) ?? [];
+    channelErrors.push(error);
+    byChannel.set(error.channel, channelErrors);
   });
 
   byChannel.forEach((channelErrors, channel) => {

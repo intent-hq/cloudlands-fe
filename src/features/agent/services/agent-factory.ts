@@ -29,6 +29,8 @@ import {
   selectAvailableEnabledProviderIds,
 } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
+import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -91,6 +93,7 @@ const AGENT_FACTORY_HMR_KEY = '__agentFactory_hmr';
 
 export class UnifiedAgentFactory {
   private static instance: UnifiedAgentFactory;
+  private pendingCreations = new Map<string, Promise<CreateAgentResult>>();
 
   private constructor() {}
 
@@ -126,7 +129,31 @@ export class UnifiedAgentFactory {
    * This is the ONLY public creation method. All creation paths go through here.
    * Consolidates: createAgent, createInitialAgent, createContextualAgent
    */
-  async createAgent(workspace: Workspace, config: UnifiedAgentConfig): Promise<CreateAgentResult> {
+  createAgent(
+    workspace: Workspace,
+    config: UnifiedAgentConfig,
+    creationKey?: string,
+  ): Promise<CreateAgentResult> {
+    if (!creationKey) return this.createAgentOnce(workspace, config);
+    const key = JSON.stringify([
+      isBackend ? null : selectPrincipalActionContext.select(appStore.state),
+      workspace.id,
+      creationKey,
+    ]);
+    const pending = this.pendingCreations.get(key);
+    if (pending) return pending;
+    const creation = this.createAgentOnce(workspace, config).finally(() => {
+      if (this.pendingCreations.get(key) === creation) this.pendingCreations.delete(key);
+    });
+    this.pendingCreations.set(key, creation);
+    return creation;
+  }
+
+  private async createAgentOnce(
+    workspace: Workspace,
+    config: UnifiedAgentConfig,
+  ): Promise<CreateAgentResult> {
+    const principalContext = isBackend ? null : selectPrincipalActionContext.select(appStore.state);
     const startTime = Date.now();
     const metrics = {
       validationTime: 0,
@@ -317,7 +344,7 @@ export class UnifiedAgentFactory {
       // Step 6.5: Determine provider early (needed for model resolution)
       // Determine provider: use explicit config.provider, or get from Redux active-provider slice
       let provider = config.provider;
-      if (!provider && !isBackend) {
+      if (!provider && !isBackend && !normalized.metadata?.specialist) {
         const activeId = await getActiveProviderId();
         if (activeId) {
           // D1(B): never silently spawn on an unavailable provider — this is
@@ -344,7 +371,9 @@ export class UnifiedAgentFactory {
             });
             return {
               success: false,
-              error: m.agent_factory_activeProviderUnavailable_error({ provider: activeId }),
+              error: selectIsHostMember.select(appStore.state)
+                ? m.hostExecution_providerSetup_description()
+                : m.agent_factory_activeProviderUnavailable_error({ provider: activeId }),
             };
           }
           provider = activeId;
@@ -415,6 +444,9 @@ export class UnifiedAgentFactory {
       // no longer occur.
       if (!isBackend) {
         const backendStart = Date.now();
+        if (selectPrincipalActionContext.select(appStore.state) !== principalContext) {
+          return { success: false, error: m.agent_creation_createFailed_error() };
+        }
 
         const backendResult = await this.createInBackend(
           agent,
@@ -424,8 +456,15 @@ export class UnifiedAgentFactory {
           provider,
           normalized.skipInitialPrompt,
           normalized.nameExplicitlySet,
+          normalized.placement,
+          normalized.rememberSpecialist,
         );
         metrics.backendCreationTime = Date.now() - backendStart;
+        // A late acknowledgement belongs to the original connection, not the
+        // newly admitted backend. Do not publish its session or send its prompt.
+        if (selectPrincipalActionContext.select(appStore.state) !== principalContext) {
+          return { success: false, error: m.agent_creation_createFailed_error() };
+        }
 
         if (!backendResult.success) {
           logger.error('Backend agent creation failed', {
@@ -455,6 +494,16 @@ export class UnifiedAgentFactory {
           };
         }
         agent.id = createAgentId(backendResult.agentId);
+        // The host resolves specialist/default models. Keep its provider/model
+        // pair together so later picker mutations address the actual session.
+        agent.provider = backendResult.provider ?? agent.provider;
+        agent.model = backendResult.model ?? agent.model;
+        // Only the daemon can confirm the durable prompt identity. An omitted
+        // marker must not leave the requested version in the reusable-chat cache.
+        agent.metadata = {
+          ...agent.metadata,
+          chiefPromptVersion: backendResult.chiefPromptVersion,
+        };
       }
 
       logger.debug('Backend agent created', {
@@ -583,6 +632,7 @@ export class UnifiedAgentFactory {
           normalized.contextReferences,
           normalized.imageBlocks,
           initialUserAppMessageId,
+          principalContext,
         ).catch((error) => {
           logger.error('Failed to send initial message', error);
         });
@@ -665,6 +715,8 @@ export class UnifiedAgentFactory {
 
     return {
       name: normalizedName,
+      placement: config.placement,
+      rememberSpecialist: config.rememberSpecialist,
       nameExplicitlySet: config.nameExplicitlySet, // Wire `nameExplicitlySet` — false marks a generated placeholder name
       workspaceId: config.workspaceId || (workspace.id as BrandedWorkspaceId),
       model: config.model, // Don't set default here - createAgent handles provider-aware defaults
@@ -719,9 +771,20 @@ export class UnifiedAgentFactory {
     provider?: string,
     _skipInitialPrompt?: boolean,
     nameExplicitlySet?: boolean,
-  ): Promise<{ success: boolean; agentId?: string; error?: string; cause?: unknown }> {
+    placement?: import('$shared/types/agent-node').AgentPlacement,
+    rememberSpecialist?: boolean,
+  ): Promise<{
+    success: boolean;
+    agentId?: string;
+    provider?: string | null;
+    model?: string | null;
+    chiefPromptVersion?: number;
+    error?: string;
+    cause?: unknown;
+  }> {
     try {
       const request = {
+        ...(placement ? { placement } : {}),
         workspaceId: String(agent.workspaceId),
         workspacePath,
         name: agent.name,
@@ -740,7 +803,8 @@ export class UnifiedAgentFactory {
         // Maps to wire `specialistId` (PROTOCOL §5.5) — the daemon persists the
         // session specialist from the top-level param only; `metadata.specialist`
         // is NOT harvested, so it must be lifted onto the request here.
-        specialist: agent.metadata?.specialist,
+        specialist: agent.metadata?.specialist ?? (rememberSpecialist ? null : undefined),
+        ...(rememberSpecialist !== undefined ? { rememberSpecialist } : {}),
         metadata: agent.metadata,
         workspaceContext: workspaceContext as Record<string, unknown> | undefined,
       };
@@ -757,7 +821,13 @@ export class UnifiedAgentFactory {
 
       const created = await appClient.agents.create(request);
 
-      return { success: true, agentId: created.id ? String(created.id) : undefined };
+      return {
+        success: true,
+        agentId: created.id ? String(created.id) : undefined,
+        provider: created.provider,
+        model: created.model,
+        chiefPromptVersion: created.metadata?.chiefPromptVersion,
+      };
     } catch (error) {
       logger.error('Daemon agent.create failed', error);
       // Keep the thrown error alongside the flattened message: a daemon
@@ -784,6 +854,7 @@ export class UnifiedAgentFactory {
       attachmentId?: string;
     }>,
     userAppMessageId?: string,
+    principalContext: string | null = null,
   ): Promise<void> {
     logger.info('sendInitialMessage called', {
       agentId: agent?.id,
@@ -829,11 +900,13 @@ export class UnifiedAgentFactory {
         if (imageBlocks?.length && agent.workspaceId !== CHIEF_WORKSPACE_ID) {
           const { toImageReferenceBlocks } =
             await import('$lib/components/chat/input/image-attachment-placement');
+          if (selectPrincipalActionContext.select(appStore.state) !== principalContext) return;
           wireImageBlocks = await toImageReferenceBlocks(
             agent.workspaceId,
             imageBlocks as import('$lib/components/chat/input/image-attachment-placement').WireImageBlock[],
           );
         }
+        if (selectPrincipalActionContext.select(appStore.state) !== principalContext) return;
         // PROTOCOL.md §5.5 `agent.sendMessage` — one direct daemon call over
         // the BackendTransport seam. Streaming/terminal state arrives via the
         // daemon events bridge (events.subscribe → Redux); legacy-only fields
@@ -857,7 +930,7 @@ export class UnifiedAgentFactory {
         messageLength: message?.length,
       });
       // Mark streaming as failed (only in frontend)
-      if (!isBackend) {
+      if (!isBackend && selectPrincipalActionContext.select(appStore.state) === principalContext) {
         const store = appStore;
         if (store) {
           store.dispatch(setAgentStreaming(agent.id, false));

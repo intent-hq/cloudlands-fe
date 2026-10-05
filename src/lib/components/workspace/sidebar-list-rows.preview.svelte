@@ -9,6 +9,7 @@
       regular: { props: { cardWidth: 320 } },
       narrow: { props: { cardWidth: 240 } },
       'agent-bins': { props: { cardWidth: 320, agentBins: true } },
+      'agent-orphaned-bin': { props: { cardWidth: 320, agentBins: true, orphanedBin: true } },
     },
   });
 </script>
@@ -25,7 +26,7 @@
   import { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import { store } from '$store/renderer/store';
   import { setSkills } from '$store/renderer/slices/skills/skills-slice';
-  import { setServers } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
+  import { workspaceCatalogReceived } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import {
     bulkUpsertSessions,
     removeSession,
@@ -43,8 +44,14 @@
 
   // `agentBins`: the Agents card renders the collapsed Delegated / Background /
   // Retired bins from daemon-served counts (`scopeCounts` + `retiredCount`).
-  let { cardWidth = 320, agentBins = false }: { cardWidth?: number; agentBins?: boolean } =
-    $props();
+  // `orphanedBin`: the daemon also served `delegatedCounts` with `orphaned`, so
+  // the first agent shows its collapsed per-parent group and the Delegated bin
+  // counts only the orphaned row.
+  let {
+    cardWidth = 320,
+    agentBins = false,
+    orphanedBin = false,
+  }: { cardWidth?: number; agentBins?: boolean; orphanedBin?: boolean } = $props();
   const timestamp = '2026-09-16T00:00:00.000Z';
   const notes = [
     {
@@ -145,13 +152,32 @@
         },
       ]),
     );
+    const previousCatalog = store.state.providerCatalog.byWorkspaceId?.[LIST_LABELS_WORKSPACE] ?? {
+      catalog: { providers: [] },
+      settings: [],
+      specialists: [],
+      readiness: {},
+    };
     store.dispatch(
-      setServers([{ name: 'Local reference tools', type: 'stdio', command: 'echo fixture' }]),
+      workspaceCatalogReceived(
+        LIST_LABELS_WORKSPACE,
+        {
+          ...previousCatalog,
+          mcpServers: [{ name: 'Local reference tools', type: 'stdio', command: 'echo fixture' }],
+        },
+        store.state.providerCatalog.workspaceEpoch ?? 0,
+      ),
     );
     return () => {
       agents.forEach((agent) => store.dispatch(removeSession(agent.id)));
       store.dispatch(setSkills(LIST_LABELS_WORKSPACE, []));
-      store.dispatch(setServers([]));
+      store.dispatch(
+        workspaceCatalogReceived(
+          LIST_LABELS_WORKSPACE,
+          previousCatalog,
+          store.state.providerCatalog.workspaceEpoch ?? 0,
+        ),
+      );
       dispose();
     };
   });
@@ -201,6 +227,13 @@
             {selectedAgentId}
             scopeCounts={agentBins
               ? { topLevel: agents.length, delegated: 3, background: 2 }
+              : null}
+            delegatedCounts={agentBins && orphanedBin
+              ? {
+                  running: 1,
+                  byParent: { [agents[0].id]: { total: 2, running: 1 } },
+                  orphaned: { total: 1, running: 0 },
+                }
               : null}
             retiredCount={agentBins ? 1 : 0}
             onSelect={({ agentId }) => (selectedAgentId = agentId)}

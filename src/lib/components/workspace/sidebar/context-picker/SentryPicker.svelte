@@ -12,10 +12,11 @@
   import {
     selectSentryIsAuthenticated,
     selectSentryIsConnecting,
+    selectSentryAuthConsumerOperation,
   } from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
-    initializeSentryAuth,
     connectSentry,
+    consumeSentryAuth,
   } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
@@ -24,7 +25,9 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { onMount } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
+  import { captureIntegrationContext } from '$features/integrations-request-context';
+  import { onBackendReconnected } from '$lib/client/live/backend-transport';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -40,17 +43,21 @@
     onClose: () => void;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId, onSelect, onClose }: Props = $props();
 
+  let isAuthenticated = $state(false);
   const isAuthenticated$ = selectSentryIsAuthenticated();
   const storeIsConnecting$ = selectSentryIsConnecting();
 
   let issues = $state<SentryIssueResult[]>([]);
   let isLoadingIssues = $state(false);
-  let hasLoadedIssues = $state(false);
   let searchQuery = $state('');
-  let pendingConnect = $state(false);
+  const consumerId = crypto.randomUUID();
+  const operation$ = selectSentryAuthConsumerOperation(consumerId);
+  onDestroy(() => {
+    const operation = selectSentryAuthConsumerOperation.select(appStore.state, consumerId);
+    if (operation) appStore.dispatch(consumeSentryAuth(operation.requestId));
+  });
 
   // Config form for unauthenticated users
   let showConfigForm = $state(false);
@@ -68,32 +75,54 @@
     );
   });
 
+  let generation = 0;
   async function loadIssues() {
-    if (isLoadingIssues) return;
+    const mine = ++generation;
+    const context = captureIntegrationContext(workspaceId);
+    const current = () =>
+      mine === generation && context.isCurrent() && context.workspaceId === workspaceId;
     isLoadingIssues = true;
     try {
-      issues = await sentryAuthClient.fetchIssues();
-      hasLoadedIssues = true;
+      const auth = await sentryAuthClient.getAuthState(context.workspaceId);
+      if (!current()) return;
+      isAuthenticated = auth.isAuthenticated;
+      if (!isAuthenticated) {
+        issues = [];
+        return;
+      }
+      const result = await sentryAuthClient.fetchIssues({ workspaceId: context.workspaceId });
+      if (current()) issues = result;
     } finally {
-      isLoadingIssues = false;
+      if (current()) isLoadingIssues = false;
     }
   }
 
-  // When connect completes successfully, fetch issues
+  // Only the request owned by this picker may clear its draft. Issue loading
+  // below reacts to canonical auth state, not another panel's completion flag.
   $effect(() => {
-    if (pendingConnect && !$storeIsConnecting$) {
-      pendingConnect = false;
-      if ($isAuthenticated$) {
+    const operation = $operation$;
+    if (operation && operation.status !== 'pending') {
+      if (operation.status === 'succeeded') {
         showConfigForm = false;
-        loadIssues();
+        sentryOrg = '';
+        sentryToken = '';
       }
+      appStore.dispatch(consumeSentryAuth(operation.requestId));
     }
   });
 
   function handleConnect() {
     if (!sentryOrg || !sentryToken) return;
-    pendingConnect = true;
-    appStore.dispatch(connectSentry(sentryOrg, sentryToken));
+    appStore.dispatch(
+      connectSentry(sentryOrg, sentryToken, { requestId: crypto.randomUUID(), consumerId }),
+    );
+  }
+
+  function handleCancelConnect() {
+    const operation = selectSentryAuthConsumerOperation.select(appStore.state, consumerId);
+    if (operation) appStore.dispatch(consumeSentryAuth(operation.requestId));
+    showConfigForm = false;
+    sentryToken = '';
   }
 
   function handleSelect(issue: SentryIssueResult) {
@@ -114,23 +143,25 @@
     onClose();
   }
 
-  onMount(() => {
-    appStore.dispatch(initializeSentryAuth());
-    // Fetch issues if already authenticated (state may persist from previous mount)
-    if ($isAuthenticated$) {
-      loadIssues();
-    }
-  });
-
-  // When auth state becomes true (e.g. after init), fetch issues
   $effect(() => {
-    if ($isAuthenticated$ && !hasLoadedIssues && !isLoadingIssues) {
-      loadIssues();
-    }
+    workspaceId;
+    $isAuthenticated$;
+    untrack(() => {
+      issues = [];
+      void loadIssues();
+    });
+    const stop = onBackendReconnected(() => {
+      issues = [];
+      void loadIssues();
+    });
+    return () => {
+      generation += 1;
+      stop();
+    };
   });
 </script>
 
-{#if !$isAuthenticated$}
+{#if !isAuthenticated}
   <div class="flex flex-col items-start gap-4 p-6 text-left">
     <SentryIcon size={48} class="text-subtle" />
     <p class="text-left text-sm text-subtle">{m.workspace_sentryPicker_connectPrompt_label()}</p>
@@ -149,7 +180,7 @@
           class="h-9"
         />
         <div class="flex gap-2">
-          <Button variant="outline" onclick={() => (showConfigForm = false)} class="flex-1">
+          <Button variant="outline" onclick={handleCancelConnect} class="flex-1">
             {m.workspace_prCreator_cancel_label()}
           </Button>
           <Button

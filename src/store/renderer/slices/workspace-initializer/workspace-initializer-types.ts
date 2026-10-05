@@ -1,5 +1,7 @@
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { OnboardingStep } from '../onboarding/onboarding-types';
+import type { RepositoryCheckoutDraft } from '../repository-checkout/repository-checkout-types';
+import type { RepositoryTarget } from '$shared/types/repository-context';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
@@ -36,6 +38,8 @@ export interface WorkspaceInitializerRecentRepo {
   githubUrl?: string;
   name: string;
   owner?: string;
+  /** Display identity only; null explicitly marks unqualified legacy metadata. */
+  repositoryIdentity?: RepositoryTarget | null;
 }
 
 export interface WorkspaceInitializerAgentSettings {
@@ -43,6 +47,7 @@ export interface WorkspaceInitializerAgentSettings {
   /** Bare model id of an explicit pick, paired with `selectedProvider`. */
   selectedModel?: string;
   modelWasOverridden?: boolean;
+  /** Absent inherits defaults; blank remembers an explicit clear. */
   selectedReasoningEffort?: string;
   isTeamMode?: boolean;
   /** Provider the persisted `selectedModel` belongs to. */
@@ -51,7 +56,8 @@ export interface WorkspaceInitializerAgentSettings {
 
 export interface CompactWorkspaceInitializerFormState extends WorkspaceInitializerAgentSettings {
   repoPath?: string;
-  repoType?: WorkspaceInitializerRepoType;
+  repoType?: WorkspaceInitializerRepoType | 'gitlab';
+  repositoryCheckoutDraft?: RepositoryCheckoutDraft;
   githubUrl?: string;
   branch?: string;
   isNewRepo?: boolean;
@@ -93,6 +99,10 @@ export interface WorkspaceInitializerPendingGitHubPrefill {
   number: number;
   kind: 'issue' | 'pr';
   url: string;
+  /** Already-read PR branches; available on both browser and Electron Home. */
+  sourceBranch?: string;
+  targetBranch?: string;
+  title?: string;
 }
 
 export interface WorkspaceInitializerHydrationState {
@@ -102,11 +112,15 @@ export interface WorkspaceInitializerHydrationState {
   branchByRepo?: Record<string, string>;
   defaultParentPath?: string;
   recentRepos?: WorkspaceInitializerRecentRepo[];
+  dismissedRecentRepoKeys?: Record<string, true>;
   remoteSetups?: WorkspaceInitializerRemoteSetup[];
   lastSubmittedAgent?: WorkspaceInitializerAgentSettings | null;
 }
 
 export interface WorkspaceInitializerState {
+  /** Transient probe lifetime; never part of the persisted form bag. */
+  gitCheckRequest: number;
+  gitCheck: { context: string; available: boolean | 'unknown' } | null;
   hydrated: boolean;
   compactFormState: CompactWorkspaceInitializerFormState | null;
   onboardingFormState: WorkspaceInitializerOnboardingFormState | null;
@@ -114,6 +128,9 @@ export interface WorkspaceInitializerState {
   branchByRepo: Record<string, string>;
   defaultParentPath: string;
   recentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'>;
+  /** Uncapped source results awaiting initial settings hydration; never persisted. */
+  pendingRecentRepos: Collection<WorkspaceInitializerRecentRepo, 'path'> | null;
+  dismissedRecentRepoKeys: Record<string, true>;
   remoteSetups: Collection<WorkspaceInitializerRemoteSetup, 'id'>;
   lastSubmittedAgent: WorkspaceInitializerAgentSettings | null;
   /** Transient GitHub issue/PR prefill pending consumption by the initializer (not persisted). */

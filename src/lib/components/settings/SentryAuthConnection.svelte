@@ -5,11 +5,14 @@
     selectSentryOrganization,
     selectSentryIsConnecting,
     selectSentryError,
+    selectSentryIsDisconnecting,
+    selectSentryAuthConsumerOperation,
   } from '$store/renderer/slices/sentry-auth/sentry-auth-selectors';
   import {
     connectSentry,
     logoutSentry,
     clearSentryError,
+    consumeSentryAuth,
   } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
 
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
@@ -19,6 +22,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { onDestroy } from 'svelte';
 
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
   const isAuthenticated$ = selectSentryIsAuthenticated();
@@ -26,21 +30,27 @@
   const storeIsConnecting$ = selectSentryIsConnecting();
   const error$ = selectSentryError();
 
-  let isDisconnectingSentry = $state(false);
+  const consumerId = crypto.randomUUID();
+  const operation$ = selectSentryAuthConsumerOperation(consumerId);
+  const isDisconnectingSentry$ = selectSentryIsDisconnecting();
+  onDestroy(() => {
+    const operation = selectSentryAuthConsumerOperation.select(appStore.state, consumerId);
+    if (operation) appStore.dispatch(consumeSentryAuth(operation.requestId));
+  });
   let showConnectForm = $state(false);
   let sentryOrg = $state('');
   let sentryToken = $state('');
-  let pendingConnect = $state(false);
 
   // When connect completes successfully, clear the form
   $effect(() => {
-    if (pendingConnect && !$storeIsConnecting$) {
-      pendingConnect = false;
-      if ($isAuthenticated$) {
+    const operation = $operation$;
+    if (operation && operation.status !== 'pending') {
+      if (operation.kind === 'connect' && operation.status === 'succeeded') {
         sentryOrg = '';
         sentryToken = '';
         showConnectForm = false;
       }
+      appStore.dispatch(consumeSentryAuth(operation.requestId));
     }
   });
 
@@ -48,15 +58,16 @@
     if (!sentryOrg.trim() || !sentryToken.trim()) {
       return;
     }
-    pendingConnect = true;
-    appStore.dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()));
+    appStore.dispatch(
+      connectSentry(sentryOrg.trim(), sentryToken.trim(), {
+        requestId: crypto.randomUUID(),
+        consumerId,
+      }),
+    );
   }
 
   function handleSentryDisconnect() {
-    isDisconnectingSentry = true;
-    appStore.dispatch(logoutSentry());
-    // Reset local state immediately since logout is synchronous in Redux
-    isDisconnectingSentry = false;
+    appStore.dispatch(logoutSentry({ requestId: crypto.randomUUID(), consumerId }));
   }
 
   function handleSentryReconnect() {
@@ -66,6 +77,8 @@
   }
 
   function handleCancelConnect() {
+    const operation = selectSentryAuthConsumerOperation.select(appStore.state, consumerId);
+    if (operation) appStore.dispatch(consumeSentryAuth(operation.requestId));
     showConnectForm = false;
     sentryOrg = '';
     sentryToken = '';
@@ -74,7 +87,7 @@
 </script>
 
 <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-3">
-  <div class="flex size-4 items-center justify-center text-ghost">
+  <div class="first-line-icon type-body w-4 text-ghost">
     <SentryIcon size={16} />
   </div>
   <div class="flex min-w-0 items-center gap-3">
@@ -93,7 +106,7 @@
   </div>
 
   <div class="flex h-[22px] items-center gap-3 self-start">
-    {#if $storeIsConnecting$ || pendingConnect}
+    {#if $storeIsConnecting$}
       <span class="type-body text-muted-foreground">{m.settings_connections_connecting()}</span>
     {:else if $isAuthenticated$}
       <Button
@@ -111,9 +124,9 @@
         type="button"
         class="h-[22px] px-0"
         onclick={handleSentryDisconnect}
-        disabled={isDisconnectingSentry}
+        disabled={$isDisconnectingSentry$}
       >
-        {isDisconnectingSentry
+        {$isDisconnectingSentry$
           ? m.settings_connections_disconnecting()
           : m.settings_connections_disconnect()}
       </Button>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -78,9 +79,14 @@
 
   import {
     selectWorkspaceScriptEntries,
+    selectAllWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { refreshScripts, removeScript } from '$store/renderer/slices/scripts/scripts-slice';
+  import {
+    refreshScripts,
+    removeScript,
+    stopScriptRequested,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
@@ -115,6 +121,7 @@
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
   const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
+  const allScriptEntries$ = selectAllWorkspaceScriptEntries(workspaceIdStore);
   const scriptEntries$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
 
@@ -301,8 +308,8 @@
 
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: live (running/restarting) > exited > idle
-      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
+      // Priority: live (starting/running/restarting) > exited > idle
+      const statusPriority = { starting: 0, running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 
@@ -371,6 +378,12 @@
       restart: m.terminal_quakeOverlay_restartScriptFailed_error,
       delete: m.terminal_quakeOverlay_deleteScriptFailed_error,
     };
+    if (action === 'stop') {
+      appStore.dispatch(
+        stopScriptRequested(mutationWorkspaceId, scriptId, scriptActionErrors.stop()),
+      );
+      return;
+    }
     const succeeded = await runScriptMutation(
       () => scriptsClient[action === 'delete' ? 'remove' : action](mutationWorkspaceId, scriptId),
       scriptActionErrors[action](),
@@ -390,7 +403,7 @@
 
   const selectedScript = $derived(
     selectedScriptId
-      ? ($scriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
+      ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
@@ -567,11 +580,13 @@
   async function dismissPreviouslyRunningTab(scriptId: string, event: MouseEvent) {
     event.stopPropagation();
     if (!workspaceId) return;
-    const succeeded = await runScriptMutation(
-      () => scriptsClient.stop(workspaceId, scriptId),
-      m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
+    appStore.dispatch(
+      stopScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
+      ),
     );
-    if (succeeded) appStore.dispatch(refreshScripts(workspaceId));
   }
 
   // Constants
@@ -840,7 +855,7 @@
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
     if (workspaceId) appStore.dispatch(removeTerminal(workspaceId, termId));
-    terminalManager.disposeTerminal(termId);
+    terminalManager.disposeTerminal(termId, workspaceId);
   }
 
   function clearActiveTerminal() {
@@ -1017,7 +1032,8 @@
                     bind:value={editedScriptName}
                     onblur={finishEditingScriptName}
                     onkeydown={handleScriptNameKeydown}
-                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
+                    noFocusStyle
+                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent hover:bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
                     placeholder={m.terminal_quakeOverlay_scriptName_placeholder()}
                   />
                 {:else}
@@ -1048,7 +1064,8 @@
                   <Input
                     bind:ref={editScriptCommandTextarea}
                     bind:value={editedScriptCommand}
-                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-0 bg-transparent px-0 font-mono text-xs text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
+                    noFocusStyle
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-0 bg-transparent hover:bg-transparent px-0 font-mono text-xs text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
                     placeholder={/* i18n-ignore (shell command example) */ 'npm run dev'}
                     spellcheck="false"
                   />
@@ -1185,7 +1202,8 @@
                     bind:value={headerEditValue}
                     onblur={finishEditingHeaderName}
                     onkeydown={handleHeaderEditKeydown}
-                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
+                    noFocusStyle
+                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent hover:bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
                     placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
                   />
                 {:else}
@@ -1248,6 +1266,7 @@
           {/if}
         </div>
 
+        <HostExecutionNotice />
         <!-- Terminal Content with Sidebar -->
         <div class="flex-1 flex min-h-0 relative overflow-hidden">
           <!-- Terminal Content + Setup Script Editor -->
@@ -1356,9 +1375,10 @@
                     bind:value={editingValue}
                     onblur={finishEditing}
                     onkeydown={handleEditKeydown}
+                    noFocusStyle
                     onclick={(e) => e.stopPropagation()}
                     placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent hover:bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
                   />
                 {:else}
                   <span
@@ -1437,9 +1457,10 @@
                     bind:value={editingScriptTabValue}
                     onblur={finishEditingScriptTab}
                     onkeydown={handleEditScriptTabKeydown}
+                    noFocusStyle
                     onclick={(e) => e.stopPropagation()}
                     placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent hover:bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
                   />
                 {:else}
                   <span

@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: thin composition over the catalogued Button; no catalog fixtures yet -->
+
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { crispOut, springIn } from '$lib/motion';

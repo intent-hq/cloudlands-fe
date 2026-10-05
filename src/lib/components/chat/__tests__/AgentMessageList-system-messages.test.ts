@@ -22,6 +22,48 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 }));
 
 describe('AgentMessageList - System Messages', () => {
+  it('renders an arriving effort notice once and preserves it on history reload', async () => {
+    const notice: AgentMessage = {
+      id: 'effort-notice',
+      role: 'system',
+      timestamp: '2026-09-26T12:00:00Z',
+      contentBlocks: [{ type: 'text', text: 'Effort changed from auto to none.' }],
+      metadata: { type: 'effort_changed', from: null, to: 'none' },
+    };
+    const { rerender } = render(AgentMessageList, {
+      props: { messages: [], enableTransitions: false },
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+
+    await rerender({ messages: [notice] });
+    const liveText = screen.getByRole('status').textContent;
+    expect(liveText).toContain('Auto');
+    expect(liveText).toContain('Off');
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    await rerender({ messages: JSON.parse(JSON.stringify([notice])) });
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toBe(liveText);
+  });
+
+  it('keeps an incomplete effort notice informational and uses the saved fallback', () => {
+    render(AgentMessageList, {
+      props: {
+        messages: [
+          {
+            id: 'effort-fallback',
+            role: 'system',
+            timestamp: '2026-09-26T12:00:00Z',
+            contentBlocks: [{ type: 'text', text: 'Saved effort explanation' }],
+            metadata: { type: 'effort_changed', to: 'high' },
+          },
+        ],
+      },
+    });
+    expect(screen.getByRole('status').textContent).toContain('Saved effort explanation');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('renders system message as interruption notice', () => {
     const messages: AgentMessage[] = [
       {
@@ -202,6 +244,73 @@ describe('AgentMessageList - System Messages', () => {
     ).toBeTruthy();
   });
 
+  it('renders a provider_rehomed system message once, naming the old model + provider and the new provider (intent#5737)', () => {
+    // Daemon-persisted re-home row (§5.5, disabled providers): role "system",
+    // the daemon's own sentence as the text block, metadata
+    // { type: "provider_rehomed", reason: "provider_disabled", from, to, fromProvider, toProvider }.
+    const daemonText =
+      'gpt-5-codex (OpenAI Codex) is no longer available — OpenAI Codex was disabled in Settings > Agents; this agent now runs on Augment Auggie.';
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'ping' }],
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: 'msg-2',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: daemonText }],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          type: 'provider_rehomed',
+          reason: 'provider_disabled',
+          from: 'gpt-5-codex',
+          to: null,
+          fromProvider: 'codex',
+          toProvider: 'auggie',
+        },
+      },
+      {
+        id: 'msg-3',
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'pong' }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    // One status divider, not an interruption alert. With the empty mocked
+    // store the provider names fall back to their ids.
+    const notices = screen.getAllByRole('status');
+    expect(notices).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    const text = notices[0].textContent ?? '';
+    expect(text).toMatch(/gpt-5-codex/);
+    expect(text).toMatch(/codex/);
+    expect(text).toMatch(/disabled/i);
+    expect(text).toMatch(/auggie/);
+    expect(screen.getByText('pong')).toBeTruthy();
+  });
+
+  it('falls back to the daemon text when a provider_rehomed row carries an unknown reason', () => {
+    const daemonText = 'The agent was moved to another provider.';
+    const messages: AgentMessage[] = [
+      {
+        id: 'msg-1',
+        role: 'system',
+        contentBlocks: [{ type: 'text', text: daemonText }],
+        timestamp: new Date().toISOString(),
+        metadata: { type: 'provider_rehomed', reason: 'other', fromProvider: 'codex' },
+      },
+    ];
+
+    render(AgentMessageList, { props: { messages } });
+
+    expect(screen.getByRole('status').textContent).toContain(daemonText);
+  });
+
   it('renders no model-change notice when the transcript has no model_changed row', () => {
     // A reverted-before-send switch persists nothing, so an ordinary
     // transcript must contain no status divider.
@@ -367,5 +476,45 @@ describe('AgentMessageList - search filter memo', () => {
     // (the row leaves after its outro transition settles).
     await waitFor(() => expect(screen.queryByText(/hello from the guest/)).toBeNull());
     expect(screen.queryByText(/hello from the owner/)).toBeNull();
+  });
+});
+
+describe('AgentMessageList member preamble search', () => {
+  it('re-filters the same member row when trusted owner context arrives', async () => {
+    const header =
+      'Message from @same (Same Person), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+    const messages: AgentMessage[] = [
+      {
+        id: 'member-search',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00Z',
+        contentBlocks: [{ type: 'text', text: `${header}\n\nsearchable member body` }],
+        author: {
+          principalId: 'person-1',
+          login: 'same',
+          displayName: 'Same Person',
+          avatarUrl: null,
+          identity: { provider: 'gitlab', host: 'gitlab.example:8443', externalUserId: '42' },
+        },
+      },
+    ];
+    const before = JSON.stringify(messages);
+    const { rerender } = render(AgentMessageList, {
+      props: { messages, searchQuery: 'a host member', workspace: null },
+    });
+    expect(screen.getByText(/searchable member body/)).toBeTruthy();
+    await rerender({
+      messages,
+      searchQuery: 'a host member',
+      workspace: { id: 'ws-1', ownerPrincipalId: 'owner' } as unknown as Workspace,
+    });
+    await waitFor(() => expect(screen.queryByText(/searchable member body/)).toBeNull());
+    await rerender({
+      messages,
+      searchQuery: 'searchable member body',
+      workspace: { id: 'ws-1', ownerPrincipalId: 'owner' } as unknown as Workspace,
+    });
+    await waitFor(() => expect(screen.getByText(/searchable member body/)).toBeTruthy());
+    expect(JSON.stringify(messages)).toBe(before);
   });
 });

@@ -1,14 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * AgentCard — "Reveal in Finder" sandbox context-menu item (Task: agent
- * sandbox UI visibility).
- *
- * Renders the REAL component against the REAL configured store: seeds an
- * agent session (with/without `metadata.sandboxPath`) plus daemon locality
- * (`systemStatusSuccess` → `host.locality`), opens the context menu, and
- * asserts the reveal item's visibility and that clicking it invokes
- * `shell:showItemInFolder` with the sandbox path.
+ * AgentCard — legacy sandbox reveal retirement and node hub replacement.
+ * Uses the real store and component; legacy sandbox/node paths must never
+ * reach the local shell, while supported isolated work remains manageable.
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -19,6 +14,12 @@ import {
   bulkUpsertSessions,
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  nodeCapabilitiesReceived,
+  agentHubActionRequested,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { m } from '$shared/paraglide/messages.js';
 import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import {
@@ -103,13 +104,21 @@ async function openContextMenu() {
   await fireEvent.contextMenu(button!);
 }
 
-describe('AgentCard sandbox "Reveal in" context-menu item', () => {
+describe('AgentCard legacy sandbox retirement and hub management', () => {
   beforeEach(() => {
     appStore.init();
+    appStore.dispatch(setLabsRemoteAgentsEnabled(false));
+    appStore.dispatch(
+      nodeCapabilitiesReceived(appStore.state.daemonHealth.connectionGeneration, {
+        agentNodes: false,
+        localNodeIsolation: false,
+      }),
+    );
     agentId = `agent-sbx-${++testAgentSeq}`;
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     // Full reset (not just mockClear): drops any unconsumed one-off stubs
     // (e.g. mockRejectedValueOnce from a test that bailed early) so behavior
     // never leaks between tests; then restore the test-setup default impl.
@@ -119,7 +128,7 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
     appStore.dispatch(removeWorkspaceEntity('ws-1'));
   });
 
-  it('shows the reveal item when the agent has a sandboxPath and the daemon is local', async () => {
+  it('retires legacy reveal even for a local sandboxPath', async () => {
     seedLocality('local');
     appStore.dispatch(
       bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
@@ -128,7 +137,11 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
 
-    expect(await screen.findByText(/^Reveal in /)).toBeTruthy();
+    expect(await screen.findByText('Open')).toBeTruthy();
+    expect(screen.queryByText(/^Reveal in /)).toBeNull();
+    expect(mockedInvoke.mock.calls.some(([channel]) => channel === 'shell:showItemInFolder')).toBe(
+      false,
+    );
   });
 
   it('hides the reveal item when the agent has no sandboxPath', async () => {
@@ -141,6 +154,26 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
     // Menu is open (Open/Rename present) but no reveal entry.
     expect(await screen.findByText('Open')).toBeTruthy();
     expect(screen.queryByText(/^Reveal in /)).toBeNull();
+  });
+
+  it('hides node paths even when the head daemon is local', async () => {
+    seedLocality('local');
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({
+          placement: { target: 'remote', checkout: 'isolated' },
+          nodePath: '/node/private/checkout',
+          metadata: { sandboxPath: '/node/private/checkout' },
+        }),
+      ]),
+    );
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+    expect(await screen.findByText('Open')).toBeTruthy();
+    expect(screen.queryByText(/^Reveal in /)).toBeNull();
+    expect(mockedInvoke.mock.calls.some(([channel]) => channel === 'shell:showItemInFolder')).toBe(
+      false,
+    );
   });
 
   it('hides the reveal item when the daemon is remote', async () => {
@@ -170,43 +203,64 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
     expect(screen.queryByText(/^Reveal in /)).toBeNull();
   });
 
-  it('invokes shell:showItemInFolder with the sandbox path on click', async () => {
-    seedLocality('local');
-    appStore.dispatch(
-      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
-    );
-
-    render(AgentCard, { props: { agentId } });
-    await openContextMenu();
-
-    const item = await screen.findByText(/^Reveal in /);
-    await fireEvent.click(item);
-
-    await waitFor(() => {
-      expect(mockedInvoke).toHaveBeenCalledWith('shell:showItemInFolder', {
-        path: SANDBOX_PATH,
+  it.each(['merge', 'discard'] as const)(
+    'dispatches hub %s with Labs off instead of revealing a node path',
+    async (operation) => {
+      seedLocality('local');
+      appStore.dispatch(
+        bulkUpsertSessions([
+          makeSession({
+            status: AgentStatus.Halted,
+            placement: { target: 'remote', checkout: 'isolated' },
+            effectiveIsolation: 'isolated',
+            nodePath: '/node/private/checkout',
+            metadata: { sandboxPath: SANDBOX_PATH },
+            checkpoint: {
+              id: 'checkpoint',
+              assignmentEpoch: '1',
+              captureRevision: '1',
+              capturedAt: '2026-09-30T00:00:00Z',
+              committedAt: '2026-09-30T00:00:01Z',
+            },
+          }),
+        ]),
+      );
+      appStore.dispatch(
+        nodeCapabilitiesReceived(appStore.state.daemonHealth.connectionGeneration, {
+          agentNodes: true,
+          localNodeIsolation: true,
+        }),
+      );
+      const dispatch = vi.spyOn(appStore, 'dispatch');
+      render(AgentCard, { props: { agentId } });
+      await openContextMenu();
+      expect(screen.queryByText(/^Reveal in /)).toBeNull();
+      const item = await screen.findByRole('menuitem', {
+        name: operation === 'merge' ? m.agent_hub_merge() : m.agent_hub_discard(),
       });
-    });
-  });
-
-  it('surfaces a reveal failure as an error toast (no silent no-op)', async () => {
+      await fireEvent.click(item);
+      await waitFor(() =>
+        expect(dispatch).toHaveBeenCalledWith(agentHubActionRequested('ws-1', agentId, operation)),
+      );
+      expect(
+        mockedInvoke.mock.calls.some(([channel]) => channel === 'shell:showItemInFolder'),
+      ).toBe(false);
+    },
+  );
+  it('shows unsupported node capability without restoring a legacy reveal fallback', async () => {
     seedLocality('local');
     appStore.dispatch(
-      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
+      bulkUpsertSessions([
+        makeSession({ effectiveIsolation: 'isolated', metadata: { sandboxPath: SANDBOX_PATH } }),
+      ]),
     );
-    mockedInvoke.mockRejectedValueOnce(new Error('open exited with code 1'));
-    const { notify } = await import('$lib/components/patterns/notify');
-    const errorSpy = vi.spyOn(notify, 'error').mockImplementation(() => '' as never);
-
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
-
-    const item = await screen.findByText(/^Reveal in /);
-    await fireEvent.click(item);
-
-    await waitFor(() => {
-      expect(errorSpy).toHaveBeenCalledWith('open exited with code 1');
-    });
-    errorSpy.mockRestore();
+    expect(screen.queryByText(/^Reveal in /)).toBeNull();
+    const item = await screen.findByRole('menuitem', { name: m.agent_placement_unavailable() });
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    expect(mockedInvoke.mock.calls.some(([channel]) => channel === 'shell:showItemInFolder')).toBe(
+      false,
+    );
   });
 });

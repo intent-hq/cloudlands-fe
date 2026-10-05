@@ -7,12 +7,12 @@
  * Mirrors github-repo-search: `lastQuery` records the query that produced the
  * current results so the UI can drop stale rows the moment the input diverges.
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 
 export type GithubUserSearchItem = {
   login: string;
@@ -27,6 +27,8 @@ export type GithubUserSearchState = {
   error: string | null;
   /** Trimmed query that produced `results`. Empty string when idle. */
   lastQuery: string;
+  workspaceId?: string;
+  revision: number;
 };
 
 export const initialState: GithubUserSearchState = {
@@ -34,10 +36,12 @@ export const initialState: GithubUserSearchState = {
   loading: false,
   error: null,
   lastQuery: '',
+  revision: 0,
 };
 
 /** Trigger: debounced by the saga so rapid keystrokes coalesce into one call. */
-export const searchGithubUsers = createAction<[query: string]>('githubUserSearch/search');
+export const searchGithubUsers =
+  createAction<[query: string, workspaceId?: string]>('githubUserSearch/search');
 
 /**
  * Saga → reducer: flip loading and record the query being searched. Drops the
@@ -87,4 +91,13 @@ githubUserSearchReducer.with(setGithubUserSearchError, (state, { payload: [query
   error,
   lastQuery: query,
 }));
-githubUserSearchReducer.with(clearGithubUserSearch, () => initialState);
+githubUserSearchReducer.with(searchGithubUsers, (state, { payload: [query, workspaceId] }) => ({
+  ...initialState,
+  lastQuery: query.trim().replace(/^@/, ''),
+  workspaceId,
+  revision: state.revision + 1,
+}));
+githubUserSearchReducer.with(clearGithubUserSearch, (state) => ({
+  ...initialState,
+  revision: state.revision + 1,
+}));

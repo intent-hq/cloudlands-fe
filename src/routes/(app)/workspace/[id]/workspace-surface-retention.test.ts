@@ -45,6 +45,49 @@ describe('workspace surface retention', () => {
     expect(state.surfaces.some(({ workspaceId }) => workspaceId === 'workspace-a')).toBe(false);
   });
 
+  it('preserves browser workspace DOM across the working-set limit and releases it when closed', async () => {
+    const browserWorkspaceIds = ['workspace-a', 'workspace-b', 'workspace-e'];
+    const props = (id: string) => ({ ...input(id), browserWorkspaceIds });
+    const view = render(RetentionHarness, { props: props('workspace-a') });
+    const retainedA = view.getByRole('button', { name: 'workspace-a' });
+    await view.rerender(props('workspace-b'));
+    const retainedB = view.getByRole('button', { name: 'workspace-b' });
+
+    for (const id of ['workspace-c', 'workspace-d', 'workspace-a', 'workspace-b']) {
+      await view.rerender(props(id));
+      expect(retainedA.isConnected).toBe(true);
+      expect(retainedB.isConnected).toBe(true);
+      expect(view.getAllByRole('button')).toHaveLength(1);
+      expect(view.container.querySelector('[data-workspace-content="workspace-e"]')).toBeNull();
+    }
+    expect(view.getByRole('button', { name: 'workspace-b' })).toBe(retainedB);
+
+    // Closing the last browser allows the old workspace to leave the warm set.
+    for (const id of ['workspace-c', 'workspace-d']) {
+      await view.rerender({ ...input(id), browserWorkspaceIds: ['workspace-b'] });
+    }
+    expect(retainedA.isConnected).toBe(false);
+    expect(retainedB.isConnected).toBe(true);
+
+    // Closing the workspace releases even a browser-pinned surface.
+    await view.rerender({ ...props('workspace-c'), openWorkspaceIds: ['workspace-c'] });
+    expect(retainedB.isConnected).toBe(false);
+  });
+
+  it('releases deleted browser workspaces despite their retention exemption', () => {
+    const props = (id: string) => ({ ...input(id), browserWorkspaceIds: ['workspace-a'] });
+    let state = reconcileWorkspaceSurfaces(
+      createWorkspaceSurfaceRetentionState(),
+      props('workspace-a'),
+    );
+    state = reconcileWorkspaceSurfaces(state, props('workspace-b'));
+    state = reconcileWorkspaceSurfaces(state, {
+      ...props('workspace-c'),
+      workspaceEntityIds: ['workspace-b', 'workspace-c'],
+    });
+    expect(state.surfaces.some((surface) => surface.workspaceId === 'workspace-a')).toBe(false);
+  });
+
   it('does not churn state when the same workspace remains active', () => {
     const state = reconcileWorkspaceSurfaces(
       createWorkspaceSurfaceRetentionState(),

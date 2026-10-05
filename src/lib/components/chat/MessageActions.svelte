@@ -5,8 +5,12 @@
   Appears on hover for both user and assistant messages.
 -->
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { observeMessageActionDay } from './message-action-day-clock';
+  import { queueMessageControls } from './message-controls-mount-queue';
+  import { observeLazyTurnVisibility } from './lazy-turn-observer';
   import { ActionBar, defineActions } from '$lib/components/patterns/action-menu';
-  import { formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
+  import { formatDateTime, formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
   import {
     faArrowRotateRight,
     faArrowUp,
@@ -43,6 +47,7 @@
     requestId?: string;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Canonical message time. */
     timestamp?: DateInput | null;
     /** Legacy fallback when the canonical timestamp is absent or invalid. */
@@ -63,14 +68,76 @@
     class: className = '',
     requestId,
     onScrollToPrevious,
+    previousMessageLoading = false,
     timestamp,
     createdAt,
     queueInfo,
   }: Props = $props();
 
+  let actionSurface: HTMLDivElement;
+  let controlsReady = $state(false);
+  let containerWidth = $state(Number.POSITIVE_INFINITY);
+  onMount(() => {
+    const root = actionSurface.closest<HTMLElement>('[data-message-controls-root]');
+    const parent = actionSurface.parentElement;
+    if (!root || !parent) {
+      controlsReady = true;
+      return;
+    }
+    let stopObserving = () => {};
+    let released = false;
+    const release = () => {
+      // Both queued mounting and teardown release this registration.
+      if (released) return;
+      released = true;
+      stopObserving();
+      parent.removeEventListener('pointerenter', queued.mountNow);
+      parent.removeEventListener('focusin', queued.mountNow);
+    };
+    const queued = queueMessageControls(() => {
+      controlsReady = true;
+      release();
+    });
+    stopObserving = observeLazyTurnVisibility(actionSurface, root, (_intersecting, visible) => {
+      if (visible) queued.prioritize();
+    });
+    parent.addEventListener('pointerenter', queued.mountNow);
+    parent.addEventListener('focusin', queued.mountNow);
+    return () => {
+      queued.cancel();
+      release();
+    };
+  });
+
+  $effect(() => {
+    if (!controlsReady) return;
+    const parent = actionSurface.parentElement;
+    if (!parent || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      containerWidth = entry.contentRect.width;
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  });
+
+  let today = $state(new Date().toDateString());
+  onMount(() => observeMessageActionDay((day) => (today = day)));
+
   let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
-  let compactTime = $derived(actionDate ? formatTime(actionDate) : '');
+  const showDate = $derived(actionDate !== null && actionDate.toDateString() !== today);
+  let compactTime = $derived(
+    actionDate ? (showDate ? formatDateTime(actionDate) : formatTime(actionDate)) : '',
+  );
   let fullTime = $derived(actionDate ? formatFullDateTime(actionDate) : '');
+  const interactiveClass = $derived(
+    showOnHover
+      ? 'group-hover:pointer-events-auto group-focus-within:pointer-events-auto'
+      : 'pointer-events-auto',
+  );
+  // Keep a full date beside the primary action; the existing menu keeps the rest reachable.
+  const visibleActionCount = $derived(
+    role === 'assistant' && showDate && containerWidth < 320 ? 1 : Number.POSITIVE_INFINITY,
+  );
   const actions = $derived(
     defineActions([
       {
@@ -87,6 +154,15 @@
         when: role === 'assistant' && Boolean(onRegenerate),
       },
       {
+        id: 'scroll-previous',
+        label: previousMessageLoading
+          ? m.chat_messageActions_previousMessageLoading_label()
+          : m.chat_messageActions_previousUserMessage_label(),
+        disabled: previousMessageLoading,
+        icon: faArrowUp,
+        when: role === 'assistant' && Boolean(onScrollToPrevious),
+      },
+      {
         id: 'fork',
         label: m.chat_messageActions_fork_ariaLabel(),
         icon: faCodeBranch,
@@ -94,6 +170,7 @@
       },
       {
         id: 'vote-up',
+        kind: 'checkbox',
         label: m.chat_messageActions_goodResponse_label(),
         icon: faThumbsUp,
         checked: currentVote === 'up',
@@ -101,6 +178,7 @@
       },
       {
         id: 'vote-down',
+        kind: 'checkbox',
         label: m.chat_messageActions_badResponse_label(),
         icon: faThumbsDown,
         checked: currentVote === 'down',
@@ -114,7 +192,10 @@
       },
       {
         id: 'scroll-previous',
-        label: m.chat_messageActions_scrollToPrevious_label(),
+        label: previousMessageLoading
+          ? m.chat_messageActions_previousMessageLoading_label()
+          : m.chat_messageActions_scrollToPrevious_label(),
+        disabled: previousMessageLoading,
         icon: faArrowUp,
         when: role === 'user' && Boolean(onScrollToPrevious),
       },
@@ -159,9 +240,10 @@
 </script>
 
 <div
+  bind:this={actionSurface}
   data-testid="message-actions"
   data-message-actions-role={role}
-  style:max-width={queueInfo ? 'calc(100% - 0.5rem)' : undefined}
+  style:max-width="calc(100% - 0.5rem)"
   class="{MESSAGE_ACTION_SURFACE_CLASS} {showOnHover
     ? MESSAGE_ACTION_REVEAL_CLASS
     : ''} {className}"
@@ -175,14 +257,19 @@
     >
   {/if}
 
-  {#if role === 'user' && queueInfo}
-    <QueuedMessageNoticeHeader {queueInfo} />
-  {/if}
+  {#if controlsReady}
+    {#if role === 'user' && queueInfo}
+      <div class="min-w-0 {interactiveClass}">
+        <QueuedMessageNoticeHeader {queueInfo} />
+      </div>
+    {/if}
 
-  <ActionBar
-    {actions}
-    class="shrink-0"
-    overflowLabel={m.lib_commandPalette_quickActions_ariaLabel()}
-    onAction={handleAction}
-  />
+    <ActionBar
+      {actions}
+      visibleCount={visibleActionCount}
+      class="shrink-0 {interactiveClass}"
+      overflowLabel={m.lib_commandPalette_quickActions_ariaLabel()}
+      onAction={handleAction}
+    />
+  {/if}
 </div>

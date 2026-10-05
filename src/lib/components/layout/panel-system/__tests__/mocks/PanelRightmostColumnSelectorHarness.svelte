@@ -7,6 +7,7 @@
     initializeLayout,
     openTab,
     setRestoreStatus,
+    setPanelColumnCount,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import {
     selectPanelColumnCount,
@@ -43,9 +44,18 @@
   );
   appStore.dispatch(setRestoreStatus(WORKSPACE_ID, 'restored'));
 
+  let availableCanvasWidth = $state<number | undefined>();
+
   const panelIds$ = selectPanelIds(WORKSPACE_ID);
   const columnCount$ = selectPanelColumnCount(WORKSPACE_ID);
   const focusedPanelId$ = selectFocusedPanelId(WORKSPACE_ID);
+
+  function addColumn() {
+    if ($columnCount$ >= 4) return;
+    appStore.dispatch(
+      setPanelColumnCount(WORKSPACE_ID, $columnCount$ + 1, undefined, availableCanvasWidth),
+    );
+  }
 
   function populateRightmostPanel() {
     const panelId = selectPanelIds.select(appStore.state, WORKSPACE_ID).at(-1);
@@ -71,6 +81,10 @@
   onDestroy(() => appStore.dispatch(clearPanelLayout(WORKSPACE_ID)));
 </script>
 
+<!-- Drive the production column-count action without depending on a header menu entry. -->
+<button data-testid="add-column-fixture" onclick={addColumn} disabled={$columnCount$ >= 4}>
+  Add column
+</button>
 <button class="sr-only" data-testid="populate-rightmost-panel" onclick={populateRightmostPanel}>
   Populate rightmost panel
 </button>
@@ -86,6 +100,7 @@
   <PanelLayout
     workspaceId={WORKSPACE_ID}
     layoutId={WORKSPACE_ID}
+    onAvailableCanvasWidthChange={(width) => (availableCanvasWidth = width)}
     contained
     canvasSizing="content"
     allowCloseLastPanel

@@ -188,8 +188,17 @@ describe('no-direct-reduced-motion-query under the real eslint.config.js', () =>
     expect(await lintCode(DIRECT_QUERY_SCRIPT, filePath)).toEqual([]);
   });
 
-  it('never lints outside src/ or the globally ignored .cjs extension', async () => {
+  it('never lints outside src/', async () => {
     expect(await lintCode(DIRECT_QUERY_SCRIPT, 'e2e/probe.ts')).toEqual([]);
-    expect(await eslint.isPathIgnored('src/lib/utils/probe.cjs')).toBe(true);
+  });
+
+  it('lints a production .cjs module (the extension is no longer globally ignored)', async () => {
+    expect(await eslint.isPathIgnored('src/lib/utils/probe.cjs')).toBe(false);
+    const messages = await lintCode(
+      "module.exports = window.matchMedia('(prefers-reduced-motion: reduce)').matches;",
+      'src/lib/utils/probe.cjs',
+    );
+    expect(ruleHits(messages)).toEqual([[1, 38]]);
+    expect(messages[0]?.message).toContain('$lib/utils/reduced-motion');
   });
 });

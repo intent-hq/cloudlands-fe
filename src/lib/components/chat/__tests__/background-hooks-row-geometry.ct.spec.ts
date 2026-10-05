@@ -109,8 +109,9 @@ for (const theme of ['light', 'dark'] as const) {
             .getByTestId('background-hook-icon')
             .locator('svg')
             .boundingBox();
-          expect(iconBox?.width).toBeCloseTo(14 * zoom, 1);
-          expect(iconBox?.height).toBeCloseTo(14 * zoom, 1);
+          // Subscription leading glyphs share the 16px operational-row icon contract.
+          expect(iconBox?.width).toBeCloseTo(16 * zoom, 1);
+          expect(iconBox?.height).toBeCloseTo(16 * zoom, 1);
 
           const summaryGeometry = await component
             .getByTestId('background-hook-summary-row')

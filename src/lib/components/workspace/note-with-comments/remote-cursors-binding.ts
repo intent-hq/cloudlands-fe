@@ -5,14 +5,21 @@
  *
  * Coordinates: a wire caret is a UTF-16 offset into the daemon markdown at
  * `rev`. The editor's plain-text projection (`docTextOffsets`) shares its
- * characters with that markdown, so `createOffsetMapper` over the two texts
- * aligns them in both directions; the editor's baseline (`getBaseText` /
- * `getBaseRev`, the text the editor was loaded from or last saved) is the
- * base both peers are assumed to be near.
+ * characters with that markdown, so one `createBidirectionalOffsetMapper`
+ * over the two texts aligns them in both directions; the editor's baseline
+ * (`getBaseText` / `getBaseRev`, the text the editor was loaded from or last
+ * saved) is the base both peers are assumed to be near.
+ *
+ * The alignment anchors the blocks the two texts share and diffs only the
+ * text between them under a time budget — still tens of milliseconds on a
+ * large note — so it is cached per (editor text, base text) and shared by
+ * every consumer: selection publishes, the presence heartbeat, and peer-caret
+ * renders reuse it until the document text or the base text actually changes.
  */
 import type { Editor } from '@tiptap/core';
-import { createOffsetMapper } from '$lib/notes/text-rebase';
-import { docTextOffsets } from '$lib/notes/doc-text-offsets';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { createBidirectionalOffsetMapper } from '$lib/notes/text-rebase';
+import { docTextOffsets, type DocTextOffsets } from '$lib/notes/doc-text-offsets';
 import {
   createRemoteCursorDecorationsPlugin,
   remoteCursorColor,
@@ -38,27 +45,53 @@ function viewerLabel(viewer: RemoteNoteViewer): string {
   return viewer.displayName ?? viewer.login ?? viewer.principalId;
 }
 
+/** The editor text ↔ base text alignment for one (document, base text) pair. */
+interface Alignment {
+  doc: ProseMirrorNode;
+  baseText: string;
+  offsets: DocTextOffsets;
+  localToBase: (offset: number) => number;
+  baseToLocal: (offset: number) => number;
+}
+
+/**
+ * Single-entry alignment cache. The plain-text projection is rebuilt only for
+ * a new document object; the diff only when the projected text or the base
+ * text differs from the cached pair — a selection-only transaction keeps the
+ * same document, and a formatting-only one keeps the same text.
+ */
+function alignmentFor(
+  cached: Alignment | undefined,
+  doc: ProseMirrorNode,
+  baseText: string,
+): Alignment {
+  if (cached && cached.doc === doc && cached.baseText === baseText) return cached;
+  const offsets = cached?.doc === doc ? cached.offsets : docTextOffsets(doc);
+  if (cached && cached.offsets.text === offsets.text && cached.baseText === baseText) {
+    return { ...cached, doc, offsets };
+  }
+  const { aToB, bToA } = createBidirectionalOffsetMapper(offsets.text, baseText);
+  return { doc, baseText, offsets, localToBase: aToB, baseToLocal: bToA };
+}
+
 /** Project peers' wire carets onto the editor document. */
 function projectRemoteCursors(
-  editor: Editor,
-  baseText: string,
+  { offsets, baseToLocal }: Alignment,
   viewers: RemoteNoteViewer[],
 ): RemoteCursor[] {
-  const withCursor = viewers.flatMap((viewer) =>
-    viewer.cursor ? [{ viewer, cursor: viewer.cursor }] : [],
-  );
-  if (withCursor.length === 0) return [];
-  const offsets = docTextOffsets(editor.state.doc);
-  const mapBaseToLocal = createOffsetMapper(baseText, offsets.text);
-  return withCursor.map(({ viewer, cursor }) => {
-    return {
-      principalId: viewer.principalId,
-      label: viewerLabel(viewer),
-      avatarUrl: viewer.avatarUrl,
-      color: remoteCursorColor(viewer.principalId),
-      anchor: offsets.posOfOffset(mapBaseToLocal(cursor.anchor)),
-      head: offsets.posOfOffset(mapBaseToLocal(cursor.head)),
-    };
+  return viewers.flatMap((viewer) => {
+    const cursor = viewer.cursor;
+    if (!cursor) return [];
+    return [
+      {
+        principalId: viewer.principalId,
+        label: viewerLabel(viewer),
+        avatarUrl: viewer.avatarUrl,
+        color: remoteCursorColor(viewer.principalId),
+        anchor: offsets.posOfOffset(baseToLocal(cursor.anchor)),
+        head: offsets.posOfOffset(baseToLocal(cursor.head)),
+      },
+    ];
   });
 }
 
@@ -69,13 +102,22 @@ export function bindRemoteCursors(options: RemoteCursorsBindingOptions): () => v
   let viewers: RemoteNoteViewer[] = session.getViewers();
   let renderFrame: number | undefined;
   let publishFrame: number | undefined;
+  let alignment: Alignment | undefined;
 
   editor.registerPlugin(createRemoteCursorDecorationsPlugin());
+
+  const align = (): Alignment => {
+    alignment = alignmentFor(alignment, editor.state.doc, getBaseText());
+    return alignment;
+  };
 
   const render = () => {
     renderFrame = undefined;
     if (disposed || editor.isDestroyed) return;
-    setRemoteCursors(editor.view, projectRemoteCursors(editor, getBaseText(), viewers));
+    const cursors = viewers.some((viewer) => viewer.cursor)
+      ? projectRemoteCursors(align(), viewers)
+      : [];
+    setRemoteCursors(editor.view, cursors);
   };
   const scheduleRender = () => {
     if (renderFrame !== undefined) return;
@@ -87,13 +129,12 @@ export function bindRemoteCursors(options: RemoteCursorsBindingOptions): () => v
     if (disposed || editor.isDestroyed) return undefined;
     const rev = getBaseRev();
     if (rev === undefined) return undefined;
-    const offsets = docTextOffsets(editor.state.doc);
-    const mapLocalToBase = createOffsetMapper(offsets.text, getBaseText());
+    const { offsets, localToBase } = align();
     const { anchor, head } = editor.state.selection;
     return {
       rev,
-      anchor: mapLocalToBase(offsets.offsetOfPos(anchor)),
-      head: mapLocalToBase(offsets.offsetOfPos(head)),
+      anchor: localToBase(offsets.offsetOfPos(anchor)),
+      head: localToBase(offsets.offsetOfPos(head)),
     };
   };
 
@@ -109,8 +150,9 @@ export function bindRemoteCursors(options: RemoteCursorsBindingOptions): () => v
   // moment, so an acknowledged save under an idle caret corrects the
   // published rev/offsets. A never-published editor stays caret-less.
   const offProvider = session.provideCursor(() => (hasPublished ? currentCursor() : undefined));
-  // The text diff runs once per frame at most, however many transactions a
-  // burst of typing dispatches; the session throttles the wire further.
+  // A publish runs once per frame at most, however many transactions a burst
+  // of typing dispatches, and only re-aligns when the text actually changed;
+  // the session throttles the wire further.
   const schedulePublish = () => {
     if (publishFrame !== undefined) return;
     publishFrame = requestAnimationFrame(publishSelection);
@@ -138,6 +180,7 @@ export function bindRemoteCursors(options: RemoteCursorsBindingOptions): () => v
     offViewers();
     editor.off('selectionUpdate', schedulePublish);
     editor.off('update', schedulePublish);
+    alignment = undefined;
     if (!editor.isDestroyed) {
       setRemoteCursors(editor.view, []);
       editor.unregisterPlugin(remoteCursorsPluginKey);

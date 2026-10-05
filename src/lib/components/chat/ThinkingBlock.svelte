@@ -8,7 +8,7 @@
   import { faBrain } from '@fortawesome/free-solid-svg-icons';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { extractReasoningHeading } from './reasoning-heading';
+  import { extractReasoningHeading, extractStandaloneReasoningTitles } from './reasoning-heading';
   import {
     CHAT_OPERATIONAL_ICON_CLASS,
     OPERATIONAL_EXPANDED_CONTENT_CLASS,
@@ -18,39 +18,78 @@
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
 
   interface Props {
+    saved?: { expanded?: boolean; userToggled?: boolean; searchOwnsExpansion?: boolean };
+    searchPath?: string;
     content: string;
     isStreaming?: boolean;
     /** Auto-expand while streaming */
     autoExpandWhileStreaming?: boolean;
     workspaceId?: string;
+    canOpenFile?: () => boolean;
+    allowFileMedia?: boolean;
     class?: string;
     adjacentOperationalRow?: boolean;
   }
 
   let {
+    saved,
+    searchPath,
     content,
     isStreaming = false,
     autoExpandWhileStreaming = true,
     workspaceId,
+    canOpenFile,
+    allowFileMedia = true,
     class: className = '',
     adjacentOperationalRow = false,
   }: Props = $props();
 
   // Auto-expand while streaming, collapse when done
-  let isExpanded = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let isExpanded = $state(saved?.expanded ?? false);
 
   // Track if user has manually toggled
-  let userToggled = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let userToggled = $state(saved?.userToggled ?? false);
+
+  // svelte-ignore state_referenced_locally -- retained search ownership survives row eviction.
+  let searchOwnsExpansion = $state(saved?.searchOwnsExpansion ?? false);
 
   $effect(() => {
-    if (!userToggled) {
+    if (!userToggled && !searchOwnsExpansion) {
       isExpanded = autoExpandWhileStreaming && isStreaming;
     }
   });
 
   function toggle() {
+    searchOwnsExpansion = false;
     userToggled = true;
     isExpanded = !isExpanded;
+    if (saved) {
+      saved.expanded = isExpanded;
+      saved.userToggled = true;
+      saved.searchOwnsExpansion = false;
+    }
+  }
+
+  function expandForSearch() {
+    if (isExpanded) return;
+    searchOwnsExpansion = true;
+    isExpanded = true;
+    if (saved) {
+      saved.expanded = true;
+      saved.searchOwnsExpansion = true;
+    }
+  }
+
+  function restoreSearchExpansion() {
+    if (!searchOwnsExpansion) return;
+    searchOwnsExpansion = false;
+    isExpanded = !userToggled && autoExpandWhileStreaming && isStreaming;
+    if (saved) {
+      saved.expanded = isExpanded;
+      saved.searchOwnsExpansion = false;
+    }
   }
 
   function handleDisclosureKeydown(event: KeyboardEvent) {
@@ -59,7 +98,8 @@
     toggle();
   }
 
-  const reasoningContent = $derived(extractReasoningHeading(content));
+  const reasoningContent = $derived(extractReasoningHeading(content, { preserveInlineText: true }));
+  const standaloneTitles = $derived(extractStandaloneReasoningTitles(content));
   const instanceId = $props.id();
   const detailsId = `reasoning-details-${instanceId}`;
   const toggleLabel = $derived(
@@ -78,12 +118,12 @@
   {/if}
 {/snippet}
 
-{#snippet summary()}
+{#snippet summaryText(label: string)}
   <span class="min-w-0 truncate whitespace-nowrap font-normal">
     {#if isStreaming}
-      <ShimmerOverlay duration={1.92}>{toggleLabel}</ShimmerOverlay>
+      <ShimmerOverlay duration={1.92}>{label}</ShimmerOverlay>
     {:else}
-      {toggleLabel}
+      {label}
     {/if}
   </span>
 {/snippet}
@@ -91,6 +131,8 @@
 {#snippet details()}
   <div class="reasoning-expanded-body" data-reasoning-expanded-body>
     <MarkdownViewer
+      {canOpenFile}
+      {allowFileMedia}
       content={reasoningContent.body}
       {isStreaming}
       {workspaceId}
@@ -99,28 +141,53 @@
   </div>
 {/snippet}
 
-<ChatOperationalRow
-  {leading}
-  {summary}
-  showChevron={false}
-  {details}
-  animateDetailsHeight
-  interactive
-  expanded={isExpanded}
-  controls={detailsId}
-  {detailsId}
-  ariaLabel={toggleLabel}
-  summaryTitle={toggleLabel}
-  onclick={toggle}
-  onkeydown={handleDisclosureKeydown}
-  detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
-  {adjacentOperationalRow}
-  streaming={isStreaming}
-  testId="reasoning-tool-call"
-  disclosureTestId="reasoning-disclosure"
-  summaryTestId="reasoning-summary"
-  class={className}
-/>
+{#if standaloneTitles}
+  {#each standaloneTitles as title, index (index)}
+    {#snippet summary()}
+      {@render summaryText(title)}
+    {/snippet}
+    <ChatOperationalRow
+      {leading}
+      {summary}
+      ariaLabel={title}
+      summaryTitle={title}
+      adjacentOperationalRow={adjacentOperationalRow || index > 0}
+      streaming={isStreaming}
+      testId="reasoning-tool-call"
+      summaryTestId="reasoning-summary"
+      class={className}
+    />
+  {/each}
+{:else}
+  {#snippet summary()}
+    {@render summaryText(toggleLabel)}
+  {/snippet}
+  <ChatOperationalRow
+    {leading}
+    {summary}
+    showChevron={false}
+    {details}
+    animateDetailsHeight
+    interactive
+    searchDisclosureId={searchPath ? `thinking:${searchPath}` : undefined}
+    onSearchExpand={expandForSearch}
+    onSearchRestore={restoreSearchExpansion}
+    expanded={isExpanded}
+    controls={detailsId}
+    {detailsId}
+    ariaLabel={toggleLabel}
+    summaryTitle={toggleLabel}
+    onclick={toggle}
+    onkeydown={handleDisclosureKeydown}
+    detailsClass="{OPERATIONAL_EXPANDED_CONTENT_CLASS} pb-2 type-caption text-muted-foreground [&_.markdown-content]:text-sm [&_.markdown-content]:leading-relaxed [&_.markdown-content]:text-muted-foreground"
+    {adjacentOperationalRow}
+    streaming={isStreaming}
+    testId="reasoning-tool-call"
+    disclosureTestId="reasoning-disclosure"
+    summaryTestId="reasoning-summary"
+    class={className}
+  />
+{/if}
 
 <style>
   .reasoning-expanded-body :global(.markdown-viewer) {

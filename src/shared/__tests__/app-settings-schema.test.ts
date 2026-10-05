@@ -17,6 +17,28 @@ describe('app settings schema', () => {
       apply: { kind: 'redux-action', action: 'notificationSettings/setSoundPath' },
     });
   });
+  it('exposes GitLab as a local, default-off Labs preference', () => {
+    expect(findAppSettingDefinition('labs.gitlab')).toMatchObject({
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:gitlabEnabled',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setLabsGitLabEnabled' },
+    });
+  });
+
+  it('exposes remote agents as a local, default-off Labs preference', () => {
+    expect(findAppSettingDefinition('labs.remoteAgents')).toMatchObject({
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:remoteAgentsEnabled',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setLabsRemoteAgentsEnabled' },
+    });
+  });
+
   it('defines the persisted Open In editor order setting', () => {
     expect(findAppSettingDefinition('openIn.editorOrder')).toMatchObject({
       type: 'array',
@@ -82,6 +104,17 @@ describe('app settings schema', () => {
       storageKey: 'appearance:reduceMotionOnBattery',
       defaultValue: false,
       apply: { kind: 'redux-action', action: 'userPreferences/setReduceMotionOnBattery' },
+    });
+  });
+
+  it('defines the Multiplayer lab preference as an opt-in local-storage boolean', () => {
+    expect(findAppSettingDefinition('labs.multiplayer')).toMatchObject({
+      category: 'labs',
+      type: 'boolean',
+      source: 'local-storage',
+      storageKey: 'labs:multiplayerEnabled',
+      defaultValue: false,
+      apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
     });
   });
 

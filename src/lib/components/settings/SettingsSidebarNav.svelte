@@ -2,7 +2,8 @@
   import { ListRow } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
-  import DevicesIcon from 'phosphor-svelte/lib/DevicesIcon';
+  import DesktopIcon from 'phosphor-svelte/lib/DesktopIcon';
+  import DeviceMobileIcon from 'phosphor-svelte/lib/DeviceMobileIcon';
   import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
   import GitBranchIcon from 'phosphor-svelte/lib/GitBranchIcon';
   import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
@@ -27,27 +28,6 @@
 
   const primaryItems = [
     {
-      id: 'display',
-      icon: PaintBrushIcon,
-      get label() {
-        return m.settings_sidebar_display_label();
-      },
-    },
-    {
-      id: 'app-behavior',
-      icon: SlidersHorizontalIcon,
-      get label() {
-        return m.settings_sidebar_appBehavior_label();
-      },
-    },
-    {
-      id: 'input',
-      icon: KeyboardIcon,
-      get label() {
-        return m.settings_sidebar_input_label();
-      },
-    },
-    {
       id: 'agent-behavior',
       icon: RobotIcon,
       get label() {
@@ -70,16 +50,44 @@
     },
     {
       id: 'devices',
-      icon: DevicesIcon,
+      icon: DesktopIcon,
       get label() {
         return m.settings_sidebar_devices_label();
       },
     },
     {
-      id: 'guest-sessions',
+      id: 'mobile',
+      icon: DeviceMobileIcon,
+      get label() {
+        return m.settings_sidebar_mobile_label();
+      },
+    },
+    {
+      id: 'collaboration',
       icon: UsersIcon,
       get label() {
         return m.settings_sidebar_guestSessions_label();
+      },
+    },
+    {
+      id: 'display',
+      icon: PaintBrushIcon,
+      get label() {
+        return m.settings_sidebar_display_label();
+      },
+    },
+    {
+      id: 'app-behavior',
+      icon: SlidersHorizontalIcon,
+      get label() {
+        return m.settings_sidebar_appBehavior_label();
+      },
+    },
+    {
+      id: 'input',
+      icon: KeyboardIcon,
+      get label() {
+        return m.settings_sidebar_input_label();
       },
     },
     {
@@ -100,25 +108,25 @@
 
   const groups = [
     {
-      id: 'preferences',
-      get label() {
-        return m.settings_sidebar_preferences_label();
-      },
-      items: primaryItems.slice(0, 3),
-    },
-    {
-      id: 'environment',
-      get label() {
-        return m.settings_sidebar_environment_label();
-      },
-      items: primaryItems.slice(5),
-    },
-    {
       id: 'agents',
       get label() {
         return m.settings_sidebar_agents_label();
       },
-      items: primaryItems.slice(3, 5),
+      items: primaryItems.slice(0, 3),
+    },
+    {
+      id: 'remote',
+      get label() {
+        return m.settings_sidebar_remote_label();
+      },
+      items: primaryItems.slice(3, 6),
+    },
+    {
+      id: 'preferences',
+      get label() {
+        return m.settings_sidebar_preferences_label();
+      },
+      items: primaryItems.slice(6),
     },
   ];
 </script>
@@ -151,7 +159,9 @@
                 ? 'bg-foreground/5 text-foreground'
                 : 'text-muted-foreground'}"
             >
-              <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
+              <ListRow
+                class="min-h-8 w-full items-center gap-2 px-3 py-0 [&>[data-slot=list-row-leading]]:self-center"
+              >
                 {#snippet leading()}
                   <span
                     data-slot="settings-sidebar-icon"

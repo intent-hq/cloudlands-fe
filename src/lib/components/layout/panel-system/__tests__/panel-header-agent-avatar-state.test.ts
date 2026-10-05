@@ -59,6 +59,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsBlockedWaiting: () => constantReadable(false),
   selectAgentAttentionRequest: () => constantReadable(null),
 }));
+vi.mock('$store/renderer/slices/pending-submissions/pending-submissions-selectors', () => ({
+  selectPendingSubmissionEntry: { select: () => undefined },
+}));
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
   selectAgentQueueMessages: Object.assign(() => constantReadable([]), { select: () => [] }),
 }));
@@ -134,12 +137,10 @@ describe('panel header agent identity', () => {
       },
     });
     const header = container.querySelector('[data-panel-tabless-header]')!;
-    const activeIdentity = header.querySelector('[data-panel-agent-header-identity]')!;
-    const leadingSurface = activeIdentity.querySelector(
-      '[data-testid="panel-header-agent-avatar-slot"]',
-    )!;
+    const activeIdentity = header.querySelector('[data-pane-stack-selector-trigger]')!;
+    const leadingSurface = activeIdentity.querySelector('[data-panel-header-leading-surface]')!;
 
-    expect(header.querySelector('[data-panel-agent-header-identity]')).not.toBeNull();
+    expect(header.querySelector('[data-pane-stack-selector-trigger]')).not.toBeNull();
     expect(activeIdentity.textContent).toContain('Agent A');
     expect(leadingSurface.hasAttribute('data-panel-header-leading-surface')).toBe(true);
     expectHeaderAvatarIdentity(leadingSurface, 'agent-a');
@@ -161,7 +162,7 @@ describe('panel header agent identity', () => {
       panelId: 'panel-1',
       workspaceId: 'workspace-1',
     });
-    const activeIdentity = view.container.querySelector('[data-panel-agent-header-identity]')!;
+    const activeIdentity = view.container.querySelector('[data-pane-stack-selector-trigger]')!;
     expect(activeIdentity.textContent).toContain('Agent B');
     expectHeaderAvatarIdentity(activeIdentity, 'agent-b');
   });

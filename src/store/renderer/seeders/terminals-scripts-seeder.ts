@@ -54,17 +54,22 @@ registerMockIpcHandler('terminal:createWithCommand', async (arg) => {
     return { ok: false, error: result.error ?? 'Failed to create terminal' };
   }
   const terminalId = result.id;
-  const unsubscribe = appClient.terminals.subscribeEvents(terminalId, {
-    onExit: ({ exitCode }) => {
-      emitMockIpcEvent(`terminal:professional:exit:${terminalId}`, exitCode);
-      unsubscribe();
+  const unsubscribe = appClient.terminals.subscribeEvents(
+    terminalId,
+    {
+      onExit: ({ exitCode }) => {
+        emitMockIpcEvent(`terminal:professional:exit:${terminalId}`, exitCode);
+        unsubscribe();
+      },
     },
-  });
+    workspaceId,
+  );
   try {
     if (interactive) {
       const written = await appClient.terminals.write(
         terminalId,
         params.pasteOnly === true ? command : `${command}\r`,
+        workspaceId,
       );
       if (!written.success) {
         throw new Error(written.error ?? 'Failed to write terminal command');
@@ -72,7 +77,7 @@ registerMockIpcHandler('terminal:createWithCommand', async (arg) => {
     }
   } catch (error) {
     unsubscribe();
-    await appClient.terminals.kill(terminalId);
+    await appClient.terminals.kill(terminalId, workspaceId);
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   emitMockIpcEvent('terminal:created', { terminalId, workspaceId, background: true });
@@ -85,7 +90,11 @@ registerMockIpcHandler('terminal:professional:write', async (arg) => {
   const terminalId = typeof params.terminalId === 'string' ? params.terminalId : '';
   const data = typeof params.data === 'string' ? params.data : '';
   if (!terminalId) return { success: false, error: 'terminalId is required' };
-  const result = await appClient.terminals.write(terminalId, data);
+  const result = await appClient.terminals.write(
+    terminalId,
+    data,
+    typeof params.workspaceId === 'string' ? params.workspaceId : undefined,
+  );
   if (!result.success) {
     throw new Error(result.error ?? 'terminal.write failed');
   }

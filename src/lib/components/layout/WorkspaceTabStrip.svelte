@@ -9,6 +9,8 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
+  import { formatShortcut } from '$lib/utils/shortcuts';
   import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
   import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
@@ -53,7 +55,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
   import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
@@ -86,6 +92,13 @@
     leadingInsetPx = 28,
     scrollerMarginLeftPx = WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
   }: Props = $props();
+  const tabShortcut$ = effectiveShortcutReadable('navigation.go-to-tab');
+  function shortcutForWorkspace(workspaceId: string): string | undefined {
+    const index = visibleTabIds.indexOf(workspaceId);
+    const digit =
+      index >= 0 && index < 7 ? index + 2 : index === visibleTabIds.length - 1 ? 9 : null;
+    return digit === null ? undefined : $tabShortcut$.replace(/([1-8])-9$/, String(digit));
+  }
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceItems$ = selectWorkspaceItems();
@@ -165,7 +178,11 @@
   let layoutTracking = false;
   let dragTracking = false;
   let scrollTracking = false;
-  let tabContextMenu = $state<{ workspaceId: string; x: number; y: number } | null>(null);
+  let tabContextMenu = $state<(SidebarContextPosition & { workspaceId: string }) | null>(null);
+  $effect(() => {
+    if (tabContextMenu && !visibleTabIds.includes(tabContextMenu.workspaceId))
+      tabContextMenu = null;
+  });
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     if (!tabContextMenu) return [];
     const { workspaceId } = tabContextMenu;
@@ -569,11 +586,11 @@
     );
   }
 
-  function handleWorkspaceTabContextMenu(event: MouseEvent, workspaceId: string) {
-    event.preventDefault();
-    event.stopPropagation();
+  function handleWorkspaceTabContextMenu(event: MouseEvent | KeyboardEvent, workspaceId: string) {
+    const position = getSidebarContextPosition(event);
+    if (!position) return;
     cancelPointerDrag();
-    tabContextMenu = { workspaceId, x: event.clientX, y: event.clientY };
+    tabContextMenu = { ...position, workspaceId, returnFocus: tabButtons[workspaceId] ?? null };
   }
 
   function moveWorkspaceTab(workspaceId: string, direction: -1 | 1) {
@@ -606,6 +623,8 @@
   }
 
   function handleTabKeydown(event: KeyboardEvent, workspaceId: string) {
+    handleWorkspaceTabContextMenu(event, workspaceId);
+    if (event.defaultPrevented) return;
     if (
       event.altKey &&
       event.shiftKey &&
@@ -875,12 +894,14 @@
     data-workspace-tab-list
   ></div>
   <!-- Clipped tabs must not carve titlebar no-drag holes. The lead-in keeps
-       the flare visible; the right margin reserves the launcher gap on overflow. -->
+       the flare visible; the right margin reserves the launcher gap on overflow.
+       Flex shrinking bounds the strip. A percentage max-width against the intrinsic
+       parent feeds the negative margin back into overflow when no launcher exists. -->
   <div
     bind:this={stripElement}
     data-workspace-tab-scroller
     class={cn(
-      'flex w-fit min-w-0 max-w-[100%] items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left,margin-right] motion-reduce:transition-none',
+      'flex w-fit min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden pr-3 scrollbar-none transition-[padding-left,margin-right] motion-reduce:transition-none',
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
@@ -993,7 +1014,6 @@
                 align="start"
                 delayDuration={workspaceHoverCardOpenDelay}
                 onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-                disableHoverableContent={true}
                 disabled={isCurrent || draggedWorkspaceId !== null}
                 showArrow={false}
                 maxWidth="none"
@@ -1004,6 +1024,13 @@
                 {#snippet content()}
                   <div data-workspace-tab-hover-content={workspaceId}>
                     <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
+                    {#if shortcutForWorkspace(workspaceId)}
+                      <kbd
+                        class="block px-3 pb-2 text-right type-caption text-muted-foreground"
+                        data-workspace-tab-shortcut
+                        >{formatShortcut(shortcutForWorkspace(workspaceId)!)}</kbd
+                      >
+                    {/if}
                   </div>
                 {/snippet}
                 <Button
@@ -1138,8 +1165,10 @@
 
 {#if tabContextMenu}
   <SidebarContextMenu
-    x={tabContextMenu.x}
-    y={tabContextMenu.y}
+    x={tabContextMenu?.x ?? 0}
+    y={tabContextMenu?.y ?? 0}
+    returnFocus={tabContextMenu?.returnFocus}
+    ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
     items={tabContextMenuItems}
     onClickOutside={() => (tabContextMenu = null)}
   />

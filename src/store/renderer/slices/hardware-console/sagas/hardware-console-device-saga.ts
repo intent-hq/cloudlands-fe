@@ -1,4 +1,5 @@
-import { takeLatestFromSelector, type SelectorChannelPayload } from '@augmentcode/themis/saga';
+import { readHardwareConsoleSettingsBag } from '$features/hardware-console/settings-bag';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, cancelled, delay, fork, join, put, take, takeLatest } from 'typed-redux-saga';
 
@@ -16,7 +17,6 @@ import {
 import {
   parseEnabled,
   persistHardwareConsoleEnabled,
-  readHardwareConsoleSettingsBag,
 } from '$features/hardware-console/integration-toggle-service';
 import { getHardwareConsoleManager } from '$features/hardware-console/instance';
 import { installHardwareConsoleConnectionToasts } from '$features/hardware-console/connection-toast-service';
@@ -29,6 +29,7 @@ import {
   consoleOwnerChanged,
   encoderHudHidden,
   encoderHudShown,
+  encoderEffortHudShown,
   hydrateHardwareConsoleEnabled,
   setHardwareConsoleEnabled,
 } from '../hardware-console-slice';
@@ -37,6 +38,8 @@ import {
   selectHardwareLedSnapshot,
   selectIsConsoleOwner,
 } from '../hardware-console-selectors';
+
+import { encoderEffortSaga } from './encoder-effort-saga';
 
 const logger = createLogger('HardwareConsoleDeviceSaga');
 
@@ -71,7 +74,7 @@ function* hydrateEnabled(manager: HardwareConsoleManager, lifecycle: Integration
     hydrated = true;
   } catch (error) {
     logger.error('Enabled-flag hydration failed; dispatching default (enabled)', { error });
-    yield* put(hydrateHardwareConsoleEnabled(true));
+    yield* put(hydrateHardwareConsoleEnabled(true, false));
   }
 
   lifecycle.hydrationSettled = true;
@@ -172,15 +175,20 @@ function* watchConsoleOwnerLedGate(
 }
 
 function* hideEncoderHudAfterDelay(
-  action: ReturnType<typeof encoderHudShown | typeof encoderHudHidden>,
+  action: ReturnType<
+    typeof encoderHudShown | typeof encoderEffortHudShown | typeof encoderHudHidden
+  >,
 ) {
-  if (action.type !== encoderHudShown.type) return;
+  if (action.type === encoderHudHidden.type) return;
   yield* delay(ENCODER_HUD_HIDE_MS);
   yield* put(encoderHudHidden());
 }
 
 export function* watchHardwareConsoleEncoderHud() {
-  yield* takeLatest([encoderHudShown, encoderHudHidden], hideEncoderHudAfterDelay);
+  yield* takeLatest(
+    [encoderHudShown, encoderEffortHudShown, encoderHudHidden],
+    hideEncoderHudAfterDelay,
+  );
 }
 
 function* watchHardwareConsoleLedSnapshot(engine: HardwareLedEngine) {
@@ -211,6 +219,7 @@ export function* hardwareConsoleDeviceSaga() {
     const ownerPushes = yield* call(hydrateConsoleOwnerStatus);
     if (ownerPushes !== null) yield* fork(watchConsoleOwnerPushes, ownerPushes);
 
+    yield* fork(encoderEffortSaga);
     disposers.push(yield* call(installHardwareConsoleKeySwitching, manager));
     disposers.push(yield* call(installHardwareConsoleEncoder, manager));
     const ledEngine = new HardwareLedEngine();

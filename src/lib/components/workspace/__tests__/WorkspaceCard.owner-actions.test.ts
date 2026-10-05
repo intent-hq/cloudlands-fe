@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -15,7 +16,7 @@
  * its own invite).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
@@ -37,6 +38,7 @@ import {
 } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 import { createTestWorkspaceId } from '../../../../test/factories/workspace.factory';
+import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -160,6 +162,11 @@ function seedState(workspace: Workspace, backendId: string | typeof PRE_BIND = '
       guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
     ),
   } as StoreState;
+  if (backendId !== PRE_BIND)
+    mocks.storeState.current = withLegacyPrincipal(
+      mocks.storeState.current as object,
+      backendId === 'local' ? 'owner' : 'guest',
+    );
 }
 
 async function openContextMenu(
@@ -190,6 +197,43 @@ beforeEach(() => {
 });
 
 describe('WorkspaceCard context menu owner gating', () => {
+  it.each(['owner', 'collaborator'] as const)(
+    'keeps keyboard context and overflow actions identical for %s',
+    async (myRole) => {
+      const onOpenInNewWindow = vi.fn();
+      const workspace = makeWorkspace({ myRole });
+      seedState(workspace);
+      const { container, rerender } = render(WorkspaceCard, {
+        props: { workspace, onOpenInNewWindow },
+      });
+      await tick();
+      (appStore as unknown as { emitState: () => void }).emitState();
+      const row = container.querySelector('[data-workspace-card-row]')!;
+      await fireEvent.keyDown(row, { key: 'F10', shiftKey: true });
+      const expected =
+        myRole === 'owner'
+          ? ['Open in New Window', 'Transfer/Download…', 'Archive', 'Delete Workspace…']
+          : ['Open in New Window'];
+      expect(menuItemNames()).toEqual(expected);
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Open in New Window' }));
+      expect(onOpenInNewWindow).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.workspace_progressCard_actions_ariaLabel() }),
+      );
+      expect(menuItemNames()).toEqual(expected);
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Open in New Window' }));
+      expect(onOpenInNewWindow).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      await fireEvent.contextMenu(row);
+      await rerender({
+        workspace: makeWorkspace({ id: createTestWorkspaceId(), myRole }),
+        onOpenInNewWindow,
+      });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    },
+  );
+
   it('offers Transfer, Archive and Delete to the workspace owner', async () => {
     await openContextMenu(makeWorkspace({ myRole: 'owner' }), vi.fn());
 

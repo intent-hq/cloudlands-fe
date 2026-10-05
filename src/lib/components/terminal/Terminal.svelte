@@ -33,6 +33,7 @@
 
   let container: HTMLDivElement;
   let terminal: TerminalAdapter | null = null;
+  let lastLoadedId: string | null = null;
   let isConnected = $state(false);
   let isExecuting = $state(false);
 
@@ -63,6 +64,12 @@
   $effect(() => {
     const isVisible = visible;
     if (!terminal) return;
+    // The shared adapter may have been handed to another surface (e.g. a
+    // panel tab) while this one was parked; take it back before revealing.
+    if (isVisible && lastLoadedId && !terminalManager.isAttachedTo(lastLoadedId, container)) {
+      void loadTerminal(lastLoadedId);
+      return;
+    }
     terminal.setVisible(isVisible);
     if (isVisible) requestAnimationFrame(() => terminal?.focus());
   });
@@ -156,8 +163,6 @@
     }
   }
 
-  let lastLoadedId: string | null = null;
-
   // Search handlers
   function handleFindNext(query: string) {
     if (terminal && query) {
@@ -195,9 +200,11 @@
     // Clean up theme listeners
     themeCleanup?.();
 
-    // Detach terminal from container (keeps it alive in the manager for reattachment)
+    // Detach terminal from container (keeps it alive in the manager for
+    // reattachment). Scoped to this surface's container so a detach from a
+    // surface the adapter has already left is a no-op.
     if (terminalId) {
-      terminalManager.detachTerminal(terminalId);
+      terminalManager.detachTerminal(terminalId, container);
     }
     lastLoadedId = null;
   });
@@ -207,7 +214,7 @@
     if (container && terminalId && lastLoadedId !== terminalId) {
       // Detach the old terminal first if switching terminals
       if (lastLoadedId) {
-        terminalManager.detachTerminal(lastLoadedId);
+        terminalManager.detachTerminal(lastLoadedId, container);
       }
       lastLoadedId = terminalId;
       loadTerminal(terminalId);

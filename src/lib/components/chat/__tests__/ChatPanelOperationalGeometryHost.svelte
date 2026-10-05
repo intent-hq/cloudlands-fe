@@ -1,7 +1,14 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import AgentSubscriptions from '../AgentSubscriptions.svelte';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT fixture exercises the real watched-agent navigation route.
+  import { appLayoutNavigationSaga } from '$store/renderer/slices/app-layout/sagas/app-layout-navigation-saga';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT fixture runs only the two navigation watchers it needs.
+  import { watchRightmostColumnRequests } from '$store/renderer/slices/panel-layout/sagas/panel-layout-saga';
+  import { setSubscriptionSnapshot } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
+  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
-  import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+  import type { AgentMessage, AgentSession, ContentBlock, PendingProposalRef } from '$shared/types';
   import { AgentStatus } from '$shared/types/agent.types';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
   import InitialAgentChatTabType from './InitialAgentChatTabType.svelte';
@@ -9,10 +16,15 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
-  import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import {
+    bulkUpsertSessions,
+    replaceMessages,
+    updateSession,
+  } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
     initializeLayout,
     setRestoreStatus,
+    setActiveTab,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -27,6 +39,11 @@
     theme = 'light',
     zoom = 1,
     width = 560,
+    height = 900,
+    liveStreaming,
+    alternateMessages,
+    watchedAgent = false,
+    activeAgent = 'primary',
     seamOnly = false,
     detachedStatus = false,
     reasoningSearchOnly = false,
@@ -36,10 +53,18 @@
     pendingAssistantStatus,
     pendingEvent = false,
     cardSeamMessages,
+    liveMessages,
+    pendingProposals,
+    chiefWorkspace = false,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
     width?: number;
+    height?: number;
+    liveStreaming?: boolean;
+    alternateMessages?: AgentMessage[];
+    watchedAgent?: boolean;
+    activeAgent?: 'primary' | 'secondary';
     seamOnly?: boolean;
     detachedStatus?: boolean;
     reasoningSearchOnly?: boolean;
@@ -49,15 +74,31 @@
     pendingAssistantStatus?: 'thinking' | 'error' | 'model-unavailable' | 'idle' | 'reply';
     pendingEvent?: boolean;
     cardSeamMessages?: AgentMessage[];
+    liveMessages?: AgentMessage[];
+    pendingProposals?: PendingProposalRef[];
+    chiefWorkspace?: boolean;
   } = $props();
   const setupCardFixture = untrack(() => setupCardOnly);
   const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
   const pendingFixture = untrack(() => pendingAssistantStatus !== undefined);
   const cardSeamFixture = untrack(() => cardSeamMessages);
-  const workspaceId = 'chat-panel-operational-geometry';
+  const liveFixture = untrack(() => liveMessages);
+  const pendingProposalFixture = untrack(() => pendingProposals);
+  const workspaceId = untrack(() => chiefWorkspace)
+    ? '__chief__'
+    : 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const watchedFixture = untrack(() => watchedAgent);
+  const disposeStore = startRootStoreLifecycle(store, {
+    startSagas: (appStore) =>
+      watchedFixture
+        ? [
+            appStore.runSaga(appLayoutNavigationSaga),
+            appStore.runSaga(watchRightmostColumnRequests),
+          ]
+        : [],
+  });
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>
     [
@@ -533,6 +574,7 @@
   ]);
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const messages =
+    liveFixture ??
     cardSeamFixture ??
     (pendingFixture
       ? pendingMessages
@@ -565,7 +607,11 @@
     isProcessing: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
     isResponding: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
     isInitialAgent: setupCardFixture,
-    metadata: setupCardFixture ? { isInitialAgent: true } : undefined,
+    metadata: setupCardFixture
+      ? { isInitialAgent: true }
+      : pendingProposalFixture
+        ? { pendingProposals: pendingProposalFixture }
+        : undefined,
     messages,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -595,6 +641,21 @@
     } as never),
   );
   store.dispatch(bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }));
+  const alternate = untrack(() => alternateMessages);
+  if (alternate)
+    store.dispatch(
+      bulkUpsertSessions(
+        [
+          {
+            ...session,
+            id: `${agentId}-alternate` as AgentSession['id'],
+            name: 'Alternate agent',
+            messages: alternate,
+          },
+        ],
+        { preserveExplicitRuntimeFlags: false },
+      ),
+    );
   store.dispatch(setAgents(workspaceId, [session]));
   store.dispatch(
     initializeLayout(workspaceId, {
@@ -611,6 +672,18 @@
               workspaceId,
               closable: true,
             },
+            ...(alternate && !watchedFixture
+              ? [
+                  {
+                    id: 'alternate-tab',
+                    type: 'agent' as const,
+                    title: 'Alternate agent',
+                    agentId: `${agentId}-alternate`,
+                    workspaceId,
+                    closable: true,
+                  },
+                ]
+              : []),
           ],
           activeTabId: 'agent-tab',
         },
@@ -619,6 +692,54 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+  if (watchedFixture) {
+    store.dispatch(openWorkspaceTab(workspaceId));
+    store.dispatch(
+      setSubscriptionSnapshot(workspaceId, agentId, {
+        subscriptions: [
+          {
+            id: 'scale-watch',
+            agentId,
+            actorIds: [`${agentId}-alternate`],
+            eventTypes: ['agent:completed'],
+            createdAt: timestamp,
+            description: 'Watch alternate agent',
+          },
+        ],
+        delegationGroups: [],
+        agentStatuses: { [`${agentId}-alternate`]: 'waiting' },
+        waitingState: 'waiting',
+      }),
+    );
+  }
+
+  $effect(() => {
+    const streaming = liveStreaming;
+    if (streaming === undefined) return;
+    untrack(() =>
+      store.dispatch(
+        updateSession(agentId, {
+          isStreaming: streaming,
+          isProcessing: streaming,
+          isResponding: streaming,
+        }),
+      ),
+    );
+  });
+
+  $effect(() => {
+    const tabId = activeAgent === 'secondary' ? 'alternate-tab' : 'agent-tab';
+    if (alternate && !watchedFixture)
+      untrack(() => store.dispatch(setActiveTab(workspaceId, tabId, 'chat-panel')));
+  });
+
+  $effect(() => {
+    if (!liveFixture || !liveMessages) return;
+    const nextMessages = liveMessages;
+    untrack(() => {
+      store.dispatch(replaceMessages(agentId, nextMessages));
+    });
+  });
 
   $effect(() => {
     if (!pendingFixture) return;
@@ -673,7 +794,12 @@
 </script>
 
 <section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-operational-host">
-  <div style:height="900px" style:width="{width}px">
+  {#if watchedFixture}
+    <div data-testid="scale-agent-subscriptions" style:width="{width}px">
+      <AgentSubscriptions {workspaceId} {agentId} />
+    </div>
+  {/if}
+  <div style:height="{height}px" style:width="{width}px">
     <PanelLayout {workspaceId} layoutId={workspaceId} contained />
   </div>
 </section>

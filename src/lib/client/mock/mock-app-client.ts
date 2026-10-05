@@ -96,7 +96,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     setMcpServers: async () => OK,
     getMcpServerStatuses: async () => [],
     restartMcpServer: async (serverId) => ({ serverId, state: 'running' }),
-    getWorkspaceDisabledMcpServerNames: async () => [],
+    getWorkspaceDisabledMcpServerKeys: async () => [],
     toggleWorkspaceMcpServer: async () => OK,
     getWorkspaceSettings: async () => fx.mockWorkspaceSettings,
     setWorkspaceSettings: async () => OK,
@@ -190,6 +190,10 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly integrations: AppClient['integrations'] = {
+    captureRepositoryCheckout: async () => ({ status: 'unavailable', reason: 'disabled' }),
+    captureRepositoryResource: async () => {
+      throw new Error('REPOSITORY_RESOURCE_UNAVAILABLE');
+    },
     githubUser: async () => fx.mockGitHubUser,
     githubPullRequest: async (owner, repo, number) => ({
       ...(number === fx.mockGitHubPullRequestQueued.number

@@ -141,15 +141,13 @@ function findInvokes(): Map<string, Array<{ file: string; line: number; code: st
         const channel = match[1];
         const relPath = path.relative(srcDir, file);
 
-        if (!invokes.has(channel)) {
-          invokes.set(channel, []);
-        }
-
-        invokes.get(channel)!.push({
+        const channelInvokes = invokes.get(channel) ?? [];
+        channelInvokes.push({
           file: relPath,
           line: index + 1,
           code: line.trim(),
         });
+        invokes.set(channel, channelInvokes);
       }
     });
   }

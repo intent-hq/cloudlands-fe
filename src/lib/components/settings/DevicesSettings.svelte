@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy, untrack } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { ListView } from '$lib/components/patterns/collection';
   import { Fa } from 'svelte-fa';
@@ -12,9 +13,15 @@
     selectConnections,
     selectConnectionsLoaded,
     selectRemoteConnections,
+    selectConnectionWorkflow,
   } from '$store/renderer/slices/connections/connections-selectors';
-  import { forgetConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
+  import {
+    connectionWorkflowRequested,
+    connectionWorkflowCleared,
+  } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
+
+  let { initialEditedMachine }: { initialEditedMachine?: string } = $props();
 
   // Full ordered list (local first) drives the rows AND the empty state (the
   // always-present local row and the "no devices" box must not render
@@ -24,12 +31,25 @@
   const loaded$ = selectConnectionsLoaded();
 
   let connectModalOpen = $state(false);
-  let activeDeviceId = $state<string | null>(null);
-  let activePanel = $state<DevicePanelMode>(null);
+  let activeDeviceId = $state<string | null>(untrack(() => initialEditedMachine ?? null));
+  let activePanel = $state<DevicePanelMode>(untrack(() => (initialEditedMachine ? 'edit' : null)));
   let removeDialogOpen = $state(false);
   let removeTarget = $state<ConnectionRecord | null>(null);
-  let removeError = $state<string | null>(null);
-  let removing = $state(false);
+  const consumerId = $props.id();
+  const workflow$ = selectConnectionWorkflow(consumerId);
+  const removeError = $derived(
+    $workflow$?.outcome?.kind === 'error' ? m.settings_devices_remove_error() : null,
+  );
+  const removing = $derived(!!$workflow$ && $workflow$.phase !== 'settled');
+  onDestroy(() => appStore.dispatch(connectionWorkflowCleared(consumerId)));
+  $effect(() => {
+    if ($workflow$?.outcome?.kind !== 'done') return;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
+    untrack(() => {
+      if (activeDeviceId === removeTarget?.id) closePanel();
+      removeTarget = null;
+    });
+  });
 
   const defaultAccent = $derived(
     SELECTABLE_CONNECTION_ACCENTS[$devices$.length % SELECTABLE_CONNECTION_ACCENTS.length],
@@ -47,31 +67,19 @@
 
   function requestRemove(device: ConnectionRecord) {
     removeTarget = device;
-    removeError = null;
+    appStore.dispatch(connectionWorkflowCleared(consumerId));
     removeDialogOpen = true;
   }
 
-  async function removeDevice(device = removeTarget) {
+  function removeDevice(device = removeTarget) {
     if (!device || removing) return;
-    removing = true;
-    removeError = null;
-    try {
-      const action = forgetConnectionRequested(device.id);
-      appStore.dispatch(action);
-      await action.promise;
-      if (activeDeviceId === device.id) closePanel();
-      removeTarget = null;
-    } catch {
-      removeError = m.settings_devices_remove_error();
-    } finally {
-      removing = false;
-    }
+    appStore.dispatch(connectionWorkflowRequested(consumerId, { kind: 'forget', id: device.id }));
   }
 </script>
 
 <div class="space-y-5">
   <div>
-    <h2 class="type-caption font-medium text-muted-foreground mb-3">
+    <h2 class="type-title mb-3 text-foreground">
       {m.settings_devices_title()}
     </h2>
     <p class="max-w-2xl type-body text-muted-foreground">
@@ -86,7 +94,7 @@
     getText={(device) => device.label}
     status={$loaded$ ? 'ready' : 'loading'}
     ariaLabel={m.settings_devices_title()}
-    class="overflow-visible rounded-xl bg-card [&>div>div[aria-hidden=true]]:hidden"
+    class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
   >
     {#snippet row({ item: device })}
       <DeviceRow
@@ -108,12 +116,14 @@
     {#snippet empty()}
       <div class="rounded-xl border border-dashed border-border bg-card p-8 text-left">
         <p class="type-body font-medium text-foreground">{m.settings_devices_empty_title()}</p>
-        <p class="mt-1 type-body text-muted-foreground">{m.settings_devices_empty_description()}</p>
+        <p class="mt-1 type-body text-muted-foreground">
+          {m.settings_devices_empty_description()}
+        </p>
       </div>
     {/snippet}
   </ListView>
 
-  <div class="flex justify-start">
+  <div class="flex justify-end">
     <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
       <Fa icon={faPlus} class="mr-1.5" size="xs" />
       {m.settings_devices_add_label()}

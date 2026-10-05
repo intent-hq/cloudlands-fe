@@ -271,8 +271,10 @@ export function setupAuggieIPC() {
   );
 
   // Get available models for auggie — daemon-owned catalog (PROTOCOL §6.7)
-  ipcMain.handle(AUGGIE_CHANNELS.GET_MODELS, async (event, params?: { forceRefresh?: boolean }) =>
-    getProviderModelsEnvelope('auggie', params, event),
+  ipcMain.handle(
+    AUGGIE_CHANNELS.GET_MODELS,
+    async (event, params?: { forceRefresh?: boolean; workspaceId?: string }) =>
+      getProviderModelsEnvelope('auggie', params, event),
   );
 
   // Get the latest session file

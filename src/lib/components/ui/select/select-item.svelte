@@ -3,13 +3,13 @@
   import { Select as SelectPrimitive } from 'bits-ui';
   import { cn } from '$lib/utils';
   import { menuItem } from '../menu/menu-recipes';
-  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
+  import { Indicator } from '$lib/components/ui/menu';
 
   let {
     value,
     label,
     disabled = false,
-    children,
+    children: itemContent,
     class: className = '',
   }: {
     value: string;
@@ -24,16 +24,12 @@
   {value}
   label={label ?? value}
   {disabled}
+  aria-disabled={disabled || undefined}
   data-menu-item
   class={cn(menuItem(), className)}
 >
-  <div class="min-w-0 flex-1 truncate">{@render children?.()}</div>
-  <span
-    data-slot="select-item-check"
-    class={cn(
-      OPTION_LIST_END_SLOT_CLASS,
-      'text-primary-ink font-medium opacity-0 group-data-[selected]:opacity-100',
-    )}
-    aria-hidden="true">✓</span
-  >
+  {#snippet children({ selected })}
+    <div class="min-w-0 flex-1 truncate">{@render itemContent?.()}</div>
+    <Indicator state={selected ? 'checked' : 'empty'} data-slot="select-item-check" />
+  {/snippet}
 </SelectPrimitive.Item>

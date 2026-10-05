@@ -36,7 +36,7 @@ describe('ContextPickerModal Escape handling (escape-layer stack)', () => {
       expect(screen.getByText('GitHub Issues')).toBeTruthy();
     });
 
-    await fireEvent.keyDown(window, { key: 'Escape' });
+    await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });

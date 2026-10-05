@@ -181,23 +181,43 @@ class RendererTerminalManager {
   }
 
   /**
-   * Detach a terminal (when component unmounts)
+   * Whether the terminal's adapter is currently attached to `container`.
    */
-  detachTerminal(terminalId: string): void {
+  isAttachedTo(terminalId: string, container: HTMLElement): boolean {
     const managed = this.terminals.get(terminalId);
-    if (managed) {
-      logger.info(`[RendererTerminalManager] Detaching terminal: ${terminalId}`);
-      managed.isAttached = false;
-      // Call detach first before clearing container
-      managed.adapter.detach();
-      managed.container = null;
+    return !!managed && managed.isAttached && managed.container === container;
+  }
+
+  /**
+   * Detach a terminal (when component unmounts).
+   *
+   * A shared adapter can be handed from one surface to another (overlay ↔
+   * panel) while the first surface is still mounted. When `container` is
+   * given, the detach only applies if that surface still owns the adapter;
+   * a stale surface unmounting later must not tear the adapter off its new
+   * home.
+   */
+  detachTerminal(terminalId: string, container?: HTMLElement): void {
+    const managed = this.terminals.get(terminalId);
+    if (!managed) return;
+    if (container && managed.container !== container) {
+      logger.info(
+        // i18n-ignore (log message, not user-facing)
+        `[RendererTerminalManager] Ignoring detach from a stale surface: ${terminalId}`,
+      );
+      return;
     }
+    logger.info(`[RendererTerminalManager] Detaching terminal: ${terminalId}`);
+    managed.isAttached = false;
+    // Call detach first before clearing container
+    managed.adapter.detach();
+    managed.container = null;
   }
 
   /**
    * Dispose a terminal completely
    */
-  disposeTerminal(terminalId: string): void {
+  disposeTerminal(terminalId: string, workspaceId?: string): void {
     const managed = this.terminals.get(terminalId);
     if (managed) {
       logger.info(`[RendererTerminalManager] Disposing terminal: ${terminalId}`);
@@ -207,7 +227,7 @@ class RendererTerminalManager {
       this.removeTerminalMetadata(terminalId, managed.workspaceId);
     } else {
       // Restored tabs can be closed before their renderer adapter is created.
-      void appClient.terminals.kill(terminalId).then(
+      void appClient.terminals.kill(terminalId, workspaceId).then(
         (result) => {
           if (!result.success) logger.error('Error killing terminal:', result.error);
         },

@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: context provider that renders only its children -->
+
 <script lang="ts">
   import { setContext, untrack, type Snippet } from 'svelte';
   import { SIZE_CONTEXT, type UiSize } from '$lib/components/ui/size-context';

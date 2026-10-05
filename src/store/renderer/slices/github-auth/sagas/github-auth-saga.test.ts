@@ -51,7 +51,11 @@ function harness(seed = initialState) {
     { channel, dispatch, getState: () => ({ githubAuth: state }) },
     githubAuthSaga,
   );
-  return { channel, dispatched, state: () => state, task };
+  const send = (action: Parameters<typeof githubAuthReducer>[1]) => {
+    state = githubAuthReducer(state, action);
+    channel.put(action);
+  };
+  return { channel: { put: send }, dispatched, state: () => state, task };
 }
 
 describe('githubAuthSaga', () => {
@@ -100,10 +104,11 @@ describe('githubAuthSaga', () => {
     await run.task.toPromise();
   });
 
-  it('cancels polling on disconnect and ignores the late completion', async () => {
+  it('cancels polling on disconnect, scoping the cancel to the started flow, and ignores the late completion', async () => {
     let resolveCheck!: (value: unknown) => void;
     mocks.startAuth.mockResolvedValue({
       success: true,
+      flowId: 'flow-1',
       userCode: 'ABCD',
       verificationUri: 'https://github.test',
       expiresIn: 900,
@@ -135,7 +140,7 @@ describe('githubAuthSaga', () => {
     });
     await settle();
 
-    expect(mocks.cancelAuth.mock.calls).toEqual([[]]);
+    expect(mocks.cancelAuth.mock.calls).toEqual([[{ flowId: 'flow-1' }]]);
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setAuthenticating', payload: [true] },
       { type: 'githubAuth/setOAuthInfo', payload: { oauthUrl: null, needsScopeUpdate: false } },
@@ -143,6 +148,7 @@ describe('githubAuthSaga', () => {
         type: 'githubAuth/setDeviceFlowInfo',
         payload: [
           {
+            flowId: 'flow-1',
             userCode: 'ABCD',
             verificationUri: 'https://github.test',
             expiresIn: 900,
@@ -150,8 +156,262 @@ describe('githubAuthSaga', () => {
           },
         ],
       },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
       { type: 'githubAuth/authCancelled', payload: [] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cancels a flow started without a flowId (older daemon) with the unscoped call', async () => {
+    mocks.startAuth.mockResolvedValue({
+      success: true,
+      userCode: 'ABCD',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.checkAuthComplete.mockResolvedValue({ success: true, data: { isComplete: false } });
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    expect(run.state().deviceFlow).not.toHaveProperty('flowId');
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+
+    expect(mocks.cancelAuth.mock.calls).toEqual([[]]);
+    expect(run.state().deviceFlow).toBeNull();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a cancel while startAuth is still awaiting is sent scoped once the result names the flow', async () => {
+    let resolveStart!: (value: unknown) => void;
+    mocks.startAuth.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    mocks.checkAuthComplete.mockResolvedValue({ success: true, data: { isComplete: false } });
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+    expect(mocks.cancelAuth).not.toHaveBeenCalled();
+    expect(run.state().isAuthenticating).toBe(true);
+
+    resolveStart({
+      success: true,
+      flowId: 'flow-1',
+      userCode: 'ABCD',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
+    });
+    await settle();
+
+    expect(mocks.cancelAuth.mock.calls).toEqual([[{ flowId: 'flow-1' }]]);
+    expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+    expect(run.dispatched).toEqual([
+      { type: 'githubAuth/setAuthenticating', payload: [true] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
+      { type: 'githubAuth/authCancelled', payload: [] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
+    ]);
+    expect(run.state().deviceFlow).toBeNull();
+    expect(run.state().isAuthenticating).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a cancel while startAuth is still awaiting falls back to the unscoped call when the result has no flowId (older daemon)', async () => {
+    let resolveStart!: (value: unknown) => void;
+    mocks.startAuth.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    mocks.checkAuthComplete.mockResolvedValue({ success: true, data: { isComplete: false } });
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+    expect(mocks.cancelAuth).not.toHaveBeenCalled();
+
+    resolveStart({
+      success: true,
+      userCode: 'ABCD',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
+    });
+    await settle();
+
+    expect(mocks.cancelAuth.mock.calls).toEqual([[]]);
+    expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+    expect(run.state().deviceFlow).toBeNull();
+    expect(run.state().isAuthenticating).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a cancel while startAuth is still awaiting settles as cancelled when the start then fails', async () => {
+    let rejectStart!: (error: unknown) => void;
+    mocks.startAuth.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectStart = reject;
+      }),
+    );
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+    rejectStart(new Error('connect failed'));
+    await settle();
+
+    expect(mocks.cancelAuth).not.toHaveBeenCalled();
+    expect(run.state().error).toBeNull();
+    expect(run.state().isAuthenticating).toBe(false);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drains a scoped early cancel before a newer start and keeps the new cancellation identity', async () => {
+    const firstStart = Promise.withResolvers<unknown>();
+    const firstCancel = Promise.withResolvers<{ success: boolean }>();
+    mocks.startAuth.mockReturnValueOnce(firstStart.promise).mockResolvedValueOnce({
+      success: true,
+      flowId: 'flow-b',
+      userCode: 'BBBB',
+      verificationUri: 'https://github.com/login/device',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.cancelAuth.mockReturnValueOnce(firstCancel.promise).mockResolvedValue({ success: true });
+    mocks.checkAuthComplete.mockResolvedValue({ success: true, data: { isComplete: false } });
+    const run = harness();
+    try {
+      run.channel.put(startGitHubAuth());
+      run.channel.put(cancelGitHubAuth());
+      run.channel.put(startGitHubAuth());
+      await settle();
+      expect(mocks.startAuth).toHaveBeenCalledTimes(1);
+      expect(mocks.cancelAuth).not.toHaveBeenCalled();
+
+      firstStart.resolve({
+        success: true,
+        flowId: 'flow-a',
+        userCode: 'AAAA',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 900,
+        interval: 5,
+      });
+      await settle();
+      expect(mocks.cancelAuth.mock.calls).toEqual([[{ flowId: 'flow-a' }]]);
+      expect(mocks.startAuth).toHaveBeenCalledTimes(1);
+      expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+      expect(run.state().deviceFlow).toBeNull();
+
+      firstCancel.resolve({ success: true });
+      await settle();
+      expect(mocks.startAuth).toHaveBeenCalledTimes(2);
+      expect(run.state().deviceFlow).toMatchObject({ flowId: 'flow-b', userCode: 'BBBB' });
+      run.channel.put(cancelGitHubAuth());
+      await settle();
+      expect(mocks.cancelAuth.mock.calls).toEqual([[{ flowId: 'flow-a' }], [{ flowId: 'flow-b' }]]);
+      expect(run.state().deviceFlow).toBeNull();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('initialize keeps the locally known flowId when authStatus resumes the same code, so the cancel stays scoped', async () => {
+    mocks.startAuth.mockResolvedValue({
+      success: true,
+      flowId: 'flow-1',
+      userCode: 'ABCD',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.getAuthState.mockResolvedValue({
+      isAuthenticated: false,
+      requiresDaemonAuth: false,
+      user: null,
+      deviceFlow: {
+        status: 'pending',
+        userCode: 'ABCD',
+        verificationUri: 'https://github.test',
+        expiresIn: 880,
+        interval: 5,
+      },
+    });
+    mocks.checkAuthComplete.mockResolvedValue({ success: true, data: { isComplete: false } });
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    run.channel.put(initializeGitHubAuth());
+    await settle();
+
+    expect(run.state().deviceFlow).toEqual({
+      flowId: 'flow-1',
+      userCode: 'ABCD',
+      verificationUri: 'https://github.test',
+      expiresIn: 880,
+      interval: 5,
+    });
+
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+    expect(mocks.cancelAuth.mock.calls).toEqual([[{ flowId: 'flow-1' }]]);
+    expect(run.state().deviceFlow).toBeNull();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('initialize does not carry a local flowId over to a different pending code', async () => {
+    mocks.startAuth.mockResolvedValue({
+      success: true,
+      flowId: 'flow-1',
+      userCode: 'ABCD',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.getAuthState.mockResolvedValue({
+      isAuthenticated: false,
+      requiresDaemonAuth: false,
+      user: null,
+      deviceFlow: {
+        status: 'pending',
+        userCode: 'WXYZ',
+        verificationUri: 'https://github.test',
+        expiresIn: 899,
+        interval: 5,
+      },
+    });
+    mocks.checkAuthComplete.mockResolvedValue({ success: true, data: { isComplete: false } });
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    run.channel.put(initializeGitHubAuth());
+    await settle();
+
+    expect(run.state().deviceFlow).toEqual({
+      userCode: 'WXYZ',
+      verificationUri: 'https://github.test',
+      expiresIn: 899,
+      interval: 5,
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -187,6 +447,7 @@ describe('githubAuthSaga', () => {
           },
         ],
       },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -259,6 +520,7 @@ describe('githubAuthSaga', () => {
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setAuthenticating', payload: [true] },
       { type: 'githubAuth/setError', payload: ['device denied'] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -271,12 +533,13 @@ describe('githubAuthSaga', () => {
     await settle();
 
     expect(mocks.logout.mock.calls).toEqual([[]]);
-    expect(run.dispatched).toEqual([{ type: 'githubAuth/logoutCompleted', payload: [] }]);
+    expect(run.state()).toMatchObject({ isAuthenticated: false, isDisconnecting: false });
+    expect(run.dispatched).toContainEqual({ type: 'githubAuth/logoutCompleted', payload: [] });
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('runs repeated status requests concurrently like the middleware', async () => {
+  it('makes repeated status requests latest-wins', async () => {
     let resolveFirst!: (value: unknown) => void;
     mocks.getAuthState
       .mockReturnValueOnce(
@@ -305,16 +568,6 @@ describe('githubAuthSaga', () => {
           isAuthenticated: false,
           requiresDaemonAuth: false,
           user: null,
-          needsScopeUpdate: false,
-          oauthUrl: null,
-        },
-      },
-      {
-        type: 'githubAuth/setAuthState',
-        payload: {
-          isAuthenticated: true,
-          requiresDaemonAuth: false,
-          user: { login: 'octo', name: null, email: null, avatar_url: 'avatar' },
           needsScopeUpdate: false,
           oauthUrl: null,
         },
@@ -378,6 +631,7 @@ describe('githubAuthSaga', () => {
           },
         ],
       },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
       {
         type: 'githubAuth/setAuthState',
         payload: {
@@ -395,7 +649,7 @@ describe('githubAuthSaga', () => {
     await run.task.toPromise();
   });
 
-  it('dispatches exact cancel, logout, and terminal-event failures', async () => {
+  it('reports cancel/logout failures and ignores late terminal events after cancellation', async () => {
     mocks.checkAuthComplete.mockRejectedValue(new Error('probe unavailable'));
     mocks.cancelAuth.mockResolvedValue({ success: false, error: 'cancel rejected' });
     mocks.logout.mockResolvedValue({ success: false, error: 'logout rejected' });
@@ -411,9 +665,220 @@ describe('githubAuthSaga', () => {
 
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setError', payload: ['cancel rejected'] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
+      { type: 'githubAuth/setDisconnecting', payload: [true] },
       { type: 'githubAuth/setError', payload: ['logout rejected'] },
-      { type: 'githubAuth/setError', payload: [m.githubAuth_service_codeExpired_error()] },
+      { type: 'githubAuth/setDisconnecting', payload: [false] },
+      { type: 'githubAuth/settleMutation', payload: [expect.any(String)] },
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cannot restart polling from a start response arriving after cancel', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.startAuth.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+    resolve({
+      success: true,
+      userCode: 'STALE',
+      verificationUri: 'https://github.com/login/device',
+      expiresIn: 900,
+      interval: 5,
+    });
+    await settle();
+    expect(run.state()).toMatchObject({ isAuthenticating: false, deviceFlow: null });
+    expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('discards in-flight and newly arriving authorization callbacks after cancel', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.getUser.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(githubAuthChanged('authorized'));
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+    resolve({ login: 'stale', name: null, email: null, avatar_url: '' });
+    run.channel.put(githubAuthChanged('authorized'));
+    await settle();
+    expect(mocks.getUser).toHaveBeenCalledTimes(1);
+    expect(run.state()).toMatchObject({ isAuthenticated: false, user: null });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('uses one completion owner for polling and compatibility focus requests, then removes focus on teardown', async () => {
+    mocks.startAuth.mockResolvedValue({
+      success: true,
+      userCode: 'CODE',
+      verificationUri: 'https://github.com/login/device',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.checkAuthComplete.mockReturnValue(new Promise(() => {}));
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    window.dispatchEvent(new Event('focus'));
+    run.channel.put(checkGitHubAuthStatus());
+    await settle();
+    expect(mocks.checkAuthComplete).toHaveBeenCalledTimes(1);
+    run.task.cancel();
+    await run.task.toPromise();
+    const count = run.dispatched.length;
+    window.dispatchEvent(new Event('focus'));
+    expect(run.dispatched).toHaveLength(count);
+  });
+
+  it('shows disconnecting until the actual logout settles, not a timer', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.logout.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const run = harness({ ...initialState, isAuthenticated: true });
+    run.channel.put(logoutGitHub());
+    await settle();
+    expect(run.state()).toMatchObject({ isAuthenticated: true, isDisconnecting: true });
+    resolve({ success: true });
+    await settle();
+    expect(run.state()).toMatchObject({ isAuthenticated: false, isDisconnecting: false });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('drains logout before reconnect and reconciles the revoked credential before starting again', async () => {
+    const logout = Promise.withResolvers<{ success: boolean }>();
+    const start = Promise.withResolvers<{ success: boolean; error: string }>();
+    mocks.logout.mockReturnValue(logout.promise);
+    mocks.startAuth.mockReturnValue(start.promise);
+    const run = harness({
+      ...initialState,
+      isAuthenticated: true,
+      user: { login: 'old', name: null, email: null, avatar_url: '' },
+    });
+    try {
+      run.channel.put(logoutGitHub());
+      run.channel.put(startGitHubAuth({ reconnect: true }));
+      run.channel.put(initializeGitHubAuth());
+      run.channel.put(checkGitHubAuthStatus());
+      run.channel.put(githubAuthChanged('authorized'));
+      await settle();
+      expect(mocks.startAuth).not.toHaveBeenCalled();
+      expect(mocks.getAuthState).not.toHaveBeenCalled();
+      expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+      expect(mocks.getUser).not.toHaveBeenCalled();
+      expect(run.state().isDisconnecting).toBe(true);
+
+      logout.resolve({ success: true });
+      await settle();
+      expect(mocks.startAuth.mock.calls).toEqual([[{ reconnect: true }]]);
+      expect(run.dispatched).toContainEqual({ type: 'githubAuth/logoutCompleted', payload: [] });
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        user: null,
+        isDisconnecting: false,
+        isAuthenticating: true,
+      });
+      start.resolve({ success: false, error: 'reconnect rejected' });
+      await settle();
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        isAuthenticating: false,
+        error: 'reconnect rejected',
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('does not start a queued reconnect cancelled while logout is in flight', async () => {
+    const logout = Promise.withResolvers<{ success: boolean }>();
+    mocks.logout.mockReturnValue(logout.promise);
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness({ ...initialState, isAuthenticated: true });
+    try {
+      run.channel.put(logoutGitHub());
+      run.channel.put(startGitHubAuth({ reconnect: true }));
+      run.channel.put(cancelGitHubAuth());
+      await settle();
+      expect(mocks.startAuth).not.toHaveBeenCalled();
+      expect(mocks.cancelAuth).not.toHaveBeenCalled();
+      logout.resolve({ success: true });
+      await settle();
+      expect(mocks.startAuth).not.toHaveBeenCalled();
+      expect(mocks.cancelAuth).toHaveBeenCalledTimes(1);
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        isAuthenticating: false,
+        isDisconnecting: false,
+        callbacksCancelled: true,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('orders logout after an already-sent start without publishing its obsolete device flow', async () => {
+    const start = Promise.withResolvers<{
+      success: boolean;
+      userCode: string;
+      verificationUri: string;
+      expiresIn: number;
+      interval: number;
+    }>();
+    mocks.startAuth.mockReturnValue(start.promise);
+    mocks.logout.mockResolvedValue({ success: true });
+    const run = harness({ ...initialState, isAuthenticated: true });
+    try {
+      run.channel.put(startGitHubAuth({ reconnect: true }));
+      run.channel.put(logoutGitHub());
+      await settle();
+      expect(mocks.logout).not.toHaveBeenCalled();
+      start.resolve({
+        success: true,
+        userCode: 'OBSOLETE',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 900,
+        interval: 5,
+      });
+      await settle();
+      expect(mocks.logout).toHaveBeenCalledTimes(1);
+      expect(mocks.checkAuthComplete).not.toHaveBeenCalled();
+      expect(run.state()).toMatchObject({
+        isAuthenticated: false,
+        isAuthenticating: false,
+        deviceFlow: null,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('still handles terminal failure events for an uncancelled flow', async () => {
+    const run = harness();
+    run.channel.put(githubAuthChanged('expired'));
+    await settle();
+    expect(run.state().error).toBe(m.githubAuth_service_codeExpired_error());
     run.task.cancel();
     await run.task.toPromise();
   });

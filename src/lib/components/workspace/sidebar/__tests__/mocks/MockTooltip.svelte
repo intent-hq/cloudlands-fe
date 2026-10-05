@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { children, content, disabled }: any = $props();
+  let { children, content, disabled, delayDuration }: any = $props();
   void content;
   // Expose the lazy prop getters to tests that simulate the real Tooltip
   // re-reading props mid-teardown (intent-hq/monorepo#2543).
@@ -9,6 +9,9 @@
     },
     get disabled() {
       return disabled;
+    },
+    get delayDuration() {
+      return delayDuration;
     },
   });
 </script>

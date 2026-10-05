@@ -15,7 +15,7 @@
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
-  import * as Menu from '$lib/components/ui/menu';
+  import SpecialistOptions from './SpecialistOptions.svelte';
 
   interface Props {
     /** Currently selected specialist ID - null means blank agent */
@@ -44,7 +44,9 @@
   const currentSpecialist = $derived(value ? $allSpecialists.find((s) => s.id === value) : null);
 
   // Display label
-  const displayLabel = $derived(currentSpecialist?.name ?? m.chat_shared_general_fallback());
+  const displayLabel = $derived(
+    currentSpecialist?.name ?? value ?? m.chat_shared_general_fallback(),
+  );
 
   function handleSelect(id: string | null) {
     if (id !== value) {
@@ -94,46 +96,7 @@
 
   {#snippet content()}
     <div class="min-w-0">
-      <!-- Blank agent option -->
-      <Menu.Item
-        class={cn(
-          'h-auto min-h-(--control-height-medium) gap-2 w-full py-2 text-left',
-          value === null ? 'bg-muted/50' : '',
-        )}
-        onSelect={() => handleSelect(null)}
-      >
-        <AgentAvatar agentId="blank" variant="standard" specialist={null} />
-        <div class="flex flex-col min-w-0 flex-1">
-          <span class="text-foreground truncate">{m.chat_shared_general_fallback()}</span>
-          <span class="text-xs text-subtle truncate"
-            >{m.chat_shared_noSpecializedBehavior_label()}</span
-          >
-        </div>
-      </Menu.Item>
-
-      <div class="h-px bg-border my-1"></div>
-
-      <!-- Specialists -->
-      {#each visibleSpecialists as specialist (specialist.id)}
-        <Menu.Item
-          class={cn(
-            'h-auto min-h-(--control-height-medium) gap-2 w-full py-2 text-left',
-            value === specialist.id ? 'bg-muted/50' : '',
-          )}
-          onSelect={() => handleSelect(specialist.id)}
-        >
-          <AgentAvatar
-            agentId="blank"
-            variant="standard"
-            specialist={specialist.id}
-            icon={specialist.icon}
-          />
-          <div class="flex flex-col min-w-0 flex-1">
-            <span class="text-foreground truncate">{specialist.name}</span>
-            <span class="text-xs text-subtle truncate">{specialist.description}</span>
-          </div>
-        </Menu.Item>
-      {/each}
+      <SpecialistOptions specialists={visibleSpecialists} {value} onchange={handleSelect} />
     </div>
   {/snippet}
 </DropdownMenu>

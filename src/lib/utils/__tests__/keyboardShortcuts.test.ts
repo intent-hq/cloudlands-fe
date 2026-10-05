@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KeyboardShortcutManager } from '../keyboardShortcuts';
+import { registerWorkspaceSpacesShortcut } from '$features/workspace/utils/workspace-spaces-shortcut';
 
 function dispatchShortcut(target: EventTarget, init: KeyboardEventInit = {}) {
   const event = new KeyboardEvent('keydown', {
@@ -14,15 +15,19 @@ function dispatchShortcut(target: EventTarget, init: KeyboardEventInit = {}) {
 
 const managers: KeyboardShortcutManager[] = [];
 
-function createSpacesManager(action: () => void, modifier: 'meta' | 'ctrl') {
+function createSpacesManager(
+  action: () => void,
+  modifier: 'meta' | 'ctrl',
+  binding?: () => string,
+) {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue(
+    modifier === 'meta' ? 'MacIntel' : 'Linux',
+  );
   const manager = new KeyboardShortcutManager();
   managers.push(manager);
-  manager.register({
-    key: 'o',
-    [modifier]: true,
-    description: 'Toggle All Spaces',
-    action,
-    skipInEditableElements: true,
+  registerWorkspaceSpacesShortcut(manager, {
+    toggleSpaces: action,
+    resolveBinding: binding,
   });
   manager.attach();
   return manager;
@@ -59,11 +64,13 @@ function createGlobalCloseManager(
 afterEach(() => {
   for (const manager of managers.splice(0)) manager.destroy();
   document.body.replaceChildren();
+  vi.restoreAllMocks();
 });
 
 describe('spaces shortcut handling', () => {
   it.each([
     ['Cmd+O', 'input', 'meta', () => document.createElement('input')],
+    ['Cmd+O', 'textarea', 'meta', () => document.createElement('textarea')],
     [
       'Cmd+O',
       'contenteditable',
@@ -76,6 +83,7 @@ describe('spaces shortcut handling', () => {
       },
     ],
     ['Ctrl+O', 'input', 'ctrl', () => document.createElement('input')],
+    ['Ctrl+O', 'textarea', 'ctrl', () => document.createElement('textarea')],
     [
       'Ctrl+O',
       'contenteditable',
@@ -88,7 +96,7 @@ describe('spaces shortcut handling', () => {
       },
     ],
   ] as const)(
-    'leaves %s unhandled from %s focus',
+    'handles %s from %s focus before editor handlers',
     (_shortcut, _context, modifier, createTarget) => {
       const action = vi.fn();
       createSpacesManager(action, modifier);
@@ -96,7 +104,7 @@ describe('spaces shortcut handling', () => {
       document.body.append(target);
       target.focus();
       const bubbled = vi.fn();
-      document.addEventListener('keydown', bubbled, { once: true });
+      target.addEventListener('keydown', bubbled);
 
       const event = dispatchShortcut(target, {
         key: 'o',
@@ -107,11 +115,89 @@ describe('spaces shortcut handling', () => {
       });
 
       expect(document.activeElement).toBe(target);
-      if (_context === 'input') expect(event.defaultPrevented).toBe(false);
-      expect(bubbled).toHaveBeenCalledOnce();
-      expect(action).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(true);
+      expect(bubbled).not.toHaveBeenCalled();
+      expect(action).toHaveBeenCalledOnce();
     },
   );
+
+  it('handles events from inside a prompt', () => {
+    const action = vi.fn();
+    createSpacesManager(action, 'meta');
+    const editor = document.createElement('div');
+    editor.setAttribute('contenteditable', 'true');
+    const paragraph = document.createElement('p');
+    editor.append(paragraph);
+    document.body.append(editor);
+
+    expect(dispatchShortcut(paragraph, { key: 'o', metaKey: true }).defaultPrevented).toBe(true);
+    expect(action).toHaveBeenCalledOnce();
+  });
+
+  it('uses the current custom binding while an input is focused', () => {
+    const action = vi.fn();
+    let binding = 'mod+shift+o';
+    createSpacesManager(action, 'meta', () => binding);
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+
+    expect(dispatchShortcut(input, { key: 'o', metaKey: true }).defaultPrevented).toBe(false);
+    expect(action).not.toHaveBeenCalled();
+    expect(
+      dispatchShortcut(input, { key: 'O', metaKey: true, shiftKey: true }).defaultPrevented,
+    ).toBe(true);
+    expect(action).toHaveBeenCalledOnce();
+
+    binding = 'mod+o';
+    expect(dispatchShortcut(input, { key: 'o', metaKey: true }).defaultPrevented).toBe(true);
+    expect(action).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['macOS plain O', 'meta', 'o', false],
+    ['Windows/Linux plain O', 'ctrl', 'o', false],
+    ['macOS Ctrl+O', 'meta', 'ctrl+o', true],
+  ] as const)(
+    'preserves prompt editing when rebound to %s',
+    (_label, platform, binding, ctrlKey) => {
+      const action = vi.fn();
+      createSpacesManager(action, platform, () => binding);
+      const editor = document.createElement('div');
+      editor.setAttribute('contenteditable', 'true');
+      editor.tabIndex = 0;
+      const paragraph = document.createElement('p');
+      editor.append(paragraph);
+      const button = document.createElement('button');
+      document.body.append(editor, button);
+      editor.focus();
+      const localHandler = vi.fn();
+      editor.addEventListener('keydown', localHandler);
+
+      for (const target of [editor, paragraph]) {
+        expect(dispatchShortcut(target, { key: 'o', ctrlKey }).defaultPrevented).toBe(false);
+      }
+      expect(localHandler).toHaveBeenCalledTimes(2);
+      expect(action).not.toHaveBeenCalled();
+
+      button.focus();
+      expect(dispatchShortcut(button, { key: 'o', ctrlKey }).defaultPrevented).toBe(true);
+      expect(action).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('leaves typing, macOS Ctrl+O, and other modifier combinations to the input', () => {
+    const action = vi.fn();
+    createSpacesManager(action, 'meta');
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+
+    for (const modifiers of [{}, { ctrlKey: true }, { metaKey: true, shiftKey: true }]) {
+      expect(dispatchShortcut(input, { key: 'o', ...modifiers }).defaultPrevented).toBe(false);
+    }
+    expect(action).not.toHaveBeenCalled();
+  });
 });
 
 describe('global panel-tab close shortcut handling', () => {

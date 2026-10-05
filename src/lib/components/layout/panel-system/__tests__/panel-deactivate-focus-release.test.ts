@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
 
 const readable = <T>(value: T) => ({
@@ -54,7 +55,10 @@ function baseProps(active: boolean) {
   };
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('panel deactivation focus release', () => {
   it('blurs focus inside the tab-content-wrapper before inert applies when active flips false', async () => {
@@ -92,5 +96,86 @@ describe('panel deactivation focus release', () => {
     await view.rerender(baseProps(false));
 
     expect(document.activeElement).toBe(headerControl);
+  });
+});
+
+describe('inactive panel content retention', () => {
+  it.each(['note', 'file', 'diff'] as const)(
+    'starts the selected %s inactivity window when the workspace deactivates',
+    async (type) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      const props = (active: boolean) => ({
+        ...baseProps(active),
+        panel: {
+          id: 'retained',
+          tabs: [{ id: 'editor', type, title: 'Editor', closable: true }],
+          activeTabId: 'editor',
+        },
+      });
+      const view = render(Panel, { props: props(true) });
+      const content = view.container.querySelector('[data-tab-id="editor"]')!;
+      expect(content).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(60_000);
+      await view.rerender(props(false));
+      await vi.advanceTimersByTimeAsync(29_999);
+      await tick();
+      expect(view.container.querySelector('[data-tab-id="editor"]')).toBe(content);
+      await view.rerender(props(false));
+      await vi.advanceTimersByTimeAsync(1);
+      await tick();
+      expect(content.isConnected).toBe(false);
+    },
+  );
+
+  it('expires notes, files and diffs while preserving the browser instance across workspace switches', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const tabs: PanelState['tabs'] = [
+      { id: 'browser', type: 'browser', title: 'Browser', closable: true },
+      { id: 'note', type: 'note', title: 'Note', closable: true },
+      { id: 'file', type: 'file', title: 'File', closable: true },
+      { id: 'diff', type: 'diff', title: 'Diff', closable: true },
+      { id: 'unvisited', type: 'note', title: 'Unvisited', closable: true },
+    ];
+    const props = (activeTabId: string, active = true) => ({
+      ...baseProps(active),
+      panel: { id: 'retained', tabs, activeTabId },
+    });
+    const view = render(Panel, { props: props('browser') });
+    const browser = view.container.querySelector('[data-tab-id="browser"]')!;
+    expect(browser).not.toBeNull();
+    for (const id of ['note', 'file', 'diff']) {
+      await view.rerender(props(id));
+    }
+    const cachedContent = ['note', 'file', 'diff'].map((id) =>
+      view.container.querySelector(`[data-tab-id="${id}"]`),
+    );
+    expect(cachedContent.every((node) => node?.isConnected)).toBe(true);
+
+    await view.rerender(props('diff', false));
+    await vi.advanceTimersByTimeAsync(30_000);
+    await tick();
+
+    expect(cachedContent.every((node) => !node?.isConnected)).toBe(true);
+    expect(browser.isConnected).toBe(true);
+    expect(view.container.querySelector('[data-tab-id="unvisited"]')).toBeNull();
+
+    await view.rerender(props('diff'));
+    expect(view.container.querySelector('[data-tab-id="diff"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-tab-id="diff"]')).not.toBe(cachedContent[2]);
+    expect(view.container.querySelector('[data-tab-id="browser"]')).toBe(browser);
+  });
+
+  it('cancels selected-content eviction when the workspace returns before expiry', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const view = render(Panel, { props: baseProps(true) });
+    const content = view.container.querySelector('[data-tab-id="deactivate-tab"]');
+    expect(content).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await view.rerender(baseProps(false));
+    await vi.advanceTimersByTimeAsync(15_000);
+    await view.rerender(baseProps(true));
+    await vi.advanceTimersByTimeAsync(30_000);
+    await tick();
+    expect(view.container.querySelector('[data-tab-id="deactivate-tab"]')).toBe(content);
   });
 });

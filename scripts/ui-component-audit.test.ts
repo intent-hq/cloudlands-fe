@@ -12,6 +12,8 @@ import {
 import {
   buildButtonBackgroundAudit,
   buildPatternAdoptionAudit,
+  buildRawPrincipalAvatarAudit,
+  legacyUiCallerFailures,
   runUiComponentAudit,
 } from './ui-component-audit';
 import { buildUiComponentInventory } from './ui-component-inventory';
@@ -82,6 +84,41 @@ describe('UI component metadata schema', () => {
 });
 
 describe('UI component inventory gate', () => {
+  it('rejects new static and dynamic legacy callers without blocking removal or canonical adoption', () => {
+    const inventory = buildUiComponentInventory();
+    const component = inventory.components.find(
+      (entry) => entry.publicImport === '$lib/components/ui/dropdown-menu.svelte',
+    )!;
+    const metadata = parseUiComponentMetadata({
+      ...component,
+      publicImport: '$lib/components/ui/menu',
+      category: 'primitive',
+      legacyImports: [component.publicImport],
+      callers: ['src/features/existing/Actions.svelte'],
+      replacement: null,
+    });
+    const withCallers = (callers: string[], dynamicImports: string[] = []) => ({
+      ...inventory,
+      components: [{ ...component, callers, dynamicImports }],
+    });
+
+    expect(legacyUiCallerFailures(withCallers(metadata.callers), [metadata])).toEqual([]);
+    expect(legacyUiCallerFailures(withCallers([]), [metadata])).toEqual([]);
+    expect(
+      legacyUiCallerFailures(
+        withCallers(
+          [...metadata.callers, 'src/features/new/Overflow.svelte'],
+          ['src/features/new/Context.svelte'],
+        ),
+        [metadata],
+      ),
+    ).toEqual([
+      expect.stringContaining('src/features/new/Context.svelte: new legacy caller'),
+      expect.stringContaining('src/features/new/Overflow.svelte: new legacy caller'),
+    ]);
+    expect(legacyUiCallerFailures({ ...inventory, components: [] }, [metadata])).toEqual([]);
+  });
+
   it('validates the checked-in inventory and its folder template', () => {
     const inventory = buildUiComponentInventory();
     expect(() => parseUiComponentInventory(inventory)).not.toThrow();
@@ -141,15 +178,21 @@ describe('UI component inventory gate', () => {
     );
 
     expect(toggleGroup?.callers).toEqual([
-      'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
-      'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
       'src/lib/components/patterns/settings/custom-controls.ts',
+      'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
       'src/routes/(app)/settings/+page.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(15);
-    expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
+    expect(dropdownMenu?.callers.length).toBeLessThanOrEqual(11);
+    expect(dropdownMenu?.callers).toEqual([...new Set(dropdownMenu?.callers)].sort());
+    // DiagramBlock migrated to DiagramActionsMenu's canonical Menu in d9229ea037.
+    expect(dropdownMenu?.callers).not.toContain(
+      'src/lib/components/notes/primitives/DiagramBlock.svelte',
+    );
+    expect(
+      components.find((component) => component.publicImport === '$lib/components/ui/menu')?.callers,
+    ).toContain('src/lib/components/diagrams/DiagramActionsMenu.svelte');
     expect(buildUiComponentInventory().components).toEqual(components);
   });
 
@@ -447,6 +490,105 @@ describe('Button background override guard', () => {
 
   it('keeps the checked-in tree at the zero ceiling', () => {
     expect(buildButtonBackgroundAudit()).toMatchObject({ count: 0, ceiling: 0, failures: [] });
+  });
+});
+
+describe('raw principal avatar image guard', () => {
+  const scaffold = {
+    'src/lib/components/ui/button/index.ts': "export const Button = 'button';",
+    'src/lib/components/ui/button/button.svelte': '<button>primitive host</button>',
+    'scripts/ui-component-raw-element-allowlist.json': JSON.stringify({
+      ceilings: {
+        'src/features': { button: 0, input: 0, select: 0, textarea: 0 },
+        'src/lib': { button: 0, input: 0, select: 0, textarea: 0 },
+      },
+      exceptions: [],
+    }),
+  };
+
+  function withFixtures(files: Record<string, string>, run: (root: string) => void) {
+    const root = mkdtempSync(path.join(tmpdir(), 'principal-avatar-audit-'));
+    try {
+      for (const [file, source] of Object.entries({ ...scaffold, ...files })) {
+        const target = path.join(root, file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, source);
+      }
+      run(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('fails a raw <img> whose src binds an avatarUrl expression, naming file:line and PrincipalAvatar', () => {
+    withFixtures(
+      {
+        'src/lib/components/settings/HostedWorkspaceRoster.svelte': [
+          '<ul>',
+          '  {#each members as member}',
+          '    <li><img src={member.avatarUrl} alt="" class="rounded-full" /></li>',
+          '  {/each}',
+          '  <img alt="" src="{person.avatarUrl}" />',
+          '  <img src={avatarUrl ?? placeholder} alt="" />',
+          '</ul>',
+        ].join('\n'),
+      },
+      (root) => {
+        const audit = buildRawPrincipalAvatarAudit(root);
+        expect(audit.findings).toEqual([
+          { file: 'src/lib/components/settings/HostedWorkspaceRoster.svelte', line: 3 },
+          { file: 'src/lib/components/settings/HostedWorkspaceRoster.svelte', line: 5 },
+          { file: 'src/lib/components/settings/HostedWorkspaceRoster.svelte', line: 6 },
+        ]);
+        expect(audit.failures[0]).toMatch(
+          /^src\/lib\/components\/settings\/HostedWorkspaceRoster\.svelte:3: raw <img> binds src to an avatarUrl expression; .*<PrincipalAvatar /,
+        );
+
+        const result = runUiComponentAudit('check', root);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(
+          'HostedWorkspaceRoster.svelte:3: raw <img> binds src to an avatarUrl expression',
+        );
+        expect(result.stderr).toContain('PrincipalAvatar');
+      },
+    );
+  });
+
+  it('passes the PrincipalAvatar component itself and images that do not bind avatarUrl', () => {
+    withFixtures(
+      {
+        'src/lib/components/ui/PrincipalAvatar.svelte': [
+          '<script lang="ts">',
+          '  let { avatarUrl, label } = $props();',
+          '</script>',
+          '<img src={avatarUrl} alt="" />',
+        ].join('\n'),
+        'src/features/example/Fine.svelte': [
+          '<script lang="ts">',
+          "  const example: string = '<img src={user.avatarUrl} />';",
+          '  let avatarUrl = $state(null);',
+          '</script>',
+          '<!-- <img src={user.avatarUrl} /> -->',
+          '<PrincipalAvatar {avatarUrl} label={user.login} />',
+          '<img src={workspace.iconUrl} alt="" data-avatar-url={avatarUrl} />',
+          '<img src="/static/avatarUrl.png" alt="" />',
+          '<style>',
+          '  /* <img src={user.avatarUrl} /> */',
+          '</style>',
+        ].join('\n'),
+        'src/routes/sandbox/avatar/+page.svelte': '<img src={user.avatarUrl} alt="" />',
+        'src/features/example/__tests__/Harness.svelte': '<img src={user.avatarUrl} alt="" />',
+      },
+      (root) => {
+        const audit = buildRawPrincipalAvatarAudit(root);
+        expect(audit).toMatchObject({ count: 0, ceiling: 0, findings: [], failures: [] });
+        expect(runUiComponentAudit('check', root).stderr).not.toContain('avatarUrl');
+      },
+    );
+  });
+
+  it('keeps the checked-in tree at the zero ceiling', () => {
+    expect(buildRawPrincipalAvatarAudit()).toMatchObject({ count: 0, ceiling: 0, failures: [] });
   });
 });
 

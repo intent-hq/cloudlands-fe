@@ -178,6 +178,16 @@ const GetSummaryActionSchema = z
   })
   .strict();
 
+const ReadCaptureActionSchema = z
+  .object({
+    action: z.literal('readCapture'),
+    captureId: z.string().min(1).max(512),
+    artifact: z.enum(['console.jsonl', 'network.jsonl', 'summary.json', 'session.json']),
+    offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    maxBytes: z.number().int().min(1).max(65536).optional(),
+  })
+  .strict();
+
 // Emulated viewport bounds for agent-owned tabs (monorepo#2857).
 const ViewportDimensionSchema = z
   .number()
@@ -300,6 +310,7 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   EndSessionActionSchema,
   ResetTabActionSchema,
   GetSummaryActionSchema,
+  ReadCaptureActionSchema,
   OpenTabActionSchema,
   ClaimTabActionSchema,
   ResizeTabActionSchema,
@@ -808,6 +819,12 @@ async function executeAction(
   }
 
   try {
+    if ('sessionId' in action)
+      browserCapture.assertSessionOwner(
+        action.sessionId,
+        requireWorkspaceId(workspaceId, action.action),
+        agentId,
+      );
     switch (action.action) {
       case 'listTabs': {
         const scope = action.scope ?? 'all';
@@ -1032,6 +1049,7 @@ async function executeAction(
       case 'startSession': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
         const options: SessionOptions = {
+          ownerAgentId: agentId,
           workspaceId: captureWorkspaceId,
           tabId,
           name: action.name,
@@ -1101,10 +1119,23 @@ async function executeAction(
         return { action: 'resetTab', success: true, result };
       }
 
+      case 'readCapture': {
+        const result = await browserCapture.readCapture(
+          requireWorkspaceId(workspaceId, action.action),
+          action.captureId,
+          action.artifact,
+          agentId,
+          action.offset,
+          action.maxBytes,
+        );
+        return { action: 'readCapture', success: true, result };
+      }
+
       case 'getSummary': {
         const result = await browserCapture.getSummary(
           requireWorkspaceId(workspaceId, action.action),
           action.captureId,
+          agentId,
         );
         return { action: 'getSummary', success: true, result };
       }
@@ -1749,6 +1780,7 @@ export async function executeActions(
   getLoopbackContext?: () => LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
   deadline?: number,
+  waitForRegistry?: (tabId: string, deadline?: number) => Promise<boolean>,
 ): Promise<ExecutionResult> {
   // Validate input against schema
   const parseResult = ActionSequenceSchema.safeParse(input);
@@ -1770,7 +1802,7 @@ export async function executeActions(
   const ownerNameCache: OwnerNameCache = new Map();
 
   for (const action of actions) {
-    const result = await executeAction(
+    let result = await executeAction(
       action,
       defaultTabId,
       openTabFn,
@@ -1781,6 +1813,31 @@ export async function executeActions(
       ownerNameCache,
       deadline,
     );
+    // Local webview registration does not make a tab addressable through
+    // the daemon. Check every successful open, including reuse/replace,
+    // before running the next action or returning the handle (#2756).
+    if (result.action === 'openTab' && result.success && waitForRegistry) {
+      const opened =
+        result.result && typeof result.result === 'object'
+          ? (result.result as Record<string, unknown>)
+          : undefined;
+      const tabId = typeof opened?.tabId === 'string' ? opened.tabId : undefined;
+      let registered = false;
+      try {
+        registered = typeof tabId === 'string' && (await waitForRegistry(tabId, deadline));
+      } catch (error) {
+        logger.warn('Could not confirm daemon tab registration', { tabId, error });
+      }
+      if (!registered) {
+        result = {
+          ...result,
+          success: false,
+          result: { ...opened, success: false },
+          // i18n-ignore (agent-facing protocol error, not user-facing)
+          error: `Tab ${tabId ?? '(unknown)'} could not be confirmed in the daemon browser registry before the registration deadline. Check { action: "listTabs" } before retrying the open.`,
+        };
+      }
+    }
     results.push(result);
 
     if (!result.success) {

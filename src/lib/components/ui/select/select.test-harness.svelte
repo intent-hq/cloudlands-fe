@@ -11,6 +11,11 @@
     unlabelled?: boolean;
     searchable?: boolean;
     staticPosition?: boolean;
+    value?: string;
+    items?: { value: string; label: string; disabled?: boolean }[];
+    labelledby?: string;
+    describedby?: string;
+    onchange?: (value: string) => void;
   }
 
   let {
@@ -21,15 +26,17 @@
     unlabelled = false,
     searchable = false,
     staticPosition = false,
+    value = $bindable('apple'),
+    items = [
+      { value: 'apple', label: 'Apple' },
+      { value: 'banana', label: 'Banana' },
+      { value: 'cherry', label: 'A very long cherry option label used to verify truncation' },
+    ],
+    labelledby,
+    describedby,
+    onchange,
   }: Props = $props();
-  let value = $state('apple');
   let open = $state(false);
-
-  const items = [
-    { value: 'apple', label: 'Apple' },
-    { value: 'banana', label: 'Banana' },
-    { value: 'cherry', label: 'A very long cherry option label used to verify truncation' },
-  ];
 </script>
 
 {#if searchable}
@@ -38,10 +45,14 @@
 {#if consumerId}
   <label for={consumerId}>Fruit</label>
 {/if}
-<Select.Root bind:value bind:open {items} {disabled} {invalid} {staticPosition}>
+{#if labelledby}<span id={labelledby}>Favorite fruit</span>{/if}
+{#if describedby}<span id={describedby}>Choose a snack for today.</span>{/if}
+<Select.Root bind:value bind:open {items} {disabled} {invalid} {staticPosition} {onchange}>
   <Select.Trigger
     id={consumerId}
-    aria-label={consumerId || unlabelled ? undefined : 'Choose fruit'}
+    aria-label={consumerId || unlabelled || labelledby ? undefined : 'Choose fruit'}
+    aria-labelledby={labelledby}
+    aria-describedby={describedby}
   >
     <Select.Value placeholder="Choose fruit" />
   </Select.Trigger>
@@ -50,7 +61,9 @@
       <Input aria-label="Filter fruit" />
     {/if}
     {#each items as option}
-      <Select.Item value={option.value} label={option.label}>{option.label}</Select.Item>
+      <Select.Item value={option.value} label={option.label} disabled={option.disabled}
+        >{option.label}</Select.Item
+      >
     {/each}
   </Select.Content>
 </Select.Root>

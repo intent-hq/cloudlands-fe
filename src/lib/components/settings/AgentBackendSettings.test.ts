@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  */
@@ -6,6 +7,20 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import AgentBackendSettings from './AgentBackendSettings.svelte';
 import { warmImport } from '../../../test/warm-import';
 import { m } from '$shared/paraglide/messages.js';
+import { store } from '$store/renderer/store';
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+
+let stop: () => void;
+beforeEach(() => {
+  store.init();
+  admitLegacyPrincipal();
+  stop = store.runSaga(settingsFormSaga);
+});
+afterEach(() => {
+  cleanup();
+  stop();
+  store.dispose();
+});
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
 const mocks = vi.hoisted(() => ({
@@ -28,18 +43,8 @@ vi.mock('svelte-fa', async () => {
 });
 
 const MAX_CONCURRENT_PATH = 'agents.maxConcurrent';
-const FLUSH_PATH = 'agents.flushQueuedMessages';
-const FLUSH_TRIGGER = { name: /Flush queued messages/ };
-
-/** settings.list mock; `flush: undefined` = daemon does not report the setting. */
-function mockSettings({
-  maxConcurrent = 0,
-  flush,
-}: { maxConcurrent?: number; flush?: string | boolean } = {}) {
-  mocks.mockSettingsList.mockResolvedValue([
-    { path: MAX_CONCURRENT_PATH, value: maxConcurrent },
-    ...(flush === undefined ? [] : [{ path: FLUSH_PATH, value: flush }]),
-  ]);
+function mockSettings({ maxConcurrent = 0 }: { maxConcurrent?: number } = {}) {
+  mocks.mockSettingsList.mockResolvedValue([{ path: MAX_CONCURRENT_PATH, value: maxConcurrent }]);
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -171,7 +176,7 @@ describe('AgentBackendSettings', () => {
     render(AgentBackendSettings);
 
     const input = await waitFor(() => screen.getByPlaceholderText('Auto') as HTMLInputElement);
-    expect(input.value).toBe('10');
+    await waitFor(() => expect(input.value).toBe('10'));
 
     await fireEvent.input(input, { target: { value: '-5' } });
     await fireEvent.blur(input);
@@ -191,181 +196,6 @@ describe('AgentBackendSettings', () => {
 
     await waitFor(() => {
       expect(screen.getByText(m.settings_agentBackend_loadError())).toBeTruthy();
-    });
-  });
-});
-
-describe('AgentBackendSettings — flush queued messages mode', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('defaults to "All Queued Messages" when the daemon has no value for the setting', async () => {
-    mockSettings({ flush: undefined });
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_all_label());
-  });
-
-  it('maps a legacy boolean true to "All Queued Messages"', async () => {
-    mockSettings({ flush: true });
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_all_label());
-  });
-
-  it('maps a legacy boolean false to "Off (FIFO)"', async () => {
-    mockSettings({ flush: false });
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_off_label());
-  });
-
-  it('renders "System Messages Only" when the daemon reports systemOnly', async () => {
-    mockSettings({ flush: 'systemOnly' });
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(
-      m.settings_agentBackend_flushQueuedMessages_systemOnly_label(),
-    );
-  });
-
-  it('renders "Off (FIFO)" when the daemon reports off', async () => {
-    mockSettings({ flush: 'off' });
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_off_label());
-  });
-
-  it('persists a selection of systemOnly via settings.update with the exact payload', async () => {
-    mockSettings({ flush: 'all' });
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: 'systemOnly' }]);
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    trigger.focus();
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-
-    await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-        { path: FLUSH_PATH, value: 'systemOnly' },
-      ]);
-    });
-  });
-
-  it('persists a selection of off via settings.update with the exact payload', async () => {
-    mockSettings({ flush: 'all' });
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: 'off' }]);
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    trigger.focus();
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-
-    await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'off' }]);
-    });
-  });
-
-  it('persists a selection of all via settings.update with the exact payload', async () => {
-    mockSettings({ flush: 'off' });
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: 'all' }]);
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    trigger.focus();
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-
-    await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'all' }]);
-    });
-  });
-
-  it('keeps the current value and shows an error when the update fails', async () => {
-    mockSettings({ flush: 'all' });
-    mocks.mockSettingsUpdate.mockRejectedValue(new Error('Network error'));
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    trigger.focus();
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-
-    await waitFor(() => {
-      expect(screen.getByText(m.settings_agentBackend_saveError())).toBeTruthy();
-      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
-        m.settings_agentBackend_flushQueuedMessages_all_label(),
-      );
-    });
-  });
-
-  it('keeps the current value and shows an error when the daemon does not apply the path', async () => {
-    mockSettings({ flush: 'all' });
-    mocks.mockSettingsUpdate.mockResolvedValue([]);
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    trigger.focus();
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-
-    await waitFor(() => {
-      expect(screen.getByText(m.settings_agentBackend_saveError())).toBeTruthy();
-      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
-        m.settings_agentBackend_flushQueuedMessages_all_label(),
-      );
-    });
-  });
-
-  it('commits the daemon-applied value rather than the requested one', async () => {
-    mockSettings({ flush: 'all' });
-    // Daemon acknowledges the path but reports it kept the setting at "all".
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: FLUSH_PATH, value: 'all' }]);
-
-    render(AgentBackendSettings);
-
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    trigger.focus();
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-
-    await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: FLUSH_PATH, value: 'off' }]);
-      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
-        m.settings_agentBackend_flushQueuedMessages_all_label(),
-      );
     });
   });
 });

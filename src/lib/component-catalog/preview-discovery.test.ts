@@ -35,6 +35,8 @@ describe('preview discovery', () => {
     expect(ids).toEqual(
       expect.arrayContaining([
         'button',
+        'diagram-controls-host',
+        'diagram-workbench',
         'mention-agent-avatar',
         'workspace-hover-card',
         'workspace-tab-strip-geometry',
@@ -43,15 +45,13 @@ describe('preview discovery', () => {
     expect(ids).toEqual([...ids].sort());
   });
 
-  it('loads a valid preview definition from every discovered file', async () => {
-    const ids = listPreviewIds();
-    const loadedIds: string[] = [];
-    for (const id of ids) {
-      loadedIds.push((await loadPreview(id))?.definition.id ?? '');
-    }
-
-    expect(loadedIds).toEqual(ids);
-  }, 60_000);
+  it.each(listPreviewIds())(
+    'loads a valid preview definition for %s',
+    async (id) => {
+      expect((await loadPreview(id))?.definition.id).toBe(id);
+    },
+    60_000,
+  );
 
   it('rejects duplicate filenames instead of silently replacing a preview', () => {
     expect(() =>

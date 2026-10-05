@@ -51,6 +51,7 @@ export const ACTION_KEY_ACTION_IDS = [
   'switch-window-layouts',
   'cycle-open-windows',
   'push-to-talk',
+  'close-tab',
   'none',
 ] as const;
 
@@ -72,11 +73,12 @@ export const CODEX_MIC_LINKED_SLOT = 5;
 /**
  * Per-model default mappings on ACT06–ACT12.
  *
- * CM2 (7 discrete keys): creation/navigation actions first, then row 4
- * (ACT10–ACT12, Settings-graphic keys 2/3/4) = push-to-talk, open-window
- * cycling, unread cycling; `cycle-workspace-agents`,
- * `cycle-in-progress-agents`, `cycle-attention-agents`, `stop-agent`, and
- * `toggle-sidebar-tabs` ship unassigned (all stay assignable).
+ * CM2 (7 discrete keys): creation/navigation actions first, closing the
+ * active tab (Cmd+W) on row 3 key 4 (ACT09), then row 4 (ACT10–ACT12,
+ * Settings-graphic keys 2/3/4) = push-to-talk, open-window cycling, unread
+ * cycling; `cycle-workspace-agents`, `cycle-in-progress-agents`,
+ * `cycle-attention-agents`, `stop-agent`, `toggle-sidebar-tabs`, and
+ * `switch-window-layouts` ship unassigned (all stay assignable).
  *
  * Codex Micro (6 printed caps): row 3 = lightning (ACT06), checkmark
  * (ACT07), x-mark (ACT08), branching (ACT09); row 4 = the linked 2U Mic
@@ -88,7 +90,7 @@ export const DEFAULT_ACTION_MAPPINGS: Record<HardwareDeviceModel, readonly Actio
     'new-workspace',
     'new-agent',
     'see-spec',
-    'switch-window-layouts',
+    'close-tab',
     'push-to-talk',
     'cycle-open-windows',
     'cycle-unread-agents',
@@ -163,12 +165,28 @@ export const PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActi
   'cycle-unread-agents',
 ];
 
+/**
+ * CM2 defaults before `close-tab` landed on slot 3 (ACT09) — that slot
+ * still carried `switch-window-layouts`. Used only by the one-shot
+ * hydration migration below.
+ */
+export const PRE_CLOSE_TAB_CM2_DEFAULT_ACTION_MAPPING: readonly ActionKeyActionId[] = [
+  'new-workspace',
+  'new-agent',
+  'see-spec',
+  'switch-window-layouts',
+  'push-to-talk',
+  'cycle-open-windows',
+  'cycle-unread-agents',
+];
+
 /** Every prior CM2 default generation the migration recognizes. */
 const PRIOR_CM2_DEFAULT_ACTION_MAPPINGS: readonly (readonly ActionKeyActionId[])[] = [
   LEGACY_CM2_DEFAULT_ACTION_MAPPING,
   PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
   PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
   PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING,
+  PRE_CLOSE_TAB_CM2_DEFAULT_ACTION_MAPPING,
 ];
 
 /**

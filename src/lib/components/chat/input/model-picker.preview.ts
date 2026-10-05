@@ -20,6 +20,7 @@ import {
   selectModelPickerCollapsedGroups,
 } from '$store/renderer/slices/model/model-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 import {
   hydrateDefaultProvider,
   setAvailableModels,
@@ -44,7 +45,7 @@ const models = [
 const selectLoadingStates = appStore.createSelector((state) => state.model.loadingState);
 let activeCleanup: (() => void) | undefined;
 
-function setupModels(populated: boolean) {
+function setupModels(populated: boolean, degraded = false, diagnostic?: string) {
   return () => {
     activeCleanup?.();
     const previousLoading = selectLoadingStates.select(appStore.state);
@@ -73,14 +74,28 @@ function setupModels(populated: boolean) {
         ? models.map((model) => ({ ...model, value: `${providerId}-${model.value}` }))
         : [];
       restoreModelHandlers.push(setupModelPickerPreviewHandler(providerId, rows));
-      appStore.dispatch(providerModelsLoaded(providerId, { models: rows }, epoch));
-      if (providerId === 'codex') appStore.dispatch(setAvailableModels(rows, providerId));
+      appStore.dispatch(
+        providerModelsLoaded(
+          providerId,
+          degraded || (diagnostic && providerId === 'codex')
+            ? {
+                models: [],
+                warning: diagnostic ?? 'Temporary model catalog failure',
+              }
+            : { models: rows },
+          epoch,
+        ),
+      );
+      if (providerId === 'codex')
+        appStore.dispatch(setAvailableModels(degraded ? [] : rows, providerId));
     }
+    const cancelCatalog = appStore.runSaga(modelReloadSaga);
     let disposed = false;
     const cleanup = () => {
       if (disposed) return;
       disposed = true;
       if (activeCleanup === cleanup) activeCleanup = undefined;
+      cancelCatalog();
       if (bridge && originalInvoke) bridge.invoke = originalInvoke;
       for (const restoreHandler of restoreModelHandlers) restoreHandler();
       appStore.dispatch(providerModelsCacheCleared());
@@ -149,6 +164,48 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         updateGlobalDefault: false,
       },
       setup: setupModels(true),
+    },
+    recovery: {
+      props: {
+        initialOpen: true,
+        selectedModel: 'codex-preview-balanced',
+        agentId: 'preview-recovery-agent',
+        showReasoning: true,
+        reasoningEffort: 'high',
+        onReasoningChange: () => true,
+        showDefaultOption: false,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+      },
+      setup: setupModels(true, true),
+    },
+    'adapter-error': {
+      props: {
+        initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
+        providerId: 'codex',
+        selectedModel: null,
+        showDefaultOption: false,
+        silentFallback: false,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupModels(
+        true,
+        false,
+        [
+          'codex adapter exited before reporting models: exit status: 254',
+          'npm error code ENOENT',
+          'npm error syscall open',
+          'npm error path /Users/clement/.npm/_npx/39d488c67d3fe4d0/package.json',
+          `npm error enoent Could not read package.json: ${'/Users/clement/workspaces/very-long-project-path/'.repeat(12)}package.json`,
+          'npm error enoent This is related to npm not being able to find a file.',
+          'npm error A complete log of this run can be found in: /Users/clement/.npm/_logs/2026-10-04T23_21_43_314Z-debug-0.log',
+        ].join('\n'),
+      ),
     },
     // Open the “Default model” trigger to reveal the empty state and Retry button.
     // No search is needed: both available providers return an empty model catalog.

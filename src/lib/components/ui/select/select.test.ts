@@ -161,4 +161,37 @@ describe('Select', () => {
     const longOption = screen.getByRole('option', { name: /very long cherry/ });
     expect(longOption.textContent).toContain('A very long cherry');
   });
+
+  it('retains a purpose-specific external name and description through a value change', async () => {
+    render(SelectHarness, { labelledby: 'fruit-name', describedby: 'fruit-description' });
+    const trigger = screen.getByRole('combobox', { name: 'Favorite fruit' });
+    expect(trigger.getAttribute('aria-describedby')).toBe('fruit-description');
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByTestId('select-value').textContent).toBe('banana'));
+    expect(screen.getByRole('combobox', { name: 'Favorite fruit' })).toBe(trigger);
+  });
+
+  it('does not replace a controlled selection when it disappears or becomes disabled', async () => {
+    const onchange = vi.fn();
+    const view = render(SelectHarness, { value: 'apple', onchange });
+    await view.rerender({ items: [{ value: 'banana', label: 'Banana' }] });
+    const trigger = screen.getByRole('combobox', { name: 'Choose fruit' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect(screen.getByTestId('select-value').textContent).toBe('apple');
+    expect(screen.getByRole('option', { name: 'Banana' }).getAttribute('aria-selected')).not.toBe(
+      'true',
+    );
+    expect(onchange).not.toHaveBeenCalled();
+    await view.rerender({ items: [{ value: 'apple', label: 'Apple', disabled: true }] });
+    const apple = screen.getByRole('option', { name: 'Apple' });
+    expect(apple.getAttribute('aria-selected')).toBe('true');
+    expect(apple.getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.pointerUp(apple, { button: 0, pointerType: 'mouse' });
+    expect(onchange).not.toHaveBeenCalled();
+    await view.rerender({ value: '' });
+    await waitFor(() => expect(apple.getAttribute('aria-selected')).not.toBe('true'));
+    expect(screen.getByTestId('select-value').textContent).toBe('');
+  });
 });

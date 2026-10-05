@@ -311,8 +311,11 @@ export async function handleWebAgentIdle(
       });
       return;
     }
-    if ((event.data.waitingOnPrMonitors?.length ?? 0) > 0) {
-      logger.debug('Skipping notification for agent waiting on PR monitors', {
+    if (
+      (event.data.waitingOnPrMonitors?.length ?? 0) > 0 ||
+      (event.data.waitingOnScriptMonitors?.length ?? 0) > 0
+    ) {
+      logger.debug('Skipping notification for agent waiting on monitors', {
         workspaceId,
         agentName: event.data.agentName,
       });

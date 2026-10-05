@@ -28,7 +28,7 @@ function createBaseDiagram(
       edges: [],
     },
     baseView: {
-      layout: getDefaultLayout(grammar),
+      layout: { ...getDefaultLayout(grammar), direction: undefined },
     },
   };
 }

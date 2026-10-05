@@ -22,6 +22,10 @@ test.beforeAll(async () => {
         { find: '$store', replacement: resolve(process.cwd(), 'src/store') },
         { find: '$features', replacement: resolve(process.cwd(), 'src/features') },
         { find: '$shared', replacement: resolve(process.cwd(), 'src/shared') },
+        {
+          find: /^\$app\/(state|navigation)$/,
+          replacement: resolve(process.cwd(), 'test/fixtures/titlebar-navigation.svelte.ts'),
+        },
         { find: '$app', replacement: resolve(process.cwd(), 'playwright/app-stubs') },
         {
           find: /^@fortawesome\/(?:fontawesome-common-types|fontawesome-svg-core|free-brands-svg-icons|free-regular-svg-icons|free-solid-svg-icons)$/,
@@ -107,44 +111,55 @@ async function changeZoom(page: Page, zoom: number) {
   }, zoom);
 }
 
-test('keeps the Mac sidebar hit target clear of traffic lights through live zoom and reset', async ({
+test('keeps the Mac Home hit target clear of traffic lights through live zoom and reset', async ({
   page,
 }) => {
   await emulatePlatform(page, 'macOS');
   await mountControls(page, 'dark', 1);
   const toggle = page.locator('[data-titlebar-spaces-control]');
   const wrapper = page.locator('.window-title-bar-wrapper');
-  const initialLeft = (await toggle.boundingBox())!.x;
+  const homeTab = page.locator('[data-home-tab]');
+  const initialLeft = (await homeTab.boundingBox())!.x;
   // Independent safe-area requirement, not derived from the production padding.
   expect(initialLeft).toBeGreaterThanOrEqual(88);
   for (const zoom of [0.8, 0.67, 0.5, 1, 1.25, 2, 1]) {
     await changeZoom(page, zoom);
-    await expect.poll(async () => (await toggle.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
+    // Measure the outer tab: Chromium rounds its 1px border at fractional zoom.
+    await expect.poll(async () => (await homeTab.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
+    expect((await toggle.boundingBox())!.x).toBeGreaterThanOrEqual(88);
     await expect.poll(async () => (await wrapper.boundingBox())!.height).toBeCloseTo(35, 0);
     const box = (await toggle.boundingBox())!;
-    // #2441 settles the default icon control on --control-height-medium (32px).
-    expect(box.width).toBeCloseTo(32, 0);
+    // Home uses a 48px tab with the standard 32px control height.
+    expect(box.width).toBeCloseTo(48, 0);
     expect(box.height).toBeCloseTo(32, 0);
-    await toggle.click();
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    await toggle.press('Enter');
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    for (const activation of ['click', 'Enter', 'Space']) {
+      await page.evaluate(async () => {
+        const { goto, page } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
+        await goto('/workspace/titlebar-test');
+        if (page.url.pathname !== '/workspace/titlebar-test')
+          throw new Error('Route did not reset');
+      });
+      await expect(toggle).not.toHaveAttribute('aria-current');
+      if (activation === 'click') await toggle.click();
+      else await toggle.press(activation);
+      await expect(toggle).toHaveAttribute('aria-current', 'page');
+    }
   }
 });
 
 for (const platform of ['Windows', 'Linux'] as const) {
-  test(`${platform} retains its existing sidebar placement`, async ({ page }) => {
+  test(`${platform} retains its existing Home placement`, async ({ page }) => {
     await emulatePlatform(page, platform);
     await mountControls(page, 'light', 1);
-    const toggle = page.locator('[data-titlebar-spaces-control]');
+    const homeTab = page.locator('[data-home-tab]');
     for (const zoom of [1, 0.5, 2, 1]) {
       await changeZoom(page, zoom);
-      await expect.poll(async () => (await toggle.boundingBox())!.x).toBeCloseTo(28, 0);
+      await expect.poll(async () => (await homeTab.boundingBox())!.x).toBeCloseTo(28, 0);
     }
   });
 }
 
-test('Mac sidebar activation preserves tab alignment, drag regions and narrow-window controls', async ({
+test('Mac Home navigation preserves sidebar state, drag regions and narrow-window controls', async ({
   page,
 }) => {
   await emulatePlatform(page, 'macOS');
@@ -153,8 +168,12 @@ test('Mac sidebar activation preserves tab alignment, drag regions and narrow-wi
   await mountControls(page, 'light', 0.67);
   const toggle = page.locator('[data-titlebar-spaces-control]');
   const tabs = page.locator('[data-titlebar-workspace-controls]');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    const { openPanel } =
+      await import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts');
+    store.dispatch(openPanel('all-workspaces'));
+  });
   await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(296, 0);
   await page.evaluate(async () => {
     const { store } = await import('/src/store/renderer/store.ts');
@@ -164,7 +183,13 @@ test('Mac sidebar activation preserves tab alignment, drag regions and narrow-wi
   });
   await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(328, 0);
   await toggle.press('Space');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle).toHaveAttribute('aria-current', 'page');
+  expect(
+    await page.evaluate(async () => {
+      const { store } = await import('/src/store/renderer/store.ts');
+      return store.state.sidebarNav.panelItem;
+    }),
+  ).toBe('all-workspaces');
   const toggleBox = (await toggle.boundingBox())!;
   await expect.poll(async () => (await tabs.boundingBox())!.x).toBeLessThan(200);
 
@@ -207,33 +232,34 @@ test('Mac sidebar activation preserves tab alignment, drag regions and narrow-wi
   ).toBe(true);
 });
 
-test('mounts accepted control geometry and shortcut tooltips', async ({ page }, testInfo) => {
-  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-    await page.emulateMedia({ reducedMotion });
-    for (const theme of ['light', 'dark'] as const) {
-      for (const zoom of [1, 2]) {
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  for (const theme of ['light', 'dark'] as const) {
+    for (const zoom of [1, 2]) {
+      test(`control geometry and shortcut tooltips: ${theme}, zoom ${zoom}, motion ${reducedMotion}`, async ({
+        page,
+      }, testInfo) => {
+        await page.emulateMedia({ reducedMotion });
         await mountControls(page, theme, zoom);
         const controls = [
           page.locator('[data-titlebar-spaces-control]'),
           page.locator('[data-workspace-repo-launcher] button'),
         ];
-        // Both resolve to 32px: the sidebar control via --control-height-medium (#2441),
-        // the repo launcher via its explicit size-8.
-        const size = 32;
-        for (const control of controls) {
+        // Home is a 48px tab; the workspace launcher remains 32px.
+        for (const [index, control] of controls.entries()) {
+          const width = index === 0 ? 48 : 32;
           // Startup zoom arrives asynchronously over IPC, then selector readables
           // schedule the titlebar's inverse-zoom layout update.
-          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(size, 0);
+          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(width, 0);
           const box = await control.boundingBox();
-          expect(box?.height).toBeCloseTo(size, 0);
+          expect(box?.height).toBeCloseTo(32, 0);
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
         const sidebarControl = controls[0];
-        await expect(sidebarControl).toHaveAttribute('aria-label', 'Toggle sidebar');
+        await expect(sidebarControl).toHaveAttribute('aria-label', 'Home');
         await expect(sidebarControl).not.toHaveAttribute('aria-haspopup');
         await expect(sidebarControl).not.toHaveAttribute('aria-expanded');
         await expect(sidebarControl).not.toHaveAttribute('aria-controls');
-        // #2441 reduces the launcher plus glyph to 14px; the sidebar glyph stays 16px.
+        // #2441 reduces the launcher plus glyph to 14px; the Home glyph stays 16px.
         const glyphs: Array<[Locator, number]> = [
           [page.locator('[data-titlebar-spaces-control] svg'), 16],
           [page.locator('[data-workspace-repo-launcher] svg'), 14],
@@ -246,8 +272,8 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
         }
         await sidebarControl.hover();
         await expect(page.locator('[data-tooltip-label]')).toBeVisible();
-        await expect(page.locator('[data-tooltip-label]')).toHaveText('Toggle sidebar');
-        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/(?:⌘|Ctrl\+)O/);
+        await expect(page.locator('[data-tooltip-label]')).toHaveText('Open Home');
+        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/(?:⌘|Ctrl\+)1/);
         await expect(page.locator('.sidebar-hover-card')).toHaveCount(0);
         if (reducedMotion === 'no-preference' && zoom === 1) {
           await testInfo.attach(theme + '-titlebar-controls', {
@@ -255,7 +281,43 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
             contentType: 'image/png',
           });
         }
-      }
+      });
     }
   }
+}
+
+test('modeled owner workspace creation remains withheld for unknown and guest callers', async ({
+  page,
+}) => {
+  await mountControls(page, 'light', 1);
+  const launcher = page.locator('[data-workspace-repo-launcher] button');
+  await expect(launcher).toBeVisible();
+  for (const role of ['unknown', 'guest'] as const) {
+    await page.evaluate(async (role) => {
+      const [{ store }, { principalContextChanged }, { admitLegacyPrincipal }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/principal/principal-slice.ts'),
+        import('/src/test/fixtures/principal-state.ts'),
+      ]);
+      if (role === 'unknown') store.dispatch(principalContextChanged(null));
+      else admitLegacyPrincipal('guest');
+    }, role);
+    await expect(launcher).toHaveCount(0);
+  }
 });
+
+import { checkFixturePrincipalLifecycle } from './fixture-principal-lifecycle';
+
+for (const borrowed of [true, false]) {
+  test(`principal lifecycle restores ${borrowed ? 'a borrowed guest' : 'a fresh store'}`, async ({
+    page,
+  }, info) => {
+    await checkFixturePrincipalLifecycle(
+      page,
+      info,
+      baseUrl,
+      'TitlebarWorkspaceControlsHarness',
+      borrowed,
+    );
+  });
+}

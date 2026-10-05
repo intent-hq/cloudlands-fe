@@ -34,6 +34,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
     selectAgentSession: Object.assign(() => makeReadable(session()), { select: () => session() }),
     selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
     selectAgentDetailHydrated: () => makeReadable(false),
+    selectAgentBackgroundPending: () => makeReadable(false),
     selectAgentPreview: Object.assign(() => makeReadable(null), { select: () => null }),
     // Mirrors the stored-session predicate: the raw waiting reason includes an
     // unresolved tool_use on the in-flight turn.
@@ -61,7 +62,9 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}) });
+  return createAppStoreMockModule({
+    state: () => ({ agentMutationUi: { byWorkspaceId: {} } }),
+  });
 });
 
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({

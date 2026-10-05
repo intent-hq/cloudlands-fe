@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -37,11 +38,15 @@ const mocks = vi.hoisted(() => {
   return {
     writable,
     readable,
+    principalState: {} as Record<string, unknown>,
     dispatch: vi.fn(),
     goto: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     hydrated$: writable(false),
+    selectedModel$: writable(''),
+    configuredModels$: writable<Record<string, string>>({}),
+    defaultReasoningEffort$: writable(''),
     compactFormState$: writable<unknown>(null),
     lastSubmittedAgent$: writable<unknown>(null),
     // Never resolves: provider availability stays unknown, so it is never
@@ -65,6 +70,7 @@ vi.mock('$store/renderer/store', async () => {
   );
   return createAppStoreMockModule({
     state: () => ({
+      ...mocks.principalState,
       providerCatalog,
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: 'auggie' },
@@ -72,7 +78,10 @@ vi.mock('$store/renderer/store', async () => {
       providerModels: {
         byProviderId: {
           auggie: {
-            models: [{ value: 'fable-5' }, { value: 'opus4.6' }, { value: 'user-picked-model' }],
+            models: ['fable-5', 'opus4.6', 'user-picked-model'].map((value) => ({
+              value,
+              effortLevels: ['low', 'high'],
+            })),
             fetchedAt: '2026-08-15T00:00:00.000Z',
           },
         },
@@ -86,6 +95,12 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
   selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
@@ -98,7 +113,9 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable([]),
   selectAvailableModelsProviderId: () => mocks.readable(''),
-  selectSelectedModel: () => mocks.readable(''),
+  selectSelectedModel: () => mocks.selectedModel$,
+  selectProviderModels: () => mocks.configuredModels$,
+  selectDefaultReasoningEffort: () => mocks.defaultReasoningEffort$,
   selectModelEffortLevels: { select: () => undefined },
 }));
 
@@ -112,7 +129,11 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
       mocks.readable([
         { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
       ]),
-    { select: vi.fn(() => []) },
+    {
+      select: vi.fn(() => [
+        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'fable-5' },
+      ]),
+    },
   ),
   selectCustomSpecialistsLoaded: () => mocks.readable(true),
   selectFileSpecialistsLoaded: () => mocks.readable(true),
@@ -276,6 +297,10 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
+import { getLocale, overwriteGetLocale } from '$shared/paraglide/runtime.js';
+import { m } from '$shared/paraglide/messages.js';
+
+const originalGetLocale = getLocale;
 import { warmImport } from '../../../../test/warm-import';
 
 const PREFILL_KEY = 'workspace-prefill';
@@ -324,14 +349,19 @@ const SAVED_AGENT_STATE: CompactWorkspaceInitializerFormState = {
 
 describe('initializer model-override persistence (monorepo#2678)', () => {
   beforeEach(() => {
+    mocks.principalState = withLegacyPrincipal({});
     vi.clearAllMocks();
     sessionStorage.clear();
     mocks.hydrated$.set(false);
+    mocks.selectedModel$.set('');
+    mocks.configuredModels$.set({});
+    mocks.defaultReasoningEffort$.set('');
     mocks.compactFormState$.set(null);
     mocks.lastSubmittedAgent$.set(null);
   });
 
   afterEach(() => {
+    overwriteGetLocale(originalGetLocale);
     cleanup();
     sessionStorage.clear();
   });
@@ -363,8 +393,47 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
 
     // …and be submitted as the initial agent's model.
     expect(submittedInitialAgent()).toMatchObject({
+      name: 'Coordinator',
+      nameExplicitlySet: false,
+      specialist: 'spec-writer',
+      rememberSpecialist: true,
       model: 'opus4.6',
       provider: 'auggie',
+    });
+  });
+
+  it.each([
+    ['ja', 'エージェント'],
+    ['es', 'Agente'],
+  ] as const)('omits the generated General name in %s', async (locale, label) => {
+    overwriteGetLocale(() => locale);
+    expect(m.workspace_fileChanges_agent_label()).toBe(label);
+    mockCreateSuccess();
+    mocks.compactFormState$.set({
+      ...SAVED_AGENT_STATE,
+      selectedSpecialist: null,
+      isTeamMode: false,
+    });
+    mocks.hydrated$.set(true);
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+        prompt: 'Build the thing',
+        autoCreate: true,
+      }),
+    );
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(submittedInitialAgent()).not.toHaveProperty('name');
+    expect(submittedInitialAgent()).toMatchObject({
+      nameExplicitlySet: false,
+      rememberSpecialist: true,
+      specialist: undefined,
+      provider: 'auggie',
+      model: 'opus4.6',
     });
   });
 
@@ -404,5 +473,139 @@ describe('initializer model-override persistence (monorepo#2678)', () => {
     await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
 
     expect(submittedInitialAgent()).toMatchObject({ model: 'user-picked-model' });
+  });
+
+  it.each(['high', ''])(
+    'keeps an effort-only edit (%j) and its model context over late hydration',
+    async (effort) => {
+      render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+      await fireEvent.click(
+        screen.getAllByTestId(effort ? 'pick-reasoning' : 'clear-reasoning')[0],
+      );
+      mocks.compactFormState$.set({ ...SAVED_AGENT_STATE, selectedReasoningEffort: 'low' });
+      mocks.hydrated$.set(true);
+      await waitFor(() => {
+        const form = mocks.dispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
+          .at(-1)?.payload[0];
+        expect(form).toMatchObject({
+          selectedReasoningEffort: effort,
+          selectedModel: undefined,
+          selectedProvider: 'auggie',
+          isTeamMode: false,
+        });
+      });
+      expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe(effort);
+    },
+  );
+
+  it('does not resurrect last-submitted effort when a newer saved form has no override', async () => {
+    mocks.compactFormState$.set({ ...SAVED_AGENT_STATE, selectedReasoningEffort: undefined });
+    mocks.lastSubmittedAgent$.set({ ...SAVED_AGENT_STATE, selectedReasoningEffort: 'high' });
+    mocks.hydrated$.set(true);
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await waitFor(() => expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe(''));
+  });
+
+  it('shows late Settings effort and leaves creation-time default resolution to the daemon', async () => {
+    mockCreateSuccess();
+    mocks.hydrated$.set(true);
+    const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    mocks.selectedModel$.set('fable-5');
+    mocks.configuredModels$.set({ auggie: 'fable-5' });
+    mocks.defaultReasoningEffort$.set('high');
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high'),
+    );
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+        prompt: 'Use the configured default',
+        autoCreate: true,
+      }),
+    );
+    await component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(submittedInitialAgent()).toMatchObject({
+      provider: 'auggie',
+      model: undefined,
+      prompt: 'Use the configured default',
+    });
+    expect(submittedInitialAgent()).not.toHaveProperty('reasoningEffort');
+    const persisted = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
+      .at(-1)?.payload[0];
+    expect(persisted.selectedReasoningEffort).toBeUndefined();
+  });
+
+  it('remembers the saved provider together with an explicit model and effort', async () => {
+    mocks.compactFormState$.set({
+      ...SAVED_AGENT_STATE,
+      selectedProvider: 'codex',
+      selectedModel: 'gpt-fixture',
+      selectedReasoningEffort: 'high',
+    });
+    mocks.hydrated$.set(true);
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-selected')[0].textContent).toBe('gpt-fixture'),
+    );
+    expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high');
+    const persisted = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
+      .at(-1)?.payload[0];
+    expect(persisted).toMatchObject({
+      selectedModel: 'gpt-fixture',
+      selectedProvider: 'codex',
+      selectedReasoningEffort: 'high',
+    });
+  });
+
+  it('retains an effort with its provider/model after create, close, and remount', async () => {
+    mockCreateSuccess();
+    mocks.compactFormState$.set({ ...SAVED_AGENT_STATE, selectedReasoningEffort: 'high' });
+    mocks.hydrated$.set(true);
+    sessionStorage.setItem(
+      PREFILL_KEY,
+      JSON.stringify({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+        prompt: 'Build the thing',
+        autoCreate: true,
+      }),
+    );
+    const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await view.component.applyPrefill();
+    await waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-created'));
+    expect(submittedInitialAgent()).toMatchObject({
+      provider: 'auggie',
+      model: 'opus4.6',
+      reasoningEffort: 'high',
+      prompt: 'Build the thing',
+    });
+    const persisted = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action.type === 'workspaceInitializer/setCompactFormState')
+      .at(-1)?.payload[0];
+    expect(persisted).toMatchObject({
+      selectedProvider: 'auggie',
+      selectedModel: 'opus4.6',
+      selectedReasoningEffort: 'high',
+    });
+    await view.rerender({ isExpanded: false });
+    await view.rerender({ isExpanded: true });
+    expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high');
+    view.unmount();
+    mocks.compactFormState$.set(JSON.parse(JSON.stringify(persisted)));
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await waitFor(() =>
+      expect(screen.getAllByTestId('picker-reasoning')[0].textContent).toBe('high'),
+    );
+    expect(screen.getAllByTestId('picker-selected')[0].textContent).toBe('opus4.6');
   });
 });

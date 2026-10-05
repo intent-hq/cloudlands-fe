@@ -189,39 +189,6 @@ describe('LiveGitClient reads (fake transport)', () => {
     expect(status?.files[1]).toEqual({ path: 'src/plain.ts', status: 'M', staged: false });
   });
 
-  it('prStatus forwards pr.status and maps prNumber/url/state', async () => {
-    mockedRequest.mockResolvedValueOnce({
-      prNumber: 42,
-      title: 'My PR',
-      url: 'https://example.test/pr/42',
-      state: 'open',
-      mergeable: true,
-      mergeableState: 'clean',
-      hasConflicts: false,
-      isDraft: false,
-      isMerged: false,
-      isClosed: false,
-      summary: 'ready',
-    });
-    const client = new LiveGitClient();
-
-    const result = await client.prStatus('ws-1');
-
-    expect(mockedRequest).toHaveBeenCalledWith('pr.status', { workspaceId: 'ws-1' });
-    expect(result).toEqual({
-      prNumber: 42,
-      url: 'https://example.test/pr/42',
-      state: 'open',
-    });
-  });
-
-  it('prStatus resolves null when the daemon errors (no active PR)', async () => {
-    mockedRequest.mockRejectedValueOnce(new Error('no active PR'));
-    const client = new LiveGitClient();
-
-    expect(await client.prStatus('ws-1')).toBeNull();
-  });
-
   it('prRefresh forwards pr.refresh and maps outcome/prNumber/prUrl/prStatus/pullRequests', async () => {
     const pullRequests = [
       {
@@ -255,6 +222,29 @@ describe('LiveGitClient reads (fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('pr.refresh', { workspaceId: 'ws-1' });
     expect(result).toEqual({
       outcome: 'linked',
+      prNumber: 300,
+      prUrl: 'https://example.test/pr/300',
+      prStatus: 'Open',
+      pullRequests,
+    });
+  });
+
+  it('prRefresh forwards automatic provenance and preserves cached linkage on admission skip', async () => {
+    const pullRequests = [{ number: 300, status: 'Open' }];
+    mockedRequest.mockResolvedValueOnce({
+      outcome: 'skipped',
+      prNumber: 300,
+      prUrl: 'https://example.test/pr/300',
+      prStatus: 'Open',
+      pullRequests,
+    });
+    const result = await new LiveGitClient().prRefresh('ws-1', { automatic: true });
+    expect(mockedRequest).toHaveBeenCalledWith('pr.refresh', {
+      workspaceId: 'ws-1',
+      automatic: true,
+    });
+    expect(result).toEqual({
+      outcome: 'skipped',
       prNumber: 300,
       prUrl: 'https://example.test/pr/300',
       prStatus: 'Open',
@@ -1585,5 +1575,32 @@ describe('LiveGitClient.subscribe event-family routing (fake transport)', () => 
       unsubscribe();
       await flush();
     });
+  });
+});
+
+describe('LiveGitClient local origin observation', () => {
+  afterEach(() => vi.clearAllMocks());
+  it('returns the untouched origin from the existing local read, without fetching', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      url: 'https://git.example.test:8443/Forge/Team/App.git',
+    });
+    expect(await new LiveGitClient().originUrl('/owned/checkout')).toBe(
+      'https://git.example.test:8443/Forge/Team/App.git',
+    );
+    expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('git.getRemoteUrl', {
+      repoPath: '/owned/checkout',
+      remoteName: 'origin',
+    });
+  });
+  it.each([{ url: null }, {}, { url: 4 }])(
+    'does not infer an origin from an empty/malformed reply: %j',
+    async (reply) => {
+      mockedRequest.mockResolvedValueOnce(reply);
+      expect(await new LiveGitClient().originUrl('/owned/checkout')).toBeNull();
+    },
+  );
+  it('does not turn a denied local read into a forge identity', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('Forbidden'));
+    expect(await new LiveGitClient().originUrl('/owned/checkout')).toBeNull();
   });
 });

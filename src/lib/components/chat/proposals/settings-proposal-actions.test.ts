@@ -3,12 +3,17 @@ import type { Proposal, ProposalActionDetail } from '$shared/types/proposal';
 import {
   initialState as backgroundAgentSettingsInitialState,
   setDefaultModel,
+  setDefaultReasoningEffort,
+  setTypeReasoningEffortOverrides,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 import {
   initialState as userPreferencesInitialState,
   setAgentFontStyle,
   setChatAuroraEnabled,
   setGithubLinkDefaultAction,
+  setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   setShellTransparencyEnabled,
   setVolume,
   setSoundPath,
@@ -38,7 +43,7 @@ import {
   providerCatalogReducer,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 
 const providerCatalog = providerCatalogReducer(
@@ -162,6 +167,33 @@ describe('settings-proposal-actions', () => {
     ]);
   });
 
+  it('applies and reverses independent quick-action effort proposals', async () => {
+    mocks.getState.mockReturnValue(
+      makeState({
+        backgroundAgentSettings: {
+          ...backgroundAgentSettingsInitialState,
+          defaultReasoningEffort: 'low',
+          typeReasoningEffortOverrides: { commit: 'high' },
+        },
+      }),
+    );
+    const shared = await applySettingsProposalWork(
+      makeDetail(makeProposal('quickActions.defaultReasoningEffort', 'medium')),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultReasoningEffort('medium'));
+    await undoSettingsProposalWork(shared.reverseChanges);
+    expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultReasoningEffort('low'));
+    const action = await applySettingsProposalWork(
+      makeDetail(makeProposal('quickActions.typeReasoningEffortOverrides', { fast: 'high' })),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(setTypeReasoningEffortOverrides({ fast: 'high' }));
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(action.reverseChanges);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setTypeReasoningEffortOverrides({ commit: 'high' }),
+    );
+  });
+
   it('applies normalized Open In editor order, persists it, and returns a reversible change', async () => {
     const setItem = vi.mocked(window.localStorage.setItem);
     setItem.mockClear();
@@ -256,6 +288,76 @@ describe('settings-proposal-actions', () => {
       },
     ]);
   });
+
+  it('applies and reverses the Multiplayer lab preference', async () => {
+    const result = await applySettingsProposalWork(
+      makeDetail(makeProposal('labs.multiplayer', true)),
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(true));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'labs.multiplayer',
+        value: false,
+        apply: { kind: 'redux-action', action: 'userPreferences/setLabsMultiplayerEnabled' },
+      },
+    ]);
+
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(result.reverseChanges);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsMultiplayerEnabled(false));
+  });
+
+  it('applies and reverses the GitLab lab preference', async () => {
+    const result = await applySettingsProposalWork(makeDetail(makeProposal('labs.gitlab', true)));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsGitLabEnabled(true));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'labs.gitlab',
+        value: false,
+        apply: { kind: 'redux-action', action: 'userPreferences/setLabsGitLabEnabled' },
+      },
+    ]);
+
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(result.reverseChanges);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(setLabsGitLabEnabled(false));
+  });
+
+  it('applies and reverses the remote agents lab preference', async () => {
+    const result = await applySettingsProposalWork(
+      makeDetail(makeProposal('labs.remoteAgents', true)),
+    );
+
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsRemoteAgentsEnabled(true));
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'labs.remoteAgents',
+        value: false,
+        apply: { kind: 'redux-action', action: 'userPreferences/setLabsRemoteAgentsEnabled' },
+      },
+    ]);
+
+    expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    mocks.dispatch.mockClear();
+    await undoSettingsProposalWork(result.reverseChanges);
+
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith(setLabsRemoteAgentsEnabled(false));
+  });
+
+  it.each(['true', 1, null, {}])(
+    'rejects invalid remote agent opt-in proposals: %j',
+    async (value) => {
+      await expect(
+        applySettingsProposalWork(makeDetail(makeProposal('labs.remoteAgents', value))),
+      ).rejects.toThrow('Invalid value');
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      expect(mocks.settingsUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   it('falls back to the proposal value when a numeric edit is invalid', async () => {
     const proposal = makeProposal('notifications.volume', 0.75);

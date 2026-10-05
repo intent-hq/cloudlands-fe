@@ -72,8 +72,8 @@
         {m.layout_agentMemoryBreakdown_refreshError_label()}
       </p>
     {/if}
-    <div class="flex justify-between gap-2 type-caption text-muted-foreground">
-      <span>
+    <div class="flex flex-wrap justify-between gap-x-4 gap-y-1 type-caption text-muted-foreground">
+      <span class="shrink-0 whitespace-nowrap">
         {m.layout_agentMemoryBreakdown_total_label()}
         <span class="tabular-nums text-foreground"
           >{usage.totalBytes === null ? '—' : formatMemory(usage.totalBytes)}</span

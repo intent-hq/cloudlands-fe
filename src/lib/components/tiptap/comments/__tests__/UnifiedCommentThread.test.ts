@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockProcessMarkdownToHTML = vi.hoisted(() =>
   vi.fn(async (content: string) => `<p>${content}</p>`),
@@ -24,8 +24,9 @@ vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({
   selectCommentById: { select: vi.fn(() => null) },
 }));
 
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { cleanup, render, fireEvent, waitFor } from '@testing-library/svelte';
 import UnifiedCommentThread from '../UnifiedCommentThread.svelte';
+import ResponsiveCommentThread from '../ResponsiveCommentThread.svelte';
 import TooltipWrapper from './TooltipWrapper.svelte';
 
 describe('UnifiedCommentThread', () => {
@@ -192,6 +193,42 @@ describe('UnifiedCommentThread', () => {
     expect(onShow).toHaveBeenCalled();
   });
 
+  it('closes without reactivating its clickable ancestor and preserves other comment clicks', async () => {
+    const onClose = vi.fn();
+    const onResolve = vi.fn();
+    const onAncestorClick = vi.fn();
+    const ancestor = document.createElement('div');
+    const target = document.createElement('div');
+    ancestor.append(target);
+    document.body.append(ancestor);
+    ancestor.addEventListener('click', onAncestorClick);
+    const { getByRole, findByText } = render(TooltipWrapper, {
+      target,
+      props: {
+        component: UnifiedCommentThread,
+        props: {
+          comment: mockComment,
+          replies: [],
+          isCollapsed: false,
+          onClose,
+          onResolve,
+        },
+      },
+    });
+
+    await fireEvent.click(await findByText(mockComment.content));
+    expect(onAncestorClick).toHaveBeenCalledTimes(1);
+    onAncestorClick.mockClear();
+
+    await fireEvent.click(getByRole('button', { name: 'Collapse' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onAncestorClick).not.toHaveBeenCalled();
+
+    await fireEvent.click(getByRole('button', { name: 'Resolve' }));
+    expect(onResolve).toHaveBeenCalledTimes(1);
+    expect(onAncestorClick).toHaveBeenCalledTimes(1);
+  });
+
   it('transitions smoothly between collapsed and expanded states', async () => {
     const { container, rerender } = render(TooltipWrapper, {
       props: {
@@ -236,4 +273,95 @@ describe('UnifiedCommentThread', () => {
     lineClamp = container.querySelector('.line-clamp-2');
     expect(lineClamp).toBeTruthy();
   });
+});
+
+describe('qualified comment author presentation', () => {
+  let previousResizeObserver: PropertyDescriptor | undefined;
+  const observers = new Set<AttributionResizeObserver>();
+
+  // Follow the local observer fixtures used by ScrollArea and panel ownership tests.
+  // These cases select a display mode explicitly; no resize geometry is synthesized.
+  class AttributionResizeObserver {
+    readonly targets = new Set<Element>();
+
+    constructor() {
+      observers.add(this);
+    }
+
+    observe(target: Element) {
+      this.targets.add(target);
+    }
+
+    unobserve(target: Element) {
+      this.targets.delete(target);
+    }
+
+    disconnect() {
+      this.targets.clear();
+      observers.delete(this);
+    }
+  }
+
+  beforeEach(() => {
+    previousResizeObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: AttributionResizeObserver,
+    });
+  });
+
+  afterEach(() => {
+    try {
+      cleanup();
+    } finally {
+      for (const observer of observers) observer.disconnect();
+      if (previousResizeObserver) {
+        Object.defineProperty(globalThis, 'ResizeObserver', previousResizeObserver);
+      } else {
+        Reflect.deleteProperty(globalThis, 'ResizeObserver');
+      }
+    }
+  });
+
+  it.each(['full', 'compact', 'icon'] as const)(
+    'distinguishes identical labels in %s mode without requiring a local principal',
+    async (displayMode) => {
+      const people = [
+        { provider: 'github', host: 'github.com', externalUserId: '42' },
+        { provider: 'gitlab', host: 'gitlab.com', externalUserId: '42' },
+        { provider: 'gitlab', host: 'other.example', externalUserId: '42' },
+        { provider: 'gitlab', host: 'other.example', externalUserId: '43' },
+      ];
+      const labels: string[] = [];
+      for (const [index, authorIdentity] of people.entries()) {
+        const comment = {
+          id: `c-${index}`,
+          author: 'same',
+          authorType: 'user',
+          authorIdentity,
+          content: 'body',
+          type: 'comment',
+          createdAt: '2026-01-01T00:00:00Z',
+        };
+        const view = render(TooltipWrapper, {
+          props: {
+            component: ResponsiveCommentThread,
+            props: { comment, displayMode, workspace: { id: 'ws' } },
+          },
+        });
+        await waitFor(() =>
+          expect(view.container.querySelector('[data-comment-author]')).not.toBeNull(),
+        );
+        const label =
+          view.container.querySelector('[data-comment-author]')?.getAttribute('aria-label') ?? '';
+        expect(label).toContain('same');
+        expect(label).toContain(authorIdentity.host);
+        expect(label).toContain(authorIdentity.externalUserId);
+        labels.push(label);
+        view.unmount();
+      }
+      expect(new Set(labels).size).toBe(4);
+    },
+  );
 });

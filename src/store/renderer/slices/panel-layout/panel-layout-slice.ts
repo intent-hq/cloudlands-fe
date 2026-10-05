@@ -5,8 +5,8 @@
  * Migrated from features/layout/panel-layout-manager.svelte.ts
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   addItems,
@@ -17,7 +17,7 @@ import {
   replaceItem,
   updateItem,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { BrowserTab } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeScript } from '../scripts/scripts-slice';
@@ -57,6 +57,8 @@ import {
   countHorizontalPanelColumns,
   getAutomaticPanelLayoutCanvasWidth,
   getFixedColumnPanelIds,
+  getHorizontalPanelColumns,
+  projectPaneVerticalMove,
   getPanelOrder,
   appendHorizontalPanelToLayout,
   insertFixedColumnInLayout,
@@ -313,6 +315,7 @@ export const openTab = createAction(
     timestamp?: number,
     allowDuplicate?: boolean,
     preserveFocus?: boolean,
+    insertAfterActiveTab?: boolean,
   ) => ({
     wsId,
     tab,
@@ -322,6 +325,7 @@ export const openTab = createAction(
     timestamp: timestamp ?? Date.now(),
     ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
     ...(preserveFocus === true ? { preserveFocus: true } : {}),
+    ...(insertAfterActiveTab === true ? { insertAfterActiveTab: true } : {}),
   }),
 );
 
@@ -384,6 +388,8 @@ export const openTabInAdjacentOrSplit = createAction(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
     options?: {
+      /** Automatic restore reconciliation, never a manual selection. */
+      origin?: 'layout-restore';
       animated?: boolean;
       force?: boolean;
       allowDuplicate?: boolean;
@@ -395,6 +401,7 @@ export const openTabInAdjacentOrSplit = createAction(
     wsId,
     tab,
     sourcePanelId,
+    ...(options?.origin === undefined ? {} : { origin: options.origin }),
     animated: options?.animated ?? false,
     force: options?.force ?? false,
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
@@ -715,6 +722,17 @@ export const setPanelColumnCount = createAction(
     timestamp: timestamp ?? Date.now(),
     availableCanvasWidth,
   }),
+);
+
+export const moveActivePaneVertically = createAction(
+  'panelLayout/moveActivePaneVertically',
+  (
+    wsId: string,
+    panelId: string,
+    direction: 'up' | 'down',
+    newPanelId = generatePanelId(),
+    timestamp = Date.now(),
+  ) => ({ wsId, panelId, direction, newPanelId, timestamp }),
 );
 
 export const movePanel = createAction(
@@ -1344,7 +1362,7 @@ function insertFixedColumn(
   const panelIds = getFixedColumnPanelIds(workspace);
   if (
     !panelIds ||
-    panelIds.length >= 4 ||
+    workspace.columnCount >= 4 ||
     !panelIds.includes(targetPanelId) ||
     workspace.panels[newPanel.id]
   ) {
@@ -1358,7 +1376,7 @@ function insertFixedColumn(
     workspace.canvasWidth,
     requestedPanelWidth,
   );
-  const columnCount = panelIds.length + 1;
+  const columnCount = workspace.columnCount + 1;
   if (!root || !isPanelColumnCount(columnCount)) return null;
   return {
     ...workspace,
@@ -1368,7 +1386,7 @@ function insertFixedColumn(
     columnCount,
     columnCountInitialized: true,
     canvasWidth:
-      (workspace.canvasWidth ?? getAutomaticPanelCanvasWidth(panelIds.length, 'content')) +
+      (workspace.canvasWidth ?? getAutomaticPanelCanvasWidth(workspace.columnCount, 'content')) +
       requestedPanelWidth +
       PANEL_SPLIT_GUTTER_WIDTH,
     canvasWidthSource:
@@ -1400,6 +1418,7 @@ function moveTabIntoFixedColumn(
     root: projection.root,
     panels: projection.panels,
     focusedPanelId: projection.destinationPanelId,
+    pendingFocusTabId: tabId,
     columnCount: isPanelColumnCount(columnCount) ? columnCount : saved.columnCount,
     columnCountInitialized: isPanelColumnCount(columnCount) ? true : saved.columnCountInitialized,
     canvasWidth: projection.canvasWidth ?? null,
@@ -1427,10 +1446,11 @@ function reconcileWorkspacePanelColumns(
   const restored = restoreExpandedWorkspaceLayout(workspace);
   const originalOrder = getPanelOrder(restored.root).filter((panelId) => restored.panels[panelId]);
   if (originalOrder.length === 0) return { ...restored, columnCount: count };
+  const originalColumns = getHorizontalPanelColumns(restored.root);
   const hasLegacyPin = Object.values(restored.panels).some((panel) => 'pinned' in panel);
   if (
-    originalOrder.length === count &&
-    isFixedColumnRoot(restored.root, originalOrder) &&
+    originalColumns.length === count &&
+    getFixedColumnPanelIds({ ...restored, columnCount: count }) &&
     !hasLegacyPin
   ) {
     return restored.columnCount === count ? restored : { ...restored, columnCount: count };
@@ -1440,8 +1460,9 @@ function reconcileWorkspacePanelColumns(
   const panels = Object.fromEntries(
     Object.entries(next.panels).map(([panelId, panel]) => [panelId, stripLegacyPanelPin(panel)]),
   );
-  const panelIds = originalOrder.slice(0, count);
-  const removedPanelIds = originalOrder.slice(count);
+  const columns = originalColumns.slice(0, count);
+  const panelIds = columns.flatMap(getPanelOrder);
+  const removedPanelIds = originalColumns.slice(count).flatMap(getPanelOrder);
   const survivingRightmostId = panelIds.at(-1);
 
   if (survivingRightmostId && removedPanelIds.length > 0) {
@@ -1473,16 +1494,17 @@ function reconcileWorkspacePanelColumns(
     for (const panelId of removedPanelIds) delete panels[panelId];
   }
 
-  while (panelIds.length < count) {
-    const panelId = newPanelIds[panelIds.length - originalOrder.length];
+  while (columns.length < count) {
+    const panelId = newPanelIds[columns.length - originalColumns.length];
     if (!panelId) break;
     panelIds.push(panelId);
+    columns.push({ type: 'panel', panelId });
     panels[panelId] = { id: panelId, tabs: [], activeTabId: null, pristine: true };
   }
 
   const removedSet = new Set(removedPanelIds);
-  const previousColumnCount = originalOrder.length;
-  const nextColumnCount = panelIds.length;
+  const previousColumnCount = originalColumns.length;
+  const nextColumnCount = columns.length;
   const addedColumns = nextColumnCount > previousColumnCount;
   const fitsAvailableCanvas =
     addedColumns &&
@@ -1506,7 +1528,17 @@ function reconcileWorkspacePanelColumns(
       PANEL_SPLIT_GUTTER_WIDTH * Math.max(0, nextColumnCount - 1)
     );
   })();
-  const root = isFixedColumnRoot(next.root, panelIds) ? next.root : createFixedColumnRoot(panelIds);
+  const root: PanelLayoutNode =
+    columns.length === originalColumns.length
+      ? next.root
+      : columns.length === 1
+        ? columns[0]
+        : {
+            type: 'split',
+            direction: 'horizontal',
+            children: columns,
+            sizes: columns.map(() => 100 / columns.length),
+          };
 
   return {
     ...next,
@@ -2313,16 +2345,24 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
 
   const panel = ws.panels[targetPanelId];
 
-  // Create new tab
+  // Source-context navigation keeps the opener immediately before the new pane.
+  const openerIndex = payload.insertAfterActiveTab
+    ? panel.tabs.findIndex((candidate) => candidate.id === panel.activeTabId)
+    : -1;
+  const insertIndex = openerIndex >= 0 ? openerIndex + 1 : panel.tabs.length;
   ws = saveToHistory(ws, timestamp);
-  const newTab: PanelTab = { ...tab, id: newTabId };
+  const newTab: PanelTab = {
+    ...tab,
+    id: newTabId,
+    ...(openerIndex >= 0 ? { openerTabId: panel.tabs[openerIndex].id } : {}),
+  };
   ws = {
     ...ws,
     panels: {
       ...ws.panels,
       [targetPanelId]: {
         ...panel,
-        tabs: [...panel.tabs, newTab],
+        tabs: [...panel.tabs.slice(0, insertIndex), newTab, ...panel.tabs.slice(insertIndex)],
         activeTabId: newTabId,
         pristine: false,
       },
@@ -2381,7 +2421,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
   }
 
   const visiblePanelIds = getPanelOrder(ws.root).filter((panelId) => ws.panels[panelId]);
-  if (visiblePanelIds.length >= 4) {
+  if (countHorizontalPanelColumns(ws.root) >= 4) {
     return selfDispatch(
       state,
       openTabInAdjacentOrSplit(
@@ -2465,7 +2505,7 @@ panelLayoutReducer.with(openTabInNewRootColumn, (state, { payload }) => {
     existingCanvasWidth,
     newPanelWidth,
   );
-  const nextColumnCount = visiblePanelIds.length + 1;
+  const nextColumnCount = countHorizontalPanelColumns(ws.root) + 1;
   ws = {
     ...ws,
     root: appendedRoot,
@@ -2533,7 +2573,10 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
   if (panel.activeTabId === tabId) {
     if (newTabs.length > 0) {
       const newIndex = Math.min(tabIndex, newTabs.length - 1);
-      newActiveTabId = newTabs[newIndex].id;
+      // Only source-context opens opt into returning to their opener. If it
+      // was closed or moved to another panel, retain the ordinary close fallback.
+      const opener = newTabs.find((candidate) => candidate.id === closedTab.openerTabId);
+      newActiveTabId = opener?.id ?? newTabs[newIndex].id;
     } else {
       newActiveTabId = null;
     }
@@ -2614,14 +2657,32 @@ panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
       state,
       closeTab(wsId, activeTab.id, panelId, timestamp, { preservePanel: true }),
     );
-    if (panel.tabs.length > 1 || ws.columnCount <= 1) return stateAfterTabClose;
+    if (panel.tabs.length > 1 || Object.keys(ws.panels).length <= 1) return stateAfterTabClose;
     closedTabIds = [activeTab.id];
-  } else if (ws.columnCount <= 1) {
+  } else if (Object.keys(ws.panels).length <= 1) {
     return state;
   }
 
   const wsAfterTabClose = getWorkspaceState(stateAfterTabClose, wsId);
   const panelIds = getPanelOrder(wsAfterTabClose.root).filter((id) => wsAfterTabClose.panels[id]);
+  if (!isFixedColumnRoot(wsAfterTabClose.root, panelIds) && panelIds.length > 1) {
+    const closedWorkspace = closePanelHelper(wsAfterTabClose, panelId, timestamp);
+    return setWorkspaceState(
+      stateAfterTabClose,
+      wsId,
+      markEmptiedByUserClose(
+        recordClosedPanelColumn(
+          ws,
+          closedWorkspace,
+          columnHistoryId,
+          panelId,
+          timestamp,
+          closedTabIds,
+        ),
+      ),
+    );
+  }
+
   if (
     panelIds.length !== wsAfterTabClose.columnCount ||
     !isFixedColumnRoot(wsAfterTabClose.root, panelIds) ||
@@ -3237,6 +3298,7 @@ panelLayoutReducer.with(moveTabToPanel, (state, { payload }) => {
       [toPanelId]: {
         ...toPanel,
         tabs: newToTabs,
+        pristine: false,
         activeTabId: tab.id,
         attentionTabIds: toPanel.attentionTabIds?.filter((id) => id !== tab.id),
       },
@@ -3712,7 +3774,7 @@ panelLayoutReducer.with(splitPanel, (state, { payload }) => {
   const panelIds = getFixedColumnPanelIds(current);
   if (
     !panelIds ||
-    panelIds.length >= 4 ||
+    current.columnCount >= 4 ||
     !panelIds.includes(panelId) ||
     current.panels[newPanelId]
   ) {
@@ -3758,6 +3820,29 @@ panelLayoutReducer.with(openBlankWorkingPanel, (state, { payload }) => {
     pendingPanelReveal: createPanelRevealRequest(newPanelId, null, newPanelId),
   });
 });
+panelLayoutReducer.with(moveActivePaneVertically, (state, { payload }) => {
+  const { wsId, panelId, direction, newPanelId, timestamp } = payload;
+  const original = getWorkspaceState(state, wsId);
+  const workspace = restoreExpandedWorkspaceLayout(original);
+  const projection = projectPaneVerticalMove(workspace, panelId, direction, newPanelId);
+  if (!projection?.changed) return state;
+  const destination = projection.destinationPanelId;
+  const tabId = projection.panels[destination].activeTabId;
+  const next = {
+    ...saveToHistory(workspace, timestamp),
+    root: projection.root,
+    panels: projection.panels,
+    focusedPanelId: destination,
+    pendingFocusTabId: tabId,
+    pendingPanelReveal: createPanelRevealRequest(destination, tabId, newPanelId),
+  };
+  return setWorkspaceState(
+    state,
+    wsId,
+    tabId ? addToFocusHistory(next, destination, tabId, timestamp) : next,
+  );
+});
+
 // --- Close Panel ---
 panelLayoutReducer.with(closePanel, (state, { payload }) => {
   const { wsId, panelId, timestamp, columnHistoryId } = payload;
@@ -4364,14 +4449,12 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
   }
 
   const panelOrder = getPanelOrder(ws.root).filter((panelId) => ws.panels[panelId]);
-  const sourceIndex = effectiveSourcePanelId ? panelOrder.indexOf(effectiveSourcePanelId) : -1;
-  const rightNeighborPanelId = sourceIndex >= 0 ? panelOrder[sourceIndex + 1] : undefined;
-  if (
-    !rightNeighborPanelId &&
-    sourceIndex >= 0 &&
-    panelOrder.length < 4 &&
-    effectiveSourcePanelId
-  ) {
+  const columns = getHorizontalPanelColumns(ws.root).map(getPanelOrder);
+  const sourceIndex = effectiveSourcePanelId
+    ? columns.findIndex((column) => column.includes(effectiveSourcePanelId))
+    : -1;
+  const rightNeighborPanelId = sourceIndex >= 0 ? columns[sourceIndex + 1]?.[0] : undefined;
+  if (!rightNeighborPanelId && sourceIndex >= 0 && columns.length < 4 && effectiveSourcePanelId) {
     const saved = saveToHistory(ws, timestamp);
     const inserted = insertFixedColumn(
       saved,
@@ -4437,10 +4520,14 @@ panelLayoutReducer.with(moveTabToSplitLevel, (state, { payload }) => {
   if (!panelIds) return state;
   let targetPanelId: string | undefined;
   if (splitPath.length === 0) {
-    targetPanelId = position === 'before' ? panelIds[0] : panelIds.at(-1);
+    const targets =
+      workspace.panels[fromPanelId]?.tabs.length === 1
+        ? panelIds.filter((id) => id !== fromPanelId)
+        : panelIds;
+    targetPanelId = position === 'before' ? targets[0] : targets.at(-1);
   } else if (splitPath.length === 1 && workspace.root.type === 'split') {
     const target = workspace.root.children[splitPath[0]];
-    targetPanelId = target?.type === 'panel' ? target.panelId : undefined;
+    targetPanelId = target ? getPanelOrder(target)[0] : undefined;
   }
   if (!targetPanelId) return state;
   const moved = moveTabIntoFixedColumn(

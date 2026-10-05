@@ -131,7 +131,10 @@ test('uses the workspace row medium corner radius', async ({ mount, page }) => {
   expect(radii.card).toBe(radii.workspaceRow);
 });
 
-test('uses an even vertical rhythm across the header metadata', async ({ mount, page }) => {
+test('uses a tighter title-to-repo gap than the remaining header metadata', async ({
+  mount,
+  page,
+}) => {
   await page.setViewportSize({ width: 720, height: 640 });
   const preview = await mount(WorkspaceHoverCardPreview, {
     props: fixture('working'),
@@ -148,9 +151,8 @@ test('uses an even vertical rhythm across the header metadata', async ({ mount, 
   expect(summaryBox).not.toBeNull();
   const titleToRepo = repoBox!.y - (titleBox!.y + titleBox!.height);
   const repoToSummary = summaryBox!.y - (repoBox!.y + repoBox!.height);
-  expect(titleToRepo).toBeCloseTo(4, 0);
+  expect(titleToRepo).toBeCloseTo(2, 0);
   expect(repoToSummary).toBeCloseTo(4, 0);
-  expect(Math.abs(titleToRepo - repoToSummary)).toBeLessThanOrEqual(1);
 });
 
 test('places the status indicator after its right-aligned label', async ({ mount, page }) => {

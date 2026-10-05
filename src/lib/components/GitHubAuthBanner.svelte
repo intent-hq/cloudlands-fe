@@ -240,10 +240,10 @@
       <Button
         type="button"
         variant="plain"
-        class="h-auto! w-full px-2! py-2! flex items-center gap-2 hover:bg-muted/50 transition-colors cursor-pointer text-left"
+        class="h-auto! w-full px-2! py-2! flex items-start gap-2 hover:bg-muted/50 transition-colors cursor-pointer text-left"
         onclick={handleConnect}
       >
-        <div class="flex items-center justify-center">
+        <div class="first-line-icon text-xs">
           <GitHubIcon size={16} class="text-ghost" />
         </div>
         <div class="flex-1 min-w-0">

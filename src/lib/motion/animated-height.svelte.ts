@@ -1,8 +1,12 @@
+import {
+  scheduleLayoutRead,
+  scheduleLayoutWrite,
+  type CancelLayoutTask,
+} from '$lib/utils/layout-phases';
 import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
 import './svelte-motion-match-media-fallback';
-import { Spring } from 'svelte/motion';
 import type { Action } from 'svelte/action';
-import { spring, type SpringTierName } from './springs';
+import { Spring, type SpringTierName } from './springs';
 
 interface AnimatedHeightOptions {
   open?: boolean;
@@ -37,32 +41,75 @@ function measuredHeight(node: HTMLElement): number {
   );
 }
 
-/** Animates a wrapper's real height while preserving velocity across retargets. */
+/** Eases a wrapper's real height from its current position without overshoot. */
 export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
   node,
   parameter = true,
 ) => {
   let { open } = resolveOptions(parameter);
   const { tier } = resolveOptions(parameter);
-  const initialHeight = measuredHeight(node);
-  const height = new Spring(open ? initialHeight : 0, spring[tier]);
+  // Initially open content retains its natural layout until the first read phase.
+  // Historical mounts snap to that measurement rather than animating from zero.
+  const height = new Spring(0, tier);
+  let initialized = !open;
+  let writtenHeight: number | undefined;
+  let destroyed = false;
+  let cancelRead: CancelLayoutTask | undefined;
+  let cancelTarget: CancelLayoutTask | undefined;
+  let cancelStyle: CancelLayoutTask | undefined;
   const previousOverflow = node.style.overflow;
   const previousHeight = node.style.height;
-  node.style.overflow = 'clip';
 
+  const writeHeight = () => {
+    node.style.overflow = 'clip';
+    writtenHeight = height.current;
+    node.style.height = `${writtenHeight}px`;
+  };
   const disposeEffect = $effect.root(() => {
     $effect(() => {
-      node.style.height = `${height.current}px`;
+      // Subscribe here; the write consumes the latest value after all reads.
+      const current = height.current;
+      if (!initialized || destroyed || current === writtenHeight) return;
+      cancelStyle?.();
+      cancelStyle = scheduleLayoutWrite(() => {
+        cancelStyle = undefined;
+        if (!destroyed) writeHeight();
+      });
     });
   });
 
   const retarget = () => {
-    void height.set(open ? measuredHeight(node) : 0, { instant: prefersReducedMotion() });
+    if (destroyed) return;
+    cancelRead?.();
+    cancelTarget?.();
+    const setTarget = (target: number) => {
+      cancelTarget = scheduleLayoutWrite(() => {
+        cancelTarget = undefined;
+        if (destroyed) return;
+        void height.set(target, { instant: !initialized || prefersReducedMotion() });
+        initialized = true;
+        cancelStyle?.();
+        writeHeight();
+      });
+    };
+    if (open) {
+      cancelRead = scheduleLayoutRead(() => {
+        cancelRead = undefined;
+        setTarget(measuredHeight(node));
+      });
+    } else {
+      setTarget(0);
+    }
   };
   const handleMotionPreference = () => {
-    if (prefersReducedMotion()) void height.set(height.target, { instant: true });
+    if (prefersReducedMotion()) retarget();
   };
-  const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(retarget);
+  const observer =
+    typeof ResizeObserver === 'undefined'
+      ? undefined
+      : new ResizeObserver(() => {
+          if (open) retarget();
+        });
   let observedContent: Element | null = null;
   const observeContent = () => {
     const targets = node.querySelectorAll<HTMLElement>('[data-animated-height-target]');
@@ -77,11 +124,13 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
     typeof MutationObserver === 'undefined'
       ? undefined
       : new MutationObserver(() => {
+          if (destroyed) return;
           observeContent();
-          retarget();
+          if (open) retarget();
         });
   mutationObserver?.observe(node, { childList: true, subtree: true });
   const stopMotionListener = onReducedMotionChange(handleMotionPreference);
+  retarget();
 
   return {
     update(nextParameter = true) {
@@ -89,6 +138,11 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
       retarget();
     },
     destroy() {
+      destroyed = true;
+      cancelRead?.();
+      cancelTarget?.();
+      cancelStyle?.();
+      void height.set(height.current, { instant: true });
       observer?.disconnect();
       mutationObserver?.disconnect();
       stopMotionListener();

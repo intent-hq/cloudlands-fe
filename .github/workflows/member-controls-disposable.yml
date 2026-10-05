@@ -1,0 +1,49 @@
+name: Member controls disposable verification (disabled)
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source-reviewed commit (new candidate; no old approval)
+        required: true
+      grant_sha256:
+        description: Hash of separately reviewed grant JSON (no source self-reference)
+        required: true
+      grant_json:
+        description: Separate authorization JSON, no secrets; must bind source_sha
+        required: true
+permissions:
+  contents: read
+jobs:
+  member-controls:
+    # This preparation has ZERO hosted execution authorization. A separate
+    # reviewed disposition must materialize the grant and enable this job.
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+          submodules: false
+      - name: One setup and isolated workload (80 minutes including UI)
+        timeout-minutes: 80
+        env:
+          REVIEWED_SOURCE: ${{ inputs.source_sha }}
+          REVIEWED_GRANT_SHA: ${{ inputs.grant_sha256 }}
+          REVIEWED_GRANT_JSON: ${{ inputs.grant_json }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          grant_file="$RUNNER_TEMP/member-controls-grant.json"
+          node --input-type=module -e 'import {writeFileSync} from "node:fs"; const text=process.env.REVIEWED_GRANT_JSON; if(Buffer.byteLength(text)>8192) throw new Error("grant bound"); writeFileSync(process.env.RUNNER_TEMP+"/member-controls-grant.json",text,{flag:"wx",mode:0o600});'
+          trap 'rm -f -- "$grant_file"' EXIT
+          bash tests/member-controls/hosted.sh "$REVIEWED_SOURCE" "$grant_file" "$REVIEWED_GRANT_SHA"
+      - name: Preserve sanitized failure or success evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: member-controls-${{ github.run_id }}-${{ github.run_attempt }}
+          path: member-controls-evidence
+          retention-days: 7
+          if-no-files-found: error

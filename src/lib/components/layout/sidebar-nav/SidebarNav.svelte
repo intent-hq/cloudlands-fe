@@ -1,82 +1,79 @@
 <script lang="ts">
-  /** SidebarNav - Compact global navigation for the window title bar. */
-
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { m } from '$shared/paraglide/messages.js';
-  import type { SidebarNavItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
-  import { isCombinedWorkspacePanelItem } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import { Button } from '$lib/components/ui/button';
-  import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
+  import Fa from 'svelte-fa';
+  import { faHouse } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
+  import WorkspaceTabFlare from '../WorkspaceTabFlare.svelte';
   import {
-    TITLEBAR_NAVIGATION_CONTROL_CLASS,
-    TITLEBAR_NAVIGATION_GLYPH_CLASS,
-  } from '../titlebar-navigation';
+    WORKSPACE_TAB_CORNER_RADIUS_PX,
+    WORKSPACE_TAB_MOTION_DURATION_MS,
+    WORKSPACE_TAB_MOTION_EASING,
+  } from '../titlebar-geometry';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import TitlebarNavigationTooltip from '../TitlebarNavigationTooltip.svelte';
+  import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
-  import {
-    selectPanelItem,
-    selectOnboardingActive,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
-  import { togglePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { store as appStore } from '$store/renderer/store';
-  const panelItem$ = selectPanelItem();
   const onboardingActive$ = selectOnboardingActive();
-
-  const navItems: { id: SidebarNavItem }[] = [{ id: 'all-workspaces' }];
-
-  function isItemActive(id: SidebarNavItem): boolean {
-    // Highlight the workspace button for either half of the combined panel.
-    if ($panelItem$ === id) return true;
-    if (
-      id === 'all-workspaces' &&
-      $panelItem$ !== null &&
-      isCombinedWorkspacePanelItem($panelItem$)
-    )
-      return true;
-    return false;
-  }
-
-  function handleClick(id: SidebarNavItem) {
-    // Primary activation toggles the persistent combined Spaces + Chief panel.
-    appStore.dispatch(togglePanel(id));
-  }
+  const tabShortcut$ = effectiveShortcutReadable('navigation.go-to-tab');
+  const homeShortcut = $derived($tabShortcut$.replace(/([1-8])-9$/, '1'));
+  const isHome = $derived(page.url.pathname === '/');
 </script>
 
 {#if !$onboardingActive$}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <nav
-    class="group/nav sidebar-nav flex h-8 shrink-0 items-center gap-0.5"
+    class="sidebar-nav flex shrink-0 items-end"
     aria-label={m.layout_sidebarNav_ariaLabel()}
     data-top-navigation
   >
-    <div class="flex items-center gap-0.5">
-      {#each navItems as item (item.id)}
-        {@const active = isItemActive(item.id)}
-        <TitlebarNavigationTooltip
-          label={m.layout_titleBar_toggleSidebar_ariaLabel()}
-          shortcut="mod+o"
+    <div
+      class={cn(
+        'home-tab relative flex h-(--control-height-medium) w-12 shrink-0 items-center border transition-[background-color,border-color] duration-spring-moderate motion-reduce:transition-none',
+        isHome
+          ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
+          : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
+      )}
+      data-home-tab
+      data-active={isHome}
+      style:border-radius={isHome
+        ? `${WORKSPACE_TAB_CORNER_RADIUS_PX}px ${WORKSPACE_TAB_CORNER_RADIUS_PX}px 0 0`
+        : `${WORKSPACE_TAB_CORNER_RADIUS_PX}px`}
+      style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
+      style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
+    >
+      {#if isHome}
+        <div
+          class="pointer-events-none absolute -bottom-0.5 inset-x-0 z-[60] h-1 bg-sidebar"
+          data-home-tab-border-mask
+          aria-hidden="true"
+        ></div>
+      {/if}
+      <WorkspaceTabFlare
+        side="leading"
+        visible={isHome}
+        durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
+      />
+      <WorkspaceTabFlare
+        side="trailing"
+        visible={isHome}
+        durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
+      />
+      <TitlebarNavigationTooltip label={m.home_navigation_description()} shortcut={homeShortcut}>
+        <Button
+          variant="plain"
+          size="icon"
+          class="sidebar-nav-btn flex h-(--control-height-medium) w-12 cursor-pointer items-center justify-center rounded-[inherit] focus-visible:text-foreground"
+          onclick={() => goto('/')}
+          aria-label={m.home_navigation_label()}
+          aria-current={isHome ? 'page' : undefined}
+          data-nav-item="home"
+          data-titlebar-spaces-control
         >
-          <Button
-            variant="ghost-light"
-            size="icon"
-            iconOnly
-            class={cn('sidebar-nav-btn relative', TITLEBAR_NAVIGATION_CONTROL_CLASS)}
-            onclick={() => handleClick(item.id)}
-            aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}
-            aria-pressed={active}
-            data-nav-item={item.id}
-            data-titlebar-spaces-control
-          >
-            <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
-              <IntentNavigationIcon
-                name="dandelion"
-                size={16}
-                class="pointer-events-none size-4!"
-              />
-            </span>
-          </Button>
-        </TitlebarNavigationTooltip>
-      {/each}
+          <Fa icon={faHouse} class="pointer-events-none size-4" />
+        </Button>
+      </TitlebarNavigationTooltip>
     </div>
   </nav>
 {/if}

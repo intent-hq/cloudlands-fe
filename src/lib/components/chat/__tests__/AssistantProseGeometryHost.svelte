@@ -203,7 +203,7 @@
         <StreamingMessageContent content={markdown} isStreaming />
       </div>
       <div data-testid="thinking-row">
-        <ThinkingBlock content="# Inspecting response geometry\n\nReasoning body" />
+        <ThinkingBlock content={'# Inspecting response geometry\n\nReasoning body'} />
       </div>
       <div data-testid="streaming-thinking-row">
         <ThinkingBlock content="Inspecting streaming geometry" isStreaming />

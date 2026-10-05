@@ -25,7 +25,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const scriptPath = join(repoRoot, 'scripts/inline-ipc-channels.ts');
 
-const realTemplatePath = join(repoRoot, 'src/preload/index.template.ts');
+// Fixture-relative locations of the generator's input and output.
+const templateFile = 'src/preload/index.template.ts';
+const generatedFile = 'src/preload/index.ts';
+
+const realTemplatePath = join(repoRoot, templateFile);
 const realTemplate = readFileSync(realTemplatePath, 'utf-8');
 
 const fixtureRoots: string[] = [];
@@ -44,8 +48,8 @@ function makeFixture(template: string, index?: string): string {
   const root = mkdtempSync(join(tmpdir(), 'preload-gen-'));
   fixtureRoots.push(root);
   mkdirSync(join(root, 'src/preload'), { recursive: true });
-  writeFileSync(join(root, 'src/preload/index.template.ts'), template, 'utf-8');
-  if (index !== undefined) writeFileSync(join(root, 'src/preload/index.ts'), index, 'utf-8');
+  writeFileSync(join(root, templateFile), template, 'utf-8');
+  if (index !== undefined) writeFileSync(join(root, generatedFile), index, 'utf-8');
   return root;
 }
 
@@ -63,7 +67,7 @@ function runGenerator(root: string, ...flags: string[]) {
 }
 
 function generatedIndex(root: string): string {
-  return readFileSync(join(root, 'src/preload/index.ts'), 'utf-8');
+  return readFileSync(join(root, generatedFile), 'utf-8');
 }
 
 // Stands in for the shape of monorepo#2124: a line added to the generated file

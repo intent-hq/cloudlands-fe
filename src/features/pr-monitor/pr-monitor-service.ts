@@ -296,7 +296,7 @@ export function subscribePrMonitors(
         if (disposed || epoch !== registerEpoch) {
           // Stale registration (disposed or superseded by a reconnect) —
           // drop the ack and release its server-side subscription.
-          if (acked) void backendUnsubscribe(acked);
+          if (acked) void backendUnsubscribe(acked, workspaceId);
           return;
         }
         subscriptionId = acked;
@@ -347,7 +347,7 @@ export function subscribePrMonitors(
       disposed = true;
       offNotification();
       offReconnected();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
+      if (subscriptionId) void backendUnsubscribe(subscriptionId, workspaceId);
     },
   };
 }

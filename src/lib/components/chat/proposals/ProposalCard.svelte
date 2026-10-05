@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   /* eslint-disable max-lines -- sibling mode remains in the single shared proposal renderer */
   import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -27,6 +28,7 @@
     isSpecialistEditProposal,
     isWorkspaceCreateProposal,
   } from '$shared/types/proposal';
+  import WorkspaceTransferProposalCard from '$features/workspace-transfer/components/WorkspaceTransferProposalCard.svelte';
   import BulkProposalItems from './BulkProposalItems.svelte';
   import SettingsChangeCard from './SettingsChangeCard.svelte';
   import SpecialistChangeCard from './SpecialistChangeCard.svelte';
@@ -807,8 +809,11 @@
     };
   }
 
+  const workspaceContext = getWorkspaceRouteContext();
+
   function buildDetail(): ProposalActionDetail {
     return {
+      workspaceId: workspaceContext?.workspaceId ?? undefined,
       proposal,
       editedFields: isWorkspaceCreate ? buildWorkspaceEditedFields() : fieldValues,
       selectedBulkItemIds,
@@ -869,6 +874,14 @@
     {m.chat_shared_discarded_label()}
     {proposal.preview.title}
   </div>
+{:else if proposal.kind === 'workspace-transfer'}
+  <WorkspaceTransferProposalCard
+    {proposal}
+    {disabled}
+    {onApply}
+    {onDiscard}
+    {suppressLocalDiscard}
+  />
 {:else if settingsProposal}
   <SettingsChangeCard
     proposal={settingsProposal}

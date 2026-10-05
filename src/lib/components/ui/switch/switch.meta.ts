@@ -10,7 +10,6 @@ export const switchMetadata = {
   category: 'primitive',
   owner: '007-B2',
   callers: [
-    'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/ChatPolishGeometryControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',

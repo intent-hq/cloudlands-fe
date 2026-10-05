@@ -191,8 +191,8 @@
     height: var(--chat-polish-subscription-bottom-gap, 16px);
   }
   :global(.chat-polish-preview .turn-failure-notice) {
-    margin-block: var(--chat-polish-failure-notice-top-gap, 16px)
-      var(--chat-polish-failure-notice-bottom-gap, 16px);
+    margin-block: var(--chat-polish-failure-notice-top-gap, 40px)
+      var(--chat-polish-failure-notice-bottom-gap, 0px);
   }
   :global(.chat-polish-preview [data-adjacent-operational-row='true']) {
     margin-top: var(--chat-operational-row-gap, 0px);

@@ -10,6 +10,7 @@ import {
   PickNotificationSoundSchema,
   ReadNotificationSoundSchema,
 } from '../../../shared/notification-audio';
+import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { spawn } from 'child_process';
 import { collectOpenWorkspaceIds, collectWindowIdsForWorkspace } from './window-workspace-tracking';
 import {
@@ -412,6 +413,7 @@ export async function installIntentCli(): Promise<{
   message: string;
   error?: string;
 }> {
+  assertNormalAppOperation();
   try {
     const fs = require('fs');
     const { promises: fsPromises } = require('fs');
@@ -539,6 +541,7 @@ export async function installIntentCli(): Promise<{
  * - If admin prompt is cancelled/fails, logs a warning and continues (non-fatal)
  */
 export async function autoRepairCliSymlink(): Promise<void> {
+  if (isIsolatedTestBuild()) return;
   try {
     // Only run in production mode
     if (process.env.NODE_ENV === 'development') {

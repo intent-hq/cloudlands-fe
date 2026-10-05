@@ -29,12 +29,11 @@ describe('TurnFailureNotice', () => {
     expect(alert.getAttribute('aria-live')).toBe('polite');
   });
 
-  it('displays failure icon', () => {
-    const { container } = render(TurnFailureNotice);
-
-    // Check for icon presence via SVG element
-    const icon = container.querySelector('svg');
-    expect(icon).toBeTruthy();
+  it('updates the failure reason without losing alert semantics', async () => {
+    const { rerender } = render(TurnFailureNotice, { props: { reason: 'First failure' } });
+    await rerender({ reason: 'Updated failure' });
+    expect(screen.getByRole('alert').textContent).toContain('Updated failure');
+    expect(screen.queryByText('First failure')).toBeNull();
   });
 
   it('applies custom class when provided', () => {
@@ -44,15 +43,5 @@ describe('TurnFailureNotice', () => {
     const notice = container.querySelector('.turn-failure-notice');
     expect(notice).toBeTruthy();
     expect(notice?.className).toContain(customClass);
-  });
-
-  it('uses sandbox-scoped CSS variables for vertical spacing with 1rem fallback', () => {
-    const { container } = render(TurnFailureNotice);
-
-    const notice = container.querySelector('.turn-failure-notice') as HTMLElement;
-    expect(notice).toBeTruthy();
-    // The component should have the turn-failure-notice class which applies the CSS variables
-    // The actual computed values are tested in the Playwright geometry test (chat-polish-controls.spec.ts)
-    expect(notice.className).toContain('turn-failure-notice');
   });
 });

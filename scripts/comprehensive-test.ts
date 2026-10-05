@@ -98,7 +98,7 @@ runTest('IPC handler registration', () => {
         throw new Error(`Missing critical handlers: ${missingCritical.join(', ')}`);
       }
     }
-  } catch (error) {
+  } catch {
     // If the audit script doesn't exist or fails, that's okay for now
     console.log('  ⚠️  IPC audit script not available, skipping detailed check');
   }

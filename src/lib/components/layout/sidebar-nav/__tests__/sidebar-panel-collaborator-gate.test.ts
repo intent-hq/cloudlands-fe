@@ -1,13 +1,21 @@
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
+import {
+  admitLegacyPrincipal,
+  withHostPrincipal,
+} from '../../../../../test/fixtures/principal-state';
 /**
  * SidebarPanel withholds the Chief from a collaborator-only client
  * (multiplayer w3): the daemon answers its `__chief__` calls with not-found,
- * so the card, its split divider and its collapse toggle are never rendered
+ * so the card and its Intent tab are never rendered
  * and the workspace list takes the whole panel. The gate is live — when the
  * flag flips true after mount the card unmounts and releases the Chief
  * workspace with `workspaceUnmounted(CHIEF_WORKSPACE_ID)`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -61,6 +69,7 @@ function makeWorkspace(id: string, myRole: Workspace['myRole']): Workspace {
 
 /** Load the workspace list with the given roles (the harness settles an owner window). */
 function loadWorkspaces(...roles: Array<Workspace['myRole']>) {
+  admitLegacyPrincipal(roles.includes('owner') ? 'owner' : 'guest');
   appStore.dispatch(replaceWorkspaceList(roles.map((role, i) => makeWorkspace(`ws-${i}`, role))));
   appStore.dispatch(setWorkspaceHasLoaded(true));
 }
@@ -68,8 +77,7 @@ function loadWorkspaces(...roles: Array<Workspace['myRole']>) {
 function chiefSurfaces(container: HTMLElement) {
   return {
     card: container.querySelector('[data-combined-panel-chief]'),
-    divider: container.querySelector('[data-testid="split-resize-handle"]'),
-    toggle: container.querySelector('[data-chief-section-toggle]'),
+    tab: screen.queryByRole('tab', { name: m.layout_chiefCard_title() }),
     spaces: container.querySelector<HTMLElement>('[data-combined-panel-spaces]'),
   };
 }
@@ -96,7 +104,7 @@ describe('SidebarPanel collaborator-only gate (multiplayer w3)', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders the Chief card, divider and toggle for an owner client', async () => {
+  it('lets an owner client switch between workspace and Intent panes', async () => {
     const { container } = render(SidebarPanelHarness, {
       props: {
         setup: () => {
@@ -107,32 +115,48 @@ describe('SidebarPanel collaborator-only gate (multiplayer w3)', () => {
     });
 
     expect(selectIsCollaboratorOnlyClient.select(appStore.state)).toBe(false);
-    const { card, divider, toggle, spaces } = chiefSurfaces(container);
+    const { card, tab, spaces } = chiefSurfaces(container);
     expect(card).not.toBeNull();
-    expect(divider).not.toBeNull();
-    expect(toggle).not.toBeNull();
-    expect(spaces?.style.height).not.toBe('');
-  });
-
-  it('withholds the Chief card, divider and toggle from a collaborator-only client; the list takes the panel', async () => {
-    const { container } = render(SidebarPanelHarness, {
-      props: {
-        setup: () => {
-          loadWorkspaces('collaborator', 'collaborator');
-          appStore.dispatch(openPanel('chief'));
-        },
-      },
+    expect(tab?.getAttribute('aria-selected')).toBe('true');
+    expect(spaces?.hasAttribute('hidden')).toBe(true);
+    await fireEvent.click(
+      screen.getByRole('tab', { name: m.layout_sidebarPanel_workspacesTab_label() }),
+    );
+    await waitFor(() => {
+      expect(spaces?.hasAttribute('hidden')).toBe(false);
+      expect(card?.hasAttribute('inert')).toBe(true);
     });
-
-    expect(selectIsCollaboratorOnlyClient.select(appStore.state)).toBe(true);
-    const { card, divider, toggle, spaces } = chiefSurfaces(container);
-    expect(card).toBeNull();
-    expect(divider).toBeNull();
-    expect(toggle).toBeNull();
-    expect(spaces).not.toBeNull();
-    expect(spaces?.style.height).toBe('');
-    expect(spaces?.classList.contains('flex-1')).toBe(true);
   });
+
+  it.each(['member', 'guest'] as const)(
+    'falls back to Workspaces for %s clients even on direct Assistant navigation',
+    async (hostRole) => {
+      const { container } = render(SidebarPanelHarness, {
+        props: {
+          setup: () => {
+            loadWorkspaces('collaborator', 'collaborator');
+            const { principal } = withHostPrincipal(appStore.state, hostRole);
+            appStore.dispatch(
+              principalReceived(
+                { context: principal.context!, invalidation: 0, presentationVersion: 0 },
+                principal.snapshot!,
+              ),
+            );
+            appStore.dispatch(openPanel('chief'));
+          },
+        },
+      });
+
+      expect(selectIsCollaboratorOnlyClient.select(appStore.state)).toBe(true);
+      const { card, tab, spaces } = chiefSurfaces(container);
+      expect(card).toBeNull();
+      expect(tab).toBeNull();
+      expect(spaces).not.toBeNull();
+      expect(spaces?.hasAttribute('hidden')).toBe(false);
+      expect(spaces?.hasAttribute('inert')).toBe(false);
+      expect(screen.queryByRole('tablist')).toBeNull();
+    },
+  );
 
   it('unmounts the Chief card and releases the Chief workspace when the flag flips true after mount', async () => {
     const { container } = render(SidebarPanelHarness, {
@@ -149,9 +173,19 @@ describe('SidebarPanel collaborator-only gate (multiplayer w3)', () => {
     loadWorkspaces('collaborator', 'collaborator');
 
     await waitFor(() => expect(chiefSurfaces(container).card).toBeNull());
+    expect(chiefSurfaces(container).tab).toBeNull();
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(chiefSurfaces(container).spaces?.hasAttribute('hidden')).toBe(false);
+    expect(chiefSurfaces(container).spaces?.hasAttribute('inert')).toBe(false);
     expect(dispatchSpy).toHaveBeenCalledWith(
       expect.objectContaining(workspaceUnmounted(CHIEF_WORKSPACE_ID)),
     );
+
+    loadWorkspaces('owner');
+    await waitFor(() =>
+      expect(chiefSurfaces(container).tab?.getAttribute('aria-selected')).toBe('true'),
+    );
+    expect(chiefSurfaces(container).card?.hasAttribute('hidden')).toBe(false);
   });
 });
 
@@ -252,7 +286,7 @@ describe('SidebarPanel workspace-list title in a guest window (multiplayer w4)',
   // Runs first in this block: `connections.hasReceivedList` has no reset action,
   // so identity is only unsettled before any test here binds the window. The
   // precondition assertion below fails loudly if that ever stops holding.
-  it('keeps "All workspaces" in an owner window whose identity has not settled yet', async () => {
+  it('keeps "All workspaces" while the connected principal is unresolved', async () => {
     const { container } = render(SidebarPanelHarness, {
       props: {
         setup: () => {
@@ -263,6 +297,7 @@ describe('SidebarPanel workspace-list title in a guest window (multiplayer w4)',
             guestSessionsListReceived({ sessions: [GUEST], openIds: [], connectedIds: [] }),
           );
           loadWorkspaces('owner');
+          appStore.dispatch(principalContextChanged(null));
           appStore.dispatch(openPanel('chief'));
         },
       },
@@ -273,6 +308,9 @@ describe('SidebarPanel workspace-list title in a guest window (multiplayer w4)',
     expect(panelTitle(container)).toBe(m.layout_sidebarNav_allWorkspaces_title());
 
     bindWindowToGuest();
+    // A saved guest connection alone is not a current principal response.
+    expect(panelTitle(container)).toBe(m.layout_sidebarNav_allWorkspaces_title());
+    admitLegacyPrincipal('guest');
     await waitFor(() =>
       expect(panelTitle(container)).toBe(m.layout_sidebarNav_allSharedWorkspaces_title()),
     );

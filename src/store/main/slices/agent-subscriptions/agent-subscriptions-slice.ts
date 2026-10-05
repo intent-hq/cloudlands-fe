@@ -11,8 +11,8 @@
  * - One-shot subscription tracking
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../../utils/workspace-scoped';
 import type { WorkspaceEvent } from '../../../../features/events/types';
 

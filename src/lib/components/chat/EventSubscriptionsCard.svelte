@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import type { Snippet } from 'svelte';
   import { tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -9,6 +10,12 @@
   } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
   import AgentSubscriptions from './AgentSubscriptions.svelte';
   import BackgroundHooksRow from './BackgroundHooksRow.svelte';
+  import MonitoredScriptsRow from './MonitoredScriptsRow.svelte';
+  import { selectAgentScriptMonitors } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
+  import {
+    scriptMonitorsSubscribeRequested,
+    scriptMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/script-monitor/script-monitor-slice';
   import MonitoredPrsRow from './MonitoredPrsRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -96,7 +103,11 @@
     if (isolatedPreview || !workspaceId || !isActive) return;
     const currentWorkspaceId = workspaceId;
     untrack(() => appStore.dispatch(prMonitorsSubscribeRequested(currentWorkspaceId)));
-    return () => appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
+    untrack(() => appStore.dispatch(scriptMonitorsSubscribeRequested(currentWorkspaceId)));
+    return () => {
+      appStore.dispatch(prMonitorsUnsubscribeRequested(currentWorkspaceId));
+      appStore.dispatch(scriptMonitorsUnsubscribeRequested(currentWorkspaceId));
+    };
   });
 
   const workspaceIdStore = writable('');
@@ -106,6 +117,9 @@
     agentIdStore.set(agentId);
   });
   const hooks$ = selectBackgroundHooks(workspaceIdStore);
+  const scriptMonitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
+  const scriptCount = $derived($scriptMonitors$.filter((row) => row.state === 'active').length);
+  const hasScripts = $derived(scriptCount > 0);
   const monitors$ = selectAgentPrMonitors(workspaceIdStore, agentIdStore);
   const agentSubscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const agentSessionsById$ = selectAgentSessionsById();
@@ -136,18 +150,18 @@
   const hasEventSubscriptions = $derived(
     isolatedPreview
       ? isolatedPreview.count > 0
-      : $agentSubscriptionLane$.visible || hasHooks || hasPrs,
+      : $agentSubscriptionLane$.visible || hasHooks || hasPrs || hasScripts,
   );
   const hasSubscriptions = $derived(hasEventSubscriptions);
   const totalCount = $derived(
     isolatedPreview
       ? isolatedPreview.count
-      : $agentSubscriptionLane$.count + effectiveHookCount + effectivePrCount,
+      : $agentSubscriptionLane$.count + effectiveHookCount + effectivePrCount + scriptCount,
   );
   const visibleSectionCount = $derived(
     isolatedPreview
       ? 1
-      : [$agentSubscriptionLane$.visible, hasHooks, hasPrs].filter(Boolean).length,
+      : [$agentSubscriptionLane$.visible, hasHooks, hasPrs, hasScripts].filter(Boolean).length,
   );
   const isSingleEvent = $derived(
     hasEventSubscriptions && visibleSectionCount === 1 && totalCount === 1,
@@ -156,7 +170,7 @@
   // Agent-only cards show "Waiting for N agents"; mixed/non-agent cards show "Subscribed to N events"
   const isAgentOnly = $derived(
     isolatedPreview?.mode === 'agents' ||
-      (!isolatedPreview && $agentSubscriptionLane$.visible && !hasHooks && !hasPrs),
+      (!isolatedPreview && $agentSubscriptionLane$.visible && !hasHooks && !hasPrs && !hasScripts),
   );
   const agentOnlyCount = $derived(
     isolatedPreview?.mode === 'agents'
@@ -258,8 +272,8 @@
             >
               <Fa
                 icon={faBell}
-                size={14}
-                class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               />
             </span>
             <span
@@ -341,6 +355,7 @@
               {compact}
               embedded
               forceWaitingHeader={!isSingleEvent}
+              isActive={isActive && !bodyIsClosing && $agentSubscriptionLane$.visible}
               visible={$agentSubscriptionLane$.visible}
               count={$agentSubscriptionLane$.count}
               participantAgentIds={$agentSubscriptionLane$.participantAgentIds}
@@ -360,6 +375,14 @@
               bind:count={hookCount}
             />
           </div>
+          {#if hasScripts}
+            <div
+              class={isSingleEvent ? '' : 'border-t border-border'}
+              data-testid="event-subscriptions-scripts"
+            >
+              <MonitoredScriptsRow {workspaceId} {agentId} />
+            </div>
+          {/if}
           <div
             class={isSingleEvent ? '' : 'border-t border-border'}
             class:hidden={!prsVisible}

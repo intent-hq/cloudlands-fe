@@ -331,7 +331,7 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(repos.ok).toBe(true);
     expect(Array.isArray(repos.result?.repos)).toBe(true);
 
-    // Bare array per §5.10 — the MainLayout activity timeline reads this at boot.
+    // Bare array per §5.10 when pagination is not engaged.
     const events = await api.invoke('backend:request', { method: 'event.query' });
     expect(events.ok).toBe(true);
     expect(Array.isArray(events.result)).toBe(true);
@@ -441,6 +441,7 @@ describe('browser-mock backend:* transport envelope', () => {
       cacheCreationTokens: 0,
     });
     expect(tokenUsage.result?.tokenUsage?.lastScanAt).toBeNull();
+    expect(tokenUsage.result?.tokenUsage?.byAgentModel).toEqual([]);
 
     const context = await api.invoke('backend:request', {
       method: 'workspace.getContext',
@@ -550,6 +551,34 @@ describe('browser-mock backend:* transport envelope', () => {
     const workspace = await client.workspaces.get('mock-ws-1');
     expect(workspace).not.toBeNull();
     expect(String(workspace?.id)).toBe('mock-ws-1');
+  });
+
+  it('serves the §5.10 paginated event.query envelope the lifecycle saga consumes (intent-hq/intent#5582)', async () => {
+    // `paginate: true` (what `events.queryPage` sends) or a `nextToken` opt
+    // into the `{ items, nextToken }` envelope; the saga spreads `page.items`.
+    const first = await api.invoke('backend:request', {
+      method: 'event.query',
+      params: { workspaceId: 'mock-ws-1', limit: 100, paginate: true },
+    });
+    expect(first.ok).toBe(true);
+    expect(first.result).toEqual({ items: [], nextToken: null });
+
+    const older = await api.invoke('backend:request', {
+      method: 'event.query',
+      params: { workspaceId: 'mock-ws-1', limit: 100, nextToken: 'older' },
+    });
+    expect(older.ok).toBe(true);
+    expect(older.result).toEqual({ items: [], nextToken: null });
+
+    const invokeSpy = vi.spyOn(api, 'invoke');
+    const { LiveAppClient } = await import('./client');
+    const page = await new LiveAppClient().events.queryPage('mock-ws-1', { limit: 100 });
+    expect(invokeSpy).toHaveBeenCalledWith('backend:request', {
+      method: 'event.query',
+      params: { workspaceId: 'mock-ws-1', limit: 100, paginate: true },
+    });
+    expect(() => [...page.items].reverse()).not.toThrow();
+    expect(page).toEqual({ items: [], nextToken: null });
   });
 
   it('backend:request for an unimplemented method returns a structured error envelope', async () => {
@@ -662,6 +691,15 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     (window as any).electronAPI = originalElectronAPI;
   });
 
+  async function completeHello(socket: FakeWebSocket) {
+    const hello = JSON.parse(socket.sent[socket.sent.length - 1]);
+    expect(hello.method).toBe('client.hello');
+    expect((await api.invoke('backend:get-status')).status).toBe('connecting');
+    socket.receive({ jsonrpc: '2.0', id: hello.id, result: { clientId: 'browser-health' } });
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
   /** Resolve the (WS) transport via the factory and drive it to connected. */
   async function connectTransport() {
     const { resolveBackendTransport } = await import('./client/live/backend-transport-factory');
@@ -672,6 +710,7 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     socket.open();
     await Promise.resolve();
     await Promise.resolve();
+    await completeHello(socket);
     const frame = JSON.parse(socket.sent[socket.sent.length - 1]) as { id: number };
     socket.receive({ jsonrpc: '2.0', id: frame.id, result: { running: true } });
     await pending;
@@ -713,6 +752,7 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     const reconnectSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
     expect(reconnectSocket).not.toBe(socket);
     reconnectSocket.open();
+    await completeHello(reconnectSocket);
     expect(events).toContainEqual({
       status: 'connected',
       transport: { mode: 'external-ws', target: 'ws://127.0.0.1:5181/rpc' },
@@ -727,12 +767,64 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     (transport as { dispose?: () => void }).dispose?.();
   });
 
-  it('keeps the legacy mock disconnected shape when no WS URL is configured', async () => {
+  it('reports a connected browser-mock status when no WS URL is configured (intent-hq/intent#5582)', async () => {
     vi.stubEnv('VITE_INTENTD_WS_URL', '');
     delete (window as any).electronAPI;
     await importBrowserMock();
     api = (window as any).electronAPI;
     const res = await api.invoke('backend:get-status');
-    expect(res).toEqual({ status: 'disconnected', transport: 'browser-mock' });
+    expect(res).toEqual({ status: 'connected', transport: 'browser-mock' });
+    expect(res).not.toHaveProperty('ok');
+  });
+
+  it('mock-only status keeps the daemon-health slice out of the overlay-raising down state', async () => {
+    vi.stubEnv('VITE_INTENTD_WS_URL', '');
+    delete (window as any).electronAPI;
+    await importBrowserMock();
+    api = (window as any).electronAPI;
+    const res = await api.invoke('backend:get-status');
+
+    // The DaemonStoppedOverlay engages on health === 'down'; fold the boot
+    // snapshot through the real reducer exactly as daemonStatusSaga does.
+    const { connectionStatusChanged, daemonHealthReducer, initialState } =
+      await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+    const state = daemonHealthReducer(
+      initialState,
+      connectionStatusChanged(res.status, res.transport),
+    );
+    expect(state.health).toBe('healthy');
+    expect(state.hasEverConnected).toBe(true);
+  });
+
+  it('answers the system.status poll a connected snapshot starts, so mock-only boot never degrades', async () => {
+    vi.stubEnv('VITE_INTENTD_WS_URL', '');
+    delete (window as any).electronAPI;
+    await importBrowserMock();
+    api = (window as any).electronAPI;
+    const snapshot = await api.invoke('backend:get-status');
+
+    // pollSystemStatusSaga issues `backendRequest('system.status')`; with no
+    // WS URL and the mock bridge installed the factory resolves the
+    // Electron-IPC transport, which routes the call to the browser mock.
+    // Before the fix the mock answered NOT_IMPLEMENTED, the request rejected,
+    // and the saga put systemStatusFailure → health 'degraded'. (The saga is
+    // not imported here: it pulls in the whole renderer store graph.)
+    const { resolveBackendTransport } = await import('./client/live/backend-transport-factory');
+    const payload = await resolveBackendTransport().request<{ running?: boolean }>('system.status');
+    expect(payload.running).toBe(true);
+
+    const { connectionStatusChanged, daemonHealthReducer, initialState, systemStatusSuccess } =
+      await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+    let state = daemonHealthReducer(
+      initialState,
+      connectionStatusChanged(snapshot.status, snapshot.transport),
+    );
+    state = daemonHealthReducer(
+      state,
+      systemStatusSuccess(payload as any, new Date().toISOString(), state.connectionGeneration),
+    );
+    expect(state.health).toBe('healthy');
+    expect(state.statusCheckFailure).toBeNull();
+    expect(state.hostLocality).toBe('local');
   });
 });

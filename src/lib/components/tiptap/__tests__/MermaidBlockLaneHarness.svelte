@@ -16,9 +16,10 @@
   interface Props {
     code: string;
     hostWidth: number;
+    editable?: boolean;
   }
 
-  let { code, hostWidth }: Props = $props();
+  let { code, hostWidth, editable = true }: Props = $props();
 
   let editorElement: HTMLDivElement;
   let editor: Editor | null = $state(null);
@@ -26,6 +27,7 @@
   onMount(() => {
     editor = new Editor({
       element: editorElement,
+      editable,
       extensions: [StarterKit, MermaidBlock],
       content: {
         type: 'doc',

@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import {
   closeSync,
   existsSync,
   mkdtempSync,
+  mkdirSync,
   openSync,
   readFileSync,
   rmSync,
@@ -484,5 +485,272 @@ describe('heapCapMB and formatPeakRss', () => {
       'svelte-check peak RSS: 3412 MiB (no --max-old-space-size set)',
     );
     expect(formatPeakRss(null, {})).toBeNull();
+  });
+});
+
+describe('local checker heap with real children', () => {
+  const runHeapChild = async (
+    options: Record<string, string> = {},
+    exitCode = 0,
+    preload = false,
+  ) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'svelte-heap-child-'));
+    const outputPath = path.join(dir, 'output');
+    const oraclePath = path.join(dir, 'oracle.json');
+    const cliPath = path.join(dir, 'checker.mjs');
+    const env: Record<string, string> = {
+      PATH: process.env.PATH ?? '',
+      TMPDIR: dir,
+      HOME: dir,
+      DD_INSTRUMENT_SERVICE_WITH_APM: 'false',
+      ...options,
+      HEAP_ORACLE_FILE: oraclePath,
+    };
+    if (preload) {
+      const preloadPath = path.join(dir, 'preload with spaces.cjs');
+      writeFileSync(preloadPath, 'globalThis.heapTestPreloaded = true;');
+      env.NODE_OPTIONS = `--require "${preloadPath}"`;
+    }
+    const originalEnv = { ...env };
+    writeFileSync(
+      cliPath,
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "import { getHeapStatistics } from 'node:v8';",
+        'writeFileSync(process.env.HEAP_ORACLE_FILE, JSON.stringify({',
+        '  heapMiB: getHeapStatistics().heap_size_limit / 1024 / 1024,',
+        '  nodeOptions: process.env.NODE_OPTIONS, argv: process.execArgv,',
+        '  preloaded: globalThis.heapTestPreloaded === true,',
+        '}));',
+        `process.exit(${exitCode});`,
+      ].join('\n'),
+    );
+    // Compare with this Node runtime directly: V8's young-generation allowance
+    // varies by Node version and is additional to the old-space cap.
+    const referenceArgs =
+      Object.keys(options).length === 0
+        ? ['--max-old-space-size=8192']
+        : (options.CT_NODE_ARGS?.trim().split(/\s+/).filter(Boolean) ?? []);
+    const reference = spawnSync(process.execPath, [...referenceArgs, cliPath], {
+      env,
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(reference.error).toBeUndefined();
+    expect(reference.signal).toBeNull();
+    const expectedHeapMiB = existsSync(oraclePath)
+      ? JSON.parse(readFileSync(oraclePath, 'utf8')).heapMiB
+      : undefined;
+    rmSync(oraclePath, { force: true });
+    const outputFd = openSync(outputPath, 'w');
+    try {
+      const result = await runSvelteCheck({ cliPath, args: [], outputFd, env });
+      expect(env).toEqual(originalEnv);
+      expect(result.exitCode).toBe(reference.status);
+      const oracle = existsSync(oraclePath) ? JSON.parse(readFileSync(oraclePath, 'utf8')) : null;
+      expect(oracle?.heapMiB).toBe(expectedHeapMiB);
+      return { ...result, oracle };
+    } finally {
+      closeSync(outputFd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it.each([0, 7])('adds local headroom and preserves child exit %i', async (exitCode) => {
+    const result = await runHeapChild({}, exitCode);
+    expect(result.exitCode).toBe(exitCode);
+    expect(result.oracle.nodeOptions).toBe('--max-old-space-size=8192');
+    expect(result.peakRssMiB).toBeGreaterThan(0);
+  });
+
+  it('adds headroom without losing a quoted unrelated preload', async () => {
+    const { exitCode, oracle } = await runHeapChild({}, 0, true);
+    expect(exitCode).toBe(0);
+    expect(oracle.preloaded).toBe(true);
+    expect(oracle.nodeOptions).toMatch(
+      /--require ".*preload with spaces.cjs" --max-old-space-size=8192$/,
+    );
+  });
+
+  it.each([
+    '--max-old-space-size=192',
+    '--max_old_space_size=192',
+    '"--max-old-space-size=192"',
+    '--max-old-space-size=256 --max-old-space-size=192',
+  ])('preserves the explicit NODE_OPTIONS cap %s', async (nodeOptions) => {
+    const { exitCode, oracle } = await runHeapChild({ NODE_OPTIONS: nodeOptions });
+    expect(exitCode).toBe(0);
+    expect(oracle.nodeOptions).toBe(nodeOptions);
+    expect(heapCapMB({ NODE_OPTIONS: nodeOptions })).toBe(192);
+    expect(formatPeakRss(400, { NODE_OPTIONS: nodeOptions })).toContain('--max-old-space-size=192');
+  });
+
+  it.each(['--max-old-space-size=256', '--max_old_space_size=256'])(
+    'lets the explicit CLI cap win: %s',
+    async (nodeArgs) => {
+      const { exitCode, oracle } = await runHeapChild({
+        NODE_OPTIONS: '--max-old-space-size=192',
+        CT_NODE_ARGS: nodeArgs,
+      });
+      expect(exitCode).toBe(0);
+      expect(oracle.nodeOptions).toBe('--max-old-space-size=192');
+      expect(oracle.argv).toEqual(expect.arrayContaining(nodeArgs.split(/\s+/)));
+      expect(heapCapMB({ NODE_OPTIONS: '--max-old-space-size=192', CT_NODE_ARGS: nodeArgs })).toBe(
+        256,
+      );
+      expect(
+        formatPeakRss(400, { NODE_OPTIONS: '--max-old-space-size=192', CT_NODE_ARGS: nodeArgs }),
+      ).toContain('--max-old-space-size=256');
+    },
+  );
+
+  it('does not add a default when only CT_NODE_ARGS chooses the cap', async () => {
+    const { exitCode, oracle } = await runHeapChild({ CT_NODE_ARGS: '--max-old-space-size=192' });
+    expect(exitCode).toBe(0);
+    expect(oracle.nodeOptions).toBeUndefined();
+  });
+
+  it.each([
+    { NODE_OPTIONS: '--max-old-space-size-percentage=1' },
+    { NODE_OPTIONS: '"--max-old-space-size-percentage" "1"' },
+    { CT_NODE_ARGS: '--max-old-space-size-percentage 1' },
+    { NODE_OPTIONS: '--max_old_space_size_percentage=1', CT_NODE_ARGS: '--max-old-space-size=192' },
+  ])('preserves explicit percentage choices %j', async (options) => {
+    const { exitCode, oracle } = await runHeapChild(options);
+    expect(exitCode).toBe(0);
+    expect(oracle.nodeOptions).toBe(options.NODE_OPTIONS);
+    expect(oracle.argv).not.toContain('--max-old-space-size=8192');
+    expect(oracle.heapMiB).toBeGreaterThan(0);
+  });
+
+  it.each([
+    { NODE_OPTIONS: '--max-old-space-size=invalid' },
+    { NODE_OPTIONS: '--max-old-space-size 192' },
+    { NODE_OPTIONS: '--max_old_space_size 192' },
+    { CT_NODE_ARGS: '--max-old-space-size 256' },
+    { CT_NODE_ARGS: '--max_old_space_size 256' },
+  ])(
+    'preserves native rejection of invalid or unsupported explicit options %j',
+    async (options) => {
+      const { exitCode, oracle } = await runHeapChild(options);
+      expect(exitCode).not.toBe(0);
+      expect(oracle).toBeNull();
+    },
+  );
+});
+
+describe('checker wrapper diagnostics with real children', () => {
+  it.each([
+    { childExit: 0, errors: 0, completed: true, expectedExit: 0 },
+    { childExit: 7, errors: 1, completed: true, expectedExit: 7 },
+    { childExit: 0, errors: 1, completed: true, expectedExit: 1 },
+    { childExit: 0, errors: 0, completed: false, expectedExit: 1 },
+  ])('preserves diagnostics and guards for %j', (control) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'svelte-wrapper-child-'));
+    try {
+      const runner = path.join(dir, 'runner.mjs');
+      writeFileSync(runner, readFileSync(path.resolve('scripts/run-svelte-check.mjs')));
+      const writePackage = (name: string, binName: string, code: string) => {
+        const packageDir = path.join(dir, 'node_modules', name);
+        mkdirSync(packageDir, { recursive: true });
+        writeFileSync(
+          path.join(packageDir, 'package.json'),
+          JSON.stringify({
+            name,
+            type: 'module',
+            bin: { [binName]: './cli.mjs' },
+          }),
+        );
+        writeFileSync(path.join(packageDir, 'cli.mjs'), code);
+      };
+      writePackage(
+        '@sveltejs/kit',
+        'svelte-kit',
+        [
+          "import { writeFileSync } from 'node:fs';",
+          "writeFileSync(new URL('./sync-env.json', import.meta.url), JSON.stringify(process.env));",
+        ].join('\n'),
+      );
+      const diagnostic = {
+        type: 'ERROR',
+        filename: 'src/Bad.svelte',
+        start: { line: 2, character: 4 },
+        message: 'fixture type error',
+        source: 'ts',
+      };
+      writePackage(
+        'svelte-check',
+        'svelte-check',
+        [
+          'console.log("1 START workspace");',
+          ...(control.errors
+            ? [`console.log(${JSON.stringify(`2 ${JSON.stringify(diagnostic)}`)});`]
+            : []),
+          ...(control.completed
+            ? [
+                `console.log("3 COMPLETED 600 FILES ${control.errors} ERRORS 0 WARNINGS ${control.errors} FILES_WITH_PROBLEMS");`,
+              ]
+            : []),
+          `process.exit(${control.childExit});`,
+        ].join('\n'),
+      );
+      const result = spawnSync(process.execPath, [runner], {
+        cwd: dir,
+        env: {
+          PATH: process.env.PATH,
+          HOME: dir,
+          TMPDIR: dir,
+          DD_INSTRUMENT_SERVICE_WITH_APM: 'false',
+        },
+        encoding: 'utf8',
+        timeout: 15_000,
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.signal).toBeNull();
+      expect(result.status).toBe(control.expectedExit);
+      expect(result.stdout).toMatch(/svelte-check peak RSS: \d+ MiB \(--max-old-space-size=8192\)/);
+      if (control.completed)
+        expect(result.stdout).toContain(
+          `svelte-check found ${control.errors} errors and 0 warnings in ${control.errors} files (checked 600 files)`,
+        );
+      if (control.errors)
+        expect(result.stdout).toContain('src/Bad.svelte:3:5\nError: fixture type error (ts)');
+      if (!control.completed || (control.errors && control.childExit === 0))
+        expect(result.stderr).toContain('PLAUSIBILITY GUARD:');
+      const sync = JSON.parse(
+        readFileSync(path.join(dir, 'node_modules/@sveltejs/kit/sync-env.json'), 'utf8'),
+      );
+      expect(sync.NODE_ENV).toBe('development');
+      expect(sync.NODE_OPTIONS).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('explicit heap reporting', () => {
+  it('reports the last aliased CLI cap rather than the environment cap', () => {
+    const env = {
+      NODE_OPTIONS: '--max-old-space-size=192',
+      CT_NODE_ARGS: '--max_old_space_size=256 --max-old-space-size=320',
+    };
+    expect(heapCapMB(env)).toBe(320);
+    expect(formatPeakRss(400, env)).toContain('--max-old-space-size=320');
+  });
+
+  it.each([
+    {
+      NODE_OPTIONS: '"--max-old-space-size-percentage" "25"',
+      CT_NODE_ARGS: '--max-old-space-size=256',
+    },
+    {
+      NODE_OPTIONS: '--max-old-space-size-percentage=1',
+      CT_NODE_ARGS: '--max_old_space_size_percentage 25',
+    },
+  ])('reports a percentage instead of an overridden absolute cap: %j', (env) => {
+    expect(heapCapMB(env)).toBeNull();
+    expect(formatPeakRss(400, env)).toBe(
+      'svelte-check peak RSS: 400 MiB (--max-old-space-size-percentage=25)',
+    );
   });
 });

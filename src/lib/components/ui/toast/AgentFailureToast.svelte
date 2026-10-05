@@ -54,13 +54,13 @@
   class="relative flex w-full min-w-0 items-start gap-2.5 pr-6"
   data-toast-layout="agent-failure"
 >
-  <ToastGlyph variant="error" />
+  <span class="first-line-icon toast-first-line"><ToastGlyph variant="error" /></span>
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
-    <div class="flex items-center gap-1.5">
+    <div class="flex items-start gap-1.5">
       {#if keySlot != null}
-        <MicroKeySlotSquare slot={keySlot} />
+        <span class="first-line-icon toast-first-line"><MicroKeySlotSquare slot={keySlot} /></span>
       {/if}
       <p class="toast-title min-w-0 break-words">{title}</p>
     </div>
@@ -128,7 +128,8 @@
     overflow: hidden;
   }
 
-  .toast-title {
+  .toast-title,
+  .toast-first-line {
     color: hsl(var(--foreground));
     font-size: var(--toast-title-size, 0.8125rem);
     font-weight: 500;

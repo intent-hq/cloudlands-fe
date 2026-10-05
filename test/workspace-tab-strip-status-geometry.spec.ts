@@ -1,9 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { prepareRootHarnessModules } from './root-harness-import';
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -88,30 +90,6 @@ const virtualModules: Record<string, string> = {
       get state() { return {}; },
       getReadableState() { return { subscribe(run) { run({}); return () => {}; } }; },
     };`,
-  '$shared/paraglide/messages.js': `
-    export const m = {
-      layout_panelTabBar_close_label: () => 'Close',
-      layout_panelTabBar_closeAllOthers_label: () => 'Close all others',
-      layout_panelTabBar_closeTabsToRight_label: () => 'Close tabs to the right',
-      layout_workspaceTabStrip_openSpaces_ariaLabel: () => 'Open spaces',
-      layout_workspaceTabStrip_untitled_label: () => 'Untitled',
-      layout_workspaceTabStrip_status_ariaLabel: ({ name, statuses }) => name + '. ' + statuses,
-      layout_workspaceTabStrip_reorderAnnouncement: ({ name, position }) => name + ' ' + position,
-      layout_workspaceTabStrip_close_ariaLabel: ({ name }) => 'Close ' + name,
-      layout_workspaceTabStrip_loading_ariaLabel: ({ workspaceId }) => 'Loading ' + workspaceId,
-      workspace_statusIcon_failed_label: () => 'Failed',
-      workspace_statusIcon_blocked_label: () => 'Blocked',
-      workspace_statusIcon_needsAttention_label: () => 'Needs attention',
-      workspace_statusIcon_inProgress_label: () => 'In progress',
-      workspace_taskStatus_waiting_label: () => 'Waiting',
-      hud_workspaceState_unread_label: () => 'Unread',
-      workspace_statusIcon_notStarted_label: () => 'Not started',
-      workspace_statusIcon_idle_label: () => 'Idle',
-      workspace_statusIcon_complete_label: () => 'Complete',
-      workspace_statusIcon_prReady_label: () => 'PR ready',
-      workspace_statusIcon_prOpen_label: () => 'PR open',
-      workspace_statusIcon_prMerged_label: () => 'PR merged',
-    };`,
   '@fortawesome/free-solid-svg-icons': `
     export const faArrowRight = { iconName: 'arrow-right' };
     export const faCheck = { iconName: 'check' };
@@ -185,12 +163,24 @@ function geometryStubs(): Plugin {
   };
 }
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, workerInfo) => {
   test.setTimeout(120_000);
+  const cacheDir = viteHarnessCacheDir('workspace-tab-strip-status-geometry', {
+    workerIndex: workerInfo.workerIndex,
+  });
+  console.log(
+    'HARNESS_CACHE ' +
+      JSON.stringify({
+        name: 'workspace-tab-strip-status-geometry',
+        worker: workerInfo.workerIndex,
+        cacheDir,
+        populated: existsSync(resolve(cacheDir, 'deps/_metadata.json')),
+      }),
+  );
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    cacheDir: viteHarnessCacheDir('workspace-tab-strip-status-geometry'),
+    cacheDir,
     optimizeDeps: { entries: ['src/lib/components/layout/WorkspaceTabStrip.svelte'] },
     plugins: [geometryStubs(), svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
@@ -222,7 +212,10 @@ async function mountStrip(
 ) {
   await page.setViewportSize({ width: options.viewport, height: 360 });
   await page.emulateMedia({ reducedMotion: options.reduced ? 'reduce' : 'no-preference' });
-  await page.goto(`${baseUrl}src/app.html`);
+  await prepareRootHarnessModules(page, baseUrl, [
+    '/@id/svelte',
+    '/src/lib/components/layout/WorkspaceTabStrip.svelte',
+  ]);
   await page.addStyleTag({ url: `${baseUrl}src/app.css` });
   await page.addStyleTag({ content: 'body { margin: 0; overflow: hidden; }' });
   await page.evaluate(async ({ zoom, theme, panelOpen, panelWidth }) => {
@@ -247,7 +240,12 @@ async function mountStrip(
     });
     function statusValue(categories: string[]) {
       const items = categories.map((category) => ({ category, count: 1, agentNames: [] }));
-      return { agentCount: 1, categories: items, visibleCategories: items, hiddenCategoryCount: 0 };
+      return {
+        agentCount: 1,
+        categories: items,
+        visibleCategories: items,
+        hiddenCategoryCount: 0,
+      };
     }
     const [{ mount, tick, unmount }, { default: Strip }] = await Promise.all([
       import('/@id/svelte'),
@@ -274,7 +272,8 @@ async function mountStrip(
       },
     };
     if (panelOpen === undefined || panelWidth === undefined) {
-      target.style.cssText = `position:relative;width:100%;padding:24px;zoom:${zoom};`;
+      // Match WindowTitleBar's flex controls: shrinking bounds the scroll viewport.
+      target.style.cssText = `position:relative;display:flex;min-width:0;align-items:center;width:100%;padding:24px;zoom:${zoom};`;
       mount(Strip, { target, props: stripProps });
     } else {
       target.style.cssText = `position:relative;width:100%;zoom:${zoom};`;
@@ -303,11 +302,24 @@ async function mountStrip(
       let currentPanelOpen = panelOpen;
       let currentPanelWidth = panelWidth;
       let component: ReturnType<typeof mount> | null = null;
-      const applyPanelLayout = () => {
+      // Under reduced motion the tokens.css blanket gives every element a
+      // 0.01ms transition-duration, so each inline change below spawns a real
+      // CSSTransition that holds the previous geometry until the document
+      // timeline passes its start (one or two frames). Gate on those
+      // transitions settling instead of counting frames.
+      const settlePanelLayout = async () => {
+        for (;;) {
+          const animations = [controls, sidebar].flatMap((element) => element.getAnimations());
+          if (animations.length === 0) return;
+          await Promise.allSettled(animations.map((animation) => animation.finished));
+        }
+      };
+      const applyPanelLayout = async () => {
         const offset = currentPanelOpen ? currentPanelWidth + 8 : 116;
         controls.style.marginLeft = `${offset}px`;
         controls.style.width = `calc(100% - ${offset}px)`;
         sidebar.style.flexBasis = `${currentPanelOpen ? currentPanelWidth : 0}px`;
+        await settlePanelLayout();
       };
       const renderStrip = async () => {
         if (component) await unmount(component);
@@ -319,17 +331,17 @@ async function mountStrip(
         await tick();
         await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
       };
-      applyPanelLayout();
+      await applyPanelLayout();
       await renderStrip();
 
       Object.assign(globalThis, {
-        __setWorkspacePanelWidth(width: number) {
+        async __setWorkspacePanelWidth(width: number) {
           currentPanelWidth = width;
-          applyPanelLayout();
+          await applyPanelLayout();
         },
         async __setWorkspacePanelOpen(open: boolean) {
           currentPanelOpen = open;
-          applyPanelLayout();
+          await applyPanelLayout();
           await renderStrip();
         },
         __remountWorkspaceTabStrip: renderStrip,
@@ -426,9 +438,11 @@ test('keeps the normal first-tab curve, both flares, and 24px panel gutter acros
       });
 
       for (const panelWidth of scenario.panelWidths) {
-        await page.evaluate((width) => {
-          (
-            globalThis as typeof globalThis & { __setWorkspacePanelWidth: (value: number) => void }
+        await page.evaluate(async (width) => {
+          await (
+            globalThis as typeof globalThis & {
+              __setWorkspacePanelWidth: (value: number) => Promise<void>;
+            }
           ).__setWorkspacePanelWidth(width);
         }, panelWidth);
         await settle(page);

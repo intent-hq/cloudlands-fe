@@ -27,6 +27,7 @@ export function buildWorkspaceTabContextMenu({
       label: m.layout_panelTabBar_closeAllOthers_label(),
       icon: faLayerGroup,
       disabled: closeOthers.length === 0,
+      disabledReason: closeOthers.length === 0 ? m.workspace_tabs_onlyTab_reason() : undefined,
       onClick: () => onCloseTabs(closeOthers, workspaceId),
     },
     {
@@ -34,6 +35,7 @@ export function buildWorkspaceTabContextMenu({
       label: m.layout_panelTabBar_closeTabsToRight_label(),
       icon: faArrowRight,
       disabled: closeRight.length === 0,
+      disabledReason: closeRight.length === 0 ? m.workspace_tabs_noTabsRight_reason() : undefined,
       onClick: () => onCloseTabs(closeRight),
     },
   ];

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { inspectReducerShape } from './check-reducer-shape.mjs';
 
 const moduleImport =
-  "import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';";
+  "import { createReducer } from '@themislib/themis/utils/store/create-reducer';";
 const rendererPath = 'src/store/renderer/slices/example/example-slice.ts';
 const mainPath = 'src/store/main/slices/example/example-slice.ts';
 
@@ -87,10 +87,10 @@ describe('reducer direct-export shape guard', () => {
 
   it('follows named, namespace, and local createReducer aliases', () => {
     const named = inspect(
-      "import { createReducer as makeReducer } from '@augmentcode/themis/utils/store/create-reducer';\nexport const reducer = makeReducer({});\nreducer.with(action, handler);",
+      "import { createReducer as makeReducer } from '@themislib/themis/utils/store/create-reducer';\nexport const reducer = makeReducer({});\nreducer.with(action, handler);",
     );
     const namespace = inspect(
-      "import * as reducers from '@augmentcode/themis/utils/store/create-reducer';\nconst makeReducer = reducers.createReducer;\nexport const reducer = makeReducer({});",
+      "import * as reducers from '@themislib/themis/utils/store/create-reducer';\nconst makeReducer = reducers.createReducer;\nexport const reducer = makeReducer({});",
     );
     expect(named).toEqual({ violations: [], reducerCount: 1, registrationCount: 1 });
     expect(namespace).toEqual({ violations: [], reducerCount: 1, registrationCount: 0 });

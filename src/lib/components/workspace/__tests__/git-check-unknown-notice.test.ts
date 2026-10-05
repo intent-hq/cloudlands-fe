@@ -1,3 +1,4 @@
+import { withHostPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -22,30 +23,28 @@ const mocks = vi.hoisted(() => {
     readable,
     dispatch: vi.fn(),
     goto: vi.fn(),
-    checkGit: vi.fn<() => Promise<unknown>>(),
+    checkGit: vi.fn(),
+    request: vi.fn(),
   };
 });
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
-    state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
-    dispatch: mocks.dispatch,
-  });
-});
-
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (original) => ({
+    ...(await original<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
+    selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+    selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  }),
+);
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable(() => []),
@@ -140,11 +139,14 @@ vi.mock('$lib/components/workspace/initializer/new-workspace-draft', () => ({
 
 // Route the git probe to a per-test mock; everything else on the bridge is a
 // benign success-with-null.
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
+
 vi.mock('$lib/electron-bridge', () => ({
   isElectron: vi.fn(() => true),
   invoke: vi.fn(async (channel: string) => {
     if (channel === 'system:check-git') {
-      return mocks.checkGit();
+      const { mockInvoke } = await import('$shared/ipc-mock-router');
+      return mockInvoke(channel);
     }
     return { success: true, data: null };
   }),
@@ -191,6 +193,46 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import CompactWorkspaceInitializer from '../CompactWorkspaceInitializer.svelte';
+import '$store/renderer/seeders/host-bridge-seeder';
+import { store } from '$store/renderer/store';
+import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
+import {
+  principalContextChanged,
+  principalReceived,
+  principalIdentityChanged,
+} from '$store/renderer/slices/principal/principal-slice';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { selectWorkspaceInitializerGitAvailability } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+let dispose: () => void;
+let stopGit: () => void;
+
+function admit(
+  role: 'owner' | 'member' | 'guest' = 'member',
+  backendId = 'shared-host',
+  principalId = 'member-A',
+) {
+  store.dispatch(principalContextChanged(null));
+  store.dispatch(
+    connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: backendId }),
+  );
+  store.dispatch(connectionStatusChanged('connected'));
+  if (!store.state.workspaceEvents.subscriptionGeneration) store.dispatch(daemonEventsSubscribed());
+  store.dispatch(setLabsMultiplayerEnabled(true));
+  const { principal } = withHostPrincipal(store.state, role);
+  principal.snapshot!.principal.id = principalId;
+  store.dispatch(principalContextChanged(principal.context));
+  store.dispatch(
+    principalReceived(
+      { context: principal.context!, invalidation: 0, presentationVersion: 0 },
+      principal.snapshot!,
+    ),
+  );
+}
+
 import { m } from '$shared/paraglide/messages.js';
 import { warmImport } from '../../../../test/warm-import';
 
@@ -239,6 +281,14 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    dispose = store.init();
+    stopGit = store.runSaga(workspaceInitializerGitSaga);
+    admit('owner');
+    mocks.request.mockImplementation(async (method: string) => {
+      const result = await mocks.checkGit();
+      if (!result?.success || !result.data) throw new Error('backend unavailable');
+      return method === 'host.toolAvailability' ? { tools: { git: result.data } } : result.data;
+    });
     mocks.checkGit.mockResolvedValue({
       success: true,
       data: { available: true, version: '2.44.0' },
@@ -247,6 +297,8 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
 
   afterEach(() => {
     cleanup();
+    stopGit();
+    dispose();
     sessionStorage.clear();
   });
 
@@ -298,5 +350,144 @@ describe('CompactWorkspaceInitializer git-check unknown notice', () => {
     await waitFor(() => expect(createButton(result).disabled).toBe(false));
     expect(result.queryByText(UNKNOWN_LABEL)).toBeNull();
     expect(result.queryByText(NOT_INSTALLED_LABEL)).toBeNull();
+  });
+
+  it('routes an admitted member through the Git projection without owner-only diagnostics', async () => {
+    admit('member');
+    const result = renderInitializer();
+    await waitFor(() =>
+      expect(selectWorkspaceInitializerGitAvailability.select(store.state)).toBe(true),
+    );
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith('host.toolAvailability', {
+      tools: ['git'],
+    });
+    expect(result.queryByText(UNKNOWN_LABEL)).toBeNull();
+    expect(result.queryByText(NOT_INSTALLED_LABEL)).toBeNull();
+  });
+
+  it.each([false, 'unknown'] as const)(
+    'preserves the admitted member Git verdict %s',
+    async (available) => {
+      admit('member');
+      mocks.checkGit.mockResolvedValue({ success: true, data: { available } });
+      const result = renderInitializer();
+      await waitFor(() =>
+        expect(
+          result.getByText(available === false ? NOT_INSTALLED_LABEL : UNKNOWN_LABEL),
+        ).toBeTruthy(),
+      );
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('host.toolAvailability', {
+        tools: ['git'],
+      });
+      await selectValidLocalRepo();
+      await waitFor(() => expect(createButton(result).disabled).toBe(available === false));
+    },
+  );
+
+  it('retains a genuine member transport failure as a non-blocking warning', async () => {
+    admit('member');
+    mocks.checkGit.mockRejectedValue(new Error('shared host transport unavailable'));
+    const result = renderInitializer();
+    await waitFor(() => expect(result.getByText(UNKNOWN_LABEL)).toBeTruthy());
+    expect(result.queryByText(NOT_INSTALLED_LABEL)).toBeNull();
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith('host.toolAvailability', {
+      tools: ['git'],
+    });
+  });
+
+  it('waits for authority and verifies after admission without remounting', async () => {
+    store.dispatch(principalContextChanged(null));
+    const result = renderInitializer();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(result.queryByText(UNKNOWN_LABEL)).toBeNull();
+    admit('member');
+    await waitFor(() =>
+      expect(selectWorkspaceInitializerGitAvailability.select(store.state)).toBe(true),
+    );
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith('host.toolAvailability', {
+      tools: ['git'],
+    });
+    expect(result.queryByText(UNKNOWN_LABEL)).toBeNull();
+  });
+
+  it('does not probe or enable creation for a workspace-only guest', async () => {
+    admit('guest');
+    const result = renderInitializer();
+    await selectValidLocalRepo();
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(createButton(result).disabled).toBe(true);
+    expect(result.queryByText(UNKNOWN_LABEL)).toBeNull();
+  });
+
+  it.each(['host', 'identity', 'reconnect'] as const)(
+    'discards a held reply after %s changes and checks the newly admitted context',
+    async (change) => {
+      admit('member');
+      let resolve!: (value: unknown) => void;
+      mocks.checkGit.mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      );
+      const result = renderInitializer();
+      await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+      if (change === 'identity') store.dispatch(principalIdentityChanged('member-A'));
+      else store.dispatch(backendReconnected());
+      admit(
+        'member',
+        change === 'host' ? 'other-host' : 'shared-host',
+        change === 'identity' ? 'member-B' : 'member-A',
+      );
+      await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(selectWorkspaceInitializerGitAvailability.select(store.state)).toBe(true),
+      );
+      resolve({ success: true, data: { available: false } });
+      await new Promise((done) => setTimeout(done, 0));
+      expect(selectWorkspaceInitializerGitAvailability.select(store.state)).toBe(true);
+      expect(result.queryByText(NOT_INSTALLED_LABEL)).toBeNull();
+      expect(result.queryByText(UNKNOWN_LABEL)).toBeNull();
+    },
+  );
+
+  it('clears an old missing-Git notice while a newly selected host is pending', async () => {
+    admit('member');
+    mocks.checkGit.mockResolvedValueOnce({ success: true, data: { available: false } });
+    const result = renderInitializer();
+    await waitFor(() => expect(result.getByText(NOT_INSTALLED_LABEL)).toBeTruthy());
+    let resolve!: (value: unknown) => void;
+    mocks.checkGit.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    admit('member', 'healthy-host');
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.queryByText(NOT_INSTALLED_LABEL)).toBeNull());
+    expect(result.queryByText(UNKNOWN_LABEL)).toBeNull();
+    resolve({ success: true, data: { available: true } });
+    await waitFor(() =>
+      expect(selectWorkspaceInitializerGitAvailability.select(store.state)).toBe(true),
+    );
+  });
+
+  it('does not accept a held owner result after demotion to workspace-only guest', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.checkGit.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const result = renderInitializer();
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+    admit('guest');
+    resolve({ success: true, data: { available: true } });
+    await selectValidLocalRepo();
+    expect(createButton(result).disabled).toBe(true);
+    expect(selectWorkspaceInitializerGitAvailability.select(store.state)).toBeNull();
+    expect(mocks.request).toHaveBeenCalledTimes(1);
   });
 });

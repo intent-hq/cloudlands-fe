@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   AGENT_KEY_COUNT,
   keyPinsEqual,
@@ -23,15 +23,24 @@ import {
   type CycleScope,
   type CycleScopeFamilyId,
 } from '$features/hardware-console/actions/cycle-scope';
-import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
+import type { EncoderDirection, HardwareDeviceModel } from '$features/hardware-console/input/types';
 import type { PttRecordingFinishedPayload } from '$features/hardware-console/voice/ptt-controller';
-import type { HardwareConsoleState, RadialPromptPickerState } from './hardware-console-types';
+import type {
+  EncoderEffortFeedback,
+  HardwareConsoleEncoderBehavior,
+  HardwareConsoleState,
+  RadialPromptPickerState,
+} from './hardware-console-types';
 
 const closedRadialPrompt: RadialPromptPickerState = { open: false, prompts: [], sector: null };
 
 export const initialState: HardwareConsoleState = {
   enabled: true,
   enabledHydrated: false,
+  enabledHydrationSucceeded: false,
+  encoderBehavior: 'agent-effort',
+  encoderBehaviorHydrated: false,
+  encoderBehaviorSaveFailed: false,
   isConsoleOwner: true,
   keyPins: new Array<string | null>(AGENT_KEY_COUNT).fill(null),
   hydrated: false,
@@ -41,11 +50,13 @@ export const initialState: HardwareConsoleState = {
   promptsHydrated: false,
   radialPrompt: closedRadialPrompt,
   encoderHudWorkspaceId: null,
+  encoderEffortFeedback: null,
   actionHudLabel: null,
   pttRecording: false,
   voiceTranscribing: false,
   actionMappingByModel: normalizeActionMappingsByModel(undefined),
   actionMappingHydrated: false,
+  actionMappingHydrationSucceeded: false,
   cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
 };
 
@@ -63,13 +74,29 @@ export const keyPinsReconciled = createAction<[keyPins: (string | null)[]]>(
   'hardwareConsole/keyPinsReconciled',
 );
 /** Boot-time hydration of the integration-enabled flag from the daemon settings bag. */
-export const hydrateHardwareConsoleEnabled = createAction<[enabled: boolean]>(
+export const hydrateHardwareConsoleEnabled = createAction<[enabled: boolean, succeeded?: boolean]>(
   'hardwareConsole/hydrateEnabled',
+);
+/** A new admitted owner lifetime must not publish the preceding lifetime's settings. */
+export const hardwareConsoleSettingsHydrationStarted = createAction(
+  'hardwareConsole/settingsHydrationStarted',
 );
 /** Enable/disable the hardware-console integration (device panel toggle). */
 export const setHardwareConsoleEnabled = createAction<[enabled: boolean]>(
   'hardwareConsole/setEnabled',
 );
+/** Hydrate the shared left-encoder preference without changing other hardware settings. */
+export const hydrateHardwareConsoleEncoderBehavior = createAction<
+  [behavior: HardwareConsoleEncoderBehavior]
+>('hardwareConsole/hydrateEncoderBehavior');
+/** Apply a user choice immediately; the preference saga persists it. */
+export const setHardwareConsoleEncoderBehavior = createAction<
+  [behavior: HardwareConsoleEncoderBehavior]
+>('hardwareConsole/setEncoderBehavior');
+/** Restore the last confirmed preference after a failed save with no newer choice. */
+export const hardwareConsoleEncoderBehaviorSaveFailed = createAction<
+  [behavior: HardwareConsoleEncoderBehavior]
+>('hardwareConsole/encoderBehaviorSaveFailed');
 /**
  * This window's console ownership changed (initial query result or an
  * `owner-changed` push from main, intent-hq/monorepo#1928).
@@ -121,6 +148,15 @@ export const radialPromptPickerClosed = createAction('hardwareConsole/radialProm
 export const encoderHudShown = createAction<[workspaceId: string]>(
   'hardwareConsole/encoderHudShown',
 );
+/** Decoded detent, with the workspace captured at input time. */
+export const encoderEffortRotated = createAction<
+  [direction: EncoderDirection, workspaceId: string | null]
+>('hardwareConsole/encoderEffortRotated');
+/** Drop queued effort writes when the decoder disconnects or is disposed. */
+export const encoderInputStopped = createAction('hardwareConsole/encoderInputStopped');
+export const encoderEffortHudShown = createAction<[feedback: EncoderEffortFeedback]>(
+  'hardwareConsole/encoderEffortHudShown',
+);
 /** Cycling HUD timed out (or device disconnected): hide it. */
 export const encoderHudHidden = createAction('hardwareConsole/encoderHudHidden');
 /** A cycle action key stepped the walk: show the action HUD with its label. */
@@ -155,7 +191,10 @@ export const voiceTranscriptionFinished = createAction(
 );
 /** Boot-time hydration of the per-model action-key mappings from the daemon settings bag. */
 export const hydrateHardwareConsoleActionMapping = createAction<
-  [actionMappingByModel: Partial<Record<HardwareDeviceModel, ActionKeyActionId[]>>]
+  [
+    actionMappingByModel: Partial<Record<HardwareDeviceModel, ActionKeyActionId[]>>,
+    succeeded?: boolean,
+  ]
 >('hardwareConsole/hydrateActionMapping');
 /** Assign an action to a model's action-key slot (0-based; `none` = unassigned). */
 export const setActionKeyMapping = createAction<
@@ -191,13 +230,50 @@ hardwareConsoleReducer.with(keyPinsReconciled, (state, { payload: [keyPins] }) =
   if (keyPinsEqual(state.keyPins, normalized)) return state;
   return { ...state, keyPins: normalized };
 });
-hardwareConsoleReducer.with(hydrateHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
-  return { ...state, enabled: enabled !== false, enabledHydrated: true };
-});
+hardwareConsoleReducer.with(hardwareConsoleSettingsHydrationStarted, (state) => ({
+  ...state,
+  enabledHydrationSucceeded: false,
+  actionMappingHydrationSucceeded: false,
+}));
+hardwareConsoleReducer.with(
+  hydrateHardwareConsoleEnabled,
+  (state, { payload: [enabled, succeeded = true] }) => {
+    return {
+      ...state,
+      enabled: enabled !== false,
+      enabledHydrated: true,
+      enabledHydrationSucceeded: succeeded,
+    };
+  },
+);
 hardwareConsoleReducer.with(setHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
   if (state.enabled === enabled) return state;
   return { ...state, enabled };
 });
+hardwareConsoleReducer.with(
+  hydrateHardwareConsoleEncoderBehavior,
+  (state, { payload: [encoderBehavior] }) => ({
+    ...state,
+    encoderBehavior,
+    encoderBehaviorHydrated: true,
+  }),
+);
+hardwareConsoleReducer.with(
+  setHardwareConsoleEncoderBehavior,
+  (state, { payload: [encoderBehavior] }) => ({
+    ...state,
+    encoderBehavior,
+    encoderBehaviorSaveFailed: false,
+  }),
+);
+hardwareConsoleReducer.with(
+  hardwareConsoleEncoderBehaviorSaveFailed,
+  (state, { payload: [encoderBehavior] }) => ({
+    ...state,
+    encoderBehavior,
+    encoderBehaviorSaveFailed: true,
+  }),
+);
 hardwareConsoleReducer.with(consoleOwnerChanged, (state, { payload: [isOwner] }) => {
   if (state.isConsoleOwner === isOwner) return state;
   return { ...state, isConsoleOwner: isOwner };
@@ -259,11 +335,16 @@ hardwareConsoleReducer.with(radialPromptPickerClosed, (state) => {
 });
 hardwareConsoleReducer.with(encoderHudShown, (state, { payload: [workspaceId] }) => {
   if (!workspaceId || state.encoderHudWorkspaceId === workspaceId) return state;
-  return { ...state, encoderHudWorkspaceId: workspaceId };
+  return { ...state, encoderHudWorkspaceId: workspaceId, encoderEffortFeedback: null };
 });
+hardwareConsoleReducer.with(encoderEffortHudShown, (state, { payload: [feedback] }) => ({
+  ...state,
+  encoderHudWorkspaceId: null,
+  encoderEffortFeedback: feedback,
+}));
 hardwareConsoleReducer.with(encoderHudHidden, (state) => {
-  if (state.encoderHudWorkspaceId === null) return state;
-  return { ...state, encoderHudWorkspaceId: null };
+  if (state.encoderHudWorkspaceId === null && state.encoderEffortFeedback === null) return state;
+  return { ...state, encoderHudWorkspaceId: null, encoderEffortFeedback: null };
 });
 hardwareConsoleReducer.with(actionHudShown, (state, { payload: [label] }) => {
   if (!label || state.actionHudLabel === label) return state;
@@ -291,11 +372,12 @@ hardwareConsoleReducer.with(voiceTranscriptionFinished, (state) => {
 });
 hardwareConsoleReducer.with(
   hydrateHardwareConsoleActionMapping,
-  (state, { payload: [actionMappingByModel] }) => {
+  (state, { payload: [actionMappingByModel, succeeded = true] }) => {
     return {
       ...state,
       actionMappingByModel: normalizeActionMappingsByModel(actionMappingByModel),
       actionMappingHydrated: true,
+      actionMappingHydrationSucceeded: succeeded,
     };
   },
 );

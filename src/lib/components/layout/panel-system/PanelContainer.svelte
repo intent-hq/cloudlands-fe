@@ -12,6 +12,11 @@
     PanelState,
     PanelTab,
   } from '$features/layout/panel-layout-adapter';
+  import {
+    resolvePaneColumnMove,
+    resolvePaneVerticalMove,
+  } from '$features/layout/panel-pane-column-move';
+  import { countHorizontalPanelColumns } from '$store/renderer/slices/panel-layout/panel-layout-tabless';
   import { cn } from '$lib/utils';
   import Panel from './Panel.svelte';
   import PanelSplitHandle from './PanelSplitHandle.svelte';
@@ -37,6 +42,7 @@
 
   interface Props {
     node: PanelLayoutNode;
+    layoutRoot?: PanelLayoutNode;
     panels: Record<string, PanelState>;
     panelOrder: readonly string[];
     focusedPanelId: string | null;
@@ -97,6 +103,7 @@
     onPaneDragFinish?: () => void;
     /** Handler for moving the active pane to an adjacent column. */
     onMoveActivePane?: (panelId: string, direction: 'next' | 'prev') => void;
+    onMoveActivePaneVertically?: (panelId: string, direction: 'up' | 'down') => void;
     /** Handler for reordering a whole panel relative to another panel */
     onPanelMove?: (
       draggedPanelId: string,
@@ -123,6 +130,7 @@
 
   let {
     node,
+    layoutRoot = node,
     panels,
     panelOrder,
     focusedPanelId,
@@ -158,6 +166,7 @@
     onPaneDropPreview,
     onPaneDragFinish,
     onMoveActivePane,
+    onMoveActivePaneVertically,
     onPanelMove,
     onTabDropToSplitHandle,
     onTabRename,
@@ -177,6 +186,10 @@
     // For splits, hidden if zoomed panel is not a descendant
     return !containsPanel(nodeToCheck, zoomedPanelId);
   }
+
+  // CSS-hidden split branches remain mounted; all descendant consumers need
+  // the same effective visibility as the panel surface.
+  const effectiveActive = $derived(active && !isPanelHiddenByZoom(node));
 
   function containsPanel(nodeToCheck: PanelLayoutNode, panelId: string): boolean {
     if (nodeToCheck.type === 'panel') {
@@ -228,7 +241,7 @@
   }
 
   $effect(() => {
-    if (!active) {
+    if (!effectiveActive) {
       lifecycleMotionReady = false;
       return;
     }
@@ -333,11 +346,13 @@
           : containerRef.clientHeight;
 
     panelReferenceSize = getPanelReferenceSize(availableSize, gutterSize);
-    if (nodePath.length === 0) onRootReferenceSizeChange?.(panelReferenceSize);
+    if (nodePath.length === 0 && node.direction === 'horizontal') {
+      onRootReferenceSizeChange?.(panelReferenceSize);
+    }
   }
 
   $effect(() => {
-    if (!active || node.type !== 'split' || !containerRef) return;
+    if (!effectiveActive || node.type !== 'split' || !containerRef) return;
 
     const observedElement =
       nodePath.length === 0
@@ -647,9 +662,9 @@
         {panel}
         {workspaceId}
         {layoutId}
-        {active}
+        active={effectiveActive}
         {availableCanvasWidth}
-        canCreateColumn={panelOrder.length < 4}
+        canCreateColumn={countHorizontalPanelColumns(layoutRoot) < 4}
         isRightmostPanel={panelOrder.at(-1) === node.panelId}
         isFocused={focusedPanelId === node.panelId}
         showFocusBorder={panelOrder.length > 1 && zoomedPanelId === null}
@@ -670,10 +685,19 @@
           onTabMoveToPanel?.(node.panelId, tabId, fromPanelId, insertIndex)}
         {onPaneDropPreview}
         {onPaneDragFinish}
-        onMovePaneLeft={onMoveActivePane && panelIndex > 0
+        onMovePaneUp={onMoveActivePaneVertically && resolvePaneVerticalMove(layoutRoot, panel, 'up')
+          ? () => onMoveActivePaneVertically(node.panelId, 'up')
+          : undefined}
+        onMovePaneDown={onMoveActivePaneVertically &&
+        resolvePaneVerticalMove(layoutRoot, panel, 'down')
+          ? () => onMoveActivePaneVertically(node.panelId, 'down')
+          : undefined}
+        onMovePaneLeft={onMoveActivePane &&
+        resolvePaneColumnMove(panelOrder, panel, 'prev', layoutRoot)
           ? () => onMoveActivePane(node.panelId, 'prev')
           : undefined}
-        onMovePaneRight={onMoveActivePane && panelIndex >= 0 && panelIndex < panelOrder.length - 1
+        onMovePaneRight={onMoveActivePane &&
+        resolvePaneColumnMove(panelOrder, panel, 'next', layoutRoot)
           ? () => onMoveActivePane(node.panelId, 'next')
           : undefined}
         onMoveLeft={panelIndex > 0
@@ -689,7 +713,7 @@
         {onCreateTerminal}
         {onOpenBrowser}
         {contained}
-        onSplitHorizontal={panelOrder.length < 4
+        onSplitHorizontal={countHorizontalPanelColumns(layoutRoot) < 4
           ? () => onSplitPanel?.(node.panelId, 'horizontal')
           : undefined}
       />
@@ -732,12 +756,13 @@
                explicit root-handle resizing owns intrinsic overflow. -->
           <PanelContainer
             node={item.child}
+            {layoutRoot}
             {panels}
             {panelOrder}
             {focusedPanelId}
             {workspaceId}
             {layoutId}
-            {active}
+            active={effectiveActive}
             {availableCanvasWidth}
             {contained}
             {suppressLayoutMotion}
@@ -762,6 +787,7 @@
             {onPaneDropPreview}
             {onPaneDragFinish}
             {onMoveActivePane}
+            {onMoveActivePaneVertically}
             {onPanelMove}
             {onTabDropToSplitHandle}
             {onTabRename}
@@ -773,7 +799,7 @@
           />
         {:else}
           <!-- i18n-ignore (scanner false positive on the < comparison) -->
-          {#if active}
+          {#if effectiveActive}
             <PanelSplitHandle
               direction={node.direction}
               {nodePath}

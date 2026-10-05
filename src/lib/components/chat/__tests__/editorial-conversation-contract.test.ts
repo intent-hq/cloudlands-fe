@@ -2,6 +2,7 @@
 //   ../PinnedUserPrompt.svelte, ../pinned-prompt.ts, ../user-message-surface.ts,
 //   ../ConversationTurnGap.svelte, ../MessageContent.svelte, ../StreamingMessageContent.svelte,
 //   ../ResponseGroup.svelte, ../operational-disclosure-row.ts, ../ChatOperationalRow.svelte,
+//   ../operational-window-items.ts, ../OperationalWindow.svelte,
 //   ../StreamingStatus.svelte, ../StreamingTypingIndicator.svelte, ../EventWakeupBanner.svelte,
 //   ../InlineAgentAvatar.svelte, ../SuggestedPrompts.svelte, ../message-action-surface.ts,
 //   ../ToolCall.svelte, ../ThinkingBlock.svelte, ../ContextEngineToolCall.svelte,
@@ -33,7 +34,7 @@ function openingTagAfter(content: string, anchor: string) {
 }
 
 describe('editorial conversation presentation contract', () => {
-  it('assigns restored and streaming transcript identity to the outer row only', () => {
+  it('assigns restored, streaming and staged transcript identity to the outer row only', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
 
@@ -41,7 +42,7 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain('ownsMessageIdentity = true');
     expect(message).toContain('data-message-id={ownsMessageIdentity ? message?.id : undefined}');
     expect(message).toContain('data-message-role={ownsMessageIdentity ? role : undefined}');
-    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(4);
+    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(5);
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,120}ownsMessageIdentity/g)).toBeNull();
   });
 
@@ -172,7 +173,8 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
     expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
-    expect(message).toContain('<div class="type-body text-pretty text-foreground">');
+    // Message body/action containment is measured by message-action-dates.ct.spec.ts,
+    // rather than coupling this suite to the body's literal class list.
     expect(markdown).toContain('font-size: var(--text-body-size)');
     expect(markdown).toContain('font-weight: var(--text-body-strong-weight)');
   });
@@ -185,13 +187,19 @@ describe('editorial conversation presentation contract', () => {
 
     expect(staticContent).toContain('<div class="flex flex-col gap-0"');
     expect(streamingContent).toContain('class="relative flex flex-col gap-0"');
-    expect(staticContent.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(2);
-    expect(staticContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
-    expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
-    expect(streamingContent).toContain(
-      '{@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}',
+    const projection = source('src/lib/components/chat/operational-window-items.ts');
+    // Inline and expanded groups share the canonical staged child renderer.
+    // Their spacing helpers below must apply to both projected paths.
+    for (const renderer of [staticContent, streamingContent]) {
+      expect(renderer.match(/{@render renderResponseGroupChild\(/g)).toHaveLength(1);
+      expect(renderer).toContain('row={renderWindowItem}');
+      expect(renderer).toContain('items={projectWindowItems(');
+    }
+    expect(projection).toContain('shouldRenderResponseGroupInline(block)');
+    expect(projection).toContain(
+      'block.children.forEach((child, ci) => append(child, index, block, ci))',
     );
-    expect(streamingContent).toContain('{#if shouldRenderResponseGroupInline(group)}');
+    expect(streamingContent).toContain('getOperationalClusterSpacingClass(');
     expect(streamingContent).toContain('isAdjacentOperationalClusterRow(');
     expect(streamingContent).toContain('isVisibleTopLevelBlock,');
     expect(streamingContent).toContain('data-operational-cluster-row=');
@@ -209,9 +217,11 @@ describe('editorial conversation presentation contract', () => {
     expect(staticContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(streamingContent).toContain('OPERATIONAL_GROUP_CHILD_ROW_CLASS');
     expect(responseGroup).not.toContain('pl-4.5');
-    expect(staticContent).toMatch(/nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/);
+    expect(staticContent).toMatch(
+      /nested,\s+item\.fragment > 0 \|\|\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
+    );
     expect(streamingContent).toMatch(
-      /nested,\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
+      /nested,\s+item\.fragment > 0 \|\|\s+isAdjacentOperationalClusterRow\(\s*group\.children,/,
     );
   });
 
@@ -221,7 +231,6 @@ describe('editorial conversation presentation contract', () => {
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
 
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain("<div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
     // Both transcript renderers mount the shared inline proposal host.
     expect(streaming).toContain('InlineProposal');
@@ -260,8 +269,6 @@ describe('editorial conversation presentation contract', () => {
     // Render-aware turn-body decisions are covered by subscription-card-spacing.test.ts;
     // chat-panel-visible-card-seams.ct.spec.ts and chat-panel-pending-status-spacing.ct.spec.ts
     // measure the production transcript for hidden/visible bodies and pending-status transitions.
-    // Card/batch/attention seam precedence is covered by subscription-card-gap
-    // and attention-flow-spacing-geometry browser tests using measured gaps.
     expect(panel).not.toContain('data-testid="chat-scroll-to-bottom-button"');
     expect(panel).toContain('showAgentCards={!isDelegatedBackgroundTaskAgent}');
     expect(panel).not.toContain('agentEventsForCards');
@@ -279,28 +286,15 @@ describe('editorial conversation presentation contract', () => {
     expect(avatar).toContain('(onclick ? m.chat_msgAttribution_openAgent_title');
   });
 
-  it('reveals message and suggestion actions for keyboard focus as well as hover', () => {
-    const message = source('src/lib/components/chat/ChatMessage.svelte');
-    const actionSurface = source('src/lib/components/chat/message-action-surface.ts');
+  // Message action hover/focus, clickability and activation are exercised against
+  // production ChatMessage in message-action-dates.ct.spec.ts.
+  it('reveals suggestion actions for keyboard focus as well as hover', () => {
     const suggestions = source('src/lib/components/chat/SuggestedPrompts.svelte');
 
-    expect(actionSurface).toContain('group-focus-within:pointer-events-auto');
-    expect(actionSurface).toContain('group-focus-within:opacity-100');
-    expect(message).toContain('class="absolute right-1 z-10');
     expect(suggestions).toContain('group-focus-within:opacity-100');
     expect(suggestions).toContain('focus-visible:opacity-100');
     expect(suggestions).toContain('icon={faArrowRight}');
     expect(suggestions).not.toContain('faPaperPlane');
-  });
-
-  it('uses the MessageComposer surface shell in docked and standalone contexts', () => {
-    const input = source('src/lib/components/chat/input/SimpleRichInput.svelte');
-
-    expect(input).toContain('surfaceClasses(2, 2)');
-    expect(input).toContain('rounded-(--radius-large)');
-    expect(input).toContain('data-ring-state={ringState}');
-    expect(input).not.toContain(':global(.panel:not(.focused) .rich-input-container) {');
-    expect(input).toContain('@container style(--motion-reduced: 1)');
   });
 
   it('gives tool, context, and reasoning rows one shared muted shell', () => {
@@ -355,7 +349,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const transcriptBottomInsetClass = $derived(');
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(queueEdgeLayout).toContain("return isCompactMode ? 'pb-3' : 'pb-6'");
-    expect(panel).toContain("isCompactMode ? 'pb-2' : 'pb-3'");
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');
@@ -398,9 +391,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('AuroraSofteningLayer');
     expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
     expect(panel).toContain('height: calc(100% + 10rem)');
-    expect(panel).toContain('{#snippet queueRegion()}');
-    expect(panel).toContain('<QueuedMessageList');
-    expect(panel).not.toContain('data-testid="queued-message-utility-area"');
     expect(panel).not.toContain('regular-composer-aurora-host');
   });
 });

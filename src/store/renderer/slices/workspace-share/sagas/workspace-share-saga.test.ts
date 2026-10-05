@@ -1,3 +1,8 @@
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
+import {
+  withHostPrincipal,
+  withLegacyPrincipal,
+} from '../../../../../test/fixtures/principal-state';
 /**
  * Saga → wire contract for the owner-side Share dialog. FAKE transport only:
  * `backendRequest` is mocked, so each test asserts the exact JSON-RPC method
@@ -16,10 +21,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
+vi.unmock('$lib/electron-bridge');
 
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+const mocks = vi.hoisted(() => ({ request: vi.fn(), reconnected: new Set<() => void>() }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.request,
+  onBackendReconnected: (handler: () => void) => {
+    mocks.reconnected.add(handler);
+    return () => mocks.reconnected.delete(handler);
+  },
+  onBackendNotification: () => () => {},
+}));
+
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { clearInviteLinks, readInviteLink } from '$features/workspace-sharing/invite-link-vault';
 import type {
   HostPrincipal,
@@ -35,6 +49,7 @@ import {
   initialState as guestSessionsInitialState,
 } from '../../guest-sessions/guest-sessions-slice';
 import {
+  shareIntegrationAuthRequested,
   closeShareDialog,
   getRosterState,
   initialState,
@@ -55,6 +70,7 @@ import {
   type WorkspaceShareState,
 } from '../workspace-share-slice';
 import { selectShareInvitablePrincipals } from '../workspace-share-selectors';
+import { initializeIdentity } from '../../identity/identity-slice';
 import { workspaceShareSaga } from './workspace-share-saga';
 
 /** Rides inside every mocked invite url (the capability); must never reach a sink. */
@@ -117,20 +133,23 @@ function rootState(share: WorkspaceShareState, roles: Record<string, WorkspaceRo
   const workspaces = Object.entries(roles).map(
     ([id, myRole]) => ({ id, title: id, myRole }) as unknown as Workspace,
   );
-  return {
+  return withLegacyPrincipal({
     workspaceShare: share,
+    githubAuth: { isAuthenticated: false },
+    gitlabAuth: { host: 'forge.example', statusReady: false, isConfigured: false },
     workspace: { workspaces: createCollection('id', workspaces) },
     connections: connectionsInitialState,
     guestSessions: guestSessionsReducer(
       guestSessionsInitialState,
       guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
     ),
-  };
+  } as unknown as StoreState);
 }
 
 function harness(
   seed: WorkspaceShareState = initialState,
   roles: Record<string, WorkspaceRole | undefined> = { 'ws-1': 'owner', 'ws-2': 'owner' },
+  project: (state: StoreState) => StoreState = (state) => state,
 ) {
   const channel = stdChannel();
   let state = seed;
@@ -145,7 +164,7 @@ function harness(
     channel.put(action);
   });
   const task = runSaga(
-    { channel, dispatch, getState: () => rootState(state, roles) },
+    { channel, dispatch, getState: () => project(rootState(state, roles)) },
     workspaceShareSaga,
   );
   return {
@@ -232,6 +251,66 @@ describe('workspaceShareSaga', () => {
     consoleSpies.error.mockClear();
   });
 
+  it('a capable member can pin GitLab without host-admin or repository-auth rights (#6392)', async () => {
+    replyByMethod({ 'workspace.invite.create': createReply() });
+    const h = harness(opened(), { 'ws-1': 'collaborator' }, (root) => {
+      const state = withHostPrincipal(root, 'member');
+      state.userPreferences = { ...state.userPreferences, labsGitLabEnabled: true };
+      state.workspace = {
+        ...state.workspace,
+        hasLoaded: true,
+        loadedBackendId: state.connections.windowBackendId,
+        workspaces: createCollection(
+          'id',
+          getItems(state.workspace.workspaces).map((ws) => ({ ...ws, canManage: true })),
+        ),
+        capabilityContext: selectPrincipalActionContext.select(state),
+      };
+      return state;
+    });
+    try {
+      h.dispatch(
+        shareInviteCreateRequested({
+          pinLogin: 'sam',
+          pin: { provider: 'gitlab', host: 'Other.Example:8443' },
+        }),
+      );
+      await settle();
+      expect(mocks.request).toHaveBeenCalledWith('workspace.invite.create', {
+        workspaceId: 'ws-1',
+        pinLogin: 'sam',
+        pinProvider: 'gitlab',
+        pinHost: 'other.example:8443',
+      });
+      expect(calls('sourceControl.authStatus')).toEqual([]);
+      expect(calls('github.authStatus')).toEqual([]);
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('uses admission-owned status without warming either provider from Share', async () => {
+    const h = harness(opened());
+    h.dispatch(shareIntegrationAuthRequested('ws-1', 'forge.example'));
+    await settle();
+    expect(calls('github.authStatus')).toEqual([]);
+    expect(calls('sourceControl.authStatus')).toEqual([]);
+    expect(h.state().integrationAuth).toEqual({ github: false, gitlab: false });
+    h.task.cancel();
+    await h.task.toPromise();
+  });
+
+  it('does not treat a requested host string as a canonical GitLab status', async () => {
+    const h = harness(opened());
+    h.dispatch(shareIntegrationAuthRequested('ws-1', 'untrusted.example'));
+    await settle();
+    expect(h.state().integrationAuth.gitlab).toBe(false);
+    expect(mocks.request).not.toHaveBeenCalled();
+    h.task.cancel();
+    await h.task.toPromise();
+  });
+
   it('reads the roster and open invites for the target when the dialog opens', async () => {
     replyByMethod();
     const h = harness();
@@ -243,6 +322,8 @@ describe('workspaceShareSaga', () => {
     expect(mocks.request).toHaveBeenCalledWith('workspace.invite.list', { workspaceId: 'ws-1' });
     expect(mocks.request).toHaveBeenCalledWith('principal.list', {});
     expect(mocks.request).toHaveBeenCalledTimes(3);
+    // The pin's default forge follows `identity.provider`: the identity slice is asked to read it.
+    expect(h.dispatched).toContainEqual(initializeIdentity());
     expect(h.state().loadStatus).toBe('loaded');
     expect(getItems(h.state().members)).toEqual([owner]);
     expect(getItems(h.state().principals)).toEqual([guest]);
@@ -525,7 +606,7 @@ describe('workspaceShareSaga', () => {
     h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
     await settle();
     expect(mocks.request).not.toHaveBeenCalled();
-    expect(h.state().withheld).toBe(true);
+    expect(h.state().withheld).toBe(false); // unknown is withheld by selectors, not a permanent denial
     h.task.cancel();
   });
 
@@ -822,6 +903,41 @@ describe('workspaceShareSaga', () => {
     expect(h.state().createError).not.toBeNull();
     expect(h.state().createError).not.toBe(listenerDownError);
     expect(h.state().createError).not.toContain('Remote Access');
+    h.task.cancel();
+  });
+
+  // Remote access on, Tailcat tunnel off: the daemon's tunnel-only refusal
+  // (-32603, `data.code = 'tunnel-down'`) names the tunnel, not Remote
+  // Access, so the owner turns on the one setting that is actually off.
+  it('maps the tunnel-down daemon code onto the Tailcat inline error, distinct from listener-down', async () => {
+    replyByMethod({
+      'workspace.invite.create': Object.assign(new Error('tunnel is down'), {
+        rpcCode: -32603,
+        data: { code: 'tunnel-down' },
+      }),
+    });
+    const h = harness(opened());
+
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().creating).toBe(false);
+    const tunnelDownError = h.state().createError;
+    expect(tunnelDownError).toContain('Tailcat');
+    expect(tunnelDownError).not.toContain('Remote Access');
+    expect(h.state().createdLink).toBeNull();
+
+    replyByMethod({
+      'workspace.invite.create': Object.assign(new Error('invite listener is down'), {
+        rpcCode: -32603,
+        data: { code: 'listener-down' },
+      }),
+    });
+    h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
+    await settle();
+
+    expect(h.state().createError).toContain('Remote Access');
+    expect(h.state().createError).not.toBe(tunnelDownError);
     h.task.cancel();
   });
 

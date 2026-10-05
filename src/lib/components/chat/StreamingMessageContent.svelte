@@ -1,5 +1,10 @@
 <script lang="ts">
+  import OperationalWindow from './OperationalWindow.svelte';
+  import { useOperationalPanel } from './operational-panel.svelte';
+  import { createWindowItemProjector, type WindowItem } from './operational-window-items';
+  import type { ReasoningHistoryItem } from './reasoning-heading';
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
+  import type { TextBlockMedia } from '$shared/types/content-block';
   import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
@@ -29,7 +34,8 @@
   import ChatVideoBlock from './ChatVideoBlock.svelte';
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
   import { PatchBlockContent } from '$features/file-tracking/components/diff';
-  import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import StreamingDiagramRenderer from '$lib/components/diagrams/StreamingDiagramRenderer.svelte';
+  import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
@@ -52,6 +58,7 @@
     type RenderContentBlock,
   } from '$lib/utils/messageParser';
   import ResponseGroup from './ResponseGroup.svelte';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import {
     getOperationalClusterSpacingClass,
     isAdjacentOperationalClusterRow,
@@ -63,23 +70,28 @@
   } from './operational-disclosure-row';
   import {
     dedupeKeys,
-    getResponseGroupBlockKeys,
+    getResponseGroupChildBoundary,
     isNestedReasoningSectionBoundary,
     isNestedReasoningSectionStart,
     normalizeResponseGroups,
-    shouldRenderResponseGroupInline,
   } from './response-group-blocks';
   import { chatSearchBlockPath } from './chat-search';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import { onDestroy } from 'svelte';
+  import { createToolEntranceReservations } from './operational-tool-entrance.svelte';
+  import { areAnimationsEnabled } from '$lib/utils/animations';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import flatstr from 'flatstr';
 
   import {
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { canOpenAgentPath } from './agent-path-actions';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('StreamingMessageContent');
@@ -116,6 +128,19 @@
     isLastConversationMessage = false,
     onSetupScriptGenerated,
   }: Props = $props();
+  const mediaAgent$ = $derived(selectAgentSession(agentId ?? ''));
+  const allowFileMedia = $derived(
+    !agentId || (!!$mediaAgent$ && !hasNodeOwnedAgentPath($mediaAgent$)),
+  );
+
+  const operationalPanel = useOperationalPanel();
+  const rendererId = $props.id();
+  const rowScope = $derived(messageId ?? rendererId);
+  const projectCanonicalItems = $derived(
+    operationalPanel.state(`projection:${rowScope}`, () => ({
+      project: createWindowItemProjector(),
+    })).project,
+  );
 
   // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock): substitute cached full blocks for slim-truncated
@@ -154,16 +179,22 @@
    */
   const animatedKeys = new Set<string>();
 
-  /**
-   * Svelte action that adds the slide-up animation class once per unique
-   * block key, then removes it after the animation completes. Uses a
-   * persistent Set to track which keys have already animated, so even if
-   * Svelte recreates the DOM element the animation won't replay.
-   */
+  // Existing rows must not replay their entrance when a live transcript mounts.
+  // svelte-ignore state_referenced_locally -- initial tool identities are an intentional snapshot.
+  const enteredToolKeys = new Set(
+    content.filter((block) => block.type === 'tool_use').map((block) => block.id),
+  );
+
+  function enterToolRow(node: Element, key: string) {
+    if (!isStreaming || enteredToolKeys.has(key)) return { duration: 0 };
+    enteredToolKeys.add(key);
+    return safeDisclosureTransition(node, { tier: 'moderate', y: 0 }, { direction: 'in' });
+  }
+
+  // Apply the entrance class once per persistent key and remove it on completion.
   function animateIn(node: HTMLElement, params: { animate: boolean; key: string }) {
     if (!params.animate || animatedKeys.has(params.key)) return {};
 
-    // Mark as animated immediately
     animatedKeys.add(params.key);
 
     node.classList.add('content-block--animate-in');
@@ -182,7 +213,6 @@
     };
   }
 
-  // Use $derived.by for synchronous computation without side effects
   let blocks = $derived.by(() => {
     // Collapse duplicate §7.1 resource blocks (daemon-attached canonical +
     // FE-lifted fallback for the same logical resource) so exactly one card
@@ -199,7 +229,6 @@
       ),
     ).filter((block) => !isQuestionResourceBlock(block));
 
-    // DEBUG: Log content block types for tool call visibility debugging
     if (isStreaming) {
       const blockTypes = rawBlocks.map((b) => b.type);
       const hasToolUse = blockTypes.includes('tool_use');
@@ -214,10 +243,8 @@
 
     let filtered: ContentBlock[];
     if (!isStreaming) {
-      // Not streaming - do full processing
       // Filter empty text blocks and optionally hide tool activity.
       filtered = rawBlocks.filter((block) => {
-        // Filter out tool_use blocks if hideToolCalls is true
         if (hideToolCalls && block.type === 'tool_use') {
           return false;
         }
@@ -238,7 +265,6 @@
     } else {
       // Streaming with content blocks - filter empty text blocks and optionally tool calls
       filtered = rawBlocks.filter((block) => {
-        // Filter out tool calls if requested
         if (hideToolCalls && (block.type === 'tool_use' || block.type === 'tool_result')) {
           return false;
         }
@@ -278,15 +304,12 @@
     normalizeResponseGroups(groupContentBlocks(blocks, isStreaming), isStreaming),
   );
 
-  // Track tool states
   let toolStates = $state<Map<string, 'running' | 'completed' | 'error'>>(new Map());
 
   let toolResultClassification = $derived.by(() => classifyToolResults(groupedBlocks));
   let toolResultsMap = $derived(toolResultClassification.resultsMap);
 
-  // Update tool states based on content
   $effect(() => {
-    // Set tool states based on whether they have results
     const newToolStates = new Map<string, 'running' | 'completed' | 'error'>();
 
     for (const block of blocks) {
@@ -299,7 +322,6 @@
         // tool-call pairing.
         const result = findToolResult(toolResultsMap, toolBlock);
         if (result) {
-          // Check both snake_case and camelCase for error flag
           const isError = result.is_error || result.isError;
           // Also detect errors from the result payload text (§7.1 `output`,
           // legacy `content` fallback; e.g., "Error:" prefix or "Tool Error:")
@@ -318,13 +340,9 @@
       }
     }
 
-    // Update state with new maps to trigger reactivity
     toolStates = newToolStates;
   });
 
-  // No need for manual markdown processing - MarkdownViewer handles it
-
-  // Handle file opening from AugmentCodeSnippet
   function handleOpenFile(detail: {
     path: string;
     line?: number;
@@ -332,7 +350,7 @@
     sourcePanelId?: string;
   }) {
     logger.info('Opening file from code snippet', detail);
-    if (!workspaceId) return;
+    if (!workspaceId || !canOpenAgentPath(appStore.state, agentId)) return;
     appStore.dispatch(
       openWorkspaceFile(workspaceId, detail.path, {
         line: detail.line,
@@ -342,7 +360,6 @@
     );
   }
 
-  // Handle diagram binding clicks (file, note, etc.)
   function handleDiagramBindingClick(e: MouseEvent, binding: { type: string; target: string }) {
     logger.info('Diagram binding clicked', binding);
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
@@ -416,19 +433,17 @@
   const MAX_CACHE_SIZE = 100;
 
   function parseTextBlock(text: string): ParsedTextResult {
-    const cacheKey = JSON.stringify([workspaceId ?? null, flatstr(text)]);
-    // Check cache first
+    const cacheKey = JSON.stringify([workspaceId ?? null, isStreaming, flatstr(text)]);
     const cached = parsedTextCache.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Extract setup script if present
     const setupScript = AuggieTextParser.extractSetupScript(text);
     // Strip suggested prompts (they're rendered separately in ChatPanel)
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
     // Parse the content - this handles digests inline as 'digest' type blocks
-    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId);
+    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId, { isStreaming });
     // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
     const grouped = groupParsedBlocks(parsed);
     const result = { blocks: grouped, setupScript };
@@ -598,19 +613,30 @@
     }
     return -1;
   }
+  const reserveToolEntrance = createToolEntranceReservations(operationalPanel, enteredToolKeys);
+  function projectWindowItems(...args: Parameters<ReturnType<typeof createWindowItemProjector>>) {
+    const animate = isStreaming && areAnimationsEnabled() && !prefersReducedMotion();
+    return projectCanonicalItems(...args).map((item) => reserveToolEntrance(item, animate));
+  }
+  const windowItems = $derived(
+    projectWindowItems(groupedBlocks, rowScope, (block, grouped) =>
+      grouped ? isVisibleGroupChild(block as ContentBlock) : isVisibleTopLevelBlock(block),
+    ),
+  );
 </script>
 
 {#snippet renderParsedContentBlock(
   parsedBlock: ParsedContent,
   isLastBlock: boolean,
   insetProse = false,
+  media: TextBlockMedia | undefined = undefined,
 )}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+      {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse)}
+    {@render renderParsedContentBlockBody(parsedBlock, isLastBlock, insetProse, media)}
   {/if}
 {/snippet}
 
@@ -618,6 +644,7 @@
   parsedBlock: ParsedContent,
   isLastBlock: boolean,
   insetProse: boolean,
+  media: TextBlockMedia | undefined,
 )}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
@@ -640,18 +667,25 @@
         {parsedBlock.content}
       </div>
     </div>
-  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
-    <div class="diagram-block my-2">
-      <DiagramRenderer
-        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
-        editable={false}
+  {:else if parsedBlock.type === 'diagram'}
+    <DiagramPresentation kind="custom">
+      <StreamingDiagramRenderer
+        diagram={(parsedBlock.metadata?.diagramData as DiagramPrimitive | null) ?? null}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        source={parsedBlock.metadata?.rawSource ?? parsedBlock.content}
+        sourceError={parsedBlock.metadata?.diagramError}
+        viewResetKey={String(parsedBlock.metadata?.fenceStart ?? '')}
         onBindingClick={handleDiagramBindingClick}
       />
-    </div>
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'mermaid'}
-    <div class="mermaid-block my-8">
-      <MermaidRenderer code={parsedBlock.content || ''} />
-    </div>
+    <DiagramPresentation kind="mermaid" rendererOwnsActions>
+      <MermaidRenderer
+        code={parsedBlock.metadata?.rawSource ?? parsedBlock.content ?? ''}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        showExportButton
+      />
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
     {@const patchData = parsedBlock.metadata.patchData}
     <PatchBlockContent
@@ -664,13 +698,20 @@
     <ChatWorkspaceCard workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds} />
   {:else if parsedBlock.type === 'nav_link' && parsedBlock.metadata?.navLinkData}
     <NavLink
+      canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
       target={parsedBlock.metadata.navLinkData.target}
       label={parsedBlock.metadata.navLinkData.label}
       {workspaceId}
     />
   {:else if parsedBlock.type === 'video' && parsedBlock.metadata?.videoData}
     {@const video = parsedBlock.metadata.videoData}
-    <ChatVideoBlock source={video.source} name={video.name} poster={video.poster} />
+    <ChatVideoBlock
+      {allowFileMedia}
+      canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+      source={video.source}
+      name={video.name}
+      poster={video.poster}
+    />
   {:else if parsedBlock.type === 'reference' && parsedBlock.metadata?.referenceData}
     <ChatReferenceBlock
       reference={parsedBlock.metadata.referenceData}
@@ -689,22 +730,28 @@
   {:else if parsedBlock.type === 'text'}
     <div data-assistant-prose={insetProse ? 'streaming-markdown' : undefined}>
       <MarkdownViewer
+        {allowFileMedia}
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
         chatImageThumbnails
+        {media}
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
   {:else}
     <div data-assistant-prose={insetProse ? 'streaming-fallback' : undefined}>
       <MarkdownViewer
+        {allowFileMedia}
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={parsedBlock.content || ''}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
         taskBlockRenderMode="content"
         chatImageThumbnails
+        {media}
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -719,6 +766,8 @@
   adjacentOperationalRow = false,
   reasoningHistory = false,
   searchPath: string | undefined = undefined,
+  rowKey: string = parsedKey,
+  historyItem: ReasoningHistoryItem | undefined = undefined,
 )}
   {@const proposal = getProposalFromBlock(block)}
   {#if proposal !== null}
@@ -727,7 +776,12 @@
     {/if}
   {:else if isNavLinkBlock(block)}
     <div class="w-full">
-      <NavLink target={block.target} label={block.label} {workspaceId} />
+      <NavLink
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+        target={block.target}
+        label={block.label}
+        {workspaceId}
+      />
     </div>
   {:else if block.type === 'text' && (block.text || (block as any).content)}
     {@const textContent = block.text || (block as any).content || ''}
@@ -751,6 +805,7 @@
             renderBlock as ParsedContent,
             isLastBlock && parsedBlockIndex === parsedResult.blocks.length - 1,
             !nested,
+            block.media,
           )}
         {/each}
       {:else}
@@ -763,11 +818,14 @@
             data-assistant-prose={nested ? undefined : 'streaming-plain'}
           >
             <MarkdownViewer
+              {allowFileMedia}
+              canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
               content={cleanedText}
               isStreaming={isStreaming && isLastBlock}
               {workspaceId}
               taskBlockRenderMode="content"
               chatImageThumbnails
+              media={block.media}
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
             />
           </div>
@@ -778,8 +836,9 @@
     {@const toolBlock = block as ToolUseBlock}
     {@const toolResultBlock = findToolResult(toolResultsMap, toolBlock)}
     {@const resultContent = getToolResultPayload(toolResultBlock)}
-    <div class="relative w-full min-w-0">
+    <div class="relative w-full min-w-0" in:enterToolRow|global={toolBlock.id} data-tool-entry>
       <ToolCall
+        saved={operationalPanel.state(rowKey, () => ({}))}
         toolUse={toolBlock}
         toolState={toolStates.get(toolBlock.id) || 'running'}
         result={resultContent}
@@ -799,6 +858,8 @@
             />
           {:else if nestedBlock?.type === 'video' && nestedBlock.source}
             <ChatVideoBlock
+              {allowFileMedia}
+              canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
               source={nestedBlock.source}
               name={nestedBlock.fileName}
               poster={typeof nestedBlock.metadata?.poster === 'string'
@@ -819,44 +880,60 @@
         {#if typeof resultPresentation.payload === 'string'}
           <CodeBlock code={resultPresentation.payload} />
         {:else if Array.isArray(resultPresentation.payload)}
-          {#each resultPresentation.payload as any[] as nestedBlock, nestedIndex (`nested-${parsedKey}-${nestedIndex}-${nestedBlock.id ?? nestedBlock.type}`)}
-            {#if nestedBlock.type === 'text' && nestedBlock.text}
-              <div class="w-full">
-                <MarkdownViewer
-                  content={nestedBlock.text}
-                  {workspaceId}
-                  taskBlockRenderMode="content"
-                  chatImageThumbnails
-                  onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+          <OperationalWindow
+            scope={`${rowScope}:result:${rowKey}`}
+            items={projectWindowItems(
+              resultPresentation.payload as ContentBlock[],
+              `${rowScope}:result:${rowKey}`,
+              () => true,
+            )}
+          >
+            {#snippet row(nestedItem)}
+              {@const nestedBlock = nestedItem.block as ContentBlock}
+              {#if nestedBlock.type === 'text' && nestedBlock.text}
+                <div class="w-full">
+                  <MarkdownViewer
+                    {allowFileMedia}
+                    canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+                    content={nestedBlock.text}
+                    {workspaceId}
+                    taskBlockRenderMode="content"
+                    chatImageThumbnails
+                    onFileClick={(path, options) => handleOpenFile({ path, ...options })}
+                  />
+                </div>
+              {:else if nestedBlock.type === 'image' && nestedBlock.data && nestedBlock.mimeType}
+                <ChatImageBlock
+                  data={nestedBlock.data}
+                  mimeType={nestedBlock.mimeType}
+                  alt={m.chat_messageContent_toolResultImage_alt()}
                 />
-              </div>
-            {:else if nestedBlock.type === 'image' && nestedBlock.data && nestedBlock.mimeType}
-              <ChatImageBlock
-                data={nestedBlock.data}
-                mimeType={nestedBlock.mimeType}
-                alt={m.chat_messageContent_toolResultImage_alt()}
-              />
-            {:else if nestedBlock.type === 'video' && nestedBlock.source}
-              <ChatVideoBlock
-                source={nestedBlock.source}
-                name={nestedBlock.fileName}
-                poster={typeof nestedBlock.metadata?.poster === 'string'
-                  ? nestedBlock.metadata.poster
-                  : undefined}
-              />
-            {:else if nestedBlock.type === 'tool_use'}
-              {@const nestedToolBlock = nestedBlock as ToolUseBlock}
-              {@const nestedToolResult = findToolResult(toolResultsMap, nestedToolBlock)}
-              {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
-              {@const nestedResultContent = getToolResultPayload(nestedToolResult)}
-              <ToolCall
-                toolUse={nestedToolBlock}
-                toolState={nestedToolState}
-                result={nestedResultContent}
-                {workspaceId}
-              />
-            {/if}
-          {/each}
+              {:else if nestedBlock.type === 'video' && nestedBlock.source}
+                <ChatVideoBlock
+                  {allowFileMedia}
+                  canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+                  source={nestedBlock.source}
+                  name={nestedBlock.fileName}
+                  poster={typeof nestedBlock.metadata?.poster === 'string'
+                    ? nestedBlock.metadata.poster
+                    : undefined}
+                />
+              {:else if nestedBlock.type === 'tool_use'}
+                {@const nestedToolBlock = nestedBlock as ToolUseBlock}
+                {@const nestedToolResult = findToolResult(toolResultsMap, nestedToolBlock)}
+                {@const nestedToolState = toolStates.get(nestedToolBlock.id) || 'completed'}
+                {@const nestedResultContent = getToolResultPayload(nestedToolResult)}
+                <ToolCall
+                  {agentId}
+                  saved={operationalPanel.state(nestedItem.key, () => ({}))}
+                  toolUse={nestedToolBlock}
+                  toolState={nestedToolState}
+                  result={nestedResultContent}
+                  {workspaceId}
+                />
+              {/if}
+            {/snippet}
+          </OperationalWindow>
         {/if}
       </div>
     </div>
@@ -867,6 +944,9 @@
          <think>-tag parser path in messageParser emits `content`. -->
     {#if reasoningHistory}
       <ReasoningHistoryBlock
+        item={historyItem}
+        {allowFileMedia}
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
@@ -874,6 +954,10 @@
       />
     {:else}
       <ThinkingBlock
+        {searchPath}
+        saved={operationalPanel.state(rowKey, () => ({}))}
+        {allowFileMedia}
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
         content={getContentBlockText(block) || m.chat_shared_processing_fallback()}
         isStreaming={isStreaming && isLastBlock}
         {workspaceId}
@@ -884,6 +968,8 @@
     <ChatImageBlock
       data={block.data}
       mimeType={block.mimeType}
+      width={block.width}
+      height={block.height}
       dataTruncated={block.dataTruncated === true}
       dataIsThumbnail={block.dataIsThumbnail === true}
       hydrationLoading={imageHydrationLoading(block.id)}
@@ -891,6 +977,8 @@
     />
   {:else if block.type === 'video' && block.source}
     <ChatVideoBlock
+      {allowFileMedia}
+      canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
       source={block.source}
       name={block.fileName}
       poster={typeof block.metadata?.poster === 'string' ? block.metadata.poster : undefined}
@@ -904,7 +992,15 @@
   childBlock: ContentBlock,
   childIndex: number,
   nested: boolean = true,
+  item: WindowItem,
 )}
+  {@const boundary = getResponseGroupChildBoundary(
+    groupedBlocks,
+    groupIndex,
+    childIndex,
+    isVisibleTopLevelBlock,
+    isVisibleGroupChild,
+  )}
   {@const reasoningSectionStart = isNestedReasoningSectionStart(group, childIndex)}
   {@const reasoningSectionBoundary = isNestedReasoningSectionBoundary(
     group,
@@ -912,14 +1008,16 @@
     isVisibleGroupChild,
   )}
   <div
-    class="content-block content-block--{childBlock.type} {reasoningSectionBoundary
-      ? NESTED_REASONING_SECTION_SEAM_CLASS
-      : getOperationalClusterSpacingClass(
-          group.children,
-          childIndex,
-          isVisibleGroupChild,
-          group.isReasoningPhase,
-        )} {nested
+    class="content-block content-block--{childBlock.type} {item.fragment > 0
+      ? ''
+      : reasoningSectionBoundary
+        ? NESTED_REASONING_SECTION_SEAM_CLASS
+        : getOperationalClusterSpacingClass(
+            boundary,
+            boundary.length - 1,
+            undefined,
+            group.isReasoningPhase,
+          )} {nested
       ? isOperationalClusterBlock(childBlock)
         ? OPERATIONAL_GROUP_CHILD_ROW_CLASS
         : OPERATIONAL_GROUP_CHILD_CONTENT_CLASS
@@ -942,11 +1040,102 @@
         groupIndex === groupedBlocks.length - 1 &&
         childIndex === lastRenderableChildIndex(group.children),
       nested,
-      isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
+      item.fragment > 0 ||
+        isAdjacentOperationalClusterRow(group.children, childIndex, isVisibleGroupChild),
       group.isReasoningPhase,
       chatSearchBlockPath(groupIndex, childIndex),
+      item.key,
+      item.historyItem,
     )}
   </div>
+{/snippet}
+
+{#snippet renderWindowItem(item: WindowItem, admitted: boolean)}
+  {@const block = item.block}
+  {@const blockIndex = item.blockIndex}
+  {#if block.type === 'content_group'}
+    {@const group = block}
+    <div
+      class="content-block content-block--group {getOperationalClusterSpacingClass(
+        groupedBlocks,
+        blockIndex,
+        isVisibleTopLevelBlock,
+      )}"
+      data-message-content-block="content_group"
+      use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
+    >
+      <ResponseGroup
+        headerAdmitted={admitted}
+        headerHeight={operationalPanel.summaryHeight(item.key)}
+        saved={operationalPanel.state(item.key, () => ({}))}
+        name={group.name}
+        isStreaming={group.isStreaming}
+        isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
+        {isLastConversationMessage}
+        blocks={group.children.filter(isVisibleGroupChild)}
+        searchPath={chatSearchBlockPath(blockIndex)}
+        reasoningPhase={group.isReasoningPhase}
+        adjacentOperationalRow={isAdjacentOperationalClusterRow(
+          groupedBlocks,
+          blockIndex,
+          isVisibleTopLevelBlock,
+        )}
+      >
+        {#snippet children()}
+          <OperationalWindow
+            scope={`${rowScope}:group:${item.key}`}
+            items={projectWindowItems(
+              group.children,
+              rowScope,
+              (block) => block.type === 'content_group' || isVisibleGroupChild(block),
+              group,
+              blockIndex,
+            )}
+            row={renderWindowItem}
+          />
+        {/snippet}
+      </ResponseGroup>
+    </div>
+  {:else if item.group && item.childIndex !== undefined}
+    {@render renderResponseGroupChild(
+      item.group,
+      blockIndex,
+      block as ContentBlock,
+      item.childIndex,
+      item.nested,
+      item,
+    )}
+  {:else}
+    <div
+      class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
+        ? 'nav-link'
+        : block.type} {item.fragment > 0
+        ? ''
+        : getOperationalClusterSpacingClass(groupedBlocks, blockIndex, isVisibleTopLevelBlock)}"
+      data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
+      data-message-content-block={block.type}
+      data-chat-search-block-path={block.type === 'text'
+        ? chatSearchBlockPath(blockIndex)
+        : undefined}
+      use:animateIn={{
+        animate: isStreaming && block.type !== 'tool_use',
+        key: blockKeys[blockIndex],
+      }}
+    >
+      {@render renderContentBlock(
+        block as ContentBlock,
+        String(blockIndex),
+        blockIndex === groupedBlocks.length - 1,
+        false,
+        item.fragment > 0 ||
+          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
+        false,
+        chatSearchBlockPath(blockIndex),
+        item.key,
+        item.historyItem,
+      )}
+    </div>
+  {/if}
 {/snippet}
 
 <div
@@ -956,78 +1145,7 @@
   data-tool-executing={[...toolStates.values()].some((s) => s === 'running')}
   data-operational-stack
 >
-  {#each groupedBlocks as block, blockIndex (blockKeys[blockIndex])}
-    {#if block.type === 'content_group'}
-      {@const group = block as ContentBlockGroup}
-      {@const childKeys = getResponseGroupBlockKeys(group.children)}
-      {#if shouldRenderResponseGroupInline(group)}
-        {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-          {#if isVisibleGroupChild(childBlock)}
-            {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex, false)}
-          {/if}
-        {/each}
-      {:else}
-        <div
-          class="content-block content-block--group {getOperationalClusterSpacingClass(
-            groupedBlocks,
-            blockIndex,
-            isVisibleTopLevelBlock,
-          )}"
-          data-message-content-block="content_group"
-          use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
-        >
-          <ResponseGroup
-            name={group.name}
-            isStreaming={group.isStreaming}
-            isTerminal={blockIndex === lastVisibleTopLevelBlockIndex}
-            {isLastConversationMessage}
-            blocks={group.children.filter(isVisibleGroupChild)}
-            searchPath={chatSearchBlockPath(blockIndex)}
-            reasoningPhase={group.isReasoningPhase}
-            adjacentOperationalRow={isAdjacentOperationalClusterRow(
-              groupedBlocks,
-              blockIndex,
-              isVisibleTopLevelBlock,
-            )}
-          >
-            {#snippet children()}
-              {#each group.children as childBlock, childIndex (childKeys[childIndex])}
-                {#if isVisibleGroupChild(childBlock)}
-                  {@render renderResponseGroupChild(group, blockIndex, childBlock, childIndex)}
-                {/if}
-              {/each}
-            {/snippet}
-          </ResponseGroup>
-        </div>
-      {/if}
-    {:else if isVisibleTopLevelBlock(block)}
-      <div
-        class="content-block content-block--{isNavLinkBlock(block as ContentBlock)
-          ? 'nav-link'
-          : block.type} {getOperationalClusterSpacingClass(
-          groupedBlocks,
-          blockIndex,
-          isVisibleTopLevelBlock,
-        )}"
-        data-operational-cluster-row={isOperationalClusterBlock(block) ? block.type : undefined}
-        data-message-content-block={block.type}
-        data-chat-search-block-path={block.type === 'text'
-          ? chatSearchBlockPath(blockIndex)
-          : undefined}
-        use:animateIn={{ animate: isStreaming, key: blockKeys[blockIndex] }}
-      >
-        {@render renderContentBlock(
-          block as ContentBlock,
-          String(blockIndex),
-          blockIndex === groupedBlocks.length - 1,
-          false,
-          isAdjacentOperationalClusterRow(groupedBlocks, blockIndex, isVisibleTopLevelBlock),
-          false,
-          chatSearchBlockPath(blockIndex),
-        )}
-      </div>
-    {/if}
-  {/each}
+  <OperationalWindow items={windowItems} scope={rowScope} row={renderWindowItem} />
 
   <!-- Show streaming cursor if streaming but no content yet -->
   {#if isStreaming && groupedBlocks.length === 0}
@@ -1035,7 +1153,14 @@
       class="w-full {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
       data-assistant-prose="streaming-empty"
     >
-      <MarkdownViewer content="" isStreaming={true} {workspaceId} taskBlockRenderMode="content" />
+      <MarkdownViewer
+        {allowFileMedia}
+        canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}
+        content=""
+        isStreaming={true}
+        {workspaceId}
+        taskBlockRenderMode="content"
+      />
     </div>
   {/if}
 </div>

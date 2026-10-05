@@ -51,7 +51,13 @@ describe('browser connected agent in the panel header', () => {
       render(Harness, { tabs: [tab], activeTabId: tab.id });
 
       const header = within(screen.getByTestId('panel-header'));
-      await fireEvent.click(header.getByRole('button', { name: /Owner one/ }));
+      if (
+        header.getByRole('button', { name: 'Panel actions' }).getAttribute('aria-expanded') !==
+        'true'
+      ) {
+        await fireEvent.click(header.getByRole('button', { name: 'Panel actions' }));
+      }
+      await fireEvent.click(header.getByRole('menuitem', { name: /Owner one/ }));
       expect(dispatch).toHaveBeenCalledWith(openedAgent('agent-one'));
     },
   );
@@ -65,7 +71,12 @@ describe('browser connected agent in the panel header', () => {
     document.body.append(panel);
 
     const header = within(screen.getByTestId('panel-header'));
-    await fireEvent.click(header.getByRole('button', { name: /Owner one/ }), { ctrlKey: true });
+    if (
+      header.getByRole('button', { name: 'Panel actions' }).getAttribute('aria-expanded') !== 'true'
+    ) {
+      await fireEvent.click(header.getByRole('button', { name: 'Panel actions' }));
+    }
+    await fireEvent.click(header.getByRole('menuitem', { name: /Owner one/ }), { ctrlKey: true });
     expect(dispatch).toHaveBeenCalledWith(
       openAgentTabRequested('workspace-1', {
         agentId: 'agent-one',
@@ -79,20 +90,35 @@ describe('browser connected agent in the panel header', () => {
     const tabs = [ownedTab('one'), ownedTab('two')];
     const view = render(Harness, { tabs, activeTabId: 'one' });
     const header = within(screen.getByTestId('panel-header'));
-    await fireEvent.click(header.getByRole('button', { name: /Owner one/ }));
+    if (
+      header.getByRole('button', { name: 'Panel actions' }).getAttribute('aria-expanded') !== 'true'
+    ) {
+      await fireEvent.click(header.getByRole('button', { name: 'Panel actions' }));
+    }
+    await fireEvent.click(header.getByRole('menuitem', { name: /Owner one/ }));
     expect(dispatch).toHaveBeenLastCalledWith(openedAgent('agent-one'));
 
     await view.rerender({ tabs, activeTabId: 'two' });
-    expect(header.queryByRole('button', { name: /Owner one/ })).toBeNull();
-    await fireEvent.click(header.getByRole('button', { name: /Owner two/ }));
+    expect(header.queryByRole('menuitem', { name: /Owner one/ })).toBeNull();
+    if (
+      header.getByRole('button', { name: 'Panel actions' }).getAttribute('aria-expanded') !== 'true'
+    ) {
+      await fireEvent.click(header.getByRole('button', { name: 'Panel actions' }));
+    }
+    await fireEvent.click(header.getByRole('menuitem', { name: /Owner two/ }));
     expect(dispatch).toHaveBeenLastCalledWith(openedAgent('agent-two'));
 
     await view.rerender({ tabs: [tabs[1]], activeTabId: 'two' });
-    await fireEvent.click(header.getByRole('button', { name: /Owner two/ }));
+    if (
+      header.getByRole('button', { name: 'Panel actions' }).getAttribute('aria-expanded') !== 'true'
+    ) {
+      await fireEvent.click(header.getByRole('button', { name: 'Panel actions' }));
+    }
+    await fireEvent.click(header.getByRole('menuitem', { name: /Owner two/ }));
     expect(dispatch).toHaveBeenLastCalledWith(openedAgent('agent-two'));
 
     await view.rerender({ tabs: [], activeTabId: '' });
-    expect(header.queryByRole('button')).toBeNull();
+    expect(header.queryByRole('menuitem')).toBeNull();
   });
 
   it('rebinds ownership and clears the chip when the tab becomes unowned', async () => {
@@ -103,10 +129,15 @@ describe('browser connected agent in the panel header', () => {
       tabs: [{ ...tab, ownerAgentId: 'agent-new', ownerAgentName: 'New owner' }],
       activeTabId: tab.id,
     });
-    await fireEvent.click(header.getByRole('button', { name: /New owner/ }));
+    if (
+      header.getByRole('button', { name: 'Panel actions' }).getAttribute('aria-expanded') !== 'true'
+    ) {
+      await fireEvent.click(header.getByRole('button', { name: 'Panel actions' }));
+    }
+    await fireEvent.click(header.getByRole('menuitem', { name: /New owner/ }));
     expect(dispatch).toHaveBeenCalledWith(openedAgent('agent-new'));
 
     await view.rerender({ tabs: [{ ...tab, ownerAgentId: undefined }], activeTabId: tab.id });
-    expect(header.queryByRole('button')).toBeNull();
+    expect(header.queryByRole('menuitem')).toBeNull();
   });
 });

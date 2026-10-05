@@ -1,4 +1,6 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '../principal/principal-selectors';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -22,7 +24,6 @@ import {
   selectAgentTypingPeople,
   selectOwnPresenceReport,
   selectPresenceMembershipKeys,
-  selectWorkspacePresenceFocusTargets,
   selectWorkspacePresencePeople,
 } from './presence-selectors';
 import type { PresencePerson, PresenceState } from './presence-types';
@@ -45,15 +46,29 @@ const typing = (source: string, pulse: number, agentId = 'agent-1'): PresenceTyp
 });
 
 const reduce = (...actions: Parameters<typeof presenceReducer>[1][]): PresenceState =>
-  actions.reduce((state, action) => presenceReducer(state, action), initialState);
+  actions.reduce((state, action) => presenceReducer(state, action), {
+    ...initialState,
+    context: 'fixture',
+    workspaceIds: ['ws-1', 'ws-2', 'ws-3'],
+  });
 
-const stateWith = (presence: PresenceState, extra: Record<string, unknown> = {}): StoreState =>
-  ({
+const stateWith = (presence: PresenceState, extra: Record<string, unknown> = {}): StoreState => {
+  const state = withLegacyPrincipal({
     presence,
+    workspace: {
+      workspaces: createCollection('id', [
+        { id: WorkspaceId('ws-1'), memberCount: 2 } as Workspace,
+      ]),
+    },
     tabState: { currentTabId: null },
     panelLayout: { byWorkspaceId: {} },
     ...extra,
-  }) as unknown as StoreState;
+  });
+  return {
+    ...state,
+    presence: { ...presence, context: selectPrincipalActionContext.select(state) },
+  };
+};
 
 const ids = (people: { principalId: string }[]) => people.map((p) => p.principalId);
 
@@ -113,32 +128,76 @@ describe('presence selectors', () => {
       ]);
     });
 
-    it('resolves where each online member looks: their agent chat first, else their note, nothing for the bare tab', () => {
-      const focused = presenceRosterReceived({
+    it('orders the owner first, then online members, then offline ones, keeping membership order within each group', () => {
+      const shuffled = presenceMembersReceived('ws-1', [
+        accepted('away'),
+        accepted('idle'),
+        accepted('gone'),
+        accepted('me', 'owner'),
+        accepted('viewer'),
+        accepted('other-agent'),
+      ]);
+      const workspace = workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 6 }));
+      const ownerOnline = stateWith(
+        reduce(roster, shuffled, presenceOwnPrincipalReceived('viewer')),
+        {
+          workspace,
+        },
+      );
+      expect(ids(selectWorkspacePresencePeople.select(ownerOnline, 'ws-1'))).toEqual([
+        'me',
+        'idle',
+        'other-agent',
+        'away',
+        'gone',
+      ]);
+
+      const ownerAway = presenceRosterReceived({
         workspaceId: 'ws-1',
-        members: [
-          member('viewer', {
-            focus: [
-              { workspaceId: 'ws-1' },
-              { workspaceId: 'ws-1', noteId: 'note-1' },
-              { workspaceId: 'ws-1', agentId: 'agent-1' },
-            ],
-          }),
-          member('reader', {
-            focus: [
-              { workspaceId: 'ws-2', agentId: 'agent-9' },
-              { workspaceId: 'ws-1', noteId: 'note-2' },
-            ],
-          }),
-          member('idle', { focus: [{ workspaceId: 'ws-1' }] }),
-        ],
+        members: [member('viewer'), member('idle'), member('other-agent')],
       });
-      const state = stateWith(reduce(focused, presenceOwnPrincipalReceived('me')));
-      expect(selectWorkspacePresenceFocusTargets.select(state, 'ws-1')).toEqual({
-        viewer: { kind: 'agent', agentId: 'agent-1' },
-        reader: { kind: 'note', noteId: 'note-2' },
-      });
-      expect(selectWorkspacePresenceFocusTargets.select(state, 'ws-9')).toEqual({});
+      const ownerOffline = stateWith(
+        reduce(ownerAway, shuffled, presenceOwnPrincipalReceived('viewer')),
+        { workspace },
+      );
+      const people = selectWorkspacePresencePeople.select(ownerOffline, 'ws-1');
+      expect(ids(people)).toEqual(['me', 'idle', 'other-agent', 'away', 'gone']);
+      expect(people.map((p) => [p.owner, p.online])).toEqual([
+        [true, false],
+        [false, true],
+        [false, true],
+        [false, false],
+        [false, false],
+      ]);
+    });
+
+    it("carries each membership row's forge identity onto the person, none for a row without one", () => {
+      const gitlab = {
+        provider: 'gitlab',
+        host: 'gitlab.example.com',
+        externalUserId: '7',
+      } as const;
+      const github = { provider: 'github', host: 'github.com', externalUserId: '42' } as const;
+      const state = stateWith(
+        reduce(
+          roster,
+          presenceMembersReceived('ws-1', [
+            accepted('me', 'owner'),
+            { ...accepted('viewer'), identity: gitlab },
+            { ...accepted('idle'), identity: github },
+            accepted('away'),
+          ]),
+          presenceOwnPrincipalReceived('me'),
+        ),
+        { workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'me', memberCount: 4 })) },
+      );
+      const people = selectWorkspacePresencePeople.select(state, 'ws-1');
+      expect(people.map((p) => [p.principalId, p.identity])).toEqual([
+        ['viewer', gitlab],
+        ['idle', github],
+        ['away', undefined],
+      ]);
+      expect('identity' in people[2]).toBe(false);
     });
 
     it('shows nothing for an unshared workspace even when its roster and membership are known', () => {
@@ -468,6 +527,27 @@ describe('presence selectors', () => {
           .select(state, 'ws-1', 'agent-1')
           .map((p) => [p.principalId, p.owner, p.self]),
       ).toEqual([['me', true, false]]);
+    });
+
+    it('leads with the owner even when the roster lists them after another viewer, keeping the others in roster order', () => {
+      const lookingAt = (principalId: string) =>
+        member(principalId, { focus: [{ workspaceId: 'ws-1', agentId: 'agent-1' }] });
+      const ownerLast = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          lookingAt('me'),
+          lookingAt('second'),
+          lookingAt('first'),
+          lookingAt('boss'),
+          lookingAt('third'),
+        ],
+      });
+      const state = stateWith(reduce(ownerLast, presenceOwnPrincipalReceived('me')), {
+        workspace: workspacesWith(shared('ws-1', { ownerPrincipalId: 'boss', memberCount: 5 })),
+      });
+      const people = selectAgentPresencePeople.select(state, 'ws-1', 'agent-1');
+      expect(ids(people)).toEqual(['boss', 'second', 'first', 'third']);
+      expect(people.map((p) => p.owner)).toEqual([true, false, false, false]);
     });
 
     it('tells a same-named other person apart from self by principal id', () => {

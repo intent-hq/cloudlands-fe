@@ -1,28 +1,99 @@
-// @verify-changed-triggers: ../PanelLayout.svelte, ../../../workspace/NoteWithComments.svelte
+/** @vitest-environment jsdom */
+import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReduxStoreContext } from '$store/renderer/types';
+import { initAppStore, store as appStore } from '$store/renderer/store';
+import {
+  initializeLayout,
+  setRestoreStatus,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+vi.mock('../Panel.svelte', async () => ({
+  default: (await import('./mocks/PanelFocusRoutingPanel.svelte')).default,
+}));
+
+import PanelLayout from '../PanelLayout.svelte';
+
+const STORE_CONTEXT = 'redux-store-context';
+const LAYOUT_ID = 'panel-active-focus';
+let storeContext: ReduxStoreContext | undefined;
+
+class TestResizeObserver {
+  observe() {}
+  disconnect() {}
+}
+
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
+  storeContext = initAppStore(appStore);
+  appStore.dispatch(
+    initializeLayout(LAYOUT_ID, {
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        sizes: [50, 50],
+        children: [
+          { type: 'panel', panelId: 'left' },
+          { type: 'panel', panelId: 'right' },
+        ],
+      },
+      panels: {
+        left: {
+          id: 'left',
+          tabs: [{ id: 'left-tab', type: 'note', title: 'Left', closable: true }],
+          activeTabId: 'left-tab',
+        },
+        right: {
+          id: 'right',
+          tabs: [{ id: 'right-tab', type: 'note', title: 'Right', closable: true }],
+          activeTabId: 'right-tab',
+        },
+      },
+      focusedPanelId: 'right',
+      canvasWidth: 800,
+    }),
+  );
+  appStore.dispatch(setRestoreStatus(LAYOUT_ID, 'restored'));
+});
+
+afterEach(() => {
+  cleanup();
+  storeContext?.dispose();
+  storeContext = undefined;
+  vi.unstubAllGlobals();
+});
+
+async function renderLayout(active: boolean) {
+  const view = render(PanelLayout, {
+    props: {
+      workspaceId: LAYOUT_ID,
+      layoutId: LAYOUT_ID,
+      contained: true,
+      canvasSizing: 'content',
+      active,
+    },
+    context: new Map([[STORE_CONTEXT, storeContext]]),
+  });
+  await waitFor(() => expect(view.container.querySelector('[data-panel-id="right"]')).toBeTruthy());
+  return view;
+}
+
+function focusedPanelIds(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('[data-panel-focused]')).map(
+    (panel) => panel.dataset.panelId!,
+  );
+}
 
 describe('panel focus ownership', () => {
-  it('only exposes stored panel focus from the active visible workspace', () => {
-    const layout = readFileSync(resolve(__dirname, '../PanelLayout.svelte'), 'utf8');
+  it('marks the stored focused panel while the workspace is active', async () => {
+    const { container } = await renderLayout(true);
 
-    expect(layout).toContain('focusedPanelId={active ? $focusedPanelId$ : null}');
-    expect(layout).not.toContain('focusedPanelId={$focusedPanelId$}');
+    expect(focusedPanelIds(container)).toEqual(['right']);
   });
 
-  it('focuses a revealed note at the top instead of scrolling to the bottom', () => {
-    const note = readFileSync(
-      resolve(__dirname, '../../../workspace/NoteWithComments.svelte'),
-      'utf8',
-    );
-    const panelFocusHandler = note.slice(
-      note.indexOf('const handlePanelFocusContent'),
-      note.indexOf("window.addEventListener('panel:focus-content'"),
-    );
+  it('exposes no focused panel while the workspace is inactive', async () => {
+    const { container } = await renderLayout(false);
 
-    expect(panelFocusHandler).toContain("editor.commands.focus('start')");
-    expect(panelFocusHandler).not.toContain("editor.commands.focus('end')");
+    expect(focusedPanelIds(container)).toEqual([]);
   });
 });

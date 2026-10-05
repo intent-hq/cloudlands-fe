@@ -74,7 +74,6 @@ describe('WorkspaceService statusMessage updates', () => {
       expect(result.data.status).toBe(WorkspaceStatus.Active);
       expect(result.data.statusMessage).toBe('Investigating verification results.');
     }
-
     service.cleanup();
   });
 });

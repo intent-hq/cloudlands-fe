@@ -11,6 +11,13 @@
     cancelLabel?: string;
     details?: Snippet;
     busy?: boolean;
+    /** Disable and show progress on submit while keeping cancellation available. */
+    submitBusy?: boolean;
+    canSubmit?: boolean;
+    focusSubmit?: boolean;
+    focusCancel?: boolean;
+    enterKey?: 'submit' | 'ignore';
+    modEnter?: 'submit' | 'ignore';
     destructive?: boolean;
     class?: string;
     closeLabel?: string;
@@ -27,6 +34,12 @@
     cancelLabel,
     details,
     busy = false,
+    submitBusy = false,
+    canSubmit = true,
+    focusSubmit = true,
+    focusCancel = false,
+    enterKey = 'submit',
+    modEnter = 'submit',
     destructive = true,
     class: className,
     closeLabel,
@@ -44,7 +57,12 @@
   {cancelLabel}
   submitVariant={destructive ? 'destructive' : 'default'}
   {busy}
-  focusSubmit
+  {submitBusy}
+  {canSubmit}
+  {focusSubmit}
+  {focusCancel}
+  {enterKey}
+  {modEnter}
   class={className}
   {closeLabel}
   onSubmit={onConfirm}

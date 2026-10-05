@@ -1,7 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import {
+  cleanup,
+  fireEvent,
+  render as renderComponent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import type { Workspace } from '$shared/types';
@@ -24,6 +31,8 @@ const mocks = vi.hoisted(() => ({
   removingIds: {} as Record<string, string[]>,
   clearingIds: [] as string[],
   collaboratorOnly: false,
+  signIn: vi.fn(),
+  syncPolicy: vi.fn(async () => true),
   dispatch: vi.fn(),
   leave: vi.fn(),
   leaveWorkspace: vi.fn(),
@@ -48,43 +57,91 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.dispatch },
+vi.mock('$store/renderer/store', async () => {
+  const { createGuestWorkflowTestStore } = await import('../../../test/guest-workflow-store');
+  return { store: createGuestWorkflowTestStore() };
+});
+
+vi.mock('$features/collaboration-auth/renderer/collaboration-auth.client', () => ({
+  openCollaborationSignIn: mocks.signIn,
+  syncCollaborationPolicy: mocks.syncPolicy,
 }));
 
-vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
-  selectGuestSessions: () => mocks.readable(() => mocks.sessions),
-  selectGuestSessionsOpenIds: () => mocks.readable(() => mocks.openIds),
-  selectGuestSessionsConnectedIds: () => mocks.readable(() => mocks.connectedIds),
-  selectGuestSessionsLoaded: () => mocks.readable(() => mocks.loaded),
-  selectHostedWorkspaces: () => mocks.readable(() => mocks.hosted),
-  selectHostedRoster: (workspaceId: string) =>
-    mocks.readable(() => mocks.rosters[workspaceId] ?? { status: 'loading', members: [] }),
-  selectHostedRemovingPrincipalIds: (workspaceId: string) =>
-    mocks.readable(() => mocks.removingIds[workspaceId] ?? []),
-  selectIsHostedWorkspaceClearing: (workspaceId: string) =>
-    mocks.readable(() => mocks.clearingIds.includes(workspaceId)),
-}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$store/renderer/slices/principal/principal-selectors')>();
+  return {
+    ...actual,
+    selectCanCreateWorkspace: Object.assign(() => mocks.readable(() => !mocks.collaboratorOnly), {
+      select: actual.selectCanCreateWorkspace.select,
+      effect: actual.selectCanCreateWorkspace.effect,
+    }),
+  };
+});
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectIsCollaboratorOnlyClient: () => mocks.readable(() => mocks.collaboratorOnly),
-}));
-
-vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-slice', () => ({
-  leaveGuestSessionRequested: (id: string) => mocks.leave(id),
-  leaveGuestWorkspaceRequested: (id: string, workspaceId: string) =>
-    mocks.leaveWorkspace(id, workspaceId),
-  loadHostedRosterRequested: (workspaceId: string) => mocks.loadRoster(workspaceId),
-  removeHostedMemberRequested: (workspaceId: string, principalId: string) =>
-    mocks.removeMember(workspaceId, principalId),
-  removeAllHostedGuestsRequested: (workspaceId: string) => mocks.removeAll(workspaceId),
-}));
-
-vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
-  openConnectionRequested: (id: string) => mocks.open(id),
-}));
-
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import GuestSessionsSettings from './GuestSessionsSettings.svelte';
+import { store as appStore } from '$store/renderer/store';
+import * as guestActions from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { guestSessionsSaga } from '$store/renderer/slices/guest-sessions/sagas/guest-sessions-saga';
+import { connectionsSaga } from '$store/renderer/slices/connections/sagas/connections-saga';
+import {
+  replaceWorkspaceList,
+  setWorkspaceHasLoaded,
+  setWorkspaceError,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { RemoveAllHostedGuestsResult } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+
+const transport = vi.hoisted(() => ({ request: vi.fn() }));
+vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: transport.request }));
+vi.mock('$features/workspace/navigate-away-if-viewing', () => ({
+  closeWorkspaceTabAndNavigateAway: vi.fn(),
+  navigateAwayIfViewing: vi.fn(),
+}));
+
+let stops: Array<() => void> = [];
+let knownWorkspaces: Workspace[] = [];
+let sweeps = new Map<string, Promise<RemoveAllHostedGuestsResult>>();
+
+function publishFixtures() {
+  if (mocks.loaded)
+    appStore.dispatch(
+      guestActions.guestSessionsListReceived({
+        sessions: mocks.sessions,
+        openIds: mocks.openIds,
+        connectedIds: mocks.connectedIds,
+      }),
+    );
+  knownWorkspaces = [
+    ...mocks.hosted,
+    ...knownWorkspaces
+      .filter((ws) => !mocks.hosted.some((current) => current.id === ws.id))
+      .map((ws) => ({ ...ws, memberCount: 1, openInviteCount: 0 })),
+  ];
+  appStore.dispatch(replaceWorkspaceList(knownWorkspaces));
+  appStore.dispatch(setWorkspaceHasLoaded(true, appStore.state.connections.windowBackendId));
+}
+
+function render(component: typeof GuestSessionsSettings) {
+  publishFixtures();
+  for (const [id, roster] of Object.entries(mocks.rosters)) {
+    if (roster.status === 'withheld') appStore.dispatch(guestActions.hostedRosterWithheld(id));
+    else {
+      appStore.dispatch(
+        guestActions.hostedRosterReceived(id, roster.members, roster.guestCount, roster.guestLimit),
+      );
+      if (roster.status === 'error') appStore.dispatch(guestActions.hostedRosterFailed(id));
+    }
+  }
+  for (const [id, principals] of Object.entries(mocks.removingIds))
+    for (const principal of principals)
+      appStore.dispatch(guestActions.removeMemberOperationStarted(id, principal));
+  for (const id of mocks.clearingIds)
+    appStore.dispatch(guestActions.removeAllGuestsOperationStarted(id));
+  mocks.dispatch.mockClear();
+  return renderComponent(component);
+}
 
 const guest: GuestSessionRecord = {
   id: 'guest-1',
@@ -153,8 +210,68 @@ const sweepClean = {
 };
 
 describe('GuestSessionsSettings', () => {
-  beforeEach(() => {
+  it('does not open an invited instance when policy publication fails, and allows a fresh retry', async () => {
+    mocks.sessions = [{ ...guest, hostRole: 'member' }];
+    mocks.syncPolicy.mockResolvedValueOnce(false);
+    render(GuestSessionsSettings);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await screen.findByTestId('guest-sessions-open-error');
+    expect(mocks.open).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+  });
+  it.each(['session', 'principal', 'flag'] as const)(
+    'cancels an Open whose %s changes while policy publishes',
+    async (change) => {
+      mocks.sessions = [{ ...guest, hostRole: 'member', pairedAt: 1 }];
+      const pending = Promise.withResolvers<boolean>();
+      mocks.syncPolicy.mockImplementationOnce(() => pending.promise);
+      render(GuestSessionsSettings);
+      await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+      await waitFor(() => expect(mocks.syncPolicy).toHaveBeenCalledTimes(1));
+      if (change === 'session') {
+        mocks.sessions = [{ ...mocks.sessions[0], pairedAt: 2 }];
+        mocks.publish();
+      } else if (change === 'principal') {
+        appStore.dispatch(principalContextChanged(null));
+      } else {
+        const { setLabsMultiplayerEnabled } =
+          await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+        appStore.dispatch(setLabsMultiplayerEnabled(false));
+      }
+      pending.resolve(true);
+      await waitFor(() => expect(appStore.state.connections.openingIds).toEqual([]));
+      expect(mocks.open).not.toHaveBeenCalled();
+    },
+  );
+  it('rehydrates window policy before reopening an invited instance after in-page navigation', async () => {
+    mocks.sessions = [{ ...guest, hostRole: 'member' }];
+    let published = false;
+    mocks.syncPolicy.mockImplementation(async () => {
+      published = true;
+      return true;
+    });
+    mocks.open.mockImplementation((id) => ({
+      promise: published
+        ? Promise.resolve({ status: 'opened', id })
+        : Promise.reject(new Error('Multiplayer is unavailable')),
+    }));
+    render(GuestSessionsSettings);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await waitFor(() => expect(mocks.syncPolicy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+    published = false;
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await waitFor(() => expect(mocks.syncPolicy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+  });
+
+  beforeEach(async () => {
     vi.clearAllMocks();
+    mocks.syncPolicy.mockReset().mockResolvedValue(true);
     mocks.loaded = true;
     mocks.sessions = [];
     mocks.openIds = [];
@@ -165,10 +282,12 @@ describe('GuestSessionsSettings', () => {
     mocks.clearingIds = [];
     mocks.collaboratorOnly = false;
     mocks.leave.mockImplementation((id) =>
-      resolvedAction('guestSessions/leaveRequested', [id], { left: true, revoked: true }),
+      resolvedAction('guestSessions/leaveRequested', [id], { id, revoked: true }),
     );
     mocks.leaveWorkspace.mockImplementation((id, workspaceId) =>
       resolvedAction('guestSessions/leaveGuestWorkspaceRequested', [id, workspaceId], {
+        id,
+        workspaceId,
         left: true,
       }),
     );
@@ -186,17 +305,108 @@ describe('GuestSessionsSettings', () => {
         removed: true,
       }),
     );
+    knownWorkspaces = [];
+    sweeps = new Map();
+    appStore.init();
+    const dispatch = appStore.dispatch.bind(appStore);
+    vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+      mocks.dispatch(action);
+      if (action.type === guestActions.removeAllHostedGuestsRequested.type) {
+        const [id] = (action as ReturnType<typeof guestActions.removeAllHostedGuestsRequested>)
+          .payload;
+        const result = mocks.removeAll(id).promise;
+        result.catch(() => {});
+        sweeps.set(id, result);
+      }
+      return dispatch(action);
+    });
+    mocks.subscribers.add(publishFixtures);
+    vi.stubGlobal('electronAPI', {
+      invoke: vi.fn((channel: string, params?: { id: string; workspaceId: string }) => {
+        if (channel === IPC_CHANNELS.GUEST_SESSIONS.LIST)
+          return Promise.resolve({ sessions: [], openIds: [], connectedIds: [] });
+        if (channel === IPC_CHANNELS.GUEST_SESSIONS.LEAVE) return mocks.leave(params!.id).promise;
+        if (channel === IPC_CHANNELS.GUEST_SESSIONS.LEAVE_WORKSPACE)
+          return mocks.leaveWorkspace(params!.id, params!.workspaceId).promise;
+        if (channel === IPC_CHANNELS.CONNECTIONS.OPEN) return mocks.open(params!.id).promise;
+        if (channel === IPC_CHANNELS.CONNECTIONS.LIST)
+          return Promise.resolve({ connections: [], activeId: 'local', windowBackendId: 'local' });
+        return Promise.resolve({});
+      }),
+      on: vi.fn(),
+      offById: vi.fn(),
+    });
+    transport.request.mockImplementation(
+      async (
+        method: string,
+        params: { workspaceId: string; principalId: string; inviteId: string },
+      ) => {
+        const sweep = sweeps.get(params.workspaceId);
+        if (sweep) {
+          const result = await sweep;
+          if (method === 'workspace.members.list')
+            return {
+              members: [
+                ...result.removedPrincipalIds,
+                ...result.failedMembers.map((member) => member.principalId),
+              ].map((principalId) => ({ ...collaborator, principalId })),
+            };
+          if (method === 'workspace.members.remove') {
+            if (result.failedMembers.some((member) => member.principalId === params.principalId))
+              throw new Error('remove failed');
+            return { removed: true };
+          }
+          if (method === 'workspace.invite.list') {
+            if (result.invitesUnavailable) throw new Error('invites unavailable');
+            return {
+              invites: [
+                ...result.revokedInviteIds.map((id) => ({ id })),
+                ...result.failedInvites.map((invite) => ({
+                  id: invite.inviteId,
+                  pinLogin: invite.pinLogin,
+                })),
+              ],
+            };
+          }
+          if (method === 'workspace.invite.revoke') {
+            if (result.failedInvites.some((invite) => invite.inviteId === params.inviteId))
+              throw new Error('revoke failed');
+            return { revoked: true };
+          }
+        }
+        if (method === 'workspace.members.list') {
+          mocks.loadRoster(params.workspaceId);
+          const roster = mocks.rosters[params.workspaceId];
+          if (roster?.status === 'error') throw new Error('list failed');
+          return {
+            members: roster?.members ?? [],
+            guestCount: roster?.guestCount,
+            guestLimit: roster?.guestLimit,
+          };
+        }
+        if (method === 'workspace.members.remove')
+          return mocks.removeMember(params.workspaceId, params.principalId).promise;
+        throw new Error(`Unexpected method ${method}`);
+      },
+    );
+    stops = [appStore.runSaga(guestSessionsSaga), appStore.runSaga(connectionsSaga)];
+    for (let i = 0; i < 6; i += 1) await Promise.resolve();
+    mocks.dispatch.mockClear();
   });
 
   afterEach(() => {
     cleanup();
+    stops.forEach((stop) => stop());
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     mocks.subscribers.clear();
   });
 
   it('shows a loading status until main has answered the first list', () => {
+    appStore.init();
     mocks.loaded = false;
     render(GuestSessionsSettings);
-    const joined = screen.getByTestId('guest-sessions-joined');
+    const joined = screen.getByTestId('guest-sessions-instances');
     expect(within(joined).getByRole('status')).toBeTruthy();
     expect(within(joined).queryByRole('list')).toBeNull();
   });
@@ -205,15 +415,19 @@ describe('GuestSessionsSettings', () => {
     render(GuestSessionsSettings);
     expect(screen.getByTestId('guest-sessions-hosting')).toBeTruthy();
     expect(screen.queryByTestId('hosted-workspace-roster')).toBeNull();
-    const joined = screen.getByTestId('guest-sessions-joined');
+    const joined = screen.getByTestId('guest-sessions-instances');
     expect(within(joined).queryByRole('list')).toBeNull();
     expect(within(joined).queryByRole('status')).toBeNull();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) => !['settings/formOpened', 'settings/formLoadRequested'].includes(action.type),
+      ),
+    ).toEqual([]);
   });
 
   it('never shows the owner-side hosting section to a collaborator-only client', () => {
     mocks.collaboratorOnly = true;
-    mocks.hosted = [hostedWorkspace];
+    mocks.hosted = [{ ...hostedWorkspace, myRole: 'collaborator' }];
     render(GuestSessionsSettings);
     expect(screen.queryByTestId('guest-sessions-hosting')).toBeNull();
     expect(mocks.loadRoster).not.toHaveBeenCalled();
@@ -233,6 +447,48 @@ describe('GuestSessionsSettings', () => {
     expect(
       rows[1].querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
     ).toBe('true');
+  });
+
+  it('uses each joined account profile and provider without exposing identity keys', () => {
+    mocks.sessions = [
+      {
+        ...guest,
+        login: 'joined-person',
+        identity: { provider: 'github', host: 'github.com', externalUserId: '900101' },
+      },
+      {
+        ...guest,
+        id: 'guest-2',
+        login: 'other-person',
+        identity: { provider: 'gitlab', host: 'gitlab.team.example', externalUserId: '900102' },
+      },
+      {
+        ...guest,
+        id: 'guest-3',
+        login: null,
+        principalId: 'missing-profile-stable',
+        identity: { provider: 'github', host: 'github.com', externalUserId: '900103' },
+      },
+    ];
+    render(GuestSessionsSettings);
+    const rows = Array.from(
+      screen.getByTestId('guest-sessions-joined').querySelectorAll('[data-session-id]'),
+    );
+    expect(rows[0].textContent).toContain('@joined-person');
+    expect(rows[0].textContent).toContain('GitHub');
+    expect(rows[1].textContent).toContain('@other-person');
+    expect(rows[1].textContent).toContain('GitLab (gitlab.team.example)');
+    expect(rows[2].textContent).toContain('Profile unavailable');
+    expect(rows[2].textContent).not.toContain('@joined-person');
+    for (const key of [
+      'github@',
+      'gitlab@',
+      '900101',
+      '900102',
+      '900103',
+      'missing-profile-stable',
+    ])
+      expect(rows.map((r) => r.textContent).join('')).not.toContain(key);
   });
 
   it('labels a joined host by its captured hostname and keeps the dialled address as secondary text', () => {
@@ -312,7 +568,7 @@ describe('GuestSessionsSettings', () => {
     expect(mocks.leaveWorkspace).toHaveBeenCalledWith('guest-1', 'ws-b');
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'guestSessions/leaveGuestWorkspaceRequested',
+        type: guestActions.leaveGuestWorkspaceRequested.type,
         payload: ['guest-1', 'ws-b'],
       }),
     );
@@ -342,6 +598,156 @@ describe('GuestSessionsSettings', () => {
     await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledTimes(2));
     expect(mocks.leaveWorkspace).toHaveBeenLastCalledWith('guest-1', 'ws-a');
     await waitFor(() => expect(screen.queryByTestId('guest-leave-workspace-error')).toBeNull());
+  });
+
+  it.each(['host', 'workspace'] as const)(
+    'C1 retries a confirmed %s leave after a same-admission Settings remount',
+    async (kind) => {
+      mocks.sessions = [guest];
+      const call = kind === 'host' ? mocks.leave : mocks.leaveWorkspace;
+      call.mockImplementationOnce((...args) => ({
+        promise: Promise.reject(new Error('transport')),
+        payload: args,
+      }));
+      const mounted = render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const row = screen
+        .getByTestId('guest-sessions-joined')
+        .querySelector(
+          kind === 'host' ? '[data-session-id="guest-1"]' : '[data-workspace-id="ws-a"]',
+        ) as HTMLElement;
+      await fireEvent.click(within(row).getByRole('button', { name, exact: true }));
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name, exact: true }),
+      );
+      const errorId = kind === 'host' ? 'guest-leave-error' : 'guest-leave-workspace-error';
+      await screen.findByTestId(errorId);
+      await mounted.unmount();
+      render(GuestSessionsSettings);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+      expect(call).toHaveBeenLastCalledWith(
+        ...(kind === 'host' ? ['guest-1'] : ['guest-1', 'ws-a']),
+      );
+    },
+  );
+
+  async function replaceAdmission() {
+    const { setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    const { principalReceived } = await import('$store/renderer/slices/principal/principal-slice');
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    const current = appStore.state.principal;
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        current.snapshot!,
+      ),
+    );
+  }
+
+  it.each(['host', 'workspace'] as const)(
+    'C1 a different confirmation under a replaced admission cannot authorize an old %s retry',
+    async (kind) => {
+      mocks.sessions = [
+        guest,
+        { ...guest, id: 'guest-2', label: 'second.local', hostname: 'second.local' },
+      ];
+      const call = kind === 'host' ? mocks.leave : mocks.leaveWorkspace;
+      call.mockImplementationOnce(() => ({ promise: Promise.reject(new Error('transport')) }));
+      render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const selectorA =
+        kind === 'host'
+          ? '[data-session-id="guest-1"]'
+          : '[data-session-id="guest-1"] [data-workspace-id="ws-a"]';
+      const selectorB =
+        kind === 'host'
+          ? '[data-session-id="guest-2"]'
+          : '[data-session-id="guest-1"] [data-workspace-id="ws-b"]';
+      const clickRow = async (selector: string) =>
+        fireEvent.click(
+          within(
+            screen.getByTestId('guest-sessions-joined').querySelector(selector) as HTMLElement,
+          ).getByRole('button', { name, exact: true }),
+        );
+      const confirm = async () => {
+        await fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name, exact: true }),
+        );
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      };
+      await clickRow(selectorA);
+      await confirm();
+      const errorId = kind === 'host' ? 'guest-leave-error' : 'guest-leave-workspace-error';
+      await screen.findByTestId(errorId);
+      await replaceAdmission();
+      await clickRow(selectorB);
+      await confirm();
+      expect(call).toHaveBeenCalledTimes(2);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      expect(call).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('dialog').textContent).toContain(
+        kind === 'host' ? 'studio.local' : 'Design system',
+      );
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(call).toHaveBeenCalledTimes(2);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      await confirm();
+      expect(call).toHaveBeenCalledTimes(3);
+      expect(call).toHaveBeenLastCalledWith(
+        ...(kind === 'host' ? ['guest-1'] : ['guest-1', 'ws-a']),
+      );
+    },
+  );
+
+  it.each(['host', 'workspace'] as const)(
+    'C1 rejects an unconfirmed %s dialog from an older admission',
+    async (kind) => {
+      mocks.sessions = [guest];
+      render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const row = screen
+        .getByTestId('guest-sessions-joined')
+        .querySelector(
+          kind === 'host' ? '[data-session-id="guest-1"]' : '[data-workspace-id="ws-a"]',
+        ) as HTMLElement;
+      await fireEvent.click(within(row).getByRole('button', { name, exact: true }));
+      const confirm = within(screen.getByRole('dialog')).getByRole('button', { name, exact: true });
+      await replaceAdmission();
+      await fireEvent.click(confirm);
+      expect(mocks.leave).not.toHaveBeenCalled();
+      expect(mocks.leaveWorkspace).not.toHaveBeenCalled();
+    },
+  );
+
+  it('C2 same-id guest readmission replaces instance presentation without losing direct workspace controls', async () => {
+    mocks.sessions = [{ ...guest, pairedAt: 100, hostRole: 'member' }];
+    render(GuestSessionsSettings);
+    expect(screen.queryByTestId('guest-session-workspaces')).toBeNull();
+    mocks.sessions = [{ ...guest, pairedAt: 101, hostRole: 'guest' }];
+    mocks.publish();
+    const button = await screen.findAllByRole('button', { name: 'Leave', exact: true });
+    await fireEvent.click(button[0]);
+    expect(mocks.leaveWorkspace).not.toHaveBeenCalled();
+    await fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Leave', exact: true }),
+    );
+    await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledWith('guest-1', 'ws-a'));
   });
 
   describe('a joined workspace the host projects with an empty title', () => {
@@ -451,7 +857,7 @@ describe('GuestSessionsSettings', () => {
       await confirmDialog('Leave');
       await fireEvent.click(within(rowB).getByRole('button', { name: 'Leave' }));
 
-      leaveA.resolve({ left: true });
+      leaveA.resolve({ id: 'guest-1', workspaceId: 'ws-a', left: true });
       await waitFor(() =>
         expect((within(rowA).getByRole('button') as HTMLButtonElement).disabled).toBe(false),
       );
@@ -614,7 +1020,10 @@ describe('GuestSessionsSettings', () => {
     await fireEvent.click(within(row as HTMLElement).getByRole('button', { name: 'Open' }));
     expect(mocks.open).toHaveBeenCalledWith('guest-1');
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'connections/openRequested', payload: ['guest-1'] }),
+      expect.objectContaining({
+        type: 'connections/workflowRequested',
+        payload: expect.objectContaining({ intent: { kind: 'open', id: 'guest-1' } }),
+      }),
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
@@ -697,10 +1106,12 @@ describe('GuestSessionsSettings', () => {
       expect(within(roster).getByRole('status')).toBeTruthy();
     });
 
-    it('surfaces a roster load failure as an alert', () => {
+    it('surfaces a roster load failure as an alert', async () => {
       mocks.rosters = { 'ws-1': { status: 'error', members: [] } };
       render(GuestSessionsSettings);
-      expect(within(screen.getByTestId('hosted-workspace-roster')).getByRole('alert')).toBeTruthy();
+      expect(
+        await within(screen.getByTestId('hosted-workspace-roster')).findByRole('alert'),
+      ).toBeTruthy();
     });
 
     it('renders a withheld roster with no member rows, no Remove, and no alert', () => {
@@ -713,14 +1124,66 @@ describe('GuestSessionsSettings', () => {
       expect(within(roster).queryByRole('alert')).toBeNull();
     });
 
-    it('lists members and offers Remove only for collaborators', () => {
+    it('lists only collaborators, each with Remove, and never the owner', () => {
       mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
       render(GuestSessionsSettings);
       const roster = screen.getByTestId('hosted-workspace-roster');
       const rows = within(roster).getAllByRole('listitem');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].textContent).toContain('guestlogin');
+      expect(rows[0].textContent).not.toContain('Host Person');
+      expect(within(rows[0]).getByRole('button', { name: 'Remove' })).toBeTruthy();
+    });
+
+    it('renders no rows when the loaded roster holds only the owner', () => {
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner] } };
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+      expect(within(roster).queryAllByRole('listitem')).toHaveLength(0);
+      expect(roster.textContent).not.toContain('Host Person');
+      expect(within(roster).queryByRole('button', { name: 'Remove' })).toBeNull();
+      expect(within(roster).queryByRole('status')).toBeNull();
+      expect(within(roster).queryByRole('alert')).toBeNull();
+    });
+
+    it('leads each collaborator row with an avatar image or an initial fallback', () => {
+      const withAvatar: WorkspaceMember = {
+        ...collaborator,
+        principalId: 'p-pictured',
+        login: 'pictured',
+        displayName: 'Pictured Guest',
+        avatarUrl: 'https://avatars.example/pictured.png',
+      };
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, withAvatar, collaborator] } };
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+      const rows = within(roster).getAllByRole('listitem');
       expect(rows).toHaveLength(2);
-      expect(within(rows[0]).queryByRole('button', { name: 'Remove' })).toBeNull();
-      expect(within(rows[1]).getByRole('button', { name: 'Remove' })).toBeTruthy();
+
+      const img = within(rows[0]).getByTestId('hosted-roster-avatar') as HTMLImageElement;
+      expect(img.getAttribute('src')).toBe('https://avatars.example/pictured.png');
+      expect(within(rows[0]).queryByTestId('hosted-roster-avatar-fallback')).toBeNull();
+
+      expect(within(rows[1]).queryByTestId('hosted-roster-avatar')).toBeNull();
+      expect(within(rows[1]).getByTestId('hosted-roster-avatar-fallback').textContent).toBe('G');
+    });
+
+    it('falls back to the initial when the avatar image fails to load', async () => {
+      const withAvatar: WorkspaceMember = {
+        ...collaborator,
+        principalId: 'p-pictured',
+        login: 'pictured',
+        displayName: 'Pictured Guest',
+        avatarUrl: 'https://avatars.example/stale.png',
+      };
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, withAvatar] } };
+      render(GuestSessionsSettings);
+      const [row] = within(screen.getByTestId('hosted-workspace-roster')).getAllByRole('listitem');
+
+      await fireEvent.error(within(row).getByTestId('hosted-roster-avatar'));
+
+      expect(within(row).queryByTestId('hosted-roster-avatar')).toBeNull();
+      expect(within(row).getByTestId('hosted-roster-avatar-fallback').textContent).toBe('P');
     });
 
     it('disables Remove while a removal for that member is in flight', () => {
@@ -789,6 +1252,68 @@ describe('GuestSessionsSettings', () => {
       expect(alert.textContent).toContain('guestlogin');
       await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
       await waitFor(() => expect(mocks.removeMember).toHaveBeenCalledTimes(2));
+    });
+
+    it('does not revive a failed removal for a re-added member and keeps retry state current', async () => {
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+      mocks.removeMember.mockImplementationOnce(() => ({
+        promise: Promise.reject(new HostedRosterOperationError('transport')),
+      }));
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+      const confirmRemoval = async () => {
+        await fireEvent.click(within(roster).getByRole('button', { name: 'Remove' }));
+        await fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: 'Remove' }),
+        );
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      };
+      const refresh = async (members: WorkspaceMember[]) => {
+        mocks.rosters['ws-1'] = { status: 'loaded', members };
+        const action = guestActions.loadHostedRosterRequested('ws-1');
+        appStore.dispatch(action);
+        await action.promise;
+      };
+      await confirmRemoval();
+      await within(roster).findByRole('alert');
+      await refresh([owner, collaborator]);
+      expect(within(roster).getByRole('button', { name: 'Retry' })).toBeTruthy();
+
+      await refresh([owner]);
+      await waitFor(() => expect(within(roster).queryByRole('alert')).toBeNull());
+      const readded = { ...collaborator, addedAt: '2026-09-24T00:00:00Z' };
+      await refresh([owner, readded]);
+      await within(roster).findByRole('button', { name: 'Remove' });
+      expect(within(roster).queryByRole('alert')).toBeNull();
+      expect(mocks.removeMember).toHaveBeenCalledTimes(1);
+
+      mocks.removeMember.mockImplementationOnce(() => ({
+        promise: Promise.reject(new HostedRosterOperationError('transport')),
+      }));
+      await confirmRemoval();
+      const alert = await within(roster).findByRole('alert');
+      const retry = Promise.withResolvers<{ removed: boolean }>();
+      mocks.removeMember.mockImplementationOnce(() => ({ promise: retry.promise }));
+      await fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+      await refresh([owner, readded]);
+      await waitFor(() => expect(within(roster).queryByRole('alert')).toBeNull());
+      expect(
+        (within(roster).getByRole('button', { name: 'Remove' }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(transport.request).toHaveBeenCalledWith('workspace.members.list', {
+        workspaceId: 'ws-1',
+      });
+      expect(transport.request).toHaveBeenCalledWith('workspace.members.remove', {
+        workspaceId: 'ws-1',
+        principalId: 'p-collab',
+      });
+      expect(mocks.removeMember).toHaveBeenCalledTimes(3);
+      retry.resolve({ removed: true });
+      await waitFor(() =>
+        expect(
+          (within(roster).getByRole('button', { name: 'Remove' }) as HTMLButtonElement).disabled,
+        ).toBe(false),
+      );
     });
 
     it('retries the removal that failed, never a later cancelled dialog target', async () => {
@@ -1034,5 +1559,127 @@ describe('GuestSessionsSettings', () => {
       expect(report.textContent).toContain('Untitled');
       expect(mocks.removeAll).toHaveBeenCalledWith('ws-1');
     });
+  });
+
+  it('hides Collaboration without loading or revoking saved access when Multiplayer is disabled', async () => {
+    const { setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    const { getItems } = await import('@themislib/themis/utils/collections/collection-utils');
+    mocks.sessions = [guest];
+    mocks.hosted = [hostedWorkspace];
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+    render(GuestSessionsSettings);
+    expect(screen.queryByTestId('guest-sessions-settings')).toBeNull();
+    appStore.dispatch(
+      guestActions.removeHostedMemberRequested(hostedWorkspace.id, collaborator.principalId),
+    );
+    appStore.dispatch(guestActions.removeAllHostedGuestsRequested(hostedWorkspace.id));
+    appStore.dispatch(guestActions.leaveGuestSessionRequested(guest.id));
+    appStore.dispatch(guestActions.leaveGuestWorkspaceRequested(guest.id, 'ws-a'));
+    appStore.dispatch(guestActions.collaborationSignInRequested());
+    await Promise.resolve();
+    expect(transport.request).not.toHaveBeenCalled();
+    expect(mocks.leave).not.toHaveBeenCalled();
+    expect(mocks.leaveWorkspace).not.toHaveBeenCalled();
+    expect(mocks.signIn).not.toHaveBeenCalled();
+    expect(getItems(appStore.state.guestSessions.sessions)).toEqual([guest]);
+  });
+
+  it('withholds owner controls and disables joined-session actions for unknown authority', async () => {
+    mocks.sessions = [guest];
+    render(GuestSessionsSettings);
+    appStore.dispatch(principalContextChanged(null));
+    await waitFor(() => expect(screen.queryByTestId('host-membership-settings')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Open' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Leave host' }).hasAttribute('disabled')).toBe(true);
+  });
+  it('omits ordinary workspaces whose effective members all inherit instance access', async () => {
+    mocks.hosted = [hostedWorkspace];
+    mocks.rosters = {
+      'ws-1': {
+        status: 'loaded',
+        members: [owner, { ...collaborator, hostRole: 'member' }],
+        guestCount: 0,
+        guestLimit: 10,
+      },
+    };
+    render(GuestSessionsSettings);
+    await waitFor(() => expect(screen.queryByTestId('hosted-workspace-roster')).toBeNull());
+    expect(screen.queryByText('Guests 0/10')).toBeNull();
+  });
+
+  it('shows a joined instance once without workspace children while retaining workspace-only sessions', async () => {
+    mocks.sessions = [
+      { ...guest, id: 'instance-1', hostname: 'Joined instance', hostRole: 'member' },
+      {
+        ...guest,
+        id: 'workspace-guest',
+        hostname: 'Workspace host',
+        hostRole: 'guest',
+        workspaces: [{ id: 'direct-ws', title: 'Direct shared workspace' }],
+      },
+    ];
+    const { container } = render(GuestSessionsSettings);
+    expect(screen.getByRole('heading', { name: 'Joined instances' })).toBeTruthy();
+    const instance = container.querySelector('[data-session-id="instance-1"]')!;
+    expect(within(instance as HTMLElement).queryByTestId('guest-session-workspaces')).toBeNull();
+    expect(
+      within(instance as HTMLElement).getByRole('button', { name: 'Leave instance' }),
+    ).toBeTruthy();
+    expect(screen.getByText('Direct shared workspace')).toBeTruthy();
+    await fireEvent.click(within(instance as HTMLElement).getByRole('button', { name: 'Open' }));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledWith('instance-1'));
+  });
+  it('retains pending-only sharing without an empty guest badge and targets the existing Share dialog', async () => {
+    mocks.hosted = [{ ...hostedWorkspace, memberCount: 1, openInviteCount: 1 }];
+    mocks.rosters = {
+      'ws-1': { status: 'loaded', members: [owner], guestCount: 1, guestLimit: 10 },
+    };
+    render(GuestSessionsSettings);
+    expect(screen.getByText('Pending invitations: 1')).toBeTruthy();
+    expect(screen.queryByTestId('hosted-guest-seats')).toBeNull();
+    expect(screen.queryByText('No items')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Manage sharing' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceShare/openDialog',
+        payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Shared project' }],
+      }),
+    );
+    mocks.hosted = [{ ...hostedWorkspace, memberCount: 1, openInviteCount: 0 }];
+    mocks.publish();
+    await waitFor(() => expect(screen.queryByTestId('hosted-workspace-roster')).toBeNull());
+  });
+
+  it('does not attach an old Open failure to a same-id replacement instance', async () => {
+    mocks.sessions = [{ ...guest, hostRole: 'member', pairedAt: 1 }];
+    const pending = pendingAction('connections/openRequested', ['guest-1']);
+    mocks.open.mockImplementationOnce(() => pending.action);
+    render(GuestSessionsSettings);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    mocks.sessions = [
+      { ...guest, hostRole: 'member', pairedAt: 2, hostname: 'Replacement instance' },
+    ];
+    mocks.publish();
+    pending.reject(new Error('old-session-failure'));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Open', exact: true }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+  });
+
+  it('keeps unfinished and failed workspace sharing lists distinct from an empty list', async () => {
+    render(GuestSessionsSettings);
+    appStore.dispatch(setWorkspaceHasLoaded(false));
+    expect(await screen.findByText('Loading workspace sharing…')).not.toBeNull();
+    expect(screen.queryByText('No shared workspaces')).toBeNull();
+    appStore.dispatch(setWorkspaceError('controlled failure'));
+    expect(await screen.findByText('Workspace sharing could not be loaded.')).not.toBeNull();
+    expect(screen.queryByText('No shared workspaces')).toBeNull();
   });
 });

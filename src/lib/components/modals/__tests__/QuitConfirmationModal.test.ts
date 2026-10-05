@@ -1,10 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
 import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
+import type { WorkspaceId } from '$shared/types';
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
@@ -34,6 +35,68 @@ warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../QuitConfirmationModal.svelte'));
 
 describe('QuitConfirmationModal', () => {
+  it('resolves browser-only workspace identities without inventing names for missing metadata', async () => {
+    const Modal = (await import('../QuitConfirmationModal.svelte')).default;
+    render(Modal, {
+      open: true,
+      workspaceDetails: [
+        {
+          id: 'w1' as WorkspaceId,
+          title: 'Design system',
+          repositoryOwner: 'intent-hq',
+          repositoryName: 'intent',
+          branch: 'design',
+        },
+      ],
+      payload: {
+        requestId: 'identities',
+        interrupted: [],
+        disruptedBrowserTabs: [
+          { tabId: 't1', ownerAgentId: 'a1', workspaceId: 'w1' },
+          { tabId: 't2', ownerAgentId: 'a2', workspaceId: 'w2' },
+        ],
+      },
+    });
+    const named = await screen.findByRole('listitem', { name: 'Design system' });
+    expect(named.querySelector('img')?.getAttribute('src')).toContain('github.com/intent-hq.png');
+    const missing = screen.getByRole('listitem', { name: 'Untitled' });
+    expect(within(missing).queryByText('w2')).toBeNull();
+    expect(screen.getByRole('alertdialog').getAttribute('aria-describedby')).toBeTruthy();
+  });
+  it('counts browsers per workspace, including owner fallback and explicit workspace overrides', async () => {
+    const Modal = (await import('../QuitConfirmationModal.svelte')).default;
+    render(Modal, {
+      open: true,
+      payload: {
+        requestId: 'workspace-counts',
+        interrupted: FULL_PAYLOAD.interrupted,
+        disruptedBrowserTabs: [
+          { tabId: 't1', ownerAgentId: 'a1' },
+          { tabId: 't2', ownerAgentId: 'a1', workspaceId: 'w1' },
+          { tabId: 't3', ownerAgentId: 'a1', workspaceId: 'w2' },
+          { tabId: 't4', ownerAgentId: 'unknown' },
+        ],
+      },
+    });
+    expect(
+      within(screen.getByRole('listitem', { name: 'Alpha' })).getByRole('img', {
+        name: '2 browsers',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole('listitem', { name: 'Untitled' })).getByRole('img', {
+        name: '1 browser',
+      }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole('listitem', { name: 'Other' })).getByRole('img', {
+        name: '1 browser',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('alertdialog', { description: "We'll stop 1 agent and close 4 browsers." }),
+    ).toBeTruthy();
+  });
   it('renders quit framing with grouped content and responds true on Quit', async () => {
     const onRespond = vi.fn();
     const QuitConfirmationModal = (await import('../QuitConfirmationModal.svelte')).default;
@@ -88,8 +151,9 @@ describe('QuitConfirmationModal', () => {
     const groups = await screen.findAllByRole('listitem', { name: 'Alpha' });
     expect(groups).toHaveLength(2);
     const agentIds = (row: HTMLElement) =>
-      Array.from(row.querySelectorAll('[data-agent-avatar-stack-agent-id]'), (avatar) =>
-        avatar.getAttribute('data-agent-avatar-stack-agent-id'),
+      Array.from(
+        row.querySelectorAll('[data-quit-agent-stack] [data-agent-avatar-stack-agent-id]'),
+        (avatar) => avatar.getAttribute('data-agent-avatar-stack-agent-id'),
       );
     expect(agentIds(groups[0])).toEqual(['a1', 'a2']);
     expect(agentIds(groups[1])).toEqual(['a4']);
@@ -126,12 +190,12 @@ describe('QuitConfirmationModal', () => {
   });
 
   it.each([
-    [1, 0, '1 agent will stop'],
-    [3, 0, '3 agents will stop'],
-    [0, 1, '1 browser will stop'],
-    [0, 2, '2 browsers will stop'],
-    [1, 1, '1 agent and 1 browser will stop'],
-    [3, 2, '3 agents and 2 browsers will stop'],
+    [1, 0, "We'll stop 1 agent in 1 workspace."],
+    [3, 0, "We'll stop 3 agents in 1 workspace."],
+    [0, 1, "We'll close 1 browser."],
+    [0, 2, "We'll close 2 browsers."],
+    [1, 1, "We'll stop 1 agent and close 1 browser."],
+    [3, 2, "We'll stop 3 agents and close 2 browsers in 1 workspace."],
   ])(
     'describes affected counts for %i agents and %i browsers',
     async (agents, browsers, summary) => {

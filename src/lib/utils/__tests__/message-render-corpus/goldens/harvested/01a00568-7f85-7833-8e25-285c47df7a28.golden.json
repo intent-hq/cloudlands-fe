@@ -60,7 +60,12 @@
         },
         {
           "type": "mermaid",
-          "content": "flowchart LR\n  A[agent: openTunnel remotePort] --> E{FE transport?}\n  E -->|ws/wss remote| M[listener → /tunnel mux → daemon 127.0.0.1:port]\n  E -->|UDS / local TCP| D[listener → direct TCP relay → 127.0.0.1:port]\n  M --> R[\"{ localPort, backend: tunnel }\"]\n  D --> R2[\"{ localPort, backend: direct }\"]"
+          "content": "flowchart LR\n  A[agent: openTunnel remotePort] --> E{FE transport?}\n  E -->|ws/wss remote| M[listener → /tunnel mux → daemon 127.0.0.1:port]\n  E -->|UDS / local TCP| D[listener → direct TCP relay → 127.0.0.1:port]\n  M --> R[\"{ localPort, backend: tunnel }\"]\n  D --> R2[\"{ localPort, backend: direct }\"]",
+          "metadata": {
+            "rawSource": "flowchart LR\n  A[agent: openTunnel remotePort] --> E{FE transport?}\n  E -->|ws/wss remote| M[listener → /tunnel mux → daemon 127.0.0.1:port]\n  E -->|UDS / local TCP| D[listener → direct TCP relay → 127.0.0.1:port]\n  M --> R[\"{ localPort, backend: tunnel }\"]\n  D --> R2[\"{ localPort, backend: direct }\"]\n",
+            "fenceStart": 96,
+            "isStreaming": false
+          }
         },
         {
           "type": "text",

@@ -1,5 +1,45 @@
+import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../../test/ct-test';
 import ChatEventGeometryHost from './ChatEventGeometryHost.svelte';
+
+for (const theme of ['light', 'dark'] as const) {
+  for (const width of [360, 960] as const) {
+    for (const zoom of [1, 2] as const) {
+      test(`subscription cards fit transcript lanes in ${theme} at ${width}px and ${zoom * 100}%`, async ({
+        mount,
+        page,
+      }, testInfo) => {
+        // Tailwind's sm: margin follows the viewport, independently of CSS zoom.
+        await page.setViewportSize({ width, height: 900 });
+        const props = { panelId: 'subscription-lane', theme, width, zoom };
+        const component = await mount(ChatEventGeometryHost, {
+          props: { ...props, subscriptionLane: 'chief-message' },
+        });
+        for (const subscriptionLane of ['chief-message', 'chief-flush', 'regular'] as const) {
+          await component.update({ props: { ...props, subscriptionLane } });
+          const clip = component.getByTestId('subscription-clip');
+          const clipBounds = await clip.boundingBox();
+          for (const surfaceId of ['event-wakeup-card', 'user-message-surface']) {
+            const surface = await clip.getByTestId(surfaceId).boundingBox();
+            expect(surface!.x).toBeGreaterThanOrEqual(clipBounds!.x);
+            expect(surface!.x + surface!.width).toBeLessThanOrEqual(
+              clipBounds!.x + clipBounds!.width,
+            );
+          }
+          expect(await clip.evaluate((node) => node.scrollWidth - node.clientWidth)).toBe(0);
+          if (
+            subscriptionLane === 'chief-message' &&
+            theme === 'light' &&
+            width === 360 &&
+            zoom === 1
+          ) {
+            await clip.screenshot({ path: testInfo.outputPath('compact-chief-fixed.png') });
+          }
+        }
+      });
+    }
+  }
+}
 
 function contrastRatio(foreground: string, background: string): number {
   const luminance = (value: string) => {
@@ -20,27 +60,50 @@ function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-test('measures the production finished-card turn gap across all required states', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(ChatEventGeometryHost, { props: { panelId: 'geometry' } });
-  const summary = component.getByTestId('event-wakeup-summary');
-  let measuredStates = 0;
-  for (const theme of ['light', 'dark'] as const) {
-    for (const width of [360, 960]) {
-      for (const zoom of [1, 2]) {
+/**
+ * The disclosure body's intro drives height/padding/opacity from inline styles
+ * and clears them on its final tick, so a natural `opacity: 1` means the intro
+ * has settled; the outro removes the node when it finishes.
+ */
+async function expectDisclosureSettled(
+  toggle: Locator,
+  body: Locator,
+  expanded: boolean,
+): Promise<void> {
+  await expect(toggle).toHaveAttribute('aria-expanded', String(expanded));
+  if (expanded) await expect(body).toHaveCSS('opacity', '1');
+  else await expect(body).toHaveCount(0);
+}
+
+/**
+ * The shared Button base transitions `color` and `opacity`, so a theme flip or a
+ * hover/focus change leaves the toggle mid-transition for one spring-fast beat;
+ * wait for its own animations to finish before reading a computed style.
+ */
+async function expectTransitionsSettled(target: Locator): Promise<void> {
+  await expect.poll(() => target.evaluate((node) => node.getAnimations().length)).toBe(0);
+}
+
+// One test() per (theme, width, zoom) group so each group is its own retry unit
+// and timeout budget (intent-hq/intent#5561); the finished-variant × label-length
+// × expanded cells of a group share one mount.
+for (const theme of ['light', 'dark'] as const) {
+  for (const width of [360, 960] as const) {
+    for (const zoom of [1, 2] as const) {
+      test(`measures the production finished-card turn gap in ${theme} at ${width}px and ${zoom * 100}%`, async ({
+        mount,
+      }) => {
+        const panelId = `geometry-${theme}-${width}-${zoom}`;
+        const component = await mount(ChatEventGeometryHost, {
+          props: { panelId, theme, width, zoom },
+        });
+        const summary = component.getByTestId('event-wakeup-summary');
+        const details = component.getByTestId('event-wakeup-details');
+        let measuredStates = 0;
         for (const finishedVariant of ['agent:idle', 'agent:reportToParent'] as const) {
           for (const labelLength of ['short', 'long'] as const) {
             await component.update({
-              props: {
-                panelId: 'geometry',
-                theme,
-                width,
-                zoom,
-                finishedVariant,
-                labelLength,
-              },
+              props: { panelId, theme, width, zoom, finishedVariant, labelLength },
             });
             const summaryLength = (await summary.textContent())!.length;
             if (labelLength === 'long') expect(summaryLength).toBeGreaterThan(50);
@@ -48,8 +111,8 @@ test('measures the production finished-card turn gap across all required states'
             for (const expanded of [false, true]) {
               if ((await summary.getAttribute('aria-expanded')) !== String(expanded)) {
                 await summary.click();
-                await page.waitForTimeout(180);
               }
+              await expectDisclosureSettled(summary, details, expanded);
               await expect(component.getByTestId('event-wakeup-card')).toBeVisible();
               await expect(component.getByTestId('following-transcript-row')).toBeVisible();
               const measurement = await component.evaluate((root) => {
@@ -93,35 +156,46 @@ test('measures the production finished-card turn gap across all required states'
             }
           }
         }
-      }
+        expect(measuredStates).toBe(8);
+      });
     }
   }
-  expect(measuredStates).toBe(64);
-});
+}
 
-test('matches sent-message disclosures to real finished event rows', async ({ mount, page }) => {
-  const component = await mount(ChatEventGeometryHost, { props: { panelId: 'parity' } });
-  const senderButton = component.getByTestId('agent-message-attribution');
-  const agentToggle = component.getByTestId('agent-message-disclosure-toggle');
-  const eventToggle = component.getByTestId('event-wakeup-summary');
-  let measuredStates = 0;
+// Same per-group split as above: the parity matrix ran 16 cells in one test() and
+// exceeded the 30 s budget under host load once the fixed waits became settle
+// assertions.
+for (const theme of ['light', 'dark'] as const) {
+  for (const width of [360, 960] as const) {
+    for (const zoom of [1, 2] as const) {
+      test(`matches sent-message disclosures to real finished event rows in ${theme} at ${width}px and ${zoom * 100}%`, async ({
+        mount,
+      }) => {
+        const panelId = `parity-${theme}-${width}-${zoom}`;
+        const component = await mount(ChatEventGeometryHost, {
+          props: { panelId, theme, width, zoom },
+        });
+        const senderButton = component.getByTestId('agent-message-attribution');
+        const agentToggle = component.getByTestId('agent-message-disclosure-toggle');
+        const agentBody = component.getByTestId('agent-message-expanded-body');
+        const eventToggle = component.getByTestId('event-wakeup-summary');
+        const eventBody = component.getByTestId('event-wakeup-details');
+        let measuredStates = 0;
 
-  await expect(senderButton).toBeVisible();
-  await expect(agentToggle).toHaveAttribute('aria-expanded', 'false');
-  await senderButton.click();
-  await expect(agentToggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(senderButton).toBeVisible();
+        await expect(agentToggle).toHaveAttribute('aria-expanded', 'false');
+        await senderButton.click();
+        await expect(agentToggle).toHaveAttribute('aria-expanded', 'false');
 
-  for (const theme of ['light', 'dark'] as const) {
-    for (const width of [360, 960]) {
-      for (const zoom of [1, 2]) {
         for (const labelLength of ['short', 'long'] as const) {
           await component.update({
-            props: { panelId: 'parity', theme, width, zoom, labelLength },
+            props: { panelId, theme, width, zoom, labelLength },
           });
           for (const toggle of [agentToggle, eventToggle]) {
             if ((await toggle.getAttribute('aria-expanded')) === 'true') await toggle.click();
           }
-          await page.waitForTimeout(180);
+          await expectDisclosureSettled(agentToggle, agentBody, false);
+          await expectDisclosureSettled(eventToggle, eventBody, false);
 
           const collapsed = await component.evaluate((root) => {
             const element = (testId: string) =>
@@ -275,6 +349,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
           const interactionStyle = async (state: 'hover' | 'focus', target: typeof agentToggle) => {
             if (state === 'hover') await target.hover();
             else await target.focus();
+            await expectTransitionsSettled(target);
             return target.evaluate((node) => {
               const computed = getComputedStyle(node);
               return {
@@ -297,7 +372,8 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
 
           await agentToggle.click();
           await eventToggle.click();
-          await page.waitForTimeout(180);
+          await expectDisclosureSettled(agentToggle, agentBody, true);
+          await expectDisclosureSettled(eventToggle, eventBody, true);
           const expanded = await component.evaluate((root) => {
             const body = (testId: string) =>
               root.querySelector(`[data-testid="${testId}"]`) as HTMLElement;
@@ -326,11 +402,11 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
           expect(expanded.agent.inlineInsets[1]).toBeCloseTo(expanded.event.inlineInsets[1], 1);
           measuredStates += 1;
         }
-      }
+        expect(measuredStates).toBe(2);
+      });
     }
   }
-  expect(measuredStates).toBe(16);
-});
+}
 
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2] as const) {

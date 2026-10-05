@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  */
@@ -29,13 +30,14 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ uiHighlight: { activeById: {} } }),
+    state: () => withLegacyPrincipal({ uiHighlight: { activeById: {} } }),
   });
 });
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: () => mocks.specialists$,
   selectFileSpecialists: () => mocks.fileSpecialists$,
+  selectSpecialistImportDiagnostics: () => mocks.readable([]),
   filterSpecialistsByGitHubAuth: (specialists: unknown[]) => specialists,
   selectHasOverrides: { select: () => false },
   selectSpecialistSourceLabel: { select: () => undefined },
@@ -75,6 +77,18 @@ describe('AIBehaviorSidebar', () => {
     await rerender({ isActive: false });
     expect(current()).toHaveLength(0);
     expect(container.querySelector('[data-state="active"]')).toBeNull();
+  });
+
+  it('renders each specialist row with a compact named-variant avatar', () => {
+    const { container } = render(AIBehaviorSidebar, {
+      activeView: { type: 'specialist', id: 'implementor' },
+      onSelect: vi.fn(),
+    });
+    const avatar = container.querySelector<SVGElement>(
+      '#specialist-implementor [data-agent-avatar]',
+    );
+    expect(avatar?.getAttribute('data-avatar-variant')).toBe('compact');
+    expect(avatar?.style.width).toBe('');
   });
 
   it('dispatches distinct specialist and creation selections', async () => {

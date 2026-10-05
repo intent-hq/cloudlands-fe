@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: full-screen overlay composed from MediaLightbox around a <video>; no catalog fixtures yet -->
+
 <script lang="ts">
   import type { VideoSource } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';

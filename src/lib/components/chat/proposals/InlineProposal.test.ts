@@ -66,6 +66,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors', () => ({
   selectProposalLifecycleMap: vi.fn(() => readable(() => state.lifecycle)),
+  selectProposalLifecycleEntry: vi.fn((id: string) => readable(() => state.lifecycle[id] ?? null)),
   selectProposalStatus: vi.fn(() => readable(() => state.cardStatus)),
   selectProposalError: vi.fn(() => readable(() => state.cardError)),
   selectProposalErrorCode: vi.fn(() => readable(() => null)),
@@ -73,6 +74,24 @@ vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors'
 }));
 vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice', () => ({
   agentScopedProposalKey: (agentId: string, proposalId: string) => `${agentId}::${proposalId}`,
+  applyProposalRequested: (request: unknown) => ({
+    type: 'proposalLifecycle/applyProposalRequested',
+    payload: [request],
+  }),
+}));
+vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
+  selectConnections: vi.fn(() =>
+    readable(() => [
+      { id: 'source', label: 'Server' },
+      { id: 'target', label: 'Laptop' },
+    ]),
+  ),
+  selectCurrentConnection: vi.fn(() => readable(() => ({ id: 'source', label: 'Server' }))),
+  selectCurrentConnectionId: vi.fn(() => readable(() => 'source')),
+}));
+vi.mock('$lib/utils/platform-capabilities', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/platform-capabilities')>()),
+  isElectronPlatform: () => true,
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
   agentProposalResolveRequested: (...args: unknown[]) => {
@@ -200,6 +219,9 @@ beforeEach(() => {
   state.cardError = null;
   subscriptions.clear();
   vi.clearAllMocks();
+  actionMocks.dispatch.mockImplementation(
+    (action: { promise?: Promise<unknown> }) => action.promise ?? action,
+  );
 });
 
 afterEach(() => {
@@ -226,6 +248,25 @@ describe('InlineProposal', () => {
       proposalId: 'tool-pending',
       outcome: 'dismissed',
     });
+  });
+
+  it('keeps the draft on a rejected dismissal and lets a subsequent dismissal retry', async () => {
+    const proposalId = 'tool-dismiss-retry';
+    state.pendingProposals = [{ proposalId, messageId: 'message-inline' }];
+    actionMocks.dispatch.mockRejectedValueOnce(new Error('resolution failed'));
+    renderProposal(makeBulkProposal(proposalId));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Dismiss proposal' }));
+    expect(actionMocks.resolve).toHaveBeenCalledOnce();
+    expect(actionMocks.clearDraft).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Dismiss proposal' }));
+    expect(actionMocks.resolve).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() =>
+      expect(actionMocks.clearDraft).toHaveBeenCalledWith(AGENT_ID, proposalId),
+    );
   });
 
   it('renders an applied workspace outcome with a link to the created workspace', async () => {
@@ -388,4 +429,63 @@ describe('InlineProposal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     expect(actionMocks.undoSettings).toHaveBeenCalledWith('tool-settings');
   });
+});
+
+function makeTransferProposal(id: string): Proposal {
+  return {
+    kind: 'workspace-transfer',
+    applyToolCallId: id,
+    payload: {
+      operation: 'workspace.transfer',
+      workspaceId: 'project',
+      sourceWorkspacePath: '/repo/project',
+      destination: 'target',
+    },
+    preview: { title: 'Transfer project' },
+  };
+}
+
+it('cancels an inline transfer directly, persists dismissal and never starts transfer work', async () => {
+  const proposal = makeTransferProposal('transfer-dismiss');
+  state.pendingProposals = [{ proposalId: 'transfer-dismiss', messageId: 'message-inline' }];
+  renderProposal(proposal);
+  await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
+    proposalId: 'transfer-dismiss',
+    outcome: 'dismissed',
+  });
+  expect(actionMocks.dispatch.mock.calls.every(([action]) => action.type === 'agent/resolve')).toBe(
+    true,
+  );
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it('routes inline approval to transfer lifecycle and persists the successful outcome', async () => {
+  const proposal = makeTransferProposal('transfer-apply');
+  state.pendingProposals = [{ proposalId: 'transfer-apply', messageId: 'message-inline' }];
+  renderProposal(proposal);
+  await fireEvent.click(screen.getByRole('button', { name: 'Approve transfer' }));
+  expect(actionMocks.dispatch).toHaveBeenCalledWith({
+    type: 'proposalLifecycle/applyProposalRequested',
+    payload: [
+      {
+        proposalId: 'transfer-apply',
+        kind: 'workspace-transfer',
+        detail: {
+          proposal,
+          editedFields: { destinationConnectionId: 'target', sourceConnectionId: 'source' },
+          selectedBulkItemIds: [],
+        },
+      },
+    ],
+  });
+  expect(actionMocks.resolve).not.toHaveBeenCalled();
+  state.lifecycle = { 'transfer-apply': { status: 'applied', completedAt: 50 } };
+  notifySubscribers();
+  await tick();
+  expect(actionMocks.resolve).toHaveBeenCalledWith(AGENT_ID, WORKSPACE_ID, {
+    proposalId: 'transfer-apply',
+    outcome: 'applied',
+  });
+  expect(screen.queryByRole('button', { name: 'Approve transfer' })).toBeNull();
 });

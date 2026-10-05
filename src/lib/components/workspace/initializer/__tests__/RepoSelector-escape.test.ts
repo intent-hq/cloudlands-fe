@@ -6,10 +6,11 @@
  * Also covers the Recent list rendering (owner-qualified repo names) and
  * plain-text search filtering from the "Pick a repo" tab (intent-hq/monorepo#859).
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 const mockRepos = vi.hoisted(() => ({
+  state: {} as Record<string, unknown>,
   recentRepos: [] as Array<{
     path: string;
     type: 'local' | 'github';
@@ -27,15 +28,25 @@ const mockRepos = vi.hoisted(() => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: {} });
+  const module = createAppStoreMockModule({
+    state: () => mockRepos.state,
+    dispatch: (action) => {
+      if (action.type === 'workspaceInitializer/setRecentRepos') {
+        mockRepos.recentRepos = action.payload;
+        module.store.emitState();
+      }
+    },
+  });
+  return module;
 });
 
 vi.mock(
   '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
   async () => {
-    const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
-    const store = createAppStoreMock({ state: {} });
+    const { store } = await import('$store/renderer/store');
     return {
+      selectWorkspaceInitializerDismissedRecentRepoKeys: store.createSelector(() => ({})),
+      selectWorkspaceInitializerHydrated: store.createSelector(() => true),
       selectWorkspaceInitializerDefaultParentPath: store.createSelector(() => ''),
       selectWorkspaceInitializerRecentRepos: store.createSelector(() => mockRepos.recentRepos),
       selectWorkspaceInitializerRemoteSetups: store.createSelector(() => []),
@@ -155,6 +166,11 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+
+beforeEach(() => {
+  mockRepos.state = withLegacyPrincipal({});
+});
 import { warmImport } from '../../../../../test/warm-import';
 
 const DROPDOWN_HEADING = 'What repo should we work on?';
@@ -338,10 +354,10 @@ describe('RepoSelector mode tabs', () => {
     const { container } = render(RepoSelector, { props: {} });
     await openDropdown(container);
 
-    await screen.findByRole('button', { name: 'Pick a repo' });
+    await screen.findByRole('tab', { name: 'Pick a repo' });
     const expectedLabels = new Set(['Pick a repo', 'Copy local repo', 'New repo']);
     const tabLabels = screen
-      .getAllByRole('button')
+      .getAllByRole('tab')
       .map((tab) => tab.textContent?.trim())
       .filter((label): label is string => Boolean(label && expectedLabels.has(label)));
     expect(tabLabels).toEqual(['Pick a repo', 'Copy local repo', 'New repo']);

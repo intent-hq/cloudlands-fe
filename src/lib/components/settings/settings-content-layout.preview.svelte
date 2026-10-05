@@ -1,13 +1,14 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import { setupSettingsFormPreview } from '../../../test/api-rtk-settings-preview';
 
   export const preview = definePreview<{ narrowPane?: boolean }>({
     id: 'settings-content-layout',
     title: 'Settings content layout',
     defaultState: 'default',
     states: {
-      default: { props: {} },
-      'narrow-pane': { props: { narrowPane: true } },
+      default: { props: {}, setup: setupSettingsFormPreview },
+      'narrow-pane': { props: { narrowPane: true }, setup: setupSettingsFormPreview },
     },
   });
 </script>
@@ -22,7 +23,6 @@
   let writes = $state<AppSettingChange[]>([]);
   const definitions: SettingDefinitionWithValue[] = [
     { path: 'agents.maxConcurrent', value: 12, min: 0, max: 200 },
-    { path: 'agents.flushQueuedMessages', value: 'all', type: 'enum' },
     { path: 'agents.memoryBudgetMb', value: 4096, min: 0, max: 16384 },
     { path: 'agents.idleReapMinutes', value: 15, defaultValue: 15, min: 0 },
     { path: 'agents.acpNodeMaxOldSpaceMb', value: 8192, min: 1024, max: 65536 },

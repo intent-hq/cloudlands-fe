@@ -105,8 +105,9 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
 
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.querySelector('[data-context-picker-body][data-embedded]')).toBeTruthy();
-    await fireEvent.click(screen.getByRole('button', { name: /Project notes/i }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: /Project notes/i }));
     expect(onToggle).toHaveBeenCalledWith('note-1');
+    expect(onToggle).toHaveBeenCalledOnce();
     expect(onPick).not.toHaveBeenCalled();
     expect(document.querySelector('[data-context-picker-body][data-embedded]')).toBeTruthy();
   });
@@ -134,8 +135,9 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Add Context' }));
     await screen.findByRole('dialog', { name: /select context panels/i });
 
-    await fireEvent.click(screen.getByRole('button', { name: /Project notes/i }));
+    await fireEvent.click(screen.getByText('Project notes'));
     expect(onToggle).toHaveBeenCalledWith('note-1');
+    expect(onToggle).toHaveBeenCalledOnce();
     expect(onPick).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog', { name: /select context panels/i })).toBeTruthy();
   });
@@ -162,9 +164,9 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add Context' }));
-    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'build' } });
+    await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'build' } });
     await vi.advanceTimersByTimeAsync(250);
-    const result = await vi.waitFor(() => screen.getByRole('button', { name: /Build terminal/i }));
+    const result = await vi.waitFor(() => screen.getByRole('option', { name: /Build terminal/i }));
 
     await fireEvent.click(result);
     expect(onInsertMention).toHaveBeenCalledWith(
@@ -202,10 +204,10 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add Context' }));
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('combobox');
     await fireEvent.input(input, { target: { value: 'app' } });
     await vi.advanceTimersByTimeAsync(250);
-    const result = await vi.waitFor(() => screen.getByRole('button', { name: /app\.ts/i }));
+    const result = await vi.waitFor(() => screen.getByRole('option', { name: /app\.ts/i }));
 
     await fireEvent.click(result);
     expect(dispatchMock).toHaveBeenCalledWith(
@@ -220,7 +222,7 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     expect(onInsertMention).not.toHaveBeenCalled();
     expect(onPick).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog', { name: /select context panels/i })).toBeTruthy();
-    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('');
+    expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('');
   });
 
   it('adds a note search result as checked context and keeps the popover open', async () => {
@@ -239,9 +241,9 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add Context' }));
-    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'design' } });
+    await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'design' } });
     await vi.advanceTimersByTimeAsync(250);
-    const result = await vi.waitFor(() => screen.getByRole('button', { name: /Design notes/i }));
+    const result = await vi.waitFor(() => screen.getByRole('option', { name: /Design notes/i }));
 
     await fireEvent.click(result);
     expect(dispatchMock).toHaveBeenCalledWith(
@@ -265,7 +267,7 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add Context' }));
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('combobox');
     await fireEvent.input(input, { target: { value: 'a' } });
     await vi.advanceTimersByTimeAsync(250);
     expect(searchMock).toHaveBeenCalledWith('a', { workspaceId: 'workspace-1' });
@@ -276,5 +278,43 @@ describe('ContextPickerButton Escape handling (escape-layer stack)', () => {
     await vi.waitFor(() => expect(screen.queryByRole('status')).toBeNull());
     expect(searchMock).toHaveBeenLastCalledWith('ab', { workspaceId: 'workspace-1' });
     expect(document.querySelector('.animate-pulse')).toBeNull();
+  });
+
+  it('retries a failed search and selects once with keyboard navigation', async () => {
+    vi.useFakeTimers();
+    searchMock.mockRejectedValueOnce(new Error('search failed')).mockResolvedValueOnce([
+      { id: 'file-1', type: 'file', label: 'First file', uri: 'file:///first' },
+      { id: 'file-2', type: 'file', label: 'Second file', uri: 'file:///second' },
+    ]);
+    render(ContextPickerButton, { props: { panels: [], workspace: { id: 'workspace-1' } as any } });
+    const trigger = screen.getByRole('button', { name: 'Add Context' });
+    await fireEvent.click(trigger);
+    const input = screen.getByRole('combobox');
+    await fireEvent.input(input, { target: { value: 'file' } });
+    await vi.advanceTimersByTimeAsync(250);
+    await vi.waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(input.getAttribute('aria-activedescendant')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    await vi.waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(2));
+    expect(searchMock).toHaveBeenLastCalledWith('file', { workspaceId: 'workspace-1' });
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input.getAttribute('aria-activedescendant')).toBe(
+      screen.getByRole('option', { name: 'Second file' }).id,
+    );
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(dispatchMock).toHaveBeenCalledOnce();
+    expect(dispatchMock).toHaveBeenCalledWith(
+      addSearchedItem({
+        id: 'file-2',
+        type: 'file',
+        label: 'Second file',
+        filePath: 'file:///second',
+        noteId: undefined,
+      }),
+    );
+    expect(input.getAttribute('aria-activedescendant')).toBeNull();
+    expect(document.activeElement).toBe(input);
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.activeElement).toBe(trigger);
   });
 });

@@ -67,6 +67,7 @@ import {
   chatSendStarted,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  olderHistoryPageRequested,
   retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
@@ -88,8 +89,10 @@ import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/wor
 import {
   selectAwaitingSwitchBackSnapshot,
   selectChatLiveStreamPhase,
+  selectChatAgentState,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import {
+  selectAgentHistoryMessages,
   selectAgentMessages,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -98,6 +101,7 @@ import {
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { chatSubscribeSaga, SWITCH_BACK_REVEAL_WAIT_MS } from './chat-subscribe-saga';
+import { chatScrollbackSaga } from './chat-scrollback-saga';
 import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
 import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
@@ -124,6 +128,7 @@ import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { reportStreamLifecycle } from '$lib/utils/stream-lifecycle-telemetry';
 import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
+import { groupIntoTurns } from '$lib/components/chat/conversation-turns';
 
 type FakeSubscription = {
   agentId: string;
@@ -203,6 +208,7 @@ function delayNextSubscription(agentId: string): {
     agentId,
     expect.any(Function),
     expect.any(Function),
+    { workspaceId: WS },
   );
   if (!subscription) throw new Error(`no delayed chat.subscribe recorded for ${agentId}`);
   return { acquisition, subscription };
@@ -234,6 +240,186 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     clearAllChatInterestLeases();
     fakeSubscriptions.length = 0;
     vi.clearAllMocks();
+  });
+
+  it('retains portable author objects and explicit null in admitted transcript hydration and replacement', async () => {
+    const agentId = 'portable-hydration';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    const author = {
+      principalId: null,
+      login: 'same',
+      displayName: null,
+      avatarUrl: null,
+      identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+    };
+    const rows: AgentMessage[] = [
+      {
+        ...makeMessage('portable-one', 'body'),
+        role: 'user',
+        author,
+        metadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+      },
+      {
+        ...makeMessage('portable-two', 'body'),
+        role: 'user',
+        author: { ...author, identity: { ...author.identity, host: 'two.example' } },
+      },
+      { ...makeMessage('no-author', 'body'), role: 'user', author: null },
+    ];
+    const before = JSON.stringify(rows);
+    sub.handler({ ...transcript(rows), fromSnapshot: true });
+    await vi.waitFor(() =>
+      expect(selectAgentMessages.select(appStore.state, agentId).map((row) => row.author)).toEqual(
+        rows.map((row) => row.author),
+      ),
+    );
+    sub.handler({ ...transcript(rows), fromSnapshot: true });
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].metadata).toEqual(
+      rows[0].metadata,
+    );
+    expect(JSON.stringify(rows)).toBe(before);
+  });
+
+  it.each(['snapshot refresh', 'hydration replay', 'discard replay'] as const)(
+    '%s does not rewind successful older-page reads during loading',
+    async (trigger) => {
+      const agentId = `load-cursor-${trigger}`;
+      const page = (start: number) =>
+        Array.from({ length: 5 }, (_, i) =>
+          makeMessage(`m-${start + i}`, `Message ${start + i}`, {
+            timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, start + i)).toISOString(),
+          }),
+        );
+      const history = () => selectAgentHistoryMessages.select(appStore.state, agentId);
+      seedSession(agentId);
+      const stopScrollback = appStore.runSaga(chatScrollbackSaga);
+      try {
+        const sub = openChat(agentId);
+        const snapshot: ChatTranscript = {
+          ...transcript(page(15)),
+          fromSnapshot: true,
+          truncated: true,
+          totalMessages: 20,
+          nextToken: 'before-15',
+          ...(trigger === 'discard replay' ? { resumed: false } : {}),
+        };
+        sub.handler(snapshot);
+        expect(appClient.agents.getConversation).not.toHaveBeenCalled();
+        vi.mocked(appClient.agents.getConversation)
+          .mockResolvedValueOnce({
+            messages: page(10),
+            truncated: true,
+            totalMessages: 20,
+            nextToken: 'before-10',
+            prevToken: 'after-10',
+          })
+          .mockResolvedValueOnce({
+            messages: page(5),
+            truncated: true,
+            totalMessages: 20,
+            nextToken: 'before-5',
+            prevToken: 'after-5',
+          });
+        appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+        await vi.waitFor(() =>
+          expect(selectChatAgentState.select(appStore.state, agentId).fetchingOlderHistory).toBe(
+            false,
+          ),
+        );
+        expect(history()).toEqual(page(10));
+        if (trigger !== 'snapshot refresh') {
+          appStore.dispatch(transcriptHydrationStarted(agentId));
+          appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+        } else {
+          // A refreshed snapshot can change its newest rows while retaining
+          // the same oldest row/cursor (e.g. an in-flight turn update).
+          sub.handler({ ...snapshot, messages: page(15) });
+        }
+        const afterReplay = history();
+        appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+        await vi.waitFor(() =>
+          expect(selectChatAgentState.select(appStore.state, agentId).fetchingOlderHistory).toBe(
+            false,
+          ),
+        );
+        expect.soft(afterReplay).toEqual(page(10));
+        expect(history()).toEqual([...page(5), ...page(10)]);
+        expect([...history(), ...selectAgentMessages.select(appStore.state, agentId)]).toEqual([
+          ...page(5),
+          ...page(10),
+          ...page(15),
+        ]);
+        expect(vi.mocked(appClient.agents.getConversation).mock.calls).toEqual([
+          [agentId, 5, 'before-15', undefined, undefined, WS],
+          [agentId, 5, 'before-10', undefined, undefined, WS],
+        ]);
+        if (trigger === 'discard replay') {
+          const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
+          sub.handler({ ...snapshot });
+          expect(history()).toEqual([]);
+          expect(selectAgentMessages.select(appStore.state, agentId)).toEqual(page(15));
+          expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+            scrollbackOlderToken: 'before-15',
+            scrollbackDiscardEpoch: epoch + 1,
+            fetchingOlderHistory: false,
+          });
+        }
+      } finally {
+        stopScrollback();
+      }
+    },
+  );
+
+  it('replaying a discard snapshot preserves an in-flight page, but a fresh discard resets it', async () => {
+    const agentId = 'load-discard-in-flight';
+    seedSession(agentId);
+    const stopScrollback = appStore.runSaga(chatScrollbackSaga);
+    try {
+      const sub = openChat(agentId);
+      const snapshot: ChatTranscript = {
+        ...transcript([makeMessage('m-15', 'Newest window')]),
+        fromSnapshot: true,
+        truncated: true,
+        totalMessages: 20,
+        nextToken: 'before-15',
+        resumed: false,
+      };
+      sub.handler(snapshot);
+      const pending = deferred<Awaited<ReturnType<typeof appClient.agents.getConversation>>>();
+      vi.mocked(appClient.agents.getConversation).mockReturnValueOnce(pending.promise);
+      appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+      const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(chatTranscriptSnapshotRerequested(WS, agentId));
+      appStore.dispatch(olderHistoryPageRequested(WS, agentId));
+      expect(appClient.agents.getConversation).toHaveBeenCalledTimes(1);
+      expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+        fetchingOlderHistory: true,
+        scrollbackDiscardEpoch: epoch,
+      });
+      // The same payload freshly delivered by the daemon is still an
+      // authoritative reset; local replay identity must not suppress it.
+      sub.handler({ ...snapshot });
+      expect(selectChatAgentState.select(appStore.state, agentId)).toMatchObject({
+        fetchingOlderHistory: false,
+        scrollbackDiscardEpoch: epoch + 1,
+        scrollbackOlderToken: 'before-15',
+      });
+      pending.resolve({
+        messages: [makeMessage('stale', 'Discarded page')],
+        truncated: true,
+        totalMessages: 20,
+        nextToken: 'stale-token',
+        prevToken: null,
+      });
+      await pending.promise;
+      expect(selectChatAgentState.select(appStore.state, agentId).scrollbackOlderToken).toBe(
+        'before-15',
+      );
+    } finally {
+      stopScrollback();
+    }
   });
 
   it('initializeChatRequested opens exactly one standing subscription per agent', () => {
@@ -505,6 +691,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -530,6 +717,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -558,6 +746,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -583,6 +772,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -607,6 +797,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
+        { workspaceId: WS },
       ),
     );
     const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
@@ -657,6 +848,27 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       truncated: false,
       oldestMessageId: 'm-newest',
       seq: 2,
+    });
+  });
+
+  it('preserves the snapshot cursor for the first older page after five-message hydration', () => {
+    const agentId = 'agent-sub-five-cursor';
+    seedSession(agentId);
+    const sub = openChat(agentId);
+    // A variable permits the wire's existing nextToken without inventing a
+    // production type/API before the implementation task adds its handoff.
+    const snapshot = {
+      ...transcript(Array.from({ length: 5 }, (_, i) => makeMessage(`m-${115 + i}`, 'short'))),
+      truncated: true,
+      totalMessages: 120,
+      fromSnapshot: true,
+      nextToken: 'opaque-before-newest-five',
+    };
+    sub.handler(snapshot);
+    expect(selectTranscriptSnapshotMeta.select(appStore.state, agentId)).toMatchObject({
+      nextToken: snapshot.nextToken,
+      oldestMessageId: 'm-115',
+      totalMessages: 120,
     });
   });
 
@@ -1497,7 +1709,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       seedSession(agentId, { messages: [makeMessage('m-existing', 'history')] });
       const sub = openChat(agentId);
       // Hydration never settled for this agent — full snapshot wanted.
-      expect(sub.options).toBeUndefined();
+      expect(sub.options).toEqual({ workspaceId: WS });
     });
 
     it('re-subscribes with the last fully-persisted message id once hydration has settled', () => {
@@ -1519,7 +1731,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
 
       const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
       expect(reopened).toBeDefined();
-      expect(reopened!.options).toEqual({ sinceMessageId: 'm-a-final' });
+      expect(reopened!.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-a-final' });
     });
 
     it('clears the resume anchor when workspace deletion names an agent whose slot already retired', () => {
@@ -1542,7 +1754,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
       const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
 
-      expect(reopened?.options).toEqual({ sinceMessageId: recycled.id });
+      expect(reopened?.options).toEqual({ workspaceId: WS, sinceMessageId: recycled.id });
     });
 
     it('clears an active-slot anchor when deletion queues behind a delayed ordinary close', async () => {
@@ -1571,7 +1783,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       });
       const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
 
-      expect(reopened?.options).toEqual({ sinceMessageId: recycled.id });
+      expect(reopened?.options).toEqual({ workspaceId: WS, sinceMessageId: recycled.id });
       expect(first.unsubscribe).toHaveBeenCalledOnce();
     });
 
@@ -1668,6 +1880,63 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       );
     }
 
+    it('moves an empty interruption back to its original turn when recovery supplies its sequence', () => {
+      const agentId = 'agent-empty-interruption-order';
+      seedSession(agentId);
+      const sub = openChat(agentId);
+      const user = makeMessage('original-user', 'First request', { role: 'user', seq: 0 });
+      hydrate(sub, [user]);
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          agentId,
+          workspaceId: WS,
+          handlerSessionId: agentId,
+          source: 'sendMessage',
+          eventType: 'complete',
+          assistantMessageId: PLACEHOLDER_ID,
+          stopReason: 'interrupted',
+          interruptReason: 'preempted_by_message',
+        }),
+      );
+      const followup = makeMessage('followup-user', 'Second request', { role: 'user', seq: 2 });
+      const answer = makeMessage('normal-answer', 'Done', { seq: 3 });
+      sub.handler(transcript([user, followup, answer]));
+      // Reproduce the visible symptom: without an entity for the empty row,
+      // the retained seq-less placeholder sorts after the completed reply.
+      expect(selectAgentMessages.select(appStore.state, agentId).at(-1)?.id).toBe(PLACEHOLDER_ID);
+
+      const marker = makeMessage(PLACEHOLDER_ID, '', {
+        seq: 1,
+        contentBlocks: [],
+        metadata: {
+          interrupted: true,
+          stopReason: 'interrupted',
+          interruptReason: 'preempted_by_message',
+        },
+      });
+      // LiveChatClient's recovery emits this daemon-owned full snapshot.
+      sub.handler({ ...transcript([user, marker, followup, answer]), fromSnapshot: true });
+      const messages = selectAgentMessages.select(appStore.state, agentId);
+      expect(messages.map(({ id }) => id)).toEqual([
+        'original-user',
+        PLACEHOLDER_ID,
+        'followup-user',
+        'normal-answer',
+      ]);
+      expect(messages[1].provisional).toBeUndefined();
+      const turns = groupIntoTurns(messages);
+      expect(turns.map((turn) => turn.assistantMessages.map(({ id }) => id))).toEqual([
+        [PLACEHOLDER_ID],
+        ['normal-answer'],
+      ]);
+      expect(
+        shouldShowStoppedIndicator({ message: turns[0].assistantMessages[0], isStreaming: false }),
+      ).toBe(true);
+      expect(
+        shouldShowStoppedIndicator({ message: turns[1].assistantMessages[0], isStreaming: false }),
+      ).toBe(false);
+    });
+
     function closeThenReopen(agentA: string, agentB: string, sub: FakeSubscription) {
       appStore.dispatch(markAgentAsViewed(agentB));
       expect(sub.unsubscribe).toHaveBeenCalledOnce();
@@ -1700,9 +1969,9 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentA,
         expect.any(Function),
         expect.any(Function),
-        { sinceMessageId: 'm-1' },
+        { workspaceId: WS, sinceMessageId: 'm-1' },
       );
-      expect(reopened.options).toEqual({ sinceMessageId: 'm-1' });
+      expect(reopened.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-1' });
     });
 
     it('requests the full snapshot when the placeholder is the only row at close', () => {
@@ -1719,7 +1988,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       ]);
 
       const reopened = closeThenReopen(agentA, agentB, sub);
-      expect(reopened.options).toBeUndefined();
+      expect(reopened.options).toEqual({ workspaceId: WS });
     });
 
     // The anchor scan keys on the row's `provisional` flag, not on empty
@@ -1749,7 +2018,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       });
 
       const reopened = closeThenReopen(agentA, agentB, sub);
-      expect(reopened.options).toEqual({ sinceMessageId: 'm-1' });
+      expect(reopened.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-1' });
     });
 
     // Conversely, a daemon-delivered assistant row with no content blocks is
@@ -1769,7 +2038,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       expect(rows[1].provisional).toBeUndefined();
 
       const reopened = closeThenReopen(agentA, agentB, sub);
-      expect(reopened.options).toEqual({ sinceMessageId: 'm-empty' });
+      expect(reopened.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-empty' });
     });
   });
 
@@ -1875,9 +2144,9 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentA,
         expect.any(Function),
         expect.any(Function),
-        { sinceMessageId: 'm-1' },
+        { workspaceId: WS, sinceMessageId: 'm-1' },
       );
-      expect(reopened!.options).toEqual({ sinceMessageId: 'm-1' });
+      expect(reopened!.options).toEqual({ workspaceId: WS, sinceMessageId: 'm-1' });
     });
 
     it('never resolves the fallback anchor to a firehose-created row when no close-time anchor was captured', () => {
@@ -1912,9 +2181,12 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
         agentId,
         expect.any(Function),
         expect.any(Function),
-        { sinceMessageId: 'm-1' },
+        { workspaceId: WS, sinceMessageId: 'm-1' },
       );
-      expect(reopened!.options).not.toEqual({ sinceMessageId: FIREHOSE_MESSAGE_ID });
+      expect(reopened!.options).not.toEqual({
+        workspaceId: WS,
+        sinceMessageId: FIREHOSE_MESSAGE_ID,
+      });
     });
   });
 
@@ -2137,7 +2409,7 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       appStore.dispatch(markAgentAsViewed(agentId));
       const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
       if (!reopened) throw new Error(`no reopened chat.subscribe recorded for ${agentId}`);
-      expect(reopened.options).toEqual({ sinceMessageId: PRIOR });
+      expect(reopened.options).toEqual({ workspaceId: WS, sinceMessageId: PRIOR });
       return reopened;
     }
 

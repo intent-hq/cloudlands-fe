@@ -33,6 +33,7 @@ import {
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { store as appStore } from '$store/renderer/store';
+import { isSettingsRoute, navigateToRoute, SETTINGS_PREV_PATH_KEY } from './navigation.client';
 
 const logger = new Logger('WorkspaceNavigation');
 
@@ -126,7 +127,7 @@ export interface OpenInPanelOptions {
  * Returns undefined if not found (e.g., not in a panel layout)
  */
 export function findSourcePanelId(element: HTMLElement | EventTarget | null): string | undefined {
-  if (!element || !(element instanceof HTMLElement)) return undefined;
+  if (!element || !(element instanceof Element)) return undefined;
   const panelElement = element.closest('[data-panel-id]');
   return panelElement?.getAttribute('data-panel-id') ?? undefined;
 }
@@ -298,11 +299,6 @@ export async function navigateToTask(
 }
 
 /**
- * Session storage key for tracking the previous path before settings
- */
-const SETTINGS_PREV_PATH_KEY = 'settings-previous-path';
-
-/**
  * Options for navigating to the settings page.
  *
  * Uses a structured object instead of raw URL strings to prevent
@@ -333,11 +329,6 @@ export interface SettingsNavigationOptions {
  */
 export async function navigateToSettings(options?: SettingsNavigationOptions): Promise<void> {
   logger.info('[navigateToSettings] Navigating to settings', options);
-
-  // Save current path for back navigation
-  if (typeof sessionStorage !== 'undefined' && typeof window !== 'undefined') {
-    sessionStorage.setItem(SETTINGS_PREV_PATH_KEY, window.location.pathname);
-  }
 
   // Build the target URL using the URL API for safe construction
   const targetUrl = new URL('/settings', window.location.origin);
@@ -380,7 +371,7 @@ export async function navigateToSettings(options?: SettingsNavigationOptions): P
     return;
   }
 
-  await goto(targetUrl.pathname + targetUrl.search + targetUrl.hash);
+  await navigateToRoute(targetUrl.pathname + targetUrl.search + targetUrl.hash);
 }
 
 /**
@@ -388,11 +379,18 @@ export async function navigateToSettings(options?: SettingsNavigationOptions): P
  *
  * Used by the settings page to show a back button.
  *
- * @returns The previous path, or the workspace creation route if not set
+ * @returns The previous path, or an available workspace / empty-window destination
  */
 export function getSettingsPreviousPath(): string {
-  if (typeof sessionStorage === 'undefined') return '/workspace/new';
-  return sessionStorage.getItem(SETTINGS_PREV_PATH_KEY) || '/workspace/new';
+  const previousPath =
+    typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(SETTINGS_PREV_PATH_KEY);
+  if (previousPath && previousPath !== '/' && !isSettingsRoute(previousPath)) {
+    return previousPath;
+  }
+  const workspace = getFirstAvailableWorkspace();
+  return workspace
+    ? `/workspace/${workspace.id}`
+    : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state));
 }
 
 /**
@@ -401,10 +399,6 @@ export function getSettingsPreviousPath(): string {
 export async function navigateBackFromSettings(): Promise<void> {
   const prevPath = getSettingsPreviousPath();
   logger.info('[navigateBackFromSettings] Navigating back to:', prevPath);
-  if (prevPath === '/') {
-    await navigateToFirstWorkspace();
-    return;
-  }
   await goto(prevPath);
 }
 

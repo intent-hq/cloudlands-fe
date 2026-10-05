@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ContentDialog } from '$lib/components/patterns/confirm';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
@@ -89,82 +90,72 @@
 </script>
 
 {#if open}
-  <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="button"
-    tabindex="0"
-    aria-label={m.lib_githubAuth_closeModal_ariaLabel()}
-    onclick={(event) => event.target === event.currentTarget && handleCancel()}
-    onkeydown={(e) => e.key === 'Escape' && handleCancel()}
+  <ContentDialog
+    {open}
+    title={m.lib_githubAuth_connect_label()}
+    closeLabel={m.lib_githubAuth_closeModal_ariaLabel()}
+    onClose={handleCancel}
   >
-    <div
-      class="bg-background rounded-lg w-[420px] max-w-[90vw] shadow-lg border border-border text-foreground"
-    >
-      <div class="flex justify-between items-center p-4 border-b border-border">
-        <h2 class="m-0 text-lg text-foreground">{m.lib_githubAuth_connect_label()}</h2>
-        <Button
-          variant="ghost"
-          class="bg-transparent border-none text-2xl cursor-pointer text-muted-foreground hover:text-foreground"
-          onclick={handleCancel}>×</Button
-        >
-      </div>
-
-      <div class="p-6 text-center text-foreground">
-        {#if $error$}
-          <div class="text-danger">
-            <p>{$error$}</p>
-            <Button
-              class="mt-3 border-none px-4 py-2 rounded cursor-pointer text-foreground"
-              onclick={handleRetry}>{m.lib_githubAuth_tryAgain_label()}</Button
-            >
+    <div class="space-y-4 type-body">
+      {#if $error$}
+        <div class="text-danger">
+          <p>{$error$}</p>
+        </div>
+      {:else if $requiresDaemonAuth$}
+        <div class="daemon-auth-required">
+          <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
+          <p class="text-foreground">
+            {m.lib_githubAuth_daemonAuthIntegration_message()}
+          </p>
+          <p class="text-subtle text-sm mt-2">
+            {m.lib_githubAuth_run_before()}
+            <code class="bg-muted px-2 py-1 rounded">{GITHUB_LOGIN_COMMAND}</code>
+            {m.lib_githubAuth_inYourTerminal_after()}
+          </p>
+        </div>
+      {:else if $deviceFlow$}
+        <div class="oauth-redirect">
+          <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
+          <p class="text-foreground mb-4">
+            {m.lib_githubAuth_enterCodeConnect_message()}
+          </p>
+          <GitHubDeviceCodeCard
+            userCode={$deviceFlow$.userCode}
+            verificationUri={$deviceFlow$.verificationUri}
+          />
+          <div class="flex items-center justify-center gap-2 mt-4 text-subtle text-sm">
+            <IntentMarkLoader size={16} />
+            <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
           </div>
-        {:else if $requiresDaemonAuth$}
-          <div class="daemon-auth-required">
-            <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
-            <p class="text-foreground">
-              {m.lib_githubAuth_daemonAuthIntegration_message()}
-            </p>
-            <p class="text-subtle text-sm mt-2">
-              {m.lib_githubAuth_run_before()}
-              <code class="bg-muted px-2 py-1 rounded">{GITHUB_LOGIN_COMMAND}</code>
-              {m.lib_githubAuth_inYourTerminal_after()}
-            </p>
-          </div>
-        {:else if $deviceFlow$}
-          <div class="oauth-redirect">
-            <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
-            <p class="text-foreground mb-4">
-              {m.lib_githubAuth_enterCodeConnect_message()}
-            </p>
-            <GitHubDeviceCodeCard
-              userCode={$deviceFlow$.userCode}
-              verificationUri={$deviceFlow$.verificationUri}
-            />
-            <div class="flex items-center justify-center gap-2 mt-4 text-subtle text-sm">
-              <IntentMarkLoader size={16} />
-              <span>{m.lib_githubAuth_waitingForAuthorization_label()}</span>
-            </div>
-          </div>
-        {:else if $isAuthenticating$}
-          <div class="loading">
-            <IntentMarkLoader size={24} class="mx-auto" />
-            <p class="text-foreground">{m.lib_githubAuth_startingAuthentication_label()}</p>
-          </div>
-        {:else}
-          <div class="connect-prompt">
-            <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
-            <p class="text-foreground">
-              {m.lib_githubAuth_connectPrompt_message()}
-            </p>
-            <p class="text-subtle text-sm mt-2">
-              {m.lib_githubAuth_localCredentials_message()}
-            </p>
-            <Button variant="primary" class="mt-4 px-6 py-3 text-base" onclick={handleConnect}>
-              {m.lib_githubAuth_connect_label()}
-            </Button>
-          </div>
-        {/if}
-      </div>
+        </div>
+      {:else if $isAuthenticating$}
+        <div class="flex items-center gap-3 py-2">
+          <IntentMarkLoader size={24} class="text-subtle" />
+          <p class="text-foreground">{m.lib_githubAuth_startingAuthentication_label()}</p>
+        </div>
+      {:else}
+        <div class="connect-prompt">
+          <GitHubIcon size={48} class="block mx-auto mb-4 text-foreground" />
+          <p class="text-foreground">
+            {m.lib_githubAuth_connectPrompt_message()}
+          </p>
+          <p class="text-subtle text-sm mt-2">
+            {m.lib_githubAuth_localCredentials_message()}
+          </p>
+        </div>
+      {/if}
     </div>
-  </div>
+    {#snippet footer()}
+      <Button variant="ghost" onclick={handleCancel}
+        >{m.modals_bulkActionConfirm_cancel_label()}</Button
+      >
+      {#if $error$}<Button variant="primary" onclick={handleRetry}
+          >{m.lib_githubAuth_tryAgain_label()}</Button
+        >
+      {:else if !$requiresDaemonAuth$ && !$deviceFlow$ && !$isAuthenticating$}
+        <Button variant="primary" onclick={handleConnect}>{m.lib_githubAuth_connect_label()}</Button
+        >
+      {/if}
+    {/snippet}
+  </ContentDialog>
 {/if}

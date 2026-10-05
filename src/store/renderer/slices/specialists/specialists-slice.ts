@@ -1,9 +1,15 @@
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import {
+  emptySpecialistCreation,
+  type SpecialistCreation,
+  type SpecialistDraft,
+} from './specialist-creation-types';
+import type { SpecialistImportDiagnostic } from '$lib/client/app-client';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   SpecialistFileScope,
   SpecialistModelOption,
@@ -31,6 +37,12 @@ export interface CustomSpecialist {
 }
 
 export interface FileSpecialist {
+  /** Original Claude definition; read-only in Intent. */
+  importedFrom?: 'claude-code';
+  /** Unsupported settings that prevent launching this imported definition. */
+  unsupportedFields?: string[];
+  requiredSkills?: string[];
+  missingSkills?: string[];
   id: string;
   name: string;
   description: string;
@@ -82,12 +94,14 @@ export interface FileSpecialistWritePayload {
   behaviorPrompt: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface FileSpecialistReference {
   id: string;
   scope?: SpecialistFileScope;
   workspacePath?: string;
+  workspaceId?: string;
 }
 
 // ============================================================================
@@ -95,6 +109,8 @@ export interface FileSpecialistReference {
 // ============================================================================
 
 export type SpecialistsState = {
+  creationByContext: Record<string, SpecialistCreation>;
+  importDiagnostics?: Collection<SpecialistImportDiagnostic & { id: string }, 'id'>;
   bundledSpecialists: import('$lib/constants/specialists').Specialist[];
   customSpecialists: Collection<CustomSpecialist, 'id'>;
   fileSpecialists: Collection<FileSpecialist, 'id'>;
@@ -117,6 +133,8 @@ export type SpecialistsState = {
 // ============================================================================
 
 export const initialState: SpecialistsState = {
+  creationByContext: {},
+  importDiagnostics: createCollection<SpecialistImportDiagnostic & { id: string }, 'id'>('id'),
   bundledSpecialists: [],
   customSpecialists: createCollection<CustomSpecialist, 'id'>('id'),
   fileSpecialists: createCollection<FileSpecialist, 'id'>('id'),
@@ -138,6 +156,9 @@ export const initialState: SpecialistsState = {
 // Reducer Actions (pure state updates)
 // ============================================================================
 
+export const setSpecialistImportDiagnostics = createAction<
+  [diagnostics: SpecialistImportDiagnostic[]]
+>('specialists/setImportDiagnostics');
 export const setBundledSpecialists = createAction<
   [specialists: import('$lib/constants/specialists').Specialist[]]
 >('specialists/setBundledSpecialists');
@@ -174,6 +195,16 @@ export const deleteFileSpecialist = createAsyncAction<[specialist: FileSpecialis
 // ============================================================================
 
 export const specialistsReducer = createReducer<SpecialistsState>(initialState);
+specialistsReducer.with(setSpecialistImportDiagnostics, (state, { payload: [diagnostics] }) => ({
+  ...state,
+  importDiagnostics: createCollection(
+    'id',
+    diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      id: JSON.stringify([diagnostic.source, diagnostic.path, diagnostic.code]),
+    })),
+  ),
+}));
 specialistsReducer.with(setBundledSpecialists, (state, { payload: [specialists] }) => ({
   ...state,
   bundledSpecialists: specialists,
@@ -201,4 +232,54 @@ specialistsReducer.with(setBundledSpecialistsLoaded, (state, { payload: [loaded]
 specialistsReducer.with(setDefaultSpecialistId, (state, { payload: [specialistId] }) => ({
   ...state,
   defaultSpecialistId: specialistId,
+}));
+
+export const updateSpecialistDraft =
+  createAction<[context: string, patch: Partial<SpecialistDraft>]>('specialists/updateDraft');
+export const discardSpecialistDraft = createAction<[context: string]>('specialists/discardDraft');
+export const setSpecialistCreation =
+  createAction<[context: string, creation: SpecialistCreation]>('specialists/setCreation');
+export const createSpecialistFromDraft = createAsyncAction<
+  [context: string, workspaceId?: string],
+  string
+>('specialists/createFromDraft', 'specialists/createFromDraftRequested');
+
+specialistsReducer.with(updateSpecialistDraft, (state, { payload: [context, patch] }) => {
+  const current = state.creationByContext[context] ?? emptySpecialistCreation;
+  if (current.status !== 'editing' && current.status !== 'save-failed') return state;
+  return {
+    ...state,
+    creationByContext: {
+      ...state.creationByContext,
+      [context]: {
+        ...current,
+        draft: { ...current.draft, ...patch },
+        status: 'editing',
+        error: undefined,
+      },
+    },
+  };
+});
+specialistsReducer.with(discardSpecialistDraft, (state, { payload: [context] }) => {
+  const current = state.creationByContext[context];
+  if (current?.status === 'saving' || current?.status === 'refreshing') return state;
+  const creationByContext = { ...state.creationByContext };
+  delete creationByContext[context];
+  return { ...state, creationByContext };
+});
+specialistsReducer.with(setSpecialistCreation, (state, { payload: [context, creation] }) => ({
+  ...state,
+  creationByContext: { ...state.creationByContext, [context]: creation },
+}));
+
+/** A different admission must not inherit definitions or creation drafts from this instance. */
+export const specialistSessionEnded = createAction('specialists/sessionEnded');
+specialistsReducer.with(specialistSessionEnded, (state) => ({
+  ...state,
+  creationByContext: {},
+  importDiagnostics: initialState.importDiagnostics,
+  bundledSpecialists: [],
+  fileSpecialists: initialState.fileSpecialists,
+  bundledSpecialistsLoaded: false,
+  fileSpecialistsLoaded: false,
 }));

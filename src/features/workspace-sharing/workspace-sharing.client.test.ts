@@ -218,6 +218,26 @@ describe('workspaceSharingClient wire contract (fake transport)', () => {
     expect(inviteErrorCode({ data: { code: 'listener-down' } })).toBeUndefined();
   });
 
+  // Remote access on but the Tailcat tunnel off: the daemon's tunnel-only
+  // invite refusal (-32603, `data.code = 'tunnel-down'`) is a distinct
+  // transport-side class so the dialog can name the one setting that is off.
+  it('createInvite surfaces the tunnel-down code without widening the invite codes', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'internal',
+        message: 'tunnel is down',
+        rpcCode: -32603,
+        data: { code: 'tunnel-down' },
+      }),
+    );
+    await expect(workspaceSharingClient.createInvite('ws-1')).resolves.toEqual({
+      success: false,
+      code: 'tunnel-down',
+      rpcCode: -32603,
+    });
+    expect(inviteErrorCode({ data: { code: 'tunnel-down' } })).toBeUndefined();
+  });
+
   // Guest cap reached (intent-hq/intentd#1917): `workspace.invite.create`
   // rejects with `data.code = 'guest-limit'`, which is an invite code.
   it('createInvite surfaces the guest-limit code when the workspace is at capacity', async () => {

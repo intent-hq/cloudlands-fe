@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import './app-layout.css';
   import { m } from '$shared/paraglide/messages.js';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
@@ -32,6 +33,7 @@
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
+  import { registerWorkspaceSpacesShortcut } from '$features/workspace/utils/workspace-spaces-shortcut';
   import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -131,10 +133,7 @@
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import { SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import {
-    togglePanel,
-    setShowCreateModal,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -159,9 +158,11 @@
     installInviteConsentService,
     respondToInviteConsent,
   } from '$features/invite-consent/invite-consent-service';
+  import CollaborationSignInHost from '$features/collaboration-auth/renderer/CollaborationSignInHost.svelte';
   import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
+  import InviteProgressHost from '$features/invite-progress/InviteProgressHost.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
@@ -177,6 +178,7 @@
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
   // Workspace creation (repo picker) is administrator-only (multiplayer w3).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
@@ -478,7 +480,7 @@
 
     // Direct workspace routes open their tab without mirroring route identity into Redux.
     if (workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId));
+      appStore.dispatch(openWorkspaceTab(workspaceId, $page.state?.presenceFollowRequestId));
       appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
     }
     // Register global palette shortcuts (config-driven later)
@@ -613,17 +615,12 @@
       description: 'Command Palette (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCommandPalette,
     });
-    // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
-    const toggleAllSpaces = () => {
-      appStore.dispatch(togglePanel('all-workspaces'));
-    };
-    register({
-      key: 'o',
-      meta: true,
-      shortcutId: 'global.toggle-spaces',
-      description: 'Toggle All Spaces (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      skipInEditableElements: true,
-      action: toggleAllSpaces,
+    // Cmd+O (Mac) / Ctrl+O (Win/Linux) opens Home.
+    registerWorkspaceSpacesShortcut(paletteShortcuts, {
+      toggleSpaces: () => {
+        void goto('/');
+      },
+      resolveBinding: getEffectiveShortcut,
     });
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
     // F12 - Go to Definition (dispatches event for Monaco editor to handle)
@@ -679,7 +676,6 @@
     const toggleTerminal = () => {
       // Collaborators (multiplayer w3) are refused on terminal methods: no root
       // overlay for a collaborator-only client, none for a collaborator workspace.
-      if ($isCollaboratorOnlyClient$) return;
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
@@ -869,14 +865,13 @@
     };
   });
 
-  // Both modal actions go through the service so it stops the cross-window
-  // watcher before sending the resolution request.
+  // Return the daemon result so recovery can retain unresolved rows and retry.
   async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
-    await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
+    return await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
   }
 
   async function handleAbandonAllAgents(abandonIds: string[]) {
-    await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
+    return await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
   }
 
   function handleGitHubAuthSuccess() {
@@ -995,7 +990,9 @@
           class="workspace-sidebar-frame relative z-40 flex min-h-0 shrink-0 bg-transparent"
           data-sidebar-panel-frame
         >
-          <SidebarPanel />
+          {#if routePathname !== '/'}
+            <SidebarPanel />
+          {/if}
         </div>
 
         <!-- Workspace content area -->
@@ -1101,7 +1098,7 @@
 
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
-    open={$showCreateModal$ && !$isCollaboratorOnlyClient$}
+    open={$showCreateModal$ && $canCreateWorkspace$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 
@@ -1145,9 +1142,9 @@
     agents={interruptedAgents}
     onResumeSelected={handleResumeSelectedAgents}
     onAbandonAll={handleAbandonAllAgents}
-    onClose={() => {
+    onClose={(reason) => {
       showInterruptedAgentsModal = false;
-      notifyInterruptedAgentsModalClosed();
+      notifyInterruptedAgentsModalClosed(reason);
     }}
   />
 
@@ -1155,6 +1152,7 @@
   <QuitConfirmationModal
     bind:open={showQuitConfirmationModal}
     payload={quitConfirmationPayload}
+    workspaceDetails={$workspaceItems}
     onRespond={(proceed) => {
       quitConfirmationPayload = null;
       respondToQuitConfirmation(proceed);
@@ -1162,6 +1160,7 @@
   />
 
   <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
+  <CollaborationSignInHost />
   <InviteConsentModal
     bind:open={showInviteConsentModal}
     payload={inviteConsentPayload}
@@ -1173,6 +1172,9 @@
 
   <!-- Invite notice (intent://invite join failed / plaintext credential warning) -->
   <InviteNoticeHost />
+
+  <!-- Invite progress (spinner + Cancel during the silent phases of an intent://invite join) -->
+  <InviteProgressHost />
 
   {#if import.meta.env.DEV}
     <DebugPanel />

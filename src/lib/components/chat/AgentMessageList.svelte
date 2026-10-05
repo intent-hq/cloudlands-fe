@@ -4,15 +4,19 @@
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
+  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
+  import { getProviderRehomedNotice } from './rehome-notice';
   import { crispOut, spring, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -113,8 +117,10 @@
 <div class="message-list">
   {#each filteredMessages as message, index (message.id)}
     {@const modelChangeNotice = getModelChangeNotice(message)}
+    {@const effortChangeNotice = getEffortChangeNotice(message)}
     {@const questionsDismissedNotice = getQuestionsDismissedNotice(message)}
     {@const autoUnarchivedNotice = getAutoUnarchivedNotice(message)}
+    {@const providerRehomedNotice = getProviderRehomedNotice(message)}
     <div
       id="message-{message.id}"
       class="message-wrapper group/message"
@@ -136,6 +142,11 @@
           notice={modelChangeNotice}
           fallbackText={extractAllContent(message) || undefined}
         />
+      {:else if effortChangeNotice}
+        <EffortChangeNotice
+          notice={effortChangeNotice}
+          fallbackText={extractAllContent(message) || undefined}
+        />
       {:else if questionsDismissedNotice}
         <!-- Daemon-delivered dismissal notification - compact centered chip.
              Discriminated on metadata type before role branching so it renders
@@ -146,6 +157,12 @@
              Discriminated on metadata type before role branching so it renders
              regardless of the exact role the daemon persists. -->
         <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
+      {:else if providerRehomedNotice}
+        <!-- Daemon-persisted provider re-home notice - centered inline divider. -->
+        <ProviderRehomedNotice
+          notice={providerRehomedNotice}
+          fallbackText={extractAllContent(message) || undefined}
+        />
       {:else if message.role === 'user'}
         <ChatMessage
           {message}

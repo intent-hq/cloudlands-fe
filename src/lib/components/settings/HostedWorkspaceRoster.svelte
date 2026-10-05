@@ -5,51 +5,58 @@
    * that calls `workspace.members.remove`, plus a per-workspace *Remove all
    * guests* that removes every collaborator and revokes every open invite
    * link (`workspace.invite.list` → `workspace.invite.revoke`). Both confirm
-   * first. The confirmed sweep is handed to the parent (`onRemoveAll`, with
-   * the roster as it stands) — the sweep's membership delta may unmount this
-   * row before it settles, and its per-step report must outlive the row. The
-   * owner row never carries a control (`workspace.members.remove` refuses
-   * the owner).
+   * first. The confirmed sweep is handed to the parent (`onRemoveAll`) — its
+   * membership delta may unmount this row before it settles, so the saga
+   * captures the roster and retains its report in the slice. The
+   * owner is not listed (`workspace.members.remove` refuses the owner); only
+   * the displayed rows are filtered — the sweep still receives the full roster.
    */
-  import { onMount } from 'svelte';
+  import { isWorkspaceGuest } from '$features/workspace-sharing/utils/workspace-guest';
+  import { formatInteger } from '$lib/i18n/format';
+  import { onMount, untrack } from 'svelte';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
   import { ListView } from '$lib/components/patterns/collection';
-  import { Button } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, PrincipalAvatar } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { Workspace } from '$shared/types';
   import {
     selectHostedRoster,
+    selectHostedPendingInviteCount,
+    selectCanManageHostedWorkspace,
     selectHostedRemovingPrincipalIds,
     selectIsHostedWorkspaceClearing,
+    selectHostedFailedRemovals,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     loadHostedRosterRequested,
     removeHostedMemberRequested,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
-  import {
-    HostedRosterOperationError,
-    type WorkspaceMember,
-  } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+  import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
     workspace: Workspace;
-    /** A confirmed *Remove all guests*, with the roster as it was before the sweep. */
-    onRemoveAll: (membersBefore: WorkspaceMember[]) => void;
+    /** A confirmed *Remove all guests*. The saga captures the current roster. */
+    onRemoveAll: () => void;
   }
 
   let { workspace, onRemoveAll }: Props = $props();
 
-  const roster$ = selectHostedRoster(workspace.id);
-  const removingIds$ = selectHostedRemovingPrincipalIds(workspace.id);
-  const clearing$ = selectIsHostedWorkspaceClearing(workspace.id);
+  const workspaceId = untrack(() => workspace.id);
+  const context = selectPrincipalActionContext.select(appStore.state);
+  const roster$ = selectHostedRoster(workspaceId);
+  const pendingCount$ = selectHostedPendingInviteCount(workspaceId);
+  const removingIds$ = selectHostedRemovingPrincipalIds(workspaceId);
+  const clearing$ = selectIsHostedWorkspaceClearing(workspaceId);
+  const failedRemovals$ = selectHostedFailedRemovals(workspaceId);
+
+  const collaborators = $derived($roster$.members.filter(isWorkspaceGuest));
 
   /** What the *Remove* confirm dialog shows — never what a retry acts on. */
   let removeTarget = $state<WorkspaceMember | null>(null);
   let removeDialogOpen = $state(false);
-  /** The confirmed removal that failed; its retry re-runs exactly this one. */
-  let failedRemove = $state<WorkspaceMember | null>(null);
-  let removeError = $state<string | null>(null);
 
   let removeAllDialogOpen = $state(false);
 
@@ -58,8 +65,8 @@
   }
 
   function removeAllGuests() {
-    if ($clearing$) return;
-    onRemoveAll($roster$.members);
+    if ($clearing$ || context !== selectPrincipalActionContext.select(appStore.state)) return;
+    onRemoveAll();
   }
 
   function requestRemove(member: WorkspaceMember) {
@@ -67,44 +74,19 @@
     removeDialogOpen = true;
   }
 
-  /**
-   * A retry is offered only for a failure a retry can fix. `forbidden` has
-   * terminally moved the roster to `withheld` (the controls are gone) and
-   * `cancelled` means the workspace left this window or the same removal is
-   * already in flight — neither has anything to retry.
-   */
-  function isRetryable(error: unknown): boolean {
-    return !(
-      error instanceof HostedRosterOperationError &&
-      (error.code === 'forbidden' || error.code === 'cancelled')
-    );
-  }
-
-  async function removeMember(member: WorkspaceMember | null) {
-    if (!member) return;
-    failedRemove = null;
-    removeError = null;
-    try {
-      const action = removeHostedMemberRequested(workspace.id, member.principalId);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch (error) {
-      if (!isRetryable(error)) return;
-      failedRemove = member;
-      removeError = m.settings_guestSessions_remove_error({ name: memberLabel(member) });
-    }
+  function removeMember(member: WorkspaceMember | null) {
+    if (!member || context !== selectPrincipalActionContext.select(appStore.state)) return;
+    appStore.dispatch(removeHostedMemberRequested(workspace.id, member.principalId));
   }
 
   onMount(() => {
-    const action = loadHostedRosterRequested(workspace.id);
-    action.promise.catch(() => {});
-    appStore.dispatch(action);
+    appStore.dispatch(loadHostedRosterRequested(workspace.id));
   });
 </script>
 
-<section class="px-6 py-5" data-testid="hosted-workspace-roster" data-workspace-id={workspace.id}>
-  <div class="flex items-center justify-between gap-3">
-    <h3 class="min-w-0 truncate type-body font-medium text-foreground">{workspace.title}</h3>
+<section class="py-3" data-testid="hosted-workspace-roster" data-workspace-id={workspace.id}>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h3 class="min-w-0 break-words type-body font-medium text-foreground">{workspace.title}</h3>
     {#if $roster$.status !== 'withheld'}
       <Button
         variant="ghost"
@@ -120,6 +102,38 @@
       </Button>
     {/if}
   </div>
+  {#if collaborators.length > 0 && $roster$.guestLimit != null}
+    <p class="type-caption text-muted-foreground" data-testid="hosted-guest-seats">
+      {m.workspace_share_guests_label({
+        count: formatInteger(collaborators.length),
+        limit: formatInteger($roster$.guestLimit),
+      })}
+    </p>
+  {/if}
+  {#if $pendingCount$ !== null && $pendingCount$ > 0}
+    <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+      <p class="type-caption text-muted-foreground">
+        {m.collaboration_lists_pending_label({ count: formatInteger($pendingCount$) })}
+      </p>
+      <Button
+        variant="ghost"
+        size="sm"
+        onclick={() => {
+          if (
+            context === selectPrincipalActionContext.select(appStore.state) &&
+            selectCanManageHostedWorkspace.select(appStore.state, workspace.id)
+          )
+            appStore.dispatch(
+              openShareDialog({ workspaceId: workspace.id, workspaceTitle: workspace.title }),
+            );
+        }}>{m.collaboration_lists_manageSharing_label()}</Button
+      >
+    </div>
+  {:else if $pendingCount$ === null && $roster$.status === 'loaded' && collaborators.length === 0}
+    <p role="status" class="mt-2 type-body text-muted-foreground">
+      {m.collaboration_lists_sharingUnknown_label()}
+    </p>
+  {/if}
   {#if $roster$.status === 'loading' && $roster$.members.length === 0}
     <p class="mt-2 type-body text-muted-foreground" role="status">
       {m.settings_guestSessions_roster_loading_label()}
@@ -132,61 +146,74 @@
     >
       {m.settings_guestSessions_roster_withheld()}
     </p>
-  {:else if $roster$.status === 'error' && $roster$.members.length === 0}
+  {:else if $roster$.status === 'error'}
     <p class="mt-2 type-body text-danger" role="alert">
       {m.settings_guestSessions_roster_error()}
     </p>
-  {:else}
+  {/if}
+  {#if collaborators.length > 0}
     <ListView
       virtualize={false}
-      items={$roster$.members}
+      items={collaborators}
       getKey={(member) => member.principalId}
       getText={(member) => memberLabel(member)}
       ariaLabel={workspace.title}
       class="mt-2 overflow-visible"
     >
       {#snippet row({ item: member })}
-        <div class="flex items-center justify-between gap-3 py-2">
-          <div class="min-w-0">
-            <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
-            <p class="truncate type-caption text-muted-foreground">
-              {member.role === 'owner'
-                ? m.settings_guestSessions_role_owner_label()
-                : m.settings_guestSessions_role_collaborator_label()}
-              {#if member.login && member.displayName}
-                · @{member.login}
-              {/if}
-            </p>
+        <div class="flex flex-wrap items-center justify-between gap-3 py-2">
+          <div class="flex min-w-0 items-center gap-2">
+            <PrincipalAvatar
+              avatarUrl={member.avatarUrl}
+              label={memberLabel(member)}
+              size={24}
+              testid="hosted-roster-avatar"
+            />
+            <div class="min-w-0">
+              <p class="break-words type-body text-foreground">{memberLabel(member)}</p>
+              <p class="break-words type-caption text-muted-foreground">
+                {m.settings_guestSessions_role_collaborator_label()}
+                {#if member.login && member.displayName}
+                  · @{member.login}
+                {/if}
+              </p>
+            </div>
           </div>
-          {#if member.role !== 'owner'}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={$removingIds$.includes(member.principalId)}
-              onclick={() => requestRemove(member)}
-            >
-              {m.settings_guestSessions_remove_label()}
-            </Button>
-          {/if}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={$removingIds$.includes(member.principalId) ||
+              $roster$.inheritedPrincipalIds?.includes(member.principalId)}
+            onclick={() => requestRemove(member)}
+          >
+            {m.settings_guestSessions_remove_label()}
+          </Button>
         </div>
       {/snippet}
     </ListView>
   {/if}
-  {#if removeError}
+  {#if $roster$.inheritedPrincipalIds?.length}
+    <p role="alert" class="mt-3 type-body text-muted-foreground">
+      {m.collaboration_workspace_inherited_error()}
+    </p>
+  {/if}
+  {#each $failedRemovals$ as failedRemove (failedRemove.principalId)}
     <div
       class="mt-3 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
     >
-      <p class="type-body text-danger">{removeError}</p>
+      <p class="type-body text-danger">
+        {m.settings_guestSessions_remove_error({ name: memberLabel(failedRemove) })}
+      </p>
       <Button
         variant="ghost"
-        disabled={!failedRemove || $removingIds$.includes(failedRemove.principalId)}
+        disabled={$removingIds$.includes(failedRemove.principalId)}
         onclick={() => removeMember(failedRemove)}
       >
         {m.settings_guestSessions_retry_label()}
       </Button>
     </div>
-  {/if}
+  {/each}
 </section>
 
 <BulkActionConfirmDialog

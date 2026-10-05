@@ -33,7 +33,7 @@
 </script>
 
 {#snippet primaryActions()}
-  <div class="flex min-w-0 items-center gap-1.5">
+  <div class="flex min-w-0 items-center gap-0.5">
     <TaskProgressControl
       tasks={[
         { id: 'review', status: 'review_required', title: 'Review the agent header actions' },

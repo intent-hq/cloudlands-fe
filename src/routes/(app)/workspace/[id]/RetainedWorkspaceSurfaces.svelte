@@ -9,11 +9,13 @@
     activeWorkspaceId,
     openWorkspaceIds,
     workspaceEntityIds,
+    browserWorkspaceIds = [],
     children,
   }: {
     activeWorkspaceId: string;
     openWorkspaceIds: readonly string[];
     workspaceEntityIds: readonly string[];
+    browserWorkspaceIds?: readonly string[];
     children: Snippet<[workspaceId: string, active: boolean]>;
   } = $props();
 
@@ -23,6 +25,7 @@
         activeWorkspaceId,
         openWorkspaceIds,
         workspaceEntityIds,
+        browserWorkspaceIds,
       }),
     ),
   );
@@ -36,6 +39,7 @@
       activeWorkspaceId,
       openWorkspaceIds,
       workspaceEntityIds,
+      browserWorkspaceIds,
     });
     if (next !== current) retention = next;
   });

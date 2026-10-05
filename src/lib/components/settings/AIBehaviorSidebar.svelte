@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
+  import SpecialistImportDiagnostics from './SpecialistImportDiagnostics.svelte';
   import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { ListRow } from '$lib/components/patterns/collection';
@@ -24,11 +26,13 @@
     activeView: AIBehaviorView;
     onSelect: (view: AIBehaviorView) => void;
     isActive?: boolean;
+    workspaceId?: string;
   }
 
-  let { activeView, onSelect, isActive = true }: Props = $props();
+  let { activeView, onSelect, isActive = true, workspaceId }: Props = $props();
 
-  const specialists = selectSpecialists();
+  const specialists = $derived(selectSpecialists(workspaceId));
+  const canEdit$ = selectCanAdministerHost();
   const fileSpecialists$ = selectFileSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
@@ -47,7 +51,7 @@
 
   function getHasOverrides(id: string): boolean {
     void $fileSpecialists$; // track file specialist changes for reactivity
-    return selectHasOverrides.select(appStore.state, id);
+    return selectHasOverrides.select(appStore.state, id, workspaceId);
   }
 
   // Check if item is selected
@@ -61,10 +65,16 @@
   }
 </script>
 
+<SpecialistImportDiagnostics {workspaceId} />
+
 <!-- Specialists -->
 {#each visibleSpecialists as specialist (specialist.id)}
   {@const hasOverrides = getHasOverrides(specialist.id)}
-  {@const sourceLabel = selectSpecialistSourceLabel.select(appStore.state, specialist.id)}
+  {@const sourceLabel = selectSpecialistSourceLabel.select(
+    appStore.state,
+    specialist.id,
+    workspaceId,
+  )}
 
   <Button
     bind:ref={specialistButtonRefs[specialist.id]}
@@ -81,7 +91,9 @@
       ? 'bg-foreground/5 text-foreground'
       : 'text-muted-foreground'}"
   >
-    <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
+    <ListRow
+      class="min-h-8 w-full items-center gap-2 px-3 py-0 [&>[data-slot=list-row-leading]]:self-center"
+    >
       {#snippet leading()}
         <AgentAvatar
           agentId={specialist.id}
@@ -125,31 +137,35 @@
 {/each}
 
 <!-- Create button - flows after specialists -->
-<Button
-  bind:ref={createSpecialistButtonRef}
-  variant="plain"
-  id="create-specialist"
-  type="button"
-  onclick={() => onSelect({ type: 'create-specialist' })}
-  data-highlight-id="create-specialist"
-  data-settings-agent-row
-  active={isSelected({ type: 'create-specialist' })}
-  aria-current={isSelected({ type: 'create-specialist' }) ? 'page' : undefined}
-  class="h-auto w-full min-w-0 justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active
+{#if $canEdit$}
+  <Button
+    bind:ref={createSpecialistButtonRef}
+    variant="plain"
+    id="create-specialist"
+    type="button"
+    onclick={() => onSelect({ type: 'create-specialist' })}
+    data-highlight-id="create-specialist"
+    data-settings-agent-row
+    active={isSelected({ type: 'create-specialist' })}
+    aria-current={isSelected({ type: 'create-specialist' }) ? 'page' : undefined}
+    class="h-auto w-full min-w-0 justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active
     {isSelected({ type: 'create-specialist' })
-    ? 'bg-foreground/5 text-foreground'
-    : 'text-muted-foreground'}"
->
-  <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
-    {#snippet leading()}
-      <span class="flex size-4 shrink-0 items-center justify-center">
-        <PlusIcon size={16} weight="regular" />
-      </span>
-    {/snippet}
-    {#snippet title()}
-      <span data-settings-sidebar-label class="block truncate type-body font-normal">
-        {m.settings_aiBehavior_sidebar_createSpecialist()}
-      </span>
-    {/snippet}
-  </ListRow>
-</Button>
+      ? 'bg-foreground/5 text-foreground'
+      : 'text-muted-foreground'}"
+  >
+    <ListRow
+      class="min-h-8 w-full items-center gap-2 px-3 py-0 [&>[data-slot=list-row-leading]]:self-center"
+    >
+      {#snippet leading()}
+        <span class="flex size-4 shrink-0 items-center justify-center">
+          <PlusIcon size={16} weight="regular" />
+        </span>
+      {/snippet}
+      {#snippet title()}
+        <span data-settings-sidebar-label class="block truncate type-body font-normal">
+          {m.settings_aiBehavior_sidebar_createSpecialist()}
+        </span>
+      {/snippet}
+    </ListRow>
+  </Button>
+{/if}

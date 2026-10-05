@@ -1,11 +1,9 @@
 ---
 name: core/store-pruning
 description: >-
-  Explicit-only Redux store pruning guidance for removing unused selectors,
-  actions, handlers, reducers, sagas, and orphaned store logic. Use only when
-  the user specifically asks to prune Redux store surface area; never run
-  automatically during unrelated work. Requires production-usage searches
-  separate from tests and external/public-boundary checks before deletion.
+  Use only when explicitly asked to prune unused Redux selectors, actions,
+  reducers, sagas, or orphaned store logic. Requires production-usage and
+  public-boundary checks before deletion.
 type: sub-skill
 requires:
   - core

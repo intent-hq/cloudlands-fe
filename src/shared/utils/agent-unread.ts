@@ -10,17 +10,19 @@
  * list/get reads, new-message-driven pushes, and `agent:updated` marker
  * convergence — recomputes it through one seam.
  *
- * Background agents (`isBackground` / `metadata.isBackground`) and delegated
- * child agents (`metadata.createdByAgentId` set) always derive `false`: the
- * unread blue dot (agent avatar + bottom-bar Agents launcher) is reserved for
- * top-level foreground agents. The child check follows the dangling-parent
- * semantics of `isTopLevelAgent` in hud-selectors — a delegated agent stays
- * suppressed even when its parent left the list — which is stricter than the
- * Agents-panel tree's nesting (that additionally requires the parent to be
- * present, so an orphaned child renders as a top-level row yet never shows
- * the dot). Unlike `isTopLevelAgent`, this derivation has no agent-id input,
- * so a (malformed) self-referencing `createdByAgentId` also suppresses the
- * dot.
+ * Only rows the shared `agent-scope` classifier bins as `topLevel` can be
+ * unread: background agents (`isBackground` / `metadata.isBackground`) and
+ * delegated child agents (wire `parentAgentId`, or the legacy
+ * `metadata.createdByAgentId`) always derive `false` — the unread blue dot
+ * (agent avatar + bottom-bar Agents launcher) is reserved for top-level
+ * foreground agents. The child check follows the shared classifier's
+ * dangling-parent semantics (it never checks that the parent exists) — a
+ * delegated agent stays suppressed even when its parent left the list —
+ * which is stricter than the Agents-panel tree's nesting (that additionally
+ * requires the parent to be present, so an orphaned child renders as a
+ * top-level row yet never shows the dot). Unlike the HUD, this derivation
+ * has no agent-id input to drop a self-reference, so a (malformed)
+ * self-referencing parent id also suppresses the dot.
  *
  * Muted agents (`notificationsMuted === true`, the daemon-owned per-agent
  * mute settable via `agent.update`) also always derive `false`: the mute
@@ -29,16 +31,13 @@
  * Dependency-light per AGENTS.md: pure function, no stores or services.
  */
 
-interface AgentUnreadInputs {
+import { classifyAgentScope, type AgentScopeInputs, type AgentScopeMetadata } from './agent-scope';
+
+interface AgentUnreadInputs extends AgentScopeInputs {
   lastMessageRole?: 'user' | 'assistant';
   lastMessageId?: string;
-  isBackground?: boolean;
   notificationsMuted?: boolean;
-  metadata?: {
-    lastSeenMessageId?: string;
-    isBackground?: unknown;
-    createdByAgentId?: unknown;
-  };
+  metadata?: (AgentScopeMetadata & { lastSeenMessageId?: string }) | null;
 }
 
 /**
@@ -49,16 +48,13 @@ interface AgentUnreadInputs {
  * definition. Older daemons omit `lastMessageId`, which derives `false`
  * (no exact signal; consumers fall back to their heuristics).
  *
- * Always `false` for background agents (`isBackground === true` or
- * `metadata.isBackground === true`) and delegated child agents
- * (`metadata.createdByAgentId` is a non-empty string) — only top-level
- * foreground agents surface the unread indicator — and for muted agents
- * (`notificationsMuted === true`).
+ * Always `false` for rows outside the `topLevel` bin (background agents and
+ * delegated child agents — only top-level foreground agents surface the
+ * unread indicator) and for muted agents (`notificationsMuted === true`).
  */
 export function deriveAgentHasUnread(agent: AgentUnreadInputs): boolean {
   if (agent.notificationsMuted === true) return false;
-  if (agent.isBackground === true || agent.metadata?.isBackground === true) return false;
-  if (normalizeId(agent.metadata?.createdByAgentId) !== undefined) return false;
+  if (classifyAgentScope(agent) !== 'topLevel') return false;
   if (agent.lastMessageRole !== 'assistant') return false;
   const lastMessageId = normalizeId(agent.lastMessageId);
   if (lastMessageId === undefined) return false;

@@ -167,7 +167,6 @@ function extractBalancedObject(src, startIdx) {
   let i = startIdx;
   let depth = 0;
   let inStr = null; // ' " or `
-  let templateDepth = 0; // for ${...} inside template literals
   while (i < src.length) {
     const c = src[i];
     const next = src[i + 1];
@@ -177,7 +176,6 @@ function extractBalancedObject(src, startIdx) {
         continue;
       }
       if (inStr === '`' && c === '$' && next === '{') {
-        templateDepth++;
         i += 2;
         depth++;
         continue;

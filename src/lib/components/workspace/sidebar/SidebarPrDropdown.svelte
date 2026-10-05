@@ -6,6 +6,7 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { handleLink } from '$features/navigation/link-handler';
   import { ensureWorkspacePullRequestPool } from '$features/workspace/workspace-detail-hydration';
+  import { isWorkspacePullRequestPoolTruncated } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -27,6 +28,18 @@
   } = $props();
 
   let open = $state(false);
+  let refreshing = $state(false);
+  let refreshFailed = $state(false);
+  let refreshTarget: string | null = null;
+
+  $effect(() => {
+    if (refreshTarget !== null && refreshTarget !== workspaceId) {
+      open = false;
+      refreshing = false;
+      refreshFailed = false;
+      refreshTarget = null;
+    }
+  });
 
   // Rows arrive sorted earliest-in-flow first (draft → open → merged → closed);
   // the lead row drives the trigger glyph.
@@ -61,7 +74,25 @@
   // the parent derives `rows` from the store row, so completing the pool via
   // `workspace.get` on open re-renders the full list. No-op when complete.
   function onOpenChange(next: boolean) {
-    if (next) void ensureWorkspacePullRequestPool(workspaceId);
+    if (next) void refresh();
+  }
+
+  async function refresh() {
+    if (refreshing) return;
+    const target = workspaceId;
+    refreshTarget = target;
+    refreshing = true;
+    refreshFailed = false;
+    try {
+      const workspace = await ensureWorkspacePullRequestPool(target);
+      if (workspaceId === target) {
+        refreshFailed = !workspace || isWorkspacePullRequestPoolTruncated(workspace);
+      }
+    } catch {
+      if (workspaceId === target) refreshFailed = true;
+    } finally {
+      if (workspaceId === target) refreshing = false;
+    }
   }
 
   function openPr(pr: WorkspacePRPresentationRow, close: () => void) {
@@ -114,6 +145,19 @@
         aria-label={triggerLabel}
       >
         <SidebarPrList {rows} onSelect={(pr) => openPr(pr, close)} />
+        {#if refreshing}
+          <div role="status" class="px-3 py-2 type-caption text-muted-foreground">
+            {m.workspace_sidebarPrDropdown_refreshing_label()}
+          </div>
+        {:else if refreshFailed}
+          <Menu.Separator />
+          <div role="status" class="px-3 py-2 type-caption text-muted-foreground">
+            {m.workspace_sidebarPrDropdown_refreshFailed_error()}
+          </div>
+          <Menu.Item onSelect={() => void refresh()} closeOnSelect={false}>
+            {m.workspace_repoSelector_retrySuggestions_label()}
+          </Menu.Item>
+        {/if}
       </Menu.Content>
     </Menu.Root>
   </span>

@@ -41,6 +41,9 @@ describe('ReplaceAgentModal', () => {
     await renderModal();
 
     expect(await screen.findByRole('dialog', { name: m.modals_replaceAgent_title() })).toBeTruthy();
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.modals_replaceAgent_instruction_ariaLabel() }),
+    );
     expect(getTextarea().value).toBe(
       buildReplaceAgentHandoffMessage({
         agentName: 'Backend Coordinator',
@@ -54,6 +57,9 @@ describe('ReplaceAgentModal', () => {
     await renderModal({ onSend });
 
     await screen.findByRole('dialog', { name: m.modals_replaceAgent_title() });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.modals_replaceAgent_instruction_ariaLabel() }),
+    );
     const edited = 'Custom hand-off: wrap up and retire.';
     await fireEvent.input(getTextarea(), { target: { value: edited } });
 
@@ -68,6 +74,9 @@ describe('ReplaceAgentModal', () => {
     await renderModal({ onSend });
 
     await screen.findByRole('dialog', { name: m.modals_replaceAgent_title() });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.modals_replaceAgent_instruction_ariaLabel() }),
+    );
     await fireEvent.input(getTextarea(), { target: { value: '   ' } });
 
     const sendButton = screen.getByRole('button', {
@@ -86,6 +95,9 @@ describe('ReplaceAgentModal', () => {
     await renderModal({ onSend, onCancel });
 
     await screen.findByRole('dialog', { name: m.modals_replaceAgent_title() });
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.modals_replaceAgent_instruction_ariaLabel() }),
+    );
     await fireEvent.input(getTextarea(), { target: { value: 'edited but abandoned' } });
 
     await fireEvent.click(

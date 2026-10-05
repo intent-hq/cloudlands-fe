@@ -41,7 +41,7 @@ import {
   selectHardwareConsoleActionMappingsByModel,
   selectHardwareConsoleCycleScopes,
 } from '../hardware-console-selectors';
-import { HARDWARE_CONSOLE_SETTINGS_PATH } from '$features/hardware-console/assignment/key-pin-persistence-service';
+import { HARDWARE_CONSOLE_SETTINGS_PATH } from '$features/hardware-console/settings-bag';
 
 const logger = createLogger('HardwareConsoleActionKeys');
 
@@ -83,7 +83,9 @@ function* hydrateActionKeys(): SagaGenerator<boolean> {
     yield* put(hydrateHardwareConsoleCycleScopes(hydrated.cycleScopeByFamily));
   } catch (error) {
     logger.error('Action-mapping hydration failed; dispatching defaults', { error });
-    yield* put(hydrateHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined)));
+    yield* put(
+      hydrateHardwareConsoleActionMapping(normalizeActionMappingsByModel(undefined), false),
+    );
     yield* put(hydrateHardwareConsoleCycleScopes(normalizeCycleScopeByFamily(undefined)));
     return false;
   }

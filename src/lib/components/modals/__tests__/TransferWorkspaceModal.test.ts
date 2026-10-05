@@ -143,37 +143,46 @@ describe('TransferWorkspaceModal — destination step', () => {
       expect(className).not.toMatch(/\bsize-\d/);
       expect(className).toContain('whitespace-normal');
       expect(className).not.toContain('whitespace-nowrap');
-      expect(className).not.toContain('!px-0');
-      expect(className).not.toContain('!py-0');
+      expect(className).toContain('!px-0');
+      expect(className).toContain('!py-0');
+      expect(screen.getByTestId(testId).querySelector('[data-slot="list-row"]')).toBeTruthy();
     }
   });
 
-  it('shows the empty-server explainer while download stays available', async () => {
+  it('offers export without a redundant destination selector', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
 
     render(TransferWorkspaceModal, {
       props: { open: true, workspaceTitle: 'My Space', step: 'destination', connections: [] },
     });
 
-    expect(screen.getByTestId('transfer-empty-servers')).toBeTruthy();
-    expect(screen.getByTestId('transfer-download-option')).toBeTruthy();
+    expect(screen.getByText('Export workspace')).toBeTruthy();
+    expect(
+      screen.getByText('Save “My Space” to a file you can import on another device.'),
+    ).toBeTruthy();
+    expect(screen.queryByTestId('transfer-empty-servers')).toBeNull();
+    expect(screen.queryByTestId('transfer-download-option')).toBeNull();
   });
 
-  it('enables Next once a destination is picked and forwards onNext', async () => {
+  it('selects download before requesting the export plan', async () => {
     const TransferWorkspaceModal = (await import('../TransferWorkspaceModal.svelte')).default;
-    const onNext = vi.fn();
+    const onSelectDestination = vi.fn();
+    const onNext = vi.fn(() =>
+      expect(onSelectDestination).toHaveBeenCalledWith({ kind: 'download' }),
+    );
 
     render(TransferWorkspaceModal, {
       props: {
         open: true,
         step: 'destination',
         connections: [],
-        destination: { kind: 'download' },
+        destination: null,
+        onSelectDestination,
         onNext,
       },
     });
 
-    const next = screen.getByRole('button', { name: 'Next' });
+    const next = screen.getByRole('button', { name: 'Review export' });
     expect(next.disabled).toBe(false);
     await fireEvent.click(next);
     expect(onNext).toHaveBeenCalled();
@@ -332,15 +341,12 @@ describe('TransferWorkspaceModal — transferring step', () => {
         },
       },
     });
-    expect(screen.getByTestId('transfer-progress-label').textContent).toContain(
-      'Transferring “My Space”',
-    );
     expect(screen.getByTestId('transfer-progress-stage').textContent).toContain(
       'Transferring archive',
     );
     const bytes = screen.getByTestId('transfer-progress-bytes').textContent ?? '';
-    expect(bytes).toContain('Downloaded: 2Mi');
-    expect(bytes).toContain('Uploaded: 1Mi');
+    expect(bytes).toContain('2Mi');
+    expect(bytes).toContain('1Mi');
     // (2 + 1) MiB of 2×4 MiB → 38%.
     expect(screen.getByTestId('transfer-progress-bar').getAttribute('aria-valuenow')).toBe('38');
     // Restart toggle only renders for server destinations.
@@ -368,9 +374,6 @@ describe('TransferWorkspaceModal — transferring step', () => {
         },
       },
     });
-    expect(screen.getByTestId('transfer-progress-label').textContent).toContain(
-      'Downloading “My Space”',
-    );
     expect(screen.getByTestId('transfer-progress-stage').textContent).toContain(
       'Downloading archive',
     );
@@ -378,7 +381,7 @@ describe('TransferWorkspaceModal — transferring step', () => {
       'Download progress',
     );
     const bytes = screen.getByTestId('transfer-progress-bytes').textContent ?? '';
-    expect(bytes).toContain('Downloaded: 1Mi');
+    expect(bytes).toContain('1Mi');
     expect(bytes).not.toContain('Uploaded');
     expect(screen.queryByTestId('transfer-restart-agents')).toBeNull();
     // Download fraction counts down only: 1 of 4 MiB → 25%.
@@ -570,8 +573,9 @@ describe('TransferWorkspaceModal — result step', () => {
     const closeButton = screen.getByLabelText('Close') as HTMLButtonElement;
     expect(closeButton.disabled).toBe(true);
     await fireEvent.click(closeButton);
-    await fireEvent.click(screen.getByRole('presentation'));
-    await fireEvent.keyDown(screen.getByRole('presentation'), { key: 'Escape' });
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]')!;
+    await fireEvent.pointerDown(overlay, { pointerType: 'mouse', button: 0 });
+    await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onCancel).not.toHaveBeenCalled();
   });
 

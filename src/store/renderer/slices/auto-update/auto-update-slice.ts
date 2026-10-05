@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { AutoUpdateState } from './auto-update-types';
 import type { UpdateProgress, UpdateState } from '$features/auto-update/types';
 import { m } from '$shared/paraglide/messages.js';

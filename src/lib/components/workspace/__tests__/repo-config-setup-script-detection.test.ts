@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -11,6 +12,11 @@
  */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
+beforeEach(() => {
+  admittedFixture.state = withLegacyPrincipal({});
+});
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -39,6 +45,7 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({
+      ...admittedFixture.state,
       hardwareConsole: { pttRecording: false, voiceTranscribing: false },
       workspaceCreateProgress: { byProgressId: {} },
     }),
@@ -47,6 +54,12 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.savedFormState),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
@@ -389,15 +402,9 @@ describe('CompactWorkspaceInitializer repo-config setup script detection', () =>
   });
 });
 
-// The modal must keep a constant height across loading transitions: the
-// setup-script pill and its trailing "script" suffix render in both loading
-// and loaded states (spinner inside the pill), and the Create button's
-// shortcut hint is always mounted with only its visibility toggled by form
-// validity.
+// The labeled setup field stays mounted across loading transitions, and the
+// Create shortcut hint changes visibility without changing the form's height.
 describe('CompactWorkspaceInitializer modal height stability', () => {
-  const PILL_CLASSES = ['rounded-md', 'border', 'border-border', 'bg-background', 'px-2', 'py-0.5'];
-  const SUFFIX_LABEL = 'script';
-
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
@@ -412,7 +419,7 @@ describe('CompactWorkspaceInitializer modal height stability', () => {
     sessionStorage.clear();
   });
 
-  it('keeps the setup-script pill and suffix rendered with the spinner inside the pill while the probe is in flight', async () => {
+  it('keeps the labeled setup-script trigger mounted while its value is detected', async () => {
     const probe = deferred<string | null>();
     mocks.fetchRepoConfig.mockReturnValue(probe.promise);
     mocks.savedFormState = { repoPath: '/repo/a', repoType: 'local', isValidPath: true };
@@ -421,26 +428,16 @@ describe('CompactWorkspaceInitializer modal height stability', () => {
     await waitFor(() => {
       expect(result.getByText(SPINNER_LABEL)).toBeTruthy();
     });
-    // The sr-only loading label (next to the spinner) sits inside the same
-    // bordered pill that later shows the script name, and the trailing
-    // "script" suffix stays mounted so the row structure never changes.
-    const loadingPill = result.getByText(SPINNER_LABEL).parentElement;
-    expect(loadingPill).toBeTruthy();
-    for (const cls of PILL_CLASSES) {
-      expect(loadingPill!.classList.contains(cls)).toBe(true);
-    }
-    const loadingSuffix = result.getByText(SUFFIX_LABEL);
+    const trigger = result.getByLabelText('Setup script');
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(trigger.contains(result.getByText(SPINNER_LABEL))).toBe(true);
 
     probe.resolve('echo repo-config');
     await waitFor(() => {
       expect(result.getByText(REPO_CONFIG_SCRIPT_NAME)).toBeTruthy();
     });
-    const loadedPill = result.getByText(REPO_CONFIG_SCRIPT_NAME);
-    for (const cls of PILL_CLASSES) {
-      expect(loadedPill.classList.contains(cls)).toBe(true);
-    }
-    // Same suffix node across the transition — it is never unmounted.
-    expect(result.getByText(SUFFIX_LABEL)).toBe(loadingSuffix);
+    expect(result.getByLabelText('Setup script')).toBe(trigger);
+    expect(trigger.contains(result.getByText(REPO_CONFIG_SCRIPT_NAME))).toBe(true);
   });
 
   it('never remounts the shortcut hint span on a validity flip — visibility only', async () => {

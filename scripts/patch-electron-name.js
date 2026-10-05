@@ -30,7 +30,7 @@ function getElectronAppPath() {
     if (existsSync(hoistedPath)) {
       return hoistedPath;
     }
-  } catch (e) {
+  } catch {
     // Ignore
   }
   return null;
@@ -85,7 +85,7 @@ function patchInfoPlist() {
         '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user',
         { stdio: 'ignore' },
       );
-    } catch (e) {
+    } catch {
       // Ignore - this is optional
     }
 

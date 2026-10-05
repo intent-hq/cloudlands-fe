@@ -9,6 +9,14 @@
  */
 
 export const IPC_CHANNELS = {
+  DEV_CONSOLE: {
+    OPEN: 'dev-console:open',
+    CONNECT: 'dev-console:connect',
+    READ: 'dev-console:read',
+    RECORD: 'dev-console:record',
+    CLEAR: 'dev-console:clear',
+    SELECT: 'dev-console:select',
+  },
   // Workspace Management
   WORKSPACE: {
     LIST: 'workspace:list',
@@ -248,6 +256,7 @@ export const IPC_CHANNELS = {
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
+    PREPARE_ADAPTERS: 'providers:prepare-adapters',
     GET_PATHS: 'providers:get-paths',
     CHECK_SINGLE: 'providers:check-single',
   },
@@ -333,6 +342,14 @@ export const IPC_CHANNELS = {
 
   // Invite consent (renderer-rendered GitHub identity prompt of an invite join).
   // Payload contracts live in src/shared/ipc/invite-consent.ts.
+  COLLABORATION_AUTH: {
+    POLICY: 'collaboration-auth:policy',
+    OPEN: 'collaboration-auth:open',
+    SHOW: 'collaboration-auth:show',
+    ACTION: 'collaboration-auth:action',
+    DISMISS: 'collaboration-auth:dismiss',
+  },
+
   INVITE_CONSENT: {
     /** Main → renderer: show the invite-consent modal for a request. */
     SHOW: 'invite-consent:show',
@@ -342,6 +359,21 @@ export const IPC_CHANNELS = {
     RESPONSE: 'invite-consent:response',
     /** Main → renderer: close the modal with the request's outcome. */
     DISMISS: 'invite-consent:dismiss',
+  },
+
+  // Invite progress (renderer-rendered "Connecting…" / "Opening…" dialog of an
+  // invite join). Payload contracts live in src/shared/ipc/invite-progress.ts.
+  INVITE_PROGRESS: {
+    /** Main → renderer: show the invite-progress modal for a request. */
+    SHOW: 'invite-progress:show',
+    /** Main → renderer: update the phase / labels of the request's modal. */
+    UPDATE: 'invite-progress:update',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'invite-progress:ack',
+    /** Renderer → main (invoke): the user pressed Cancel. */
+    RESPONSE: 'invite-progress:response',
+    /** Main → renderer: close the modal for a finished/superseded request. */
+    DISMISS: 'invite-progress:dismiss',
   },
 
   // Invite notice (renderer-rendered failure / plaintext-credential notice of
@@ -724,6 +756,15 @@ export const IPC_CHANNELS = {
     SEARCH_USERS: 'github-auth:search-users',
   },
 
+  // Provider-generic forge auth (daemon `sourceControl.*`, GitHub + GitLab)
+  FORGE_AUTH: {
+    GET_STATUS: 'forge-auth:get-status',
+    CONNECT: 'forge-auth:connect',
+    CANCEL_AUTH: 'forge-auth:cancel',
+    REVOKE: 'forge-auth:revoke',
+    GET_USER: 'forge-auth:get-user',
+  },
+
   // Linear Auth (via daemon API OAuth)
   LINEAR_AUTH: {
     IS_AUTHENTICATED: 'linear-auth:is-authenticated',
@@ -888,9 +929,42 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     REQUEST: 'backend:request',
+    NATIVE_REVIEW: {
+      PREPARE: 'backend:native-review:prepare',
+      EXECUTE: 'backend:native-review:execute',
+      RECONCILE: 'backend:native-review:reconcile',
+      RELEASE: 'backend:native-review:release',
+      RETIRED: 'backend:native-review:retired',
+    },
+    REPOSITORY_SELECTION: {
+      CAPTURE: 'backend:repository-selection:capture',
+      CONFIRM: 'backend:repository-selection:confirm',
+      RECONCILE: 'backend:repository-selection:reconcile',
+      RELEASE: 'backend:repository-selection:release',
+      RETIRED: 'backend:repository-selection:retired',
+    },
+    REPOSITORY_CHECKOUT: {
+      CAPTURE: 'backend:repository-checkout:capture',
+      REQUEST: 'backend:repository-checkout:request',
+      RELEASE: 'backend:repository-checkout:release',
+      RETIRED: 'backend:repository-checkout:retired',
+    },
+    REPOSITORY_RESOURCE: {
+      CAPTURE: 'backend:repository-resource:capture',
+      DETAIL: 'backend:repository-resource:detail',
+      RELEASE: 'backend:repository-resource:release',
+      RETIRED: 'backend:repository-resource:retired',
+    },
+    REPOSITORY: {
+      CAPTURE: 'backend:repository:capture',
+      RETIRED: 'backend:repository:retired',
+      REQUEST: 'backend:repository:request',
+      RELEASE: 'backend:repository:release',
+    },
     SUBSCRIBE: 'backend:subscribe',
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',
+    NODE_CAPABILITIES: 'backend:node-capabilities',
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',
@@ -1016,6 +1090,10 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
+  IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
+  IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
+  IPC_CHANNELS.BACKEND.NATIVE_REVIEW.RETIRED,
   'event:workspace:created',
   'event:workspace:updated',
   'event:workspace:deleted',
@@ -1189,6 +1267,7 @@ export const EVENT_CHANNELS = [
   'token-usage:changed',
   // Live backend transport (main → renderer): daemon JSON-RPC notifications
   // and connection-status changes pushed from the main-process client.
+  'dev-console:changed',
   'backend:notification',
   'backend:status',
   // Hardware console shutdown handshake (main → renderer)

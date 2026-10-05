@@ -122,6 +122,20 @@ describe('client startup', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  it('skips the browser mock beneath /sandbox so the catalog never boots a mock host', async () => {
+    const loadBrowserMock = vi.fn(() => ({}));
+    vi.doMock('$lib/browser-mock', loadBrowserMock);
+
+    window.history.replaceState({}, '', '/sandbox/button?state=loading');
+    await (await import('./hooks.client')).init();
+    expect(loadBrowserMock).not.toHaveBeenCalled();
+
+    vi.resetModules();
+    window.history.replaceState({}, '', '/settings');
+    await (await import('./hooks.client')).init();
+    expect(loadBrowserMock).toHaveBeenCalledOnce();
+  });
 });
 
 describe('handleError call-TypeError classification', () => {

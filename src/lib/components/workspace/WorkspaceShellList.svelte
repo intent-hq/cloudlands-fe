@@ -150,6 +150,7 @@
                       iconOnly
                       class="size-(--row-action-target-compact)"
                       tooltip={m.ui_openCombo_openInApp_tooltip()}
+                      aria-label={m.ui_openCombo_openInApp_tooltip()}
                       tooltipSide="left"
                     >
                       <Fa icon={faArrowUpRightFromSquare} class="size-3" />
@@ -160,7 +161,7 @@
                   align="end"
                   side="bottom"
                   preventScroll={false}
-                  aria-label={m.ui_dropdownMenu_ariaLabel()}
+                  aria-label={terminalName}
                 >
                   <Menu.Item
                     onclick={(event) => {
@@ -207,6 +208,7 @@
           {@const live = isLiveScriptStatus(script.runtime.status)}
           {@const operation = $operations$[script.id]}
           {@const statusDescription = {
+            starting: m.workspace_devScripts_running_label(),
             running: m.workspace_devScripts_running_label(),
             restarting: m.workspace_devScripts_restarting_label(),
             exited: m.workspace_devScripts_exited_label(),
@@ -268,6 +270,7 @@
                         iconOnly
                         class="size-(--row-action-target-compact)"
                         tooltip={m.ui_openCombo_openInApp_tooltip()}
+                        aria-label={m.ui_openCombo_openInApp_tooltip()}
                         tooltipSide="left"
                       >
                         <Fa icon={faArrowUpRightFromSquare} class="size-3" />
@@ -278,7 +281,7 @@
                     align="end"
                     side="bottom"
                     preventScroll={false}
-                    aria-label={m.ui_dropdownMenu_ariaLabel()}
+                    aria-label={script.name}
                   >
                     <Menu.Item
                       onclick={(event) => {

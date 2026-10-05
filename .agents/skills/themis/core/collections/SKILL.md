@@ -1,21 +1,16 @@
 ---
 name: core/collections
 description: >-
-  Normalized entity storage via Collection<T, K>: createCollection plus addItem,
-  addItems, addItemAt, upsertItem, updateItem, replaceItem, removeItem,
-  filterCollection, getItem, getItems, findItem, filterItems, and reference
-  counting (increaseRefsCount, decreaseRefsCount, getRefsCount,
-  addItemAndCountRef). All operations are immutable and return a new Collection
-  (or the same reference on a no-op). Public API:
-  @augmentcode/themis/utils/collections/collection-utils; docs: @augmentcode/themis/docs/COLLECTIONS.md.
+  Use for normalized entity storage with Themis Collection helpers, including
+  immutable CRUD, lookups, filtering, and reference counting.
 type: sub-skill
 library: themis
 requires:
   - core
   - core/reducers
 sources:
-  - "@augmentcode/themis/docs/COLLECTIONS.md"
-  - "@augmentcode/themis/utils/collections/collection-utils"
+  - "@themislib/themis/docs/COLLECTIONS.md"
+  - "@themislib/themis/utils/collections/collection-utils"
 triggers:
   - create collection
   - addItem collection
@@ -24,7 +19,7 @@ triggers:
 ---
 # Collections — `Collection<T, K>`
 
-> Operational guidance for normalized entity state. Full API reference and examples: `@augmentcode/themis/docs/COLLECTIONS.md`. Public API: `@augmentcode/themis/utils/collections/collection-utils`.
+> Operational guidance for normalized entity state. Full API reference and examples: `@themislib/themis/docs/COLLECTIONS.md`. Public API: `@themislib/themis/utils/collections/collection-utils`.
 
 ## Use when
 
@@ -35,7 +30,7 @@ triggers:
 ## Shape and imports
 
 - A collection is `{ idField, ids, map, refsCount }`; `ids` preserves order and `map` stores id → item.
-- Import helpers from `@augmentcode/themis/utils/collections/collection-utils`.
+- Import helpers from `@themislib/themis/utils/collections/collection-utils`.
 - Use selectors, not components, to read collection contents.
 
 ## Do
@@ -66,7 +61,7 @@ triggers:
 ### Serializable initial collection state
 
 ```ts
-import { type Collection, createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
+import { type Collection, createCollection } from "@themislib/themis/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { todos: Collection<Todo, "id"> };
@@ -79,7 +74,7 @@ export const initialState: TodosState = {
 ### Add, update, upsert, and remove in reducers
 
 ```ts
-import { addItem, createCollection, removeItem, updateItem, upsertItem } from "@augmentcode/themis/utils/collections/collection-utils";
+import { addItem, createCollection, removeItem, updateItem, upsertItem } from "@themislib/themis/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string; completed: boolean };
 const state = { todos: createCollection<Todo, "id">("id") };
@@ -95,7 +90,7 @@ const nextState = withoutDraft === state.todos ? state : { ...state, todos: with
 ### Reference-count shared entities
 
 ```ts
-import { addItemAndCountRef, createCollection, decreaseRefsCount, getRefsCount } from "@augmentcode/themis/utils/collections/collection-utils";
+import { addItemAndCountRef, createCollection, decreaseRefsCount, getRefsCount } from "@themislib/themis/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string; completed: boolean };
 const state = { todos: createCollection<Todo, "id">("id") };
@@ -112,8 +107,8 @@ afterRelease.ids satisfies string[];
 
 ```ts
 import { Store } from "<selected Store family package>";
-import { type Collection, createCollection, getItem, getItems } from "@augmentcode/themis/utils/collections/collection-utils";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { type Collection, createCollection, getItem, getItems } from "@themislib/themis/utils/collections/collection-utils";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { todos: Collection<Todo, "id"> };
@@ -140,9 +135,9 @@ const breadcrumbs: BreadcrumbState = {
 ### ❌ Bad: mutating internals corrupts normalized identity
 
 ```ts
-import { type Collection, createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { type Collection, createCollection } from "@themislib/themis/utils/collections/collection-utils";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { todos: Collection<Todo, "id"> };
@@ -161,11 +156,11 @@ export const todosReducer = createReducer(initialState).with(renameTodo, (state,
 
 - Reducer tests cover add/update/remove/upsert branches and no-op same-reference behavior.
 - Selector tests cover item lookup and list materialization using `.select(mockState, ...)`.
-- Manual review checks that detailed helper examples remain in `@augmentcode/themis/docs/COLLECTIONS.md`; this skill keeps only implementation cues.
+- Manual review checks that detailed helper examples remain in `@themislib/themis/docs/COLLECTIONS.md`; this skill keeps only implementation cues.
 
 ## See also
 
-- `@augmentcode/themis/docs/COLLECTIONS.md` — human reference for helper signatures and examples.
+- `@themislib/themis/docs/COLLECTIONS.md` — human reference for helper signatures and examples.
 - `core/reducers/SKILL.md` — pure immutable reducer updates.
 - Selected Store family selector skill — collection selector helpers.
 - `core/state-serialization/SKILL.md` — collections as serializable alternatives to `Map`/`Set`.

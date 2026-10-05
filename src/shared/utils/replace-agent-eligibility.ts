@@ -1,8 +1,6 @@
-export interface ReplaceAgentSessionLike {
-  isBackground?: boolean | null;
-  metadata?: Record<string, unknown> | null;
-  /** Alternative location for AgentMetadata (see AgentSession.agentMetadata). */
-  agentMetadata?: Record<string, unknown> | null;
+import { classifyAgentScope, type AgentScopeInputs } from './agent-scope';
+
+export interface ReplaceAgentSessionLike extends AgentScopeInputs {
   retiredAt?: string | null;
   harnessFeatures?: Record<string, boolean> | null;
 }
@@ -18,18 +16,16 @@ export interface ReplaceAgentSessionLike {
  *   session known only from a list row is ineligible until an `agent.get`
  *   has filled it in — callers ensure that read (`ensureAgentSessionLoaded`)
  *   and re-evaluate reactively rather than treating a first `false` as final
- * - top-level: no `createdByAgentId` / `parentAgentId` in either metadata
- *   record (`metadata` or its documented alternative location `agentMetadata`)
- * - non-background: neither `isBackground` nor either metadata record's
- *   `isBackground` is true
+ * - top-level: the shared `agent-scope` classifier bins the session as
+ *   `topLevel` — no wire `parentAgentId`, no `createdByAgentId` and no
+ *   `isBackground` in either metadata record (`metadata` or its documented
+ *   alternative location `agentMetadata`)
  * - not retired: `retiredAt` unset
  */
 export function isReplaceAgentEligible(session?: ReplaceAgentSessionLike | null): boolean {
   if (!session) return false;
   if (session.harnessFeatures?.peerAgents !== true) return false;
-  const records = [session.metadata ?? {}, session.agentMetadata ?? {}];
-  if (records.some((r) => r.createdByAgentId || r.parentAgentId)) return false;
-  if (session.isBackground === true || records.some((r) => r.isBackground === true)) return false;
+  if (classifyAgentScope(session) !== 'topLevel') return false;
   if (session.retiredAt) return false;
   return true;
 }

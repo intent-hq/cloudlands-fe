@@ -3,6 +3,7 @@
   import { EmptyState, ErrorState, LoadingState } from '$lib/components/patterns/screen';
   import { createProximityHover, proximityItem, type ProximityHover } from '$lib/interaction';
   import { cn } from '$lib/utils';
+  import { slide } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import { untrack, type Snippet } from 'svelte';
   import type { Action } from 'svelte/action';
@@ -17,6 +18,8 @@
     getText?: (item: T, index: number) => string;
     selectable?: SelectionMode;
     selectedKeys?: ListKey[];
+    /** Use indicator when each row supplies a visible selection control. */
+    selectionAppearance?: 'surface' | 'indicator';
     onSelectedKeysChange?: (keys: ListKey[]) => void;
     onActivate?: (item: T, index: number) => void;
     status?: 'ready' | 'loading' | 'error';
@@ -24,6 +27,7 @@
     loading?: Snippet;
     error?: Snippet;
     virtualize?: boolean | 'auto';
+    animateRows?: boolean;
     rowHeight?: number;
     overscan?: number;
     stateDensity?: StateDensity;
@@ -38,6 +42,7 @@
     getText = (item, index) => String(getKey(item, index)),
     selectable = false,
     selectedKeys = $bindable([]),
+    selectionAppearance = 'surface',
     onSelectedKeysChange,
     onActivate,
     status = 'ready',
@@ -45,6 +50,7 @@
     loading,
     error,
     virtualize = 'auto',
+    animateRows = false,
     rowHeight = LIST_STATE_GEOMETRY.default.rowHeight,
     overscan = 4,
     stateDensity = 'compact',
@@ -76,6 +82,9 @@
   const visibleRows = $derived(
     items.slice(startIndex, endIndex).map((item, offset) => ({ item, index: startIndex + offset })),
   );
+  function rowTransition(node: Element) {
+    return animateRows && !isVirtualized ? slide(node, { tier: 'fast' }) : { duration: 0 };
+  }
   const selectedSet = $derived(new Set(selectedKeys));
   const selectedIndexes = $derived(
     items.flatMap((item, index) => (selectedSet.has(getKey(item, index)) ? [index] : [])),
@@ -274,13 +283,18 @@
       class="relative min-w-0"
       style:height={isVirtualized ? `${items.length * rowHeight}px` : undefined}
     >
-      {#if hover}<ProximityHighlight store={hover} {selectedIndexes} />{/if}
+      {#if hover}<ProximityHighlight
+          store={hover}
+          selectedIndexes={selectionAppearance === 'surface' ? selectedIndexes : []}
+        />{/if}
       <div style:transform={isVirtualized ? `translateY(${startIndex * rowHeight}px)` : undefined}>
         {#each visibleRows as { item, index } (getKey(item, index))}
           {@const key = getKey(item, index)}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex (listbox uses roving option focus; role is selected at runtime) -->
           <div
+            transition:rowTransition
             data-slot="list-view-item"
+            class:cursor-pointer={!!selectable || !!onActivate}
             data-list-index={index}
             data-highlighted={hover?.activeIndex === index || undefined}
             class="group/collection-row relative z-10 min-w-0 rounded-(--radius-row) focus-visible:-outline-offset-1 has-[>[data-inset=card]]:mx-2 [&>[data-inset=card]]:mx-0"

@@ -422,10 +422,25 @@ describe('Dropdown compatibility modes', () => {
     await fireEvent.mouseDown(option);
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
+    // Canonical Select puts aria-controls on the inner listbox, while its
+    // portalled surface also owns the border and padding around that listbox.
+    const surface = document.createElement('div');
+    surface.setAttribute('data-slot', 'select-content');
+    popup.replaceWith(surface);
+    surface.appendChild(popup);
+    await fireEvent.mouseDown(surface);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
     const unrelatedPopup = document.createElement('div');
     unrelatedPopup.setAttribute('role', 'listbox');
+    unrelatedPopup.setAttribute('data-slot', 'select-content');
     document.body.appendChild(unrelatedPopup);
     await fireEvent.mouseDown(unrelatedPopup);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.mouseDown(document.body);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -439,6 +454,43 @@ describe('Dropdown compatibility modes', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(trigger);
   });
+
+  it.each(['pointer', 'keyboard'])(
+    'opts into staying open after %s selection',
+    async (interaction) => {
+      const onchange = vi.fn();
+      const onopenchange = vi.fn();
+      render(Dropdown, {
+        props: {
+          options: [
+            { value: 'a', label: 'Alpha' },
+            { value: 'b', label: 'Beta' },
+          ],
+          closeOnSelect: false,
+          onchange,
+          onopenchange,
+        },
+      });
+      const trigger = screen.getByRole('button');
+      await fireEvent.click(trigger);
+      const search = screen.getByRole('searchbox');
+      if (interaction === 'pointer')
+        await fireEvent.click(screen.getByRole('option', { name: 'Beta' }));
+      else {
+        await fireEvent.input(search, { target: { value: 'Beta' } });
+        await fireEvent.keyDown(search, { key: 'Enter' });
+      }
+      expect(onchange).toHaveBeenCalledWith(
+        'b',
+        interaction === 'pointer' ? expect.any(MouseEvent) : undefined,
+      );
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(onopenchange.mock.calls).toEqual([[true]]);
+      await fireEvent.keyDown(search, { key: 'Escape' });
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
 
   it('preserves searchable keyboard selection and open-state callbacks', async () => {
     const onchange = vi.fn();
@@ -636,6 +688,109 @@ describe('Dropdown compatibility modes', () => {
   });
 });
 
+// Regression for intent-hq/intent#5601: the submenu flyout is portaled outside the
+// dropdown content, so a real pointer's `mousedown` on a leaf closed the dropdown
+// before the `click` could select it.
+describe('Dropdown portaled submenu ownership', () => {
+  beforeEach(setupDropdownEnv);
+  afterEach(cleanupDropdownEnv);
+
+  function submenuOptions(childAction: () => void, submenuValue = 'more') {
+    return [
+      { value: 'a', label: 'Alpha' },
+      {
+        value: submenuValue,
+        label: 'More',
+        type: 'submenu' as const,
+        children: [{ value: 'child', label: 'Child action', onclick: childAction }],
+      },
+    ];
+  }
+
+  async function openWithSubmenu(container: HTMLElement) {
+    await fireEvent.click(container.querySelector('button')!);
+    await fireEvent.mouseOver(screen.getByRole('option', { name: 'More' }));
+    return screen.findByRole('menuitem', { name: 'Child action' });
+  }
+
+  it('selects a portaled submenu leaf on mousedown followed by click', async () => {
+    const childAction = vi.fn();
+    const onopenchange = vi.fn();
+    const { container } = render(Dropdown, {
+      props: {
+        searchable: false,
+        portal: true,
+        onopenchange,
+        options: submenuOptions(childAction),
+      },
+    });
+    const leaf = await openWithSubmenu(container);
+
+    await fireEvent.mouseDown(leaf);
+    await fireEvent.click(leaf);
+
+    expect(childAction).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(onopenchange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('owns the submenu when the trigger value contains whitespace', async () => {
+    const childAction = vi.fn();
+    const { container } = render(Dropdown, {
+      props: {
+        searchable: false,
+        portal: true,
+        options: submenuOptions(childAction, 'more actions'),
+      },
+    });
+    const leaf = await openWithSubmenu(container);
+
+    await fireEvent.mouseDown(leaf);
+    await fireEvent.click(leaf);
+
+    expect(childAction).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  });
+
+  it('does not treat another dropdown’s open submenu as its own popup', async () => {
+    const first = render(Dropdown, {
+      props: { searchable: false, portal: true, options: submenuOptions(vi.fn()) },
+    });
+    const second = render(Dropdown, {
+      props: { searchable: false, portal: true, options: submenuOptions(vi.fn()) },
+    });
+    await fireEvent.click(first.container.querySelector('button')!);
+    const firstListbox = screen.getByRole('listbox');
+    await fireEvent.click(second.container.querySelector('button')!);
+    const secondListbox = screen.getAllByRole('listbox').find((el) => el !== firstListbox)!;
+    expect(secondListbox).toBeTruthy();
+    const secondMore = screen
+      .getAllByRole('option', { name: 'More' })
+      .find((el) => secondListbox.contains(el))!;
+    await fireEvent.mouseOver(secondMore);
+    const leaf = await screen.findByRole('menuitem', { name: 'Child action' });
+
+    await fireEvent.mouseDown(leaf);
+
+    await waitFor(() => expect(document.body.contains(firstListbox)).toBe(false));
+    expect(document.body.contains(secondListbox)).toBe(true);
+  });
+
+  it('still dismisses on a plain outside mousedown while the submenu is open', async () => {
+    const childAction = vi.fn();
+    const { container } = render(Dropdown, {
+      props: { searchable: false, portal: true, options: submenuOptions(childAction) },
+    });
+    await openWithSubmenu(container);
+
+    await fireEvent.mouseDown(document.body);
+
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(childAction).not.toHaveBeenCalled();
+  });
+});
+
 describe('Dropdown caller migration ledger', () => {
   it('classifies every authoritative caller by its actual behavior', () => {
     const inventoryEntry = buildUiComponentInventory().components.find(
@@ -647,7 +802,7 @@ describe('Dropdown caller migration ledger', () => {
     );
     expect(dropdownCallerLedger.map(({ caller }) => caller).sort()).toEqual(inventoryCallers);
     expect([...new Set(dropdownCallerLedger.map(({ replacement }) => replacement))].sort()).toEqual(
-      ['Combobox', 'Select'],
+      ['Combobox'],
     );
     expect(dropdownCallerLedger).toEqual([
       {
@@ -679,11 +834,6 @@ describe('Dropdown caller migration ledger', () => {
         caller: 'src/lib/components/chat/input/model-picker-utils.ts',
         replacement: 'Combobox',
         reason: 'searchable option model for ModelPicker',
-      },
-      {
-        caller: 'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
-        replacement: 'Select',
-        reason: 'non-searchable single-value selection',
       },
     ]);
   });

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   logs: [] as string[],
   challenge: vi.fn(),
   prove: vi.fn(),
-  /** The guest's OWN daemon (`github.getUser`, `github.identityProof.*`, `github.connect`). */
+  /** The guest's OWN legacy daemon (`github.getUser`, `github.identityProof.*`). */
   local: vi.fn(),
   add: vi.fn(),
   open: vi.fn(),
@@ -46,12 +46,27 @@ vi.mock('electron', () => ({
   dialog: { showMessageBox: mocks.dialog },
 }));
 vi.mock('../../../../main/state', () => ({ getMainWindow: () => null }));
+// Controlled enabled-policy/local-lease fixture exercises the native dialog/log boundary.
+// Real parentless launch is fail-closed and covered by invite-attempt.test.ts; this is not native acceptance.
+vi.mock('../invite-attempt', () => ({
+  captureInviteAttempt: () => ({
+    id: 'security-fixture',
+    metadataRevision: 0,
+    parent: null,
+    current: () => true,
+    allowed: () => true,
+    release: () => {},
+    cancelled: new Promise(() => {}),
+    local: { supported: false, current: () => true, request: mocks.local },
+  }),
+}));
 vi.mock('../../../protocol/main/protocol-adapter', () => ({ protocolAdapter: {} }));
 vi.mock('../../../backend/main/guest-sessions-store', () => ({
   add: mocks.add,
   // First join on this machine: no stored session, so the returning-guest
   // shortcut is skipped and the identity proof under review runs.
   findMatching: vi.fn(async () => null),
+  findAllMatching: vi.fn(async () => []),
   getDecryptedToken: vi.fn(async () => null),
   GuestStoreCorruptError: class extends Error {},
   GuestEncryptionUnavailableError: class extends Error {},
@@ -59,15 +74,18 @@ vi.mock('../../../backend/main/guest-sessions-store', () => ({
 vi.mock('../../../backend/main/backend.ipc', () => ({
   openBackendWindow: mocks.open,
   getBackendClient: () => ({ request: mocks.local }),
+  captureLocalIdentityConnection: () => ({ supported: false }),
+  // A local sidecar that serves the identity seam, so the GitLab probe runs
+  // when GitHub is not connected (the review covers the GitHub proof path).
+  getConnectedDaemonProtocolVersion: () => '10.8', // protocol-version-ok: fixture hello
   onBackendNotification: () => () => {},
 }));
 vi.mock('../../../backend/main/backend-connection', () => ({
   PinMismatchError: class extends Error {},
   normalizeFingerprint: (fp: string) => fp,
 }));
-vi.mock('../../../backend/main/invite-connection', () => ({
-  InviteRpcError: class extends Error {},
-  InviteTransportError: class extends Error {},
+vi.mock('../../../backend/main/invite-connection', async () => ({
+  ...(await vi.importActual('../../../backend/main/invite-connection')),
   openInviteConnection: vi.fn(async () => ({
     host: '127.0.0.1',
     via: 'direct',
@@ -118,6 +136,7 @@ beforeEach(() => {
     }
   });
   mocks.prove.mockResolvedValue({
+    status: 'authorized',
     token,
     principalId: 'review',
     login: 'review',
@@ -194,35 +213,30 @@ describe('review: secret boundary', () => {
     expect(allLogs).not.toContain(token);
   });
 
-  it('aborts before storing or opening when the OS refuses to launch the sign-in URL', async () => {
-    // Not signed in: the guest's own device flow runs, and its browser
-    // launch fails — the proof cannot have been made yet.
+  it('requires an upgrade without repository sign-in when legacy credentials are missing', async () => {
     mocks.local.mockImplementation(async (method: string) => {
       switch (method) {
         case 'github.getUser':
           return { user: null };
-        case 'github.connect':
-          return {
-            userCode: 'ABCD-1234',
-            verificationUri: 'https://github.com/login/device',
-            expiresIn: 60,
-            interval: 5,
-          };
-        case 'github.cancelAuth':
-          return { ok: true, cancelled: true };
+        case 'sourceControl.authStatus':
+          return { isConfigured: false };
         default:
-          throw new Error(`unexpected local method ${method}`);
+          throw new Error(`unexpected local method ${method}: ${token}`);
       }
     });
-    vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error(`launch refused for ${token}`));
     await handleInviteDeepLink(link);
     expect(mocks.challenge).toHaveBeenCalledOnce();
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    expect(mocks.local.mock.calls.some(([method]) => /connect|cancelAuth/.test(method))).toBe(
+      false,
+    );
     expect(mocks.prove).not.toHaveBeenCalled();
     expect(mocks.add).not.toHaveBeenCalled();
     expect(mocks.open).not.toHaveBeenCalled();
     expect(mocks.dialog.mock.calls.at(-1)?.[0]).toMatchObject({ type: 'error' });
     const allLogs = mocks.logs.join('\n');
-    expect(allLogs).toContain('verification-launch-failed');
+    expect(allLogs).toContain('collaboration-upgrade-required');
+    expect(allLogs).not.toContain(secret);
     expect(allLogs).not.toContain(token);
   });
 });

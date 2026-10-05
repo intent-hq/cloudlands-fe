@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspacePermissionContext } from '$store/renderer/slices/workspace/workspace-selectors';
   import { fly } from '$lib/motion';
   import { onMount, onDestroy } from 'svelte';
   import { selectPermissionOption } from '$store/renderer/slices/permission/permission-slice';
@@ -52,7 +53,12 @@
   }
 
   function handleSelectOption(optionId: string) {
-    if (isProcessing) return;
+    if (
+      isProcessing ||
+      !request.workspaceId ||
+      !selectWorkspacePermissionContext.select(appStore.state, request.workspaceId)
+    )
+      return;
     isProcessing = true;
     appStore.dispatch(selectPermissionOption(request.requestId, optionId));
     isProcessing = false;
@@ -98,10 +104,12 @@
 >
   <!-- Header with friendly question -->
   <div class="flex items-center justify-between px-4 py-3 bg-muted/30 border-b border-border">
-    <div class="flex items-center gap-3">
-      <div class={`p-1.5 rounded-md border ${getCategoryColor(display.category)}`}>
-        <Fa icon={faShieldHalved} class="h-3.5 w-3.5" />
-      </div>
+    <div class="flex items-start gap-3">
+      <span class="first-line-icon type-body">
+        <span class={`p-1.5 rounded-md border ${getCategoryColor(display.category)}`}>
+          <Fa icon={faShieldHalved} class="h-3.5 w-3.5" />
+        </span>
+      </span>
       <div>
         <div class="type-body font-medium text-foreground">{display.question}</div>
         {#if request.agentName}

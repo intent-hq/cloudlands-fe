@@ -46,6 +46,7 @@
   let backendResumeError = $state<string | null>(null);
   let availableAgents = $state<Array<{ id: string; name: string; status: string }>>([]);
   let selectedAgentId = $state<string>('');
+  let agentsLoaded = $state(false);
 
   // Trigger label for the agent picker select
   const selectedAgentLabel = $derived.by(() => {
@@ -231,11 +232,13 @@
 
   // Load available agents from the unified state store
   function loadAvailableAgents() {
+    agentsLoaded = true;
     const workspace = routeWorkspaceId
       ? selectWorkspaceById.select(appStore.state, routeWorkspaceId)
       : undefined;
     if (!workspace?.id) {
       availableAgents = [];
+      selectedAgentId = '';
       return;
     }
 
@@ -247,9 +250,9 @@
       status: s.status || 'unknown',
     }));
 
-    // Auto-select first agent if none selected
-    if (availableAgents.length > 0 && !selectedAgentId) {
-      selectedAgentId = availableAgents[0].id;
+    // Keep an existing selection only while that agent still exists.
+    if (!availableAgents.some((agent) => agent.id === selectedAgentId)) {
+      selectedAgentId = availableAgents[0]?.id ?? '';
     }
 
     logger.info('[Debug] Loaded agents for backend resume test', {
@@ -533,7 +536,10 @@
 
             {#if availableAgents.length > 0}
               <Select.Root bind:value={selectedAgentId}>
-                <Select.Trigger class="w-full h-8 px-2 text-sm py-1!">
+                <Select.Trigger
+                  class="w-full h-8 px-2 text-sm py-1!"
+                  aria-label={m.debug_resumeAgent_ariaLabel()}
+                >
                   <span class="truncate">{selectedAgentLabel}</span>
                 </Select.Trigger>
                 <Select.Content portal class="max-h-[300px]">
@@ -561,9 +567,11 @@
                 {/if}
               </Button>
             {:else}
-              <p class="text-xs text-subtle italic">
+              <p class="text-xs text-subtle italic" role="status">
                 <!-- i18n-ignore (dev-only debug UI) -->
-                Click "Load Agents" to see available agents
+                {agentsLoaded
+                  ? m.debug_resumeAgent_empty()
+                  : 'Click "Load Agents" to see available agents'}
               </p>
             {/if}
 

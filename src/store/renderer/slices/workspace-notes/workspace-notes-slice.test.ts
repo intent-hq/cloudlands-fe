@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ContentType, NoteVisibility, type Note } from '$shared/types';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   applyNoteCreated,
   applyNoteDeleted,

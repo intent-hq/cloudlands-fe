@@ -96,3 +96,47 @@ describe('buildGroupedModelOptions default pseudo-row filtering', () => {
     expect(groups[0]?.options.map(({ value }) => value)).toEqual(['auggie:default']);
   });
 });
+
+describe('buildGroupedModelOptions disabled effective provider (intent#5737)', () => {
+  const auggieModels = [{ value: 'sonnet4.6', label: 'Sonnet 4.6' }];
+  const disabledEffectiveParams = {
+    ...baseParams,
+    effectiveProviderId: 'auggie',
+    availableModels: auggieModels,
+    availableModelsProviderId: 'auggie',
+    enabledProviderIds: ['codex'],
+    allProviderModels: { codex: [{ value: 'gpt-5.4', label: 'GPT 5.4' }] },
+  };
+
+  it('keeps the unavailable effective provider group when it is not disabled in settings', () => {
+    const groups = buildGroupedModelOptions(disabledEffectiveParams);
+
+    expect(groups.map(({ key }) => key)).toEqual(['auggie', 'codex']);
+    expect(groups[0]?.options.map(({ value }) => value)).toEqual(['sonnet4.6']);
+  });
+
+  it('drops the effective provider group when it was disabled in settings', () => {
+    const groups = buildGroupedModelOptions({
+      ...disabledEffectiveParams,
+      effectiveProviderDisabled: true,
+    });
+
+    expect(groups.map(({ key }) => key)).toEqual(['codex']);
+  });
+
+  it('drops the disabled effective provider even while the enabled set still names it', () => {
+    // The enabled set also carries the active provider, which can still be the
+    // disabled one until the daemon re-derives the default.
+    const groups = buildGroupedModelOptions({
+      ...disabledEffectiveParams,
+      enabledProviderIds: ['auggie', 'codex'],
+      allProviderModels: {
+        auggie: auggieModels,
+        codex: [{ value: 'gpt-5.4', label: 'GPT 5.4' }],
+      },
+      effectiveProviderDisabled: true,
+    });
+
+    expect(groups.map(({ key }) => key)).toEqual(['codex']);
+  });
+});

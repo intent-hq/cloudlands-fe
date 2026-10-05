@@ -8,8 +8,8 @@ import { findInstructionThemisPinViolations } from './check-instruction-themis-p
 const instructionFile = (path: string, lines: string[]) => ({ path, content: lines.join('\n') });
 
 const scriptPath = join(process.cwd(), 'scripts/check-instruction-themis-pins.mjs');
-const STALE_PIN = '`@augmentcode/themis@0.1.1` is the canonical Store implementation.\n';
-const CLEAN = 'Use the `@augmentcode/themis` version declared in `package.json`.\n';
+const STALE_PIN = '`@themislib/themis@0.1.1` is the canonical Store implementation.\n';
+const CLEAN = 'Use the `@themislib/themis` version declared in `package.json`.\n';
 
 function git(cwd: string, args: string[], input?: string) {
   return execFileSync('git', args, {
@@ -77,11 +77,11 @@ describe('instruction Themis pin guard', () => {
       instructionFile('src/store/renderer/AGENTS.md', [
         '# Redux Store — Agent Directives',
         '',
-        '> The `@augmentcode/themis` version declared in `package.json` is the canonical',
+        '> The `@themislib/themis` version declared in `package.json` is the canonical',
         '> Store implementation.',
         '',
-        '- Import helpers from `@augmentcode/themis/utils/collections/collection-utils`.',
-        "import { createAction } from '@augmentcode/themis/utils/store/create-action';",
+        '- Import helpers from `@themislib/themis/utils/collections/collection-utils`.',
+        "import { createAction } from '@themislib/themis/utils/store/create-action';",
       ]),
     ];
     expect(findInstructionThemisPinViolations(files)).toEqual([]);
@@ -92,30 +92,30 @@ describe('instruction Themis pin guard', () => {
       instructionFile('src/store/renderer/AGENTS.md', [
         '# Redux Store — Agent Directives',
         '',
-        '> `@augmentcode/themis@0.1.1` is the canonical Store implementation.',
+        '> `@themislib/themis@0.1.1` is the canonical Store implementation.',
       ]),
     ];
     expect(findInstructionThemisPinViolations(files)).toEqual([
-      { path: 'src/store/renderer/AGENTS.md', line: 3, match: '@augmentcode/themis@0.1.1' },
+      { path: 'src/store/renderer/AGENTS.md', line: 3, match: '@themislib/themis@0.1.1' },
     ]);
   });
 
   it('flags a pin even when it matches the installed version', () => {
-    const files = [instructionFile('AGENTS.md', ['Use `@augmentcode/themis@0.2.5` everywhere.'])];
+    const files = [instructionFile('AGENTS.md', ['Use `@themislib/themis@0.2.5` everywhere.'])];
     expect(findInstructionThemisPinViolations(files)).toHaveLength(1);
     expect(findInstructionThemisPinViolations(files)[0]).toMatchObject({
       line: 1,
-      match: '@augmentcode/themis@0.2.5',
+      match: '@themislib/themis@0.2.5',
     });
   });
 
   it.each([
-    ['a bare package reference', 'The `@augmentcode/themis` package owns the Store.'],
+    ['a bare package reference', 'The `@themislib/themis` package owns the Store.'],
     [
       'a subpath import',
-      "import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';",
+      "import { getItem } from '@themislib/themis/utils/collections/collection-utils';",
     ],
-    ['a subpath reference in prose', 'Reference: `@augmentcode/themis/utils/store/create-action`.'],
+    ['a subpath reference in prose', 'Reference: `@themislib/themis/utils/store/create-action`.'],
   ])('does not flag %s', (_name, line) => {
     expect(
       findInstructionThemisPinViolations([instructionFile('src/features/AGENTS.md', [line])]),
@@ -124,9 +124,9 @@ describe('instruction Themis pin guard', () => {
 
   it('ignores files that are not AGENTS.md', () => {
     const files = [
-      instructionFile('CHANGELOG.md', ['- bump to `@augmentcode/themis@0.2.5`']),
-      instructionFile('package.json', ['"@augmentcode/themis@0.2.5"']),
-      instructionFile('src/store/renderer/docs/AGENTS.md.bak', ['`@augmentcode/themis@0.1.1`']),
+      instructionFile('CHANGELOG.md', ['- bump to `@themislib/themis@0.2.5`']),
+      instructionFile('package.json', ['"@themislib/themis@0.2.5"']),
+      instructionFile('src/store/renderer/docs/AGENTS.md.bak', ['`@themislib/themis@0.1.1`']),
     ];
     expect(findInstructionThemisPinViolations(files)).toEqual([]);
   });
@@ -135,16 +135,16 @@ describe('instruction Themis pin guard', () => {
     const files = [
       instructionFile('AGENTS.md', [
         'ok',
-        '`@augmentcode/themis@0.1.1`',
+        '`@themislib/themis@0.1.1`',
         'ok',
-        '`@augmentcode/themis@next`',
+        '`@themislib/themis@next`',
       ]),
-      instructionFile('src/AGENTS.md', ['`@augmentcode/themis@^0.2.0`']),
+      instructionFile('src/AGENTS.md', ['`@themislib/themis@^0.2.0`']),
     ];
     expect(findInstructionThemisPinViolations(files)).toEqual([
-      { path: 'AGENTS.md', line: 2, match: '@augmentcode/themis@0.1.1' },
-      { path: 'AGENTS.md', line: 4, match: '@augmentcode/themis@next' },
-      { path: 'src/AGENTS.md', line: 1, match: '@augmentcode/themis@^0.2.0' },
+      { path: 'AGENTS.md', line: 2, match: '@themislib/themis@0.1.1' },
+      { path: 'AGENTS.md', line: 4, match: '@themislib/themis@next' },
+      { path: 'src/AGENTS.md', line: 1, match: '@themislib/themis@^0.2.0' },
     ]);
   });
 });
@@ -159,8 +159,8 @@ describe('instruction Themis pin guard CLI traversal', () => {
       git(dir, ['add', 'src/store/AGENTS.md']);
       const result = runGate(dir);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toContain('src/store/AGENTS.md:1: @augmentcode/themis@0.1.1');
-      expect(result.output).toContain('src/features/AGENTS.md:1: @augmentcode/themis@0.1.1');
+      expect(result.output).toContain('src/store/AGENTS.md:1: @themislib/themis@0.1.1');
+      expect(result.output).toContain('src/features/AGENTS.md:1: @themislib/themis@0.1.1');
     });
   });
 
@@ -242,9 +242,7 @@ describe('instruction Themis pin guard CLI traversal', () => {
       (dir) => {
         const result = runGate(dir);
         expect(result.exitCode).toBe(1);
-        expect(result.output).toContain(
-          'src/store/renderer/AGENTS.md:1: @augmentcode/themis@0.1.1',
-        );
+        expect(result.output).toContain('src/store/renderer/AGENTS.md:1: @themislib/themis@0.1.1');
       },
     );
   });
@@ -255,7 +253,7 @@ describe('instruction Themis pin guard CLI traversal', () => {
       (dir) => {
         const result = runGate(dir);
         expect(result.exitCode).toBe(1);
-        expect(result.output).toContain('src/AGENTS.md:1: @augmentcode/themis@0.1.1');
+        expect(result.output).toContain('src/AGENTS.md:1: @themislib/themis@0.1.1');
         expect(result.output).not.toContain('node_modules');
       },
       { init: false },

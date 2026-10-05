@@ -12,7 +12,9 @@
   import { writable } from 'svelte/store';
   import EmbeddedBrowser from '$lib/components/browser/EmbeddedBrowser.svelte';
   import BrowserViewerTab from '$lib/components/browser/BrowserViewerTab.svelte';
-  import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
+  import * as Menu from '$lib/components/ui/menu';
+  import { faRobot } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
@@ -69,7 +71,7 @@
     appStore.dispatch(
       openAgentTabRequested(workspaceId, {
         agentId: tab.ownerAgentId,
-        sourcePanelId: findSourcePanelId(event.target),
+        sourcePanelId: findSourcePanelId(viewportActionNode ?? event.target),
         openInAdjacentPanel: isCmdClickModifier({ event }),
       }),
     );
@@ -77,7 +79,7 @@
   const headerContext = getPanelHeaderContext();
   $effect(() => {
     if (!headerContext || !isActive || !tab.ownerAgentId) return;
-    return headerContext.registerActions({ primary: connectedAgent });
+    return headerContext.registerActions({ actions: connectedAgent });
   });
   let viewportActionNode: HTMLDivElement | null = $state(null);
 
@@ -91,34 +93,29 @@
   );
   const hostClientIdStore = writable(untrack(() => tab.hostClientId ?? ''));
   $effect(() => hostClientIdStore.set(tab.hostClientId ?? ''));
-  const tabHost$ = selectBrowserTabHost(hostClientIdStore);
+  const tabHost$ = selectBrowserTabHost(hostClientIdStore, workspaceIdStore);
 </script>
 
 {#snippet connectedAgent()}
   {#if tab.ownerAgentId}
-    {#key tab.ownerAgentId}
-      <span data-browser-owner-chip={tab.ownerAgentId} class="flex shrink-0 items-center">
-        <InlineAgentAvatar
-          agentId={tab.ownerAgentId}
-          agentName={ownerAgentName}
-          onclick={openOwnerAgent}
-        />
-      </span>
-    {/key}
+    <Menu.CommandItem
+      icon={faRobot}
+      label={m.browser_embedded_ownerChip_ariaLabel({ name: ownerAgentName ?? tab.ownerAgentId })}
+      onclick={openOwnerAgent}
+      data-browser-owner-chip={tab.ownerAgentId}
+    />
   {/if}
 {/snippet}
 
 {#if !isHostedHere}
-  <div class="h-full" data-browser-tab-mirror={tab.hostClientId}>
+  <div bind:this={viewportActionNode} class="h-full" data-browser-tab-mirror={tab.hostClientId}>
     <BrowserViewerTab
       url={browserUrl}
       title={tab.title}
       host={$tabHost$}
       {isActive}
       onNavigate={(newUrl: string) => {
-        const action = navigateBrowserTabRequested(tab.id, newUrl);
-        appStore.dispatch(action);
-        return action.promise;
+        return appStore.dispatch(navigateBrowserTabRequested(tab.id, newUrl));
       }}
       onClose={({ force }) => {
         appStore.dispatch(closeBrowserTabRequested(tab.id, force));
@@ -149,9 +146,15 @@
           new CustomEvent(BROWSER_VIEWPORT_CHANGE_EVENT, { detail: viewport }),
         );
       }}
-      onNavigate={(newUrl: string) => {
-        // Update the tab's browserUrl so it stays in sync with actual location
-        appStore.dispatch(updateTabBrowserUrl(panelLayoutId, tab.id, newUrl));
+      onNavigate={(newUrl: string, requestedUrl?: string) => {
+        // Update the tab's browserUrl so it stays in sync with actual location.
+        // An address-bar alias resolution names its pre-rewrite URL so the tab
+        // restores by re-resolving it; other navigations keep the auto mode.
+        appStore.dispatch(
+          requestedUrl === undefined
+            ? updateTabBrowserUrl(panelLayoutId, tab.id, newUrl)
+            : updateTabBrowserUrl(panelLayoutId, tab.id, newUrl, requestedUrl),
+        );
         // Update context store item if this tab is linked to one
         if (tab.contextItemId) {
           appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { url: newUrl }));

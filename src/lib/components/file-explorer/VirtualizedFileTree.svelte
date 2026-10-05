@@ -24,15 +24,16 @@
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
-  import { invoke } from '$lib/electron-bridge';
-  import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
-  import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import {
-    getPanelLayoutManager,
-    hasPanelLayoutManager,
-  } from '$features/layout/panel-layout-adapter';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
+  import { invoke } from '$lib/electron-bridge';
+  import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
+  import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
+  import { pathsMatch as filePathsMatch, stripWorkspacePrefix } from '$lib/utils/file-utils';
+  import { deleteFileWithUndoRequested } from '$store/renderer/slices/files/files-slice';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -438,6 +439,11 @@
     // Don't handle if we're editing or creating
     if (editingPath || creatingInDir) return;
 
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      handleContextMenu(e, focusedNode?.node ?? null);
+      return;
+    }
+
     const nodeCount = effectiveNodes.length;
     if (nodeCount === 0) return;
 
@@ -707,76 +713,90 @@
   }
 
   // Context menu state
-  let contextMenu: { x: number; y: number; node: FileNode | null } | null = $state(null);
+  let contextMenu:
+    | (SidebarContextPosition & { node: FileNode | null; workspaceId: string; rootPath: string })
+    | null = $state(null);
 
-  function handleContextMenu(e: MouseEvent, node: FileNode) {
-    e.preventDefault();
-    e.stopPropagation();
-    contextMenu = { x: e.clientX, y: e.clientY, node };
+  function handleContextMenu(e: MouseEvent | KeyboardEvent, node: FileNode | null) {
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
+    contextMenu = {
+      ...position,
+      returnFocus: treeContainer ?? null,
+      node,
+      workspaceId,
+      rootPath: $fileExplorerWorkspacePath,
+    };
   }
 
   function handleBackgroundContextMenu(e: MouseEvent) {
     // Only show if click target is the tree container or scroll area (not a file item)
-    e.preventDefault();
-    contextMenu = { x: e.clientX, y: e.clientY, node: null };
+    handleContextMenu(e, null);
   }
 
   function closeContextMenu() {
     contextMenu = null;
   }
 
-  // TODO(redux-remove): explorer file-tree CRUD (delete/read/write-for-undo here, plus
-  // create/rename) stays on the legacy absolute-path `file:*` IPC. The files AppClient
-  // seam is workspace-scoped + relative-path, so migrating these absolute-path,
-  // undo-aware operations is deferred to a dedicated explorer migration; out of scope.
-  async function handleDeleteFile(filePath: string) {
-    const fileName = filePath.split('/').pop() || m.fileExplorer_tree_file_fallback();
-    // Read file content before deleting so we can undo
-    let savedContent = '';
-    try {
-      const result = await invoke<{ content: string }>('file:read', { path: filePath });
-      savedContent = result?.content ?? '';
-    } catch {
-      // If we can't read the file, proceed with delete but undo won't restore content
-    }
-
-    await deleteWithUndo(
-      `"${fileName}"`,
-      async () => {
-        const result = await invoke<{ success: boolean; error?: string }>('file:delete', {
-          path: filePath,
-        });
-        if (!result?.success) {
-          throw new Error(result?.error || m.fileExplorer_tree_deleteFailed_error());
-        }
-        // Close related panel tabs after successful deletion
-        if (workspaceId && hasPanelLayoutManager(workspaceId)) {
-          const layoutManager = getPanelLayoutManager(workspaceId);
-          layoutManager.closeTabsByType('file', 'filePath', filePath);
-        }
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
-      },
-      async () => {
-        await invoke('file:write', {
-          path: filePath,
-          content: savedContent,
-          workspaceId,
-        });
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'create', filePath });
-      },
+  function isContextTargetCurrent(target: typeof contextMenu): boolean {
+    return (
+      !!target &&
+      target.workspaceId === workspaceId &&
+      target.rootPath === $fileExplorerWorkspacePath &&
+      (!target.node ||
+        flattenedNodes.some(
+          ({ node }) => node.path === target.node?.path && node.type === target.node?.type,
+        ))
     );
   }
 
-  // Save a copy of a file (or a zip of a folder) via the main process's native
-  // save dialog. Workspace-host-local only — the local main process reads the path.
+  $effect(() => {
+    if (contextMenu && !isContextTargetCurrent(contextMenu)) closeContextMenu();
+  });
+
+  function guardContextItems(items: SidebarMenuEntry[]): SidebarMenuEntry[] {
+    const target = contextMenu;
+    return items.map((item) =>
+      'onClick' in item
+        ? {
+            ...item,
+            onClick: () => {
+              if (contextMenu !== target || !isContextTargetCurrent(target)) return;
+              if (
+                (item.id === 'reveal' ||
+                  (item.id === 'download' && target?.node?.type !== 'file')) &&
+                !selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)
+              )
+                return;
+              item.onClick();
+            },
+          }
+        : item,
+    );
+  }
+
+  function handleDeleteFile(filePath: string) {
+    const rootPath = selectEffectiveFileExplorerWorkspacePath.select(appStore.state, workspaceId);
+    if (!workspaceId || !rootPath) return;
+    appStore.dispatch(
+      deleteFileWithUndoRequested(workspaceId, stripWorkspacePrefix(filePath, rootPath), {
+        absolutePath: filePath,
+      }),
+    );
+  }
+
+  // Files use workspace-aware transfers; folder ZIPs remain host-local.
   async function handleDownload(node: FileNode) {
     try {
-      const result = await invoke<{
-        success: boolean;
-        canceled?: boolean;
-        data?: { filePath: string };
-        error?: { code: string; message: string };
-      }>('file:download', { path: node.path });
+      const result =
+        node.type === 'file'
+          ? await downloadWorkspaceFile(workspaceId, node.path, $fileExplorerWorkspacePath)
+          : await invoke<{
+              success: boolean;
+              canceled?: boolean;
+              data?: { filePath: string };
+              error?: { code: string; message: string };
+            }>('file:download', { path: node.path });
       if (result?.success && result.data?.filePath) {
         notify.success(
           m.fileExplorer_tree_downloadSuccess_toast({ filePath: result.data.filePath }),
@@ -802,7 +822,7 @@
         },
       });
     }
-    return items;
+    return guardContextItems(items);
   }
 
   function getContextMenuItems(node: FileNode): SidebarMenuEntry[] {
@@ -870,10 +890,12 @@
     }
 
     if (node.type === 'file') {
+      items.push({ type: 'separator' });
       items.push({
         id: 'delete',
         label: m.fileExplorer_tree_delete_label(),
         icon: faTrash,
+        destructive: true,
         onClick: () => {
           handleDeleteFile(node.path);
           closeContextMenu();
@@ -881,12 +903,13 @@
       });
     }
 
-    // Add download and reveal-in-file-manager options — desktop actions on
-    // workspace file paths, only offered when the daemon runs on this machine
-    // (PROTOCOL §5.14 locality) AND the workspace checkout lives on the daemon
-    // host, i.e. not a remote (SSH) workspace (monorepo#2171).
-    if (selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)) {
-      items.push({ type: 'separator' });
+    const hostLocal = selectIsWorkspaceHostLocal.select(appStore.state, workspaceId);
+    const canDownload =
+      node.type === 'file'
+        ? !!workspaceId && !!workspaceRelativeFilePath(node.path, $fileExplorerWorkspacePath)
+        : hostLocal;
+    if (canDownload || hostLocal) items.push({ type: 'separator' });
+    if (canDownload) {
       items.push({
         id: 'download',
         label:
@@ -899,6 +922,9 @@
           void handleDownload(node);
         },
       });
+    }
+    // Reveal and folder ZIPs read host paths and require a local checkout.
+    if (hostLocal) {
       items.push({
         id: 'reveal',
         label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),
@@ -909,7 +935,7 @@
       });
     }
 
-    return items;
+    return guardContextItems(items);
   }
 
   // Start editing a file/folder name
@@ -1211,7 +1237,8 @@
                     bind:value={editingValue}
                     onblur={saveEdit}
                     onkeydown={handleEditKeydown}
-                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent type-body font-normal outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                    noFocusStyle
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent type-body font-normal outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                     onclick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -1321,9 +1348,11 @@
 
 {#if contextMenu}
   <SidebarContextMenu
-    x={contextMenu.x}
-    y={contextMenu.y}
-    items={contextMenu.node
+    x={contextMenu?.x ?? 0}
+    y={contextMenu?.y ?? 0}
+    ariaLabel={contextMenu?.node?.path || m.fileExplorer_tree_fileExplorer_ariaLabel()}
+    returnFocus={contextMenu?.returnFocus}
+    items={contextMenu?.node
       ? getContextMenuItems(contextMenu.node)
       : getBackgroundContextMenuItems()}
     onClickOutside={closeContextMenu}

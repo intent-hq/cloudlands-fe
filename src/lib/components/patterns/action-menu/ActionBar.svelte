@@ -1,4 +1,5 @@
 <script lang="ts">
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
@@ -23,9 +24,11 @@
   } = $props();
 
   const split = $derived(splitActions(actions, visibleCount));
-  const visibleActions = $derived(split.visible.filter((action) => !action.children?.length));
+  const visibleActions = $derived(
+    split.visible.filter((action) => action.kind !== 'label' && !action.children?.length),
+  );
   const overflowActions = $derived([
-    ...split.visible.filter((action) => action.children?.length),
+    ...split.visible.filter((action) => action.kind === 'label' || action.children?.length),
     ...split.overflow,
   ]);
 </script>
@@ -70,7 +73,7 @@
     <ActionMenu actions={overflowActions} {onAction} ariaLabel={overflowLabel} align="end">
       {#snippet trigger({ props })}
         <Button {...props} variant="ghost-light" size="icon-xs" iconOnly aria-label={overflowLabel}>
-          <span aria-hidden="true">•••</span>
+          <KebabIcon class="size-3.5" />
         </Button>
       {/snippet}
     </ActionMenu>

@@ -14,14 +14,23 @@
  *       Example: { "chunks": ["Thinking about", " your request...", " Done! TASK_COMPLETE"], "chunkDelayMs": 500 }
  *     - chunkDelayMs: milliseconds to wait between each chunk (default: 500). Only used with chunks.
  *     When chunks is set, it takes precedence over response.
+ *   MOCK_AGENT_BEHAVIOR_FILE - path of a JSON file holding the same payload, re-read on every
+ *     session/prompt. Takes precedence over MOCK_AGENT_BEHAVIOR when the file exists. The
+ *     daemon spawns this agent with the env it was itself started with, so a test can only
+ *     change behavior between turns through a file, not by editing the app's env.
  *   MOCK_AGENT_DELAY_MS - milliseconds to wait before streaming the response in session/prompt.
  *     Gives the app time to finish chat initialization. Default: 3000. Set to 0 for no delay.
  */
 import readline from 'node:readline';
+import { createMockChild } from './mock-workspace-mcp.js';
+import { respondToMockRequest } from './mock-acp-request.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 let workspacePath = null;
+let mcpServers = [];
+let delegated = false;
+let childFixture;
 const sessionId = 'mock-session-1';
 
 // --- JSON-RPC helpers ---
@@ -44,7 +53,19 @@ async function handleInitialize(id) {
   // Simulate realistic provider timing — give frontend time to set up panel layout
   await new Promise((resolve) => setTimeout(resolve, 2000));
   return jsonrpcResult(id, {
+    protocolVersion: 1,
+    agentCapabilities: {},
     agentInfo: { name: 'mock-e2e', version: '1.0.0' },
+  });
+}
+
+function agentMessageChunk(text) {
+  return jsonrpcNotification('session/update', {
+    sessionId,
+    update: {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text },
+    },
   });
 }
 
@@ -53,6 +74,7 @@ function handleAuthenticate(id) {
 }
 
 async function handleSessionNew(id, params) {
+  mcpServers = params?.mcpServers ?? [];
   // Capture workspace path from metadata or cwd fallback
   workspacePath =
     (params && params.metadata && params.metadata.workspacePath) || (params && params.cwd) || null;
@@ -69,13 +91,29 @@ function handleSessionLoad(id) {
   return jsonrpcError(id, -32601, 'Method not found: session/load');
 }
 
-async function handleSessionPrompt(id) {
-  const behaviorRaw = process.env.MOCK_AGENT_BEHAVIOR || '{}';
+async function handleSessionPrompt(id, params) {
+  let behaviorRaw = process.env.MOCK_AGENT_BEHAVIOR || '{}';
+  const behaviorFile = process.env.MOCK_AGENT_BEHAVIOR_FILE;
+  if (behaviorFile && fs.existsSync(behaviorFile)) {
+    behaviorRaw = fs.readFileSync(behaviorFile, 'utf8');
+  }
   let behavior;
   try {
     behavior = JSON.parse(behaviorRaw);
   } catch {
     behavior = { response: 'Mock agent received prompt.' };
+  }
+
+  const promptText = (params?.prompt ?? [])
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n');
+  if (childFixture === undefined) childFixture = promptText.includes('CHILD_REQUEST:');
+  if (behavior.child && childFixture) behavior = behavior.child;
+  // Delegate once through the authenticated parent context. No fabricated IDs or metadata linkage.
+  if (behavior.delegate && !delegated) {
+    delegated = true;
+    await createMockChild(mcpServers, behavior.delegate);
   }
 
   process.stderr.write(
@@ -110,14 +148,7 @@ async function handleSessionPrompt(id) {
       if (i > 0 && chunkDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, chunkDelayMs));
       }
-      const notification = jsonrpcNotification('session/update', {
-        sessionId,
-        sessionUpdate: {
-          type: 'agent_message_chunk',
-          content: { type: 'text', text: behavior.chunks[i] },
-        },
-      });
-      process.stdout.write(notification + '\n');
+      process.stdout.write(agentMessageChunk(behavior.chunks[i]) + '\n');
     }
   } else {
     // Single-response mode: split response text into fixed-size chunks (no delay)
@@ -125,29 +156,12 @@ async function handleSessionPrompt(id) {
     const chunkSize = behavior.chunkSize || 20;
 
     for (let i = 0; i < replyText.length; i += chunkSize) {
-      const chunk = replyText.slice(i, i + chunkSize);
-      const notification = jsonrpcNotification('session/update', {
-        sessionId,
-        sessionUpdate: {
-          type: 'agent_message_chunk',
-          content: { type: 'text', text: chunk },
-        },
-      });
-      process.stdout.write(notification + '\n');
+      process.stdout.write(agentMessageChunk(replyText.slice(i, i + chunkSize)) + '\n');
     }
   }
 
-  // 4. Send done notification
-  const doneNotification = jsonrpcNotification('session/update', {
-    sessionId,
-    sessionUpdate: {
-      type: 'done',
-      stopReason: 'end_turn',
-    },
-  });
-  process.stdout.write(doneNotification + '\n');
-
-  return jsonrpcResult(id, {});
+  // 4. End the turn — the prompt result carries the stop reason
+  return jsonrpcResult(id, { stopReason: 'end_turn' });
 }
 
 // --- Message dispatch ---
@@ -164,7 +178,7 @@ function handleMessage(msg) {
     case 'session/load':
       return handleSessionLoad(id);
     case 'session/prompt':
-      return handleSessionPrompt(id);
+      return handleSessionPrompt(id, params);
     case 'session/cancel':
       // Acknowledge silently — no response needed for notifications
       return null;
@@ -191,14 +205,12 @@ rl.on('line', async (line) => {
 
   pendingHandlers++;
   try {
-    const msg = JSON.parse(trimmed);
-    const response = await handleMessage(msg);
+    const response = await respondToMockRequest(trimmed, handleMessage, (error) =>
+      process.stderr.write(error),
+    );
     if (response) {
       process.stdout.write(response + '\n');
     }
-  } catch (err) {
-    // Invalid JSON — send parse error
-    process.stdout.write(jsonrpcError(null, -32700, 'Parse error: ' + err.message) + '\n');
   } finally {
     pendingHandlers--;
     exitIfDone();

@@ -46,6 +46,8 @@ test('scrolls many PRs and opens the keyboard-selected identity through the link
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
   await expect(menu.locator('[data-sidebar-pr-link]')).toHaveCount(12);
+  await expect(menu.getByRole('menuitem')).toHaveCount(12);
+  await expect(menu.locator('[data-sidebar-pr-link]').first()).toBeFocused();
   await page.keyboard.press('End');
   const last = menu.locator('[data-sidebar-pr-link]').last();
   await expect(last).toBeFocused();

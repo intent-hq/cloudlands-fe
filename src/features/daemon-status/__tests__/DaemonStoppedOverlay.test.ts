@@ -55,11 +55,11 @@ vi.mock('$store/renderer/store', async () => {
       listeners.forEach((listener) => listener());
       return action;
     },
-    createSelector<T>(select: (value: typeof state) => T) {
+    createSelector<T, A extends unknown[]>(select: (value: typeof state, ...args: A) => T) {
       return Object.assign(
-        () => ({
+        (...args: A) => ({
           subscribe(run: (value: T) => void) {
-            const update = () => run(select(state));
+            const update = () => run(select(state, ...args));
             update();
             listeners.add(update);
             return () => listeners.delete(update);
@@ -67,8 +67,8 @@ vi.mock('$store/renderer/store', async () => {
         }),
         {
           select,
-          effect: function* () {
-            return select(state);
+          effect: function* (...args: A) {
+            return select(state, ...args);
           },
         },
       );
@@ -85,7 +85,6 @@ import { store as appStore } from '$store/renderer/store';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import { daemonHealthSaga } from '$store/renderer/slices/daemon-health/sagas/daemon-health-saga';
@@ -94,12 +93,15 @@ import {
   certWarningsReceived,
   connectionsListReceived,
   connectOperationStarted,
-  openConnectionRequested,
+  connectionWorkflowRequested,
+  connectionWorkflowFinished,
 } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import {
   guestSessionsListReceived,
   leaveGuestSessionRequested,
+  leaveOperationStarted,
+  leaveOperationSettled,
 } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import { setZoomFactor } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -339,7 +341,7 @@ describe('DaemonStoppedOverlay', () => {
     // not the local data-dir caveat. The positive match is the only signal that
     // the external-note branch rendered (the negative alone also passes with no
     // note at all), so it stays despite being copy.
-    expect(overlay()!.textContent).toContain('instead of the remote server');
+    expect(overlay()!.textContent).toContain('workspaces and agents, not the remote server');
     expect(overlay()!.textContent).not.toContain('may use a different data directory');
   });
 
@@ -751,8 +753,8 @@ describe('DaemonStoppedOverlay', () => {
       await fireEvent.click(openButtons[0]);
       const dispatched = dispatchSpy.mock.calls
         .map(([action]) => action as { type: string; payload?: unknown[] })
-        .find((action) => action.type === openConnectionRequested.type);
-      expect(dispatched?.payload).toEqual(['remote-2']);
+        .find((action) => action.type === connectionWorkflowRequested.type);
+      expect(dispatched?.payload).toMatchObject({ intent: { kind: 'open', id: 'remote-2' } });
       // Open-only: the legacy retargeting action must never fire from the
       // overlay. Literal type string: the remove-switch change deleted the
       // action creator, and this negative assertion must survive that.
@@ -775,10 +777,13 @@ describe('DaemonStoppedOverlay', () => {
       const originalDispatch = appStore.dispatch.bind(appStore);
       const dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
         const result = originalDispatch(action);
-        if ((action as { type: string }).type === openConnectionRequested.type) {
-          (action as ReturnType<typeof openConnectionRequested>).success({
-            status: 'secret-unavailable',
-          });
+        if (action.type === connectionWorkflowRequested.type) {
+          const { consumerId, requestId } = (
+            action as ReturnType<typeof connectionWorkflowRequested>
+          ).payload;
+          originalDispatch(
+            connectionWorkflowFinished(consumerId, requestId, { kind: 'secretUnavailable' }),
+          );
         }
         return result;
       });
@@ -819,11 +824,11 @@ describe('DaemonStoppedOverlay', () => {
       const originalDispatch = appStore.dispatch.bind(appStore);
       const dispatchSpy = vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
         const result = originalDispatch(action);
-        if ((action as { type: string }).type === openConnectionRequested.type) {
-          (action as ReturnType<typeof openConnectionRequested>).success({
-            status: 'opened',
-            id: 'remote-2',
-          });
+        if (action.type === connectionWorkflowRequested.type) {
+          const { consumerId, requestId } = (
+            action as ReturnType<typeof connectionWorkflowRequested>
+          ).payload;
+          originalDispatch(connectionWorkflowFinished(consumerId, requestId, { kind: 'done' }));
         }
         return result;
       });
@@ -1180,9 +1185,11 @@ describe('DaemonStoppedOverlay', () => {
         .map(([action]) => action as ReturnType<typeof leaveGuestSessionRequested>)
         .find((action) => action.type === leaveGuestSessionRequested.type);
       expect(leave?.payload).toEqual([GUEST.id]);
+      dispatchAndFlush(leaveOperationStarted(GUEST.id));
       expect(screen.getByTestId('daemon-stopped-guest-leave').textContent).toContain('Leaving');
 
-      leave!.failure(new Error('ipc failed'));
+      dispatchAndFlush(leave!.failure(new Error('ipc failed')));
+      dispatchAndFlush(leaveOperationSettled(GUEST.id));
       await vi.waitFor(() => {
         expect(screen.getByTestId('daemon-stopped-guest-leave-error').textContent).toContain(
           'Clement’s Mac Studio',

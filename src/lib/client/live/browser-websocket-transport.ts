@@ -18,6 +18,7 @@
  * `window.electronAPI` is absent and the URL is configured. The WebSocket
  * constructor is injectable (`webSocketFactory`) so tests use a fake socket.
  */
+import { assertScopedFileReadSupport } from '$shared/root-file-read-support';
 import {
   BackendError,
   type BackendErrorPayload,
@@ -215,6 +216,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RECONNECT_MS = 1_000;
 const DEFAULT_MAX_RECONNECT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+// Match the desktop handshake bound; legacy/unresponsive daemons must not stall the app.
+const HELLO_HANDSHAKE_TIMEOUT_MS = 5_000;
 
 /**
  * `BackendTransport` speaking JSON-RPC 2.0 over a browser WebSocket. One JSON
@@ -222,6 +225,8 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
  * boundaries). Lifecycle mirrors the main-process `JsonRpcClient`: lazy
  * connect on first request, exponential-backoff reconnect, pending requests
  * failed fast on drop, `reconnected` fired after a prior connection or failed dial.
+ * Each socket completes a bounded client.hello before queued work/replay. If hello
+ * fails, unrelated RPCs remain usable but presence requires a confirmed handshake.
  */
 export class BrowserWebSocketTransport implements BackendTransport {
   private readonly url: string;
@@ -239,7 +244,19 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private currentReconnectDelay: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
-  private connectWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+  private connectWaiters: Array<{
+    resolve: (socket: BrowserWebSocketLike) => void;
+    reject: (e: Error) => void;
+  }> = [];
+  private clientId: string | undefined;
+  private helloConfirmed = false;
+  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
+  private capabilityHelloGeneration = 0;
+  private protocolVersion: unknown;
+  private helloError: Error = new BackendError({
+    code: 'UNAVAILABLE',
+    message: 'client.hello has not completed on this connection',
+  });
   private readonly pending = new Map<number, PendingRequest>();
   /** A successful connection or failed dial requires recovery on the next connect. */
   private hasBeenConnected = false;
@@ -265,11 +282,37 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return !this.disposed;
   }
 
+  async observeNodeCapabilities(): Promise<unknown> {
+    if (this.disposed)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
+    const socket = await this.ensureConnected();
+    if (this.disposed || !this.connected || this.socket !== socket)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
+    return { server: { capabilities: this.nodeCapabilities } };
+  }
+
   request<T = unknown>(
     method: string,
     params?: unknown,
     options?: BackendRequestOptions,
   ): Promise<T> {
+    return this.requestOnSocket(method, params, options);
+  }
+
+  private requestOnSocket<T = unknown>(
+    method: string,
+    params?: unknown,
+    options?: BackendRequestOptions,
+    handshakeSocket?: BrowserWebSocketLike,
+  ): Promise<T> {
+    if (options?.localMachine) {
+      return Promise.reject(
+        new BackendError({
+          code: 'UNAVAILABLE',
+          message: 'Local machine requests require the desktop bridge',
+        }),
+      );
+    }
     if (this.disposed) {
       return Promise.reject(
         new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' }),
@@ -299,30 +342,78 @@ export class BrowserWebSocketTransport implements BackendTransport {
       }, timeoutMs);
       // Register the pending entry and send synchronously once connected, so a
       // response arriving immediately after the frame is correlated correctly.
-      const send = () => {
+      const fail = (error: unknown) => {
+        clearTimeout(timeout);
+        reject(toTransportError(error));
+      };
+      const send = (socket: BrowserWebSocketLike) => {
         if (timedOut) return;
-        const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
+        if (this.disposed || this.socket !== socket) {
+          fail(new BackendError({ code: 'TRANSPORT_ERROR', message: 'Connection replaced' }));
+          return;
+        }
+        if (method === 'presence.update' && !this.helloConfirmed) {
+          fail(this.helloError);
+          return;
+        }
+        try {
+          assertScopedFileReadSupport(method, params, this.protocolVersion);
+        } catch (error) {
+          fail(error);
+          return;
+        }
+        // A capability probe must not replace the identity established at connect.
+        const wireParams =
+          method === 'client.hello' && this.clientId
+            ? { clientId: this.clientId, ...(params as Record<string, unknown>) }
+            : params;
+        const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params: wireParams });
+        const capabilityGeneration =
+          method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
+        if (method === 'client.hello') this.nodeCapabilities = null;
         this.pending.set(id, {
           method,
           timeout,
-          resolve: (result) => resolve(result as T),
+          resolve: (result) => {
+            if (method === 'client.hello' && this.socket === socket) {
+              const clientId = (result as { clientId?: unknown } | null)?.clientId;
+              if (typeof clientId === 'string') this.clientId = clientId;
+              if (
+                typeof clientId === 'string' &&
+                clientId &&
+                capabilityGeneration === this.capabilityHelloGeneration
+              ) {
+                const capabilities = (
+                  result as { server?: { capabilities?: Record<string, unknown> } }
+                ).server?.capabilities;
+                this.nodeCapabilities = Object.freeze({
+                  agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
+                  localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
+                  agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
+                });
+              }
+              this.helloConfirmed = true;
+              this.protocolVersion = (result as { protocolVersion?: unknown } | null)
+                ?.protocolVersion;
+            }
+            resolve(result as T);
+          },
           reject,
         });
         try {
-          this.socket?.send(payload);
+          socket.send(payload);
         } catch (error) {
           clearTimeout(timeout);
           this.pending.delete(id);
           reject(toTransportError(error));
         }
       };
-      if (this.connected) {
-        send();
+      if (handshakeSocket) {
+        send(handshakeSocket);
+      } else if (this.connected && this.socket) {
+        send(this.socket);
       } else {
-        this.ensureConnected().then(send, (error: unknown) => {
-          clearTimeout(timeout);
-          reject(toTransportError(error));
-        });
+        this.ensureConnected().then(send, fail);
       }
     });
   }
@@ -331,9 +422,12 @@ export class BrowserWebSocketTransport implements BackendTransport {
     return this.request<T>('events.subscribe', params);
   }
 
-  async unsubscribe(subscriptionId: string): Promise<void> {
+  async unsubscribe(subscriptionId: string, workspaceId?: string): Promise<void> {
     try {
-      await this.request('events.unsubscribe', { subscriptionId });
+      await this.request('events.unsubscribe', {
+        subscriptionId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+      });
     } catch {
       // Unsubscribe is best-effort; ignore transport errors on teardown.
     }
@@ -380,11 +474,11 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.statusHandlers.clear();
   }
 
-  private ensureConnected(): Promise<void> {
-    if (this.connected) return Promise.resolve();
-    this.start();
-    return new Promise<void>((resolve, reject) => {
+  private ensureConnected(): Promise<BrowserWebSocketLike> {
+    if (this.connected && this.socket) return Promise.resolve(this.socket);
+    return new Promise<BrowserWebSocketLike>((resolve, reject) => {
       this.connectWaiters.push({ resolve, reject });
+      this.start();
     });
   }
 
@@ -410,6 +504,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
       return;
     }
     this.socket = socket;
+    this.helloConfirmed = false;
     // Watchdog: if the handshake stalls with neither `open` nor `close`
     // firing, tear the attempt down and arm the reconnect path so the
     // transport recovers instead of staying stuck in `connecting`.
@@ -428,7 +523,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     // newer connection attempt.
     socket.onopen = () => {
       if (this.socket !== socket) return;
-      this.onConnected();
+      this.onConnected(socket);
     };
     socket.onmessage = (event) => {
       if (this.socket !== socket) return;
@@ -446,8 +541,25 @@ export class BrowserWebSocketTransport implements BackendTransport {
     };
   }
 
-  private onConnected(): void {
+  private onConnected(socket: BrowserWebSocketLike): void {
     this.clearConnectTimer();
+    void this.performHelloHandshake(socket);
+  }
+
+  private async performHelloHandshake(socket: BrowserWebSocketLike): Promise<void> {
+    try {
+      await this.requestOnSocket(
+        'client.hello',
+        {},
+        { timeoutMs: Math.min(this.requestTimeoutMs, HELLO_HANDSHAKE_TIMEOUT_MS) },
+        socket,
+      );
+    } catch (error) {
+      if (this.disposed || this.socket !== socket) return;
+      // Unrelated RPCs keep their legacy fallback; presence requires a confirmed hello.
+      this.helloError = toTransportError(error);
+    }
+    if (this.disposed || this.socket !== socket) return;
     this.connecting = false;
     this.connected = true;
     this.currentReconnectDelay = this.reconnectDelayMs;
@@ -455,7 +567,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.hasBeenConnected = true;
     this.hasConnectionFailed = false;
     this.notifyStatusChange();
-    this.flushWaiters();
+    this.flushWaiters(socket);
     // Fire AFTER waiters so queued sends and the resubscribe replay observe a
     // connected transport; see RESUB-1.
     if (wasReconnect) {
@@ -571,6 +683,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private teardownSocket(): void {
+    this.nodeCapabilities = null;
+    this.capabilityHelloGeneration += 1;
+    this.protocolVersion = undefined;
     if (!this.socket) return;
     const socket = this.socket;
     this.socket = null;
@@ -593,10 +708,10 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.pending.clear();
   }
 
-  private flushWaiters(): void {
+  private flushWaiters(socket: BrowserWebSocketLike): void {
     const waiters = this.connectWaiters;
     this.connectWaiters = [];
-    for (const waiter of waiters) waiter.resolve();
+    for (const waiter of waiters) waiter.resolve(socket);
   }
 
   private failWaiters(error: Error): void {

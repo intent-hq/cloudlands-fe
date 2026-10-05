@@ -9,7 +9,7 @@
 import { store } from '../../store';
 import type { WorkspaceTask } from '$shared/types';
 import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES } from '$shared/utils/task-stats';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { emptyWorkspaceTaskStats, emptyWorkspaceTasksState } from './workspace-tasks-slice';
 import type { WorkspaceTaskProgress, WorkspaceTasksWorkspaceState } from './workspace-tasks-types';
 
@@ -39,6 +39,21 @@ export const selectWorkspaceTasksError = store.createSelector(
 export const selectWorkspaceTasksInitialized = store.createSelector(
   (state, workspaceId: string): boolean =>
     state.workspaceTasks.byWorkspaceId[workspaceId]?.initialized ?? false,
+);
+
+/** Reconnect recovery considers only workspaces with displayed task consumers. */
+export const selectDemandedTaskWorkspaceIds = store.createSelector((state): string[] =>
+  Object.entries(state.workspaceTasks.byWorkspaceId)
+    .filter(([, workspace]) => workspace.demandIds.length > 0)
+    .map(([workspaceId]) => workspaceId),
+);
+
+/** Read admission must be checked after waiting for a scheduler slot. */
+export const selectWorkspaceTasksShouldLoad = store.createSelector(
+  (state, workspaceId: string): boolean => {
+    const ws = state.workspaceTasks.byWorkspaceId[workspaceId];
+    return !!ws?.demandIds.length && !ws.loading && (!ws.initialized || ws.stale);
+  },
 );
 
 // ============================================================================

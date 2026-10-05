@@ -899,10 +899,9 @@ async function setCatalogTheme(page: Page, theme: 'light' | 'dark') {
 
 async function setReducedMotion(page: Page, enabled: boolean) {
   await expandCustomization(page);
-  const control = page.getByRole('switch', { name: 'Reduce motion' });
-  const checked = (await control.getAttribute('aria-checked')) === 'true';
-  if (checked !== enabled) await control.click();
-  await expect(control).toHaveAttribute('aria-checked', String(enabled));
+  const control = page.getByRole('radio', { name: enabled ? 'Reduced' : 'Full', exact: true });
+  if ((await control.getAttribute('aria-checked')) !== 'true') await control.click();
+  await expect(control).toHaveAttribute('aria-checked', 'true');
 }
 
 function maxDurationMs(value: string): number {
@@ -1010,7 +1009,7 @@ for (const route of ['', '/button', '/checkbox', '/fields']) {
     );
     await expandCustomization(page);
     const motion = await page
-      .getByRole('switch', { name: 'Reduce motion' })
+      .getByRole('radio', { name: 'Reduced', exact: true })
       .evaluate((element) => getComputedStyle(element).transitionDuration);
     expect(maxDurationMs(motion)).toBeLessThanOrEqual(0.01);
     // The preference attribute precedes the effect applying the root theme and its colours.

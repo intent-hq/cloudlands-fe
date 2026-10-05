@@ -1,5 +1,5 @@
 import { store } from '../../store';
-import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { GithubUserSearchItem } from './github-user-search-slice';
 
 const selectGithubUserSearchCollection = store.createSelector(
@@ -21,4 +21,12 @@ export const selectGithubUserSearchError = store.createSelector(
 
 export const selectGithubUserSearchLastQuery = store.createSelector(
   (state): string => state.githubUserSearch.lastQuery,
+);
+
+export const selectGithubUserSearchWorkspaceId = store.createSelector(
+  (state): string | undefined => state.githubUserSearch.workspaceId,
+);
+
+export const selectGithubUserSearchRevision = store.createSelector(
+  (state) => state.githubUserSearch.revision,
 );

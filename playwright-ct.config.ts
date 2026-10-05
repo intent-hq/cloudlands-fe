@@ -61,8 +61,7 @@ export default defineConfig({
   /* Retry twice on CI. Locally, retry once so a single load-induced mount
      timeout on the shared host (the incident seen while verifying
      intent-hq/cloudlands-fe#2373, see `workers` above) reports as flaky
-     instead of failing the run; `trace: 'on-first-retry'` below then
-     captures a trace for it. */
+     in the report. The required CI command fails on any flaky result. */
   retries: process.env.CI ? 2 : 1,
   /* 1 on CI; bounded locally — see `workers` above. */
   workers,
@@ -90,8 +89,8 @@ export default defineConfig({
 
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: 'on-first-retry',
+    /* Record the original attempt; keep it only on failure, even if a retry passes. */
+    trace: 'retain-on-first-failure',
 
     /* Port to use for Playwright component endpoint. CT_PORT overrides the
        default (3100) for CI shards on the shared self-hosted host, where a

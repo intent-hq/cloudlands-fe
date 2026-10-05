@@ -63,19 +63,6 @@ async function isPortAvailable(port) {
 }
 
 /**
- * Find next available port starting from a given port
- */
-async function findAvailablePort(startPort, maxAttempts = 20) {
-  for (let i = 0; i < maxAttempts; i++) {
-    const port = startPort + i;
-    if (await isPortAvailable(port)) {
-      return port;
-    }
-  }
-  throw new Error(`No available port found starting from ${startPort}`);
-}
-
-/**
  * Find all available ports for a dev instance
  */
 async function findAvailablePorts(includeCdp = false) {

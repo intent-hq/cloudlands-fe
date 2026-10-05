@@ -9,6 +9,11 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import {
+    principalContextChanged,
+    principalReceived,
+  } from '$store/renderer/slices/principal/principal-slice';
   import {
     bulkUpsertSessions,
     updateSession,
@@ -17,8 +22,21 @@
     initializeLayout,
     setRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
+  import { beginSubmissionRead } from '$features/agent/submission-evidence';
+  import { buildRecordedAttempt } from '$features/agent/utils/build-recorded-attempt';
+  import {
+    chatLastAttemptedMessageSet,
+    chatSendFailed,
+    chatSendStarted,
+  } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+  import { selectAgentSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+  import {
+    pendingEvidenceObserved,
+    pendingSubmissionSettled,
+  } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
@@ -34,9 +52,17 @@
     queued = false,
     suggestions = false,
     questions = false,
+    newerQuestion = false,
+    staleAnswerTranscript = false,
     transcript = false,
     responseDelivered = false,
     initializeStore = true,
+    submissionSupport = false,
+    settleSubmission,
+    submissionStage,
+    queuePhase,
+    followUp,
+    historyNotice,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -49,19 +75,67 @@
     queued?: boolean;
     suggestions?: boolean;
     questions?: boolean;
+    newerQuestion?: boolean;
+    staleAnswerTranscript?: boolean;
     transcript?: boolean;
     responseDelivered?: boolean;
     initializeStore?: boolean;
+    submissionSupport?: boolean;
+    settleSubmission?: 'history' | 'queue' | 'rejected' | 'uncertain' | 'evidence';
+    submissionStage?: 'started' | 'ack';
+    queuePhase?: 'ready' | 'foreign' | 'restored';
+    followUp?: 'blocker' | 'discussion';
+    historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
   } = $props();
 
-  const fixture = untrack(() => ({ chief, streaming, draft, suggestions, questions, transcript }));
+  $effect(() => {
+    const root = document.documentElement;
+    const hadLight = root.classList.contains('light');
+    const hadDark = root.classList.contains('dark');
+    root.classList.toggle('light', theme === 'light');
+    root.classList.toggle('dark', theme === 'dark');
+    return () => {
+      root.classList.toggle('light', hadLight);
+      root.classList.toggle('dark', hadDark);
+    };
+  });
+
+  const fixture = untrack(() => ({
+    chief,
+    streaming,
+    draft,
+    suggestions,
+    questions,
+    transcript,
+    followUp,
+    historyNotice,
+  }));
   let appliedStreaming = fixture.streaming;
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
   const timestamp = '2026-08-23T12:00:00.000Z';
-  const disposeStore = untrack(() => initializeStore)
+  const ownsStore = untrack(() => initializeStore);
+  const previousPrincipal = store.state.principal;
+  const disposeStore = ownsStore
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
     : () => {};
+  if (ownsStore) admitLegacyPrincipal();
+  if (submissionSupport) {
+    const current = store.state.principal;
+    store.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        {
+          ...current.snapshot!,
+          capabilities: { ...current.snapshot!.capabilities, submissionCorrelation: 1 },
+        },
+      ),
+    );
+  }
   const session = {
     id: agentId,
     workspaceId,
@@ -130,6 +204,61 @@
     updatedAt: timestamp,
   } as unknown as AgentSession;
 
+  if (fixture.followUp || fixture.historyNotice) {
+    session.messages = [
+      {
+        id: 'follow-up-user',
+        role: 'user',
+        timestamp,
+        contentBlocks: [
+          { type: 'text', text: 'Check the release readiness and share the next steps.' },
+        ],
+      },
+      {
+        id: 'follow-up-assistant',
+        role: 'assistant',
+        timestamp,
+        contentBlocks: [
+          {
+            type: 'text',
+            text: [
+              '## Release readiness',
+              'The implementation is complete. Here is the verification summary.',
+              ...Array.from(
+                { length: 8 },
+                (_, index) =>
+                  `### Check ${index + 1}\nThe focused checks passed. The changes remain scoped to the requested behavior.`,
+              ),
+              '## Ready for your review',
+              'Automated validation is complete. Native accessibility checks still need guided manual testing.',
+              'No merge action was taken.',
+              '<!-- suggested-prompts\nWalk me through the manual checks.\nHold off on opening the PR.\n-->',
+            ].join('\n\n'),
+          },
+        ],
+      },
+    ];
+    if (fixture.historyNotice) {
+      session.messages.push({
+        id: 'follow-up-notice',
+        role: 'system',
+        timestamp,
+        contentBlocks: [
+          {
+            type: 'text',
+            text:
+              fixture.historyNotice === 'interruption'
+                ? 'This conversation was interrupted because intentd restarted.'
+                : fixture.historyNotice === 'turn-failure'
+                  ? 'The agent stopped before it could finish the response. Please retry when the connection is restored.'
+                  : 'Native accessibility checks need manual confirmation. Choose guided testing or resolve the permission entry before continuing.',
+            meta: { kind: fixture.historyNotice },
+          },
+        ],
+      });
+    }
+  }
+
   if (fixture.transcript) {
     const history = Array.from({ length: 12 }, (_, index) => {
       const time = Date.parse(timestamp) - (12 - index) * 60_000;
@@ -170,6 +299,7 @@
     setWorkspaceEntity({
       id: workspaceId,
       title: fixture.chief ? 'Chief' : 'Composer geometry',
+      myRole: 'owner',
       branch: 'test',
       status: 'active',
       path: '/tmp/chat-panel-composer-geometry',
@@ -218,19 +348,210 @@
       }),
     );
   });
-  if (fixture.draft) store.dispatch(setChatDraft(workspaceId, agentId, fixture.draft));
   $effect(() => {
+    if (!submissionStage) return;
+    const pending = selectAgentSubmissionDisplay.select(store.state, agentId, workspaceId)
+      .conversation[0];
+    const scope = store.state.pendingSubmissions.byAgentId[agentId]?.scope;
+    if (submissionStage === 'started') {
+      if (!pending || !scope) return;
+      // The direct-send saga records ownership before the request can emit stream-start.
+      store.dispatch(chatSendStarted(agentId, workspaceId));
+      store.dispatch(
+        chatLastAttemptedMessageSet(
+          agentId,
+          buildRecordedAttempt(pending.content, {
+            messageMetadata: pending.messageMetadata,
+            submission: { scope, id: pending.id },
+          }),
+        ),
+      );
+    } else {
+      const reference =
+        store.state.chatState.byAgentId[agentId]?.lastAttemptedMessage?.submission?.reference;
+      if (reference)
+        store.dispatch(
+          pendingSubmissionSettled(reference.scope, reference.id, 'accepted', Date.now()),
+        );
+    }
+  });
+  $effect(() => {
+    if (!settleSubmission) return;
+    const pending = selectAgentSubmissionDisplay.select(store.state, agentId, workspaceId)
+      .conversation[0];
+    const scope = store.state.pendingSubmissions.byAgentId[agentId]?.scope;
+    if (!pending || !scope) return;
+    const author = {
+      principalId: scope.principalId,
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+    };
+    if (settleSubmission === 'rejected' || settleSubmission === 'uncertain') {
+      store.dispatch(
+        chatLastAttemptedMessageSet(
+          agentId,
+          buildRecordedAttempt(pending.content, {
+            messageMetadata: pending.messageMetadata,
+            submission: { scope, id: pending.id },
+          }),
+        ),
+      );
+      store.dispatch(pendingSubmissionSettled(scope, pending.id, settleSubmission, Date.now()));
+      store.dispatch(
+        chatSendFailed(
+          agentId,
+          settleSubmission === 'rejected' ? 'Request rejected' : 'Connection lost after write',
+        ),
+      );
+    } else if (settleSubmission === 'evidence') {
+      store.dispatch(
+        pendingEvidenceObserved(
+          scope,
+          'history',
+          [{ submissionIds: [pending.id], author }],
+          Date.now(),
+        ),
+      );
+    } else if (settleSubmission === 'queue') {
+      store.dispatch(
+        pendingSubmissionSettled(scope, pending.id, 'accepted', Date.now(), undefined, true),
+      );
+    } else {
+      const message = {
+        id: pending.id,
+        appMessageId: pending.appMessageId,
+        role: 'user' as const,
+        timestamp,
+        contentBlocks: [{ type: 'text' as const, text: pending.content }],
+        author,
+        metadata: { ...pending.messageMetadata, submissionIds: [pending.id] },
+      };
+      store.dispatch(
+        pendingEvidenceObserved(
+          scope,
+          'history',
+          [{ ...message, submissionIds: [pending.id] }],
+          Date.now(),
+        ),
+      );
+      store.dispatch(
+        updateSession(agentId, {
+          messages: [...store.state.agentSessions.byAgentId[agentId].messages, message],
+        }),
+      );
+    }
+  });
+  $effect(() => {
+    if (!staleAnswerTranscript) return;
+    store.dispatch(updateSession(agentId, { messages: session.messages }));
+  });
+  $effect(() => {
+    if (!newerQuestion) return;
+    const next = { ...session.messages[0], id: 'composer-question-new' };
     store.dispatch(
       updateSession(agentId, {
-        attentionRequestKind: attention ?? undefined,
-        attentionRequestReason: attention
-          ? 'Please review the fixture plan before continuing. This longer explanation must stay readable without covering the prompt or queued messages.'
-          : undefined,
-        attentionRequestTimestamp: attention ? timestamp : undefined,
+        messages: [...store.state.agentSessions.byAgentId[agentId].messages, next],
+        metadata: { pendingQuestionsMessageId: next.id },
       }),
     );
   });
   $effect(() => {
+    if (!queuePhase) return;
+    const author = {
+      principalId: store.state.principal.snapshot!.principal.id,
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+    };
+    const base = {
+      id: 'queue-a',
+      content: 'Confirmed A',
+      queuedAt: timestamp,
+      position: 0,
+      author,
+      submissionIds: ['queue-a'],
+      mergeEligible: true,
+    };
+    if (queuePhase === 'ready' && !store.state.pendingSubmissions.byAgentId[agentId]) {
+      const setup = admitAgentSubmission(store, agentId, workspaceId, 1, {
+        content: 'setup',
+        destination: 'queue',
+      })!;
+      store.dispatch(
+        pendingSubmissionSettled(setup.scope, setup.submission.id, 'rejected', Date.now()),
+      );
+    }
+    const pending = selectAgentSubmissionDisplay
+      .select(store.state, agentId, workspaceId)
+      .queue.flatMap((row) => row.contributions);
+    const queue =
+      queuePhase === 'foreign' && pending.length > 0
+        ? [
+            { ...base, mergeEligible: false },
+            {
+              ...base,
+              id: 'queue-foreign',
+              content: 'Other participant',
+              position: 1,
+              author: { ...author, principalId: 'other' },
+              submissionIds: ['queue-foreign'],
+              mergeEligible: false,
+            },
+            {
+              ...base,
+              id: pending[0].id,
+              content: pending[0].content,
+              position: 2,
+              submissionIds: [pending[0].id],
+            },
+          ]
+        : [
+            {
+              ...base,
+              requeuedAfterFailure: queuePhase === 'restored',
+              mergeEligible: queuePhase !== 'restored',
+            },
+          ];
+    store.dispatch(replaceAgentQueue(agentId, queue, workspaceId));
+    const scope = store.state.pendingSubmissions.byAgentId[agentId]?.scope;
+    if (scope) store.dispatch(pendingEvidenceObserved(scope, 'queue', queue, Date.now()));
+    beginSubmissionRead(agentId, workspaceId, 'queue').complete(queue);
+    beginSubmissionRead(agentId, workspaceId, 'history').complete([]);
+    if (queuePhase === 'restored')
+      store.dispatch(
+        updateSession(agentId, {
+          messages: [
+            ...session.messages,
+            {
+              id: 'persisted-queue-a',
+              role: 'user',
+              timestamp,
+              contentBlocks: [{ type: 'text', text: 'Persisted A' }],
+              author,
+              metadata: { submissionIds: ['queue-a'], queueInfo: { queuedMessageId: 'queue-a' } },
+            },
+          ],
+        }),
+      );
+  });
+  if (fixture.draft) store.dispatch(setChatDraft(workspaceId, agentId, fixture.draft));
+  $effect(() => {
+    const kind = attention ?? followUp;
+    store.dispatch(
+      updateSession(agentId, {
+        attentionRequestKind: kind,
+        attentionRequestReason: kind
+          ? followUp
+            ? 'Native accessibility checks need manual confirmation. Choose guided testing or resolve the permission entry before continuing.'
+            : 'Please review the fixture plan before continuing. This longer explanation must stay readable without covering the prompt or queued messages.'
+          : undefined,
+        attentionRequestTimestamp: kind ? timestamp : undefined,
+      }),
+    );
+  });
+  $effect(() => {
+    if (queuePhase) return;
     store.dispatch(
       replaceAgentQueue(
         agentId,
@@ -270,10 +591,21 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
-  onDestroy(disposeStore);
+  onDestroy(() => {
+    disposeStore();
+    if (!ownsStore) return;
+    store.dispatch(principalContextChanged(previousPrincipal.context));
+    if (previousPrincipal.context && previousPrincipal.snapshot)
+      store.dispatch(
+        principalReceived(
+          { context: previousPrincipal.context, invalidation: 0, presentationVersion: 0 },
+          previousPrincipal.snapshot,
+        ),
+      );
+  });
 </script>
 
-<section class:dark={theme === 'dark'} style:zoom data-testid="chat-panel-composer-host">
+<section style:zoom data-testid="chat-panel-composer-host">
   <div class="relative" style:width="{width}px" style:height="{height}px">
     <div class="absolute inset-0 h-full w-full">
       <PanelLayout {workspaceId} layoutId={workspaceId} />

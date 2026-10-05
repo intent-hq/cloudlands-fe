@@ -110,7 +110,9 @@ export async function prepareOutDir(outDir) {
     await mkdir(resolved);
   } catch (error) {
     if (error?.code === 'EEXIST') {
-      throw new Error(`refusing to overwrite existing output directory ${resolved}`);
+      throw new Error(`refusing to overwrite existing output directory ${resolved}`, {
+        cause: error,
+      });
     }
     throw error;
   }

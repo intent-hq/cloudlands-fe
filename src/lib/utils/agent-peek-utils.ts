@@ -7,6 +7,7 @@
 
 import type { AgentSession, AgentMessage, FileOperation, ToolUseBlock } from '$shared/types';
 import { m } from '$shared/paraglide/messages.js';
+import { agentDelegationParentOf } from '$shared/utils/agent-scope';
 
 export interface AgentPeekData {
   id: string;
@@ -89,7 +90,7 @@ export function getAgentPeekData(agent: AgentSession | null | undefined): AgentP
 
   // Extract completion report and parent agent from metadata if available
   const completionReport = (agent.metadata?.completionReport as string) || undefined;
-  const parentAgentId = (agent.metadata?.createdByAgentId as string) || undefined;
+  const parentAgentId: string | undefined = agentDelegationParentOf(agent) ?? undefined;
 
   return {
     id: agent.id,

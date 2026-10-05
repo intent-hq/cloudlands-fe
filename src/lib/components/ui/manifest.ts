@@ -23,6 +23,7 @@ import { labelMetadata } from './label/label.meta';
 import { listMetadata } from './list/list.meta';
 import { menuMetadata } from './menu/menu.meta';
 import { messageComposerMetadata } from './message-composer/message-composer.meta';
+import { principalAvatarMetadata } from './PrincipalAvatar.meta';
 import { proximityHighlightMetadata } from './proximity-highlight/proximity-highlight.meta';
 import { radioGroupMetadata } from './radio-group/radio-group.meta';
 import { scrollAreaMetadata } from './scroll-area/scroll-area.meta';
@@ -70,6 +71,7 @@ const sourceMetadata = [
   listMetadata,
   menuMetadata,
   messageComposerMetadata,
+  principalAvatarMetadata,
   proximityHighlightMetadata,
   radioGroupMetadata,
   scrollAreaMetadata,

@@ -9,7 +9,6 @@
     selectUnstagedWorkingChanges,
   } from '$store/renderer/slices/changes/changes-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { loadChatTranscript } from '$features/agent/chat-read-service';
   import {
     selectActiveTab,
     selectAllTabs,
@@ -35,6 +34,7 @@
   import {
     fetchBackgroundAgentsRequested,
     fetchDelegatedAgentsRequested,
+    fetchOrphanedDelegatedAgentsRequested,
     fetchRetiredAgentsRequested,
     restoreRetiredAgentRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -42,10 +42,16 @@
     selectAllWorkspaceAgents,
     selectBackgroundAgentsLoaded,
     selectDelegatedAgentsLoaded,
+    selectDelegatedCounts,
     selectIsLoadingAgents,
     selectIsLoadingBackgroundAgents,
     selectIsLoadingDelegatedAgents,
+    selectIsLoadingOrphanedDelegatedAgents,
     selectIsLoadingRetiredAgents,
+    selectLoadedDelegatedParentIds,
+    selectLoadingDelegatedParentIds,
+    selectOrphanedDelegatedAgentIds,
+    selectOrphanedDelegatedAgentsLoaded,
     selectRetiredAgentsLoaded,
     selectRetiredCount,
     selectScopeCounts,
@@ -84,6 +90,7 @@
   import SidebarExpandableSearch from './sidebar/SidebarExpandableSearch.svelte';
   import SidebarHeaderAction from './sidebar/SidebarHeaderAction.svelte';
   import WorkspaceProgressCard from './sidebar/WorkspaceProgressCard.svelte';
+  import WorkspaceTokenUsage from './sidebar/WorkspaceTokenUsage.svelte';
   import SidebarLauncherHoverCard from './sidebar/SidebarLauncherHoverCard.svelte';
   import SidebarPrDropdown from './sidebar/SidebarPrDropdown.svelte';
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
@@ -237,6 +244,12 @@
   const scopeCounts$ = selectScopeCounts(workspaceIdStore);
   const delegatedAgentsLoaded$ = selectDelegatedAgentsLoaded(workspaceIdStore);
   const loadingDelegated$ = selectIsLoadingDelegatedAgents(workspaceIdStore);
+  const delegatedCounts$ = selectDelegatedCounts(workspaceIdStore);
+  const loadedDelegatedParentIds$ = selectLoadedDelegatedParentIds(workspaceIdStore);
+  const loadingDelegatedParentIds$ = selectLoadingDelegatedParentIds(workspaceIdStore);
+  const orphanedDelegatedAgentsLoaded$ = selectOrphanedDelegatedAgentsLoaded(workspaceIdStore);
+  const orphanedDelegatedAgentIds$ = selectOrphanedDelegatedAgentIds(workspaceIdStore);
+  const loadingOrphanedDelegated$ = selectIsLoadingOrphanedDelegatedAgents(workspaceIdStore);
   const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
   const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
   const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
@@ -462,13 +475,13 @@
     };
   }
 
-  function launcherGridReveal(_node: Element): TransitionConfig {
+  function launcherGridReveal(_node: Element, index = 0): TransitionConfig {
     if (prefersReducedMotion()) return { duration: 0 };
 
     return {
-      delay: spring.moderate.settleMs,
+      delay: spring.moderate.settleMs + (index * spring.slow.settleMs) / 10,
       duration: spring.fast.settleMs,
-      css: (t) => `opacity: ${t};`,
+      css: (t) => `opacity: ${t}; transform: translateY(${(1 - t) * 4}px);`,
     };
   }
 
@@ -914,7 +927,6 @@
       open={openLauncherHoverKey === `agent:${agent.id}`}
       onOpenChange={(open) => {
         handleLauncherHoverOpenChange(`agent:${agent.id}`, open);
-        if (open && agent.messages.length === 0) void loadChatTranscript(agent.id);
       }}
     >
       <Button
@@ -1138,8 +1150,19 @@
                             scopeCounts={$scopeCounts$}
                             delegatedAgentsLoaded={$delegatedAgentsLoaded$}
                             loadingDelegated={$loadingDelegated$}
-                            onLoadDelegated={() => {
-                              appStore.dispatch(fetchDelegatedAgentsRequested(workspaceId));
+                            onLoadDelegated={(parentAgentId) => {
+                              appStore.dispatch(
+                                fetchDelegatedAgentsRequested(workspaceId, parentAgentId),
+                              );
+                            }}
+                            delegatedCounts={$delegatedCounts$}
+                            loadedDelegatedParentIds={$loadedDelegatedParentIds$}
+                            loadingDelegatedParentIds={$loadingDelegatedParentIds$}
+                            orphanedDelegatedAgentsLoaded={$orphanedDelegatedAgentsLoaded$}
+                            orphanedDelegatedAgentIds={$orphanedDelegatedAgentIds$}
+                            loadingOrphanedDelegated={$loadingOrphanedDelegated$}
+                            onLoadOrphanedDelegated={() => {
+                              appStore.dispatch(fetchOrphanedDelegatedAgentsRequested(workspaceId));
                             }}
                             backgroundAgentsLoaded={$backgroundAgentsLoaded$}
                             loadingBackground={$loadingBackground$}
@@ -1290,11 +1313,11 @@
           class="flex h-full min-h-0 items-end px-6 pt-4"
           data-testid="sidebar-launchers"
           data-launcher-layout="tiles"
-          in:launcherGridReveal|global
         >
           <div class="grid h-56 w-full auto-rows-fr grid-cols-2 gap-3" data-sidebar-launcher-grid>
-            {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab (tab.id)}
+            {#each TAB_DEFINITIONS.filter((definition) => definition.id in LAUNCHER_GRID_POSITIONS) as tab, index (tab.id)}
               <div
+                in:launcherGridReveal|global={index}
                 class="group/launcher relative flex h-full min-h-0 w-full min-w-0 cursor-pointer overflow-hidden rounded-lg border border-border bg-sidebar p-2 text-foreground transition-colors"
                 data-sidebar-launcher={tab.id}
                 data-sidebar-card-surface
@@ -1413,7 +1436,7 @@
                       data-sidebar-launcher-label
                       class={cn(
                         'truncate text-sm font-semibold',
-                        tab.id === 'changes' ? 'min-w-0 flex-1' : '',
+                        tab.id === 'changes' || tab.id === 'agents' ? 'min-w-0 flex-1' : '',
                       )}>{tab.label}</span
                     >
                     {#if tab.id === 'agents' && $hasUnreadForegroundAgents$}
@@ -1432,6 +1455,7 @@
                       <span id={`sidebar-launcher-agent-count-${workspaceId}`} class="sr-only">
                         {launcherAgentCountLabel}
                       </span>
+                      <WorkspaceTokenUsage {workspaceId} />
                     {/if}
                     {#if tab.id === 'files' && $fileExplorerWorkspacePath}
                       <span class="pointer-events-auto relative z-20 cursor-pointer">
@@ -1476,18 +1500,22 @@
     {#if isLauncherOverview}
       {#if !isCollaborator}
         {#if !isNewWorkspaceSession}
-          <SidebarBrowserLauncher
-            {workspaceId}
-            {panelLayoutId}
-            onExpand={() => handleTabClick('browser')}
-            expanded={selectedTabs.has('browser')}
-          />
+          <div class="min-w-0" in:launcherGridReveal|global={4}>
+            <SidebarBrowserLauncher
+              {workspaceId}
+              {panelLayoutId}
+              onExpand={() => handleTabClick('browser')}
+              expanded={selectedTabs.has('browser')}
+            />
+          </div>
         {/if}
-        <WorkspaceTerminalDock
-          {workspaceId}
-          onExpand={() => handleTabClick('shell')}
-          expanded={selectedTabs.has('shell')}
-        />
+        <div class="min-w-0" in:launcherGridReveal|global={isNewWorkspaceSession ? 0 : 5}>
+          <WorkspaceTerminalDock
+            {workspaceId}
+            onExpand={() => handleTabClick('shell')}
+            expanded={selectedTabs.has('shell')}
+          />
+        </div>
       {/if}
     {:else}
       <SidebarExpandedTabStrip

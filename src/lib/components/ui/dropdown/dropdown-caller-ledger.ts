@@ -37,9 +37,4 @@ export const dropdownCallerLedger = [
     replacement: 'Combobox',
     reason: 'searchable option model for ModelPicker',
   },
-  {
-    caller: 'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
-    replacement: 'Select',
-    reason: 'non-searchable single-value selection',
-  },
 ] as const satisfies readonly DropdownCallerLedgerEntry[];

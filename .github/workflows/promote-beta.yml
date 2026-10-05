@@ -21,10 +21,11 @@ permissions:
   contents: read
   pull-requests: read
 
-# Never cancel a release in progress
+# Shared with source releases, alpha, stable and cleanup. Queue pending writers.
 concurrency:
-  group: cloudlands-beta-promotion
+  group: cloudlands-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   promote-to-beta:
@@ -383,6 +384,14 @@ jobs:
           VERSION: ${{ inputs.version }}
           PROMOTED_FEEDS: ${{ steps.upload_assets.outputs.promoted_feeds }}
         run: |
+          # Hash the whole feed: the legacy feed digest covers only one Mac CPU.
+          # This also works for older releases with an ARM-only Mac feed.
+          feed_hash() {
+            local content
+            content=$(curl -fsSL "$1") || return 1
+            [ -n "$content" ] || return 1
+            printf '%s' "$content" | sha512sum | awk '{print $1}'
+          }
           read -ra FEEDS <<< "$PROMOTED_FEEDS"
           if [ ${#FEEDS[@]} -eq 0 ]; then
             echo "::error::No promoted feeds recorded by the upload step"
@@ -392,10 +401,10 @@ jobs:
           for feed in "${FEEDS[@]}"; do
             echo "Verifying $feed"
 
-            # Fetch versioned release sha512
-            VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/${feed}" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+            # Fetch versioned release feed digest
+            VERSIONED_SHA=$(feed_hash "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/${feed}") || VERSIONED_SHA=""
             if [ -z "$VERSIONED_SHA" ]; then
-              echo "::error::Failed to fetch or parse sha512 for $feed from versioned release v${VERSION}"
+              echo "::error::Failed to fetch feed digest for $feed from versioned release v${VERSION}"
               exit 1
             fi
 
@@ -403,30 +412,30 @@ jobs:
             MAX_RETRIES=5
             RETRY_DELAY=2
             for i in $(seq 1 "$MAX_RETRIES"); do
-              BETA_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/beta/${feed}?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+              BETA_SHA=$(feed_hash "https://github.com/intent-hq/cloudlands-releases/releases/download/beta/${feed}?t=$(date +%s)") || BETA_SHA=""
 
               if [ -z "$BETA_SHA" ]; then
-                echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch or parse sha512 for $feed from beta release"
+                echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch feed digest for $feed from beta release"
                 if [ "$i" -lt "$MAX_RETRIES" ]; then
                   sleep "$RETRY_DELAY"
                   RETRY_DELAY=$((RETRY_DELAY * 2))
                   continue
                 else
-                  echo "::error::Failed to fetch beta sha512 for $feed after $MAX_RETRIES retries"
+                  echo "::error::Failed to fetch beta feed digest for $feed after $MAX_RETRIES retries"
                   exit 1
                 fi
               fi
 
               if [ "$VERSIONED_SHA" = "$BETA_SHA" ]; then
-                echo "✓ Beta $feed sha512 matches versioned release ($VERSIONED_SHA) [attempt $i]"
+                echo "✓ Beta $feed feed digest matches versioned release ($VERSIONED_SHA) [attempt $i]"
                 break
               else
-                echo "::warning::Retry $i/$MAX_RETRIES: $feed sha512 mismatch - versioned: $VERSIONED_SHA, beta: $BETA_SHA (likely CDN propagation delay)"
+                echo "::warning::Retry $i/$MAX_RETRIES: $feed feed digest mismatch - versioned: $VERSIONED_SHA, beta: $BETA_SHA (likely CDN propagation delay)"
                 if [ "$i" -lt "$MAX_RETRIES" ]; then
                   sleep "$RETRY_DELAY"
                   RETRY_DELAY=$((RETRY_DELAY * 2))
                 else
-                  echo "::error::$feed sha512 mismatch after $MAX_RETRIES retries - versioned: $VERSIONED_SHA, beta: $BETA_SHA"
+                  echo "::error::$feed feed digest mismatch after $MAX_RETRIES retries - versioned: $VERSIONED_SHA, beta: $BETA_SHA"
                   exit 1
                 fi
               fi
@@ -575,7 +584,7 @@ jobs:
             echo ""
             echo "### Verification"
             echo "- ✓ Assets copied from versioned release v$VERSION"
-            echo "- ✓ sha512 verification passed for: ${FEEDS[*]}"
+            echo "- ✓ Complete-feed verification passed for: ${FEEDS[*]}"
             if [ "$SKIP_NOTES" = "true" ]; then
               echo "- ⚠ Release notes left untouched (idempotent re-run, no notes-base marker)"
             else

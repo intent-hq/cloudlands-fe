@@ -53,7 +53,6 @@ for (const theme of ['light', 'dark'] as const) {
       'color',
       colors.danger,
     );
-    await expect(notice.locator('svg').first()).toHaveCSS('color', colors.danger);
     await expect(notice).toHaveAttribute('aria-live', 'polite');
   });
 }

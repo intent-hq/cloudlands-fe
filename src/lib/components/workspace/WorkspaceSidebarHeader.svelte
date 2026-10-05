@@ -1,4 +1,5 @@
 <script lang="ts">
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import { logger } from '$lib/utils/client-logger';
@@ -9,12 +10,10 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import {
     faBars,
-    faEllipsisV,
     faKeyboard,
     faRightLeft,
     faTableColumns,
   } from '@fortawesome/free-solid-svg-icons';
-  import Fa from 'svelte-fa';
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -349,6 +348,7 @@
   }
 
   const sidebarToggleAction: MenuAction = {
+    id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
     icon: faBars,
     dividerBefore: true,
@@ -359,6 +359,7 @@
   };
 
   const sidebarSideAction: MenuAction = $derived({
+    id: 'move-sidebar',
     label:
       $sidebarSide$ === 'left'
         ? m.workspace_sidebarHeader_moveSidebarRight_label()
@@ -389,6 +390,7 @@
     const submenu: MenuAction[] = [];
     for (let slot = 0; slot < AGENT_KEY_COUNT; slot += 1) {
       submenu.push({
+        id: `micro-key-${slot}`,
         label: m.workspace_card_assignMicroKeyNumber_label({ number: formatInteger(slot + 1) }),
         checked: $pinnedKeySlot$ === slot,
         onClick: () => {
@@ -399,17 +401,21 @@
     const resolvedSlot = $resolvedKeySlot$;
     if (resolvedSlot !== null) {
       submenu.push({
+        id: 'clear-micro-key',
         label: m.workspace_card_unassignMicroKey_label(),
+        dividerBefore: true,
         onClick: () => {
           appStore.dispatch(markKeySlotUnassigned(resolvedSlot));
         },
       });
     }
     return {
+      id: 'assign-micro-key',
       label: m.workspace_card_assignMicroKey_label(),
       icon: faKeyboard,
       dividerBefore: true,
       onClick: () => {},
+      selection: 'single',
       submenu,
     };
   });
@@ -417,6 +423,7 @@
   const transferAction: MenuAction | null = $derived(
     workspace && !$hidesOwnerActions$
       ? {
+          id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
           onClick: () => {
@@ -634,7 +641,7 @@
           {#if isDeleting}
             <IntentMarkLoader size={14} />
           {:else}
-            <Fa icon={faEllipsisV} size="sm" />
+            <KebabIcon class="size-3.5" />
           {/if}
         </Button>
       {/snippet}
@@ -645,6 +652,7 @@
           style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
         >
           <WorkspaceActionsMenu
+            layout="editors-submenu"
             filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
             workspaceId={workspace?.id || workspaceId}
             isDirectory={true}

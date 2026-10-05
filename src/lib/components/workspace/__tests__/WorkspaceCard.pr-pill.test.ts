@@ -76,7 +76,8 @@ vi.mock('$features/navigation/link-handler', () => ({
 
 // Capture tooltip props (content/disabled) via the shared MockTooltip, which
 // pushes lazy prop getters onto `globalThis.__mockTooltipProps`.
-vi.mock('$lib/components/ui/tooltip', async () => ({
+vi.mock('$lib/components/ui/tooltip', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/components/ui/tooltip')>()),
   Tooltip: (await import('../sidebar/__tests__/mocks/MockTooltip.svelte')).default,
 }));
 vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({

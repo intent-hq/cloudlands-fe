@@ -1,4 +1,7 @@
+<!-- @catalog-exempt: clock-driven time text with no interactive DOM -->
+
 <script lang="ts">
+  import * as Tooltip from '$lib/components/ui/tooltip';
   import {
     createReactiveRelativeTime,
     createReactiveCompactTime,
@@ -52,6 +55,10 @@
   });
 </script>
 
-<span class={className} title={fullTimestamp}>
-  {relativeTime}
-</span>
+<Tooltip.Provider
+  ><Tooltip.Root
+    ><Tooltip.Trigger>
+      {#snippet child({ props })}<span {...props} class={className}>{relativeTime}</span>{/snippet}
+    </Tooltip.Trigger><Tooltip.Content>{fullTimestamp}</Tooltip.Content></Tooltip.Root
+  ></Tooltip.Provider
+>

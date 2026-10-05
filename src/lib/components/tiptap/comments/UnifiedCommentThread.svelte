@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { CommentAttribution } from '$shared/types/comment.types';
   import { faArrowUp, faAt, faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import AgentPeekCard from './AgentPeekCard.svelte';
   import Comment from './Comment.svelte';
@@ -20,7 +21,8 @@
 
   type CommentType = 'comment' | 'suggestion' | 'change-request' | 'question' | string;
 
-  interface CommentLike {
+  interface CommentLike extends CommentAttribution {
+    authorType?: 'user' | 'agent';
     id: string;
     author?: string;
     type?: CommentType;

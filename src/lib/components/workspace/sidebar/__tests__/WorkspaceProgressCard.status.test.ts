@@ -7,7 +7,7 @@ import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
 import type { BrowserClientsState } from '$store/renderer/slices/browser-clients/browser-clients-types';
@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },
     browserClients: undefined as unknown,
+    userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
     if (
@@ -97,7 +98,7 @@ const mocks = vi.hoisted(() => {
       { select: getter },
     );
   const notifySelectors = () => selectorSubscribers.forEach((notify) => notify());
-  const role = { hidesOwnerActions: false };
+  const role = { hidesOwnerActions: false, context: 'backend-a:principal-a' };
   return {
     role,
     dispatch,
@@ -118,6 +119,10 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalActionContext: mocks.selector(() => mocks.role.context),
+}));
+
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
@@ -133,11 +138,18 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectCanSetWorkspacePrimaryClient: mocks.selector(() => !mocks.role.hidesOwnerActions),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),
   selectHidesOwnerWorkspaceActions: mocks.selector(() => mocks.role.hidesOwnerActions),
+  selectCanShareWorkspace: mocks.selector(
+    () =>
+      mocks.storeState.userPreferences?.labsMultiplayerEnabled === true &&
+      !mocks.role.hidesOwnerActions &&
+      (mocks.workspaceEntity.canManage === true || mocks.workspaceEntity.myRole === 'owner'),
+  ),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -170,7 +182,8 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectAcceptChangesStatusLoading: mocks.selector(() => false),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
   removeWorkspaceEntity: Object.assign(
     vi.fn((id: string) => ({ type: 'workspace/removeWorkspaceEntity', payload: [id] })),
@@ -353,7 +366,9 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
     mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.storeState.userPreferences = undefined;
     mocks.role.hidesOwnerActions = false;
+    delete mocks.workspaceEntity.canManage;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -383,13 +398,12 @@ describe('WorkspaceProgressCard status message', () => {
     const archive = screen.getByRole('button', { name: 'Archive Workspace' });
     const menuItems = Array.from(transfer.parentElement!.children);
     const moveSidebarIndex = menuItems.indexOf(moveSidebar);
-    const dividerIndex = moveSidebarIndex + 1;
     const transferIndex = menuItems.indexOf(transfer);
     const archiveIndex = menuItems.indexOf(archive);
 
     expect(transfer.dataset.iconName).toBe('right-left');
-    expect(menuItems[dividerIndex]?.getAttribute('data-testid')).toBe('menu-divider');
-    expect(transferIndex).toBe(dividerIndex + 1);
+    expect(menuItems[transferIndex - 1]?.getAttribute('data-testid')).toBe('menu-divider');
+    expect(transferIndex).toBeGreaterThan(moveSidebarIndex);
     expect(archiveIndex).toBe(transferIndex + 1);
   });
 
@@ -422,7 +436,20 @@ describe('WorkspaceProgressCard status message', () => {
     ).toBe('false');
   });
 
-  it('offers Share to the workspace owner ahead of Transfer and opens the share dialog', async () => {
+  it('offers Share when current sharing authority admits a member with collaborator metadata (#6390)', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    mocks.workspaceEntity.myRole = 'collaborator';
+    mocks.workspaceEntity.canManage = true;
+    const { container } = await renderProgressCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    await fireEvent.click(screen.getByRole('button', { name: 'Share…' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
+  });
+
+  it('offers Share to the workspace owner ahead of Transfer and opens the share dialog once the Multiplayer lab is on', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
     const { container } = await renderProgressCard({ myRole: 'owner' });
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
 
@@ -447,9 +474,25 @@ describe('WorkspaceProgressCard status message', () => {
   });
 
   it.each([
+    ['by default (no preference persisted)', undefined],
+    ['while the Multiplayer lab is off', { labsMultiplayerEnabled: false }],
+  ])('does not offer Share to the owner %s', async (_label, userPreferences) => {
+    mocks.storeState.userPreferences = userPreferences;
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
+  });
+
+  it.each([
     ['a collaborator', { myRole: 'collaborator' as const }],
     ['no reported role', { myRole: undefined }],
-  ])('does not offer Share to %s', async (_label, overrides) => {
+  ])('does not offer Share to %s even with the Multiplayer lab on', async (_label, overrides) => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
     const { container } = await renderProgressCard(overrides);
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
 
@@ -458,6 +501,7 @@ describe('WorkspaceProgressCard status message', () => {
   });
 
   it('does not offer Share while the owner-only actions are hidden, even when the row reports myRole owner (guest window / unsettled identity)', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
     mocks.role.hidesOwnerActions = true;
     const { container } = await renderProgressCard({ myRole: 'owner' });
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
@@ -717,6 +761,13 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('true');
   });
 
+  it('uses daemon aggregate progress without initializing individual task rows', async () => {
+    mocks.taskState.initialized = false;
+    mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
+    await renderProgressCard({ taskStats: { total: 2, completed: 1, inProgress: 1 } });
+    expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('false');
+  });
+
   it('keeps the progress bar mounted across task refetches after initialization', async () => {
     mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
     const { container } = await renderProgressCard();
@@ -942,7 +993,14 @@ describe('WorkspaceProgressCard driving browser client', () => {
       ownClientId: OWN,
       liveClients: createLiveClientCollection(clients),
       liveClientsLoaded: true,
-      byWorkspaceId: { 'ws-1': { ...emptyWorkspaceBrowserClientsState, browserClient } },
+      byWorkspaceId: {
+        'ws-1': {
+          ...emptyWorkspaceBrowserClientsState,
+          browserClient,
+          liveClients: createLiveClientCollection(clients),
+          liveClientsLoaded: true,
+        },
+      },
     } satisfies BrowserClientsState;
   }
 
@@ -972,11 +1030,13 @@ describe('WorkspaceProgressCard driving browser client', () => {
 
   beforeEach(() => {
     mocks.dispatch.mockClear();
+    mocks.role.hidesOwnerActions = false;
+    mocks.role.context = 'backend-a:principal-a';
     mocks.storeState.browserClients = browserClientsInitialState;
     seedPanelTabs([browserTab]);
   });
 
-  it('shows nothing and offers no switch when this app is the only eligible client', async () => {
+  it('keeps recovery available when this app is the only eligible client', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop')], {
       source: 'default',
       resolved: { clientId: OWN, name: 'laptop' },
@@ -985,10 +1045,10 @@ describe('WorkspaceProgressCard driving browser client', () => {
 
     expect(drivingIndicator(container)).toBeNull();
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
-    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
+    expect((screen.getByRole('button', SET_PRIMARY) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('marks this app as driving and hides the switch when it already drives', async () => {
+  it('allows explicitly pinning this app when it only drives by default', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
       source: 'default',
       resolved: { clientId: OWN, name: 'laptop' },
@@ -997,7 +1057,7 @@ describe('WorkspaceProgressCard driving browser client', () => {
 
     expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('here');
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
-    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
+    expect((screen.getByRole('button', SET_PRIMARY) as HTMLButtonElement).disabled).toBe(false);
   });
 
   const SET_PRIMARY_DIALOG = { name: /set this client as primary/i };
@@ -1008,6 +1068,26 @@ describe('WorkspaceProgressCard driving browser client', () => {
     await fireEvent.click(screen.getByRole('button', SET_PRIMARY));
     return await waitFor(() => screen.getByRole('dialog', SET_PRIMARY_DIALOG));
   }
+
+  it('offers confirmed recovery for unresolved default routing with offline claimed tabs', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], { source: 'default', resolved: null });
+    seedPanelTabs([{ ...browserTab, ownerAgentId: 'agent-1', hostClientId: OTHER }]);
+    const { container } = await renderDrivingCard();
+    expect(drivingIndicator(container)).toBeNull();
+    const dialog = await openSetPrimaryDialog(container);
+    expect(dialog.textContent).toContain('agent-owned tabs');
+    expect(dialog.textContent).not.toContain('currently driven by');
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+    await fireEvent.click(screen.getByRole('button', CONFIRM_SET_PRIMARY));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'browserClients/setWorkspaceBrowserClientRequested',
+        payload: ['ws-1', OWN],
+      }),
+    );
+  });
 
   it('names the other driving client and asks for confirmation before switching', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
@@ -1147,7 +1227,7 @@ describe('WorkspaceProgressCard driving browser client', () => {
     expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
   });
 
-  it('hides the switch while this app does not yet know its own client id', async () => {
+  it('disables recovery while this app does not yet know its own client id', async () => {
     seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
       source: 'default',
       resolved: { clientId: OTHER, name: 'desktop' },
@@ -1157,6 +1237,92 @@ describe('WorkspaceProgressCard driving browser client', () => {
 
     expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('elsewhere');
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
-    expect(screen.queryByRole('button', SET_PRIMARY)).toBeNull();
+    expect((screen.getByRole('button', SET_PRIMARY) as HTMLButtonElement).disabled).toBe(true);
   });
+  it('keeps recovery available with no tabs and no resolved client', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], { source: 'default', resolved: null });
+    seedPanelTabs([]);
+    const { container } = await renderDrivingCard();
+    await openSetPrimaryDialog(container);
+    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+    );
+  });
+
+  it('shows an explicit current primary as checked and disabled', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OWN,
+      resolved: { clientId: OWN },
+    });
+    const { container } = await renderDrivingCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    const action = screen.getByRole('button', SET_PRIMARY);
+    expect((action as HTMLButtonElement).disabled).toBe(true);
+    expect(action.getAttribute('data-checked')).toBe('true');
+    await fireEvent.click(action);
+    expect(screen.queryByRole('dialog', SET_PRIMARY_DIALOG)).toBeNull();
+  });
+
+  it.each(['missing', 'incapable', 'denied', 'suffix-only'] as const)(
+    'disables recovery when current desktop is %s',
+    async (reason) => {
+      const own = liveClient(OWN, 'laptop');
+      if (reason === 'incapable') own.capabilities.browserExec = false;
+      if (reason === 'suffix-only') own.clientId = 'other-principal:' + OWN;
+      seedBrowserClients(reason === 'missing' ? [liveClient(OTHER, 'desktop')] : [own], {
+        source: 'default',
+        resolved: null,
+      });
+      mocks.role.hidesOwnerActions = reason === 'denied';
+      const { container } = await renderDrivingCard();
+      await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+      const action = screen.getByRole('button', SET_PRIMARY);
+      expect((action as HTMLButtonElement).disabled).toBe(true);
+      await fireEvent.click(action);
+      expect(mocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+      );
+    },
+  );
+
+  it('dispatches the exact canonical current-backend identity after confirmation', async () => {
+    const canonical = 'principal:device:raw-client';
+    seedBrowserClients([liveClient(canonical, 'laptop')], { source: 'default', resolved: null });
+    (mocks.storeState.browserClients as BrowserClientsState).ownClientId = canonical;
+    const { container } = await renderDrivingCard();
+    await openSetPrimaryDialog(container);
+    await fireEvent.click(screen.getByRole('button', CONFIRM_SET_PRIMARY));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'browserClients/setWorkspaceBrowserClientRequested',
+        payload: ['ws-1', canonical],
+      }),
+    );
+  });
+
+  it.each(['identity', 'context', 'permission', 'disconnect'] as const)(
+    'does not confirm after the %s changes',
+    async (change) => {
+      seedBrowserClients([liveClient(OWN, 'laptop')], { source: 'default', resolved: null });
+      const { container } = await renderDrivingCard();
+      await openSetPrimaryDialog(container);
+      if (change === 'identity') {
+        seedBrowserClients([liveClient(OTHER, 'other')], { source: 'default', resolved: null });
+        (mocks.storeState.browserClients as BrowserClientsState).ownClientId = OTHER;
+      }
+      if (change === 'context') mocks.role.context = 'backend-b:principal-b';
+      if (change === 'permission') mocks.role.hidesOwnerActions = true;
+      if (change === 'disconnect') seedBrowserClients([], { source: 'default', resolved: null });
+      mocks.notifySelectors();
+      const { store } = await import('$store/renderer/store');
+      (store as unknown as { emitState: () => void }).emitState();
+      await tick();
+      await fireEvent.click(screen.getByRole('button', CONFIRM_SET_PRIMARY));
+      expect(mocks.dispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'browserClients/setWorkspaceBrowserClientRequested' }),
+      );
+    },
+  );
 });

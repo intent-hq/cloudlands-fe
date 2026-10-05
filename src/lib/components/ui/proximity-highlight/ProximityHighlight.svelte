@@ -72,6 +72,7 @@
 <div aria-hidden="true" class={cn('pointer-events-none absolute inset-0', className)}>
   {#each mergeSplit.groups as group (group.id)}
     <div
+      data-proximity-highlight="selected"
       class={cn('absolute', selectedClass)}
       style="border-radius: var(--radius-row)"
       use:springRect={{ rect: group.rect, tier: 'moderate' }}
@@ -83,9 +84,10 @@
     <!-- Retain the last rectangle through outro without remounting on geometry changes. -->
     {#each activeRect ? [activeRect] : [] as rect (0)}
       <div
+        data-proximity-highlight="hover"
         class={cn('absolute', hoverClass)}
         style="border-radius: var(--radius-row)"
-        use:springRect={{ rect, tier: 'fast' }}
+        use:springRect={{ rect, tier: 'moderate' }}
         out:fade={{ tier: 'fast' }}
       ></div>
     {/each}

@@ -4,9 +4,11 @@
   import BrowserIcon from 'phosphor-svelte/lib/BrowserIcon';
   import { CHAT_ICON_SIZE } from './chat-icon-size';
   import { faWindowMaximize, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import * as Dialog from '$lib/components/ui/dialog';
+  import { FormDialog, confirm } from '$lib/components/patterns/confirm';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import * as Popover from '$lib/components/ui/popover';
   import * as Menu from '$lib/components/ui/menu';
+  import { menuItem } from '$lib/components/ui/menu';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import {
     selectHiddenTabs,
@@ -33,9 +35,10 @@
     workspaceId: string;
     agentId: string;
     entries?: BrowserTabEntry[];
+    embedded?: boolean;
   }
 
-  let { workspaceId, agentId, entries: previewEntries }: Props = $props();
+  let { workspaceId, agentId, entries: previewEntries, embedded = false }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- intentional initial snapshot for store construction.
   const workspaceIdStore = writable(workspaceId);
@@ -64,6 +67,7 @@
   }
 
   function handleTabClick(entry: BrowserTabEntry) {
+    menuOpen = false;
     if (previewEntries) return;
     if (entry.hidden) {
       const panels = selectPanels.select(appStore.state, workspaceId);
@@ -81,20 +85,42 @@
     }
   }
   let menuOpen = $state(false);
+  let contentElement = $state<HTMLUListElement | null>(null);
+  let triggerElement = $state<HTMLButtonElement | null>(null);
   let navigated = false;
 
   function handleCloseAutoFocus(event: Event) {
-    if (!navigated) return;
+    if (!navigated && !pendingClose) return;
     event.preventDefault();
     navigated = false;
+  }
+
+  function handleTabKeydown(event: KeyboardEvent, index: number) {
+    const rows = contentElement?.querySelectorAll<HTMLElement>(
+      '[data-testid="browser-tabs-menu-item"]',
+    );
+    if (!rows?.length) return;
+    let next: number;
+    if (event.key === 'ArrowDown') next = (index + 1) % rows.length;
+    else if (event.key === 'ArrowUp') next = (index - 1 + rows.length) % rows.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = rows.length - 1;
+    else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      (event.currentTarget as HTMLElement)
+        .closest('li')
+        ?.querySelector<HTMLButtonElement>('[data-testid="browser-tab-close"]')
+        ?.focus();
+      return;
+    } else return;
+    event.preventDefault();
+    rows[next].focus();
   }
   const hiddenCount = $derived(entries.filter((entry) => entry.hidden).length);
   type PendingClose = { kind: 'tab'; entry: BrowserTabEntry } | { kind: 'hidden' };
 
   // Close request awaiting confirmation (owner agent running); null otherwise.
   let pendingClose = $state<PendingClose | null>(null);
-  let confirmButtonRef: HTMLButtonElement | null = $state(null);
-  let confirmHasFocus = $state(false);
 
   function isHostedHere(tab: PanelTab, ownClientId: string | null): boolean {
     return tab.hostClientId === undefined || tab.hostClientId === ownClientId;
@@ -103,7 +129,7 @@
   // A mirror is closed on its host; `force` tombstones the daemon row when
   // that host is offline (same as the viewer's "Close anyway").
   function closeMirror(tab: PanelTab) {
-    const host = selectBrowserTabHost.select(appStore.state, tab.hostClientId ?? '');
+    const host = selectBrowserTabHost.select(appStore.state, tab.hostClientId ?? '', workspaceId);
     appStore.dispatch(closeBrowserTabRequested(tab.id, !host.connected));
   }
 
@@ -127,11 +153,29 @@
     for (const tab of hiddenMirrors) closeMirror(tab);
   }
 
-  function requestClose(action: PendingClose) {
+  async function requestClose(action: PendingClose) {
     if (previewEntries) return;
     menuOpen = false;
     if (selectAgentIsRunning.select(appStore.state, agentId)) {
-      pendingClose = action;
+      if (embedded) {
+        const hidden = action.kind === 'hidden';
+        const confirmed = await confirm({
+          title: hidden
+            ? m.chat_browserTabs_closeHiddenDialog_title()
+            : m.chat_browserTabs_closeDialog_title(),
+          description: hidden
+            ? m.chat_browserTabs_closeHiddenDialog_description()
+            : m.chat_browserTabs_closeDialog_description(),
+          confirmLabel: hidden
+            ? m.chat_browserTabs_closeHiddenDialog_confirm_label()
+            : m.chat_browserTabs_closeDialog_confirm_label(),
+          cancelLabel: m.chat_browserTabs_closeDialog_cancel_label(),
+          destructive: true,
+        });
+        if (confirmed) performClose(action);
+      } else {
+        pendingClose = action;
+      }
       return;
     }
     performClose(action);
@@ -145,11 +189,6 @@
 
   function cancelPendingClose() {
     pendingClose = null;
-  }
-
-  function handleDialogOpenAutoFocus(event: Event) {
-    event.preventDefault();
-    confirmButtonRef?.focus();
   }
 </script>
 
@@ -170,16 +209,65 @@
   </span>
 {/snippet}
 
-{#if entries.length > 0}
-  <Menu.Root bind:open={menuOpen}>
-    <Menu.Trigger>
+{#if entries.length > 0 && embedded}
+  <Menu.Sub bind:open={menuOpen}>
+    <Menu.SubTrigger icon={faWindowMaximize} data-testid="browser-tabs-trigger"
+      >{triggerLabel}</Menu.SubTrigger
+    >
+    <Menu.SubContent class="w-64" alignIconColumn={false} onCloseAutoFocus={handleCloseAutoFocus}>
+      {#each entries as entry (entry.tab.id)}
+        {@const label = tabLabel(entry)}
+        <div class="flex min-w-0 items-center gap-1">
+          <Menu.Item
+            class="min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}"
+            textValue={label}
+            onclick={() => handleTabClick(entry)}
+            data-testid="browser-tabs-menu-item"
+            data-browser-tab-id={entry.tab.id}
+            data-hidden={entry.hidden || undefined}
+          >
+            {#snippet leading()}{@render favicon(entry)}{/snippet}
+            <span class="min-w-0 flex-1 truncate">{label}</span>
+          </Menu.Item>
+          <Menu.Item
+            class="size-7 shrink-0 items-center justify-center p-0"
+            textValue={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            aria-label={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            title={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+            onSelect={(event) => event.preventDefault()}
+            onclick={() => requestClose({ kind: 'tab', entry })}
+            data-testid="browser-tab-close"
+            data-browser-tab-id={entry.tab.id}
+          >
+            <Fa icon={faXmark} size={16} class="size-4! shrink-0" />
+          </Menu.Item>
+        </div>
+      {/each}
+      {#if hiddenCount > 0}
+        <Menu.Separator />
+        <Menu.CommandItem
+          icon={faXmark}
+          label={m.chat_browserTabs_closeHidden_label({ count: formatInteger(hiddenCount) })}
+          onSelect={(event) => event.preventDefault()}
+          onclick={() => requestClose({ kind: 'hidden' })}
+          data-testid="browser-tabs-close-hidden"
+        />
+      {/if}
+    </Menu.SubContent>
+  </Menu.Sub>
+{:else if entries.length > 0}
+  <Popover.Root bind:open={menuOpen}>
+    <Popover.Trigger>
       {#snippet child({ props })}
         <Button
           {...props}
+          bind:ref={triggerElement}
           variant="ghost-light"
           size="icon-sm"
+          active={menuOpen}
           aria-label={triggerLabel}
           tooltip={triggerLabel}
+          tooltipDisabled={menuOpen}
           tooltipSide="bottom"
           tooltipDelayDuration={300}
           data-testid="browser-tabs-trigger"
@@ -192,119 +280,106 @@
           />
         </Button>
       {/snippet}
-    </Menu.Trigger>
-    <Menu.Content
+    </Popover.Trigger>
+    <Popover.Content
+      trapFocus={false}
       align="end"
       side="bottom"
-      class="min-w-52 max-w-80"
+      sideOffset={4}
+      class="min-w-52 max-w-80 max-h-[min(var(--bits-popover-content-available-height,calc(100dvh-1rem)),calc(100dvh-1rem))] overflow-y-auto p-1"
+      role="dialog"
+      aria-label={triggerLabel}
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        contentElement
+          ?.querySelector<HTMLElement>('[data-testid="browser-tabs-menu-item"]')
+          ?.focus();
+      }}
       onCloseAutoFocus={handleCloseAutoFocus}
     >
-      {#each entries as entry (entry.tab.id)}
-        {@const label = tabLabel(entry)}
-        <Menu.Item
-          class="min-w-0 {entry.hidden ? 'opacity-60' : ''}"
-          data-testid="browser-tabs-menu-item"
-          data-browser-tab-id={entry.tab.id}
-          data-hidden={entry.hidden || undefined}
-          onkeydown={(event) => {
-            if (event.key === 'ArrowRight') {
-              event.preventDefault();
-              event.currentTarget
-                .querySelector<HTMLButtonElement>('[data-testid="browser-tab-close"]')
-                ?.focus();
-            }
-          }}
-          onSelect={() => handleTabClick(entry)}
-        >
-          {@render favicon(entry)}
-          <span class="min-w-0 flex-1 truncate text-muted-foreground">{label}</span>
-          <Button
-            variant="plain"
-            size="icon-compact"
-            type="button"
-            class="size-6 shrink-0 focus-visible:ring-1"
-            data-testid="browser-tab-close"
-            data-browser-tab-id={entry.tab.id}
-            aria-label={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
-            title={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
-            onkeydown={(event) => {
-              event.stopPropagation();
-              if (event.key === 'ArrowLeft') {
+      <ul bind:this={contentElement} class="m-0 list-none p-0">
+        {#each entries as entry, index (entry.tab.id)}
+          {@const label = tabLabel(entry)}
+          <li class="flex min-w-0 items-center gap-1">
+            <Button
+              variant="plain"
+              wrapContent={false}
+              class="{menuItem()} min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}"
+              data-testid="browser-tabs-menu-item"
+              data-browser-tab-id={entry.tab.id}
+              data-hidden={entry.hidden || undefined}
+              onkeydown={(event) => handleTabKeydown(event, index)}
+              onclick={() => handleTabClick(entry)}
+            >
+              {@render favicon(entry)}
+              <span class="min-w-0 flex-1 truncate text-muted-foreground">{label}</span>
+            </Button>
+            <Button
+              variant="plain"
+              size="icon-compact"
+              type="button"
+              class="size-6 shrink-0 focus-visible:ring-1"
+              data-testid="browser-tab-close"
+              data-browser-tab-id={entry.tab.id}
+              aria-label={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+              title={m.chat_browserTabs_closeTab_ariaLabel({ title: label })}
+              onkeydown={(event) => {
+                if (event.key !== 'Escape') event.stopPropagation();
+                if (event.key === 'ArrowLeft') {
+                  event.preventDefault();
+                  event.currentTarget
+                    .closest('li')
+                    ?.querySelector<HTMLElement>('[data-testid="browser-tabs-menu-item"]')
+                    ?.focus();
+                }
+              }}
+              onclick={(event) => {
                 event.preventDefault();
-                event.currentTarget
-                  .closest<HTMLElement>('[data-testid="browser-tabs-menu-item"]')
-                  ?.focus();
-              }
-            }}
-            onclick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              requestClose({ kind: 'tab', entry });
-            }}
-          >
-            <Fa icon={faXmark} class="size-3" />
-          </Button>
-        </Menu.Item>
-      {/each}
+                event.stopPropagation();
+                requestClose({ kind: 'tab', entry });
+              }}
+            >
+              <Fa icon={faXmark} class="size-3" />
+            </Button>
+          </li>
+        {/each}
+      </ul>
       {#if hiddenCount > 0}
-        <Menu.Separator />
-        <Menu.Item
+        <div class="my-1 border-t border-border"></div>
+        <Button
+          variant="plain"
+          class={menuItem()}
           data-testid="browser-tabs-close-hidden"
-          onSelect={() => requestClose({ kind: 'hidden' })}
+          onclick={() => requestClose({ kind: 'hidden' })}
         >
           <Fa icon={faXmark} class="size-3" />
           {m.chat_browserTabs_closeHidden_label({ count: formatInteger(hiddenCount) })}
-        </Menu.Item>
+        </Button>
       {/if}
-    </Menu.Content>
-  </Menu.Root>
+    </Popover.Content>
+  </Popover.Root>
 {/if}
 
-<Dialog.Root
+<FormDialog
   open={pendingClose !== null}
-  onOpenChange={(nextOpen) => !nextOpen && cancelPendingClose()}
->
-  <Dialog.Content
-    class="max-w-sm gap-0 overflow-hidden p-0"
-    closeLabel={m.chat_browserTabs_closeDialog_close_ariaLabel()}
-    onOpenAutoFocus={handleDialogOpenAutoFocus}
-  >
-    <div class="p-5 pr-12">
-      <Dialog.Header class="gap-2 pr-0">
-        <Dialog.Title>
-          {pendingClose?.kind === 'hidden'
-            ? m.chat_browserTabs_closeHiddenDialog_title()
-            : m.chat_browserTabs_closeDialog_title()}
-        </Dialog.Title>
-        <Dialog.Description class="leading-5">
-          {pendingClose?.kind === 'hidden'
-            ? m.chat_browserTabs_closeHiddenDialog_description()
-            : m.chat_browserTabs_closeDialog_description()}
-        </Dialog.Description>
-      </Dialog.Header>
-    </div>
-
-    <Dialog.Footer class="mt-0 flex-row items-center justify-end border-0 px-5 pb-5 pt-0">
-      <Button
-        variant="ghost-light"
-        data-testid="browser-tabs-close-dialog-cancel"
-        onclick={cancelPendingClose}
-      >
-        {m.chat_browserTabs_closeDialog_cancel_label()}
-      </Button>
-      <Button
-        variant="destructive"
-        bind:ref={confirmButtonRef}
-        class={confirmHasFocus ? 'ring-ring/50 ring-2' : undefined}
-        data-testid="browser-tabs-close-dialog-confirm"
-        onfocus={() => (confirmHasFocus = true)}
-        onblur={() => (confirmHasFocus = false)}
-        onclick={confirmPendingClose}
-      >
-        {pendingClose?.kind === 'hidden'
-          ? m.chat_browserTabs_closeHiddenDialog_confirm_label()
-          : m.chat_browserTabs_closeDialog_confirm_label()}
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+  size="sm"
+  title={pendingClose?.kind === /* i18n-ignore (internal close-intent discriminator) */ 'hidden'
+    ? m.chat_browserTabs_closeHiddenDialog_title()
+    : m.chat_browserTabs_closeDialog_title()}
+  description={pendingClose?.kind === 'hidden'
+    ? m.chat_browserTabs_closeHiddenDialog_description()
+    : m.chat_browserTabs_closeDialog_description()}
+  closeLabel={m.chat_browserTabs_closeDialog_close_ariaLabel()}
+  cancelLabel={m.chat_browserTabs_closeDialog_cancel_label()}
+  submitLabel={pendingClose?.kind === 'hidden'
+    ? m.chat_browserTabs_closeHiddenDialog_confirm_label()
+    : m.chat_browserTabs_closeDialog_confirm_label()}
+  submitVariant="destructive"
+  focusSubmit
+  onSubmit={confirmPendingClose}
+  onCancel={cancelPendingClose}
+  onCloseAutoFocus={(event) => {
+    event.preventDefault();
+    triggerElement?.focus();
+  }}
+/>

@@ -9,7 +9,8 @@
  * which is what turns an online-only roster into the brief's member circles
  * (offline members dimmed, the owner blue).
  */
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { PresenceMember } from '$shared/types/presence';
 import type { WorkspaceMember } from '../guest-sessions/guest-sessions-types';
 
@@ -36,6 +37,9 @@ export interface LiveTypingEntry {
 }
 
 export interface PresenceState {
+  /** Admission/presentation lifetime owning these ephemeral rows. */
+  context: string | null;
+  workspaceIds: string[];
   /** Latest roster per workspace id — a full replacement each time. */
   rosters: Record<string, PresenceMemberCollection>;
   /** Accepted membership per shared workspace on display — a full replacement each time. */
@@ -54,10 +58,17 @@ export interface PresenceState {
 
 /** The identity part of a roster or membership row — what a name or a typing line needs. */
 export interface PresenceIdentity {
+  hostRole?: import('$shared/types/principal').HostRole;
   principalId: string;
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
+  /**
+   * The forge the person is identified by (`Principal.identity`), carried by
+   * a membership row of a daemon that serves the identity seam. Modern presence rosters carry the same qualified identity; older
+   * daemons remain neutral.
+   */
+  identity?: PrincipalIdentity;
 }
 
 /**
@@ -75,11 +86,3 @@ export interface PresencePerson extends PresenceIdentity {
   /** This window's own principal. */
   self: boolean;
 }
-
-/**
- * Where a person is looking right now inside one workspace, resolved from
- * their roster focus items: the agent chat they have open, else the note.
- * A person on the bare workspace tab (or offline) has no target.
- */
-export type PresenceFocusTarget =
-  { kind: 'agent'; agentId: string } | { kind: 'note'; noteId: string };

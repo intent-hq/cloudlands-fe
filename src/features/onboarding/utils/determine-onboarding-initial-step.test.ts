@@ -19,6 +19,28 @@ const setupStates = [false, true].flatMap((fullFlowRequested) =>
 );
 
 describe('determineOnboardingInitialStep', () => {
+  it('opens repository selection for members without running host setup', () => {
+    expect(
+      determineOnboardingInitialStep({
+        hostRole: 'member',
+        requirementsCheckedOnce: false,
+        allRequirementsMet: false,
+      }),
+    ).toBe('project');
+  });
+
+  it.each(['owner', 'guest', null] as const)(
+    'does not bypass setup with %s authority',
+    (hostRole) => {
+      expect(
+        determineOnboardingInitialStep({
+          hostRole,
+          requirementsCheckedOnce: false,
+          allRequirementsMet: false,
+        }),
+      ).toBe('requirements');
+    },
+  );
   it.each(setupStates)('starts at welcome regardless of prior setup: %j', (setupState) => {
     expect(
       determineOnboardingInitialStep({

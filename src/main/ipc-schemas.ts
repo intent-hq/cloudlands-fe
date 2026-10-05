@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
+import type { InviteProgressAction } from '../shared/ipc/invite-progress';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
 import {
@@ -73,6 +74,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:user-message:sent',
   // Agent session stats (PROTOCOL §5.24)
   'agent:session-stats-changed',
+  // Hub checkpoint events
+  'hub:checkpoint',
   // Git events
   'git:commit',
   'git:push',
@@ -194,6 +197,8 @@ export const WorkspaceCreateSchema = z.object({
       // not send one. Kept optional for legacy callers only.
       agentId: z.string().optional(),
       name: z.string().optional(),
+      nameExplicitlySet: z.boolean().optional(),
+      rememberSpecialist: z.boolean().optional(),
       model: z.string().optional(),
       provider: z.string().optional(), // Provider ID (e.g., 'auggie', 'claude-code', 'codex')
       prompt: z.string().optional(),
@@ -579,17 +584,6 @@ export const EventsSubscribeSchema = z.object({
 export const EventsUnsubscribeSchema = z.object({
   subscriptionId: z.string().min(1, 'Subscription ID is required'),
 });
-
-export const EventsGetLastEventSchema = z.object({
-  // Mirrors `EventsEmitSchema.event.type`: drift-resistant union pulled from
-  // `WorkspaceEventType`. Reserved-but-unused types (e.g. `file:created`) are
-  // still accepted as query inputs and simply return `null` if no such event
-  // has ever been recorded.
-  type: z.enum(WORKSPACE_EVENT_TYPE_LITERALS),
-  workspaceId: WorkspaceIdSchema.optional(),
-});
-
-export const EventsGetStatisticsSchema = z.object({});
 
 export const SystemWriteClipboardSchema = z.object({
   text: z.string(),
@@ -1243,6 +1237,23 @@ export const InviteConsentAckSchema = z.object({
 export const InviteConsentResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
   action: z.enum(['open', 'cancel']),
+});
+
+// ============================================================================
+// Invite Progress Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite progress dialog.
+// The payload contract (all five channels) is documented in
+// `src/shared/ipc/invite-progress.ts`.
+// ============================================================================
+
+export const InviteProgressAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteProgressResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  action: z.enum(['cancel', 'retry'] as const satisfies readonly InviteProgressAction[]),
 });
 
 // ============================================================================

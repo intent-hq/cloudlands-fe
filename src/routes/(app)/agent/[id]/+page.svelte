@@ -120,9 +120,9 @@
             agentId: requestedAgentId,
             workspaceId: workspace.id,
           });
-          const restoreAction = restoreAgentSessionRequested(workspace.id, requestedAgentId);
-          appStore.dispatch(restoreAction);
-          session = await restoreAction.promise;
+          session = await appStore.dispatch(
+            restoreAgentSessionRequested(workspace.id, requestedAgentId),
+          );
         }
       }
 

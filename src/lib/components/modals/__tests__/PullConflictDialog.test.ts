@@ -48,6 +48,21 @@ const expectDismissedOnce = async (trigger: HTMLElement, count = '1') => {
 describe('PullConflictDialog dismissal', () => {
   beforeEach(() => dispatch.mockClear());
 
+  it('renders recognized conflict paths without dropping other diagnostics', async () => {
+    const Dialog = (await import('../PullConflictDialog.svelte')).default;
+    render(Dialog, {
+      props: {
+        open: true,
+        static: true,
+        staticData: { editors: [] },
+        error:
+          'CONFLICT (content): Merge conflict in src/file with spaces.ts\nfatal: unexpected failure',
+      },
+    });
+    expect(screen.getByText('src/file with spaces.ts')).toBeTruthy();
+    expect(screen.getByText('fatal: unexpected failure')).toBeTruthy();
+  });
+
   it('closes from the X with mouse and touch activation exactly once per open', async () => {
     const Harness = (await import('./PullConflictDialogHarness.svelte')).default;
     render(Harness);

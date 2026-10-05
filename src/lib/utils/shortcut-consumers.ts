@@ -20,7 +20,10 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     source: 'routes/(app)/+layout.svelte',
     handler: 'keyboard manager',
   },
-  'global.toggle-spaces': { source: 'routes/(app)/+layout.svelte', handler: 'keyboard manager' },
+  'global.toggle-spaces': {
+    source: 'features/workspace/utils/workspace-spaces-shortcut.ts',
+    handler: 'keyboard manager',
+  },
   'global.new-space': {
     source: 'features/workspace/utils/workspace-tab-navigation.ts',
     handler: 'keyboard manager',

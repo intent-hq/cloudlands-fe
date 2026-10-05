@@ -1,4 +1,4 @@
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '$store/renderer/store';
 import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
 import { fetchEditorsSuccess } from '$store/renderer/slices/external-editors/external-editors-slice';

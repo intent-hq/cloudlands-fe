@@ -17,6 +17,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
+  import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
@@ -31,7 +32,6 @@
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
-  import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
@@ -43,7 +43,10 @@
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectWindowIdentitySettled } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import {
+    selectPrincipalActionContext,
+    selectHostAdministrationDenied,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -62,9 +65,9 @@
     selectChatAuroraEnabled,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
-    selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
+    selectLabsMultiplayerEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -93,14 +96,15 @@
   const agentFontStyle = selectAgentFontStyle();
   const codeFontFamily = selectCodeFontFamily();
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
-  const codeFontFamilyLabel = selectCodeFontFamilyLabel();
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
-  const windowIdentitySettled$ = selectWindowIdentitySettled();
+  const collaborationContext$ = selectPrincipalActionContext();
+  const hostAdministrationDenied$ = selectHostAdministrationDenied();
+  const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -119,7 +123,8 @@
     'providers',
     'connections',
     'devices',
-    'guest-sessions',
+    'mobile',
+    'collaboration',
     'setup',
     'advanced',
     'input',
@@ -144,10 +149,12 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
-    'websocket-api': 'devices',
-    'remote-access': 'devices',
-    'guest-sessions': 'guest-sessions',
-    sharing: 'guest-sessions',
+    mobile: 'mobile',
+    'websocket-api': 'mobile',
+    'remote-access': 'mobile',
+    collaboration: 'collaboration',
+    'guest-sessions': 'collaboration',
+    sharing: 'collaboration',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -189,6 +196,7 @@
   }
 
   function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
+    if (tabParam === 'guest-sessions' || tabParam === 'sharing') return 'collaboration';
     if (tabParam === 'accounts') return 'providers';
     if (
       tabParam === 'general' ||
@@ -208,7 +216,7 @@
     const targetTab = resolveHashTab(targetId);
     if (targetTab) return targetTab;
     if (tabParam && isSettingsTab(tabParam)) return tabParam;
-    return (tabParam && resolveLegacyTab(tabParam)) || 'display';
+    return (tabParam && resolveLegacyTab(tabParam)) || 'agent-behavior';
   }
 
   function getInitialTab(): SettingsTab {
@@ -242,15 +250,22 @@
   // Provider keys and GitHub/Linear/Sentry connections are administrator-owned
   // daemon state (multiplayer w3): a collaborator-only client cannot read or
   // change them, so those sections are withheld and their tabs redirect. The
-  // redirect waits for the window identity to settle: during boot the
+  // redirect waits for the connected principal: during boot the
   // collaborator-only default is a safe placeholder, not an answer, and
   // redirecting on it would drop a `?tab=providers` deep link for an
   // administrator (intent-hq/intent#5514).
-  const hiddenTabs = $derived<readonly SettingsTab[]>(
-    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
-  );
+  const hiddenTabs = $derived.by(() => {
+    const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
+    if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
+    return tabs;
+  });
   $effect(() => {
-    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
+    if (
+      hiddenTabs.includes(activeTab) &&
+      (activeTab === 'collaboration' || $hostAdministrationDenied$)
+    ) {
+      setActiveTab('display');
+    }
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
@@ -503,6 +518,7 @@
 
 {#snippet agentsNavigation()}
   <AIBehaviorSidebar
+    workspaceId={settingsWorkspaceId ?? undefined}
     activeView={aiBehaviorView}
     onSelect={selectAiBehaviorView}
     isActive={activeTab === 'specialists'}
@@ -568,7 +584,7 @@
           <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
-        <!-- Devices -->
+        <!-- Machines -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
             <DevicesSettings />
@@ -585,29 +601,20 @@
               </section>
             </div>
           </div>
+        {/if}
 
-          <!-- Remote Access (WebSocket API) -->
-          <div
-            id="websocket-api"
-            data-highlight-id="websocket-api"
-            use:highlightTarget
-            class="scroll-mt-20"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_remoteAccess()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <WebSocketApiSettings />
-              </section>
+        {#if activeTab === 'mobile'}
+          <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
+            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+              <MobileSettings />
             </div>
           </div>
         {/if}
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
-        {#if activeTab === 'guest-sessions'}
-          <div id="guest-sessions" class="scroll-mt-20">
-            <GuestSessionsSettings />
+        {#if activeTab === 'collaboration' && $labsMultiplayerEnabled$}
+          <div id="collaboration" class="scroll-mt-20">
+            {#key $collaborationContext$}<GuestSessionsSettings />{/key}
           </div>
         {/if}
 
@@ -815,24 +822,27 @@
                   label={m.settings_font_code_label()}
                   description={m.settings_font_code_description()}
                 >
-                  <div class="w-[180px] flex-shrink-0">
-                    <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
-                      <Select.Trigger>
-                        <span class="truncate" style:font-family={$codeFontFamilyCSS}>
-                          {$codeFontFamilyLabel}
-                        </span>
-                      </Select.Trigger>
-                      <Select.Content portal class="max-h-[300px] w-[180px]">
-                        {#each $codeFontOptions as option}
-                          <Select.Item value={option.value}>
-                            <span class="truncate" style:font-family={option.fontFamily}>
-                              {option.label}
-                            </span>
-                          </Select.Item>
-                        {/each}
-                      </Select.Content>
-                    </Select.Root>
-                  </div>
+                  {#snippet control({ labelId, descriptionId })}
+                    <div class="w-[180px] flex-shrink-0">
+                      <Select.Root value={$codeFontFamily} onchange={handleCodeFontChange}>
+                        <Select.Trigger aria-labelledby={labelId} aria-describedby={descriptionId}>
+                          <span class="truncate" style:font-family={$codeFontFamilyCSS}>
+                            {$codeFontOptions.find((option) => option.value === $codeFontFamily)
+                              ?.label ?? $codeFontFamily}
+                          </span>
+                        </Select.Trigger>
+                        <Select.Content portal class="max-h-[300px] w-[180px]">
+                          {#each $codeFontOptions as option}
+                            <Select.Item value={option.value}>
+                              <span class="truncate" style:font-family={option.fontFamily}>
+                                {option.label}
+                              </span>
+                            </Select.Item>
+                          {/each}
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                  {/snippet}
                 </SettingsFieldRow>
               </section>
             </div>

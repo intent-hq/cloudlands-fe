@@ -63,13 +63,11 @@ function auditPerformance() {
 
   // Check file existence
   console.log('📁 Checking Files:\n');
-  let allFilesExist = true;
 
   filesToAudit.forEach((file) => {
     const filePath = path.join(rootDir, file);
     const exists = fs.existsSync(filePath);
     console.log(`  ${exists ? '✅' : '❌'} ${file}`);
-    if (!exists) allFilesExist = false;
   });
 
   console.log('\n');
@@ -78,7 +76,6 @@ function auditPerformance() {
   console.log('🚀 Performance Features:\n');
 
   Object.entries(performanceFeatures).forEach(([feature, config]) => {
-    let featureFound = false;
     let matchCount = 0;
 
     config.files.forEach((fileName) => {
@@ -97,7 +94,7 @@ function auditPerformance() {
       }
     });
 
-    featureFound = matchCount > 0;
+    const featureFound = matchCount > 0;
     const score = featureFound ? (matchCount / config.patterns.length) * 10 : 0;
     totalScore += score;
     maxScore += 10;

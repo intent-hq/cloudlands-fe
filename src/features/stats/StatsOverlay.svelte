@@ -12,10 +12,9 @@
    */
   import { fade } from '$lib/motion';
   import { Button } from '$lib/components/ui/button';
-  import { menuItem } from '$lib/components/ui/menu';
-  import { cn } from '$lib/utils';
+  import { Select } from '$lib/components/ui/select';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faCheck, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faDownload, faXmark } from '@fortawesome/free-solid-svg-icons';
   import AgentPassportCard from './AgentPassportCard.svelte';
   import ModelsCard from './ModelsCard.svelte';
   import ProvidersCard from './ProvidersCard.svelte';
@@ -94,7 +93,7 @@
   });
 
   function handleKeydown(event: KeyboardEvent) {
-    if (!$isOpen$) return;
+    if (!$isOpen$ || event.defaultPrevented) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       if (dropdownOpen) {
@@ -143,10 +142,10 @@
   >
     <!-- Close affordance -->
     <Button
-      variant="ghost"
+      variant="secondary"
       size="icon"
       iconOnly
-      class="stats-close pointer-events-auto fixed top-10 right-5 z-10 rounded-lg cursor-pointer"
+      class="pointer-events-auto fixed top-3 right-3 z-10"
       onclick={close}
       aria-label={m.stats_overlay_close_ariaLabel()}
     >
@@ -156,15 +155,15 @@
     <!-- Mode pill + period dropdown. The mt-auto here pairs with the hint's mb-auto to
          center the content block when it fits the viewport, without the top-clipping
          that justify-center causes on an overflow-y-auto container. -->
-    <div class="pointer-events-auto relative z-[3] mt-auto flex items-center gap-2.5">
-      <div class="stats-pill flex rounded-lg p-[3px]">
+    <div
+      class="pointer-events-auto relative z-[3] mt-auto flex flex-wrap justify-center items-center gap-2.5"
+    >
+      <div class="flex gap-1 rounded-lg bg-popover p-1 text-popover-foreground shadow-sm">
         {#each STATS_MODES as entry (entry.mode)}
           <Button
-            variant="ghost"
-            class="stats-pill-seg rounded-md px-3.5 py-[5px] text-[12.5px] font-medium cursor-pointer select-none {$mode$ ===
-            entry.mode
-              ? 'stats-pill-seg-active'
-              : ''}"
+            variant={$mode$ === entry.mode ? 'secondary' : 'ghost'}
+            size="sm"
+            aria-pressed={$mode$ === entry.mode}
             onclick={() => setMode(entry.mode)}
           >
             {entry.label}
@@ -174,92 +173,92 @@
 
       {#if $mode$ !== '24h'}
         <div class="relative">
-          <Button
-            variant="ghost"
-            class="stats-dd-trigger flex h-8 items-center gap-2 rounded-lg px-3 text-[12.5px] font-medium cursor-pointer select-none"
-            onclick={() => (dropdownOpen = !dropdownOpen)}
-            aria-haspopup="listbox"
-            aria-expanded={dropdownOpen}
-          >
-            {$periodKey$ ? periodLabel($mode$, $periodKey$) : '—'}
-            <span class="opacity-60 text-[9px] a11y-ignore"
-              ><Fa icon={faChevronDown} size={9} /></span
+          <Select.Root value={$periodKey$ ?? ''} bind:open={dropdownOpen} onchange={pickPeriod}>
+            <Select.Trigger
+              variant="secondary"
+              aria-label={m.stats_overlay_period_ariaLabel()}
+              aria-busy={$loading$}
+              class="h-8 min-w-40"
             >
-          </Button>
-          {#if dropdownOpen}
-            <div
-              class="stats-dd absolute top-[38px] left-0 z-[4] w-40 rounded-lg p-1"
-              role="listbox"
-            >
+              {$periodKey$ ? periodLabel($mode$, $periodKey$) : '—'}
+              <span class="opacity-60" aria-hidden="true"><Fa icon={faChevronDown} size={9} /></span
+              >
+            </Select.Trigger>
+            <Select.Content portal class="z-[60] min-w-40">
               {#each options as key (key)}
-                <Button
-                  variant="ghost"
-                  class={cn(
-                    menuItem(),
-                    'stats-dd-opt justify-between rounded-[5px] px-[9px] py-1.5 text-xs cursor-pointer',
-                    key === $periodKey$ && 'stats-dd-opt-sel',
-                  )}
-                  role="option"
-                  aria-selected={key === $periodKey$}
-                  onclick={() => pickPeriod(key)}
-                >
+                <Select.Item value={key} label={periodLabel($mode$, key)}>
                   {periodLabel($mode$, key)}
-                  {#if key === $periodKey$}
-                    <span class="stats-check"><Fa icon={faCheck} size={9} /></span>
-                  {/if}
-                </Button>
+                </Select.Item>
               {:else}
-                <div class="px-[9px] py-1.5 text-xs stats-muted">
+                <div class="px-2 py-1.5 type-caption text-muted-foreground" role="status">
                   {m.stats_overlay_noData_label()}
                 </div>
               {/each}
-            </div>
-          {/if}
+            </Select.Content>
+          </Select.Root>
         </div>
       {/if}
     </div>
 
     {#if $error$}
-      <div class="stats-error pointer-events-auto mt-8 text-sm" role="alert">{$error$}</div>
+      <div
+        class="pointer-events-auto mt-8 rounded-lg bg-popover p-3 text-sm text-danger"
+        role="alert"
+      >
+        {$error$}
+      </div>
+    {/if}
+
+    {#if $loading$ && !$data$}
+      <p class="mt-8 rounded-lg bg-popover p-3 text-sm text-popover-foreground" role="status">
+        {m.stats_overlay_loading_label()}
+      </p>
     {/if}
 
     <!-- Card slots (each wrapped for the hover-reveal PNG export button) -->
-    <div class="pointer-events-auto mt-[30px] flex flex-wrap justify-center gap-7">
-      <div class="stats-card-wrap relative">
-        {@render exportBtn('passport')}
-        <AgentPassportCard data={$data$} label={cardLabel} />
-      </div>
-      <div class="stats-card-wrap relative">
-        {@render exportBtn('models')}
-        <ModelsCard data={$data$} label={cardLabel} />
-      </div>
-      <div class="stats-card-wrap relative">
-        {@render exportBtn('providers')}
-        <ProvidersCard data={$data$} label={cardLabel} />
-      </div>
-      <div class="stats-card-wrap relative">
-        {@render exportBtn('by-hour')}
-        <TokensByHourCard data={$data$} mode={$mode$} label={cardLabel} loading={$loading$} />
-      </div>
-      {#if $mode$ !== '24h'}
-        <!-- Tokens by Month is hidden in 24H mode (Spec D11). -->
-        <div class="stats-card-wrap relative">
-          {@render exportBtn('by-month')}
-          <TokensByMonthCard data={$data$} {yearKey} loading={$loading$} />
+    {#if $data$}
+      <div class="pointer-events-auto mt-[30px] flex flex-wrap justify-center gap-7">
+        <div class="group relative">
+          {@render exportBtn('passport')}
+          <AgentPassportCard data={$data$} label={cardLabel} />
         </div>
-      {/if}
-    </div>
+        <div class="group relative">
+          {@render exportBtn('models')}
+          <ModelsCard data={$data$} label={cardLabel} />
+        </div>
+        <div class="group relative">
+          {@render exportBtn('providers')}
+          <ProvidersCard data={$data$} label={cardLabel} />
+        </div>
+        <div class="group relative">
+          {@render exportBtn('by-hour')}
+          <TokensByHourCard data={$data$} mode={$mode$} label={cardLabel} loading={$loading$} />
+        </div>
+        {#if $mode$ !== '24h'}
+          <!-- Tokens by Month is hidden in 24H mode (Spec D11). -->
+          <div class="group relative">
+            {@render exportBtn('by-month')}
+            <TokensByMonthCard data={$data$} {yearKey} loading={$loading$} />
+          </div>
+        {/if}
+      </div>
 
-    <div class="stats-hint mt-[26px] mb-auto rounded-full px-3.5 py-1.5 text-xs">
-      {m.stats_overlay_exportHint_label()}
-    </div>
+      <div
+        class="mt-[26px] mb-auto rounded-full border border-border bg-popover text-muted-foreground px-3.5 py-1.5 text-xs"
+      >
+        {m.stats_overlay_exportHint_label()}
+      </div>
+    {:else}
+      <div class="mb-auto"></div>
+    {/if}
   </div>
 {/if}
 
 {#snippet exportBtn(card: StatsCardName)}
   <Button
-    variant="ghost"
-    class="stats-export-btn absolute top-3.5 right-3.5 z-[2] flex h-[30px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium cursor-pointer"
+    variant="secondary"
+    size="sm"
+    class="absolute top-3.5 right-3.5 z-[2] opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto"
     onclick={(event) => exportCard(event.currentTarget as HTMLElement, card)}
     aria-label={m.stats_overlay_exportCard_ariaLabel({ card })}
   >
@@ -273,86 +272,5 @@
     background: rgba(0, 0, 0, 0.55);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
-  }
-
-  .stats-pill,
-  .stats-dd-trigger,
-  .stats-dd,
-  .stats-hint {
-    background: hsl(240 12% 11%);
-    border: 1px solid hsl(256 6% 24%);
-  }
-
-  .stats-pill,
-  .stats-dd-trigger,
-  .stats-hint {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  }
-
-  .stats-dd {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  }
-
-  .stats-pill-seg {
-    background: transparent;
-    color: hsl(240 5% 58%);
-  }
-
-  .stats-pill-seg-active {
-    background: hsl(240 12% 20%);
-    color: hsl(0 0% 97%);
-  }
-
-  .stats-dd-trigger {
-    color: hsl(0 0% 97%);
-  }
-
-  .stats-dd-opt {
-    background: transparent;
-    color: hsl(240 5% 58%);
-  }
-
-  .stats-dd-opt-sel {
-    background: hsl(240 12% 18%);
-    color: hsl(0 0% 97%);
-  }
-
-  .stats-check {
-    color: hsl(158 100% 38%);
-  }
-
-  .stats-close {
-    background: hsl(240 12% 11%);
-    border: 1px solid hsl(256 6% 24%);
-    color: hsl(0 0% 97%);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  }
-
-  .stats-muted {
-    color: hsl(240 5% 46%);
-  }
-
-  .stats-hint {
-    color: hsl(240 5% 58%);
-  }
-
-  .stats-error {
-    color: hsl(0 84% 60%);
-  }
-
-  /* Design btn(): hover-only, top-right, semi-opaque dark chip. */
-  .stats-export-btn {
-    background: rgba(22, 22, 30, 0.9);
-    border: 1px solid hsl(256 6% 32%);
-    color: hsl(0 0% 97%);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s;
-  }
-
-  .stats-card-wrap:hover .stats-export-btn,
-  .stats-export-btn:focus-visible {
-    opacity: 1;
-    pointer-events: auto;
   }
 </style>

@@ -21,6 +21,13 @@ export type VideoSource =
   | { kind: 'workspace'; url: string; mimeType: 'video/mp4' | 'video/webm' };
 
 /**
+ * Text-block image dimension sidecar (PROTOCOL §7.1): intrinsic pixel
+ * dimensions keyed by the exact Markdown image `src` as written in the block's
+ * text.
+ */
+export type TextBlockMedia = Record<string, { width: number; height: number }>;
+
+/**
  * Unified ContentBlock Type Definition
  *
  * Single source of truth for all content block types across the application.
@@ -145,8 +152,14 @@ export interface ContentBlock {
   dataIsThumbnail?: boolean;
   /** Byte size of the full `data` when `dataTruncated` is set. */
   dataBytes?: number;
+  /** Intrinsic pixel width of the original image (image blocks; kept by the slim projection). */
+  width?: number;
+  /** Intrinsic pixel height of the original image (image blocks; kept by the slim projection). */
+  height?: number;
   /** MIME type of media */
   mimeType?: string;
+  /** Image dimension sidecar for Markdown images referenced by a text block. */
+  media?: TextBlockMedia;
   /** Transcript for audio content */
   transcript?: string;
   /** Normalized source for assistant-produced video content */

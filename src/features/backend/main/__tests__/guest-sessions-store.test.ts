@@ -3,6 +3,18 @@ import * as fs from 'fs/promises';
 import { promises as mutableFs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { invitedPersonKey, invitedRemovalKey } from '../invited-session-key';
+import { parseInvitedPayload } from '../invited-session-payload';
+import { reconcileInvitedSessions } from '../invited-session-sync';
+import {
+  serializeRecord,
+  accountKeyFor,
+  type KeychainClient,
+  type KeychainItem,
+  type KeychainSyncRecord,
+} from '../keychain-sync';
+import type { InvitedSession } from '../invited-session-payload';
+import { AuthRejectedError } from '../backend-connection';
 
 /**
  * Round-trip tests for the guest sessions store
@@ -15,6 +27,7 @@ import * as path from 'path';
 
 let tmpDir: string;
 let encryptionAvailable = true;
+let decryptionAvailable = true;
 
 function mockElectron() {
   vi.doMock('electron', () => ({
@@ -22,7 +35,10 @@ function mockElectron() {
     safeStorage: {
       isEncryptionAvailable: () => encryptionAvailable,
       encryptString: (s: string) => Buffer.from(`enc:${s}`, 'utf8'),
-      decryptString: (b: Buffer) => b.toString('utf8').replace(/^enc:/, ''),
+      decryptString: (b: Buffer) => {
+        if (!decryptionAvailable) throw new Error('locked test keyring');
+        return b.toString('utf8').replace(/^enc:/, '');
+      },
     },
   }));
   vi.doMock('../../../shared/logger', () => ({
@@ -38,6 +54,7 @@ function mockElectron() {
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'guest-sessions-'));
   encryptionAvailable = true;
+  decryptionAvailable = true;
   vi.resetModules();
   mockElectron();
 });
@@ -54,18 +71,361 @@ const sample = {
   host: '192.168.1.10',
   hosts: ['192.168.1.10', '10.0.0.5', '127.0.0.1'],
   port: 8443,
-  fingerprint: 'AA:BB:CC',
+  fingerprint: 'ab'.repeat(32),
   tcAddress: null,
   principalId: 'prn_7',
   login: 'octocat',
   token: 'guest-secret',
 };
 
+const authenticate = async (r: { principalId?: string }) => ({
+  principalId: r.principalId!,
+  login: null,
+});
+function keychain(items: KeychainItem[] = []): KeychainClient {
+  return {
+    list: async () => ({ ok: true, items }),
+    insert: async (account, payload) => {
+      const old = items.find((r) => r.account === account);
+      if (!old) items.push({ account, payload });
+      return { ok: true, inserted: !old, payload: old?.payload ?? payload };
+    },
+    upsert: async (account, payload) => {
+      const old = items.find((r) => r.account === account);
+      if (old) old.payload = payload;
+      else items.push({ account, payload });
+      return { ok: true };
+    },
+    delete: async () => ({ ok: true }),
+  };
+}
+
+type Store = typeof import('../guest-sessions-store');
+async function syncRecords(store: Store): Promise<InvitedSession[]> {
+  const { items } = await store.createInvitedSyncAdapter(authenticate).read();
+  return [...new Map(items.map((r) => [r.account, r])).values()].flatMap((r) => {
+    const value = parseInvitedPayload(r.account, r.payload);
+    return value?.kind === 'session' ? [value] : [];
+  });
+}
+async function importRecord(
+  store: Store,
+  record: KeychainSyncRecord | InvitedSession,
+): Promise<boolean> {
+  const row =
+    'kind' in record
+      ? { account: invitedPersonKey(record as InvitedSession), payload: JSON.stringify(record) }
+      : { account: accountKeyFor(record.host, record.port), payload: serializeRecord(record) };
+  const result = await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+    client: keychain([row]),
+  });
+  return result.pulled.length > 0;
+}
+describe('invited v2 registry durability', () => {
+  it('does not transfer another person’s future observations into a removal floor', async () => {
+    const store = await import('../guest-sessions-store');
+    const b = await store.add(sample);
+    await store.add({ ...sample, principalId: 'C', token: 'c-secret' });
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+      client: keychain(),
+    });
+    const c = (await syncRecords(store)).find((r) => r.principalId === 'C')!;
+    const future = { ...c, updatedAt: Date.now() + 10_000_000 };
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+      client: keychain([{ account: invitedPersonKey(future), payload: JSON.stringify(future) }]),
+    });
+    await store.forget(b.id);
+    const records = (await store.createInvitedSyncAdapter(authenticate).read()).items.map((r) =>
+      parseInvitedPayload(r.account, r.payload),
+    );
+    const removal = records.find(
+      (r) => r?.kind === 'removal' && r.principalId === sample.principalId,
+    )!;
+    expect(removal.removedThrough).toBeLessThan(future.updatedAt);
+    expect((await store.list()).map((r) => r.principalId)).toEqual(['C']);
+  });
+
+  it('preserves bytes and refuses Forget when the durable clock index is malformed', async () => {
+    const store = await import('../guest-sessions-store');
+    const joined = await store.add(sample);
+    const raw = await readFile();
+    raw.invitedObservedClocks = { [invitedPersonKey(sample)]: -1 };
+    const original = JSON.stringify(raw);
+    const file = path.join(tmpDir, 'guest-sessions.json');
+    await fs.writeFile(file, original);
+    await expect(store.forget(joined.id)).rejects.toBeInstanceOf(store.GuestStoreCorruptError);
+    expect(await fs.readFile(file, 'utf8')).toBe(original);
+  });
+  it.each(
+    [false, true].flatMap((locked) =>
+      ['pairedAt', 'updatedAt', 'tcUpdatedAt'].map((clock) => ({ locked, clock })),
+    ),
+  )(
+    'Forget covers encrypted future $clock before late auth and restart (locked=$locked)',
+    async ({ locked, clock }) => {
+      const store = await import('../guest-sessions-store');
+      const first = await store.add(sample);
+      const unrelated = await store.add({ ...sample, principalId: 'C', token: 'c-secret' });
+      const client = keychain();
+      await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), { client });
+      const current = (await syncRecords(store)).find((r) => r.principalId === sample.principalId)!;
+      const future = {
+        ...current,
+        token: 'future-secret',
+        updatedAt: Date.now() + 1_000_000,
+        pairedAt: Date.now() + 2_000_000,
+        [clock]: Date.now() + 3_000_000,
+      };
+      const futureItem = { account: invitedPersonKey(future), payload: JSON.stringify(future) };
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const pending = reconcileInvitedSessions(
+        store.createInvitedSyncAdapter(async (candidate) => {
+          if (candidate.token === future.token) {
+            entered.resolve();
+            await release.promise;
+          }
+          return authenticate(candidate);
+        }),
+        { client: keychain([futureItem]) },
+      );
+      await entered.promise;
+      // The production reconciler has durably remembered the candidate but has not admitted it.
+      expect(JSON.stringify(await readFile())).not.toContain(future.token);
+      encryptionAvailable = !locked;
+      decryptionAvailable = !locked;
+      vi.resetModules();
+      const afterRestart = await import('../guest-sessions-store');
+      await afterRestart.forget(first.id);
+      encryptionAvailable = true;
+      decryptionAvailable = true;
+      release.resolve();
+      await pending;
+      expect(await store.findById(first.id)).toBeNull();
+      expect((await store.list()).map((r) => r.principalId)).toEqual(['C']);
+      expect(await store.getDecryptedToken(unrelated.id)).toBe('c-secret');
+      vi.resetModules();
+      const restarted = await import('../guest-sessions-store');
+      await reconcileInvitedSessions(restarted.createInvitedSyncAdapter(authenticate), {
+        client: keychain([futureItem]),
+      });
+      expect((await restarted.list()).map((r) => r.principalId)).toEqual(['C']);
+      const fresh = await restarted.add({ ...sample, token: 'deliberate-later-join' });
+      await reconcileInvitedSessions(restarted.createInvitedSyncAdapter(authenticate), {
+        client: keychain([futureItem]),
+      });
+      expect(await restarted.getDecryptedToken(fresh.id)).toBe('deliberate-later-join');
+      expect((await restarted.findById(fresh.id))?.pairedAt).toBeGreaterThan(
+        Math.max(future.pairedAt, future.updatedAt, future.tcUpdatedAt ?? 0),
+      );
+    },
+  );
+
+  it('explicitly forgets an unqualified legacy row locally without inventing a synced person', async () => {
+    const store = await import('../guest-sessions-store');
+    const record = await store.add(sample);
+    const raw = await readFile();
+    const rows = raw.sessions as Array<{ fingerprint: string }>;
+    rows[0].fingerprint = 'legacy-unqualified-pin';
+    await fs.writeFile(path.join(tmpDir, 'guest-sessions.json'), JSON.stringify(raw));
+    expect(await store.forget(record.id)).toBe(true);
+    expect(await store.list()).toEqual([]);
+    const next = await readFile();
+    expect(next.invitedSync ?? []).toEqual([]);
+    expect(next.tombstones).toEqual([]);
+  });
+
+  it('a returning link without a tunnel does not invent a clear, while a new known route gets its own clock', async () => {
+    const store = await import('../guest-sessions-store');
+    const first = await store.add({ ...sample, tcAddress: 'Case_Sensitive/Route' });
+    const initial = (await syncRecords(store))[0];
+    await store.add({ ...sample, retainPairing: true, tcAddress: null });
+    expect((await store.findById(first.id))?.tcAddress).toBe('Case_Sensitive/Route');
+    await store.add({ ...sample, retainPairing: true, tcAddress: 'New_Opaque/Route' });
+    const next = (await syncRecords(store))[0];
+    expect(next.pairedAt).toBe(initial.pairedAt);
+    expect(next.tcUpdatedAt).toBeGreaterThan(initial.tcUpdatedAt!);
+    expect(next.tcAddress).toBe('New_Opaque/Route');
+  });
+
+  it('persists authoritative rejection during sync before dropping only that person', async () => {
+    const store = await import('../guest-sessions-store');
+    await store.add(sample);
+    const other = await store.add({ ...sample, principalId: 'other', token: 'other-token' });
+    const remote: KeychainItem[] = [];
+    const client = keychain(remote);
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), { client });
+    const rejected = store.createInvitedSyncAdapter(async (r) => {
+      if (r.principalId === sample.principalId) throw new AuthRejectedError(401);
+      return authenticate(r);
+    });
+    await reconcileInvitedSessions(rejected, { client });
+    expect((await store.list()).map((r) => r.id)).toEqual([other.id]);
+    vi.resetModules();
+    const reloaded = await import('../guest-sessions-store');
+    const facts = (await reloaded.createInvitedSyncAdapter(authenticate).read()).items.filter((r) =>
+      r.account.startsWith('invited-v2-r:'),
+    );
+    expect(facts).toHaveLength(1);
+    await reconcileInvitedSessions(reloaded.createInvitedSyncAdapter(authenticate), { client });
+    expect((await reloaded.list()).map((r) => r.id)).toEqual([other.id]);
+    expect(remote.some((r) => r.account === facts[0].account)).toBe(true);
+  });
+
+  it.each(['timeout', 'listener disabled', 'rejoined'])(
+    'sync failure cannot erase a current credential when %s',
+    async (kind) => {
+      const store = await import('../guest-sessions-store');
+      const first = await store.add(sample);
+      const client = keychain();
+      await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), { client });
+      const adapter = store.createInvitedSyncAdapter(async () => {
+        if (kind === 'timeout') throw new Error('timeout');
+        if (kind === 'listener disabled') throw new AuthRejectedError(403);
+        await store.add({ ...sample, token: 'new-token' });
+        throw new AuthRejectedError(401);
+      });
+      await reconcileInvitedSessions(adapter, { client });
+      expect(await store.getDecryptedToken(first.id)).toBe(
+        kind === 'rejoined' ? 'new-token' : sample.token,
+      );
+      expect(
+        (await adapter.read()).items.filter((r) => r.account.startsWith('invited-v2-r:')),
+      ).toEqual([]);
+    },
+  );
+
+  it('persists offline removal and one immutable outbox identity across restart with encryption locked', async () => {
+    const store = await import('../guest-sessions-store');
+    const rec = await store.add(sample);
+    encryptionAvailable = false;
+    expect(await store.forget(rec.id)).toBe(true);
+    vi.resetModules();
+    const reloaded = await import('../guest-sessions-store');
+    const adapter = reloaded.createInvitedSyncAdapter(authenticate);
+    const first = await adapter.read();
+    const facts = first.items.filter((r) => r.account.startsWith('invited-v2-r:'));
+    expect(facts).toHaveLength(1);
+    expect(parseInvitedPayload(facts[0].account, facts[0].payload)).toMatchObject({
+      kind: 'removal',
+      principalId: sample.principalId,
+    });
+    expect(await reloaded.list()).toEqual([]);
+    const client = keychain();
+    client.insert = vi.fn(async () => ({ ok: false, code: 'unavailable', message: 'locked' }));
+    await expect(reconcileInvitedSessions(adapter, { client })).resolves.toMatchObject({
+      errors: [expect.anything()],
+    });
+    expect(
+      (await adapter.read()).items.filter((r) => r.account.startsWith('invited-v2-r:')),
+    ).toEqual(facts);
+    expect(JSON.stringify(await readFile())).not.toContain(sample.token);
+  });
+
+  it('keeps a returning guest upgrade on the same record, bearer, workspaces and pairedAt', async () => {
+    const store = await import('../guest-sessions-store');
+    const first = await store.add({
+      ...sample,
+      workspace: { id: 'w1', title: 'Project' },
+      hostRole: 'guest',
+    });
+    const second = await store.add({ ...sample, hostRole: 'member', retainPairing: true });
+    expect(second).toMatchObject({
+      id: first.id,
+      pairedAt: first.pairedAt,
+      hostRole: 'member',
+      workspaces: first.workspaces,
+    });
+    expect(await store.getDecryptedToken(second.id)).toBe(sample.token);
+    await expect(store.add({ ...sample, retainPairing: true, token: 'rotated' })).rejects.toThrow();
+  });
+
+  it('does not apply a late rejection to a replacement credential', async () => {
+    const store = await import('../guest-sessions-store');
+    const old = await store.add(sample);
+    await store.add({ ...sample, token: 'new-bearer' });
+    expect(
+      await store.forget(old.id, {
+        principalId: sample.principalId,
+        token: sample.token,
+        pairedAt: old.pairedAt!,
+      }),
+    ).toBe(false);
+    expect(await store.getDecryptedToken(old.id)).toBe('new-bearer');
+  });
+
+  it('keeps imports encrypted and inactive until pinned remote authentication succeeds after restart', async () => {
+    const store = await import('../guest-sessions-store');
+    await store.add(sample);
+    const row = (await store.createInvitedSyncAdapter(authenticate).read()).items.find((r) =>
+      r.account.startsWith('invited-v2-s:'),
+    )!;
+    await fs.rm(path.join(tmpDir, 'guest-sessions.json'));
+    await reconcileInvitedSessions(
+      store.createInvitedSyncAdapter(async () => null),
+      { client: keychain([row]) },
+    );
+    expect(await store.list()).toEqual([]);
+    expect(JSON.stringify(await readFile())).not.toContain(sample.token);
+    vi.resetModules();
+    const reloaded = await import('../guest-sessions-store');
+    await reconcileInvitedSessions(reloaded.createInvitedSyncAdapter(authenticate), {
+      client: keychain([row]),
+    });
+    expect(await reloaded.list()).toHaveLength(1);
+    const [restored] = await reloaded.list();
+    expect(restored.workspaces).toEqual([]);
+    expect(await reloaded.getDecryptedToken(restored.id)).toBe(sample.token);
+  });
+
+  it('retains unknown top-level data through local metadata writes', async () => {
+    const store = await import('../guest-sessions-store');
+    const record = await store.add(sample);
+    const state = await readFile();
+    state.future = { keep: 'unchanged' };
+    await fs.writeFile(path.join(tmpDir, 'guest-sessions.json'), JSON.stringify(state));
+    await store.setHostname(record.id, 'new');
+    expect((await readFile()).future).toEqual(state.future);
+  });
+});
+
 async function readFile(): Promise<Record<string, unknown>> {
   return JSON.parse(await fs.readFile(path.join(tmpDir, 'guest-sessions.json'), 'utf8'));
 }
 
 describe('guest-sessions-store', () => {
+  it('keeps two invited people on one host separate across a disk reload', async () => {
+    const store = await import('../guest-sessions-store');
+    const fingerprint = 'ab'.repeat(32);
+    const b = await store.add({ ...sample, fingerprint, principalId: 'B' });
+    const c = await store.add({ ...sample, fingerprint, principalId: 'C', token: 'C-secret' });
+    expect(c.id).not.toBe(b.id);
+    vi.resetModules();
+    const reloaded = await import('../guest-sessions-store');
+    expect((await reloaded.list()).map((row) => row.principalId)).toEqual(['B', 'C']);
+    expect(await reloaded.getDecryptedToken(b.id)).toBe(sample.token);
+    expect(await reloaded.getDecryptedToken(c.id)).toBe('C-secret');
+    await reloaded.forget(b.id);
+    expect((await reloaded.list()).map((row) => row.principalId)).toEqual(['C']);
+  });
+
+  it('never merges different pinned hosts just because their dial address matches', async () => {
+    const store = await import('../guest-sessions-store');
+    const a = await store.add({ ...sample, fingerprint: 'ab'.repeat(32) });
+    const b = await store.add({ ...sample, fingerprint: 'cd'.repeat(32) });
+    expect(b.id).not.toBe(a.id);
+    expect(await store.list()).toHaveLength(2);
+  });
+
+  it('refuses the first credential when OS encryption is unavailable without writing plaintext', async () => {
+    const store = await import('../guest-sessions-store');
+    encryptionAvailable = false;
+    await expect(store.add({ ...sample, fingerprint: 'ab'.repeat(32) })).rejects.toMatchObject({
+      code: 'guest-encryption-unavailable',
+    });
+    expect(await fs.readdir(tmpDir)).toEqual([]);
+  });
+
   it('starts empty and never writes the owner registry file', async () => {
     const store = await import('../guest-sessions-store');
     expect(await store.list()).toEqual([]);
@@ -82,7 +442,7 @@ describe('guest-sessions-store', () => {
       host: '192.168.1.10',
       hosts: ['192.168.1.10', '10.0.0.5'],
       port: 8443,
-      fingerprint: 'AA:BB:CC',
+      fingerprint: sample.fingerprint,
       tcAddress: null,
       hostname: null,
       principalId: 'prn_7',
@@ -112,7 +472,7 @@ describe('guest-sessions-store', () => {
       { id: 'ws-2', title: 'Release' },
     ]);
     // The list is a local detail: the keychain sync record does not carry it.
-    const [sync] = await store.listSyncRecords();
+    const [sync] = await syncRecords(store);
     expect(sync).not.toHaveProperty('workspaces');
   });
 
@@ -144,17 +504,25 @@ describe('guest-sessions-store', () => {
   it('leaveWorkspace() leaves the keychain LWW clock alone, so it cannot outrank a remote re-join', async () => {
     const store = await import('../guest-sessions-store');
     const rec = await store.add({ ...sample, workspace: { id: 'ws-1', title: 'Design' } });
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+      client: keychain(),
+    });
     const before = (await store.findById(rec.id))!.updatedAt;
 
     expect(await store.leaveWorkspace(rec.id, 'ws-1')).toBe(true);
     expect((await store.findById(rec.id))!.updatedAt).toBe(before);
-    const [sync] = await store.listSyncRecords();
+    const [sync] = await syncRecords(store);
     expect(sync.updatedAt).toBe(before);
 
     // A strictly newer remote copy (another device re-joined with a fresh
     // credential) still wins against the record that just left a workspace.
-    const remote = { ...sync, token: 'rejoined-token', updatedAt: before + 1 };
-    expect(await store.applyRemoteSyncRecord(remote)).toBe(true);
+    const remote = {
+      ...sync,
+      token: 'rejoined-token',
+      pairedAt: before + 1,
+      updatedAt: before + 1,
+    };
+    expect(await importRecord(store, remote)).toBe(true);
     expect((await store.findById(rec.id))!.updatedAt).toBe(before + 1);
     expect(await store.getDecryptedToken(rec.id)).toBe('rejoined-token');
   });
@@ -179,7 +547,7 @@ describe('guest-sessions-store', () => {
       host: '10.1.1.1',
       hosts: ['10.1.1.1'],
       port: 9000,
-      fingerprint: '11:22:33',
+      fingerprint: 'cd'.repeat(32),
       hostname: 'remote.local',
       tcAddress: null,
       detectHosts: false,
@@ -212,7 +580,7 @@ describe('guest-sessions-store', () => {
 
     it('populates a row imported by keychain sync, which never carries the list', async () => {
       const store = await import('../guest-sessions-store');
-      expect(await store.applyRemoteSyncRecord(remoteRecord)).toBe(true);
+      expect(await importRecord(store, remoteRecord)).toBe(true);
       const [imported] = await store.list();
       expect(imported.workspaces).toEqual([]);
 
@@ -229,7 +597,7 @@ describe('guest-sessions-store', () => {
         ],
       });
       // Still a local detail: the sync record does not carry it.
-      const [sync] = await store.listSyncRecords();
+      const [sync] = await syncRecords(store);
       expect(sync).not.toHaveProperty('workspaces');
     });
 
@@ -288,19 +656,23 @@ describe('guest-sessions-store', () => {
     expect(await store.getDecryptedToken('nope')).toBeNull();
   });
 
-  it('falls back to flagged plaintext when safeStorage is unavailable', async () => {
-    encryptionAvailable = false;
+  it('keeps a recoverable legacy plaintext row readable but refuses a new plaintext write', async () => {
     const store = await import('../guest-sessions-store');
-    const rec = await store.add(sample);
-    const raw = await readFile();
-    const sessions = raw.sessions as Array<{ encToken: { encrypted: boolean; value: string } }>;
-    expect(sessions[0].encToken).toEqual({ encrypted: false, value: 'guest-secret' });
-    expect(await store.getDecryptedToken(rec.id)).toBe('guest-secret');
-    // The token-free record carries the flag so the fallback is never silent.
-    expect(rec.tokenEncrypted).toBe(false);
-    expect((await store.list())[0].tokenEncrypted).toBe(false);
+    const record = await store.add(sample);
+    const state = await readFile();
+    (state.sessions as Array<{ encToken: unknown }>)[0].encToken = {
+      encrypted: false,
+      value: sample.token,
+    };
+    await fs.writeFile(path.join(tmpDir, 'guest-sessions.json'), JSON.stringify(state));
+    encryptionAvailable = false;
+    expect(await store.getDecryptedToken(record.id)).toBe(sample.token);
+    expect((await store.findById(record.id))?.tokenEncrypted).toBe(false);
+    await expect(store.add({ ...sample, token: 'next' })).rejects.toMatchObject({
+      code: 'guest-encryption-unavailable',
+    });
+    expect(await store.getDecryptedToken(record.id)).toBe(sample.token);
   });
-
   it('reports tokenEncrypted: true for a safeStorage-encrypted credential', async () => {
     const store = await import('../guest-sessions-store');
     const rec = await store.add(sample);
@@ -321,19 +693,12 @@ describe('guest-sessions-store', () => {
     expect(sessions[0].id).toBe(first.id);
     expect(sessions[0].encToken.encrypted).toBe(true);
     expect(await store.getDecryptedToken(first.id)).toBe('guest-secret');
-    // A plaintext record may be refreshed with plaintext, and upgraded once
-    // encryption is back.
-    await store.forget(first.id);
-    const plain = await store.add(sample);
-    expect(plain.tokenEncrypted).toBe(false);
-    const refreshed = await store.add({ ...sample, token: 'still-plain' });
-    expect(refreshed.id).toBe(plain.id);
-    expect(refreshed.tokenEncrypted).toBe(false);
+    // The next join can succeed only once encryption is available again.
     encryptionAvailable = true;
     const upgraded = await store.add({ ...sample, token: 'now-encrypted' });
-    expect(upgraded.id).toBe(plain.id);
+    expect(upgraded.id).toBe(first.id);
     expect(upgraded.tokenEncrypted).toBe(true);
-    expect(await store.getDecryptedToken(plain.id)).toBe('now-encrypted');
+    expect(await store.getDecryptedToken(first.id)).toBe('now-encrypted');
   });
 
   it('a corrupt registry file is never overwritten: reads are empty, mutations fail closed', async () => {
@@ -401,7 +766,7 @@ describe('guest-sessions-store', () => {
 
     expect((await store.list()).map((r) => r.id)).toEqual([stored.id]);
     expect(await store.getDecryptedToken(stored.id)).toBe(sample.token);
-    await expect(store.add({ ...sample, fingerprint: 'DD:EE:FF' })).rejects.toMatchObject({
+    await expect(store.add({ ...sample, fingerprint: 'de'.repeat(32) })).rejects.toMatchObject({
       code: 'guest-store-corrupt',
     });
     await expect(store.forget(stored.id)).rejects.toMatchObject({ code: 'guest-store-corrupt' });
@@ -464,7 +829,7 @@ describe('guest-sessions-store', () => {
     expect(replaced).toEqual([]);
     await store.setHostname(first.id, 'studio');
     expect(replaced).toEqual([]);
-    await store.add({ ...sample, token: 'newer-secret', principalId: 'prn_8' });
+    await store.add({ ...sample, token: 'newer-secret' });
     expect(replaced).toEqual([first.id]);
     off();
     await store.add({ ...sample, token: 'even-newer' });
@@ -491,36 +856,42 @@ describe('guest-sessions-store', () => {
     });
   });
 
-  it('re-joining the same daemon upserts in place (same id, fresh token and identity)', async () => {
+  it('re-joining the same person keeps the id while a different person gets a separate id', async () => {
     const store = await import('../guest-sessions-store');
     const first = await store.add(sample);
-    const second = await store.add({
-      ...sample,
-      host: '10.9.9.9',
-      hosts: ['10.9.9.9'],
-      login: 'hubot',
-      principalId: 'prn_8',
-      token: 'newer-secret',
-    });
+    const second = await store.add({ ...sample, host: 'new.example', token: 'fresh-token' });
     expect(second.id).toBe(first.id);
-    expect(await store.list()).toHaveLength(1);
-    expect(second).toMatchObject({ host: '10.9.9.9', login: 'hubot', principalId: 'prn_8' });
-    expect(await store.getDecryptedToken(first.id)).toBe('newer-secret');
+    expect(await store.getDecryptedToken(second.id)).toBe('fresh-token');
+    const other = await store.add({ ...sample, principalId: 'other', token: 'other-token' });
+    expect(other.id).not.toBe(first.id);
+    expect(await store.list()).toHaveLength(2);
   });
-
-  it('falls back to host:port identity when the stored record has no fingerprint', async () => {
+  it('an unpinned legacy row is kept for explicit recovery and never matched by route', async () => {
     const store = await import('../guest-sessions-store');
-    const first = await store.add({ ...sample, fingerprint: '' });
-    const second = await store.add({ ...sample, fingerprint: 'DD:EE:FF' });
-    expect(second.id).toBe(first.id);
-    expect(second.fingerprint).toBe('DD:EE:FF');
+    const first = await store.add(sample);
+    const file = await readFile();
+    (file.sessions as Array<{ fingerprint: string }>)[0].fingerprint = '';
+    await fs.writeFile(path.join(tmpDir, 'guest-sessions.json'), JSON.stringify(file));
+    expect(
+      await store.findMatching({
+        hosts: [sample.host],
+        port: sample.port,
+        fingerprint: sample.fingerprint,
+      }),
+    ).toBeNull();
+    const fresh = await store.add(sample);
+    expect(fresh.id).not.toBe(first.id);
+    expect(await store.list()).toHaveLength(2);
   });
-
-  it('findMatching() resolves by fingerprint first, then by any candidate host:port', async () => {
+  it('findMatching() requires a pin and never uses candidate host routes', async () => {
     const store = await import('../guest-sessions-store');
     const rec = await store.add(sample);
     expect(
-      await store.findMatching({ hosts: ['203.0.113.1'], port: 1, fingerprint: 'aabbcc' }),
+      await store.findMatching({
+        hosts: ['203.0.113.1'],
+        port: 1,
+        fingerprint: sample.fingerprint,
+      }),
     ).toMatchObject({ id: rec.id });
     expect(
       await store.findMatching({
@@ -528,9 +899,13 @@ describe('guest-sessions-store', () => {
         port: 8443,
         fingerprint: null,
       }),
-    ).toMatchObject({ id: rec.id });
+    ).toBeNull();
     expect(
-      await store.findMatching({ hosts: ['203.0.113.1'], port: 8443, fingerprint: '11:22:33' }),
+      await store.findMatching({
+        hosts: ['203.0.113.1'],
+        port: 8443,
+        fingerprint: 'cd'.repeat(32),
+      }),
     ).toBeNull();
   });
 
@@ -542,6 +917,9 @@ describe('guest-sessions-store', () => {
     expect(await store.setHostname(rec.id, '')).toBe(false);
     expect(await store.setHostname('missing', 'x')).toBe(false);
     expect(await store.findById(rec.id)).toMatchObject({ hostname: 'studio' });
+    // FEFF is not Unicode White_Space: retain the daemon's accepted collaboration name.
+    expect(await store.setHostname(rec.id, '\uFEFFTeam\uFEFF')).toBe(true);
+    expect(await store.findById(rec.id)).toMatchObject({ hostname: '\uFEFFTeam\uFEFF' });
   });
 
   it('setTcAddress() persists conclusively, skips unchanged writes, and out-clocks the record', async () => {
@@ -552,7 +930,7 @@ describe('guest-sessions-store', () => {
     expect(await store.setTcAddress(rec.id, 'invite-time.tailcat.net')).toBe(false);
     expect(await store.setTcAddress(rec.id, ' tc7f2a91.tailcat.net ')).toBe(true);
     const refreshed = await store.findById(rec.id);
-    expect(refreshed).toMatchObject({ tcAddress: 'tc7f2a91.tailcat.net' });
+    expect(refreshed).toMatchObject({ tcAddress: ' tc7f2a91.tailcat.net ' });
     expect(refreshed!.updatedAt).toBeGreaterThan(rec.updatedAt);
     // A successful answer without a tunnel clears the stale address.
     expect(await store.setTcAddress(rec.id, null)).toBe(true);
@@ -560,7 +938,7 @@ describe('guest-sessions-store', () => {
     expect(await store.setTcAddress('missing', 'x')).toBe(false);
     expect((await store.findById(rec.id))?.tcAddress).toBeNull();
     expect(mutated).toHaveBeenCalledTimes(2);
-    expect(await store.listSyncRecords()).toEqual([expect.objectContaining({ tcAddress: null })]);
+    expect(await syncRecords(store)).toEqual([expect.objectContaining({ tcAddress: null })]);
   });
 
   it('setHosts() replaces the invite-time candidates, keeps the primary first, and skips no-ops', async () => {
@@ -590,12 +968,12 @@ describe('guest-sessions-store', () => {
     expect(await store.forget(rec.id)).toBe(false);
     expect(listener).toHaveBeenCalledTimes(2);
     expect(await store.list()).toEqual([]);
-    const sync = await store.listSyncRecords();
+    const sync = await syncRecords(store);
     expect(sync).toHaveLength(1);
     expect(sync[0]).toMatchObject({
       deleted: true,
       token: '',
-      fingerprint: 'AA:BB:CC',
+      fingerprint: sample.fingerprint,
       principalId: 'prn_7',
       login: 'octocat',
     });
@@ -605,12 +983,12 @@ describe('guest-sessions-store', () => {
     const store = await import('../guest-sessions-store');
     const rec = await store.add(sample);
     await store.forget(rec.id);
-    const [tomb] = await store.listSyncRecords();
+    const [tomb] = await syncRecords(store);
     const again = await store.add(sample);
-    const sync = await store.listSyncRecords();
+    const sync = await syncRecords(store);
     expect(sync).toHaveLength(1);
     expect(sync[0]).toMatchObject({ token: 'guest-secret' });
-    expect(sync[0].deleted).toBeUndefined();
+    expect(sync[0].deleted).toBe(false);
     expect(again.updatedAt).toBeGreaterThan(tomb.updatedAt);
   });
 
@@ -624,163 +1002,100 @@ describe('guest-sessions-store', () => {
   });
 });
 
-describe('guest-sessions-store keychain sync adapter', () => {
-  it('listSyncRecords() carries principal identity and the plaintext token', async () => {
+describe('authenticated invited sync store application', () => {
+  it('imports only verified live credentials without local mutation notifications and keeps nullable login', async () => {
     const store = await import('../guest-sessions-store');
-    await store.add(sample);
-    const [rec] = await store.listSyncRecords();
-    expect(rec).toMatchObject({
-      label: 'studio.local',
-      host: '192.168.1.10',
-      hosts: ['192.168.1.10', '10.0.0.5'],
-      port: 8443,
-      fingerprint: 'AA:BB:CC',
-      token: 'guest-secret',
-      principalId: 'prn_7',
-      login: 'octocat',
-      detectHosts: false,
-    });
-  });
-
-  it('applyRemoteSyncRecord() inserts a live record without notifying local listeners', async () => {
-    const store = await import('../guest-sessions-store');
-    const listener = vi.fn();
-    const replaced = vi.fn();
-    store.onGuestSessionsMutated(listener);
-    store.onGuestCredentialReplaced(replaced);
-    const changed = await store.applyRemoteSyncRecord({
+    const mutated = vi.fn();
+    store.onGuestSessionsMutated(mutated);
+    const remote = {
       label: 'remote',
-      host: '10.1.1.1',
-      hosts: ['10.1.1.1'],
-      port: 9000,
-      fingerprint: '11:22:33',
-      hostname: 'remote.local',
-      tcAddress: null,
-      detectHosts: false,
-      token: 'remote-secret',
-      principalId: 'prn_9',
-      login: 'octocat',
-      updatedAt: 1_700_000_000_000,
-    });
-    expect(changed).toBe(true);
-    expect(listener).not.toHaveBeenCalled();
-    expect(replaced).not.toHaveBeenCalled();
-    const [rec] = await store.list();
-    expect(rec).toMatchObject({ label: 'remote', hostname: 'remote.local', principalId: 'prn_9' });
-    expect(await store.getDecryptedToken(rec.id)).toBe('remote-secret');
-  });
-
-  it('applyRemoteSyncRecord() replacing a live credential notifies onGuestCredentialReplaced', async () => {
-    const store = await import('../guest-sessions-store');
-    const first = await store.add(sample);
-    const replaced = vi.fn();
-    store.onGuestCredentialReplaced(replaced);
-    const [remote] = await store.listSyncRecords();
-    const changed = await store.applyRemoteSyncRecord({
-      ...remote,
-      token: 'synced-replacement',
-      updatedAt: remote.updatedAt + 1,
-    });
-    expect(changed).toBe(true);
-    expect(replaced).toHaveBeenCalledExactlyOnceWith(first.id);
-    expect(await store.getDecryptedToken(first.id)).toBe('synced-replacement');
-  });
-
-  it('a local re-join out-clocks a clock-ahead record pulled from another device', async () => {
-    const store = await import('../guest-sessions-store');
-    const first = await store.add(sample);
-    const [remote] = await store.listSyncRecords();
-    const ahead = Date.now() + 60 * 60 * 1000;
-    await store.applyRemoteSyncRecord({ ...remote, token: 'remote-token', updatedAt: ahead });
-    expect(await store.getDecryptedToken(first.id)).toBe('remote-token');
-
-    // The local re-join must win the next LWW reconcile against that record,
-    // or the old remote credential would overwrite the fresh one.
-    const rejoined = await store.add({ ...sample, token: 'fresh-token', principalId: 'prn_9' });
-    expect(rejoined.id).toBe(first.id);
-    expect(rejoined.updatedAt).toBeGreaterThan(ahead);
-    const [synced] = await store.listSyncRecords();
-    expect(synced).toMatchObject({ token: 'fresh-token', principalId: 'prn_9' });
-    expect(synced.updatedAt).toBe(rejoined.updatedAt);
-  });
-
-  it('applyRemoteSyncRecord() that is refused as a downgrade notifies nobody', async () => {
-    const store = await import('../guest-sessions-store');
-    const first = await store.add(sample);
-    const replaced = vi.fn();
-    store.onGuestCredentialReplaced(replaced);
-    const [remote] = await store.listSyncRecords();
-    encryptionAvailable = false;
-    expect(
-      await store.applyRemoteSyncRecord({
-        ...remote,
-        token: 'plain-replacement',
-        updatedAt: remote.updatedAt + 1,
-      }),
-    ).toBe(false);
-    expect(replaced).not.toHaveBeenCalled();
-    expect((await store.findById(first.id))?.tokenEncrypted).toBe(true);
-  });
-
-  it('applyRemoteSyncRecord() rejects records lacking principal identity', async () => {
-    const store = await import('../guest-sessions-store');
-    const changed = await store.applyRemoteSyncRecord({
-      label: 'owner-shaped',
-      host: '10.1.1.1',
-      hosts: ['10.1.1.1'],
-      port: 9000,
-      fingerprint: '11:22:33',
+      host: 'remote.example',
+      hosts: ['remote.example'],
+      port: 443,
+      fingerprint: sample.fingerprint,
       hostname: null,
       tcAddress: null,
       detectHosts: true,
-      token: 'owner-secret',
-      updatedAt: 1_700_000_000_000,
-    });
-    expect(changed).toBe(false);
-    expect(await store.list()).toEqual([]);
-  });
-
-  it('applyRemoteSyncRecord() tombstone deletes the matching session by fingerprint', async () => {
-    const store = await import('../guest-sessions-store');
-    const rec = await store.add(sample);
-    const removed = vi.fn();
-    const mutated = vi.fn();
-    store.onGuestSessionRemovedBySync(removed);
-    store.onGuestSessionsMutated(mutated);
-    const changed = await store.applyRemoteSyncRecord({
-      label: 'studio.local',
-      host: '203.0.113.9',
-      hosts: ['203.0.113.9'],
-      port: 1,
-      fingerprint: 'aa:bb:cc',
-      hostname: null,
-      tcAddress: null,
-      detectHosts: false,
-      token: '',
-      updatedAt: Date.now() + 1000,
-      deleted: true,
-      deletedAt: Date.now() + 1000,
-    });
-    expect(changed).toBe(true);
-    expect(await store.findById(rec.id)).toBeNull();
-    // The pool is told which live session went away; a pull never loops back
-    // into a push.
-    expect(removed).toHaveBeenCalledExactlyOnceWith(rec.id);
+      token: 'remote-secret',
+      principalId: 'B',
+      updatedAt: 100,
+    };
+    expect(await importRecord(store, remote)).toBe(true);
+    const [record] = await store.list();
+    expect(record).toMatchObject({ principalId: 'B', login: null, workspaces: [] });
+    expect(await store.getDecryptedToken(record.id)).toBe('remote-secret');
     expect(mutated).not.toHaveBeenCalled();
-    const sync = await store.listSyncRecords();
-    expect(sync).toEqual([expect.objectContaining({ deleted: true, fingerprint: 'aa:bb:cc' })]);
+    expect(JSON.stringify(await readFile())).not.toContain('remote-secret');
   });
-
-  it('a tombstone matching no live session notifies no removal, and a local forget never does', async () => {
+  it('applies a newer verified pairing to the same id and invalidates only its pooled credential', async () => {
     const store = await import('../guest-sessions-store');
+    const first = await store.add(sample);
+    const adapter = store.createInvitedSyncAdapter(authenticate);
+    await reconcileInvitedSessions(adapter, { client: keychain() });
+    const [before] = await syncRecords(store);
+    const replaced = vi.fn();
+    store.onGuestCredentialReplaced(replaced);
+    await importRecord(store, {
+      ...before,
+      token: 'replacement',
+      pairedAt: before.pairedAt + 1,
+      updatedAt: before.updatedAt + 1,
+    });
+    expect(replaced).toHaveBeenCalledExactlyOnceWith(first.id);
+    expect(await store.getDecryptedToken(first.id)).toBe('replacement');
+  });
+  it('preserves disk bytes and credentials on encryption failure during import', async () => {
+    const store = await import('../guest-sessions-store');
+    const first = await store.add(sample);
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+      client: keychain(),
+    });
+    const [before] = await syncRecords(store);
+    const bytes = await fs.readFile(path.join(tmpDir, 'guest-sessions.json'), 'utf8');
+    encryptionAvailable = false;
+    await expect(
+      importRecord(store, {
+        ...before,
+        token: 'replacement',
+        pairedAt: before.pairedAt + 1,
+        updatedAt: before.updatedAt + 1,
+      }),
+    ).rejects.toMatchObject({ code: 'guest-encryption-unavailable' });
+    expect(await fs.readFile(path.join(tmpDir, 'guest-sessions.json'), 'utf8')).toBe(bytes);
+    expect(await store.getDecryptedToken(first.id)).toBe(sample.token);
+  });
+  it('a removal from another device removes only its person and notifies the correct pool', async () => {
+    const store = await import('../guest-sessions-store');
+    const b = await store.add(sample);
+    const c = await store.add({ ...sample, principalId: 'C', token: 'C-token' });
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+      client: keychain(),
+    });
     const removed = vi.fn();
     store.onGuestSessionRemovedBySync(removed);
-    const rec = await store.add(sample);
-    await store.forget(rec.id);
-    const [tomb] = await store.listSyncRecords();
-    expect(await store.applyRemoteSyncRecord({ ...tomb, updatedAt: tomb.updatedAt + 1 })).toBe(
-      false,
-    );
-    expect(removed).not.toHaveBeenCalled();
+    const r = {
+      v: 2 as const,
+      kind: 'removal' as const,
+      fingerprint: sample.fingerprint,
+      principalId: sample.principalId,
+      removalId: '00000000-0000-4000-8000-000000000001',
+      removedThrough: Date.now() + 1000,
+      legacyAccounts: [],
+    };
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), {
+      client: keychain([{ account: invitedRemovalKey(r), payload: JSON.stringify(r) }]),
+    });
+    expect(removed).toHaveBeenCalledExactlyOnceWith(b.id);
+    expect(await store.findById(b.id)).toBeNull();
+    expect(await store.getDecryptedToken(c.id)).toBe('C-token');
+  });
+  it('honors the connection form sync opt-out for an invited personal token', async () => {
+    const store = await import('../guest-sessions-store');
+    await store.add({ ...sample, syncExcluded: true });
+    const client = keychain();
+    client.upsert = vi.fn(client.upsert);
+    await reconcileInvitedSessions(store.createInvitedSyncAdapter(authenticate), { client });
+    expect(client.upsert).not.toHaveBeenCalled();
+    expect(await store.list()).toHaveLength(1);
   });
 });

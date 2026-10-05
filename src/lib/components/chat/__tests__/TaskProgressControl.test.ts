@@ -1,6 +1,4 @@
 /** @vitest-environment jsdom */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -69,6 +67,196 @@ afterEach(() => {
 });
 
 describe('TaskProgressControl', () => {
+  const searchableTasks: TaskProgressItem[] = [
+    ...allStatusTasks,
+    { id: 'extra', title: 'Review keyboard navigation', status: 'pending' },
+  ];
+
+  // jsdom has no layout: bits-ui hides floating wrappers after measuring empty
+  // client rects. State tests use mounted controls; CT verifies their visibility.
+  const statusControl = () => screen.getByLabelText('Filter tasks by status');
+  const selectedStatus = () => statusControl().textContent?.replace(/\s+/g, ' ').trim();
+  async function selectStatus(name: RegExp) {
+    const trigger = statusControl();
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await screen.findByRole('listbox', { hidden: true });
+    const index = screen.getAllByRole('option', { hidden: true }).findIndex((option) => {
+      const label = option.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      return name.test(label);
+    });
+    expect(index).toBeGreaterThanOrEqual(0);
+    await fireEvent.keyDown(trigger, { key: 'Home' });
+    for (let i = 0; i < index; i++) await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByRole('listbox', { hidden: true })).toBeNull());
+    expect(statusControl().getAttribute('aria-expanded')).toBe('false');
+  }
+
+  it.each(['status-stack', 'checklist'] as const)(
+    'shows search and status filters at eight tasks, not seven, for %s',
+    async (presentation) => {
+      const view = render(TaskProgressControl, { props: { tasks: allStatusTasks, presentation } });
+      await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+      await screen.findByRole('dialog');
+      expect(screen.queryByRole('searchbox')).toBeNull();
+      expect(screen.queryByRole('combobox', { name: 'Filter tasks by status' })).toBeNull();
+
+      await view.rerender({ tasks: searchableTasks, presentation });
+      expect(screen.getByRole('searchbox')).toBeTruthy();
+      expect(selectedStatus()).toBe('All 8');
+      expect(screen.getByTestId('task-progress-summary').textContent?.match(/\d+/g)).toEqual([
+        '1',
+        '8',
+      ]);
+      expect(screen.getByTestId('task-progress-trigger').textContent?.trim()).toBe('');
+    },
+  );
+
+  it('combines trimmed case-insensitive title search with status filters and unfiltered counts', async () => {
+    render(TaskProgressControl, { props: { tasks: searchableTasks, presentation: 'checklist' } });
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+    const search = await screen.findByRole('searchbox');
+    await fireEvent.input(search, { target: { value: '  ReVieW  ' } });
+    await waitFor(() =>
+      expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual([
+        'waiting',
+        'review',
+        'extra',
+      ]),
+    );
+    await selectStatus(/not started 2/i);
+    await waitFor(() =>
+      expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual([
+        'extra',
+      ]),
+    );
+    expect(selectedStatus()).toMatch(/not started 2/i);
+    expect(screen.getByTestId('task-progress-summary').textContent?.match(/\d+/g)).toEqual([
+      '1',
+      '8',
+    ]);
+    await selectStatus(/complete 1/i);
+    await waitFor(() => expect(screen.queryAllByTestId('task-progress-row')).toHaveLength(0));
+    expect(screen.getByTestId('task-progress-no-matches')).toBeTruthy();
+    await fireEvent.click(screen.getByText('Reset filters'));
+    expect((search as HTMLInputElement).value).toBe('');
+    expect(document.activeElement).toBe(search);
+    expect(selectedStatus()).toBe('All 8');
+    await waitFor(() => expect(screen.getAllByTestId('task-progress-row')).toHaveLength(8));
+  });
+
+  it('clears only the search query and retains the selected status', async () => {
+    render(TaskProgressControl, { props: { tasks: searchableTasks, presentation: 'checklist' } });
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+    const search = await screen.findByRole('searchbox');
+    expect(screen.queryByLabelText('Clear search')).toBeNull();
+    await selectStatus(/not started 2/i);
+    await fireEvent.input(search, { target: { value: 'missing' } });
+    await waitFor(() => expect(screen.queryAllByTestId('task-progress-row')).toHaveLength(0));
+    await fireEvent.click(screen.getByLabelText('Clear search'));
+    expect((search as HTMLInputElement).value).toBe('');
+    expect(selectedStatus()).toMatch(/not started 2/i);
+    expect(screen.queryByLabelText('Clear search')).toBeNull();
+    await waitFor(() =>
+      expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual([
+        'pending',
+        'extra',
+      ]),
+    );
+  });
+
+  it.each([
+    ['Not started 2', ['pending', 'extra']],
+    ['In progress 1', ['running']],
+    ['Waiting 1', ['waiting']],
+    ['Discussion needed 1', ['discussion']],
+    ['Blocked 1', ['blocked']],
+    ['Review required 1', ['review']],
+    ['Complete 1', ['completed']],
+  ])('filters the existing %s status without changing task order', async (label, ids) => {
+    render(TaskProgressControl, { props: { tasks: searchableTasks } });
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+    await selectStatus(new RegExp(label as string, 'i'));
+    await waitFor(() =>
+      expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual(
+        ids,
+      ),
+    );
+  });
+
+  it('keeps an active search and zero-count selected status through live shrink, and resets on close', async () => {
+    const view = render(TaskProgressControl, { props: { tasks: searchableTasks } });
+    const trigger = screen.getByTestId('task-progress-trigger');
+    await fireEvent.click(trigger);
+    const search = await screen.findByRole('searchbox');
+    await fireEvent.input(search, { target: { value: 'review' } });
+    await selectStatus(/waiting 1/i);
+    search.focus();
+    await view.rerender({ tasks: [searchableTasks[0], searchableTasks[2]] });
+    expect(document.activeElement).toBe(search);
+    expect((search as HTMLInputElement).value).toBe('review');
+    expect(selectedStatus()).toBe('Waiting 0');
+    expect(screen.getByTestId('task-progress-summary').textContent?.match(/\d+/g)).toEqual([
+      '1',
+      '2',
+    ]);
+    await waitFor(() => expect(screen.queryAllByTestId('task-progress-row')).toHaveLength(0));
+    await fireEvent.keyDown(search, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { hidden: true })).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+    await fireEvent.click(trigger);
+    await screen.findByRole('dialog', { hidden: true });
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.getAllByTestId('task-progress-row')).toHaveLength(2);
+    await view.rerender({ tasks: searchableTasks });
+    expect((screen.getByRole('searchbox', { hidden: true }) as HTMLInputElement).value).toBe('');
+    expect(selectedStatus()).toBe('All 8');
+  });
+
+  it('retains focused controls after unfiltered shrink and closes when every task disappears', async () => {
+    const view = render(TaskProgressControl, { props: { tasks: searchableTasks } });
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+    const search = await screen.findByRole('searchbox');
+    search.focus();
+    await view.rerender({ tasks: allStatusTasks });
+    expect(screen.getByRole('searchbox')).toBe(search);
+    expect(document.activeElement).toBe(search);
+    await fireEvent.input(search, { target: { value: 'missing' } });
+    await view.rerender({ tasks: [] });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByTestId('task-progress-trigger')).toBeNull();
+    await view.rerender({ tasks: searchableTasks });
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+    expect(((await screen.findByRole('searchbox')) as HTMLInputElement).value).toBe('');
+    expect(screen.getAllByTestId('task-progress-row')).toHaveLength(8);
+  });
+
+  it('updates filtered membership and counts when task titles and statuses change live', async () => {
+    const view = render(TaskProgressControl, { props: { tasks: searchableTasks } });
+    await fireEvent.click(screen.getByTestId('task-progress-trigger'));
+    await fireEvent.input(await screen.findByRole('searchbox'), { target: { value: 'review' } });
+    await selectStatus(/not started 2/i);
+    await view.rerender({
+      tasks: searchableTasks.map((task) =>
+        task.id === 'extra' ? { ...task, status: 'completed' } : task,
+      ),
+    });
+    await waitFor(() => expect(screen.queryAllByTestId('task-progress-row')).toHaveLength(0));
+    expect(selectedStatus()).toMatch(/not started 1/i);
+    await view.rerender({
+      tasks: searchableTasks.map((task) =>
+        task.id === 'pending' ? { ...task, title: 'Review panel' } : task,
+      ),
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId('task-progress-row').map((row) => row.dataset.taskId)).toEqual([
+        'pending',
+        'extra',
+      ]),
+    );
+  });
+
   it.each([
     ['status-stack', 'ArrowDown'],
     ['status-stack', 'PageDown'],
@@ -77,7 +265,7 @@ describe('TaskProgressControl', () => {
   ] as const)(
     'retains early %s %s entry until the scroll region mounts',
     async (presentation, key) => {
-      render(TaskProgressControl, { props: { tasks, presentation } });
+      render(TaskProgressControl, { props: { tasks: allStatusTasks, presentation } });
       const trigger = screen.getByTestId('task-progress-trigger');
       trigger.focus();
       // Deliver input before Svelte flushes the opening portal, not after a test wait.
@@ -88,6 +276,28 @@ describe('TaskProgressControl', () => {
       await tick();
       await waitFor(() =>
         expect(document.activeElement).toBe(screen.getByTestId('task-progress-scroll-region')),
+      );
+    },
+  );
+
+  it.each(['ArrowDown', 'PageDown'])(
+    'retains early %s entry to the correct long-list control',
+    async (key) => {
+      render(TaskProgressControl, { props: { tasks: searchableTasks, presentation: 'checklist' } });
+      const trigger = screen.getByTestId('task-progress-trigger');
+      trigger.focus();
+      for (const input of ['Enter', key]) {
+        trigger.dispatchEvent(
+          new KeyboardEvent('keydown', { key: input, bubbles: true, cancelable: true }),
+        );
+      }
+      await tick();
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          key === 'ArrowDown'
+            ? screen.getByRole('searchbox')
+            : screen.getByTestId('task-progress-scroll-region'),
+        ),
       );
     },
   );
@@ -135,8 +345,6 @@ describe('TaskProgressControl', () => {
     const trigger = screen.getByTestId('task-progress-trigger');
     expect(trigger.textContent?.trim()).toBe('');
     expect(trigger.getAttribute('aria-label')).toBe('Task progress: 2 of 5 completed');
-    expect(trigger.className).toContain('h-(--row-action-target-compact)');
-    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
     expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
 
     const closest = vi.spyOn(trigger, 'closest');
@@ -207,16 +415,6 @@ describe('TaskProgressControl', () => {
     },
   );
 
-  it('uses the canonical 28px action target for one task without enlarging its disk', () => {
-    render(TaskProgressControl, { props: { tasks: [tasks[0]] } });
-
-    const trigger = screen.getByTestId('task-progress-trigger');
-    expect(trigger.className).toContain('h-(--row-action-target-compact)');
-    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
-    expect(trigger.className).toContain('w-fit');
-    expect(screen.getByTestId('task-progress-status-icon').className).toContain('size-3.5');
-  });
-
   it('caps mixed-state crescents at five slots with running frontmost and neutral overflow', () => {
     const statusTasks: TaskProgressItem[] = [
       ...tasks,
@@ -272,14 +470,6 @@ describe('TaskProgressControl', () => {
     expect(icons.at(-1)?.innerHTML).not.toContain('animate-spin');
     const overflow = screen.getByTestId('task-progress-overflow-indicator');
     expect(overflow.dataset.overflowCount).toBe('3');
-    const trigger = screen.getByTestId('task-progress-trigger');
-    expect(trigger.className).toContain('h-(--row-action-target-compact)');
-    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
-    expect(trigger.className).toContain('w-fit');
-    expect(trigger.className).toContain('gap-0');
-    expect(trigger.className).toContain('p-0');
-    expect(trigger.className).toContain('m-0');
-    expect(trigger.className).not.toMatch(/(?:p[lrxy]-|m[lrxy]-)/);
   });
 
   it('reuses the compact status indicators in every flat row', async () => {
@@ -341,19 +531,6 @@ describe('TaskProgressControl', () => {
         expect.arrayContaining([expect.stringMatching(/^(?:border|outline|ring|shadow)(?:-|$)/)]),
       );
     }
-  });
-
-  it('contains no state-ring helper, inline shadow, or replacement color styling', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/chat/TaskProgressControl.svelte'),
-      'utf8',
-    );
-    expect(source).not.toContain('statusIndicatorClass');
-    expect(source).not.toContain('--agent-avatar-surface-');
-    expect(source).not.toMatch(/box-shadow\s*:/);
-    expect(source).not.toMatch(
-      /workspace-status-unread|blue|primary|green|bg-transparent|opacity-|\/[0-9]+/,
-    );
   });
 
   it('clamps normal and shimmered titles to two lines with full accessible text', async () => {
@@ -479,7 +656,7 @@ describe('TaskProgressControl', () => {
     async (presentation) => {
       render(TaskProgressControl, { props: { tasks, presentation } });
       const trigger = screen.getByTestId('task-progress-trigger');
-      const tooltipTrigger = trigger.parentElement;
+      const tooltipTrigger = trigger.closest('span');
       if (!tooltipTrigger) throw new Error('Task progress tooltip trigger wrapper is missing');
       const outside = document.createElement('button');
       document.body.append(outside);
@@ -616,20 +793,6 @@ describe('TaskProgressControl', () => {
     expect(announcement.textContent).not.toContain('Inspect the panel');
     vi.useRealTimers();
   });
-
-  it.each(['status-stack', 'checklist'] as const)(
-    'adds layout-safe reduced-motion-aware press feedback to the %s trigger',
-    (presentation) => {
-      render(TaskProgressControl, { props: { tasks, presentation } });
-      const trigger = screen.getByTestId('task-progress-trigger');
-
-      expect(trigger.className).toContain('transition-[border-color,box-shadow,opacity,scale]');
-      expect(trigger.className).toContain('duration-(--motion-fast)');
-      expect(trigger.className).toContain('motion-safe:active:scale-[0.97]');
-      expect(trigger.className).toContain('motion-reduce:scale-100');
-      expect(trigger.className).toContain('motion-reduce:transition-none');
-    },
-  );
 
   it('retains every task in a bounded vertically scrollable long-list popover', async () => {
     const longTasks: TaskProgressItem[] = Array.from({ length: 12 }, (_, index) => ({

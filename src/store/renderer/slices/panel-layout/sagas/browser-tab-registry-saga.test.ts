@@ -1,10 +1,11 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runSaga, stdChannel } from 'redux-saga';
 import { fork } from 'typed-redux-saga';
 import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   listTabs: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock('$lib/utils/browser-url-resolution', () => ({
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import type { BrowserTab, BrowserTabListing } from '$shared/types/browser-clients';
-import { createAction, type StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, type StoreAction } from '@themislib/themis/utils/store/create-action';
 import {
   browserClientsReducer,
   browserTabClosed,
@@ -49,10 +50,12 @@ import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice
 import { removeScript } from '../../scripts/scripts-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  bootstrapNewWorkspaceLayout,
   clearPanelLayout,
   closeTab,
   emptyWorkspaceState,
   initializeLayout,
+  openHiddenTab,
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
   panelLayoutReducer as rawPanelLayoutReducer,
@@ -155,7 +158,7 @@ function start(
   } = {},
 ) {
   const channel = stdChannel();
-  let state: any = {
+  let state: any = withLegacyPrincipal({
     panelLayout: { byWorkspaceId: opts.layouts ?? {} },
     browserTabRegistry: opts.applied
       ? appliedRegistry(Object.keys(opts.layouts ?? {}))
@@ -176,7 +179,8 @@ function start(
       hasLoaded: true,
       loadedBackendId: LOCAL_CONNECTION_ID,
     },
-  };
+  });
+  state.daemonHealth.health = opts.health ?? 'healthy';
   const dispatched: StoreAction<unknown>[] = [];
   let afterDispatch: ((action: StoreAction<unknown>) => void) | null = null;
   const dispatch = (action: StoreAction<unknown>) => {
@@ -211,6 +215,7 @@ function start(
     closing: () => state.browserTabRegistry.closing as Record<string, string>,
     setHealth: (health: 'healthy' | 'down', connectionGeneration: number) => {
       state = { ...state, daemonHealth: { health, connectionGeneration } };
+      if (health === 'healthy') state = withLegacyPrincipal(state);
     },
     /** Run `fn` right after each dispatch reached the reducers and the sagas. */
     onDispatched: (fn: ((action: StoreAction<unknown>) => void) | null) => {
@@ -259,6 +264,51 @@ describe('browserTabRegistrySaga', () => {
   });
 
   describe('host reporting', () => {
+    it.each([false, true])(
+      'reports tabs opened in a workspace bootstrapped after the connection sync (hidden: %s)',
+      async (hidden) => {
+        const h = start({ workspaceIds: [WS] });
+        await flush();
+        expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+        h.dispatch(bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Coordinator', true));
+        const tab = browserTab({ browserUrl: 'http://a.test/', ownerAgentId: 'agent-1' });
+        h.dispatch(
+          hidden
+            ? openHiddenTab(WS, tab, 'b1')
+            : openTabInRightmostColumn(WS, tab, { newTabId: 'b1' }),
+        );
+        await flush();
+
+        expect(mocks.upsertTab.mock.calls).toEqual([
+          [
+            WS,
+            expectedInput({
+              ownerAgentId: 'agent-1',
+              visibility: hidden ? 'hidden' : 'visible',
+              displayed: !hidden,
+            }),
+          ],
+        ]);
+        expect((hidden ? h.hidden() : h.tabs()).find((tab) => tab.id === 'b1')).toMatchObject({
+          hostClientId: OWN,
+          ownerAgentId: 'agent-1',
+        });
+        mocks.listTabs.mockResolvedValue([row({ ...mocks.upsertTab.mock.calls[0][1] })]);
+        h.setHealth('healthy', 2);
+        h.dispatch(connectionStatusChanged('connected'));
+        await flush();
+        expect(mocks.upsertTab).toHaveBeenCalledTimes(1);
+        expect(mocks.syncTabs).toHaveBeenLastCalledWith([
+          expect.objectContaining({
+            tabId: 'b1',
+            ownerAgentId: 'agent-1',
+            visibility: hidden ? 'hidden' : 'visible',
+          }),
+        ]);
+        await stop(h);
+      },
+    );
+
     it('reports a newly opened hosted tab with browser.upsertTab and records the host', async () => {
       const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);

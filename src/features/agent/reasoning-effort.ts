@@ -1,25 +1,63 @@
-/**
- * Session-level reasoning-effort writer for the chat-input effort control.
- *
- * Keeps the versioned wire mutation out of the component: a daemon whose
- * `agent.update` accepts the first-class `reasoningEffort` field gets that,
- * while older daemons use their cataloged `{model}/{effort}` variants through
- * `agent.setModel`. A rejection reverts the optimistic field and surfaces a
- * toast.
- */
-import { appClient } from '$lib/client';
-import { createLogger } from '$lib/utils/client-logger';
-import { m } from '$shared/paraglide/messages.js';
-import { agentClient } from './agent.client';
-import { buildLegacyReasoningEffortModelId } from './utils/legacy-reasoning-effort';
-import { supportsReasoningEffortProtocol } from './utils/reasoning-effort-protocol';
+/** Compatibility for control/encoder callers. Remove when they all dispatch the
+ * owning action directly. No queue, wire work or session writes live here. */
 import { store as appStore } from '$store/renderer/store';
-import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
-import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { selectAgentModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
-import { reconcileReasoningEffort } from './utils/reconcile-reasoning-effort';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import {
+  agentEffortIntentMarked,
+  agentEffortIntentReleased,
+  agentModelMutationConsumed,
+  agentModelMutationRequested,
+} from '$store/renderer/slices/agent-model/agent-model-slice';
+import type {
+  AgentModelWriteOptions,
+  AgentModelOperation,
+} from '$store/renderer/slices/agent-model/agent-model-types';
+export type ReasoningEffortWriteOptions = AgentModelWriteOptions;
+let nextIntent = 0;
 
-const logger = createLogger('ReasoningEffort');
+/** Mark a local choice immediately, even while its RPC is still coalescing. */
+export function markReasoningEffortIntent(agentId: string, workspaceId: string): number {
+  const intent = ++nextIntent;
+  appStore.dispatch(agentEffortIntentMarked(agentId, workspaceId, intent));
+  return intent;
+}
+
+/** Discard unsent choices; issued writes can still settle their accepted value. */
+export function releaseReasoningEffortIntent(
+  agentId: string,
+  workspaceId: string,
+  intent: number,
+): void {
+  appStore.dispatch(agentEffortIntentReleased(agentId, workspaceId, intent));
+}
+
+async function requestEffort(
+  agentId: string,
+  workspaceId: string,
+  operation: AgentModelOperation,
+  options?: ReasoningEffortWriteOptions,
+): Promise<boolean> {
+  const requestId = crypto.randomUUID();
+  const consumerId = options?.source ?? 'control';
+  try {
+    const result = await appStore.dispatch(
+      agentModelMutationRequested(
+        {
+          requestId,
+          consumerId,
+          agentId,
+          workspaceId,
+          operation,
+          connection: selectPrincipalConnectionContext.select(appStore.state),
+        },
+        { ...options, intent: options?.intent ?? markReasoningEffortIntent(agentId, workspaceId) },
+      ),
+    );
+    return result.status === 'success';
+  } finally {
+    appStore.dispatch(agentModelMutationConsumed(requestId, consumerId));
+  }
+}
 
 /**
  * Apply a reasoning-effort level to a session. `effort` is the level string,
@@ -31,50 +69,14 @@ export async function applyReasoningEffort(
   workspaceId: string,
   effort: string | null,
   previousEffort: string | null,
+  options?: ReasoningEffortWriteOptions,
 ): Promise<boolean> {
-  appStore.dispatch(updateSession(agentId, { reasoningEffort: effort }));
-
-  const session = appStore.state?.agentSessions?.byAgentId?.[agentId];
-  const providerId = selectAgentProvider.select(appStore.state, agentId);
-  const effortLevels = selectAgentModelEffortLevels.select(appStore.state, agentId);
-  const protocolVersion = appStore.state?.daemonHealth?.stats?.protocolVersion;
-  let result: { success: boolean; error?: string };
-
-  if (protocolVersion && !supportsReasoningEffortProtocol(protocolVersion)) {
-    const legacyModelId = buildLegacyReasoningEffortModelId(session?.model, effort, effortLevels);
-    if (!legacyModelId) {
-      result = { success: false, error: m.chat_effortPicker_updateFailed_error() };
-    } else {
-      const legacyResult = await agentClient.setModel(
-        agentId,
-        legacyModelId,
-        workspaceId,
-        providerId,
-      );
-      result = legacyResult.ok
-        ? { success: legacyResult.data.success, error: legacyResult.data.error }
-        : { success: false, error: legacyResult.error };
-    }
-  } else {
-    result = await appClient.agents.setReasoningEffort({
-      agentId,
-      workspaceId,
-      reasoningEffort: effort,
-    });
-  }
-
-  if (result.success) return true;
-
-  logger.error('Failed to set reasoning effort', { agentId, error: result.error });
-  // Only roll back if nothing else moved the field meanwhile — a later change
-  // (or a daemon `agent:updated`) that landed during the call is authoritative.
-  const current = appStore.state?.agentSessions?.byAgentId?.[agentId]?.reasoningEffort ?? null;
-  if (current === effort) {
-    appStore.dispatch(updateSession(agentId, { reasoningEffort: previousEffort }));
-  }
-  const { notify } = await import('$lib/components/patterns/notify');
-  notify.error(result.error ?? m.chat_effortPicker_updateFailed_error());
-  return false;
+  return requestEffort(
+    agentId,
+    workspaceId,
+    { kind: 'effort', effort, previous: previousEffort },
+    options,
+  );
 }
 
 /** Reconcile and persist a session effort after its model changes. */
@@ -83,10 +85,12 @@ export async function reconcileAgentReasoningEffort(
   workspaceId: string,
   currentEffort: string | null | undefined,
   supportedEfforts: readonly string[] | null | undefined,
+  options?: ReasoningEffortWriteOptions,
 ): Promise<boolean> {
-  const previousEffort = currentEffort ?? null;
-  const nextEffort = reconcileReasoningEffort(previousEffort, supportedEfforts);
-
-  if (nextEffort === previousEffort) return true;
-  return applyReasoningEffort(agentId, workspaceId, nextEffort, previousEffort);
+  return requestEffort(
+    agentId,
+    workspaceId,
+    { kind: 'reconcile', current: currentEffort ?? null, levels: supportedEfforts },
+    options,
+  );
 }

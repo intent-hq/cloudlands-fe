@@ -97,7 +97,7 @@ async function openGithubTab(
   onProjectChange: (selection: ProjectSelection) => void,
 ): Promise<HTMLInputElement> {
   render(ProjectPickerMessage, { props: { onProjectChange } });
-  const tabButton = screen.getByRole('button', {
+  const tabButton = screen.getByRole('tab', {
     name: m.onboarding_projectPicker_githubRepo_label(),
   });
   await fireEvent.click(tabButton);

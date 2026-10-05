@@ -8,21 +8,21 @@
   selection,
   and group commits.
    */
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectLockedAgentIds } from '$store/renderer/slices/agent-lock/agent-lock-selectors';
   import {
     selectStagedWorkingChanges as selectFtStagedChanges,
     selectUnstagedWorkingChanges as selectFtUnstagedChanges,
   } from '$store/renderer/slices/changes/changes-selectors';
-  import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
   import {
-    discardFiles as discardFilesViaSeam,
-    stageFiles as stageFilesViaSeam,
-    unstageFiles as unstageFilesViaSeam,
-  } from '$features/git/git-write-service';
-  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
+    gitWriteRequested,
+    cancelQueuedGitWrite,
+  } from '$store/renderer/slices/git/git-write-slice';
+  import {
+    selectGitWritePending,
+    selectGitGroupCommits,
+  } from '$store/renderer/slices/git/git-write-selectors';
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
@@ -37,13 +37,12 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Switch } from '$lib/components/ui/switch';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { notify } from '$lib/components/patterns/notify';
+  import { confirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
   import { faNote } from '$lib/icons/faNote';
   import { logger } from '$lib/utils/client-logger';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { faCodeCommit, faLock, faMinus, faPlus, faUser } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { flip } from 'svelte/animate';
@@ -64,7 +63,6 @@
   } from './sidebar-changes-utils';
   import TimelineDivider from './TimelineDivider.svelte';
   import TimelineSection from './TimelineSection.svelte';
-  import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { getPanelTabOpenState } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
@@ -134,6 +132,8 @@
   const ftUnstagedChanges$ = selectFtUnstagedChanges(workspaceIdStore);
   const autoCommitEnabled = selectAutoCommitEnabled(workspaceIdStore);
   const lockedAgentIds$ = selectLockedAgentIds(workspaceIdStore);
+  const writePending$ = selectGitWritePending(workspaceIdStore);
+  const groupCommits$ = selectGitGroupCommits(workspaceIdStore);
 
   // Derived change lists
   const unstagedChanges = $derived($ftUnstagedChanges$ ?? []);
@@ -167,7 +167,7 @@
   );
 
   // Loading state
-  let isStaging = $state(false);
+  const isStaging = $derived($writePending$);
 
   let unstagedExpanded = $state(true);
   let stagedExpanded = $state(true);
@@ -178,17 +178,6 @@
   // Multi-select state
   let selectedFiles = $state(new Set<string>());
   let lastClickedFile = $state<{ path: string; staged: boolean } | null>(null);
-
-  // Group commit queue
-  type GroupCommitQueueEntry = {
-    groupKey: string;
-    section: 'unstaged' | 'staged';
-    group: AgentChangeGroup;
-  };
-  let groupCommit = $state<{ queue: GroupCommitQueueEntry[]; active: string | null }>({
-    queue: [],
-    active: null,
-  });
 
   // Clear selection on workspace switch
   $effect(() => {
@@ -270,14 +259,21 @@
     section: 'unstaged' | 'staged',
   ): 'idle' | 'active' | 'queued' {
     const key = getGroupKey(group, section);
-    if (groupCommit.active === key) return 'active';
-    if (groupCommit.queue.some((e) => e.groupKey === key)) return 'queued';
+    const entry = $groupCommits$.find(
+      (entry) => entry.operation.kind === 'partialCommit' && entry.operation.groupKey === key,
+    );
+    if (entry?.status === 'running') return 'active';
+    if (entry?.status === 'queued') return 'queued';
     return 'idle';
   }
 
   function getGroupQueuePosition(group: AgentChangeGroup, section: 'unstaged' | 'staged'): number {
     const key = getGroupKey(group, section);
-    const idx = groupCommit.queue.findIndex((e) => e.groupKey === key);
+    const idx = $groupCommits$
+      .filter((entry) => entry.status === 'queued')
+      .findIndex(
+        (entry) => entry.operation.kind === 'partialCommit' && entry.operation.groupKey === key,
+      );
     return idx + 1;
   }
 
@@ -348,53 +344,35 @@
   }
 
   // --- Stage/Unstage/Revert handlers ---
-  async function handleStageAll() {
-    isStaging = true;
-    try {
-      const unlockedChanges = unstagedChanges.filter((c) => {
-        const agentId = c.attribution?.agent?.agentId;
-        return !agentId || !(agentId in $lockedAgentIds$);
-      });
-      const paths = unlockedChanges.map((c) => c.relativePath);
-      if (paths.length > 0) {
-        // Staging routes through the AppClient seam (git.stage); the seam
-        // resolves only after the changes slice has converged with the fresh
-        // git status, so isStaging holds until the lists have moved.
-        const result = await stageFilesViaSeam(workspaceId, paths);
-        if (!result.success) {
-          notify.error(m.workspace_fileChanges_stageFailed_error(), {
-            description: result.error || m.workspace_prSection_unknownError_label(),
-          });
-        }
-      }
-    } finally {
-      isStaging = false;
-    }
+  function handleStageAll() {
+    const paths = unstagedChanges
+      .filter((change) => !isFileLockedByAgent(change.relativePath, false))
+      .map((change) => change.relativePath);
+    if (paths.length)
+      appStore.dispatch(
+        gitWriteRequested(workspaceId, crypto.randomUUID(), {
+          kind: 'stage',
+          paths,
+          source: 'sidebar',
+        }),
+      );
   }
 
-  async function handleUnstageAll() {
-    isStaging = true;
-    try {
-      const unlockedChanges = stagedChanges.filter((c) => {
-        const agentId = c.attribution?.agent?.agentId;
-        return !agentId || !(agentId in $lockedAgentIds$);
-      });
-      const paths = unlockedChanges.map((c) => c.relativePath);
-      if (paths.length > 0) {
-        // Unstage through the AppClient seam (git.unstage).
-        const result = await unstageFilesViaSeam(workspaceId, paths);
-        if (!result.success) {
-          notify.error(m.workspace_fileChanges_unstageFailed_error(), {
-            description: result.error || m.workspace_prSection_unknownError_label(),
-          });
-        }
-      }
-    } finally {
-      isStaging = false;
-    }
+  function handleUnstageAll() {
+    const paths = stagedChanges
+      .filter((change) => !isFileLockedByAgent(change.relativePath, true))
+      .map((change) => change.relativePath);
+    if (paths.length)
+      appStore.dispatch(
+        gitWriteRequested(workspaceId, crypto.randomUUID(), {
+          kind: 'unstage',
+          paths,
+          source: 'sidebar',
+        }),
+      );
   }
 
-  async function handleStageFile(path: string) {
+  function handleStageFile(path: string) {
     const filesToStage =
       isFileSelected(path, false) && selectedUnstagedFiles.length > 0
         ? selectedUnstagedFiles.filter((p) => !isFileLockedByAgent(p, false))
@@ -403,33 +381,18 @@
       logger.warn('Cannot stage file from locked agent', { path });
       return;
     }
-    // Stage through the AppClient seam (git.stage).
-    const stageResult = await stageFilesViaSeam(workspaceId, filesToStage);
-    if (!stageResult.success) {
-      notify.error(m.workspace_fileChanges_stageFailed_error(), {
-        description: stageResult.error || m.workspace_prSection_unknownError_label(),
-      });
-    }
+    appStore.dispatch(
+      gitWriteRequested(workspaceId, crypto.randomUUID(), {
+        kind: 'stage',
+        paths: filesToStage,
+        openDiff: true,
+        source: 'sidebar',
+      }),
+    );
     clearSelection();
-    await tick();
-    if (filesToStage.length === 1) {
-      const stagedChange = $ftStagedChanges$.find(
-        (c) => c.relativePath === path || c.file === path,
-      );
-      if (stagedChange) {
-        logger.info('[handleStageFile] Updating selection to staged version', { path });
-        appStore.dispatch(
-          openWorkspaceDiff(workspaceId, stagedChange, {
-            changeId: stagedChange.id,
-            filePath: stagedChange.relativePath || stagedChange.file,
-            forceUpdate: true,
-          }),
-        );
-      }
-    }
   }
 
-  async function handleUnstageFile(path: string) {
+  function handleUnstageFile(path: string) {
     const filesToUnstage =
       isFileSelected(path, true) && selectedStagedFiles.length > 0
         ? selectedStagedFiles.filter((p) => !isFileLockedByAgent(p, true))
@@ -438,33 +401,26 @@
       logger.warn('Cannot unstage file from locked agent', { path });
       return;
     }
-    // Unstage through the AppClient seam (git.unstage).
-    const unstageResult = await unstageFilesViaSeam(workspaceId, filesToUnstage);
-    if (!unstageResult.success) {
-      notify.error(m.workspace_fileChanges_unstageFailed_error(), {
-        description: unstageResult.error || m.workspace_prSection_unknownError_label(),
-      });
-    }
+    appStore.dispatch(
+      gitWriteRequested(workspaceId, crypto.randomUUID(), {
+        kind: 'unstage',
+        paths: filesToUnstage,
+        openDiff: true,
+        source: 'sidebar',
+      }),
+    );
     clearSelection();
-    await tick();
-    if (filesToUnstage.length === 1) {
-      const unstagedChange = $ftUnstagedChanges$.find(
-        (c) => c.relativePath === path || c.file === path,
-      );
-      if (unstagedChange) {
-        logger.info('[handleUnstageFile] Updating selection to unstaged version', { path });
-        appStore.dispatch(
-          openWorkspaceDiff(workspaceId, unstagedChange, {
-            changeId: unstagedChange.id,
-            filePath: unstagedChange.relativePath || unstagedChange.file,
-            forceUpdate: true,
-          }),
-        );
-      }
-    }
   }
 
+  let confirmingRevert = false;
+  let disposed = false;
+  onDestroy(() => {
+    disposed = true;
+  });
+
   async function handleRevertFile(path: string) {
+    if (confirmingRevert || !isOwner) return;
+    const targetWorkspaceId = workspaceId;
     const filesToRevert =
       isFileSelected(path, false) && selectedUnstagedFiles.length > 0
         ? selectedUnstagedFiles.filter((p) => !isFileLockedByAgent(p, false))
@@ -473,165 +429,103 @@
       logger.warn('Cannot revert file from locked agent', { path });
       return;
     }
-    // Revert through the AppClient seam (git.discard; DESTRUCTIVE).
-    const revertResult = await discardFilesViaSeam(workspaceId, filesToRevert);
-    if (!revertResult.success) {
-      notify.error(m.workspace_fileChanges_revertFailed_error(), {
-        description: revertResult.error || m.workspace_prSection_unknownError_label(),
+    if (!filesToRevert.length) return;
+    confirmingRevert = true;
+    try {
+      const accepted = await confirm({
+        title: m.fileTracking_changes_discardChanges_tooltip(),
+        description: filesToRevert.join('\n'),
+        confirmLabel: m.fileTracking_changes_discard_label(),
+        destructive: true,
       });
+      if (!accepted || disposed || workspaceId !== targetWorkspaceId || !isOwner) return;
+      // Never widen or retarget the confirmed set after a refresh or workspace switch.
+      const currentChanges = selectFtUnstagedChanges.select(appStore.state, targetWorkspaceId);
+      const currentLocks = selectLockedAgentIds.select(appStore.state, targetWorkspaceId);
+      if (
+        filesToRevert.some((filePath) => {
+          const change = currentChanges.find(
+            (change) => (change.relativePath || change.file) === filePath,
+          );
+          const agentId = change?.attribution?.agent?.agentId;
+          return !change || (agentId && agentId in currentLocks);
+        })
+      )
+        return;
+      appStore.dispatch(
+        gitWriteRequested(targetWorkspaceId, crypto.randomUUID(), {
+          kind: 'discard',
+          paths: filesToRevert,
+          source: 'sidebar',
+        }),
+      );
+      if (!disposed && workspaceId === targetWorkspaceId) clearSelection();
+    } finally {
+      confirmingRevert = false;
     }
-    clearSelection();
   }
 
-  async function handleStageGroup(group: AgentChangeGroup) {
+  function handleStageGroup(group: AgentChangeGroup) {
     if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot stage locked agent group', { agentId: group.agentId });
       return;
     }
     const paths = group.files.map((f) => f.path);
-    // Stage through the AppClient seam (git.stage).
-    const result = await stageFilesViaSeam(workspaceId, paths);
-    if (!result.success) {
-      notify.error(m.workspace_fileChanges_stageFailed_error(), {
-        description: result.error || m.workspace_prSection_unknownError_label(),
-      });
-    }
+    appStore.dispatch(
+      gitWriteRequested(workspaceId, crypto.randomUUID(), {
+        kind: 'stage',
+        paths,
+        source: 'sidebar',
+      }),
+    );
   }
 
-  async function handleUnstageGroup(group: AgentChangeGroup) {
+  function handleUnstageGroup(group: AgentChangeGroup) {
     if (group.agentId && group.agentId in $lockedAgentIds$) {
       logger.warn('Cannot unstage locked agent group', { agentId: group.agentId });
       return;
     }
     const paths = group.files.map((f) => f.path);
-    // Unstage through the AppClient seam (git.unstage).
-    const result = await unstageFilesViaSeam(workspaceId, paths);
-    if (!result.success) {
-      notify.error(m.workspace_fileChanges_unstageFailed_error(), {
-        description: result.error || m.workspace_prSection_unknownError_label(),
-      });
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function handleCommitGroup(group: AgentChangeGroup) {
-    if (group.agentId && group.agentId in $lockedAgentIds$) {
-      logger.warn('Cannot commit locked agent group', { agentId: group.agentId });
-      return;
-    }
-    const paths = group.files.map((f) => f.path);
-    const commitMessage = group.agentName || m.workspace_fileChanges_agentChanges_label();
-    try {
-      const stageResult = await stageFilesViaSeam(workspaceId, paths);
-      if (!stageResult.success) {
-        throw new Error(stageResult.error || 'Stage failed');
-      }
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
-        commitMessage,
-      });
-      if (result.success) {
-        try {
-          await Promise.all([
-            Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId, true)),
-          ]);
-        } catch (e) {
-          console.warn('Failed to refresh stores after group commit:', e);
-        }
-      } else {
-        notify.error(m.workspace_fileChanges_commitFailed_error(), {
-          description: result.error || m.workspace_prSection_unknownError_label(),
-        });
-      }
-    } catch (error) {
-      logger.error('Failed to commit agent group', error as Error);
-      notify.error(m.workspace_fileChanges_commitFailed_error(), {
-        description:
-          error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
-      });
-    }
+    appStore.dispatch(
+      gitWriteRequested(workspaceId, crypto.randomUUID(), {
+        kind: 'unstage',
+        paths,
+        source: 'sidebar',
+      }),
+    );
   }
 
   // --- Group commit queue ---
   function enqueueGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
     const key = getGroupKey(group, section);
-    if (groupCommit.active === key || groupCommit.queue.some((e) => e.groupKey === key)) return;
+    if (getGroupCommitState(group, section) !== 'idle') return;
     if (group.agentId && group.agentId in $lockedAgentIds$) return;
-    groupCommit.queue = [...groupCommit.queue, { groupKey: key, section, group }];
-    if (!groupCommit.active) {
-      processGroupCommitQueue();
-    }
+    appStore.dispatch(
+      gitWriteRequested(workspaceId, crypto.randomUUID(), {
+        kind: 'partialCommit',
+        paths: group.files.map((file) => file.path),
+        section,
+        message: group.agentId
+          ? getAgentDisplayName(group) ||
+            group.agentName ||
+            m.workspace_fileChanges_agentChanges_label()
+          : m.workspace_fileChanges_manualChanges_label(),
+        groupKey: key,
+        agentId: group.agentId,
+        source: 'sidebar',
+      }),
+    );
   }
 
   function cancelGroupCommit(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
     const key = getGroupKey(group, section);
-    if (groupCommit.active === key) return;
-    groupCommit.queue = groupCommit.queue.filter((e) => e.groupKey !== key);
-  }
-
-  async function processGroupCommitQueue() {
-    while (groupCommit.queue.length > 0) {
-      const next = groupCommit.queue[0];
-      groupCommit.active = next.groupKey;
-      groupCommit.queue = groupCommit.queue.slice(1);
-      try {
-        await commitSingleGroup(next.group, next.section);
-      } catch (error) {
-        logger.error('Group commit failed', error as Error);
-        notify.error(m.workspace_fileChanges_commitFailed_error(), {
-          description:
-            error instanceof Error ? error.message : m.workspace_prSection_unknownError_label(),
-        });
-      }
-    }
-    groupCommit.active = null;
-  }
-
-  // Per-group commit executes the commit itself over the legacy
-  // IPC/AcceptChangesClient path; the temporary unstage/re-stage around it
-  // routes through the git-write-service seam (git.unstage / git.stage).
-  async function commitSingleGroup(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
-    const paths = group.files.map((f) => f.path);
-    const pathSet = new Set(paths);
-    const message = group.agentId
-      ? getAgentDisplayName(group) ||
-        group.agentName ||
-        m.workspace_fileChanges_agentChanges_label()
-      : m.workspace_fileChanges_manualChanges_label();
-    const otherStagedPaths = stagedChanges
-      .filter((c) => !pathSet.has(c.relativePath))
-      .map((c) => c.relativePath);
-    try {
-      if (otherStagedPaths.length > 0) {
-        const unstageResult = await unstageFilesViaSeam(workspaceId, otherStagedPaths);
-        if (!unstageResult.success) {
-          throw new Error(unstageResult.error || 'Unstage failed');
-        }
-      }
-      if (section === 'unstaged') {
-        const stageResult = await stageFilesViaSeam(workspaceId, paths);
-        if (!stageResult.success) {
-          throw new Error(stageResult.error || 'Stage failed');
-        }
-      }
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
-        commitMessage: message,
-      });
-      if (!result.success) {
-        throw new Error(result.error || 'Commit failed');
-      }
-    } finally {
-      if (otherStagedPaths.length > 0) {
-        const restageResult = await stageFilesViaSeam(workspaceId, otherStagedPaths);
-        if (!restageResult.success) {
-          logger.error('Failed to re-stage files after group commit', restageResult.error);
-        }
-      }
-      await Promise.all([
-        Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-        appStore.dispatch(refreshRequested(workspaceId, true)),
-      ]).catch(() => {});
-    }
+    const entry = $groupCommits$.find(
+      (entry) =>
+        entry.status === 'queued' &&
+        entry.operation.kind === 'partialCommit' &&
+        entry.operation.groupKey === key,
+    );
+    if (entry) appStore.dispatch(cancelQueuedGitWrite(workspaceId, entry.id));
   }
 </script>
 
@@ -823,6 +717,7 @@
                       out:send|global={{ key: file.path }}
                     >
                       <FileRow
+                        contextKey={workspaceId}
                         compact
                         {file}
                         showStageAction={isOwner && !isLocked}
@@ -862,6 +757,7 @@
               }}
             >
               <FileRow
+                contextKey={workspaceId}
                 compact
                 file={toUIFileChange(change, false)}
                 showStageAction={isOwner}
@@ -1053,6 +949,7 @@
                       out:send|global={{ key: file.path }}
                     >
                       <FileRow
+                        contextKey={workspaceId}
                         compact
                         {file}
                         showStageAction={isOwner && !isLocked}
@@ -1087,6 +984,7 @@
               out:send|global={{ key: change.relativePath }}
             >
               <FileRow
+                contextKey={workspaceId}
                 compact
                 file={toUIFileChange(change, true)}
                 showStageAction={isOwner}

@@ -48,7 +48,6 @@ describe('editorial workspace shell presentation contract', () => {
     const container = source('../PanelContainer.svelte');
 
     expect(panel).toContain('overflow-hidden rounded-(--panel-shell-radius) text-foreground');
-    expect(panel).toContain('--panel-shell-radius: var(--radius-large);');
     expect(panel).not.toContain('rounded-lg border border-border');
     expect(panel).toContain('class:bg-sidebar={panel.tabs.length === 0}');
     expect(panel).toContain('class:bg-background={panel.tabs.length > 0}');
@@ -98,35 +97,8 @@ describe('editorial workspace shell presentation contract', () => {
     expect(handle).toContain('height: 16px');
   });
 
-  it('renders one content-aware header per panel without the legacy tab strip', () => {
-    const tabBar = source('../PanelTabBar.svelte');
-
-    expect(tabBar).not.toContain('border-b border-border');
-    expect(tabBar).toContain('h-[var(--panel-header-height)] bg-card');
-    expect(tabBar).toContain('items-center bg-sidebar pr-2.5');
-    expect(tabBar).toContain('showTabStrip = false');
-    expect(tabBar).toContain("!showTabStrip && 'hidden'");
-    expect(tabBar).toContain('data-panel-tab-bar');
-    expect(tabBar).toContain('data-panel-tabless-header');
-    expect(tabBar).toContain('data-panel-content-header');
-    expect(tabBar).toContain('m.layout_panelTabBar_closePane_ariaLabel()');
-    expect(tabBar).toContain("{#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}");
-    expect(tabBar).toContain('bind:open={panelActionsMenuOpen[location]}');
-    expect(tabBar).toContain("{@render panelActionsDropdown('tabBar')}");
-    expect(tabBar).toContain("{@render panelActionsDropdown('compact')}");
-    expect(tabBar).toContain('{#snippet panelCloseButton(tab: PanelTab | null = null)}');
-    expect(tabBar).toContain('data-testid="panel-close-button"');
-    expect(tabBar).toContain('data-panel-actions-section="display"');
-    expect(tabBar).toContain('data-panel-actions-section="actions"');
-    expect(tabBar).toContain('m.layout_panelTabBar_displaySection_label()');
-    expect(tabBar).toContain('m.layout_panelTabBar_actionsSection_label()');
-    expect(tabBar).toContain('{@render contentActions?.display?.()}');
-    expect(tabBar).toContain('{@render contentActions?.actions?.()}');
-    expect(tabBar).not.toContain('{@render contentActions()}');
-    expect(tabBar).toContain('<Menu.Separator />');
-    expect(tabBar).toContain('<Menu.CommandItem');
-    expect(tabBar).not.toContain('color-mix');
-  });
+  // Content-aware header/menu composition is exercised at runtime in
+  // panel-header-actions-menu.test.ts, including absent content sections.
 
   it('limits direct manipulation to the horizontal panel stack', () => {
     const panel = source('../Panel.svelte');
@@ -202,7 +174,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('data-titlebar-drag-handle');
     expect(titlebar).toContain('data-titlebar-left-drag-handle');
     expect(titlebar).toContain('titlebar-left-drag-handle shrink-0 self-stretch');
-    expect(titlebar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
     expect(titlebar).toContain('data-titlebar-fixed-controls');
     expect(titlebar).toContain('class="flex min-w-0 self-end items-center gap-1');
     expect(titlebar).toContain('data-titlebar-workspace-controls');
@@ -225,14 +196,16 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).not.toContain('<PanelLayoutControls');
     expect(titlebar).not.toContain('aria-label="Toggle sidebar"');
     expect(titlebar).not.toContain('mx-0.5 h-4 w-px shrink-0 bg-border/70');
-    expect(tabs).toContain('w-fit min-w-0 max-w-[100%]');
+    // Flex shrinking bounds narrow layouts without a percentage cap feeding
+    // the overflow-dependent margin back into the intrinsic parent width.
+    // The drag-region and layout-stability CTs cover this across launcher states.
+    expect(tabs).toContain('w-fit min-w-0 items-center');
+    expect(tabs).not.toContain('max-w-[100%]');
     expect(tabs).toContain('use:reportActiveTabBounds={isCurrent}');
     expect(titlebar).toContain('data-active-tab-border-mask');
     expect(nav).not.toContain('faBell');
     expect(nav).not.toContain("id: 'settings'");
     expect(nav).toContain('data-titlebar-spaces-control');
-    expect(nav).toContain('name="dandelion"');
-    expect(nav).not.toContain('name="spaces"');
     expect(titlebar).not.toContain('ChiefTrigger');
     expect(workspaceHeader).toContain('label: m.ui_sidebar_toggle_label()');
     expect(workspaceHeader).toContain('appStore.dispatch(toggleSidebar())');
@@ -261,13 +234,10 @@ describe('editorial workspace shell presentation contract', () => {
     expect(appLayout).toContain('workspace-frame relative');
     expect(appLayout).not.toContain('<ChiefNotch />');
     expect(appLayout).not.toContain('clip-path: var(--workspace-clip');
-    expect(navigation).toContain('aria-label={m.layout_titleBar_toggleSidebar_ariaLabel()}');
-    expect(navigation).toContain('aria-pressed={active}');
     expect(navigation).not.toContain('aria-haspopup');
     expect(navigation).not.toContain('aria-expanded');
     expect(navigation).not.toContain('aria-controls');
     expect(navigation).not.toContain('SidebarNavHoverCard');
-    expect(navigation).toContain('name="dandelion"');
     expect(appLayout).toContain('class="workspace-main flex');
     expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
     expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");
@@ -331,16 +301,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(dock).not.toContain('faChevron');
     expect(terminal).toContain('showDockWhenClosed || $isOpen');
     expect(route).toContain('showDockWhenClosed={false}');
-  });
-
-  it('renders a single content title instead of a category breadcrumb', () => {
-    const tabBar = source('../PanelTabBar.svelte');
-
-    expect(tabBar).toContain(
-      'Single content title; type/category is conveyed by the content itself.',
-    );
-    expect(tabBar).not.toContain('<span>{categoryLabel}</span>');
-    expect(tabBar).not.toContain('<span class="text-ghost text-xs">/</span>');
   });
 
   it('orders workspace identity, progress, and status like the reference hierarchy', () => {

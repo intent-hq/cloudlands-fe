@@ -429,6 +429,7 @@
   // Watch for selected comment from the store
   $effect(() => {
     const selected = $selectedComment$?.id ?? null;
+    if (!comments.some((comment) => comment.id === selected)) return;
 
     // Only update if the selected comment actually changed
     if (selected && selected !== selectedCommentId) {
@@ -580,7 +581,7 @@
         class:w-64={displayMode === 'compact'}
         class:w-68={displayMode === 'full'}
         class:is-focused={isFocused}
-        style="top: {adjustedTop}px; right: {-10 - horizontalOffset}px; z-index: {isFocused
+        style="--comment-focus-inset: {-horizontalOffset}px; top: {adjustedTop}px; right: {-horizontalOffset}px; z-index: {isFocused
           ? 20
           : 10}; transition: right var(--motion-slow) var(--spring-slow-ease), top var(--motion-slow) var(--spring-slow-ease);"
         role="button"
@@ -646,12 +647,19 @@
     position: absolute;
     top: 0;
     right: 0;
+    width: 100%;
     pointer-events: none;
     z-index: 10;
   }
 
   .comments-container > * {
     pointer-events: auto;
+  }
+
+  .comments-container > .is-focused {
+    --comment-focused-width: 100%;
+    box-sizing: border-box;
+    width: min(300px, calc(100% - var(--comment-focus-inset)));
   }
 
   :global(.line-clamp-2) {

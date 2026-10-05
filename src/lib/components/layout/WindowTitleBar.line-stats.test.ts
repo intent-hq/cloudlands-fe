@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { writable } from 'svelte/store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const mocks = vi.hoisted(() => ({
-  getLineStats: vi.fn(),
+  backendRequest: vi.fn(),
   invoke: vi.fn(() => Promise.resolve()),
 }));
 
@@ -16,11 +17,16 @@ const readable = <T>(value: T) => ({
   },
 });
 
+const guestSession = writable<{ hostname: string | null; label: string } | null>(null);
+vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
+  selectWindowGuestSession: () => guestSession,
+}));
+
 vi.mock('$app/state', () => ({
   page: { params: { id: 'ws-1' }, url: { pathname: '/workspace/ws-1' } },
 }));
-vi.mock('$features/file-tracking/file-tracking.client', () => ({
-  getLineStats: mocks.getLineStats,
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
 }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/components/ui/tooltip', () => ({ Tooltip: () => null }));
@@ -59,6 +65,7 @@ import WindowTitleBar from './WindowTitleBar.svelte';
 describe('WindowTitleBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    guestSession.set(null);
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -75,7 +82,31 @@ describe('WindowTitleBar', () => {
     await view.rerender({ workspaceId: 'ws-2' });
     await tick();
 
-    expect(mocks.getLineStats).not.toHaveBeenCalled();
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the guest native title when host metadata arrives and clears it on switch', async () => {
+    guestSession.set({ hostname: null, label: 'remote.example' });
+    const view = render(WindowTitleBar, { workspaceId: 'ws-1' });
+    await tick();
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.WINDOW.SET_TITLE, {
+      title: 'One [remote.example]',
+    });
+    guestSession.set({ hostname: 'Remote Studio', label: 'remote.example' });
+    await tick();
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.WINDOW.SET_TITLE, {
+      title: 'One [Remote Studio]',
+    });
+    await view.rerender({ workspaceId: undefined });
+    await tick();
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.WINDOW.SET_TITLE, {
+      title: 'Intent [Remote Studio]',
+    });
+    guestSession.set(null);
+    await tick();
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.WINDOW.SET_TITLE, {
+      title: 'Intent',
+    });
   });
 
   it('keeps the native window title current when the workspace changes', async () => {

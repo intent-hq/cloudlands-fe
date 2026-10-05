@@ -1,6 +1,7 @@
 <script lang="ts">
   import { FormDialog } from '$lib/components/patterns/confirm';
   import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -9,6 +10,7 @@
     title?: string;
     description?: string;
     placeholder?: string;
+    label?: string;
     confirmLabel?: string;
     cancelLabel?: string;
     onConfirm?: (value: string) => void;
@@ -21,6 +23,7 @@
     title = m.modals_input_title(),
     description = '',
     placeholder = '',
+    label,
     confirmLabel = m.modals_input_confirm_label(),
     cancelLabel = m.modals_input_cancel_label(),
     onConfirm,
@@ -28,6 +31,7 @@
   }: Props = $props();
 
   let inputValue = $state('');
+  const inputId = $props.id();
   let inputRef: HTMLInputElement | null = $state(null);
 
   function close() {
@@ -57,5 +61,6 @@
   onCancel={close}
 >
   {#if description}<p class="type-body">{description}</p>{/if}
-  <Input bind:ref={inputRef} bind:value={inputValue} type="text" {placeholder} />
+  <Label for={inputId}>{label ?? title}</Label>
+  <Input id={inputId} bind:ref={inputRef} bind:value={inputValue} type="text" {placeholder} />
 </FormDialog>

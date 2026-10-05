@@ -1,16 +1,15 @@
 <script lang="ts">
+  import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
-  import { onMount, tick, untrack } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
+  const hostMember$ = selectIsHostMember();
+  import { onDestroy, onMount, untrack } from 'svelte';
+  import { writable, derived } from 'svelte/store';
 
-  import { agentClient } from '$features/agent/agent.client';
-  import {
-    applyReasoningEffort,
-    reconcileAgentReasoningEffort,
-  } from '$features/agent/reasoning-effort';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { isQuickActionProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/quick-action-provider-switch';
+  import { backgroundProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/background-agent-settings-slice';
 
   import Button from '$lib/components/ui/button/button.svelte';
   import {
@@ -33,53 +32,66 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { createAgentModelMutator } from './agent-model-mutator';
+  import {
+    selectAgentModelMutationPending,
+    selectAgentModelMutations,
+  } from '$store/renderer/slices/agent-model/agent-model-selectors';
+  import {
+    agentModelMutationRequested,
+    agentModelMutationConsumed,
+  } from '$store/renderer/slices/agent-model/agent-model-slice';
 
   import {
-    selectSelectedModel,
     selectAvailableModels,
     selectAvailableModelsProviderId,
     selectModelFallbackInfo,
     selectModelPickerCollapsedGroups,
     selectIsLoadingModels,
     selectLoadError,
-    selectAllProviderWarnings,
-    selectAllProviderStaleFlags,
     selectAgentModelEffortLevels,
   } from '$store/renderer/slices/model/model-selectors';
   import {
     clearModelFallbackInfo,
     selectModel,
-    setLoadingStateForProvider,
     setModelFallbackInfo,
     setModelPickerGroupCollapsed,
   } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
-  import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
-    selectActiveProviderId,
-    selectAvailableEnabledProviderIds,
     selectIsProviderModelAccessAllowed,
-    selectModelFetchProviderIds,
+    selectActiveProviderId,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
-    getModelsForProvider,
-    getModelsForProviderForLoadingState,
-  } from '$store/renderer/slices/model/model-utils';
-  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+    selectContextDefaultProvider,
+    selectContextReadinessLoaded,
+    selectContextSelectedModel,
+    selectContextProviderWarnings,
+    selectContextProviderStaleFlags,
+    selectContextProviderEntries,
+    selectContextModelProviderIds,
+    selectContextAvailableProviderIds,
+    selectContextEnabledProviders,
+    selectWorkspaceCatalogEpoch,
+  } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
+  import { ensureWorkspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import {
-    selectProviderModelsCacheEntry,
+    providerModelsObserved,
+    providerModelsReleased,
+    providerModelsRequested,
+  } from '$store/renderer/slices/provider-models/provider-models-slice';
+  import {
     selectProviderModelsCacheMap,
-    selectProviderModelsClearEpoch,
+    selectLearnedModelDisplayName,
+    selectLearnedModelNames,
+    selectProviderModelsRequests,
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-  import {
-    selectEffectiveDefaultProviderId,
-    selectNormalizedProviderId,
-    selectProviderDisplayName,
-  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
   import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
@@ -87,9 +99,10 @@
   import {
     filterDefaultPseudoOptions,
     findModelFallbackOption,
-    isProviderEnabled,
+    isProviderDisabledInSettings as isProviderDisabledInSettingsForContext,
+    isProviderEnabled as isProviderEnabledForContext,
     isUserProviderSettled,
-    normalizeModelIdForMatch,
+    normalizeModelIdForMatch as normalizeModelIdForMatchForContext,
     toDropdownOptions,
   } from './model-picker-utils';
   import { cn } from '$lib/utils';
@@ -99,10 +112,9 @@
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
+  import { Indicator } from '$lib/components/ui/menu';
   import {
     faArrowsRotate,
-    faCheck,
     faChevronDown,
     faLock,
     faPlus,
@@ -113,16 +125,32 @@
 
   const logger = createLogger('ModelPicker');
 
-  const defaultProviderId$ = selectEffectiveDefaultProviderId();
-
   // Catalog-backed local shims for the legacy provider-config helpers, so the
   // picker's many call sites keep their shape. Reads are reactive via the
   // defaultProviderId$ subscription above plus the appStore.state lookups.
+  function isProviderEnabled(ids: string[], id: string) {
+    return isProviderEnabledForContext(ids, id, workspaceId);
+  }
+  function isProviderDisabledInSettings(enabled: Record<string, boolean>, id: string) {
+    return isProviderDisabledInSettingsForContext(enabled, id, workspaceId);
+  }
+  function normalizeModelIdForMatch(id: string, provider?: string) {
+    return normalizeModelIdForMatchForContext(id, provider, workspaceId);
+  }
   function normalizeProviderId(providerId: string): string {
-    return selectNormalizedProviderId.select(appStore.state, providerId);
+    void $providerCatalogEntries$;
+    return (
+      $providerCatalogEntries$.find(
+        (p) => p.id === providerId || p.legacyAliases?.includes(providerId),
+      )?.id ?? providerId
+    );
   }
   function providerDisplayName(providerId: string): string {
-    return selectProviderDisplayName.select(appStore.state, providerId);
+    void $providerCatalogEntries$;
+    return (
+      $providerCatalogEntries$.find((p) => p.id === normalizeProviderId(providerId))?.displayName ??
+      providerId
+    );
   }
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -132,29 +160,35 @@
     return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
 
-  const activeProviderId$ = selectActiveProviderId();
-  const modelFetchProviderIds$ = selectModelFetchProviderIds();
+  function hasResolvedProvider(providerId: string): boolean {
+    void $providerCatalogEntries$;
+    return $providerCatalogEntries$.some((p) => p.id === normalizeProviderId(providerId));
+  }
+
   const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
   // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
   // host catalog regardless (`isGuestLocked` is declared with the props below
   // and only read once the picker is rendering).
-  function canUseProviderModels(providerId: string): boolean {
+  function canUseProviderModels(providerId: string, allowLoadedCatalog = false): boolean {
+    if (workspaceId && isGuestLocked && providerId) return true;
+    // An existing models.list response has its own provider provenance. Keep
+    // its labels during registry hydration; writes still require a registry row.
+    if (
+      !hasResolvedProvider(providerId) &&
+      !(allowLoadedCatalog && providerId && providerId === $availableModelsProviderId$)
+    )
+      return false;
     return (
       normalizeProviderId(providerId) !== 'antigravity' ||
-      $antigravityModelsAllowed$ ||
+      (workspaceId ? $modelFetchProviderIds$.includes(providerId) : $antigravityModelsAllowed$) ||
       isGuestLocked
     );
   }
-  const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
-  const selectedModel$ = selectSelectedModel();
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
   const collapsedGroupKeys$ = selectModelPickerCollapsedGroups();
   const isLoadingModels$ = selectIsLoadingModels();
   const loadError$ = selectLoadError();
-  const allProviderWarnings$ = selectAllProviderWarnings();
-  const allProviderStaleFlags$ = selectAllProviderStaleFlags();
-  const hasCheckedOnce$ = selectHasCheckedOnce();
   const daemonHealth$ = selectDaemonHealth();
 
   // The availability status map gates which providers the picker offers, but
@@ -163,7 +197,7 @@
   // trigger is ensure-once and the middleware coalesces overlapping bulk
   // checks, so multiple pickers mounting concurrently cause no duplicate probes.
   onMount(() => {
-    appStore.dispatch(ensureProvidersChecked());
+    if (!workspaceId) appStore.dispatch(ensureProvidersChecked());
   });
 
   interface Props {
@@ -186,8 +220,11 @@
     confirmModelChange?: (
       from: string | null | undefined,
       to: string | null,
+      labels?: { from: string; to: string; fromProviderId?: string; toProviderId?: string },
     ) => boolean | Promise<boolean>;
     providerId?: string;
+    /** Provider-local settings cannot persist a selection owned by another provider. */
+    allowProviderSwitch?: boolean;
     isCompact?: boolean;
     isLocked?: boolean;
     lockedTitle?: string;
@@ -226,13 +263,15 @@
     // model is selected (e.g. "Default ({model})" for the specialist editor's
     // inherit state). Also applies to the catalog-default fallback.
     formatDefaultModelLabel?: (modelLabel: string) => string;
-    // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
+    // Gates agent-session updates (session model write, agent.setModel).
     updateGlobalStore?: boolean;
     // Gates the global selectModel dispatch (persisted default); Settings default picker only.
     updateGlobalDefault?: boolean;
     silentFallback?: boolean;
     showReasoning?: boolean;
     reasoningEffort?: string | null;
+    /** Display-only inherited effort; never materialized into a selection. */
+    defaultReasoningEffort?: string | null;
     onReasoningChange?: (effort: string | null) => boolean | void | Promise<boolean | void>;
     reasoningDisabled?: boolean;
     showProviderWarningNotice?: boolean;
@@ -250,6 +289,7 @@
     onModelChange = () => {},
     confirmModelChange,
     providerId,
+    allowProviderSwitch = true,
     isCompact = false,
     isLocked = false,
     lockedTitle,
@@ -278,11 +318,35 @@
     silentFallback = false,
     showReasoning = false,
     reasoningEffort,
+    defaultReasoningEffort,
     onReasoningChange,
     reasoningDisabled = false,
     showProviderWarningNotice,
     noticeClass,
   }: Props = $props();
+
+  const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
+  const defaultProviderId$ = selectContextDefaultProvider(workspaceIdStore);
+  const directActiveProviderId$ = selectActiveProviderId();
+  const activeProviderId$ = derived(
+    [workspaceIdStore, defaultProviderId$, directActiveProviderId$],
+    ([id, scoped, direct]) => (id ? scoped : direct),
+  );
+  const providerCatalogEntries$ = selectContextProviderEntries(workspaceIdStore);
+  const modelFetchProviderIds$ = selectContextModelProviderIds(workspaceIdStore);
+  const availableEnabledProviderIds$ = selectContextAvailableProviderIds(workspaceIdStore);
+  const enabledProviders$ = selectContextEnabledProviders(workspaceIdStore);
+  const selectedModel$ = selectContextSelectedModel(workspaceIdStore);
+  const hasCheckedOnce$ = selectContextReadinessLoaded(workspaceIdStore);
+  const allProviderWarnings$ = selectContextProviderWarnings(workspaceIdStore);
+  const allProviderStaleFlags$ = selectContextProviderStaleFlags(workspaceIdStore);
+  const workspaceCatalogEpoch$ = selectWorkspaceCatalogEpoch();
+  $effect(() => {
+    // An open picker can outlive its workspace lifecycle subscription. Refresh
+    // its own context when settings or the backend invalidate the registry.
+    void $workspaceCatalogEpoch$;
+    if (workspaceId) appStore.dispatch(ensureWorkspaceCatalogRequested(workspaceId));
+  });
 
   // `default`-variant pickers stack the notice directly under a full-width
   // trigger, so give it a default top margin; callers can still override it.
@@ -292,12 +356,44 @@
 
   const agentSession$ = useAgentSession(() => agentId);
 
-  let pendingModelUpdate = $state<string | null>(null);
+  type ModelPick = { providerId: string; modelId: string };
+  type ModelChange = {
+    pick: ModelPick;
+    previous: { model: string | null | undefined; providerId: string };
+    agentId: string;
+    workspaceId: string;
+    revision: number;
+    connection: string | null;
+  };
+  let pendingModelUpdate = $state<ModelChange | null>(null);
+  const mutationConsumerId = crypto.randomUUID();
+  const mutationPending$ = selectAgentModelMutationPending(mutationConsumerId);
+  const mutations$ = selectAgentModelMutations(mutationConsumerId);
+  let submittedModelChange = $state<{ requestId: string; change: ModelChange } | null>(null);
+  const isApplyingModelUpdate = $derived($mutationPending$);
+  let localPickedProviderId = $state<string | null>(null);
+  let modelChangeRevision = 0;
+  let confirmationRevision = 0;
+  let destroyed = false;
+  onDestroy(() => {
+    destroyed = true;
+    modelChangeRevision++;
+    confirmationRevision++;
+    pendingModelUpdate = null;
+    if (submittedModelChange)
+      appStore.dispatch(
+        agentModelMutationConsumed(submittedModelChange.requestId, mutationConsumerId),
+      );
+  });
 
   // Provider from the prop or agent session, or null when neither determines
   // one (fetching then uses the active provider; the trigger icon prefers the
   // displayed model's provider).
   const explicitProviderId = $derived.by(() => {
+    if (updateGlobalStore) {
+      const selection = currentSessionSelection();
+      if (selection) return selection.providerId;
+    }
     if (providerId) return normalizeProviderId(providerId);
     if (agentId && workspaceId) {
       const session = $agentSession$;
@@ -316,38 +412,20 @@
   // host: the agent-bound picker renders read-only with the host catalog
   // label and no availability warnings (intent#5378). The selector fails
   // closed while the window's identity is still the boot-time default.
-  const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
   const isWorkspaceCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
   const effectiveLocked = $derived(isLocked || isGuestLocked);
+  // Effort callbacks retain the compatibility lock funnel. Model intents below
+  // carry the same live lease to the shared saga owner.
+  const mutate = createAgentModelMutator({
+    isLocked: () => effectiveLocked || destroyed,
+    consumerId: mutationConsumerId,
+  });
 
-  let agentProviderModels = $state<
-    import('$features/auggie/auggie-models.client').AuggieModel[] | null
-  >(null);
   import { store as appStore } from '$store/renderer/store';
-  let agentProviderLoading = $state(false);
-  let agentProviderError = $state<string | null>(null);
-
-  function setProviderWarningState(
-    providerId: string,
-    warning: string | undefined,
-    stale: boolean | undefined,
-  ) {
-    const normalizedId = normalizeProviderId(providerId);
-    appStore.dispatch(
-      setLoadingStateForProvider({ providerId: normalizedId, status: 'success', warning, stale }),
-    );
-  }
-
-  function setProviderErrorState(providerId: string, error: string) {
-    const normalizedId = normalizeProviderId(providerId);
-    appStore.dispatch(
-      setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }),
-    );
-  }
 
   function getProviderWarningNotice(
     providerId: string,
@@ -357,43 +435,46 @@
     return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
   }
 
-  // Hydrate from the session-lifetime provider-models cache
-  // (stale-while-revalidate): cached providers render their catalogs — and a
-  // resolved trigger label — synchronously on mount, with no spinner/skeleton
-  // frame, while the debounced background fetch below still revalidates every
-  // provider and writes fresh results back through the cache. Uncached
-  // providers keep the normal loading path.
-  const cachedProviderCatalogs = selectProviderModelsCacheMap.select(appStore.state);
-  const seededProviderModels: Record<string, DropdownOption[]> = {};
-  const seededProviderLoading: Record<string, boolean> = {};
-  for (const [pid, entry] of Object.entries(cachedProviderCatalogs)) {
-    if (!canUseProviderModels(pid)) continue;
-    seededProviderModels[pid] = toDropdownOptions(entry.models);
-    seededProviderLoading[pid] = false;
-  }
-  // "All loaded" only when every currently-enabled provider is cache-covered;
-  // otherwise the first fetch pass settles it exactly as before.
-  const seededEnabledIds = $availableEnabledProviderIds$;
-  const seededAllProvidersLoaded =
-    seededEnabledIds.length > 0 &&
-    seededEnabledIds.every((pid) =>
-      Object.prototype.hasOwnProperty.call(seededProviderModels, normalizeProviderId(pid)),
-    );
-
-  let allProviderModels = $state<Record<string, DropdownOption[]>>(seededProviderModels);
-  let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
-  let allProviderLoading = $state<Record<string, boolean>>(seededProviderLoading);
-  let fetchGeneration = 0;
-  const providerFetchGenerations = new Map<string, number>();
-  const refreshingProviderEpochs = new Map<string, number>();
-  let allProvidersLoaded = $state(seededAllProvidersLoaded);
-  let lastFetchedProviderIds = '';
-
-  function advanceProviderFetchGeneration(providerId: string): number {
-    const generation = (providerFetchGenerations.get(providerId) ?? 0) + 1;
-    providerFetchGenerations.set(providerId, generation);
-    return generation;
-  }
+  // The saga owns the catalog and request generations. Read-through cache rows
+  // render synchronously on remount while the owner revalidates in the background.
+  const providerCatalogs$ = selectProviderModelsCacheMap(workspaceIdStore);
+  const learnedModelNames$ = selectLearnedModelNames();
+  const providerRequests$ = selectProviderModelsRequests(workspaceIdStore);
+  const catalogObserverId = crypto.randomUUID();
+  const catalogProviderIds = $derived(
+    $modelFetchProviderIds$.filter((id) => canUseProviderModels(id)).map(normalizeProviderId),
+  );
+  const allProviderModels = $derived.by(() => {
+    const models: Record<string, DropdownOption[]> = {};
+    for (const pid of catalogProviderIds) {
+      const entry = $providerCatalogs$[pid];
+      if (entry) models[pid] = toDropdownOptions(entry.models);
+    }
+    return models;
+  });
+  const allProviderErrors = $derived.by(() => {
+    const errors: Record<string, ProviderLoadError> = {};
+    for (const pid of catalogProviderIds) {
+      const request = $providerRequests$[pid];
+      if (request?.error) {
+        errors[pid] = formatProviderLoadError(pid, request.error);
+      }
+    }
+    return errors;
+  });
+  const allProviderLoading = $derived(
+    Object.fromEntries(
+      catalogProviderIds.map((pid) => [
+        pid,
+        ($providerRequests$[pid]?.status === 'loading' &&
+          $providerRequests$[pid]?.mode !== 'silentRetry') ||
+          (!$providerCatalogs$[pid] && !allProviderErrors[pid]),
+      ]),
+    ),
+  );
+  const allProvidersLoaded = $derived(
+    Object.values(allProviderLoading).every((loading) => !loading),
+  );
 
   function hasProviderResult(providerId: string): boolean {
     return (
@@ -402,93 +483,37 @@
     );
   }
 
-  function setProviderLoading(providerId: string, loading: boolean) {
-    const nextLoading = {
-      ...allProviderLoading,
-      [providerId]: loading,
-    };
-    allProviderLoading = nextLoading;
-    allProvidersLoaded = Object.values(nextLoading).every((isLoading) => !isLoading);
-  }
-
-  async function fetchAllProviderModels(enabledIds: string[]) {
-    enabledIds = enabledIds.filter(canUseProviderModels);
-    const key = enabledIds.slice().sort().join(',');
-    if (key === lastFetchedProviderIds && allProvidersLoaded) return;
-    lastFetchedProviderIds = key;
-
-    allProvidersLoaded = false;
-    const currentGen = ++fetchGeneration;
-
-    if (enabledIds.length === 0) {
-      allProviderModels = {};
-      allProviderErrors = {};
-      allProviderLoading = {};
-      allProvidersLoaded = true;
-      return;
-    }
-
-    const providerIds = enabledIds.map((pid) => normalizeProviderId(pid));
-    allProviderModels = Object.fromEntries(
-      Object.entries(allProviderModels).filter(([providerId]) => providerIds.includes(providerId)),
-    );
-    allProviderErrors = {};
-
-    // Epoch at fetch start: a reconnect clear that lands while these
-    // responses are in flight makes them stale — the settle-time isStale()
-    // check keeps them out of local state (the epoch effect's generation
-    // bump can run after a pending response settles) and the reducer drops
-    // any pre-clear write-through stamped below as a second line of defense.
-    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-    const providerIdsToFetch = providerIds.filter(
-      (providerId) =>
-        !refreshingProviders.has(providerId) ||
-        refreshingProviderEpochs.get(providerId) !== cacheEpoch,
-    );
-    const fetchingProviderIds = new Set(providerIdsToFetch);
-    allProviderLoading = Object.fromEntries(
-      providerIds.map((providerId) => [providerId, fetchingProviderIds.has(providerId)]),
-    );
-    allProvidersLoaded = providerIdsToFetch.length === 0;
-
-    await Promise.allSettled(
-      providerIdsToFetch.map(async (providerId) => {
-        const providerGeneration = advanceProviderFetchGeneration(providerId);
-        const isStale = () =>
-          fetchGeneration !== currentGen ||
-          providerFetchGenerations.get(providerId) !== providerGeneration ||
-          selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
-        try {
-          const result = await getModelsForProviderForLoadingState(providerId);
-          if (isStale()) return;
-          const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
-          allProviderErrors = remainingErrors;
-          allProviderModels = {
-            ...allProviderModels,
-            [providerId]: toDropdownOptions(result.models),
-          };
-          // Write through to the session cache (providerId is normalized here).
-          appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
-          setProviderWarningState(providerId, result.warning, result.stale);
-        } catch (err) {
-          if (isStale()) return;
-          const providerError = formatProviderLoadError(providerId, err);
-          allProviderErrors = {
-            ...allProviderErrors,
-            [providerId]: providerError,
-          };
-          setProviderErrorState(providerId, providerError.displayText);
-        } finally {
-          if (!isStale()) {
-            setProviderLoading(providerId, false);
-          }
-        }
-      }),
-    );
-  }
-
   const isEffectiveProviderAvailable = $derived(
     isProviderEnabled($availableEnabledProviderIds$, effectiveProviderId),
+  );
+
+  // An existing agent whose current provider was explicitly disabled in
+  // Settings > Agents (intent#5737). Read from `providers.enabled` alone — not
+  // the available+enabled set, which also drops providers whose probe failed,
+  // and not a daemon event — so the picker can warn before any message is
+  // sent. The daemon refuses to run the agent on a disabled provider and
+  // re-homes it on the next send, so unlike the cloudlands-fe#749 policy
+  // (keep a since-unavailable provider selectable) the model is reported as
+  // unavailable and the disabled provider's group is not offered. A
+  // guest-locked picker never sees the host's settings and stays read-only.
+  const isEffectiveProviderDisabled = $derived(
+    !!agentId &&
+      !isGuestLocked &&
+      isProviderDisabledInSettings($enabledProviders$, effectiveProviderId),
+  );
+
+  // Providers whose models the picker may offer. The available+enabled set
+  // always admits the default provider (`model.defaultProvider`) even when it
+  // was disabled in settings, so its catalog keeps loading for the fetch and
+  // warning paths — but the daemon refuses every turn on a disabled provider
+  // and a disabled default has no re-home target, so its rows must not be
+  // selectable (intent#5737). Same settings blind spot as above for guests.
+  const selectableProviderIds = $derived(
+    $availableEnabledProviderIds$.filter(
+      (pid) =>
+        (allowProviderSwitch || normalizeProviderId(pid) === effectiveProviderId) &&
+        (isGuestLocked || !isProviderDisabledInSettings($enabledProviders$, pid)),
+    ),
   );
 
   // The per-agent fetch is only needed when the effective provider's models
@@ -499,115 +524,57 @@
   const usesAgentProviderFetch = $derived(
     canUseProviderModels(effectiveProviderId) &&
       (isGuestLocked ||
-        (effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
+        (workspaceId
+          ? !$modelFetchProviderIds$.includes(effectiveProviderId)
+          : effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
   );
 
-  // Separate generation counter from fetchAllProviderModels: in unlocked mode
-  // both fetches can run concurrently and must not cancel each other.
-  let agentFetchGeneration = 0;
-  async function fetchAgentProviderModels(providerId: string) {
-    const currentGen = ++agentFetchGeneration;
-    if (!canUseProviderModels(providerId)) return;
-    // Hydrate from the session cache (stale-while-revalidate): a cached
-    // catalog renders immediately with no loading state — the all-provider
-    // fetch prunes disabled providers from allProviderModels, so this path is
-    // the only cache consumer for a locked/agent picker whose provider is no
-    // longer enabled. The fetch below still revalidates.
-    const cacheId = normalizeProviderId(providerId);
-    const cached = selectProviderModelsCacheEntry.select(appStore.state, cacheId);
-    if (cached) {
-      agentProviderModels = cached.models;
-      agentProviderLoading = false;
-    } else {
-      agentProviderLoading = true;
-    }
-    agentProviderError = null;
-
-    // Epoch at fetch start: a reconnect clear mid-flight makes this response
-    // stale for local state too, not just for the reducer write-through.
-    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-    const isStale = () =>
-      agentFetchGeneration !== currentGen ||
-      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
-    try {
-      const result = await getModelsForProviderForLoadingState(providerId);
-      if (isStale()) return;
-      agentProviderModels = result.models;
-      // Write through so the next mount of this picker hydrates too.
-      appStore.dispatch(providerModelsLoaded(cacheId, result, cacheEpoch));
-      setProviderWarningState(providerId, result.warning, result.stale);
-    } catch (err) {
-      if (isStale()) return;
-      const providerError = formatProviderLoadError(providerId, err);
-      agentProviderError = providerError.displayText;
-      setProviderErrorState(providerId, providerError.displayText);
-    } finally {
-      if (!isStale()) {
-        agentProviderLoading = false;
-      }
-    }
-  }
-
-  $effect(() => {
-    const epid = effectiveProviderId;
-    if (!usesAgentProviderFetch) {
-      ++agentFetchGeneration;
-      agentProviderModels = null;
-      agentProviderLoading = false;
-      agentProviderError = null;
-      return;
-    }
-
-    void fetchAgentProviderModels(epid);
+  const agentProviderModels = $derived(
+    usesAgentProviderFetch ? ($providerCatalogs$[effectiveProviderId]?.models ?? null) : null,
+  );
+  const agentProviderError = $derived.by(() => {
+    const request = $providerRequests$[effectiveProviderId];
+    return usesAgentProviderFetch && request?.error
+      ? formatProviderLoadError(effectiveProviderId, request.error).displayText
+      : null;
   });
+  const agentProviderLoading = $derived(
+    usesAgentProviderFetch && !agentProviderModels && !agentProviderError,
+  );
+  const observedProviderIds = $derived([
+    ...new Set([...catalogProviderIds, ...(usesAgentProviderFetch ? [effectiveProviderId] : [])]),
+  ]);
 
-  let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  // Prop/selector binding only: the registered owner handles debounce,
+  // replacement, reconnect invalidation and cancellation for this observer.
   $effect(() => {
-    const providerIds = $modelFetchProviderIds$;
-    clearTimeout(fetchDebounceTimer);
-    fetchDebounceTimer = setTimeout(() => fetchAllProviderModels(providerIds), 50);
-    return () => clearTimeout(fetchDebounceTimer);
+    appStore.dispatch(providerModelsObserved(catalogObserverId, observedProviderIds, workspaceId));
   });
-
-  // React to the session cache being cleared (backend reconnect, RESUB-1):
-  // a mounted picker has already copied cached rows into local state and
-  // fetchAllProviderModels dedups on unchanged enabled-provider ids, so
-  // without this an open picker would keep the pre-reconnect catalog
-  // indefinitely. Keyed on the clear EPOCH, not the map going empty: the
-  // epoch increments on every providerModelsCacheCleared, so a reconnect
-  // during initial load (cache already empty — an empty→empty map
-  // transition) still triggers the generation bump + refetch. The fresh
-  // fetches read the post-clear epoch at start, so their results land in
-  // both local state and the cache.
-  const providerModelsClearEpoch$ = selectProviderModelsClearEpoch();
-  let lastSeenClearEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-  $effect(() => {
-    const epoch = $providerModelsClearEpoch$;
-    if (epoch === lastSeenClearEpoch) return;
-    lastSeenClearEpoch = epoch;
-    untrack(() => {
-      lastFetchedProviderIds = '';
-      void fetchAllProviderModels($availableEnabledProviderIds$);
-      if (usesAgentProviderFetch) {
-        void fetchAgentProviderModels(effectiveProviderId);
-      }
-    });
-  });
+  onDestroy(() => appStore.dispatch(providerModelsReleased(catalogObserverId)));
 
   // Models for the effective provider: the per-agent fetch result when the
   // agent's provider differs from the active one, the global store otherwise.
   const availableModels = $derived(
     !canUseProviderModels(
-      agentProviderModels ? effectiveProviderId : $availableModelsProviderId$,
+      workspaceId || agentProviderModels ? effectiveProviderId : $availableModelsProviderId$,
+      true,
     ) || agentProviderLoading
       ? []
-      : (agentProviderModels ?? (agentProviderError ? [] : $availableModels$)),
+      : (agentProviderModels ??
+          (agentProviderError
+            ? []
+            : workspaceId
+              ? (allProviderModels[effectiveProviderId] ?? []).map(({ data, ...option }) => ({
+                  ...data,
+                  ...option,
+                }))
+              : $availableModels$)),
   );
   // Which provider `availableModels` was loaded for: the per-agent fetch is
   // for the effective provider by construction; the global catalog carries
   // explicit provenance ('' before the first load).
   const availableModelsProviderId = $derived(
-    !agentProviderLoading && agentProviderModels
+    workspaceId || (!agentProviderLoading && agentProviderModels)
       ? effectiveProviderId
       : $availableModelsProviderId$,
   );
@@ -617,7 +584,7 @@
         (!hasProviderResult(effectiveProviderId) &&
           ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded))),
   );
-  const loadError = $derived($loadError$);
+  const loadError = $derived(workspaceId ? agentProviderError : $loadError$);
 
   // Provider display name for footer — reflects the effective provider, not the global one
 
@@ -628,92 +595,50 @@
     appStore.dispatch(setModelPickerGroupCollapsed(key, !collapsedGroups.has(key)));
   }
 
-  let refreshingProviders = $state<Set<string>>(new Set());
+  const refreshingProviders = $derived(
+    new Set(
+      Object.values($providerRequests$)
+        .filter((request) => request.status === 'loading' && request.mode === 'refresh')
+        .map((request) => request.providerId),
+    ),
+  );
 
-  async function handleRefreshProvider(providerId: string) {
+  function handleRefreshProvider(providerId: string) {
     if (!canUseProviderModels(providerId)) return;
     if (refreshingProviders.has(providerId)) return;
-    // Epoch at fetch start: a reconnect clear mid-flight makes this response
-    // stale for local state as well as for the reducer write-through.
-    const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-    const providerGeneration = advanceProviderFetchGeneration(providerId);
-    refreshingProviderEpochs.set(providerId, cacheEpoch);
-    refreshingProviders = new Set([...refreshingProviders, providerId]);
-    const isStale = () =>
-      providerFetchGenerations.get(providerId) !== providerGeneration ||
-      selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
-    try {
-      // True force refresh: the daemon skips its cache and awaits a fresh
-      // probe (PROTOCOL §6.7), so the spinner spins for the real probe
-      // duration and the returned list replaces the group immediately.
-      const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
-      if (isStale()) return;
-      setProviderWarningState(providerId, result.warning, result.stale);
-      if (providerId === effectiveProviderId && usesAgentProviderFetch) {
-        agentProviderModels = result.models;
-      }
-      const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
-      allProviderErrors = remainingErrors;
-      allProviderModels = {
-        ...allProviderModels,
-        [providerId]: toDropdownOptions(result.models),
-      };
-      // Write through to the session cache (group keys are normalized ids).
-      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
-    } catch (err) {
-      if (isStale()) return;
-      const providerError = formatProviderLoadError(providerId, err);
-      allProviderErrors = {
-        ...allProviderErrors,
-        [providerId]: providerError,
-      };
-      setProviderErrorState(providerId, providerError.displayText);
-      logger.warn('Failed to refresh models for provider', { providerId, error: err });
-    } finally {
-      refreshingProviderEpochs.delete(providerId);
-      const next = new Set(refreshingProviders);
-      next.delete(providerId);
-      refreshingProviders = next;
-    }
+    appStore.dispatch(providerModelsRequested(providerId, 'refresh', workspaceId));
   }
 
-  let isRefreshing = $state(false);
-
-  async function handleRetry() {
-    lastFetchedProviderIds = '';
-    const requests = [fetchAllProviderModels($availableEnabledProviderIds$)];
-    if (usesAgentProviderFetch) {
-      requests.push(fetchAgentProviderModels(effectiveProviderId));
-    }
-    await Promise.all(requests);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function handleRefreshModels() {
-    if (isRefreshing) return;
-    isRefreshing = true;
-    try {
-      lastFetchedProviderIds = '';
-      const requests = [fetchAllProviderModels($availableEnabledProviderIds$)];
-      if (usesAgentProviderFetch) {
-        requests.push(fetchAgentProviderModels(effectiveProviderId));
-      }
-      await Promise.all(requests);
-    } finally {
-      isRefreshing = false;
+  function handleRetry() {
+    for (const providerId of observedProviderIds) {
+      appStore.dispatch(providerModelsRequested(providerId, 'retry', workspaceId));
     }
   }
 
   const USE_DEFAULT_VALUE = '__use_default__';
 
-  // undefined/null means "use default" and shows "Default model" instead of falling back to store
-  let localModel = $state<string | null | undefined>(untrack(() => selectedModel));
+  // Settings/spawn callers own their draft. Agent callers only use it while
+  // their optimistic/deferred request is live; accepted selections render
+  // directly from Redux, even if a parent's prop has not caught up yet.
+  let draftModel = $state<string | null | undefined>(
+    untrack(() => (updateGlobalDefault ? undefined : selectedModel)),
+  );
+  const localModel = $derived.by(() => {
+    // The global default owner already publishes its accepted/rolled-back
+    // selection through Redux. Never keep a competing draft for Settings.
+    if (updateGlobalDefault) return $selectedModel$;
+    const change = pendingModelUpdate ?? submittedModelChange?.change;
+    if (change && isCurrentModelChange(change)) return draftModel;
+    const selection = updateGlobalStore ? currentSessionSelection() : undefined;
+    return selection ? selection.model : draftModel;
+  });
   let userChangedModel = $state(false);
   let propModelAtLocalChange = $state<string | null | undefined>(undefined);
 
-  // Keep a local user selection until the parent prop catches up to localModel.
+  // Keep a draft selection until its owning parent catches up.
   $effect(() => {
-    if (selectedModel === localModel) {
+    if (updateGlobalDefault) return;
+    if (selectedModel === draftModel) {
       userChangedModel = false;
       propModelAtLocalChange = undefined;
       return;
@@ -726,162 +651,215 @@
       return;
     }
 
-    localModel = selectedModel;
+    draftModel = selectedModel;
+    localPickedProviderId = null;
+    pendingModelUpdate = null;
+    modelChangeRevision++;
+    confirmationRevision++;
     userChangedModel = false;
     propModelAtLocalChange = undefined;
+  });
+
+  function currentSessionSelection(): ModelChange['previous'] | undefined {
+    const session = $agentSession$;
+    if (!agentId || !workspaceId || session?.id !== agentId || session.workspaceId !== workspaceId)
+      return undefined;
+    const provider = getAgentProvider(session, $defaultProviderId$);
+    if (!provider) return undefined;
+    // An omitted model on a present session is authoritative Auto, not missing data.
+    return { model: session.model, providerId: normalizeProviderId(provider) };
+  }
+
+  // The parent mirrors optimistic picks, so only the session can acknowledge
+  // an agent selection. Once acknowledged, follow later provider-only updates.
+  $effect(() => {
+    if (!localPickedProviderId || pendingModelUpdate) return;
+    const selection = currentSessionSelection();
+    if (
+      selection?.providerId === localPickedProviderId &&
+      (selection.model === localModel ||
+        (selection.model &&
+          localModel &&
+          splitLegacyCompoundId(selection.model).modelId ===
+            splitLegacyCompoundId(localModel).modelId))
+    ) {
+      localPickedProviderId = null;
+    }
   });
 
   // A live owner → collaborator role change must not let a deferred update
   // queued during streaming reach the backend once streaming ends.
   $effect(() => {
-    if (isGuestLocked && pendingModelUpdate) {
-      logger.info('Dropping deferred model update (picker guest-locked):', { agentId });
+    if (effectiveLocked && pendingModelUpdate) {
+      restoreLocalSelection(pendingModelUpdate);
       pendingModelUpdate = null;
+      modelChangeRevision++;
     }
   });
 
   $effect(() => {
-    if (!deferUpdate && pendingModelUpdate && !isGuestLocked) {
-      const model = pendingModelUpdate;
+    if (!deferUpdate && !isApplyingModelUpdate && pendingModelUpdate) {
+      const change = pendingModelUpdate;
       pendingModelUpdate = null;
-      logger.info('Applying deferred model update:', { model, agentId });
-      void applyBackendModelUpdate(model);
+      void applyBackendModelUpdate(change);
     }
   });
 
-  // Resolve the provider owning a picked row. Catalog groups carry bare ids
-  // for every provider, so a bare pick is attributed to the loaded group that
-  // contains the row rather than blanket-attributed to the default provider.
-  // A legacy compound prefix (persisted ids) still wins outright; when several
-  // groups own the same bare id the default provider keeps priority (the
-  // intent-hq/monorepo#1657 contract). The per-agent group — the effective
-  // provider's models when that provider is outside the enabled set (disabled
-  // locally, or never enabled in a guest window, where the host's settings
-  // are administrator-only and `providers.enabled` never hydrates) — is
-  // consulted too, so a pick from it attributes to the agent's provider. With
-  // no owning group, an agent-bound picker attributes the bare id to the
-  // session's own provider (what the daemon resolves a bare `agent.setModel`
-  // id against when `providerId` is absent); otherwise the default provider.
-  function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
+  // Keep the selected row's provider through confirmation and asynchronous work.
+  // Persisted compound IDs still carry an explicit provider at the input boundary.
+  function resolvePickedTriple(model: string, rowProviderId?: string): ModelPick {
     const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
-    if (legacyProviderId) return { providerId: legacyProviderId, modelId };
-    const matchesIn = (rowProviderId: string, options: { value: string }[] | undefined) =>
-      Boolean(
-        options?.some(
-          (opt) =>
-            normalizeModelIdForMatch(opt.value, rowProviderId) ===
-            normalizeModelIdForMatch(modelId, rowProviderId),
-        ),
-      );
-    const defaultNormalized = normalizeProviderId($defaultProviderId$);
-    if (defaultNormalized && matchesIn(defaultNormalized, allProviderModels[defaultNormalized])) {
-      return { providerId: defaultNormalized, modelId };
-    }
-    for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
-      if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
-    }
-    if (agentProviderModels && matchesIn(effectiveProviderId, agentProviderModels)) {
-      return { providerId: normalizeProviderId(effectiveProviderId), modelId };
-    }
-    return { providerId: explicitProviderId ?? $defaultProviderId$, modelId };
+    return {
+      providerId: normalizeProviderId(legacyProviderId || rowProviderId || effectiveProviderId),
+      modelId,
+    };
   }
 
-  async function applyBackendModelUpdate(model: string) {
-    if (isGuestLocked) return;
-    if (agentId && workspaceId) {
-      try {
-        // Send the picked model's provider explicitly: the owning catalog
-        // group's provider (legacy compound prefix wins). Without it the
-        // daemon resolves a bare id against the session's current provider,
-        // rejecting cross-provider picks.
-        const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
-        const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
-        // The role may have changed while the RPC was in flight; the reasoning
-        // reconciliation below issues further mutations, so stop here if locked.
-        if (isGuestLocked) return;
-        if (result.ok && result.data.success) {
-          logger.info('Updated agent model via IPC:', { agentId, model });
-          const targetOption = flatModelOptions.find(
-            (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(model),
-          );
-          const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
-          const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
-          await reconcileAgentReasoningEffort(
-            agentId,
-            workspaceId,
-            currentEffort,
-            supportedEfforts,
-          );
-        } else {
-          const errorMsg = result.ok ? result.data.error : result.error;
-          logger.warn('Failed to update agent model:', {
-            agentId,
-            model,
-            error: errorMsg,
-          });
-          if (errorMsg) {
-            notify.error(errorMsg, { duration: 6000 });
-          }
-        }
-      } catch (error) {
-        logger.error('Error updating agent model:', { agentId, model, error });
-      }
-    }
+  function isCurrentModelChange(change: ModelChange): boolean {
+    return (
+      !destroyed &&
+      change.revision === modelChangeRevision &&
+      change.agentId === agentId &&
+      change.workspaceId === workspaceId &&
+      change.connection === selectPrincipalConnectionContext.select(appStore.state)
+    );
   }
 
-  async function handleModelSelect(model: string | undefined) {
-    if (isGuestLocked) {
-      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
-      return;
-    }
-    if (model !== undefined && !canUseProviderModels(resolvePickedTriple(model).providerId)) {
-      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
-      return;
-    }
-    logger.debug('Model selected:', { model, previousModel: localModel, workspaceId, agentId });
-    logger.debug('Model pick flags:', { deferUpdate, updateGlobalStore, updateGlobalDefault });
-    // Update local state before async work so the UI responds immediately.
+  function restoreLocalSelection(change: ModelChange) {
+    if (!isCurrentModelChange(change)) return;
+    // A rejected request must not restore an old snapshot over a newer
+    // authoritative selection received while the request was in flight.
+    const selection = currentSessionSelection() ?? change.previous;
+    draftModel = selection.model;
+    localPickedProviderId = selection.providerId;
     propModelAtLocalChange = selectedModel;
     userChangedModel = true;
-    localModel = model;
+    dropdownValue = currentDropdownValue();
+    onModelChange?.(
+      localModel ?? '',
+      localModel
+        ? {
+            providerId: selection.providerId,
+            modelId: splitLegacyCompoundId(localModel).modelId,
+          }
+        : undefined,
+    );
+  }
 
-    if (model === undefined) {
-      // "Use default" picked — notify the parent with an empty string so it
-      // can clear an explicit pin (consumers with explicit-model semantics
-      // guard on falsy values; no agent/global updates apply to "default").
-      // Drop any deferred update queued during streaming so it cannot apply
-      // later and override this selection.
+  function applyBackendModelUpdate(change: ModelChange) {
+    if (!isCurrentModelChange(change) || isApplyingModelUpdate) return;
+    if (!hasResolvedProvider(change.pick.providerId)) {
+      restoreLocalSelection(change);
+      return;
+    }
+    const requestId = crypto.randomUUID();
+    submittedModelChange = { requestId, change };
+    const canWrite = () =>
+      isCurrentModelChange(change) &&
+      !effectiveLocked &&
+      hasResolvedProvider(change.pick.providerId) &&
+      canUseProviderModels(change.pick.providerId);
+    const action = agentModelMutationRequested(
+      {
+        requestId,
+        consumerId: mutationConsumerId,
+        agentId: change.agentId,
+        workspaceId: change.workspaceId,
+        connection: change.connection,
+        operation: {
+          kind: 'model',
+          model: change.pick.modelId,
+          providerId: change.pick.providerId,
+          commit: true,
+        },
+      },
+      { canSend: canWrite, canMutate: canWrite },
+    );
+    // The correlated selector result below owns presentation, not this Promise.
+    void appStore.dispatch(action).catch(() => {});
+  }
+
+  $effect(() => {
+    const submitted = submittedModelChange;
+    if (!submitted) return;
+    const outcome = $mutations$.find((entry) => entry.requestId === submitted.requestId);
+    if (!outcome || outcome.status === 'pending') return;
+    untrack(() => {
+      submittedModelChange = null;
+      appStore.dispatch(agentModelMutationConsumed(outcome.requestId, mutationConsumerId));
+      if (!isCurrentModelChange(submitted.change)) return;
+      if (
+        outcome.status === 'cancelled' ||
+        (outcome.status === 'failure' && !outcome.modelAccepted)
+      ) {
+        restoreLocalSelection(submitted.change);
+        if (outcome.status === 'failure' && outcome.error && !effectiveLocked)
+          notify.error(outcome.error, { duration: 6000 });
+      }
+    });
+  });
+
+  async function handleModelSelect(model: string | undefined, picked?: ModelPick) {
+    if (effectiveLocked || destroyed || isApplyingModelUpdate) {
+      dropdownValue = currentDropdownValue();
+      return;
+    }
+    const pick = model === undefined ? undefined : (picked ?? resolvePickedTriple(model));
+    if (pick && (!hasResolvedProvider(pick.providerId) || !canUseProviderModels(pick.providerId))) {
+      dropdownValue = currentDropdownValue();
+      return;
+    }
+    // A rejected global provider switch must not become an optimistic local
+    // selection or invoke the caller's model/effort reconciliation callback.
+    if (
+      updateGlobalDefault &&
+      pick &&
+      isQuickActionProviderSwitchBlocked(appStore.state.backgroundAgentSettings, pick.providerId)
+    ) {
+      dropdownValue = currentDropdownValue();
+      appStore.dispatch(backgroundProviderSwitchBlocked(pick.providerId));
+      return;
+    }
+    if (updateGlobalDefault) {
+      // Defaults have one Redux-rendered selection. Dispatch before returning
+      // from the click; never stage a component draft or an agent request.
+      onModelChange?.(model ?? '', pick);
+      if (pick && !effectiveLocked && !destroyed && !$hostMember$)
+        appStore.dispatch(selectModel(pick.modelId, pick.providerId));
+      return;
+    }
+    const previous = pendingModelUpdate?.previous ?? {
+      model: localModel,
+      providerId: selectedModelProviderId || effectiveProviderId,
+    };
+    const revision = ++modelChangeRevision;
+    if (isEffectiveProviderDisabled || disabledProviderSnapshot) {
+      disabledProviderSnapshot = null;
+      reHomeAnnouncementSuppressed = true;
+    }
+    propModelAtLocalChange = selectedModel;
+    userChangedModel = true;
+    draftModel = model;
+    localPickedProviderId = pick?.providerId ?? null;
+
+    if (!pick || model === undefined) {
       pendingModelUpdate = null;
       onModelChange?.('');
       return;
     }
-
-    // Resolve the pick's triple legs once at the emit boundary: the legacy
-    // compound prefix when present, else the provider whose loaded catalog
-    // group owns the picked bare row.
-    const { providerId: pickedProviderId, modelId: pickedModelId } = resolvePickedTriple(model);
-    onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
-
-    await tick();
-
-    // The role may have changed while yielding; never mutate session state
-    // from a picker that is now guest-locked.
-    if (isGuestLocked) return;
-
-    if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
-    if (!updateGlobalStore) return;
-
-    if (agentId && workspaceId) {
-      appStore.dispatch(updateAgentSessionFields(agentId, { model }));
-      logger.debug('Updated local session model:', { agentId, model });
-
-      if (deferUpdate) {
-        pendingModelUpdate = model;
-        logger.info('Model update deferred until streaming ends:', { model, agentId });
-      } else {
-        await applyBackendModelUpdate(model);
-      }
-    }
+    onModelChange?.(model, pick);
+    if (effectiveLocked || destroyed) return;
+    if (!updateGlobalStore || !agentId || !workspaceId) return;
+    const change: ModelChange = {
+      pick,
+      previous,
+      agentId,
+      workspaceId,
+      revision,
+      connection: selectPrincipalConnectionContext.select(appStore.state),
+    };
+    if (deferUpdate) pendingModelUpdate = change;
+    else await applyBackendModelUpdate(change);
   }
 
   // Whether a model is explicitly selected (vs using default)
@@ -896,42 +874,57 @@
       localModel !== 'default',
   );
 
-  // Get the label for a model ID from available models list; undefined when
-  // the id resolves to no loaded model (callers pick the fallback).
-  // Catalog rows now carry bare ids for every provider, while a session id
-  // may be daemon-pinned bare or stored legacy-compound, so ids are compared
-  // via normalizeModelIdForMatch (like selectedCatalogOption), not exact
-  // string equality.
-  // Legacy codex compound ids (`{model}/{effort}`) no longer exist as catalog
-  // rows (the daemon collapses them to one base row + effortLevels), so on an
-  // exact-id miss the base model's label is rendered with the effort suffix
-  // appended — existing sessions with a stored compound id keep a sensible
-  // label instead of the raw id.
-  function getModelLabel(modelId: string | undefined): string | undefined {
+  // Settings owns the default provider even when a bare model contains a colon.
+  // Other display callers may still carry a recognized legacy provider prefix.
+  // This identity is for labels/icons only; catalog/session gates stay authoritative.
+  const selectedModelDisplayProviderId = $derived.by(() => {
+    if (updateGlobalDefault) return normalizeProviderId(effectiveProviderId);
+    if (localPickedProviderId) return normalizeProviderId(localPickedProviderId);
+    if (explicitProviderId) return explicitProviderId;
+    const prefix = localModel ? splitLegacyCompoundId(localModel).providerId : undefined;
+    return normalizeProviderId(
+      prefix && hasResolvedProvider(prefix) ? prefix : effectiveProviderId,
+    );
+  });
+
+  // Live labels retain precedence; remembered names affect display only.
+  function getModelLabel(
+    modelId: string | undefined,
+    provider = selectedModelDisplayProviderId,
+  ): string | undefined {
     if (!modelId) return undefined;
+    provider = normalizeProviderId(provider);
+    const bareId = modelIdForDisplay(modelId, provider, normalizeProviderId);
     const lookup = (id: string): string | undefined => {
-      const target = normalizeModelIdForMatch(id, effectiveProviderId);
-      for (const [rowProviderId, models] of Object.entries(allProviderModels)) {
-        const found = models.find(
-          (m) => normalizeModelIdForMatch(m.value, rowProviderId) === target,
-        );
-        if (found) return found.label;
+      const target = modelIdForDisplay(id, provider, normalizeProviderId);
+      const find = (models: { value: string; label: string }[], catalogProvider: string) => {
+        // Catalog ownership is authoritative: a custom colon-bearing ID in
+        // another provider's catalog must never supply this provider's name.
+        if (normalizeProviderId(catalogProvider) !== provider) return undefined;
+        const exact = models.find((row) => row.value === id);
+        return (
+          exact ??
+          models.find(
+            (row) => modelIdForDisplay(row.value, provider, normalizeProviderId) === target,
+          )
+        )?.label;
+      };
+      for (const [rowProvider, models] of Object.entries(allProviderModels)) {
+        const label = find(models, rowProvider);
+        if (label) return label;
       }
-      return availableModels.find(
-        (m) => normalizeModelIdForMatch(m.value, availableModelsProviderId) === target,
-      )?.label;
+      return find(availableModels, availableModelsProviderId);
     };
-    const exact = lookup(modelId);
-    if (exact) return exact;
-    const slashIndex = modelId.indexOf('/');
-    if (slashIndex > 0 && slashIndex < modelId.length - 1) {
-      const baseLabel = lookup(modelId.slice(0, slashIndex));
-      if (baseLabel) {
-        const effort = modelId.slice(slashIndex + 1);
-        return `${baseLabel} (${effort.charAt(0).toUpperCase()}${effort.slice(1)})`;
-      }
-    }
-    return undefined;
+    // Subscribe to the shared Redux names, including discoveries made by another picker.
+    void $learnedModelNames$;
+    const learned = (id: string) =>
+      selectLearnedModelDisplayName.select(appStore.state, provider, id);
+    return (
+      resolveModelDisplayName(modelId, lookup) ??
+      (bareId !== modelId ? resolveModelDisplayName(bareId, lookup) : undefined) ??
+      learned(modelId) ??
+      resolveModelDisplayName(bareId, learned)
+    );
   }
 
   // The provider's `isDefault`-marked catalog row, if its catalog is loaded
@@ -947,7 +940,7 @@
       availableModelsProviderId !== '' &&
       normalizeProviderId(availableModelsProviderId) === normalizedId
     ) {
-      const row = availableModels.find((model) => model.isDefault);
+      const row = availableModels.find((model) => 'isDefault' in model && model.isDefault);
       if (row) return toDropdownOptions([row])[0];
     }
     return undefined;
@@ -1014,6 +1007,15 @@
     defaultModelId ? mapDefaultPseudoSelection(defaultModelId) : undefined,
   );
 
+  const defaultModelDisplayProviderId = $derived.by(() => {
+    const owner = explicitProviderId || fallbackProviderId;
+    if (owner) return normalizeProviderId(owner);
+    const prefix = defaultModelId ? splitLegacyCompoundId(defaultModelId).providerId : undefined;
+    return normalizeProviderId(
+      prefix && hasResolvedProvider(prefix) ? prefix : $defaultProviderId$,
+    );
+  });
+
   function formatResolvedDefaultLabel(model: string): string {
     if (formatDefaultModelLabel) return formatDefaultModelLabel(model);
     return showDefaultOption ? m.chat_modelPicker_defaultModelPreview_label({ model }) : model;
@@ -1024,7 +1026,7 @@
       return localModel
         ? (legacyDefaultMappedOption?.label ??
             getModelLabel(localModel) ??
-            parseCompoundModelId(localModel).modelId)
+            modelIdForDisplay(localModel, selectedModelDisplayProviderId, normalizeProviderId))
         : (defaultModelLabel ?? m.chat_modelPicker_defaultModel_label());
     }
 
@@ -1032,9 +1034,11 @@
     // defaultModelLabel (e.g. "Provider default"), then the bare model id. A
     // `<provider>:default` preview maps to its D2 row's label first.
     if (defaultModelId) {
-      const resolvedLabel = defaultModelIdMappedOption?.label ?? getModelLabel(defaultModelId);
+      const provider = defaultModelDisplayProviderId;
+      const resolvedLabel =
+        defaultModelIdMappedOption?.label ?? getModelLabel(defaultModelId, provider);
       if (resolvedLabel) return formatResolvedDefaultLabel(resolvedLabel);
-      return defaultModelLabel ?? parseCompoundModelId(defaultModelId).modelId;
+      return defaultModelLabel ?? modelIdForDisplay(defaultModelId, provider, normalizeProviderId);
     }
     if (catalogDefaultFallbackOption) {
       return formatResolvedDefaultLabel(catalogDefaultFallbackOption.label);
@@ -1044,13 +1048,12 @@
 
   const triggerProviderId = $derived.by(() => {
     if (localModel && hasExplicitModel) {
-      // Catalog-ownership attribution so a bare cross-provider selection
-      // shows its own provider's icon, not the default provider's.
-      return resolvePickedTriple(localModel).providerId;
+      // Provider identity belongs to the selection, including colliding bare IDs.
+      return selectedModelDisplayProviderId;
     }
     if (explicitProviderId) return explicitProviderId;
     // No explicit provider or model — show the displayed default model's provider.
-    if (defaultModelId) return parseCompoundModelId(defaultModelId).providerId;
+    if (defaultModelId) return defaultModelDisplayProviderId;
     if (catalogDefaultFallbackOption) {
       return parseCompoundModelId(catalogDefaultFallbackOption.value).providerId;
     }
@@ -1062,7 +1065,12 @@
     // A `<provider>:default` selection mapped to its D2 row renders that
     // row's label — resolved even while other providers are still loading.
     if (legacyDefaultMappedOption) return true;
+    if (getModelLabel(localModel)) return true;
+    // The disabled-provider warning derives from settings alone and must not
+    // wait behind the disabled provider's catalog, which may never load.
+    if (isSelectedModelProviderDisabled) return true;
     if (!isLoadingModels && allProvidersLoaded) return true;
+    if (selectedCatalogOption) return true;
     for (const models of Object.values(allProviderModels)) {
       if (models.some((m) => m.value === localModel)) return true;
     }
@@ -1102,15 +1110,48 @@
 
   const flatModelOptions = $derived<DropdownOption[]>([
     ...(showDefaultOption ? [useDefaultOption] : []),
-    ...$availableEnabledProviderIds$.flatMap(
-      (pid) => allProviderModels[normalizeProviderId(pid)] ?? [],
-    ),
-    // Keep the agent's current provider selectable even if it was since
-    // disabled, so the selected model isn't treated as unavailable.
-    ...(isEffectiveProviderAvailable || !fallbackModelsMatchEffectiveProvider
+    ...selectableProviderIds.flatMap((pid) => allProviderModels[normalizeProviderId(pid)] ?? []),
+    // Keep the agent's current provider selectable while it is merely
+    // unavailable, so the selected model isn't treated as unavailable — but
+    // not once it was disabled in settings (see isEffectiveProviderDisabled).
+    ...(isEffectiveProviderAvailable ||
+    isEffectiveProviderDisabled ||
+    !fallbackModelsMatchEffectiveProvider
       ? []
       : toDropdownOptions(availableModels)),
   ]);
+
+  function findCatalogOption(
+    modelId: string,
+    bareProviderId = selectedModelProviderId || effectiveProviderId,
+  ): DropdownOption | undefined {
+    const lookup = (id: string) => {
+      const target = normalizeModelIdForMatch(splitLegacyCompoundId(id).modelId, bareProviderId);
+      for (const providerId of selectableProviderIds) {
+        const rowProviderId = normalizeProviderId(providerId);
+        const found = allProviderModels[rowProviderId]?.find(
+          (option) => normalizeModelIdForMatch(option.value, rowProviderId) === target,
+        );
+        if (found) return found;
+      }
+      if (
+        !isEffectiveProviderAvailable &&
+        !isEffectiveProviderDisabled &&
+        fallbackModelsMatchEffectiveProvider
+      ) {
+        return toDropdownOptions(availableModels).find(
+          (option) => normalizeModelIdForMatch(option.value, availableModelsProviderId) === target,
+        );
+      }
+      return undefined;
+    };
+    // Persisted effort-suffixed pins refer to today's base catalog row. An
+    // exact match wins so provider model IDs containing slashes stay intact.
+    return (
+      lookup(modelId) ??
+      lookup(modelId.replace(/\/(?:none|minimal|low|medium|high|xhigh|max|ultra)$/i, ''))
+    );
+  }
 
   const selectedCatalogOption = $derived.by(() => {
     const selectedId = hasExplicitModel ? localModel : defaultModelId;
@@ -1119,8 +1160,15 @@
     // resolve to the hidden pseudo-row when an older daemon still serves one.
     const mappedOption = hasExplicitModel ? legacyDefaultMappedOption : defaultModelIdMappedOption;
     if (mappedOption) return mappedOption;
-    return flatModelOptions.find(
-      (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(selectedId),
+    return findCatalogOption(
+      selectedId,
+      hasExplicitModel
+        ? selectedModelProviderId
+        : normalizeProviderId(
+            splitLegacyCompoundId(selectedId).providerId ||
+              fallbackProviderId ||
+              effectiveProviderId,
+          ),
     );
   });
 
@@ -1134,11 +1182,20 @@
       .filter((error): error is ProviderLoadError => Boolean(error));
   });
 
+  // Read the workspace-scoped catalog, including degraded successful responses.
+  const activeProviderIssue = $derived.by<ProviderLoadError | null>(() => {
+    const providerId = activeBrowseProviderId || preferredBrowseProviderId;
+    const error = $providerRequests$[providerId]?.error;
+    if (error) return formatProviderLoadError(providerId, error);
+    const warning = $providerCatalogs$[providerId]?.warning;
+    if (warning) return formatProviderLoadError(providerId, warning);
+    if (loadError && providerId === effectiveProviderId)
+      return formatProviderLoadError(providerId, loadError);
+    return null;
+  });
   const nonBlockingProviderWarnings = $derived(
-    hasLoadedModelOptions
-      ? providerLoadWarnings.filter(
-          (warning) => (allProviderModels[warning.providerId]?.length ?? 0) > 0,
-        )
+    activeProviderIssue && (allProviderModels[activeProviderIssue.providerId]?.length ?? 0) > 0
+      ? [activeProviderIssue]
       : [],
   );
 
@@ -1192,6 +1249,7 @@
   let noProviderToastShown = false;
 
   function openProviderSettings() {
+    if ($hostMember$) return;
     dropdownOpen = false;
     void navigateToSettings({ tab: 'accounts', hash: 'providers' }).catch((error: unknown) => {
       logger.error('Failed to open provider settings from model picker', error);
@@ -1202,14 +1260,21 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
-          id: 'no-provider-available',
-          duration: 6000,
-          action: {
-            label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
-            onClick: openProviderSettings,
+        notify.error(
+          $hostMember$
+            ? m.hostExecution_providerSetup_description()
+            : m.chat_modelPicker_noProviderAvailable_toast(),
+          {
+            id: 'no-provider-available',
+            duration: 6000,
+            action: $hostMember$
+              ? undefined
+              : {
+                  label: m.chat_modelPicker_noProviderAvailable_openSettings_label(),
+                  onClick: openProviderSettings,
+                },
           },
-        });
+        );
       }
     } else {
       noProviderToastShown = false;
@@ -1232,6 +1297,7 @@
     return {
       providerId: 'multiple',
       providerName: m.chat_modelPicker_modelProviders_label(),
+      details: providerLoadWarnings.map((error) => error.details).join('\n\n'),
       message: providerLoadWarnings.map((error) => error.displayText).join('; '),
       displayText: providerLoadWarnings.map((error) => error.displayText).join('; '),
     };
@@ -1244,7 +1310,8 @@
       effectiveProviderId,
       availableModels,
       availableModelsProviderId,
-      enabledProviderIds: $availableEnabledProviderIds$,
+      enabledProviderIds: selectableProviderIds,
+      effectiveProviderDisabled: isEffectiveProviderDisabled,
       allProviderModels,
       allProviderLoading,
       allProviderErrors,
@@ -1270,22 +1337,66 @@
   // A legacy `<provider>:default` selection has no catalog row of its own,
   // so the mapped isDefault row shows as selected instead.
   let dropdownValue = $state(untrack(() => localModel ?? USE_DEFAULT_VALUE));
+  function currentDropdownValue() {
+    if (
+      hasExplicitModel &&
+      activeBrowseProviderId &&
+      selectedModelProviderId &&
+      activeBrowseProviderId !== selectedModelProviderId
+    )
+      return '';
+    return (
+      (hasExplicitModel ? selectedCatalogOption?.value : undefined) ??
+      localModel ??
+      USE_DEFAULT_VALUE
+    );
+  }
   $effect(() => {
-    dropdownValue = legacyDefaultMappedOption?.value ?? localModel ?? USE_DEFAULT_VALUE;
+    // A fast rejection can restore the same authoritative value within one
+    // render turn. Also observe the dropdown's attempted write so its row
+    // selection cannot outlive that rejected attempt.
+    const value = currentDropdownValue();
+    if (dropdownValue !== value) dropdownValue = value;
   });
 
-  // Provider the explicitly selected model belongs to ('' when inheriting).
-  // Catalog rows are bare for every provider, so ownership is resolved from
-  // the loaded groups (legacy compound prefix wins) — not by parsing the id.
+  // Keep an explicit local choice until the daemon/parent has caught up.
+  // Existing bare session IDs belong to that session's provider, even when
+  // another provider advertises the same model ID.
   const selectedModelProviderId = $derived(
     hasExplicitModel && localModel
-      ? normalizeProviderId(resolvePickedTriple(localModel).providerId)
+      ? ((updateGlobalDefault ? null : localPickedProviderId) ??
+          normalizeProviderId(
+            explicitProviderId ||
+              splitLegacyCompoundId(localModel).providerId ||
+              effectiveProviderId,
+          ))
       : '',
+  );
+
+  // Provider the daemon resolves the selected model against on send: a legacy
+  // compound prefix, else the agent's own provider. Catalog ownership is not
+  // authoritative here — a bare id shared by several catalogs would be
+  // attributed to the default provider while the agent still runs elsewhere.
+  const selectedModelGateProviderId = $derived.by(() => {
+    const legacyProviderId =
+      hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).providerId : '';
+    return (
+      (updateGlobalDefault ? null : localPickedProviderId) ??
+      normalizeProviderId(explicitProviderId || legacyProviderId || effectiveProviderId)
+    );
+  });
+
+  // The provider the selected model is sent through was disabled in settings —
+  // the pre-send warning state.
+  const isSelectedModelProviderDisabled = $derived(
+    !!agentId &&
+      !isGuestLocked &&
+      isProviderDisabledInSettings($enabledProviders$, selectedModelGateProviderId),
   );
 
   const providerTabIds = $derived.by(() => [
     ...new Set([
-      ...$availableEnabledProviderIds$.map((id) => normalizeProviderId(id)),
+      ...selectableProviderIds.map((id) => normalizeProviderId(id)),
       ...groupedModelOptions
         .filter((group) => group.key !== 'default')
         .map((group) => group.parentKey ?? group.key),
@@ -1320,8 +1431,23 @@
   });
 
   // Display groups — every picker browses one provider at a time.
-  const displayGroups = $derived.by(() =>
-    groupedModelOptions
+  const displayGroups = $derived.by(() => {
+    // Once every catalog attempt settles without usable models, use the
+    // existing terminal error/Retry surface rather than disabled error rows.
+    // Pending retries and partial/cached success keep their groups/default row.
+    if (
+      !hasLoadedModelOptions &&
+      blockingLoadError &&
+      allProvidersLoaded &&
+      !agentProviderLoading &&
+      observedProviderIds.every(
+        (pid) =>
+          $providerRequests$[pid]?.status !== 'loading' &&
+          ($providerCatalogs$[pid]?.models.length ?? 0) === 0,
+      )
+    )
+      return [];
+    return groupedModelOptions
       .filter((group) => {
         const providerKey = group.parentKey ?? group.key;
         return (
@@ -1338,8 +1464,8 @@
             : providerTabsEnabled || !collapsedGroups.has(group.key)
               ? group.options
               : [],
-      })),
-  );
+      }));
+  });
 
   // True while a settled fetch result for the selected model's own provider is
   // still outstanding but expected. `allProvidersLoaded` is not enough: on boot
@@ -1369,20 +1495,75 @@
     // not missing, it renders as that model.
     if (legacyDefaultMappedOption) return false;
 
-    const values = new Set(
-      flatModelOptions.map((opt) => normalizeModelIdForMatch(opt.value, effectiveProviderId)),
-    );
-    return !values.has(normalizeModelIdForMatch(localModel, effectiveProviderId));
+    return !selectedCatalogOption;
   });
 
-  const isSelectedModelUnavailable = $derived.by(() => {
+  // Follow the daemon's re-home (intent#5737): while the agent's provider is
+  // disabled the warning derives from settings alone; when the session then
+  // lands on another provider (the daemon moves it on the next send and the
+  // agent-updated event refreshes `explicitProviderId`), announce the switch
+  // once with the existing fallback toast and keep the from/to note in the
+  // picker. The FE never performs the switch itself. A user pick in the
+  // meantime, or the provider being re-enabled, cancels the announcement.
+  let disabledProviderSnapshot = $state<{
+    agentId: string;
+    providerId: string;
+    fromModel: string;
+  } | null>(null);
+  // Set by an explicit pick while the provider is disabled: the user chose
+  // the switch, so the daemon's re-home must not be announced as its own.
+  let reHomeAnnouncementSuppressed = $state(false);
+
+  // The agent-updated event that re-homes the agent refreshes the session's
+  // provider and model together, but the `selectedModel` prop can land in a
+  // later flush. Until the prop matches the session model the old model is
+  // stale, so neither the announcement nor the auto-fallback may act on it.
+  // A re-home onto the provider default lands with no `model` on the AgentLite
+  // row (§5.5 omits it), so an absent model on a present session means "no
+  // pinned model", and the prop must catch up to that too.
+  const isAwaitingReHomedModel = $derived.by(() => {
+    const snapshot = disabledProviderSnapshot;
+    if (!snapshot || snapshot.agentId !== agentId || isEffectiveProviderDisabled) return false;
+    const session = $agentSession$;
+    if (!session) return false;
+    const sessionModel = session.model;
+    const sessionModelId =
+      typeof sessionModel === 'string' ? splitLegacyCompoundId(sessionModel).modelId : '';
+    const localModelId =
+      hasExplicitModel && localModel ? splitLegacyCompoundId(localModel).modelId : '';
+    return sessionModelId !== localModelId;
+  });
+
+  const isSelectedModelMissingAfterLoad = $derived.by(() => {
     if (isGuestLocked) return false;
-    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
+    // Settings-derived: does not wait for catalog loads or availability probes.
+    if (isSelectedModelProviderDisabled) return true;
+    if (isAwaitingReHomedModel) return false;
+    // A cleared registry is unknown until its replacement arrives, even if
+    // the last successful models.list response is still cached.
     if (!$hasCheckedOnce$) return false;
+    if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (isLoadingModels) return false;
     if (!allProvidersLoaded) return false;
     if (isSelectedModelProviderPending) return false;
     return isSelectedModelMissingFromCatalog;
+  });
+
+  const isSelectedModelUnavailable = $derived.by(() => {
+    if (!isSelectedModelMissingAfterLoad) return false;
+    if (isSelectedModelProviderDisabled) return true;
+    const provider = selectedModelGateProviderId;
+    // A hydrated registry can establish that a historical provider no longer
+    // resolves, even though that provider can never return a model catalog.
+    if ($providerCatalogEntries$.length > 0 && !hasResolvedProvider(provider)) return true;
+    const catalog = $providerCatalogs$[provider];
+    const request = $providerRequests$[provider];
+    // A failed probe or a degraded/last-good list cannot establish removal.
+    // Keep the user's model and effort until this provider has a fresh result.
+    if (!catalog || catalog.stale || catalog.warning) return false;
+    if (request?.error || request?.status === 'loading' || request?.status === 'cancelled')
+      return false;
+    return true;
   });
 
   // --- Per-agent fallback tracking (persisted through Redux sagas so it survives page refresh) ---
@@ -1431,15 +1612,26 @@
   const persistedReasoningEffort = $derived(
     onReasoningChange ? (reasoningEffort ?? null) : ($reasoningEffort$ ?? null),
   );
+  const inheritedReasoningLabel = $derived(
+    defaultReasoningEffort && reasoningLevels.includes(defaultReasoningEffort)
+      ? m.chat_modelPicker_defaultModelPreview_label({
+          model: reasoningLevelLabel(defaultReasoningEffort),
+        })
+      : undefined,
+  );
   const currentReasoningEffort = $derived(
     persistedReasoningEffort && reasoningLevels.includes(persistedReasoningEffort)
       ? persistedReasoningEffort
       : null,
   );
   const currentReasoningLabel = $derived(
-    currentReasoningEffort
-      ? reasoningLevelLabel(currentReasoningEffort)
-      : m.chat_effortPicker_level_auto(),
+    persistedReasoningEffort && !reasoningLevels.includes(persistedReasoningEffort)
+      ? m.chat_effortPicker_unavailable_label({
+          level: reasoningLevelLabel(persistedReasoningEffort),
+        })
+      : currentReasoningEffort
+        ? reasoningLevelLabel(currentReasoningEffort)
+        : (inheritedReasoningLabel ?? m.chat_effortPicker_level_auto()),
   );
   const currentReasoningLevelIndex = $derived(
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
@@ -1463,18 +1655,22 @@
   let updatingReasoningEffort = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
-      isGuestLocked ||
+      effectiveLocked ||
+      !hasResolvedProvider(selectedModelGateProviderId) ||
+      isApplyingModelUpdate ||
+      pendingModelUpdate !== null ||
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
+  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   const showDropdownFooter = $derived(
     showReasoningFooter ||
       (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
-      nonBlockingProviderWarnings.length > 0,
+      activeProviderIssue !== null ||
+      refreshingProviders.has(refreshProviderId),
   );
 
   const railProviderIds = $derived(providerTabIds);
-  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   let pointerInteraction = $state(false);
 
   function clearModelSearch(event: MouseEvent) {
@@ -1524,7 +1720,7 @@
         return (await onReasoningChange(value)) !== false;
       }
       if (!agentId || !workspaceId) return false;
-      return await applyReasoningEffort(agentId, workspaceId, value, previous);
+      return await mutate.applyEffort(agentId, workspaceId, value, previous);
     } finally {
       updatingReasoningEffort = false;
     }
@@ -1553,27 +1749,16 @@
     !!agentId && !isGuestLocked && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
-  // The selected model isn't in the catalog yet, but its provider hasn't
-  // settled — show a spinner in the trigger rather than a warning that would
-  // flip back to normal a moment later (transient warning on refresh).
-  const showModelLoading = $derived(
-    !!agentId &&
-      $fallbackInfo$ === null &&
-      isSelectedModelMissingFromCatalog &&
-      (!$hasCheckedOnce$ ||
-        isLoadingModels ||
-        !allProvidersLoaded ||
-        isSelectedModelProviderPending),
-  );
-
-  const modelLoadingTitle = $derived(
-    m.chat_modelPicker_loadingProviderModels_label({
-      provider: providerDisplayName(selectedModelProviderId || effectiveProviderId),
-    }),
-  );
-
   // Warning message to display
   const warningMessage = $derived.by(() => {
+    if (isSelectedModelProviderDisabled) {
+      return {
+        title: m.chat_modelPicker_noLongerAvailable_title({ model: currentModelLabel }),
+        description: m.chat_modelPicker_providerDisabled_description({
+          provider: providerDisplayName(selectedModelGateProviderId),
+        }),
+      };
+    }
     if (isSelectedModelUnavailable) {
       return {
         title: m.chat_modelPicker_noLongerAvailable_title({
@@ -1592,8 +1777,58 @@
     return null;
   });
 
+  // Native tooltip on the trigger: the warning reason while one is shown
+  // ("<model> is no longer available — <provider> is disabled"), else the label.
+  const triggerTitle = $derived(
+    showModelWarning && warningMessage
+      ? m.chat_modelPicker_warning_tooltip({
+          title: warningMessage.title,
+          description: warningMessage.description,
+        })
+      : triggerAccessibleLabel,
+  );
+
+  // Re-home announcement (see `disabledProviderSnapshot`).
+  $effect(() => {
+    if (!agentId) {
+      disabledProviderSnapshot = null;
+      reHomeAnnouncementSuppressed = false;
+      return;
+    }
+    const currentProviderId = normalizeProviderId(effectiveProviderId);
+    if (isEffectiveProviderDisabled) {
+      if (!disabledProviderSnapshot && !untrack(() => reHomeAnnouncementSuppressed)) {
+        disabledProviderSnapshot = {
+          agentId,
+          providerId: currentProviderId,
+          fromModel: untrack(() => currentModelLabel),
+        };
+      }
+      return;
+    }
+    reHomeAnnouncementSuppressed = false;
+    const snapshot = disabledProviderSnapshot;
+    if (!snapshot) return;
+    if (isAwaitingReHomedModel) return;
+    disabledProviderSnapshot = null;
+    if (snapshot.agentId !== agentId) return;
+    if (snapshot.providerId === currentProviderId) return;
+    const toModel = untrack(() => currentModelLabel);
+    logger.info('Agent re-homed by the daemon after its provider was disabled:', {
+      agentId,
+      fromProvider: snapshot.providerId,
+      toProvider: currentProviderId,
+    });
+    setFallbackInfo({ fromModel: snapshot.fromModel, toModel });
+    notify.info(
+      m.chat_modelPicker_unavailableSwitched_toast({ from: snapshot.fromModel, to: toModel }),
+      { duration: 5000 },
+    );
+  });
+
   function findFallbackOption(restrictToProvider?: string): DropdownOption | undefined {
     return findModelFallbackOption({
+      workspaceId,
       options: flatModelOptions,
       excludeValue: USE_DEFAULT_VALUE,
       restrictToProvider,
@@ -1606,13 +1841,17 @@
   $effect(() => {
     if (!agentId) return;
     if (isGuestLocked) return;
+    // A disabled provider is re-homed by the daemon on the next send; the FE
+    // must not `agent.setModel` its way around the gate (intent#5737).
+    if (isSelectedModelProviderDisabled) return;
+    if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
 
-    // Guard against transient unavailability. This effect dispatches
-    // updateAgentSessionFields(agentId, { model }), which PERMANENTLY overwrites
-    // the persisted model on the agent session — including across restarts.
+    // Guard against transient unavailability. This effect writes the session
+    // model (via handleModelSelect), which PERMANENTLY overwrites the
+    // persisted model on the agent session — including across restarts.
     // Only proceed once we're confident the user's provider has truly settled;
     // otherwise a slow/empty per-provider fetch during boot or refresh would
     // silently replace the user's picked model (e.g. Sonnet 4.6 → GPT 5.4).
@@ -1620,6 +1859,7 @@
     const modelProvider = normalizeProviderId(rawModelProvider);
     if (
       !isUserProviderSettled({
+        workspaceId,
         agentProviderModels,
         agentProviderError,
         enabledProviderIds: $availableEnabledProviderIds$,
@@ -1637,9 +1877,7 @@
     // Get the name of the unavailable model for the notification
     const unavailableModelName = localModel || m.chat_modelPicker_selectedModel_fallback();
 
-    const unavailableProvider = localModel
-      ? parseCompoundModelId(localModel).providerId
-      : effectiveProviderId;
+    const unavailableProvider = selectedModelGateProviderId;
 
     // Find a same-provider fallback using the preference list, then the globally selected model,
     // then first available as a last resort.
@@ -1690,7 +1928,10 @@
       // Switch to the fallback model — only when the model genuinely disappeared.
       // During a provider switch the model isn't really missing, so skip the silent
       // switch to avoid clobbering a valid compound/bare model ID round-trip.
-      handleModelSelect(fallbackOption.value);
+      handleModelSelect(
+        fallbackOption.value,
+        resolvePickedTriple(fallbackOption.value, unavailableProvider),
+      );
     } else {
       logger.debug('Skipping auto-fallback (provider switch detected)', {
         unavailableModel: unavailableModelName,
@@ -1716,24 +1957,27 @@
   $effect(() => {
     if (!silentFallback) return;
     if (isGuestLocked) return;
+    if (isApplyingModelUpdate || pendingModelUpdate) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
-    if (!isSelectedModelUnavailable) return;
+    if (!isSelectedModelMissingAfterLoad) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
 
-    const rawCurrentProvider = localModel
-      ? parseCompoundModelId(localModel).providerId
-      : effectiveProviderId;
-    const currentProvider = normalizeProviderId(rawCurrentProvider);
+    const currentProvider = selectedModelGateProviderId;
 
     // Try same-provider fallback first
-    const fallbackOption = findFallbackOption(currentProvider);
+    const fallbackOption = isSelectedModelUnavailable
+      ? findFallbackOption(currentProvider)
+      : undefined;
     if (fallbackOption) {
       logger.info('Workspace initializer: falling back to same-provider model', {
         unavailableModel: localModel,
         fallbackModel: fallbackOption.value,
         provider: currentProvider,
       });
-      handleModelSelect(fallbackOption.value);
+      handleModelSelect(
+        fallbackOption.value,
+        resolvePickedTriple(fallbackOption.value, currentProvider),
+      );
       return;
     }
 
@@ -1745,32 +1989,7 @@
     if (silentRetryAttemptedForProvider === currentProvider) return;
     silentRetryAttemptedForProvider = currentProvider;
 
-    void (async () => {
-      // Epoch at fetch start: a reconnect clear mid-flight makes this
-      // response stale for local state as well as the cache write-through.
-      const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
-      try {
-        const models = await getModelsForProvider(currentProvider);
-        if (selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch) return;
-        if (models.length > 0) {
-          const normalizedId = normalizeProviderId(currentProvider);
-          allProviderModels = {
-            ...allProviderModels,
-            [normalizedId]: toDropdownOptions(models),
-          };
-          // Write through to the session cache like the other fetch paths.
-          appStore.dispatch(providerModelsLoaded(normalizedId, { models }, cacheEpoch));
-          return;
-        }
-      } catch (err) {
-        logger.warn('Retry fetch failed for provider', { provider: currentProvider, error: err });
-      }
-
-      const providerName = providerDisplayName(currentProvider);
-      notify.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
-        description: m.chat_modelPicker_tryRefreshing_description(),
-      });
-    })();
+    appStore.dispatch(providerModelsRequested(currentProvider, 'silentRetry', workspaceId));
   });
 
   let dropdownOpen = $state(false);
@@ -1787,9 +2006,15 @@
     });
   });
 
-  /** Clear any pending deferred model update. Used when the parent handles the IPC call itself. */
-  export function clearPendingUpdate() {
-    pendingModelUpdate = null;
+  let detailsError = $state<ProviderLoadError | null>(null);
+  let detailsOpen = $state(false);
+
+  function showProviderDetails(error: ProviderLoadError) {
+    // The footer is removed when its dropdown closes. Restore focus to the
+    // stable picker trigger before opening the dialog so dismissal returns there.
+    dropdownRef?.dismissAndFocusTrigger();
+    detailsError = error;
+    detailsOpen = true;
   }
 
   /** Clear the fallback warning - call when user sends a message or explicitly selects a model */
@@ -1798,8 +2023,22 @@
   }
 
   async function handleModelChange(value: string | string[], event?: MouseEvent) {
-    if (effectiveLocked) return;
+    if (effectiveLocked || destroyed || isApplyingModelUpdate) {
+      dropdownValue = currentDropdownValue();
+      return;
+    }
+    const connection = selectPrincipalConnectionContext.select(appStore.state);
     const modelValue = value as string;
+    const pick =
+      modelValue === USE_DEFAULT_VALUE
+        ? undefined
+        : resolvePickedTriple(modelValue, activeBrowseProviderId);
+    if (pick && !allowProviderSwitch && pick.providerId !== effectiveProviderId) {
+      dropdownValue = currentDropdownValue();
+      return;
+    }
+    const fromProviderId = selectedModelProviderId || effectiveProviderId;
+    const confirmation = ++confirmationRevision;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
     // the current model is never gated; picking "Default model" while an
@@ -1809,24 +2048,38 @@
       modelValue === USE_DEFAULT_VALUE
         ? hasExplicitModel
         : !localModel ||
-          normalizeModelIdForMatch(modelValue, effectiveProviderId) !==
-            normalizeModelIdForMatch(localModel, effectiveProviderId);
+          pick?.providerId !== fromProviderId ||
+          normalizeModelIdForMatch(modelValue, pick?.providerId ?? effectiveProviderId) !==
+            normalizeModelIdForMatch(localModel, fromProviderId);
     if (isActualChange && confirmModelChange) {
       const confirmed = await confirmModelChange(
         localModel,
         modelValue === USE_DEFAULT_VALUE ? null : modelValue,
+        {
+          from: currentModelLabel,
+          fromProviderId,
+          toProviderId: pick?.providerId ?? fromProviderId,
+          to:
+            modelValue === USE_DEFAULT_VALUE
+              ? m.chat_modelPicker_defaultModel_label()
+              : (getModelLabel(modelValue, pick?.providerId) ??
+                parseCompoundModelId(modelValue).modelId),
+        },
       );
-      // The confirmation may resolve after the window's role changed; a pick
-      // that started in an owner window must not land once guest-locked.
-      if (!confirmed || isGuestLocked) {
-        // Revert the dropdown's internal selection back to the current model.
-        dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+      if (
+        !confirmed ||
+        connection !== selectPrincipalConnectionContext.select(appStore.state) ||
+        confirmation !== confirmationRevision ||
+        effectiveLocked ||
+        destroyed
+      ) {
+        dropdownValue = currentDropdownValue();
         return;
       }
     }
-    // Keyboard selection removes the focused search/listbox. Return to its
-    // trigger instead of leaving focus on body; pointer callers keep their policy.
-    if (modalAware || !event) {
+    // Combined model/effort pickers keep the panel for the next choice. When
+    // closing a model-only picker, restore keyboard/modal focus to its trigger.
+    if (!showReasoning && (modalAware || !event)) {
       queueMicrotask(() => {
         dropdownOpen = false;
         dropdownRef?.focusTrigger();
@@ -1836,9 +2089,9 @@
     clearFallbackInfo();
     // Convert USE_DEFAULT_VALUE back to undefined
     if (modelValue === USE_DEFAULT_VALUE) {
-      handleModelSelect(undefined as unknown as string);
+      void handleModelSelect(undefined);
     } else {
-      handleModelSelect(modelValue);
+      void handleModelSelect(modelValue, pick);
     }
   }
 
@@ -1953,6 +2206,32 @@
         {/each}
       </div>
     {/if}
+    {#if activeProviderIssue || refreshingProviders.has(refreshProviderId)}
+      <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={refreshingProviders.has(refreshProviderId)}
+          aria-label={m.chat_modelPicker_retry_label()}
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          onclick={() => handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}<IntentMarkLoader size={12} />{/if}
+          {m.chat_modelPicker_retry_label()}
+        </Button>
+        {#if activeProviderIssue}
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
+          >
+            {m.chat_modelPicker_errorDetails_label()}
+          </Button>
+        {/if}
+      </div>
+    {/if}
     {#if showReasoningFooter}
       <div class="w-full min-w-0 px-3 py-2" data-testid="model-reasoning-section">
         <EffortPicker
@@ -1962,6 +2241,7 @@
           {workspaceId}
           effortLevels={reasoningLevels}
           effort={persistedReasoningEffort}
+          autoLabel={inheritedReasoningLabel}
           disabled={reasoningControlDisabled}
           busy={updatingReasoningEffort}
           {modalAware}
@@ -1981,6 +2261,7 @@
     bind:open={dropdownOpen}
     groups={displayGroups}
     onchange={handleModelChange}
+    closeOnSelect={!showReasoning}
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
@@ -2018,17 +2299,13 @@
           'inline-flex items-center gap-2 truncate min-w-0',
           (variant === 'outline' || variant === 'default') && 'flex-1',
         )}
-        title={isTriggerLabelResolved ? triggerAccessibleLabel : ''}
+        title={isTriggerLabelResolved ? triggerTitle : ''}
         aria-label={isTriggerLabelResolved ? triggerAccessibleLabel : undefined}
       >
         {#if isCompact}
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
-          {#if showModelLoading}
-            <span class="size-3 shrink-0" title={modelLoadingTitle}>
-              <IntentMarkLoader size={12} />
-            </span>
-          {:else if showModelWarning}
+          {#if showModelWarning}
             <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
@@ -2086,7 +2363,7 @@
             </Button>
           {/each}
         </div>
-        {#if !hasNoAvailableProvider}
+        {#if !hasNoAvailableProvider && !$hostMember$}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -2193,11 +2470,7 @@
               </div>
             {/if}
           </div>
-          {#if selected}
-            <span class={OPTION_LIST_END_SLOT_CLASS}>
-              <Fa icon={faCheck} class="size-4 text-primary-ink shrink-0" />
-            </span>
-          {/if}
+          <Indicator state={selected ? 'checked' : 'empty'} />
         {/if}
       </div>
     {/snippet}
@@ -2205,8 +2478,10 @@
     {#snippet empty()}
       <ModelPickerEmptyState
         {isLoadingModels}
-        {blockingLoadError}
+        blockingLoadError={activeProviderIssue ?? blockingLoadError}
+        retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
         {hasNoAvailableProvider}
+        hostManaged={$hostMember$}
         onOpenProviderSettings={openProviderSettings}
         onRetry={handleRetry}
       />
@@ -2221,6 +2496,18 @@
     class={resolvedNoticeClass}
   />
 {/if}
+
+<ContentDialog
+  bind:open={detailsOpen}
+  title={m.chat_modelPicker_errorDetails_title({ provider: detailsError?.providerName ?? '' })}
+  onCloseAutoFocus={(event) => {
+    event.preventDefault();
+    dropdownRef?.focusTrigger();
+  }}
+>
+  <pre
+    class="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] type-caption font-mono text-foreground">{detailsError?.details}</pre>
+</ContentDialog>
 
 <style>
   :global(.model-picker-panel > div:has(> input[role='searchbox'])) {

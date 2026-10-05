@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+  import * as Menu from '$lib/components/ui/menu';
   import TerminalTabType from '../../TerminalTabType.svelte';
 
   let {
@@ -50,6 +51,10 @@
 {/if}
 <div data-testid="browser-tab" data-active={activeTabId === 'browser-tab'}></div>
 
-{#if header.actions.current?.primary}
-  {@render header.actions.current.primary()}
-{/if}
+<!-- The production header keeps its menu mounted while content registrations change. -->
+<Menu.Root>
+  <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
+  <Menu.Content portal={false}>
+    {@render header.actions.current?.actions?.()}
+  </Menu.Content>
+</Menu.Root>

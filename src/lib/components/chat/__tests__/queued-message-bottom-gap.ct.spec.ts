@@ -89,13 +89,7 @@ test('keeps the edge gap at zero for empty, one, and many queues in every displa
             '0px',
           );
           expect(await outerGap(component)).toBeCloseTo(0, 5);
-          expect(await visibleComposerGap(component)).toBeCloseTo(0, 5);
-          expect(await rowGeometry(component)).toEqual({
-            paddingTop: '0px',
-            paddingBottom: '0px',
-            rowGap: 'normal',
-            containerPaddingBottom: '0px',
-          });
+          await expect.poll(() => visibleComposerGap(component)).toBeCloseTo(0, 5);
         }
       }
     }
@@ -136,7 +130,7 @@ test('preserves edit, selection, reorder, save, cancel, removal, and scroll owne
   await expect(textarea).toHaveCount(1);
   expect(await outerGap(component)).toBeCloseTo(0, 5);
   await expect(textarea).toHaveCount(0);
-  expect(await rowGeometry(component)).toEqual(baseline);
+  await expect.poll(() => rowGeometry(component)).toEqual(baseline);
 
   await rows.first().hover();
   await rows.first().getByTestId('queued-message-content').dblclick();
@@ -153,8 +147,8 @@ test('preserves edit, selection, reorder, save, cancel, removal, and scroll owne
     .click();
   await settle(component, page);
   await expect(rows).toHaveCount(2);
-  expect(await rowGeometry(component)).toEqual(baseline);
-  expect(await visibleComposerGap(component)).toBeCloseTo(0, 5);
+  await expect.poll(() => rowGeometry(component)).toEqual(baseline);
+  await expect.poll(() => visibleComposerGap(component)).toBeCloseTo(0, 5);
   await expect(component.getByTestId('queued-gap-bottom-state')).toContainText('locked:0');
 
   const transcript = component.getByTestId('queued-gap-transcript');

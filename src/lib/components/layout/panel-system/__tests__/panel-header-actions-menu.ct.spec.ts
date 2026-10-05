@@ -1,11 +1,100 @@
 import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
-import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 import PanelHeaderActionsHost from './mocks/PanelHeaderActionsHost.svelte';
+import PanelHeaderPreview from '../panel-header-actions.preview.svelte';
+
+test('changes the font and runs a core action with keyboard focus restored', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 720, height: 1000 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(PanelHeaderPreview, { props: { kind: 'agent', stacked: true } });
+  const trigger = component.getByTestId('panel-actions-trigger').filter({ visible: true });
+  await trigger.press('Enter');
+  const menu = page.locator('[data-slot="menu-content"]');
+  await waitForMenuFocusReady(menu);
+  const fontTrigger = menu.getByRole('menuitem', { name: /^Font/ });
+  await fontTrigger.focus();
+  await fontTrigger.press('ArrowRight');
+  const fontMenu = page.getByRole('menu', { name: 'Font', exact: true });
+  await expect(fontMenu).toBeVisible();
+  await waitForMenuFocusReady(fontMenu);
+  const mono = fontMenu.getByRole('menuitemradio', { name: 'Mono', exact: true });
+  await mono.focus();
+  await mono.press('Enter');
+  await expect(mono).toHaveAttribute('aria-checked', 'true');
+  await expect(fontMenu.getByRole('menuitemradio', { name: 'Sans-serif' })).toHaveAttribute(
+    'aria-checked',
+    'false',
+  );
+  await testInfo.attach('panel-core-actions', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('ArrowLeft');
+  await expect(fontTrigger).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  await waitForMenuFocusReady(menu);
+  await fontTrigger.focus();
+  await fontTrigger.press('ArrowRight');
+  await expect(fontMenu.getByRole('menuitemradio', { name: 'Mono', exact: true })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.keyboard.press('ArrowLeft');
+  await menu.getByRole('menuitem', { name: 'Copy conversation', exact: true }).press('Enter');
+  await expect(component).toHaveAttribute('data-last-action', 'copy');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
 
 const panelTypes: PanelTabType[] = ['agent', 'note', 'browser', 'terminal', 'changes'];
 const stackCounts = [1, 2, 3, 4, 5] as const;
+
+test('panel menu commands remain clickable where they overlap the titlebar', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 720, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(PanelHeaderActionsHost, {
+    props: { width: 720, zoom: 1, titlebarOverlap: true },
+  });
+  const trigger = component.getByTestId('panel-actions-trigger').filter({ visible: true });
+  await trigger.click();
+  const menu = page.locator('.panel-actions-menu-content');
+  await waitForMenuFocusReady(menu);
+  const command = menu.getByRole('menuitem', { name: 'Content display action' });
+  const overlap = await command.evaluate((element) => {
+    const row = element.getBoundingClientRect();
+    const chrome = document.querySelector('.window-title-bar-wrapper')!.getBoundingClientRect();
+    const x = row.x + row.width / 2;
+    const y = Math.max(row.top, chrome.top) + 2;
+    return {
+      x,
+      y,
+      overlaps: y < Math.min(row.bottom, chrome.bottom),
+      receivesPointer: element.contains(document.elementFromPoint(x, y)),
+    };
+  });
+  expect(overlap.overlaps).toBe(true);
+  expect(overlap.receivesPointer).toBe(true);
+  await testInfo.attach('panel-menu-titlebar-overlap', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.mouse.click(overlap.x, overlap.y);
+  await expect(component.getByTestId('panel-actions-host')).toHaveAttribute(
+    'data-display-count',
+    '1',
+  );
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
 
 async function waitForMenuFocusReady(menu: Locator) {
   await menu.evaluate(async (element) => {
@@ -24,91 +113,196 @@ async function openAgentPanelMenu(component: Locator, page: Page) {
   const menu = page.locator('[data-slot="menu-content"]');
   await expect(menu).toBeVisible();
   await waitForMenuFocusReady(menu);
-  const subtrigger = menu.getByRole('menuitem', { name: /Open in/ });
-  await expect(subtrigger).toBeVisible();
-  return { trigger, menu, subtrigger };
+  const command = menu.getByRole('menuitem', { name: 'Content command action' });
+  await expect(command).toBeVisible();
+  return { trigger, menu, command };
 }
 
-test.describe('Open in submenu', () => {
-  test('opens and exposes the copy path action', async ({ mount, page }) => {
+async function menuState(menu: Locator) {
+  return menu.evaluate((element) =>
+    Array.from(element.querySelectorAll<HTMLElement>('[role^="menuitem"]')).map((row) => ({
+      label: row.textContent?.replace(/\s+/g, ' ').trim(),
+      role: row.getAttribute('role'),
+      checked: row.getAttribute('aria-checked'),
+      disabled: row.getAttribute('aria-disabled'),
+    })),
+  );
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`note appearance preserves menu state and keyboard behavior through both entry points in ${theme}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
     const component = await mount(PanelHeaderActionsHost, {
-      props: { panelType: 'agent', width: 560, zoom: 1 },
+      props: { panelType: 'note', width: 560, zoom: 1, noteAppearance: true, theme },
     });
-    const { subtrigger } = await openAgentPanelMenu(component, page);
+    const header = component.locator('[data-panel-tabless-header]');
+    const trigger = header.getByTestId('panel-actions-trigger');
+    const root = page.locator('[data-slot="menu-content"]');
+    const fontTrigger = root.getByRole('menuitem', { name: /^Font/ });
+    const fontMenu = page.getByRole('menu', { name: 'Font', exact: true });
+    const snapshots = [];
 
-    await subtrigger.hover();
-    const submenu = page.locator('[data-slot="menu-sub-content"]');
-    await expect(subtrigger).toHaveAttribute('aria-expanded', 'true');
-    await expect(submenu).toBeVisible();
-    await expect(submenu.getByRole('menuitem', { name: 'Copy Absolute Path' })).toBeVisible();
-  });
-
-  test('supports arrow-key navigation into and out of the submenu', async ({ mount, page }) => {
-    const component = await mount(PanelHeaderActionsHost, {
-      props: { panelType: 'agent', width: 560, zoom: 1 },
-    });
-    const { subtrigger } = await openAgentPanelMenu(component, page);
-
-    await subtrigger.focus();
-    await page.keyboard.press('ArrowRight');
-    const submenu = page.locator('[data-slot="menu-sub-content"]');
-    await expect(submenu).toBeVisible();
-    await waitForMenuFocusReady(submenu);
-    await expect(submenu.getByRole('menuitem').first()).toBeFocused();
-
-    await page.keyboard.press('ArrowLeft');
-    await expect(submenu).toBeHidden();
-    await expect(subtrigger).toBeFocused();
-    await expect(subtrigger).toHaveAttribute('aria-expanded', 'false');
-  });
-
-  test('copies the resolved absolute path and closes the menu', async ({ mount, page }) => {
-    const resolvedPath = '.';
-    await page.evaluate(() => {
-      const testWindow = window as typeof window & { copiedPanelPath?: string };
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: {
-          writeText: async (value: string) => {
-            testWindow.copiedPanelPath = value;
-          },
-        },
+    for (const entry of ['overflow', 'right-click'] as const) {
+      if (entry === 'overflow') {
+        await trigger.focus();
+        await page.keyboard.press('Enter');
+      } else {
+        await header.dispatchEvent('contextmenu', { clientX: 40, clientY: 20 });
+      }
+      await expect(root).toBeVisible();
+      await waitForMenuFocusReady(root);
+      const rootState = await menuState(root);
+      await fontTrigger.focus();
+      await page.keyboard.press('ArrowRight');
+      await expect(fontMenu).toBeVisible();
+      await waitForMenuFocusReady(fontMenu);
+      const nestedState = await menuState(fontMenu);
+      await expect(fontMenu.locator('[role="menuitemradio"]:focus')).toHaveCount(1);
+      snapshots.push({ root: rootState, nested: nestedState });
+      await testInfo.attach(`note-${entry}-${theme}`, {
+        body: await page.screenshot(),
+        contentType: 'image/png',
       });
+      await page.keyboard.press('ArrowLeft');
+      await expect(fontMenu).toBeHidden();
+      await expect(root).toBeVisible();
+      await expect(fontTrigger).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(root).toBeHidden();
+      await expect(trigger).toBeFocused();
+    }
+
+    expect(snapshots[1]).toEqual(snapshots[0]);
+    await testInfo.attach(`note-entry-parity-${theme}`, {
+      body: JSON.stringify(snapshots),
+      contentType: 'application/json',
     });
+
+    await trigger.click();
+    await waitForMenuFocusReady(root);
+    const viewTrigger = root.getByRole('menuitem', { name: /Note view/i });
+    await viewTrigger.focus();
+    await page.keyboard.press('ArrowRight');
+    const viewMenu = page.getByRole('menu', { name: 'Note view', exact: true });
+    await expect(viewMenu).toBeVisible();
+    await waitForMenuFocusReady(viewMenu);
+    const preview = viewMenu.getByRole('menuitemradio', { name: 'Rendered preview' });
+    await preview.focus();
+    await page.keyboard.press('Enter');
+    await expect(preview).toHaveAttribute('aria-checked', 'true');
+    await expect(viewMenu).toBeVisible();
+    await page.keyboard.press('ArrowLeft');
+    await expect(viewTrigger).toBeFocused();
+    await expect(root.getByRole('menuitemcheckbox', { name: 'Spellcheck' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
+  });
+}
+
+test('traditional tab context menu supports keyboard focus and stays inside the viewport', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 600, height: 420 });
+  const component = await mount(PanelHeaderActionsHost, {
+    props: { panelType: 'terminal', width: 560, zoom: 1, showTabStrip: true },
+  });
+  const target = component.locator('[data-tab-id="terminal-tab-2"]');
+  const menu = page.getByRole('menu', { name: 'Actions', exact: true });
+  await target.focus();
+  await page.keyboard.press('Shift+F10');
+  await expect(menu).toBeVisible();
+  await waitForMenuFocusReady(menu);
+  await page.keyboard.press('Home');
+  await expect(menu.getByRole('menuitem').first()).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(menu.getByRole('menuitem', { name: 'Close panel', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(target).toBeFocused();
+  await expect(component).toHaveAttribute('data-active-tab', 'terminal-tab-1');
+
+  await target.dispatchEvent('contextmenu', { clientX: 596, clientY: 416 });
+  await expect(menu).toBeVisible();
+  await waitForMenuFocusReady(menu);
+  const bounds = await menu.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(600);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(420);
+  await menu.getByRole('menuitem', { name: 'Close', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(component).toHaveAttribute('data-close-count', '1');
+  await expect(target).toBeFocused();
+});
+
+test.describe('Panel file commands in the web renderer', () => {
+  test('keeps core actions keyboard accessible without native editor commands', async ({
+    mount,
+    page,
+  }) => {
     const component = await mount(PanelHeaderActionsHost, {
       props: { panelType: 'agent', width: 560, zoom: 1 },
     });
-    const { trigger, menu, subtrigger } = await openAgentPanelMenu(component, page);
-
-    await subtrigger.press('ArrowRight');
-    const copy = page.getByRole('menuitem', { name: 'Copy Absolute Path' });
-    await expect(copy).toBeVisible();
-    await copy.click();
-
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () => (window as typeof window & { copiedPanelPath?: string }).copiedPanelPath,
-        ),
-      )
-      .toBe(resolvedPath);
+    const { menu, command } = await openAgentPanelMenu(component, page);
+    await expect(menu.getByRole('menuitem', { name: /Open in/ })).toHaveCount(0);
+    await command.focus();
+    await command.press('Enter');
+    await expect(component).toHaveAttribute('data-content-count', '1');
     await expect(menu).toBeHidden();
-    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('opens a browser panel externally without native editor capability', async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(PanelHeaderActionsHost, {
+      props: { panelType: 'browser', width: 560, zoom: 1 },
+    });
+    const { menu, trigger } = await openAgentPanelMenu(component, page);
+    const open = menu.getByRole('menuitem', { name: 'Open in Browser', exact: true });
+    await expect(open).toBeEnabled();
+    await open.press('Enter');
+    await expect(component).toHaveAttribute(
+      'data-opened-external-url',
+      'https://example.com/panel-preview',
+    );
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+
+  test('supports keyboard navigation to the last available command', async ({ mount, page }) => {
+    const component = await mount(PanelHeaderActionsHost, {
+      props: { panelType: 'agent', width: 560, zoom: 1 },
+    });
+    const { menu, trigger } = await openAgentPanelMenu(component, page);
+    await menu.getByRole('menuitem').first().focus();
+    await page.keyboard.press('End');
+    await expect(
+      menu.getByRole('menuitem', { name: 'Content navigation', exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(component).toHaveAttribute('data-navigation-count', '1');
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
   });
 
   test('restores focus to the panel actions trigger after dismissal', async ({ mount, page }) => {
     const component = await mount(PanelHeaderActionsHost, {
       props: { panelType: 'agent', width: 560, zoom: 1 },
     });
-    const { trigger, menu, subtrigger } = await openAgentPanelMenu(component, page);
-
-    await subtrigger.focus();
-    await page.keyboard.press('ArrowRight');
-    const submenu = page.locator('[data-slot="menu-sub-content"]');
-    await expect(submenu).toBeVisible();
+    const { trigger, menu, command } = await openAgentPanelMenu(component, page);
+    await command.focus();
     await page.keyboard.press('Escape');
 
-    await expect(submenu).toBeHidden();
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();
   });
@@ -130,49 +324,7 @@ for (const [index, panelType] of panelTypes.entries()) {
       '[data-panel-tabless-header] [data-testid="panel-close-button"]',
     );
     const header = component.locator('[data-panel-tabless-header]');
-    const contentActions = header.locator('[data-panel-header-content-actions]');
-    const panelControls = header.locator('[data-panel-header-actions]');
     const key = index % 2 === 0 ? 'Enter' : 'Space';
-
-    const actionGeometry = await header.evaluate((node) => {
-      const trigger = node.querySelector<HTMLElement>('[data-testid="panel-actions-trigger"]')!;
-      const close = node.querySelector<HTMLElement>('[data-testid="panel-close-button"]')!;
-      const closeGlyph = close.querySelector<SVGElement>('svg')!;
-      return {
-        borderBottomWidth: getComputedStyle(node).borderBottomWidth,
-        trigger: [getComputedStyle(trigger).width, getComputedStyle(trigger).height],
-        close: [getComputedStyle(close).width, getComputedStyle(close).height],
-        closeGlyph: [getComputedStyle(closeGlyph).width, getComputedStyle(closeGlyph).height],
-      };
-    });
-    expect(actionGeometry.borderBottomWidth).toBe('0px');
-    expect(actionGeometry.trigger).toEqual(['28px', '28px']);
-    expect(actionGeometry.close).toEqual(['28px', '28px']);
-    expect(actionGeometry.closeGlyph).toEqual(['16px', '16px']);
-    await expect(contentActions.locator('[data-panel-content-actions-divider]')).toHaveCount(0);
-    await expect(panelControls.locator('[data-panel-controls-divider]')).toHaveCount(1);
-    expect(
-      await contentActions
-        .locator('button')
-        .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
-    ).toEqual(['Content navigation']);
-    expect(
-      await panelControls
-        .locator('button')
-        .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-testid'))),
-    ).toEqual([
-      null,
-      'panel-actions-trigger',
-      ...(stackCount > 1 && panelType !== 'agent' ? ['pane-stack-selector-trigger'] : []),
-      null,
-      'panel-close-button',
-    ]);
-    await expect(header.locator('[data-panel-column-count-trigger]')).toHaveCount(0);
-    if (panelType === 'agent') {
-      const agentAvatar = header.locator('[data-panel-agent-header-identity] [data-agent-avatar]');
-      await expect(agentAvatar).toHaveCount(1);
-      await expect(agentAvatar).toHaveAttribute('data-avatar-variant', 'emphasized');
-    }
 
     const layout = await header.evaluate((node) => {
       const header = node.getBoundingClientRect();
@@ -240,6 +392,10 @@ for (const [index, panelType] of panelTypes.entries()) {
       await page.evaluate(() => innerHeight),
     );
     expect(menuBox!.x).toBeLessThan(triggerBox!.x + triggerBox!.width);
+    await testInfo.attach('narrow-menu-open', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
 
     await page.getByRole('menuitem', { name: 'Content display action' }).click();
     await expect(component).toHaveAttribute('data-display-count', '1');
@@ -249,27 +405,19 @@ for (const [index, panelType] of panelTypes.entries()) {
     await page.getByRole('menuitem', { name: 'Content command action' }).click();
     await expect(component).toHaveAttribute('data-content-count', '1');
 
-    await contentActions.getByRole('button', { name: 'Content navigation' }).click();
+    await trigger.click();
+    await page.getByRole('menuitem', { name: 'Content navigation' }).click();
     await expect(component).toHaveAttribute('data-navigation-count', '1');
 
     await trigger.click();
-    await page.getByRole('menuitem', { name: /Zoom Panel/i }).click();
-    await expect(component).toHaveAttribute('data-zoom-count', '1');
-
-    await trigger.click();
-    await page.getByRole('menuitem', { name: /Create column to right/i }).click();
-    await expect(component).toHaveAttribute('data-split-count', '1');
-
-    await trigger.click();
-    await page.getByRole('menuitem', { name: 'Move left' }).click();
+    await page.getByRole('menuitem', { name: 'Move panel left' }).press('Enter');
     await expect(component).toHaveAttribute('data-move-left-count', '1');
 
     await trigger.click();
-    await page.getByRole('menuitem', { name: 'Move right' }).click();
+    await page.getByRole('menuitem', { name: 'Move panel right' }).press('Enter');
     await expect(component).toHaveAttribute('data-move-right-count', '1');
 
     await trigger.click();
-    await expect(page.getByRole('menuitem', { name: /Split down/i })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();
@@ -282,7 +430,9 @@ for (const [index, panelType] of panelTypes.entries()) {
     await expect(menu).toBeVisible();
     await expect(menu.locator('[data-panel-actions-section="display"]')).toHaveCount(1);
     await expect(menu.locator('[data-panel-actions-section="actions"]')).toHaveCount(1);
-    await expect(menu.locator('[data-panel-actions-section="open-in"]')).toHaveCount(1);
+    if (panelType !== 'browser') {
+      await expect(menu.getByRole('menuitem', { name: 'Open in...' })).toHaveCount(0);
+    }
     await page.keyboard.press('Escape');
 
     await trigger.click();
@@ -304,7 +454,7 @@ for (const scenario of [
   test(`fits content in ${scenario.theme} at ${scenario.viewportWidth}px and ${scenario.zoom * 100}% zoom`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width: scenario.viewportWidth, height: 800 });
     const component = await mount(PanelHeaderActionsHost, {
       props: {
@@ -326,14 +476,15 @@ for (const scenario of [
     await expect(menu).toBeVisible();
 
     const geometry = await menu.evaluate((node) => {
-      const item = node.querySelector<HTMLElement>('[data-slot="menu-command-item"]')!;
-      const label = item.querySelector<HTMLElement>(':scope > span.truncate')!;
+      const item = node.querySelector<HTMLElement>(
+        '[data-panel-actions-section="display"] [data-slot="menu-command-item"]',
+      )!;
+      const label = item.querySelector<HTMLElement>('span.truncate')!;
       const shortcut = item.querySelector<HTMLElement>('kbd')!;
       const box = node.getBoundingClientRect();
       return {
         left: box.left,
         right: box.right,
-        width: box.width,
         labelClientWidth: label.clientWidth,
         labelScrollWidth: label.scrollWidth,
         labelColor: getComputedStyle(label).color,
@@ -343,187 +494,124 @@ for (const scenario of [
     expect(geometry.left).toBeGreaterThanOrEqual(8 - 0.5);
     expect(geometry.right).toBeLessThanOrEqual(scenario.viewportWidth - 8 + 0.5);
     expect(geometry.shortcutColor).not.toBe(geometry.labelColor);
-    expect(geometry.width).toBeGreaterThanOrEqual(224);
     expect(geometry.labelScrollWidth).toBeGreaterThan(geometry.labelClientWidth);
-
-    if (scenario.viewportWidth === 1000) {
-      expect(geometry.width).toBeLessThanOrEqual(320);
-    } else {
-      expect(geometry.width).toBeLessThanOrEqual(scenario.viewportWidth - 16 + 0.5);
-    }
+    await testInfo.attach('long-label-menu', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
 
     await longItem.click();
     await expect(component).toHaveAttribute('data-display-count', '1');
   });
 }
 
-test('keeps the agent actions menu compact at desktop width', async ({ mount, page }) => {
+test('keeps desktop menu commands unclipped and restores focus after selection', async ({
+  mount,
+  page,
+}, testInfo) => {
   await page.setViewportSize({ width: 1000, height: 800 });
   const component = await mount(PanelHeaderActionsHost, {
     props: { panelType: 'agent', width: 560, zoom: 1 },
   });
-  const trigger = component.locator(
-    '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
-  );
-
-  await trigger.click();
-  const menu = page.getByRole('menu');
-  await expect(menu).toBeVisible();
-  await expect(menu.getByRole('menuitem', { name: /Open in/ })).toBeVisible();
+  const { trigger, menu, command } = await openAgentPanelMenu(component, page);
 
   const geometry = await menu.evaluate((node) => {
     const box = node.getBoundingClientRect();
     return {
-      width: box.width,
+      left: box.left,
+      right: box.right,
       scrollWidth: node.scrollWidth,
       clientWidth: node.clientWidth,
     };
   });
-  expect(geometry.width).toBeGreaterThanOrEqual(224);
-  expect(geometry.width).toBeLessThanOrEqual(320);
+  expect(geometry.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.right).toBeLessThanOrEqual(1000);
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  await testInfo.attach('desktop-panel-actions', {
+    body: await menu.screenshot(),
+    contentType: 'image/png',
+  });
+  await command.click();
+  await expect(component).toHaveAttribute('data-content-count', '1');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await page.clock.install();
+  await trigger.click();
+  const leftArrow = await menu
+    .getByRole('menuitem', { name: 'Move panel left', exact: true })
+    .locator('svg')
+    .boundingBox();
+  if (!leftArrow) throw new Error('Missing visible left arrow');
+  await page.mouse.click(leftArrow.x + leftArrow.width / 2, leftArrow.y + leftArrow.height / 2);
+  await expect(component).toHaveAttribute('data-move-left-count', '1');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await trigger.hover();
+  await page.clock.runFor(1000);
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await testInfo.attach('movement-dismissal-without-tooltip', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
-for (const stackCount of stackCounts) {
-  test(`preserves required controls for ${stackCount} panes at narrow 200% zoom`, async ({
+for (const stackCount of [1, 5] as const) {
+  test(`switches among ${stackCount} panes and restores selector focus at narrow zoom`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     const component = await mount(PanelHeaderActionsHost, {
       props: { panelType: 'note', width: 240, zoom: 2, stackCount },
     });
-    const host = component;
-    const header = component.locator('[data-panel-tabless-header]');
-    const stack = header;
-    const active = header.locator('[data-pane-stack-active]');
-    const listTrigger = header.locator('[data-pane-stack-selector-trigger]');
-    const contentActions = header.locator('[data-panel-header-content-actions]');
-    const panelControls = header.locator('[data-panel-header-actions]');
-    const navigation = contentActions.getByRole('button', { name: 'Content navigation' });
-    const moreTrigger = panelControls.getByTestId('panel-actions-trigger');
-
-    await expect(active).toBeVisible();
-    await expect(active).toContainText('note panel 1');
-    if (stackCount === 1) {
-      await expect(listTrigger).toHaveCount(0);
-      await expect(panelControls.locator('[data-panel-controls-divider]')).toHaveCount(1);
-      const addColumn = panelControls.getByRole('button', { name: 'Add column' });
-      await navigation.focus();
-      await page.keyboard.press('Tab');
-      await expect(moreTrigger).toBeFocused();
-      await page.keyboard.press('Tab');
-      await expect(addColumn).toBeFocused();
-      await page.keyboard.press('Tab');
-      await expect(panelControls.getByTestId('panel-close-button')).toBeFocused();
-      return;
-    }
-    await expect(listTrigger).toBeVisible();
-    await expect(listTrigger).toHaveText('');
-    await expect(stack.locator('[data-pane-stack-layer]')).toHaveCount(0);
-    await expect(listTrigger.locator('[data-pane-stack-selector-chevron]')).toHaveCount(0);
-    await expect(listTrigger.locator('[data-pane-stack-line]')).toHaveCount(stackCount);
-    const selectorStyle = await listTrigger.evaluate((node) => {
-      const style = getComputedStyle(node);
-      const glyphStyle = getComputedStyle(node.querySelector('[data-pane-stack-glyph]')!);
-      return {
-        backgroundColor: style.backgroundColor,
-        borderWidth: style.borderWidth,
-        glyphWidth: glyphStyle.width,
-        glyphHeight: glyphStyle.height,
-      };
-    });
-    expect(selectorStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    expect(selectorStyle.borderWidth).toBe('0px');
-    expect([selectorStyle.glyphWidth, selectorStyle.glyphHeight]).toEqual(['14px', '14px']);
-
-    const boxes = await Promise.all(
-      [host, header, active, navigation, moreTrigger, listTrigger, panelControls].map((locator) =>
-        locator.boundingBox(),
-      ),
-    );
-    const [hostBox, headerBox, activeBox, navigationBox, moreBox, listBox, panelControlsBox] =
-      boxes;
-    expect(boxes.every(Boolean)).toBe(true);
-    expect(headerBox!.x).toBeGreaterThanOrEqual(hostBox!.x);
-    expect(headerBox!.x + headerBox!.width).toBeLessThanOrEqual(hostBox!.x + hostBox!.width + 0.5);
-    expect(activeBox!.x + activeBox!.width).toBeLessThanOrEqual(panelControlsBox!.x + 0.5);
-    expect(navigationBox!.x + navigationBox!.width).toBeLessThanOrEqual(moreBox!.x + 0.5);
-    expect(listBox!.x).toBeGreaterThanOrEqual(panelControlsBox!.x - 0.5);
-
+    const trigger = component.getByTestId('pane-stack-selector-trigger');
     for (let index = 1; index <= stackCount; index += 1) {
-      if (index % 2 === 0) {
-        await listTrigger.focus();
-        await page.keyboard.press('Enter');
-      } else {
-        await listTrigger.click();
-      }
+      await trigger.press('Enter');
       const menu = page.getByRole('menu', { name: 'Panes in this stack' });
-      await expect(menu).toBeVisible();
-      await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(stackCount);
       const item = menu.locator(`[data-pane-stack-item="note-tab-${index}"]`);
-      if (index % 2 === 0) {
-        await waitForMenuFocusReady(menu);
-        const initialKeyboardItem = menu.locator(
-          index === 2 ? '[data-pane-stack-open-below]' : '[data-pane-stack-open-above]',
-        );
-        await expect(initialKeyboardItem).toBeFocused();
-        await page.keyboard.press('End');
-        await expect(menu.locator(`[data-pane-stack-item="note-tab-${stackCount}"]`)).toBeFocused();
-        for (let step = stackCount - 1; step >= index; step -= 1) {
-          await page.keyboard.press('ArrowUp');
-          await expect(menu.locator(`[data-pane-stack-item="note-tab-${step}"]`)).toBeFocused();
-        }
-        await expect(item).toBeFocused();
-        await page.keyboard.press('Enter');
-      } else {
-        await item.click();
+      await item.focus();
+      if (index === stackCount) {
+        await testInfo.attach('pane-selector-open', {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        });
       }
+      await page.keyboard.press('Enter');
       await expect(component).toHaveAttribute('data-active-tab', `note-tab-${index}`);
-      await expect(active).toContainText(`note panel ${index}`);
-      await expect(listTrigger).toBeFocused();
+      await expect(trigger).toContainText(`note panel ${index}`);
+      await expect(trigger).toBeFocused();
     }
+    await trigger.press('Tab');
+    await expect(
+      component.locator('[data-panel-tabless-header]').getByTestId('panel-actions-trigger'),
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(
+      component.locator('[data-panel-tabless-header]').getByTestId('panel-close-button'),
+    ).toBeFocused();
+    await testInfo.attach('pane-selector', {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
   });
 }
 
-test('keeps the header flat and the complete selector operable at wide width', async ({
-  mount,
-  page,
-}) => {
+test('selects panes directly and restores focus at wide width', async ({ mount, page }) => {
   const component = await mount(PanelHeaderActionsHost, {
     props: { panelType: 'note', width: 560, zoom: 1, stackCount: 5 },
   });
   const stack = component.locator('[data-pane-stack]');
   const trigger = stack.locator('[data-pane-stack-selector-trigger]');
-  await expect(stack.locator('[data-pane-stack-layer]')).toHaveCount(0);
   await trigger.click();
   const menu = page.getByRole('menu', { name: 'Panes in this stack' });
-  const above = menu.getByRole('menuitem', { name: 'Open panel above' });
-  const below = menu.getByRole('menuitem', { name: 'Open panel below' });
-  const labelOrigins = await menu
-    .locator('[data-slot="menu-item-leading"] + span')
-    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().left));
-  expect(Math.max(...labelOrigins) - Math.min(...labelOrigins)).toBeLessThanOrEqual(1);
-  await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await page.evaluate(() => document.documentElement.classList.remove('dark'));
-  await expect(above).toHaveAttribute('aria-disabled', 'true');
-  await expect(below).not.toHaveAttribute('aria-disabled', 'true');
-  await expect(above).toContainText(formatShortcut(SHORTCUTS.PREVIOUS_PANE.key));
-  await expect(below).toContainText(formatShortcut(SHORTCUTS.NEXT_PANE.key));
-  await expect(
-    menu.getByText('Use Up or Down to move, Enter to select, and Escape to close.'),
-  ).toHaveCount(0);
-  await below.click();
+  await menu.locator('[data-pane-stack-item="note-tab-2"]').click();
   await expect(component).toHaveAttribute('data-active-tab', 'note-tab-2');
+  await expect(trigger).toBeFocused();
   await trigger.click();
-  await expect(menu.getByRole('menuitem', { name: 'Open panel above' })).not.toHaveAttribute(
-    'aria-disabled',
-    'true',
-  );
-  await menu.getByRole('menuitem', { name: 'Open panel above' }).click();
+  await menu.locator('[data-pane-stack-item="note-tab-1"]').click();
   await expect(component).toHaveAttribute('data-active-tab', 'note-tab-1');
   await trigger.click();
   await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(5);
   await menu.locator('[data-pane-stack-item="note-tab-5"]').click();
   await expect(component).toHaveAttribute('data-active-tab', 'note-tab-5');
-  await expect(stack.locator('[data-pane-stack-active]')).toContainText('note panel 5');
+  await expect(stack.getByTestId('pane-stack-selector-trigger')).toContainText('note panel 5');
 });

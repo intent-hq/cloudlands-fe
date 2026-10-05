@@ -1,3 +1,7 @@
+import type { NativeReviewInput, NativeReviewSession } from '$shared/types/native-review-operation';
+import type { RepositorySelectionSession } from '$shared/types/repository-selection';
+import type { RepositoryRootIdentity } from '$shared/types/repository-context';
+import type { BoundRepositoryRoute } from '$lib/client/live/backend-transport-types';
 /**
  * MockBackendTransport — scripted-daemon fixture for the renderer WSS seam.
  *
@@ -66,6 +70,9 @@ interface RecordedRequest {
 }
 
 interface MockState {
+  nativePrepare: ((input: NativeReviewInput) => Promise<NativeReviewSession>) | null;
+  selectionCapture: ((root: RepositoryRootIdentity) => Promise<RepositorySelectionSession>) | null;
+  repositoryCapture: ((root: RepositoryRootIdentity) => Promise<BoundRepositoryRoute>) | null;
   requestHandlers: Map<string, RequestHandler>;
   subscribeHandler: SubscribeHandler | null;
   notificationHandlers: Set<(n: BackendNotification) => void>;
@@ -78,6 +85,9 @@ interface MockState {
 }
 
 const state: MockState = {
+  nativePrepare: null,
+  repositoryCapture: null,
+  selectionCapture: null,
   requestHandlers: new Map(),
   subscribeHandler: null,
   notificationHandlers: new Set(),
@@ -91,6 +101,9 @@ const state: MockState = {
 
 /** Reset all handlers, recorded calls, and cached capability. Call per test. */
 export function resetMockBackend(): void {
+  state.repositoryCapture = null;
+  state.selectionCapture = null;
+  state.nativePrepare = null;
   state.requestHandlers.clear();
   state.subscribeHandler = null;
   state.notificationHandlers.clear();
@@ -172,6 +185,33 @@ function mockIsBackendAvailable(): boolean {
  * write the module-level `state` so `installMockBackend()` can drive them.
  */
 export const mockBackendTransportModule = {
+  async prepareBackendNativeReview(input: NativeReviewInput): Promise<NativeReviewSession> {
+    if (!state.nativePrepare)
+      throw new BackendError({
+        code: 'NATIVE_REVIEW_UNAVAILABLE',
+        message: 'NATIVE_REVIEW_UNAVAILABLE',
+      });
+    return state.nativePrepare(structuredClone(input));
+  },
+  async captureBackendRepositorySelection(
+    root: RepositoryRootIdentity,
+  ): Promise<RepositorySelectionSession> {
+    if (!state.selectionCapture)
+      throw new BackendError({
+        code: 'REPOSITORY_SELECTION_UNAVAILABLE',
+        message: 'REPOSITORY_SELECTION_UNAVAILABLE',
+      });
+    return state.selectionCapture(structuredClone(root));
+  },
+  async captureBackendRepositoryRoute(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute> {
+    if (!state.repositoryCapture)
+      throw new BackendError({
+        code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+        message: 'Repository route unavailable',
+      });
+    return state.repositoryCapture(structuredClone(root));
+  },
+  observeBackendNodeCapabilities: () => mockBackendRequest('client.hello', {}),
   backendRequest: mockBackendRequest,
   backendSubscribe: mockBackendSubscribe,
   backendUnsubscribe: mockBackendUnsubscribe,
@@ -274,6 +314,13 @@ export function buildErrorPayload(
 
 /** Scripting handle returned by `installMockBackend()`. */
 export interface MockBackendHandle {
+  onNativeReviewPrepare(handler: (input: NativeReviewInput) => Promise<NativeReviewSession>): void;
+  onSelectionCapture(
+    handler: (root: RepositoryRootIdentity) => Promise<RepositorySelectionSession>,
+  ): void;
+  onRepositoryCapture(
+    handler: (root: RepositoryRootIdentity) => Promise<BoundRepositoryRoute>,
+  ): void;
   onRequest(method: string, handler: RequestHandler): void;
   onSubscribe(handler: SubscribeHandler): void;
   pushEvent(
@@ -332,6 +379,15 @@ function isNotificationEnvelope(value: unknown): value is BackendNotification {
 export function installMockBackend(): MockBackendHandle {
   resetMockBackend();
   return {
+    onNativeReviewPrepare(handler) {
+      state.nativePrepare = handler;
+    },
+    onSelectionCapture(handler) {
+      state.selectionCapture = handler;
+    },
+    onRepositoryCapture(handler) {
+      state.repositoryCapture = handler;
+    },
     onRequest(method, handler) {
       state.requestHandlers.set(method, handler);
     },

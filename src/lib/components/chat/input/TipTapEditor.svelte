@@ -25,6 +25,7 @@
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import { toPromptToken } from '$lib/services/mentions/format';
+  import { memberMentionLabel } from '$lib/utils/member-mention-token';
   import { noteUrl } from '$shared/constants/intent-links';
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
   import { Slice, Fragment } from '@tiptap/pm/model';
@@ -157,6 +158,7 @@
     skills?: readonly SkillInfo[];
     skillsLoading?: boolean;
     skillsError?: string | null;
+    onSkillsRetry?: () => void;
     minHeight?: number;
     maxHeight?: number;
   }
@@ -188,6 +190,7 @@
     skills = [],
     skillsLoading = false,
     skillsError = null,
+    onSkillsRetry,
     minHeight = 80,
     maxHeight = 300,
   }: Props = $props();
@@ -347,7 +350,29 @@
     if (inputLocked) return false;
     if (editor && editor.view) {
       try {
-        editor.chain().focus().run();
+        if (editor.view.hasFocus()) return true;
+        const focusEditor = editor;
+        const focusOwner = document.activeElement;
+        // Tiptap's focus command queues an unguarded animation frame. Apply
+        // focus here instead so a newer Find/editor interaction wins even
+        // when it happens after the parent's reveal check (#6395).
+        requestAnimationFrame(() => {
+          if (editor !== focusEditor || focusEditor.isDestroyed || inputLocked) return;
+          // Native caret movement can precede ProseMirror's selectionchange.
+          // Re-focusing an editor the user already entered would restore stale selection.
+          if (focusEditor.view.hasFocus()) return;
+          const activeElement = document.activeElement;
+          if (
+            activeElement !== focusOwner &&
+            activeElement instanceof HTMLElement &&
+            activeElement.closest('input, textarea, select, [contenteditable="true"]') &&
+            !focusEditor.view.dom.contains(activeElement)
+          ) {
+            return;
+          }
+          focusEditor.view.focus();
+          focusEditor.commands.scrollIntoView();
+        });
         if (typeof editor.view.hasFocus === 'function') {
           return editor.view.hasFocus();
         }
@@ -795,7 +820,7 @@
                   class: 'mention-chip',
                   tabindex: '0',
                 },
-                label, // Display without @ prefix for cleaner appearance
+                node.attrs.type === 'member' ? memberMentionLabel(label) : label,
               ];
             },
             // Ensure mentions serialize to canonical @-tokens when extracting text
@@ -861,6 +886,16 @@
               const editorElement = editor.view.dom as HTMLElement;
               editorElement?.focus({ preventScroll: true });
             });
+          }
+        },
+        onTransaction: ({ transaction }) => {
+          // Removing a chip does not emit mouseout. Include silent content updates
+          // so its preview cannot survive a clear or describe a replacement chip.
+          if (transaction.docChanged && hoverPreview && hoverPreviewContainer) {
+            unmount(hoverPreview);
+            hoverPreviewContainer.remove();
+            hoverPreview = null;
+            hoverPreviewContainer = null;
           }
         },
         onUpdate: ({ editor, transaction }) => {
@@ -1289,6 +1324,7 @@
           personality: '🎭',
           command: '⌘',
           terminal: '💻',
+          member: '👤',
         };
 
         hoverPreview = mount(MentionHoverPreview, {
@@ -1369,6 +1405,8 @@
     if (!target.hasAttribute('data-mention')) return;
 
     const type = target.getAttribute('data-type');
+    // A person is an inline reference, not a file or a navigable context attachment.
+    if (type === 'member') return;
     const id = target.getAttribute('data-id');
     const uri = target.getAttribute('data-uri');
     const meta = JSON.parse(target.getAttribute('data-meta') || '{}');
@@ -1612,6 +1650,7 @@
           items={filteredSkills}
           loading={skillsLoading}
           error={skillsError}
+          onRetry={onSkillsRetry}
           onSelect={selectSlashSkill}
           onDismiss={dismissSlashMenu}
           onActiveOptionChange={(optionId) => (slashActiveOptionId = optionId)}

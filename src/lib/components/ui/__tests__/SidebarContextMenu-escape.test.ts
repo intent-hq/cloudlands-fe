@@ -18,7 +18,7 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
       props: {
         x: 10,
         y: 10,
-        items: [{ label: 'Rename', onClick: () => {} }],
+        items: [{ id: 'rename', label: 'Rename', onClick: () => {} }],
         onClickOutside,
       },
     });
@@ -37,7 +37,7 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
       props: {
         x: 10,
         y: 10,
-        items: [{ label: 'Rename', onClick: () => {} }],
+        items: [{ id: 'rename', label: 'Rename', onClick: () => {} }],
         onClickOutside,
       },
     });
@@ -58,7 +58,7 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it('tracks keyboard focus through the proximity state shared by its rows', async () => {
+  it('moves keyboard focus through the shared menu rows', async () => {
     render(SidebarContextMenu, {
       props: {
         x: 10,
@@ -70,11 +70,13 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
       },
     });
 
-    const archive = await screen.findByRole('menuitem', { name: 'Archive' });
-    archive.focus();
-    await waitFor(() => expect(archive.getAttribute('data-proximity-active')).toBe('true'));
-    archive.blur();
-    await waitFor(() => expect(archive.getAttribute('data-proximity-active')).toBe('false'));
+    const rename = await screen.findByRole('menuitem', { name: 'Rename' });
+    const archive = screen.getByRole('menuitem', { name: 'Archive' });
+    rename.focus();
+    await fireEvent.keyDown(rename, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement).toBe(archive));
+    await fireEvent.keyDown(archive, { key: 'Home' });
+    await waitFor(() => expect(document.activeElement).toBe(rename));
   });
   it('keeps menu actions responsive after the pointer enters the menu', async () => {
     const onClick = vi.fn();

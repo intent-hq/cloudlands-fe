@@ -1,5 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { store as appStore } from '$store/renderer/store';
+import {
+  gitReducer,
+  gitReadRequested,
+  gitReadStarted,
+  gitReadCompleted,
+  releaseGitRead,
+  setGitOperationFlag,
+} from '$store/renderer/slices/git/git-slice';
+import { gitReadKey } from '$store/renderer/slices/git/utils/git-read-key';
+import {
+  prWorkflowReducer,
+  prWorkflowRequested,
+  setPRWorkflowDrawer,
+} from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
+import type { PRWorkflowCommand } from '$store/renderer/slices/pr-workflow/pr-workflow-types';
 import { warmImport } from '../../../../../test/warm-import';
 import {
   configuredVisualStates,
@@ -46,12 +62,17 @@ const mocks = vi.hoisted(() => {
   return { dispatch, workspaceEntity, state, selector };
 });
 
+let reduxState = {
+  git: gitReducer(undefined, { type: 'test/init' }),
+  prWorkflow: prWorkflowReducer(undefined, { type: 'test/init' }),
+};
+
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => reduxState,
     dispatch: mocks.dispatch,
   });
 });
@@ -71,26 +92,9 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   ),
 }));
 
-vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
-  refreshAcceptChangesStatus: vi.fn((...args: unknown[]) => ({
-    type: 'changes/refreshAcceptChangesStatus',
-    payload: args,
-  })),
-  setSidebarCreatePRWhenReady: vi.fn((...args: unknown[]) => ({
-    type: 'changes/setSidebarCreatePRWhenReady',
-    payload: args,
-  })),
-  refreshRequested: vi.fn((wsId: string) => ({
-    type: 'changes/refreshRequested',
-    payload: [wsId],
-  })),
-  clearOlderCommits: vi.fn((wsId: string) => ({
-    type: 'changes/clearOlderCommits',
-    payload: wsId,
-  })),
-}));
-
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: mocks.selector(() => 'owner-context'),
+  selectWorkspaceListLoadedForBackend: mocks.selector(() => true),
   selectWorkspaceById: Object.assign(
     () => ({
       subscribe(run: (v: unknown) => void) {
@@ -100,6 +104,16 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     }),
     { select: () => mocks.workspaceEntity },
   ),
+}));
+
+vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
+  selectPrincipalActionContext: mocks.selector(() => 'owner-context'),
+  selectCanAdministerHost: mocks.selector(() => true),
+  selectHostRole: mocks.selector(() => 'owner'),
+}));
+
+vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
+  selectLabsMultiplayerEnabled: mocks.selector(() => false),
 }));
 
 vi.mock(
@@ -120,19 +134,8 @@ vi.mock('$store/renderer/slices/background-agent-executor/background-agent-execu
   })),
 }));
 
-vi.mock('$store/renderer/slices/git/git-selectors', () => ({
-  selectGitAhead: mocks.selector(() => 0),
-  selectGitBehind: mocks.selector(() => 0),
-  selectPostMergeState: mocks.selector(() => mocks.state.postMerge),
-  selectGitOperationFlags: mocks.selector(() => mocks.state.sidebarChanges.gitOperations),
-}));
-
-vi.mock('$store/renderer/slices/git/git-slice', () => ({
-  loadGitStatus: vi.fn((...args: unknown[]) => ({ type: 'git/loadStatus', payload: args })),
-  setGitOperationFlag: vi.fn((...args: unknown[]) => ({
-    type: 'git/setGitOperationFlag',
-    payload: args,
-  })),
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
 vi.mock('$store/renderer/slices/pr-status/pr-status-slice', () => ({
@@ -314,9 +317,68 @@ warmImport(() => import('./mocks/MockFileRow.svelte'));
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('../PRSection.svelte'));
 
+function expectWorkflow(workspaceId: string, command: PRWorkflowCommand) {
+  expect(mocks.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: prWorkflowRequested.type,
+      payload: { workspaceId, command, requestId: expect.any(String) },
+    }),
+  );
+}
+
+function readRequests(hash: string) {
+  return mocks.dispatch.mock.calls
+    .map(([action]) => action)
+    .filter(
+      (action): action is ReturnType<typeof gitReadRequested> =>
+        action.type === gitReadRequested.type && action.payload[2] === hash,
+    );
+}
+
+function completeCommitFiles(hash: string, path: string | null) {
+  const request = readRequests(hash).at(-1)!;
+  const [wsId, , , read] = request.payload;
+  const key = gitReadKey(read);
+  appStore.dispatch(gitReadStarted(wsId, key, 'result'));
+  appStore.dispatch(
+    gitReadCompleted(
+      wsId,
+      key,
+      'result',
+      {
+        kind: 'commitDetails',
+        details: path
+          ? {
+              commitHash: hash,
+              author: 'Test',
+              authorEmail: 't@example.com',
+              date: '2026-07-21T00:00:00Z',
+              message: `commit ${hash}`,
+              files: [path],
+              fileDetails: [{ path, additions: 3, deletions: 1 }],
+            }
+          : null,
+      },
+      path ? null : 'Unavailable',
+    ),
+  );
+}
+
 describe('PRSection', () => {
   beforeEach(() => {
-    mocks.dispatch.mockClear();
+    mocks.dispatch.mockReset();
+    reduxState = {
+      git: gitReducer(undefined, { type: 'test/init' }),
+      prWorkflow: prWorkflowReducer(undefined, { type: 'test/init' }),
+    };
+    mocks.dispatch.mockImplementation((action) => {
+      reduxState = {
+        git: gitReducer(reduxState.git, action),
+        prWorkflow: prWorkflowReducer(reduxState.prWorkflow, action),
+      };
+      (appStore as unknown as { emitState(): void }).emitState();
+      return action;
+    });
     mockCreatePR.mockClear();
     mockCreatePR.mockResolvedValue({ success: true });
     mockExecute.mockReset().mockResolvedValue({ success: true });
@@ -324,6 +386,37 @@ describe('PRSection', () => {
     mocks.state.githubAuthed = true;
     mocks.state.acceptChanges.prTitle = '';
     mocks.state.acceptChanges.prDescription = '';
+  });
+
+  it('dispatches pull intent for the current workspace without calling the transport', async () => {
+    const view = await renderPR({
+      workspaceId: 'a',
+      hasOpenPR: true,
+      isBehind: true,
+      behindCount: 1,
+    });
+    await fireEvent.click(view.getByTestId('pr-pull-button'));
+    expectWorkflow('a', { kind: 'pull' });
+    await view.rerender({ workspaceId: 'b' });
+    await fireEvent.click(view.getByTestId('pr-pull-button'));
+    expectWorkflow('b', { kind: 'pull' });
+    const { appClient } = await import('$lib/client');
+    expect(appClient.git.pull).not.toHaveBeenCalled();
+  });
+
+  it('renders saga-owned pull flags and does not clear them on presentation unmount', async () => {
+    const view = await renderPR({ hasOpenPR: true, isBehind: true, behindCount: 1 });
+    const pull = view.getByTestId('pr-pull-button') as HTMLButtonElement;
+    appStore.dispatch(setGitOperationFlag('ws-1', 'isPulling', true));
+    await waitFor(() => expect(pull.disabled).toBe(true));
+    appStore.dispatch(setGitOperationFlag('ws-1', 'isPulling', false));
+    await waitFor(() => expect(pull.disabled).toBe(false));
+    appStore.dispatch(setGitOperationFlag('ws-1', 'isPulling', true));
+    mocks.dispatch.mockClear();
+    view.unmount();
+    expect(mocks.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      setGitOperationFlag.type,
+    );
   });
 
   it('affirms the linked PR action in every required visual state', async () => {
@@ -346,7 +439,7 @@ describe('PRSection', () => {
     expect(observed).toEqual(configuredVisualStates);
   });
 
-  it('triggerCreatePR calls backgroundGitActionsService.createPR with provided title and description when authenticated', async () => {
+  it('triggerCreatePR dispatches the typed create intent with provided draft and target', async () => {
     const { component } = await renderPR();
     await (
       component as unknown as {
@@ -364,18 +457,18 @@ describe('PRSection', () => {
       prDescription: 'Details',
     });
 
-    await waitFor(() => expect(mockCreatePR).toHaveBeenCalled());
-    expect(mockCreatePR).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaceId: 'ws-1',
-        prTitle: 'Add X',
-        prDescription: 'Details',
-        targetBranch: 'develop',
-      }),
-    );
+    expectWorkflow('ws-1', {
+      kind: 'create-pr',
+      prTitle: 'Add X',
+      prDescription: 'Details',
+      targetBranch: 'develop',
+      hasStaged: false,
+      requireAuth: true,
+    });
+    expect(mockCreatePR).not.toHaveBeenCalled();
   });
 
-  it('triggerCreatePR dispatches initializeGitHubAuth when unauthenticated and does NOT call createPR', async () => {
+  it('delegates unauthenticated creation to the workflow with requireAuth instead of starting auth locally', async () => {
     mocks.state.githubAuthed = false;
     const { component } = await renderPR();
     await (
@@ -383,15 +476,21 @@ describe('PRSection', () => {
         triggerCreatePR: (o: { prTitle?: string; prDescription?: string }) => void;
       }
     ).triggerCreatePR({ prTitle: 'Add X', prDescription: 'd' });
-    await waitFor(() => {
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'githubAuth/initialize' }),
-      );
+    expectWorkflow('ws-1', {
+      kind: 'create-pr',
+      prTitle: 'Add X',
+      prDescription: 'd',
+      targetBranch: 'main',
+      hasStaged: false,
+      requireAuth: true,
     });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'githubAuth/initialize' }),
+    );
     expect(mockCreatePR).not.toHaveBeenCalled();
   });
 
-  it('refreshes Git status before broad Changes data after a successful push', async () => {
+  it('dispatches the pushed commit boundary and branch, leaving refresh orchestration to the owner', async () => {
     const { container } = await renderPR({
       hasOpenPR: true,
       hasUnpushedCommits: true,
@@ -408,19 +507,8 @@ describe('PRSection', () => {
     });
 
     await fireEvent.click(push);
-    await waitFor(() => expect(mockExecute).toHaveBeenCalled());
-
-    expect(
-      mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter(
-          (action) =>
-            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-        ),
-    ).toEqual([
-      { type: 'git/loadStatus', payload: ['ws-1', true] },
-      { type: 'changes/refreshRequested', payload: ['ws-1'] },
-    ]);
+    expectWorkflow('ws-1', { kind: 'push', targetBranch: 'feature/branch', upToCommitHash: 'abc' });
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 
   it('toggles the Connect Remote drawer when the button is clicked', async () => {
@@ -433,20 +521,14 @@ describe('PRSection', () => {
     const buttons = Array.from(container.querySelectorAll('button'));
     const connectBtn = buttons.find((b) => b.textContent?.includes('Connect Remote'));
     await fireEvent.click(connectBtn!);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setPRWorkflowDrawer('ws-1', 'connectRemoteDrawerOpen', true),
+    );
     await waitFor(() => expect(container.textContent).toContain('Add a git remote'));
   });
 
-  it('PR expand lazily fetches git.commitDetails for metadata-only pushed commits', async () => {
-    mockCommitDetails.mockResolvedValue({
-      commitHash: 'abc',
-      author: 'Test',
-      authorEmail: 't@example.com',
-      date: '2026-07-21T00:00:00Z',
-      message: 'commit abc',
-      files: ['src/a.ts'],
-      fileDetails: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],
-    });
-    const { container } = await renderPR({
+  it('PR expand requests commit details, renders selector results, and releases its read on unmount', async () => {
+    const { container, unmount } = await renderPR({
       hasPRs: true,
       hasOpenPR: true,
       pullRequests: [testPR],
@@ -462,16 +544,27 @@ describe('PRSection', () => {
     });
     await fireEvent.click(toggle);
 
-    expect(mockCommitDetails).toHaveBeenCalledWith('ws-1', 'abc');
+    expect(readRequests('abc').at(-1)?.payload).toEqual([
+      'ws-1',
+      expect.any(String),
+      'abc',
+      { kind: 'commitDetails', commitHash: 'abc' },
+    ]);
+    completeCommitFiles('abc', 'src/a.ts');
     await waitFor(() => {
       const fileRow = container.querySelector('[data-testid="file-row"]');
       expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
     });
 
     // Collapse + re-expand does not refetch (cache by hash).
+    const count = readRequests('abc').length;
     await fireEvent.click(toggle);
     await fireEvent.click(toggle);
-    expect(mockCommitDetails).toHaveBeenCalledTimes(1);
+    expect(readRequests('abc')).toHaveLength(count);
+    const [workspaceId, consumerId, requestId] = readRequests('abc').at(-1)!.payload;
+    unmount();
+    expect(mocks.dispatch).toHaveBeenCalledWith(releaseGitRead(workspaceId, consumerId, requestId));
+    expect(mockCommitDetails).not.toHaveBeenCalled();
   });
 
   it('PR expand does not fetch details when pushed commits already carry files', async () => {
@@ -497,20 +590,49 @@ describe('PRSection', () => {
       expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
     });
     expect(mockCommitDetails).not.toHaveBeenCalled();
+    expect(readRequests('abc')).toHaveLength(0);
   });
 
-  it('pushed commits arriving while a PR is expanded get their files fetched too', async () => {
-    mockCommitDetails.mockImplementation((_ws: string, hash: string) =>
-      Promise.resolve({
-        commitHash: hash,
-        author: 'Test',
-        authorEmail: 't@example.com',
-        date: '2026-07-21T00:00:00Z',
-        message: `commit ${hash}`,
-        files: [`src/${hash}.ts`],
-        fileDetails: [{ path: `src/${hash}.ts`, additions: 1, deletions: 0 }],
-      }),
+  it('retains details across equivalent commit lists and releases them on workspace switch', async () => {
+    const { container, rerender } = await renderPR({
+      hasPRs: true,
+      hasOpenPR: true,
+      pullRequests: [testPR],
+      pushedCommits: [makePushedCommit('abc')],
+      hasPushedCommits: true,
+    });
+    const toggle = await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('[title="Toggle file list"]');
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    await fireEvent.click(toggle);
+    completeCommitFiles('abc', 'src/abc.ts');
+    await waitFor(() =>
+      expect(container.querySelector('[data-file-path="src/abc.ts"]')).not.toBeNull(),
     );
+    const count = readRequests('abc').length;
+    const [wsId, consumerId, requestId] = readRequests('abc').at(-1)!.payload;
+
+    await rerender({ pushedCommits: [makePushedCommit('abc', { message: 'updated metadata' })] });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(releaseGitRead(wsId, consumerId, requestId));
+    expect(readRequests('abc')).toHaveLength(count);
+    expect(container.querySelector('[data-file-path="src/abc.ts"]')).not.toBeNull();
+
+    await fireEvent.click(toggle);
+    await rerender({ pushedCommits: [makePushedCommit('abc')] });
+    await fireEvent.click(toggle);
+    expect(readRequests('abc')).toHaveLength(count);
+    expect(container.querySelector('[data-file-path="src/abc.ts"]')).not.toBeNull();
+
+    await rerender({ workspaceId: 'ws-2' });
+    expect(mocks.dispatch).toHaveBeenCalledWith(releaseGitRead(wsId, consumerId, requestId));
+    await waitFor(() =>
+      expect(container.querySelector('[data-file-path="src/abc.ts"]')).toBeNull(),
+    );
+  });
+
+  it('fetches only added commits while expanded and releases only removed commits', async () => {
     const { container, rerender } = await renderPR({
       hasPRs: true,
       hasOpenPR: true,
@@ -526,32 +648,33 @@ describe('PRSection', () => {
       return btn as HTMLButtonElement;
     });
     await fireEvent.click(toggle);
-    await waitFor(() => expect(mockCommitDetails).toHaveBeenCalledWith('ws-1', 'abc'));
+    await waitFor(() => expect(readRequests('abc').length).toBeGreaterThan(0));
+    completeCommitFiles('abc', 'src/abc.ts');
+    const count = readRequests('abc').length;
+    const [wsId, consumerId, requestId] = readRequests('abc').at(-1)!.payload;
 
     // A new push lands while the PR stays expanded — the new commit's files
     // are fetched without another expand interaction.
     await rerender({ pushedCommits: [makePushedCommit('abc'), makePushedCommit('def')] });
-    await waitFor(() => expect(mockCommitDetails).toHaveBeenCalledWith('ws-1', 'def'));
+    await waitFor(() => expect(readRequests('def').length).toBeGreaterThan(0));
+    expect(readRequests('abc')).toHaveLength(count);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(releaseGitRead(wsId, consumerId, requestId));
+    completeCommitFiles('def', 'src/def.ts');
     await waitFor(() => {
       const paths = Array.from(container.querySelectorAll('[data-testid="file-row"]')).map((r) =>
         r.getAttribute('data-file-path'),
       );
       expect(paths).toEqual(expect.arrayContaining(['src/abc.ts', 'src/def.ts']));
     });
+    const defCount = readRequests('def').length;
+    await rerender({ pushedCommits: [makePushedCommit('def')] });
+    expect(mocks.dispatch).toHaveBeenCalledWith(releaseGitRead(wsId, consumerId, requestId));
+    expect(readRequests('def')).toHaveLength(defCount);
+    expect(container.querySelector('[data-file-path="src/abc.ts"]')).toBeNull();
+    expect(container.querySelector('[data-file-path="src/def.ts"]')).not.toBeNull();
   });
 
   it('a failed lazy PR details fetch is retried on the next expand', async () => {
-    // `commitDetails` folds transport errors to `null` — the marker must be
-    // cleared so a later expand refetches instead of getting stuck.
-    mockCommitDetails.mockResolvedValueOnce(null).mockResolvedValue({
-      commitHash: 'abc',
-      author: 'Test',
-      authorEmail: 't@example.com',
-      date: '2026-07-21T00:00:00Z',
-      message: 'commit abc',
-      files: ['src/a.ts'],
-      fileDetails: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],
-    });
     const { container } = await renderPR({
       hasPRs: true,
       hasOpenPR: true,
@@ -567,15 +690,18 @@ describe('PRSection', () => {
       return btn as HTMLButtonElement;
     });
     await fireEvent.click(toggle);
-    expect(mockCommitDetails).toHaveBeenCalledTimes(1);
+    expect(readRequests('abc').length).toBeGreaterThan(0);
+    completeCommitFiles('abc', null);
     await waitFor(() => {
       expect(container.querySelector('[data-testid="file-row"]')).toBeNull();
     });
 
     // Collapse + re-expand retries and succeeds this time.
+    const count = readRequests('abc').length;
     await fireEvent.click(toggle);
     await fireEvent.click(toggle);
-    expect(mockCommitDetails).toHaveBeenCalledTimes(2);
+    expect(readRequests('abc').length).toBeGreaterThan(count);
+    completeCommitFiles('abc', 'src/a.ts');
     await waitFor(() => {
       const fileRow = container.querySelector('[data-testid="file-row"]');
       expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');

@@ -34,11 +34,13 @@
     selectNodeRequirement,
   } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
   import { selectDaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectHostAdministrationContext } from '$store/renderer/slices/principal/principal-selectors';
   import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
 
   const node$ = selectNodeRequirement();
   const checking$ = selectHostRequirementsChecking();
   const health$ = selectDaemonHealth();
+  const ownerContext$ = selectHostAdministrationContext();
 
   // Onboarding renders at /workspace/new (WorkspaceSurface); suppress there.
   // Pathname form matches the (app) layout's own onboarding exclusion.
@@ -48,23 +50,24 @@
   // be observed running (checking true) and settling (checking false). If the
   // daemon drops mid-handshake the flags reset, so recovery re-requests a
   // fresh probe instead of trusting a result that settled during the outage.
-  let probeRequested = $state(false);
+  let probeContext = $state<string | null>(null);
   let probeStarted = $state(false);
 
   $effect(() => {
-    if ($health$ === 'healthy') {
-      if (!probeRequested) {
-        probeRequested = true;
+    if ($health$ === 'healthy' && $ownerContext$) {
+      if (probeContext !== $ownerContext$) {
+        probeContext = $ownerContext$;
+        probeStarted = false;
         appStore.dispatch(checkHostRequirementsRequested());
       }
     } else {
-      probeRequested = false;
+      probeContext = null;
       probeStarted = false;
     }
   });
 
   $effect(() => {
-    if (!probeRequested) return;
+    if (!probeContext || probeContext !== $ownerContext$) return;
     if ($checking$) {
       probeStarted = true;
       return;

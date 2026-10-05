@@ -1,7 +1,9 @@
-import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../../test/ct-test';
 import TaskProgressControl from '../TaskProgressControl.svelte';
 import TaskProgressControlHost from './TaskProgressControlHost.svelte';
+
+type Page = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
+type Locator = ReturnType<Page['locator']>;
 
 const tasks = [
   { id: 'pending', title: 'Inspect the panel', status: 'pending' },
@@ -18,6 +20,152 @@ const overflowTasks = Array.from({ length: 20 }, (_, index) => ({
   title: `Comparison task ${index + 1}`,
   status: 'pending' as const,
 }));
+
+function expectNoTaskDiskOutline(style: { outlineStyle: string }) {
+  // Chromium versions serialize the unused width differently when style is none.
+  expect(style.outlineStyle, 'Task disks must not paint an outline').toBe('none');
+}
+
+async function pressScrollKey(page: Page, region: Locator, key: string) {
+  // Native keyboard scrolls are not WAAPI animations. Await their end before
+  // sending the next key, rather than observing an intermediate scroll offset.
+  await Promise.all([
+    region.evaluate(
+      (node) =>
+        new Promise<void>((resolve) => {
+          node.addEventListener('scrollend', () => resolve(), { once: true });
+        }),
+    ),
+    page.keyboard.press(key),
+  ]);
+}
+
+test('search and status filters support keyboard activation, reset, Escape and outside focus', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(TaskProgressControlHost, {
+    props: {
+      tasks: [...tasks, { id: 'extra', title: 'Inspect keyboard navigation', status: 'pending' }],
+      presentation: 'checklist',
+    },
+  });
+  const trigger = component.getByTestId('task-progress-trigger');
+  const popover = page.getByTestId('task-progress-popover');
+  const search = page.getByRole('searchbox');
+  const status = page.getByRole('combobox', { name: 'Filter tasks by status' });
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await expect(popover).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(search).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(status).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('option')).toHaveCount(8);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await expect(status).toContainText('Complete');
+  await expect(popover).toBeVisible();
+  await expect(page.getByTestId('task-progress-row')).toHaveCount(1);
+  await page.keyboard.press('Shift+Tab');
+  await expect(search).toBeFocused();
+  await page.keyboard.type('missing');
+  await expect(page.getByTestId('task-progress-no-matches')).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByTestId('task-progress-scroll-region')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Reset filters' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('');
+  await expect(page.getByTestId('task-progress-row')).toHaveCount(8);
+  await page.keyboard.type('Inspect');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Clear search' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(status).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('task-progress-row')).toHaveCount(2);
+  await expect(page.getByTestId('task-progress-row').first()).toHaveAttribute(
+    'data-task-status',
+    'pending',
+  );
+  await expect(page.getByTestId('task-progress-row').last()).toHaveAttribute(
+    'data-task-status',
+    'pending',
+  );
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Clear search' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(search).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(search).toHaveValue('');
+  await page.keyboard.press('ArrowDown');
+  await expect(search).toBeFocused();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('listbox')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toBeHidden();
+  await expect(status).toBeFocused();
+  await expect(popover).toBeVisible();
+  await status.click();
+  await page.getByRole('option', { name: 'Waiting 1' }).click();
+  await expect(popover).toBeVisible();
+  await expect(status).toContainText('Waiting');
+  await expect(page.getByTestId('task-progress-row')).toHaveCount(1);
+  await component.getByTestId('after-trigger').click();
+  await expect(popover).toBeHidden();
+  await expect(component.getByTestId('after-trigger')).toBeFocused();
+});
+
+test('clear-search icon supports pointer and keyboard activation without resetting status', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(TaskProgressControlHost, {
+    props: {
+      tasks: [...tasks, { id: 'extra', title: 'Inspect keyboard navigation', status: 'pending' }],
+      presentation: 'checklist',
+    },
+  });
+  await page.getByTestId('task-progress-trigger').click();
+  const search = page.getByRole('searchbox');
+  const clear = page.getByRole('button', { name: 'Clear search' });
+  const status = page.getByRole('combobox', { name: 'Filter tasks by status' });
+  const popover = page.getByTestId('task-progress-popover');
+  await status.click();
+  await page.getByRole('option', { name: /not started 2/i }).click();
+  await search.fill('no-such-task');
+  await expect(page.getByTestId('task-progress-no-matches')).toBeVisible();
+  await expect(clear).toBeVisible();
+  const screenshotPath = testInfo.outputPath('search-clear.png');
+  await popover.screenshot({ path: screenshotPath });
+  await testInfo.attach('Search clear icon', { path: screenshotPath, contentType: 'image/png' });
+  await clear.click();
+  await expect(search).toHaveValue('');
+  await expect(search).toBeFocused();
+  await expect(clear).toHaveCount(0);
+  await expect(status).toContainText(/not started/i);
+  await expect(page.getByTestId('task-progress-row')).toHaveCount(2);
+  await search.fill('missing');
+  await page.keyboard.press('Tab');
+  await expect(clear).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(search).toHaveValue('');
+  await expect(search).toBeFocused();
+  await expect(popover).toBeVisible();
+  await expect(status).toContainText(/not started/i);
+  await expect(page.getByTestId('task-progress-row')).toHaveCount(2);
+});
 
 for (const presentation of ['status-stack', 'checklist'] as const) {
   for (const entryKey of ['ArrowDown', 'PageDown']) {
@@ -37,23 +185,27 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
       await page.keyboard.press('Space');
       await expect(popover).toBeVisible();
       await page.keyboard.press(entryKey);
+      if (entryKey === 'ArrowDown') {
+        await expect(page.getByRole('searchbox')).toBeFocused();
+        await page.keyboard.press('PageDown');
+      }
       await popover.evaluate(async (node) => {
         await Promise.all(node.getAnimations().map((animation) => animation.finished));
       });
       await expect(region).toBeFocused();
       await expect(region).toHaveAccessibleName('Agent tasks');
       await expect(page.getByRole('tooltip')).toHaveCount(0);
-      await page.keyboard.press('ArrowDown');
+      await pressScrollKey(page, region, 'ArrowDown');
       await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
       const arrowScroll = await region.evaluate((node) => node.scrollTop);
       const halfPage = await region.evaluate((node) => node.clientHeight / 2);
-      await page.keyboard.press('PageDown');
+      await pressScrollKey(page, region, 'PageDown');
       await expect
         .poll(() => region.evaluate((node) => node.scrollTop))
         .toBeGreaterThan(arrowScroll + halfPage);
-      await page.keyboard.press('End');
+      await pressScrollKey(page, region, 'End');
       await expect(lastRow).toBeInViewport({ ratio: 1 });
-      await page.keyboard.press('Home');
+      await pressScrollKey(page, region, 'Home');
       await expect.poll(() => region.evaluate((node) => node.scrollTop)).toBe(0);
       await page.keyboard.press('Escape');
       await expect(popover).toBeHidden();
@@ -73,8 +225,12 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
     await trigger.focus();
     await page.keyboard.press('Enter');
     await expect(popover).toBeVisible();
-    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('PageDown');
     await expect(page.getByTestId('task-progress-scroll-region')).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.getByRole('combobox', { name: 'Filter tasks by status' })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.getByRole('searchbox')).toBeFocused();
     await page.keyboard.press('Shift+Tab');
     await expect(popover).toBeHidden();
     await expect(component.getByTestId('after-trigger')).toBeFocused();
@@ -124,7 +280,7 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
     const outside = component.getByTestId('before-trigger');
     await trigger.click();
     await expect(popover).toBeVisible();
-    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('PageDown');
     await expect(region).toBeFocused();
     await page.getByTestId('task-progress-row').first().click();
     await expect(popover).toBeVisible();
@@ -261,6 +417,7 @@ for (const theme of ['light', 'dark'] as const) {
             style.borderLeftWidth,
           ],
           outlineWidth: style.outlineWidth,
+          outlineStyle: style.outlineStyle,
           boxShadow: style.boxShadow,
           opacity: style.opacity,
           width: rect.width,
@@ -269,13 +426,13 @@ for (const theme of ['light', 'dark'] as const) {
       });
     });
     expect(styles.length).toBeGreaterThan(tasks.length);
+    for (const style of styles) expectNoTaskDiskOutline(style);
     expect(
       styles.every(
         (style) =>
           style.background === style.tokenBackground &&
           style.backgroundAlpha === 1 &&
           style.borderWidths.every((width) => width === '0px') &&
-          style.outlineWidth === '0px' &&
           style.boxShadow === 'none' &&
           style.opacity === '1' &&
           style.width === 14 &&
@@ -315,6 +472,20 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByTestId('task-progress-row')).toHaveCount(tasks.length);
   });
 }
+
+test('the task disk outline contract rejects a visible outline', async ({ mount, page }) => {
+  await mount(TaskProgressControl, { props: { tasks: [...tasks] } });
+  const disk = page.getByTestId('task-progress-status-icon').first();
+  await expect(disk).toBeVisible();
+  const outlined = await disk.evaluate((node) => {
+    (node as HTMLElement).style.outline = '3px solid currentColor';
+    const style = getComputedStyle(node);
+    return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth };
+  });
+  expect(outlined.outlineStyle).toBe('solid');
+  expect(parseFloat(outlined.outlineWidth)).toBeGreaterThan(0);
+  expect(() => expectNoTaskDiskOutline(outlined)).toThrow();
+});
 
 test('exposes one atomic live status and keeps the full task list non-live in the accessibility tree', async ({
   mount,
@@ -460,16 +631,23 @@ test('clears tooltip suppression after pointer cancellation and task-trigger rem
 
   await trigger.click();
   await expect(popover).toBeVisible();
-  await outside.dispatchEvent('pointerdown', {
-    pointerType: 'mouse',
-    pointerId: 17,
-    button: 0,
-    isPrimary: true,
-  });
-  await outside.dispatchEvent('pointercancel', {
-    pointerType: 'mouse',
-    pointerId: 17,
-    isPrimary: true,
+  // dispatchEvent does not move the mouse; cancellation must start outside so
+  // the later hover is a fresh pointer entry after the trigger click (intent#6033).
+  await outside.hover();
+  // Cancel in the same browser turn, before the popover's deferred outside
+  // dismissal clears the active pointer ID. Separate driver calls race it.
+  await outside.evaluate((element) => {
+    const pointer = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      pointerType: 'mouse',
+      pointerId: 17,
+      button: 0,
+      isPrimary: true,
+    };
+    element.dispatchEvent(new PointerEvent('pointerdown', pointer));
+    element.dispatchEvent(new PointerEvent('pointercancel', pointer));
   });
   await page.keyboard.press('Escape');
   await expect(popover).toBeHidden();
@@ -647,7 +825,7 @@ test('reaches the final row of an overflowed task list using only the keyboard',
   await expect(trigger).toBeFocused();
   await expect(lastRow).not.toBeInViewport();
 
-  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('PageDown');
   await expect(scrollRegion).toBeFocused();
   await expect(popover).toBeVisible();
 

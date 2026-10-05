@@ -1,5 +1,9 @@
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
+import { principalContextChanged, principalReceived } from '../../principal/principal-slice';
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { setLabsMultiplayerEnabled } from '../../user-preferences/user-preferences-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { PresenceMember, PresenceRoster } from '$shared/types/presence';
 
 const mocks = vi.hoisted(() => ({
@@ -61,6 +65,37 @@ function deferRequests() {
   };
 }
 
+function admit(id = 'me') {
+  const current = store.state.connections;
+  if (!current.hasReceivedList)
+    store.dispatch(
+      connectionsListReceived({
+        connections: [],
+        activeId: current.activeId,
+        windowBackendId: current.windowBackendId,
+      }),
+    );
+  store.dispatch(connectionStatusChanged('connected'));
+  if (!store.state.workspaceEvents.subscriptionGeneration) store.dispatch(daemonEventsSubscribed());
+  const context = selectPrincipalConnectionContext.select(store.state)!;
+  if (store.state.principal.context !== context) store.dispatch(principalContextChanged(context));
+  const p = store.state.principal;
+  store.dispatch(
+    principalReceived(
+      { context, invalidation: p.invalidation, presentationVersion: p.presentationVersion },
+      {
+        principal: { id, login: null, displayName: null, avatarUrl: null, isAdministrator: true },
+        capabilities: {
+          hostMembership: false,
+          collaborationIdentity: false,
+          personalPairing: false,
+          authenticatedDevices: false,
+        },
+      },
+    ),
+  );
+}
+
 describe('presenceSaga lifecycle', () => {
   let dispose: (() => void) | undefined;
   let cancel: (() => void) | undefined;
@@ -87,9 +122,16 @@ describe('presenceSaga lifecycle', () => {
   /** Boots the saga with `ws-1` open; `subscribed` false leaves the firehose not yet live. */
   function start(subscribed = true) {
     if (!dispose) dispose = store.init();
+    store.dispatch(setLabsMultiplayerEnabled(true));
+    if (!getItems(store.state.workspace.workspaces).length)
+      store.dispatch(
+        replaceWorkspaceList(
+          ['ws-1', 'ws-2'].map((id) => ({ id: WorkspaceId(id), memberCount: 1 }) as Workspace),
+        ),
+      );
     store.dispatch(openWorkspaceTab('ws-1'));
     cancel = store.runSaga(presenceSaga);
-    if (subscribed) store.dispatch(daemonEventsSubscribed());
+    if (subscribed) admit();
   }
 
   it('waits for the daemon-events firehose before reading identity or any roster', async () => {
@@ -99,13 +141,14 @@ describe('presenceSaga lifecycle', () => {
     expect(calls('presence.snapshot')).toEqual([]);
 
     store.dispatch(daemonEventsSubscribed());
+    admit();
     await vi.advanceTimersByTimeAsync(0);
-    expect(calls('principal.me')).toEqual([{}]);
+    expect(calls('principal.me')).toEqual([]);
     expect(calls('presence.snapshot')).toEqual([{ workspaceId: 'ws-1' }]);
     expect(principals('ws-1')).toEqual(['me', 'other']);
   });
 
-  it('reads the local owner principal on start without a backend change and leaves self out', async () => {
+  it('reuses the admitted local owner without a second identity read and leaves self out', async () => {
     if (!dispose) dispose = store.init();
     store.dispatch(
       replaceWorkspaceList([
@@ -119,7 +162,7 @@ describe('presenceSaga lifecycle', () => {
     );
     start();
     await vi.advanceTimersByTimeAsync(0);
-    expect(calls('principal.me')).toEqual([{}]);
+    expect(calls('principal.me')).toEqual([]);
     expect(store.state.presence.ownPrincipalId).toBe('me');
     expect(selectAgentPresencePeople.select(store.state, 'ws-1', 'agent-1')).toEqual([]);
     store.dispatch(
@@ -213,7 +256,7 @@ describe('presenceSaga lifecycle', () => {
       listWorkspaces({ id: WorkspaceId('ws-1'), memberCount: 2 });
       start();
       await vi.advanceTimersByTimeAsync(0);
-      wire.settle('principal.me', 0, { id: 'me' });
+      admit();
       await vi.advanceTimersByTimeAsync(0);
       expect(wire.count('workspace.members.list:ws-1')).toBe(1);
 
@@ -235,7 +278,7 @@ describe('presenceSaga lifecycle', () => {
       );
       await vi.advanceTimersByTimeAsync(0);
       expect(store.state.presence.members).toEqual({});
-      wire.settle('principal.me', 1, { id: 'me' });
+      admit();
       await vi.advanceTimersByTimeAsync(0);
       expect(wire.count('workspace.members.list:ws-1')).toBe(3);
       wire.settle('workspace.members.list:ws-1', 2, { members: [owner] });
@@ -276,91 +319,68 @@ describe('presenceSaga lifecycle', () => {
     expect(principals('ws-1')).toEqual(['newest']);
   });
 
-  it('keeps the newest of two overlapping snapshot reads for one workspace, whichever settles first', async () => {
+  it.each([false, true])(
+    'fences snapshots across removed/rejoined workspaces (old first: %s)',
+    async (oldFirst) => {
+      const wire = deferRequests();
+      start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire.count('presence.snapshot:ws-1')).toBe(1);
+      store.dispatch(replaceWorkspaceList([]));
+      await vi.advanceTimersByTimeAsync(0);
+      store.dispatch(
+        replaceWorkspaceList([{ id: WorkspaceId('ws-1'), memberCount: 1 } as Workspace]),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(wire.count('presence.snapshot:ws-1')).toBe(2);
+      const old = () =>
+        wire.settle('presence.snapshot:ws-1', 0, {
+          workspaceId: 'ws-1',
+          members: [member('departed')],
+        });
+      const fresh = () =>
+        wire.settle('presence.snapshot:ws-1', 1, {
+          workspaceId: 'ws-1',
+          members: [member('current')],
+        });
+      if (oldFirst) {
+        old();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(principals('ws-1')).toEqual([]);
+        fresh();
+      } else {
+        fresh();
+        await vi.advanceTimersByTimeAsync(0);
+        old();
+      }
+      await vi.advanceTimersByTimeAsync(0);
+      expect(principals('ws-1')).toEqual(['current']);
+    },
+  );
+
+  it('drops old admission snapshots when a new backend uses the same workspace ID', async () => {
     const wire = deferRequests();
     start();
     await vi.advanceTimersByTimeAsync(0);
-    expect(wire.count('principal.me')).toBe(1);
-
-    // A tab opens while identity is pending: read A for ws-2 is issued first…
-    store.dispatch(openWorkspaceTab('ws-2'));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(wire.count('presence.snapshot:ws-2')).toBe(1);
-    // …then the attach issues read B for ws-2 (and ws-1).
-    wire.settle('principal.me', 0, { id: 'me' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(wire.count('presence.snapshot:ws-2')).toBe(2);
-
-    // A (older) settles first with a member who has since left; B carries the current roster.
-    wire.settle('presence.snapshot:ws-2', 0, {
-      workspaceId: 'ws-2',
-      members: [member('departed'), member('other')],
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(principals('ws-2')).toEqual([]);
-    wire.settle('presence.snapshot:ws-2', 1, { workspaceId: 'ws-2', members: [member('other')] });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(principals('ws-2')).toEqual(['other']);
-
-    // Reverse order for ws-1: only one read exists there (the tab was open at boot).
-    wire.settle('presence.snapshot:ws-1', 0, { workspaceId: 'ws-1', members: [member('other')] });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(principals('ws-1')).toEqual(['other']);
-  });
-
-  it('lets a newer read apply after an older read of the same workspace settled first', async () => {
-    const wire = deferRequests();
-    start();
-    await vi.advanceTimersByTimeAsync(0);
-    store.dispatch(openWorkspaceTab('ws-2'));
-    await vi.advanceTimersByTimeAsync(0);
-    wire.settle('principal.me', 0, { id: 'me' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(wire.count('presence.snapshot:ws-2')).toBe(2);
-
-    // B (newer) settles first and must not be cancelled by A's later result.
-    wire.settle('presence.snapshot:ws-2', 1, { workspaceId: 'ws-2', members: [member('other')] });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(principals('ws-2')).toEqual(['other']);
-    wire.settle('presence.snapshot:ws-2', 0, {
-      workspaceId: 'ws-2',
-      members: [member('departed'), member('other')],
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(principals('ws-2')).toEqual(['other']);
-  });
-
-  it('drops a resubscribe attach still in flight when the window moves to another backend', async () => {
-    const wire = deferRequests();
-    start();
-    await vi.advanceTimersByTimeAsync(0);
-    wire.settle('principal.me', 0, { id: 'me' });
-    await vi.advanceTimersByTimeAsync(0);
-    wire.settle('presence.snapshot:ws-1', 0, snapshotOf('ws-1'));
-    await vi.advanceTimersByTimeAsync(500);
-    expect(store.state.presence.ownPrincipalId).toBe('me');
-    expect(principals('ws-1')).toEqual(['me', 'other']);
-
-    // Resubscribe attach A parks on `principal.me`; the backend then changes.
     store.dispatch(daemonEventsSubscribed());
+    admit();
     await vi.advanceTimersByTimeAsync(0);
-    expect(wire.count('principal.me')).toBe(2);
+    expect(wire.count('presence.snapshot:ws-1')).toBe(2);
     store.dispatch(
       connectionsListReceived({ connections: [], activeId: 'remote', windowBackendId: 'remote' }),
     );
     await vi.advanceTimersByTimeAsync(0);
     expect(store.state.presence.ownPrincipalId).toBeNull();
+    wire.settle('presence.snapshot:ws-1', 1, { workspaceId: 'ws-1', members: [member('old')] });
+    await vi.advanceTimersByTimeAsync(0);
     expect(principals('ws-1')).toEqual([]);
-    expect(wire.count('principal.me')).toBe(3);
-
-    // A's late identity is ignored; B's applies.
-    wire.settle('principal.me', 1, { id: 'me' });
+    admit('remote-me');
     await vi.advanceTimersByTimeAsync(0);
-    expect(store.state.presence.ownPrincipalId).toBeNull();
-    wire.settle('principal.me', 2, { id: 'me-remote' });
+    expect(store.state.presence.ownPrincipalId).toBe('remote-me');
+    wire.settle('presence.snapshot:ws-1', 2, { workspaceId: 'ws-1', members: [member('new')] });
+    wire.settle('presence.snapshot:ws-1', 0, { workspaceId: 'ws-1', members: [member('older')] });
     await vi.advanceTimersByTimeAsync(0);
-    expect(store.state.presence.ownPrincipalId).toBe('me-remote');
-    expect(wire.count('presence.snapshot:ws-1')).toBe(2);
+    expect(principals('ws-1')).toEqual(['new']);
   });
 
   it('reports the focus settled before boot once the first attach completes', async () => {
@@ -374,17 +394,18 @@ describe('presenceSaga lifecycle', () => {
     expect(store.state.presence.ownTypingSource).toBe('ts-own');
   });
 
-  it('re-reads identity and the displayed rosters once the firehose is resubscribed, then reports once', async () => {
+  it('refreshes displayed rosters after fresh admission on resubscribe and clears the old report', async () => {
     start();
     await vi.advanceTimersByTimeAsync(500);
     mocks.request.mockClear();
     mocks.invoke.mockClear();
 
     store.dispatch(daemonEventsSubscribed());
+    admit();
     await vi.advanceTimersByTimeAsync(0);
-    expect(calls('principal.me')).toEqual([{}]);
+    expect(calls('principal.me')).toEqual([]);
     expect(calls('presence.snapshot')).toEqual([{ workspaceId: 'ws-1' }]);
-    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledTimes(2);
     expect(mocks.invoke).toHaveBeenCalledWith('presence:report', {
       focus: [{ workspaceId: 'ws-1' }],
       typing: null,

@@ -9,25 +9,30 @@
     bar = false,
     context = false,
     visibleCount = 1,
+    metadata = false,
   }: {
     bar?: boolean;
     context?: boolean;
     visibleCount?: number;
+    metadata?: boolean;
   } = $props();
 
   let selected = $state('none');
-  const actions = defineActions([
-    { id: 'edit', label: 'Edit', icon: faPencil, shortcut: '⌘E', group: 'file' },
-    { id: 'hidden', label: 'Hidden', when: false, group: 'file' },
-    {
-      id: 'export',
-      label: 'Export',
-      group: 'file',
-      children: [{ id: 'export-pdf', label: 'Export as PDF' }],
-    },
-    { id: 'locked', label: 'Locked', disabledReason: 'Requires access', group: 'file' },
-    { id: 'delete', label: 'Delete', icon: faTrash, destructive: true, group: 'danger' },
-  ]);
+  const actions = $derived(
+    defineActions([
+      { id: 'metadata', kind: 'label', label: 'Document metadata', when: metadata },
+      { id: 'edit', label: 'Edit', icon: faPencil, shortcut: '⌘E', group: 'file' },
+      { id: 'hidden', label: 'Hidden', when: false, group: 'file' },
+      {
+        id: 'export',
+        label: 'Export',
+        group: 'file',
+        children: [{ id: 'export-pdf', label: 'Export as PDF' }],
+      },
+      { id: 'locked', label: 'Locked', disabledReason: 'Requires access', group: 'file' },
+      { id: 'delete', label: 'Delete', icon: faTrash, destructive: true, group: 'danger' },
+    ]),
+  );
 </script>
 
 {#if bar}

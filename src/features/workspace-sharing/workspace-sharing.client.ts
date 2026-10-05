@@ -13,6 +13,7 @@ import {
   INVITE_ERROR_CODES,
   type HostPrincipal,
   type InviteErrorCode,
+  type InvitePin,
   type WorkspaceInviteCreateResult,
   type WorkspaceInviteRow,
   type WorkspaceMember,
@@ -44,20 +45,31 @@ export function inviteErrorCode(error: unknown): InviteErrorCode | undefined {
  */
 const LISTENER_DOWN_CODE = 'listener-down';
 
-function isListenerDownError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
+/**
+ * `error.data.code` of the daemon's tunnel-only invite refusal (`-32603`): the
+ * listener is up but the Tailcat tunnel is not running, so no invite link can
+ * be minted. Also a transport-side refusal, detected beside `listener-down`.
+ */
+const TUNNEL_DOWN_CODE = 'tunnel-down';
+
+type TransportDownCode = typeof LISTENER_DOWN_CODE | typeof TUNNEL_DOWN_CODE;
+
+function transportDownCode(error: unknown): TransportDownCode | undefined {
+  if (!error || typeof error !== 'object') return undefined;
   const data = (error as { data?: unknown }).data;
-  if (!data || typeof data !== 'object') return false;
-  return (data as { code?: unknown }).code === LISTENER_DOWN_CODE;
+  if (!data || typeof data !== 'object') return undefined;
+  const code = (data as { code?: unknown }).code;
+  return code === LISTENER_DOWN_CODE || code === TUNNEL_DOWN_CODE ? code : undefined;
 }
 
 /**
  * Bounded failure class of a sharing RPC: `forbidden` is the daemon's `-32003`
  * capability refusal (the caller is not the owner), an `InviteErrorCode` is a
  * machine-readable invite failure, `listener-down` means Remote access is off
- * so no invite can be served, and everything else is `unknown`.
+ * so no invite can be served, `tunnel-down` means the Tailcat tunnel is off so
+ * no tunnel-only link can be minted, and everything else is `unknown`.
  */
-type ShareFailureCode = 'forbidden' | InviteErrorCode | typeof LISTENER_DOWN_CODE | 'unknown';
+type ShareFailureCode = 'forbidden' | InviteErrorCode | TransportDownCode | 'unknown';
 
 export interface ShareFailure {
   success: false;
@@ -86,9 +98,7 @@ function shareFailure(error: unknown): ShareFailure {
       : undefined;
   const code: ShareFailureCode = isForbiddenErrorResponse(error)
     ? 'forbidden'
-    : isListenerDownError(error)
-      ? LISTENER_DOWN_CODE
-      : (inviteErrorCode(error) ?? 'unknown');
+    : (transportDownCode(error) ?? inviteErrorCode(error) ?? 'unknown');
   const failure: ShareFailure = { success: false, code };
   if (rpcCode !== undefined) failure.rpcCode = rpcCode;
   return failure;
@@ -152,17 +162,29 @@ export const workspaceSharingClient = {
 
   /**
    * `workspace.invite.create` — owner only. `pinLogin` restricts redemption to
-   * one GitHub account; the daemon resolves it to a user id and echoes the
-   * canonical login on `invite.pinLogin`. The raw `secret` comes back once;
-   * the `url` is also listed on the open invite row afterwards.
+   * one forge account; the daemon resolves it on `pin.provider` / `pin.host`
+   * (its own identity forge when `pin` is absent) and echoes the canonical
+   * login on `invite.pinLogin`. The raw `secret` comes back once; the `url`
+   * is also listed on the open invite row afterwards.
    */
   async createInvite(
     workspaceId: string,
-    options: { pinLogin?: string } = {},
+    options: { pinLogin?: string; pin?: InvitePin } = {},
   ): Promise<InviteCreateOutcome> {
     const pinLogin = options.pinLogin?.trim();
-    const params: { workspaceId: string; pinLogin?: string } = { workspaceId };
-    if (pinLogin) params.pinLogin = pinLogin;
+    const params: {
+      workspaceId: string;
+      pinLogin?: string;
+      pinProvider?: InvitePin['provider'];
+      pinHost?: string;
+    } = { workspaceId };
+    if (pinLogin) {
+      params.pinLogin = pinLogin;
+      if (options.pin) {
+        params.pinProvider = options.pin.provider;
+        if (options.pin.host) params.pinHost = options.pin.host;
+      }
+    }
     try {
       const result = await backendRequest<WorkspaceInviteCreateResult>(
         'workspace.invite.create',

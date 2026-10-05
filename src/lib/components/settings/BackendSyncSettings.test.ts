@@ -8,12 +8,14 @@
  * message).
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { KeychainSyncStateResult } from '$shared/types/connections';
 import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => ({
+  start: async () => {},
+  stop: async () => {},
   syncState: { value: null as KeychainSyncStateResult | null },
   dispatched: [] as { type: string; payload: unknown[] }[],
   readable: <T>(get: () => T) => ({
@@ -24,20 +26,16 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    state: {},
-    dispatch: (action: { type: string; payload: unknown[] }) => {
-      mocks.dispatched.push(action);
-      return { ...action, promise: Promise.resolve(mocks.syncState.value) };
-    },
-  },
-}));
-
-vi.mock('$store/renderer/slices/connections/connections-selectors', () => {
-  const selector = () => mocks.readable(() => mocks.syncState.value);
-  selector.select = () => mocks.syncState.value;
-  return { selectKeychainSyncState: selector };
+vi.mock('$store/renderer/store', async () => {
+  const { createConnectionsHarness } =
+    await import('$store/renderer/slices/connections/test-harness');
+  const harness = createConnectionsHarness(
+    () => ({ keychainSync: mocks.syncState.value }),
+    (action) => mocks.dispatched.push(action),
+  );
+  mocks.start = harness.start;
+  mocks.stop = harness.stop;
+  return { store: harness.store };
 });
 
 import BackendSyncSettings from './BackendSyncSettings.svelte';
@@ -49,8 +47,25 @@ const ACTIVE: KeychainSyncStateResult = {
 };
 
 describe('BackendSyncSettings', () => {
-  afterEach(() => {
+  beforeEach(async () => {
+    window.electronAPI = {
+      ...window.electronAPI,
+      on: vi.fn(() => 'listener'),
+      offById: vi.fn(),
+      invoke: vi.fn(async (channel: string, params?: any) => {
+        if (channel === 'connections:list')
+          return { connections: [], activeId: 'local', windowBackendId: 'local' };
+        if (channel === 'connections:sync-get-state') return mocks.syncState.value;
+        if (channel === 'connections:sync-set-enabled')
+          return { ...mocks.syncState.value, enabled: params.enabled };
+        throw new Error(`Unexpected channel ${channel}`);
+      }),
+    } as Window['electronAPI'];
+    await mocks.start();
+  });
+  afterEach(async () => {
     cleanup();
+    await mocks.stop();
     mocks.syncState.value = null;
     mocks.dispatched.length = 0;
   });
@@ -159,6 +174,36 @@ describe('BackendSyncSettings', () => {
       );
       expect(action).toBeDefined();
       expect(action!.payload).toEqual([true]);
+      expect(window.electronAPI!.invoke).toHaveBeenCalledWith('connections:sync-set-enabled', {
+        enabled: true,
+      });
     });
+  });
+
+  it('rolls back a failed toggle and permits a retry without remounting', async () => {
+    mocks.syncState.value = { supported: true, enabled: false, status: null };
+    const invoke = vi.mocked(window.electronAPI!.invoke);
+    const original = invoke.getMockImplementation()!;
+    let fail = true;
+    invoke.mockImplementation(async (channel, ...args) => {
+      if (channel === 'connections:sync-set-enabled' && fail) throw new Error('fixture failure');
+      return original(channel, ...args);
+    });
+    render(BackendSyncSettings);
+    const toggle = screen.getByRole('switch');
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(screen.getByText(m.settings_backendSync_saveError())).toBeTruthy());
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.hasAttribute('disabled')).toBe(false);
+    fail = false;
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(screen.queryByText(m.settings_backendSync_saveError())).toBeNull());
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel === 'connections:sync-set-enabled'),
+    ).toEqual([
+      ['connections:sync-set-enabled', { enabled: true }],
+      ['connections:sync-set-enabled', { enabled: true }],
+    ]);
   });
 });

@@ -29,9 +29,7 @@
     isStopping = true;
     try {
       logger.info('User stopping coordinator', { agentId });
-      const action = stopAgentSessionRequested(workspaceId, agentId);
-      appStore.dispatch(action);
-      await action.promise;
+      await appStore.dispatch(stopAgentSessionRequested(workspaceId, agentId));
     } catch (error) {
       logger.error('Failed to stop coordinator', error as Error, { agentId });
     } finally {

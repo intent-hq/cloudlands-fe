@@ -11,6 +11,8 @@
 
   import { page } from '$app/state';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -94,7 +96,7 @@
 
   // Align the workspace controls (tabs) with the left panel's right edge
   // when a sidebar panel is open; tracks the panel width live.
-  const sidebarPanelOpen = $derived(Boolean($panelItem$));
+  const sidebarPanelOpen = $derived(page.url.pathname !== '/' && Boolean($panelItem$));
   const workspaceTabLeadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
   const workspaceTabScrollerMarginLeftPx = $derived(
     getWorkspaceTabScrollerMarginLeftPx(
@@ -119,6 +121,7 @@
   const zoomFactor = selectZoomFactor();
   const counterScale = selectCounterScale();
   const workspaceItems = selectWorkspaceItems();
+  const windowGuestSession$ = selectWindowGuestSession();
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -152,6 +155,7 @@
   onMount(() => reducedMotion.cleanup);
   // Build display text for the search bar - show focused tab title and workspace
   const displayText = $derived.by(() => {
+    if (page.url.pathname === '/') return m.home_page_title();
     if (focusedTab?.title && workspace?.title) {
       return `${focusedTab.title} — ${workspace.title}`;
     }
@@ -166,7 +170,10 @@
 
   // Update the native window title when displayText changes
   $effect(() => {
-    const title = displayText || 'Intent';
+    const workspaceTitle = displayText || 'Intent';
+    const title = $windowGuestSession$
+      ? `${workspaceTitle} [${formatGuestSessionLabel($windowGuestSession$)}]`
+      : workspaceTitle;
     // Update the native window title via IPC
     invoke(IPC_CHANNELS.WINDOW.SET_TITLE, { title }).catch(() => {
       // Silently ignore errors (e.g., if not in Electron context)
@@ -230,7 +237,7 @@
         aria-hidden="true"
       ></div>
       <div
-        class="titlebar-fixed-controls flex min-w-0 items-center gap-1"
+        class="titlebar-fixed-controls flex min-w-0 self-end items-end gap-1"
         bind:this={fixedControlsEl}
         data-titlebar-fixed-controls
       >
@@ -284,7 +291,7 @@
 <style>
   .window-title-bar-wrapper {
     position: relative;
-    z-index: 50;
+    z-index: var(--layer-chrome);
     overflow: visible;
     background: transparent;
     -webkit-app-region: drag;
@@ -301,7 +308,7 @@
     align-items: center;
     /* border-bottom: 1px solid hsl(var(--border) / 0.5); */
     position: relative;
-    z-index: 50;
+    z-index: var(--layer-chrome);
     padding-top: 2px;
     --titlebar-control-shift: 0px;
     -webkit-app-region: drag;

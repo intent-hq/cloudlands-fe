@@ -3,11 +3,10 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import SuggestedPrompts from '../SuggestedPrompts.svelte';
 import {
+  CHAT_OPERATIONAL_ICON_CLASS,
   CHAT_OPERATIONAL_LEADING_CLASS,
   OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS,
   OPERATIONAL_ROW_TONE_CLASS,
@@ -16,7 +15,7 @@ import {
 const { handleLinkMock } = vi.hoisted(() => ({ handleLinkMock: vi.fn() }));
 
 vi.mock('svelte-fa', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/FaIcon.svelte')).default,
 }));
 
 vi.mock('$features/navigation/link-handler', () => ({
@@ -109,9 +108,11 @@ describe('SuggestedPrompts', () => {
     expect(icon.className).toContain('mt-px');
     expect(icon.className).toContain('self-start');
     expect(icon.className).not.toContain('/60');
-    const source = readFileSync(resolve('src/lib/components/chat/SuggestedPrompts.svelte'), 'utf8');
-    expect(source).toContain('size={16} class={CHAT_OPERATIONAL_ICON_CLASS}');
-    expect(source).not.toContain('size={18} class={CHAT_OPERATIONAL_ICON_CLASS}');
+    const glyph = icon.querySelector('svg')!;
+    expect(glyph.getAttribute('data-size')).toBe('16');
+    for (const className of CHAT_OPERATIONAL_ICON_CLASS.split(' ')) {
+      expect(glyph.classList.contains(className)).toBe(true);
+    }
   });
 
   it('removes row gaps and tightens padding in short chat panels', () => {

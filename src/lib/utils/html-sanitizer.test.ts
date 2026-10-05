@@ -5,6 +5,35 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeMarkdownHTML } from './html-sanitizer';
 
 describe('html-sanitizer', () => {
+  it.each(['readme.md:17', 'readme.md:17:4', 'report%20final.md:23'])(
+    'makes a bare filename location an explicit relative link: %s',
+    (href) => {
+      const element = document.createElement('div');
+      element.innerHTML = sanitizeMarkdownHTML(`<a href="${href}">open</a>`);
+      expect(element.querySelector('a')?.getAttribute('href')).toBe(`./${href}`);
+    },
+  );
+
+  it.each([
+    'javascript:alert(1)',
+    'javascript:foo.md:17',
+    'JaVaScRiPt:foo.md:17',
+    'java&#10;script:foo.md:17',
+    'data:text/html,foo.md:17',
+    'vbscript:foo.md:17',
+    'custom:foo.md:17',
+  ])('does not admit a URL scheme with filename-like content: %s', (href) => {
+    const element = document.createElement('div');
+    element.innerHTML = sanitizeMarkdownHTML(`<a href="${href}">open</a>`);
+    expect(element.querySelector('a')?.hasAttribute('href')).toBe(false);
+  });
+
+  it('does not apply filename normalization to media sources', () => {
+    const element = document.createElement('div');
+    element.innerHTML = sanitizeMarkdownHTML('<img src="readme.md:17">');
+    expect(element.querySelector('img')?.hasAttribute('src')).toBe(false);
+  });
+
   it.each([
     ['cross-workspace', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
     ['unknown workspace', 'workspace-asset://ws-abc/demo.mp4', undefined],

@@ -164,7 +164,7 @@ describe('hardwareConsoleDeviceSaga', () => {
     expect(mocks.installToasts).toHaveBeenCalledWith(mocks.manager, {
       isOwner: expect.any(Function),
     });
-    expect(getSubscriberCount()).toBe(2);
+    expect(getSubscriberCount()).toBe(3);
 
     task.cancel();
     await task.toPromise();
@@ -199,6 +199,7 @@ describe('hardwareConsoleDeviceSaga', () => {
     await vi.waitFor(() => expect(mocks.manager.start).toHaveBeenCalledTimes(1));
     expect(getState().hardwareConsole.enabled).toBe(true);
     expect(getState().hardwareConsole.enabledHydrated).toBe(true);
+    expect(getState().hardwareConsole.enabledHydrationSucceeded).toBe(false);
     task.cancel();
     await task.toPromise();
   });

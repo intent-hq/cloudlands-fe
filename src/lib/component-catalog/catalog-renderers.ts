@@ -24,6 +24,8 @@ const RowsCatalogPreview = () => import('./renderers/RowsCatalogPreview.svelte')
 const FieldsCatalogPreview = () => import('./renderers/FieldsCatalogPreview.svelte');
 const ScreenStatesCatalogPreview = () => import('./renderers/ScreenStatesCatalogPreview.svelte');
 const PatternCatalogPreview = () => import('./renderers/PatternCatalogPreview.svelte');
+const PrincipalAvatarCatalogPreview = () =>
+  import('./renderers/PrincipalAvatarCatalogPreview.svelte');
 const SubscriptionRowsCatalogPreview = () =>
   import('./renderers/SubscriptionRowsCatalogPreview.svelte');
 
@@ -59,6 +61,7 @@ const catalogRendererIds = [
   'modals',
   'model-picker',
   'notify',
+  'principal-avatar',
   'proximity-highlight',
   'popovers',
   'rows',
@@ -144,6 +147,7 @@ export const catalogRenderers = {
   rows: RowsCatalogPreview,
   screen: PatternCatalogPreview,
   'screen-states': ScreenStatesCatalogPreview,
+  'principal-avatar': PrincipalAvatarCatalogPreview,
   'proximity-highlight': ProximityHighlightCatalogPreview,
   'radio-group': ChoiceGroupCatalogPreview,
   'scroll-area': NavigationHelpCatalogPreview,

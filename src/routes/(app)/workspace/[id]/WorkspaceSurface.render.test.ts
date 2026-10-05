@@ -1,8 +1,10 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
+  state: {} as Record<string, unknown>,
   loadState: { status: 'idle', error: null } as {
     status: 'idle' | 'loading' | 'cached-ready' | 'optimistic' | 'ready' | 'not-found' | 'error';
     error: null | { kind: 'not_found' | 'error'; message: string };
@@ -10,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   workspace: null as null | { id: string; title: string },
   guestSession: null as null | { id: string; label: string },
   hidesAgentLifecycleActions: false,
+  sidebarSide: 'left' as 'left' | 'right',
   dispatch: vi.fn(),
   usePanelShortcuts: vi.fn(),
 }));
@@ -25,7 +28,11 @@ const mockPart = vi.hoisted(() => (marker: string) => async () => {
   };
 });
 
-vi.mock('$store/renderer/store', () => ({ store: { state: {}, dispatch: mocks.dispatch } }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => mocks.state, dispatch: mocks.dispatch });
+});
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
@@ -88,7 +95,7 @@ vi.mock('$store/renderer/slices/setup-prompt/setup-prompt-selectors', () => ({
 vi.mock('$lib/utils/boot-route-gate', () => ({ isBootRouteLoad: () => false }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectPanelVisibilityFlag: { select: () => true },
-  selectSidebarSide: () => readable('left'),
+  selectSidebarSide: () => readable(mocks.sidebarSide),
 }));
 vi.mock('$store/renderer/slices/app-layout/app-layout-selectors', () => ({
   selectPendingCommandPaletteAction: () => readable(null),
@@ -112,9 +119,6 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
 }));
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-slice', () => ({
   createNoteRequested: action('notes/createNoteRequested'),
-}));
-vi.mock('$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice', () => ({
-  workspaceLoadRequested: action('workspace-lifecycle/workspaceLoadRequested'),
 }));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-slice', () => ({
   setOnboardingActive: action('sidebarNav/setOnboardingActive'),
@@ -140,6 +144,7 @@ vi.mock('$lib/components/workspace/WorkspaceModals.svelte', mockPart('modals'));
 vi.mock('$lib/components/modals/InputDialog.svelte', mockPart('input-dialog'));
 vi.mock('$lib/components/terminal/QuakeTerminalOverlay.svelte', mockPart('quake-terminal'));
 vi.mock('$features/onboarding/OnboardingPage.svelte', mockPart('onboarding'));
+vi.mock('$lib/components/workspace/CompactWorkspaceInitializer.svelte', mockPart('initializer'));
 vi.mock('$features/guest-sessions/GuestEmptyState.svelte', mockPart('guest-empty-state'));
 vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
   selectWindowGuestSession: () => readable(mocks.guestSession),
@@ -168,10 +173,12 @@ function renderHost(workspaceId = 'workspace-1') {
 
 afterEach(cleanup);
 beforeEach(() => {
+  mocks.state = withLegacyPrincipal({});
   mocks.loadState = { status: 'idle', error: null };
   mocks.workspace = null;
   mocks.guestSession = null;
   mocks.hidesAgentLifecycleActions = false;
+  mocks.sidebarSide = 'left';
   mocks.dispatch.mockClear();
   mocks.usePanelShortcuts.mockClear();
 });
@@ -225,6 +232,7 @@ describe('WorkspaceSurface zero-workspace route (/workspace/new)', () => {
 
   it('shows the guest empty state instead of onboarding in a guest window and keeps the nav (multiplayer w4)', () => {
     mocks.guestSession = { id: 'guest-1', label: 'studio.local' };
+    mocks.state = withLegacyPrincipal({}, 'guest');
     const { container } = renderHost('new');
     expect(
       container.querySelector('[data-workspace-surface-part="guest-empty-state"]'),
@@ -311,6 +319,61 @@ describe('WorkspaceSurface terminal shell boundary', () => {
       ).toHaveLength(1);
     },
   );
+
+  it.each(['left', 'right'] as const)(
+    'hands the store-owned %s sidebar side to the workspace layout',
+    (side) => {
+      mocks.sidebarSide = side;
+      mocks.loadState = { status: 'ready', error: null };
+      mocks.workspace = { id: 'workspace-valid', title: 'Valid workspace' };
+      const { container } = renderHost();
+      expect(
+        container.querySelector('[data-workspace-layout]')?.getAttribute('data-sidebar-side'),
+      ).toBe(side);
+    },
+  );
+
+  it('keys the sidebar and panel tree layouts by the domain workspace ID', async () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-valid', title: 'Valid workspace' };
+    const view = renderHost('workspace-valid');
+    const layoutIds = () =>
+      ['valid-sidebar', 'valid-panel-layout'].map((part) =>
+        view.container
+          .querySelector(`[data-workspace-surface-part="${part}"]`)
+          ?.getAttribute('data-layout-id'),
+      );
+    expect(layoutIds()).toEqual(['workspace-valid', 'workspace-valid']);
+
+    mocks.workspace = { id: 'workspace-other', title: 'Other workspace' };
+    await view.rerender({ workspaceId: 'workspace-other' });
+    expect(layoutIds()).toEqual(['workspace-other', 'workspace-other']);
+  });
+
+  it('scopes the route context to the explicit workspace ID and remounts on switches', async () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-a', title: 'A' };
+    const view = renderHost('workspace-a');
+    const routeWorkspaceId = () =>
+      view.container
+        .querySelector('[data-workspace-surface-part="valid-panel-layout"]')
+        ?.getAttribute('data-route-workspace-id');
+    expect(routeWorkspaceId()).toBe('workspace-a');
+
+    // The provider freezes its context at mount, so only a remount can move it.
+    mocks.workspace = { id: 'workspace-b', title: 'B' };
+    await view.rerender({ workspaceId: 'workspace-b' });
+    expect(routeWorkspaceId()).toBe('workspace-b');
+  });
+
+  it('exposes a null route context for the onboarding route', () => {
+    const { container } = renderHost('new');
+    expect(
+      container
+        .querySelector('[data-workspace-surface-part="onboarding"]')
+        ?.getAttribute('data-route-workspace-id'),
+    ).toBe('null');
+  });
 
   it('keeps optimistic presentation in the shell without a loaded sidebar', () => {
     mocks.loadState = { status: 'optimistic', error: null };

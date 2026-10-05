@@ -12,7 +12,7 @@
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { untrack, onMount, onDestroy } from 'svelte';
+  import { untrack, onMount, onDestroy, tick } from 'svelte';
   import { createTaskAgentStatusMountManager } from './note-with-comments/task-agent-status-mount-manager';
   import { runAssignAgentTaskMenuAction } from './note-with-comments/task-menu-assign-agent-action';
   import {
@@ -61,11 +61,10 @@
   import { Editor } from '@tiptap/core';
   import { NoteId } from '$shared/types/branded-ids';
 
-  import { selectComments } from '$store/renderer/slices/comments/comments-selectors';
+  import { selectCommentsForNote } from '$store/renderer/slices/comments/comments-selectors';
   import {
     selectCommentAction,
     updateCommentAction,
-    clearCommentsAction,
   } from '$store/renderer/slices/comments/comments-slice';
 
   import { createEditorConfig } from '$lib/utils/editor-config';
@@ -114,7 +113,6 @@
   const logger = createLogger('NoteWithComments');
   const noteFontStyle = selectNoteFontStyle();
   const spellcheckEnabled = selectSpellcheckEnabled();
-  const allComments$ = selectComments();
 
   // --- Markdown paste detection helpers ---
 
@@ -521,6 +519,9 @@
 
   let isInitialized = $state(false);
   let isInitializing = $state(true);
+  let isLayingOutDiagrams = $state(true);
+  let isNoteLoading = $derived(isInitializing || isLayingOutDiagrams);
+  let editorToFocus = $state<Editor | null>(null);
 
   // Streaming-in animation state: triggers a cascading reveal
   // when a newly created note first loads
@@ -571,6 +572,7 @@
 
   // Get the current note for task metadata (reactive via Redux selector)
   const currentNote$ = selectNoteById(workspaceIdStore, noteIdStore);
+  const noteComments$ = selectCommentsForNote(workspaceIdStore, noteIdStore);
   const currentNote = $derived($currentNote$ ?? null);
   const rawNoteViewEnabled$ = selectIsRawNoteViewEnabled(workspaceIdStore, noteIdStore);
   // Both task-menu actions launch an agent; the popovers are withheld
@@ -580,6 +582,87 @@
   let shouldShowRawNoteView = $derived(
     isRawNoteViewEnabled && !isInitializing && !isTooLargeForRichEditor,
   );
+
+  $effect(() => {
+    if (!element || isInitializing) {
+      isLayingOutDiagrams = true;
+      return;
+    }
+    if (isTooLargeForRichEditor || shouldShowRawNoteView) {
+      isLayingOutDiagrams = false;
+      return;
+    }
+
+    const observer = new MutationObserver(revealSettledNote);
+    function revealSettledNote() {
+      const diagrams = element.querySelectorAll('.node-mermaidBlock, .node-diagram_block');
+      const ready = [...diagrams].every(
+        (diagram) =>
+          diagram
+            .querySelector('[data-diagram-presentation]')
+            ?.getAttribute('data-diagram-presentation-settled') === 'true' &&
+          !diagram.querySelector(
+            '[data-render-settled="false"], [data-diagram-settled="false"], [data-diagram-presentation-initializing="true"]',
+          ),
+      );
+      if (!ready) return;
+      isLayingOutDiagrams = false;
+      // Later edits and panel resizing must not hide an already readable note.
+      observer.disconnect();
+    }
+    observer.observe(element, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        'data-diagram-presentation-settled',
+        'data-diagram-presentation-initializing',
+        'data-render-settled',
+        'data-diagram-settled',
+      ],
+    });
+    revealSettledNote();
+    return () => observer.disconnect();
+  });
+
+  $effect(() => {
+    const currentNoteId = noteId;
+    const workspaceId = workspace.id;
+    if (isNoteLoading || !currentNoteId) return;
+    const newlyCreated = untrack(() => {
+      if (selectNewlyCreatedNoteId.select(appStore.state, workspaceId) !== currentNoteId)
+        return false;
+      appStore.dispatch(clearNewlyCreatedNoteId(workspaceId));
+      return true;
+    });
+    if (!newlyCreated || isTooLargeForRichEditor || shouldShowRawNoteView) return;
+
+    isStreamingIn = true;
+    const timer = setTimeout(() => {
+      isStreamingIn = false;
+    }, 900);
+    return () => {
+      clearTimeout(timer);
+      isStreamingIn = false;
+    };
+  });
+
+  $effect(() => {
+    const target = editorToFocus;
+    if (!target || isNoteLoading || isTooLargeForRichEditor || shouldShowRawNoteView) return;
+    editorToFocus = null;
+    void tick().then(() => {
+      if (
+        !isComponentDestroyed &&
+        editor === target &&
+        !target.isDestroyed &&
+        shouldFocus &&
+        editable
+      ) {
+        target.commands.focus('end');
+      }
+    });
+  });
 
   // Reactive selector subscriptions at component init time
 
@@ -667,7 +750,7 @@
     // 2. There are actual comments to display (not resolved and not replies)
     if (!showComments) return false;
 
-    const activeComments = $allComments$.filter((c) => c.status !== 'resolved' && !c.parentId);
+    const activeComments = $noteComments$.filter((c) => c.status !== 'resolved' && !c.parentId);
     return activeComments.length > 0;
   });
 
@@ -1264,16 +1347,7 @@
 
     // Focus the editor if requested (e.g., when creating a new note)
     if (shouldFocus && editable) {
-      // Wait for editor to be fully initialized before focusing
-      setTimeout(() => {
-        try {
-          if (editor && !editor.isDestroyed && editor.view) {
-            editor.commands.focus('end');
-          }
-        } catch {
-          // Editor view may not be fully mounted yet - safe to ignore
-        }
-      }, 100);
+      editorToFocus = editor;
     }
 
     // Add click handler for comment marks (wait for view to be ready)
@@ -1471,8 +1545,7 @@
       isRestorePending = false;
       lastSafetyNetSyncedContent = undefined;
 
-      // Clear comments from previous note and reset decorations immediately
-      appStore.dispatch(clearCommentsAction());
+      // The scoped selector changes owners; retain cached comments for concurrent views.
       if (editor) {
         try {
           updateCommentDecorations(editor.view);
@@ -1982,20 +2055,6 @@
             isInitializing = false;
             isInitialized = true;
 
-            // Trigger streaming-in animation when a note was just created
-            if (
-              noteId &&
-              selectNewlyCreatedNoteId.select(appStore.state, workspace.id) === noteId
-            ) {
-              isStreamingIn = true;
-              // Clear the store flag so it doesn't re-trigger
-              appStore.dispatch(clearNewlyCreatedNoteId(workspace.id));
-              // Clear the animation flag after the animation completes
-              setTimeout(() => {
-                isStreamingIn = false;
-              }, 900);
-            }
-
             // Check for pending scroll position after editor is fully ready
             checkAndRestoreScrollPosition();
 
@@ -2116,7 +2175,7 @@
   {/if}
 
   <!-- Editor Container -->
-  <div class="editor-container flex relative flex-1 overflow-hidden">
+  <div class="editor-container flex flex-col min-h-0 relative flex-1 overflow-hidden">
     <!-- Version History View -->
     <section
       class="note-content-container flex-1 pt-6 overflow-y-auto"
@@ -2167,8 +2226,8 @@
         {/if}
 
         <!-- Loading skeleton shown while editor content is being processed -->
-        {#if isInitializing}
-          <div class="w-full p-4 space-y-4">
+        {#if isNoteLoading}
+          <div class="absolute inset-x-0 top-0 p-4 space-y-4" aria-hidden="true">
             <Skeleton class="h-8 w-3/4" />
             <Skeleton class="h-4 w-full" />
             <Skeleton class="h-4 w-5/6" />
@@ -2213,10 +2272,12 @@
           class="tiptap-editor-wrapper justify-center pb-32!"
           class:with-comments={hasActiveComments}
           class:is-dragging={isDragging}
-          class:opacity-0={isInitializing || isTooLargeForRichEditor || shouldShowRawNoteView}
-          class:absolute={isInitializing || isTooLargeForRichEditor || shouldShowRawNoteView}
+          class:opacity-0={isNoteLoading || isTooLargeForRichEditor || shouldShowRawNoteView}
+          class:absolute={isTooLargeForRichEditor || shouldShowRawNoteView}
           class:invisible={isTooLargeForRichEditor || shouldShowRawNoteView}
           class:streaming-in={isStreamingIn}
+          inert={isNoteLoading || isTooLargeForRichEditor || shouldShowRawNoteView}
+          aria-busy={isNoteLoading}
           onpaste={handleImagePaste}
           ondrop={handleDrop}
           ondragenter={handleDragEnter}
@@ -2256,7 +2317,7 @@
             {editor}
             {workspace}
             editorWrapper={element}
-            comments={$allComments$}
+            comments={$noteComments$}
             onResolve={handleResolveComment}
             onAccept={(id) => appStore.dispatch(updateCommentAction(id, { status: 'accepted' }))}
             onReject={(id) => appStore.dispatch(updateCommentAction(id, { status: 'rejected' }))}

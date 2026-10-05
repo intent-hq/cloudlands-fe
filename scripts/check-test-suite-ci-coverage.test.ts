@@ -55,7 +55,6 @@ const FOLDED_NEWLINE = /([^\n])\n(?=[^\n])/g;
 const SCRIPT_NAME = /^[\w:.-]+$/;
 const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LAUNCHER = /^scripts\/[\w./-]+$/;
-const RUNNERS = ['vitest', 'playwright'] as const;
 /** Commands that run the rest of their line as the command. */
 const WRAPPERS = new Set(['cross-env', 'env', 'xvfb-run', 'corepack']);
 /** Commands that run the bins named after them. */
@@ -66,7 +65,7 @@ const SHELLS = new Set(['sh', 'bash']);
 const PLAIN_WORD = /^[\w@%+=:,./-]+$/;
 const MAX_SCRIPT_HOPS = 16;
 
-type Runner = (typeof RUNNERS)[number];
+type Runner = 'vitest' | 'playwright';
 type Scripts = Record<string, string>;
 type Reader = (path: string) => string | undefined;
 /** One package-script call with the args pnpm forwards to it. */
@@ -82,10 +81,22 @@ interface Word {
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
+  'test/fixtures/native-review-native/playwright.config.ts':
+    '2026-09-29: manual Electron native-client proof requiring explicit evidence, digest-pinned 5bed0a98 composed driver and private lifetime pipe/display/profiles/two hosts; provider API is loopback HTTP and Git is verified HTTPS; normal provider TLS and hosted CI remain unproven',
+  'test/fixtures/repository-route/playwright.config.ts':
+    '2026-09-29: opt-in disposable Electron/generated-preload harness with fixture authority, not the accepted daemon; requires a private display and profiles, with hosted CI provisioning and execution pending',
+  'test/fixtures/repository-context-native/playwright.config.ts':
+    '2026-09-29: opt-in Electron integration requiring an explicit evidence path, the digest-pinned 82ca038d normal daemon and private disposable two-daemon/display/profiles; hosted CI provisioning and execution pending',
+  'test/fixtures/repository-selection-native/playwright.config.ts':
+    '2026-09-29: opt-in Electron selection integration requiring an explicit evidence path, the digest-pinned 410a7447 normal daemon and private disposable two-host/display/profiles; hosted CI provisioning and execution pending',
+  'playwright-ct-lifetime.config.ts':
+    '2026-09-25: opt-in browser lifetime comparison for intent-hq/intent#5481; deliberately timed-out tests verify cancellation and late responses with explicitly identified diagnostic browsers',
+  'playwright-ct-evidence.config.ts':
+    '2026-09-25: opt-in intentional first-attempt failure for intent-hq/intent#5481; proves artifact retention and a red strict-flaky exit after a passing retry, so it cannot run in the passing CI lane',
   'src/lib/components/ui/card/operate-patterns.playwright.config.ts':
     '2026-09-21: intentionally manual visual harness; its spec renders Operate pattern contact sheets into a dated .demo-artifacts/ directory for human review, with no checked-in baselines to compare against in CI',
-  'e2e/build-smoke.config.ts':
-    '2026-09-21, provisional: needs a packaged app; the follow-up PR "Run the build-smoke suite from a nightly/dispatch Linux workflow" wires it and removes this entry',
+  'vitest.text-rebase-bench.config.ts':
+    '2026-09-23: local-only text-rebase benchmark; it times createBidirectionalOffsetMapper over the shapes corpus for a head-vs-base comparison on one host and writes JSON, with no assertion CI could check and timings CI runners could not reproduce',
 });
 
 const normalizePath = (value: string) => posix.normalize(value.replaceAll('\\', '/'));

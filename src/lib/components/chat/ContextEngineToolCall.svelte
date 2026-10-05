@@ -26,6 +26,7 @@
     result?: any;
     adjacentOperationalRow?: boolean;
     /** Called on expand — the parent dispatches lazy block hydration (§5.5). */
+    saved?: { expanded?: boolean };
     onExpand?: () => void;
   }
 
@@ -34,6 +35,7 @@
     toolState = 'completed',
     result = null,
     adjacentOperationalRow = false,
+    saved,
     onExpand,
   }: Props = $props();
 
@@ -43,7 +45,8 @@
       : null,
   );
 
-  let expanded = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let expanded = $state(saved?.expanded ?? false);
   const detailsId = $derived(`context-engine-details-${toolUse.id}`);
 
   // Determine the source type (codebase vs commit history)
@@ -97,6 +100,7 @@
   function toggleExpanded() {
     if (!isExpandable) return;
     expanded = !expanded;
+    if (saved) saved.expanded = expanded;
     // Expanding a slim-truncated row triggers the on-demand full-block fetch
     // (no-op for under-budget rows: the parent's truncated id list is empty).
     if (expanded) onExpand?.();

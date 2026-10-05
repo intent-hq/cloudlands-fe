@@ -52,6 +52,8 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
 
 vi.mock('../main/browser-capture-service', () => ({
   browserCapture: {
+    assertSessionOwner: vi.fn(),
+    readCapture: vi.fn(),
     snapshot: vi.fn(),
     startSession: vi.fn(),
     endSession: vi.fn(),
@@ -1153,6 +1155,84 @@ describe('browser-action-executor', () => {
   // openTab registration await (RC3, intent-hq/monorepo#2756)
   // ===========================================================================
   describe('openTab registration await', () => {
+    it.each([false, true])(
+      'awaits daemon registration before the next action (reuse: %s)',
+      async (reuse) => {
+        const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
+        if (reuse)
+          vi.mocked(embeddedBrowserCdp.findModelTabByExactUrl).mockResolvedValueOnce('tab-new');
+        let acknowledge!: (registered: boolean) => void;
+        let requested!: () => void;
+        const started = new Promise<void>((resolve) => {
+          requested = resolve;
+        });
+        const waitForRegistry = vi.fn(() => {
+          requested();
+          return new Promise<boolean>((resolve) => {
+            acknowledge = resolve;
+          });
+        });
+        const finished = vi.fn();
+        const pending = executeActions(
+          {
+            actions: [
+              { action: 'openTab', url: 'http://example.com' },
+              { action: 'closeTab', tabId: 'tab-new' },
+            ],
+          },
+          vi.fn().mockReturnValue({ success: true, message: 'opened', tabId: 'tab-new' }),
+          'agent-1',
+          'ws-1',
+          undefined,
+          undefined,
+          Date.now() + 1_000,
+          waitForRegistry,
+        ).then(finished);
+        await started;
+        expect(finished).not.toHaveBeenCalled();
+        expect(embeddedBrowserCdp.closeTab).not.toHaveBeenCalled();
+        vi.mocked(embeddedBrowserCdp.resolveTabOwner).mockResolvedValueOnce('agent-1');
+        acknowledge(true);
+        await pending;
+        expect(finished.mock.calls[0][0].success).toBe(true);
+        expect(embeddedBrowserCdp.closeTab).toHaveBeenCalled();
+      },
+    );
+
+    it('turns a rejected daemon registration read into an action failure', async () => {
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }] },
+        vi.fn().mockReturnValue({ success: true, message: 'opened', tabId: 'tab-new' }),
+        undefined,
+        'ws-1',
+        undefined,
+        undefined,
+        undefined,
+        vi.fn().mockRejectedValue(new Error('disconnected')),
+      );
+      expect(result.success).toBe(false);
+      expect(result.results[0]?.error).toContain('daemon browser registry');
+    });
+
+    it('does not report local webview registration as success when the daemon cannot find the tab', async () => {
+      const waitForRegistry = vi.fn().mockResolvedValue(false);
+      const result = await executeActions(
+        { actions: [{ action: 'openTab', url: 'http://example.com' }, { action: 'listTabs' }] },
+        vi.fn().mockReturnValue({ success: true, message: 'opened', tabId: 'tab-new' }),
+        undefined,
+        'ws-1',
+        undefined,
+        undefined,
+        undefined,
+        waitForRegistry,
+      );
+      expect(result.success).toBe(false);
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0]).toMatchObject({ success: false, result: { tabId: 'tab-new' } });
+      expect(result.results[0]?.error).toContain('daemon');
+      expect(waitForRegistry).toHaveBeenCalledWith('tab-new', undefined);
+    });
+
     it('awaits registration of the returned tabId before reporting success', async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       vi.mocked(embeddedBrowserCdp.waitForTabRegistration).mockResolvedValueOnce(true);
@@ -1340,7 +1420,11 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
-      expect(browserCapture.getSummary).toHaveBeenCalledWith('workspace-a', 'example.test/snap');
+      expect(browserCapture.getSummary).toHaveBeenCalledWith(
+        'workspace-a',
+        'example.test/snap',
+        'agent-1',
+      );
     });
 
     it('requires trusted workspace context for session operations', async () => {

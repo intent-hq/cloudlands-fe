@@ -155,7 +155,8 @@
               bind:value={editedTitle}
               onblur={saveTitle}
               onkeydown={handleTitleKeydown}
-              class="edit-input relative z-10 text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
+              noFocusStyle
+              class="edit-input relative z-10 text-sm font-medium bg-transparent hover:bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
               style="field-sizing: content;"
             />
           {:else}

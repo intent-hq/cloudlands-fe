@@ -14,8 +14,9 @@
 
 import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import type { AgentMessage, MessageAuthor } from './agent-message';
+import type { AgentMessage, MessageAuthor, SubmissionCorrelation } from './agent-message';
 import { AgentStatus } from './agent.types';
+import type { AgentNodeFields } from './agent-node';
 import type { AgentMetadata } from '../types';
 
 /**
@@ -34,7 +35,9 @@ export interface QueuedMessageContextItem {
  * A message queued to be sent to an agent.
  * Stored in backend to survive workspace switches.
  */
-export interface QueuedMessage {
+export interface QueuedMessage extends SubmissionCorrelation {
+  /** Exact full-snapshot permission to predict same-principal append, not mutation authority. */
+  mergeEligible?: boolean;
   /** Unique identifier for this queued message */
   id: string;
   /**
@@ -68,6 +71,11 @@ export interface QueuedMessage {
    * and skips it during queue drain. Only included in responses when true.
    */
   editing?: boolean;
+  /** Original active edit identity when a held entry was absorbed into this survivor. */
+  editingMessageId?: string;
+  /** Server hold marker; readiness resumes at holdUntil. */
+  holdKind?: string;
+  holdUntil?: string;
   /**
    * Optional terminal-failure requeue marker (STAB-112). When true, this message
    * was requeued after a terminal provider failure and should be visually distinguished
@@ -88,7 +96,9 @@ export interface QueuedMessage {
   /**
    * Serve-time projection of the principal that enqueued the entry
    * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
-   * stamp. Authoritative when present: `null` means the principal row is
+   * stamp, or a portable human snapshot with principalId:null and no local
+   * admission. Portable display does not change queue edit/send authority.
+   * Authoritative when present: `null` means the principal row is
    * gone (no author, no fallback). Absent on older daemons, where the queue
    * surface falls back to the projections the transcript already carries.
    */
@@ -141,6 +151,35 @@ export interface AgentScopeCounts {
   background: number;
 }
 
+/** One parent's direct non-retired children: `total` rows, `running` of them mid-turn. */
+export interface AgentDelegatedParentCounts {
+  total: number;
+  running: number;
+}
+
+/**
+ * Per-parent counts of the workspace's non-retired DELEGATED sessions, served
+ * as `delegatedCounts` on every `agent.list` response (§5.5). `running` is the
+ * workspace-wide running delegated count (persisted status `pending` /
+ * `active` / legacy `Processing`); `byParent` keys are raw `parentAgentId`
+ * values — a parent with no non-retired children has NO entry, and a key may
+ * name a parent outside this workspace (cross-workspace delegation). Invariant
+ * daemon-side: `Σ byParent[*].total === scopeCounts.delegated`. Absent on
+ * older daemons.
+ *
+ * `orphaned` counts the delegated rows whose parent is NOT a non-retired
+ * session of the same workspace (parent deleted, retired, or absent); a child
+ * of an orphan is not itself an orphan. Presence-detected: a daemon that
+ * serves it does so on every response (`{ total: 0, running: 0 }` when none,
+ * `total ≤ scopeCounts.delegated`); a daemon predating it omits the field and
+ * ignores the `orphanedOnly` list param, so it is never defaulted here.
+ */
+export interface AgentDelegatedCounts {
+  running: number;
+  byParent: Record<string, AgentDelegatedParentCounts>;
+  orphaned?: AgentDelegatedParentCounts;
+}
+
 /**
  * Canonical AgentSession interface
  *
@@ -150,7 +189,7 @@ export interface AgentScopeCounts {
  * MIGRATION NOTE: The old `sessionId` field has been renamed to `backendSessionId`
  * for clarity. Use `backendSessionId` for new code.
  */
-export interface AgentSession {
+export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
   /** The agent's unique identifier */
   id: AgentId;
@@ -423,6 +462,14 @@ export interface AgentSession {
    */
   waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
 
+  /** Active script-run watches (§5.8a), omitted by the daemon when empty. */
+  waitingOnScriptMonitors?: Array<{
+    monitorId: string;
+    scriptId: string;
+    runId: string;
+    scriptName: string;
+    expiresAt: string;
+  }>;
   /**
    * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
    * companion for centralized PR monitoring (§5.42): light metadata for the
@@ -571,7 +618,8 @@ export function isPendingAgentSession(
 /**
  * Resolve the provider for an agent session, with fallback chain.
  * Checks top-level `provider`, then `metadata.provider`, then `config.provider`.
- * Filters out the legacy 'acp' value (protocol name, not a real provider).
+ * Explicit identities, including historical aliases, are preserved verbatim.
+ * Renderer consumers resolve aliases against the daemon's provider catalog.
  * Falls back to inferring provider from the model ID if available —
  * `defaultProviderId` (the settings-derived effective default provider)
  * attributes bare model ids.
@@ -581,10 +629,9 @@ export function getAgentProvider(
   defaultProviderId: string,
 ): string | undefined {
   const explicit =
-    session.provider ?? session.metadata?.provider ?? (session as any).config?.provider;
+    session.provider || session.metadata?.provider || (session as any).config?.provider;
 
-  // 'acp' is the protocol name, not a provider ID -- treat it as unset
-  if (explicit && explicit !== 'acp') {
+  if (explicit) {
     return explicit;
   }
 

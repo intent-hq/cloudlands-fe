@@ -42,8 +42,62 @@ import { DirectRelay } from '../../backend/main/direct-relay';
 import { TunnelManager } from '../../backend/main/tunnel-manager';
 import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { LOCAL_CONNECTION_ID } from '../../../shared/types/connections';
+import type { BrowserTabListing } from '../../../shared/types/browser-clients';
 
 const logger = new Logger('BrowserIPC');
+
+/** Confirm renderer reporting reached the same daemon that will route follow-up actions. */
+async function waitForDaemonTab(
+  context: BrowserExecutionBackendContext,
+  workspaceId: string | undefined,
+  tabId: string,
+  agentId: string | undefined,
+  deadline?: number,
+): Promise<boolean> {
+  if (!workspaceId) return false;
+  // This identity represents the client's acknowledged socket/hello lifetime.
+  const connection = context.client.getRepositoryConnection();
+  if (!connection) return false;
+  const expires = Math.min(deadline ?? Infinity, Date.now() + 5_000);
+  while (Date.now() < expires) {
+    const timeoutMs = expires - Date.now();
+    if (timeoutMs <= 0) return false;
+    const { tabs } = await context.client.requestOnCapturedConnection<{
+      tabs: BrowserTabListing[];
+    }>(connection, 'browser.listTabs', { workspaceId }, { timeoutMs });
+    if (context.client.getRepositoryConnection() !== connection) return false;
+    if (
+      tabs.some(
+        (tab) =>
+          tab.tabId === tabId &&
+          tab.workspaceId === workspaceId &&
+          tab.hostConnected &&
+          (!agentId || tab.ownerAgentId === agentId),
+      )
+    ) {
+      // A local close can overtake the daemon listing. Refresh the layout,
+      // within the same budget, before confirming that row is still usable.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const local = await Promise.race([
+        embeddedBrowserCdp.listAllTabs(workspaceId),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), Math.max(0, expires - Date.now()));
+        }),
+      ]).finally(() => clearTimeout(timer));
+      return (
+        Date.now() < expires &&
+        context.client.getRepositoryConnection() === connection &&
+        !!local &&
+        !local.stale &&
+        local.tabs.some((tab) => tab.tabId === tabId && (!agentId || tab.ownerAgentId === agentId))
+      );
+    }
+    const remaining = expires - Date.now();
+    if (remaining > 0)
+      await new Promise((resolve) => setTimeout(resolve, Math.min(100, remaining)));
+  }
+  return false;
+}
 
 /**
  * Open a browser tab in the renderer.
@@ -276,8 +330,8 @@ function getBrowserTunnelProvider(
           return null;
         }
       },
-      // Read per tunnel (re)connect: CREDIT is sent only to a daemon whose
-      // hello protocolVersion advertises CREDIT support (intent-hq/intent#5482).
+      // Read before granting credit so a late reconnect hello can enable CREDIT
+      // once its protocolVersion confirms support (intent-hq/intent#5972).
       getProtocolVersion: () => getConnectedDaemonProtocolVersion(backendContext.backendId),
     });
     tunnelManagers.set(backendContext.client, tunnelManager);
@@ -410,6 +464,8 @@ export async function executeBrowserActions(
     () => getDaemonLoopbackContext(resolvedBackendContext),
     () => getOwnedBrowserTunnelProvider(resolvedBackendContext, workspaceId),
     deadline,
+    (tabId, requestDeadline) =>
+      waitForDaemonTab(resolvedBackendContext, workspaceId, tabId, agentId, requestDeadline),
   );
 }
 

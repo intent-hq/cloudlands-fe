@@ -191,11 +191,9 @@
     {#if $hasActiveFeatures$}
       <div>
         <p class="text-xs text-subtle mb-2">{m.modals_featureCode_activeFeatures_label()}</p>
-        <ul class="space-y-1">
+        <ul>
           {#each $activeFeatures$ as featureId}
-            <li
-              class="flex items-center justify-between text-sm text-subtle bg-muted/50 rounded px-2 py-1"
-            >
+            <li class="flex min-h-6 items-center justify-between gap-2 text-sm text-subtle">
               <span>{featureId}</span>
               <Button
                 variant="ghost"

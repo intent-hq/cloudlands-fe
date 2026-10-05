@@ -5,8 +5,8 @@ directories:
   buildResources: build
 
 # Code signing hooks
-# beforePack: Compiles the native macOS 26 icon resource before resources are copied
-# afterPack: Signs intentd sidecar BEFORE main app signing (prevents seal invalidation)
+# beforePack: Checks staged Mac architectures and compiles the native macOS 26 icon
+# afterPack: Checks copied Mac binaries and signs sidecar BEFORE main app signing
 # afterSign: Submits signed app to Apple for notarization
 beforePack: scripts/build-macos-icon.js
 afterPack: scripts/sign-sidecar.js
@@ -81,6 +81,12 @@ protocols:
       - intent
 
 mac:
+  # The entry point selects one native architecture per runner; no cross-builds.
+  artifactName: '${productName}-${version}-${arch}-mac.${ext}'
+  files:
+    # node-pty is rebuilt for this Electron/CPU. Never ship foreign fallback prebuilds.
+    - '!node_modules/node-pty/prebuilds/**/*'
+    - '!node_modules/node-pty/build/Debug/**/*'
   category: public.app-category.developer-tools
   icon: src/assets/icons/icon.icns
   hardenedRuntime: true
@@ -131,12 +137,8 @@ mac:
   # intentd sidecar is signed via afterPack hook (scripts/sign-sidecar.js)
   # before the main app seal is created, preventing "nested code modified" errors
   target:
-    - target: dmg
-      arch:
-        - arm64
-    - target: zip
-      arch:
-        - arm64
+    - dmg
+    - zip
 
 # Notarization configuration (requires Apple Developer account)
 # To enable notarization:
@@ -148,6 +150,7 @@ mac:
 # Or use these in afterSign hook with @electron/notarize package
 
 dmg:
+  artifactName: '${productName}-${version}-${arch}.${ext}'
   window:
     width: 540
     height: 360
@@ -163,10 +166,9 @@ dmg:
 
 win:
   icon: src/assets/icons/icon.ico
-  # Custom sign hook: uses DigiCert smctl when INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING=true,
-  # silently skips for local dev builds.
-  # electron-builder 26 moved publisherName/signingHashAlgorithms under signtoolOptions
-  # and dropped signDlls (only the executable is signed by default).
+  # Production stays unsigned; the retired hook rejects the old DigiCert flag.
+  # Manual builds explicitly select scripts/windows-builder.cjs for unsigned/Azure.
+  # Keep the existing installed updater publisher until native migration acceptance.
   signtoolOptions:
     sign: scripts/windows-sign.cjs
     publisherName: 'Clement Pang'

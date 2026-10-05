@@ -1,12 +1,12 @@
+import { beginSubmissionRead, submissionHistoryEvidence } from './submission-evidence';
+import { CHAT_PAGE_SIZE } from '$shared/constants';
+import { claimAgentReadOwnership } from './agent-read-ownership';
 /**
  * Reusable on-demand transcript read seam used by the daemon event router
  * (reconnect / event-driven refetches). `loadChatTranscript(agentId)` fetches
- * the session (`appClient.agents.get`) AND the transcript by paging through
- * `agent.getConversation` (PROTOCOL §5.5, 50 messages per page, looping
- * on `nextToken`). Paging walks from the newest page backwards and stops once
- * `MAX_MESSAGES_PER_AGENT` messages have accumulated — the agent-session slice
- * prunes to that same cap anyway, so pages past it would be fetched only
- * to be discarded (intent-hq/monorepo#2627). The daemon's
+ * the session (`appClient.agents.get`) AND one newest transcript page.
+ * Older pages are owned by the active panel's demand-driven scrollback.
+ * The daemon's
  * AgentLite projection (from `agents.get`) returns only message COUNTS, so
  * `getConversation` is the sole source of the actual message content.
  * `bulkUpsertSessions` populates the agent-session slice (`byAgentId` + messages
@@ -26,18 +26,18 @@
  * returns null we skip entirely (do not fabricate a session).
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam, the
- * configured store, the slice actions (plus its shared prune-cap constant), and
+ * configured store, the slice actions, and
  * the logger.
  */
 import type { AgentMessage } from '$shared/types';
 import { appClient } from '$lib/client';
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
 import {
   transcriptHydrationStarted,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
-  MAX_MESSAGES_PER_AGENT,
   bulkUpsertSessions,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -47,6 +47,8 @@ import { isAgentDeletionPending } from './utils/pending-agent-deletions';
 import { readAgentSession } from './agent-read-service';
 
 const logger = createLogger('ChatReadService');
+let connectionGeneration = 0;
+let lifecycleInstalled = false;
 
 /** In-flight loads keyed by agent id; coalesces concurrent requests. */
 const inFlight = new Map<string, Promise<void>>();
@@ -55,11 +57,14 @@ const inFlight = new Map<string, Promise<void>>();
 const pendingRerun = new Map<string, Promise<void>>();
 
 /** Dependency-light one-time read of the store's current transcript (no selector import). */
-function readCurrentMessages(agentId: string): AgentMessage[] {
+function readCurrentMessages(agentId: string, workspaceId?: string): AgentMessage[] {
   const state = appStore.state as {
-    agentSessions?: { byAgentId: Record<string, { messages?: AgentMessage[] }> };
+    agentSessions?: {
+      byAgentId: Record<string, { workspaceId?: string; messages?: AgentMessage[] }>;
+    };
   };
-  return state.agentSessions?.byAgentId[agentId]?.messages ?? [];
+  const session = state.agentSessions?.byAgentId[agentId];
+  return session?.workspaceId === workspaceId ? (session?.messages ?? []) : [];
 }
 
 /**
@@ -70,12 +75,24 @@ function readCurrentMessages(agentId: string): AgentMessage[] {
  * a failed read never clears an existing transcript. Concurrent calls for the
  * same agent share one fetch.
  */
-export async function loadChatTranscript(agentId: string): Promise<void> {
+export async function loadChatTranscript(agentId: string, workspaceId?: string): Promise<void> {
   // A soft-hidden deletion is pending (undo window still open): the daemon
   // still returns the agent, so hydrating would re-upsert the deleted
   // session. Skip entirely.
   if (isAgentDeletionPending(agentId)) return;
-  const pending = inFlight.get(agentId);
+  if (!lifecycleInstalled) {
+    lifecycleInstalled = true;
+    onBackendReconnected(() => {
+      connectionGeneration += 1;
+      inFlight.clear();
+      pendingRerun.clear();
+    });
+  }
+  workspaceId ??= appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  const connection = connectionGeneration;
+  const ownership = claimAgentReadOwnership(agentId, workspaceId);
+  const key = ownership.key;
+  const pending = inFlight.get(key);
   if (pending) {
     // A request arriving mid-load means the in-flight read may already be
     // stale (e.g. the turn finalized after paging began). Returning the
@@ -85,13 +102,14 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
     // clears its map entry before starting, so a request arriving DURING the
     // rerun schedules at most one more — reruns only run when requested,
     // never in an unbounded loop.
-    const scheduledRerun = pendingRerun.get(agentId);
+    const scheduledRerun = pendingRerun.get(key);
     if (scheduledRerun) return scheduledRerun;
     const rerun = pending.then(() => {
-      pendingRerun.delete(agentId);
-      return loadChatTranscript(agentId);
+      pendingRerun.delete(key);
+      if (connection === connectionGeneration && ownership.isCurrent())
+        return loadChatTranscript(agentId, workspaceId);
     });
-    pendingRerun.set(agentId, rerun);
+    pendingRerun.set(key, rerun);
     return rerun;
   }
 
@@ -102,7 +120,7 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   });
 
   // Register in inFlight BEFORE dispatching to prevent re-entrant calls
-  inFlight.set(agentId, runPromise);
+  inFlight.set(key, runPromise);
 
   // BASELINE snapshot (monorepo#1019): identity set (id + appMessageId) of the
   // store's messages at the moment this read begins. The merge guard below
@@ -111,7 +129,7 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   // dropped (BE truncation via edit/regenerate or agent.replaceMessages, from
   // this or any other client) converge to BE state instead of becoming ghosts.
   const baselineIds = new Set<string>();
-  for (const message of readCurrentMessages(agentId)) {
+  for (const message of readCurrentMessages(agentId, workspaceId)) {
     if (typeof message.id === 'string') baselineIds.add(message.id);
     if (typeof message.appMessageId === 'string') baselineIds.add(message.appMessageId);
   }
@@ -123,15 +141,18 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   } catch (error) {
     // If dispatch throws, clean up inFlight but do NOT resolve the promise
     // (coalesced callers should see the failure, not a fake success)
-    inFlight.delete(agentId);
+    inFlight.delete(key);
     throw error;
   }
 
+  const submissionRead = beginSubmissionRead(agentId, workspaceId, 'history');
   // Actually perform the work
   (async () => {
     try {
-      const session = await readAgentSession(agentId);
-      if (!session) return;
+      const session = await readAgentSession(agentId, workspaceId);
+      if (!session || connection !== connectionGeneration || !ownership.isCurrent()) return;
+      ownership.bindWorkspace(session.workspaceId);
+      workspaceId ??= session.workspaceId;
       // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
       // §5.5 `pendingDeleteAt`) — a deletion scheduled by another
       // window/client (or before an FE restart) is not in the local registry.
@@ -141,28 +162,22 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // soft-hidden session (and paging the transcript would be wasted work).
       if (isAgentDeletionPending(agentId)) return;
 
-      // Fetch the transcript by paging through agent.getConversation.
-      // Request 50 messages per page and loop on nextToken.
-      // Paging walks newest→oldest, so stopping at MAX_MESSAGES_PER_AGENT keeps
-      // exactly the newest messages the store's prune cap would retain —
-      // older pages would be fetched only to be sliced off by the
-      // agent-session slice (intent-hq/monorepo#2627).
-      const allMessages: AgentMessage[] = [];
-      let nextToken: string | null = null;
-      const pageLimit = 50;
-
-      do {
-        const page = await appClient.agents.getConversation(
-          agentId,
-          pageLimit,
-          nextToken || undefined,
-        );
-        // getConversation returns oldest→newest within each page and pages
-        // walk newest→oldest, so prepend each page to keep the accumulated
-        // list in overall oldest→newest order.
-        allMessages.unshift(...page.messages);
-        nextToken = page.nextToken;
-      } while (nextToken !== null && allMessages.length < MAX_MESSAGES_PER_AGENT);
+      // On-demand reads take the same newest window as the live subscription.
+      // Older history is fetched only by the visible panel's scrollback driver.
+      const page = await appClient.agents.getConversation(
+        agentId,
+        CHAT_PAGE_SIZE,
+        undefined,
+        undefined,
+        undefined,
+        workspaceId ?? session.workspaceId,
+      );
+      if (connection !== connectionGeneration || !ownership.isCurrent()) return;
+      if (!submissionRead.isCurrent()) {
+        void loadChatTranscript(agentId, workspaceId);
+        return;
+      }
+      const allMessages = page.messages;
 
       // Final re-check before any side effects: the deletion may have become
       // pending during transcript paging above.
@@ -190,7 +205,7 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // BE-side truncations (edit/regenerate refetch convergence, iOS
       // editAndRegenerate, daemon agent.replaceMessages) still shrink the
       // transcript instead of leaving permanent ghost rows.
-      const appendedDuringRead = readCurrentMessages(agentId).filter(
+      const appendedDuringRead = readCurrentMessages(agentId, workspaceId).filter(
         (m) =>
           !(
             (typeof m.id === 'string' && baselineIds.has(m.id)) ||
@@ -207,6 +222,7 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // because the daemon snapshot actually reports a turn is in-flight;
       // any orphan/stale healing belongs in the daemon, not the renderer.
       const sessionWithMessages = { ...session, messages: mergedMessages };
+      submissionRead.complete(submissionHistoryEvidence(allMessages));
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
@@ -217,9 +233,10 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // Wrap cleanup in try/finally to ensure inFlight.delete and resolveRun
       // run even if the dispatch throws
       try {
-        appStore.dispatch(transcriptHydrationSettled(agentId));
+        if (connection === connectionGeneration && ownership.isCurrent())
+          appStore.dispatch(transcriptHydrationSettled(agentId));
       } finally {
-        inFlight.delete(agentId);
+        inFlight.delete(key);
         resolveRun();
       }
     }

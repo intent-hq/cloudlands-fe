@@ -10,7 +10,7 @@
    * the same blink/zoom but no banners/countdown — open until DISMISS.
    * Reduced motion skips every animation (no blink, instant open).
    */
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
@@ -20,8 +20,8 @@
     selectHudTakeoverRequestWorkspaceId,
     selectHudTakeoverView,
   } from '$store/renderer/slices/hud/hud-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { hydrateTaskAgentAssociationsRequested } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
+  import { trackHudTaskDemand } from './hud-task-demand.svelte';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { onTakeoverTrigger } from './hud-takeover-bus';
@@ -80,13 +80,15 @@
   $effect(() => {
     const workspaceId = $takeoverRequest$;
     if (!workspaceId) return;
-    appStore.dispatch(hudTakeoverRequestCleared());
-    controller.openViewer({
-      workspaceId,
-      kind: 'manual',
-      detail: '',
-      raisedAtMs: Date.now(),
-      changedTaskId: null,
+    untrack(() => {
+      appStore.dispatch(hudTakeoverRequestCleared());
+      controller.openViewer({
+        workspaceId,
+        kind: 'manual',
+        detail: '',
+        raisedAtMs: Date.now(),
+        changedTaskId: null,
+      });
     });
   });
 
@@ -111,11 +113,10 @@
   // Hardware-key square gate: same as the grid card (connected + slotted).
   const microConnected$ = microConnectedReadable();
 
-  // Refresh the map's rollups on open (idempotent; the events bridge keeps them fresh).
+  // Refresh the map's agent links on open.
   $effect(() => {
     const workspaceId = queue.active?.workspaceId;
     if (!workspaceId) return;
-    appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
     appStore.dispatch(hydrateTaskAgentAssociationsRequested(workspaceId));
   });
 
@@ -123,6 +124,7 @@
   // The pre-roll blink shows only the card flash — the overlay stays hidden.
   const visible = $derived(queue.phase !== 'idle' && queue.phase !== 'blinking' && $view$ !== null);
   const closing = $derived(queue.phase === 'closing');
+  trackHudTaskDemand(() => (visible && !closing ? queue.active?.workspaceId : undefined));
   const motion = $derived(!reducedMotion.current);
   const frameStyle = $derived(
     takeoverFrameStyle(controller.frameFrom, { closing, zoom: controller.zoom, motion }),

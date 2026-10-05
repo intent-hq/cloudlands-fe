@@ -1,3 +1,9 @@
+import { workspaceInitializerGitSaga } from './workspace-initializer-git-saga';
+import {
+  selectCanAdministerHost,
+  selectHostAdministrationContext,
+} from '../../principal/principal-selectors';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { buffers } from 'redux-saga';
 import {
   actionChannel,
@@ -27,12 +33,14 @@ import {
   selectWorkspaceInitializerLastSubmittedAgent,
   selectWorkspaceInitializerOnboardingFormState,
   selectWorkspaceInitializerRecentRepos,
+  selectWorkspaceInitializerDismissedRecentRepoKeys,
   selectWorkspaceInitializerRemoteSetups,
 } from '../workspace-initializer-selectors';
 import {
   cancelWorkspaceInitializerOnboardingFormStateDebounce,
   debounceWorkspaceInitializerOnboardingFormState,
   hydrateWorkspaceInitializer,
+  dismissWorkspaceInitializerRecentRepo,
   removeWorkspaceInitializerRemoteSetup,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerBranchForRepo,
@@ -141,6 +149,7 @@ function* buildWorkspaceInitializerBag() {
   const branchByRepo = yield* selectWorkspaceInitializerBranchByRepo.effect();
   const defaultParentPath = yield* selectWorkspaceInitializerDefaultParentPath.effect();
   const recentRepos = yield* selectWorkspaceInitializerRecentRepos.effect();
+  const dismissedRecentRepoKeys = yield* selectWorkspaceInitializerDismissedRecentRepoKeys.effect();
   const remoteSetups = yield* selectWorkspaceInitializerRemoteSetups.effect();
   const lastSubmittedAgent = yield* selectWorkspaceInitializerLastSubmittedAgent.effect();
   return {
@@ -150,12 +159,14 @@ function* buildWorkspaceInitializerBag() {
     branchByRepo,
     defaultParentPath,
     recentRepos,
+    dismissedRecentRepoKeys,
     remoteSetups,
     lastSubmittedAgent,
   } satisfies WorkspaceInitializerHydrationState;
 }
 
 export function* persistWorkspaceInitializerWorker() {
+  if (!(yield* selectCanAdministerHost.effect())) return;
   const bag = cloneableBag(yield* call(buildWorkspaceInitializerBag));
   if (bag === null) return;
   try {
@@ -206,6 +217,7 @@ function* readLegacyBag() {
 }
 
 export function* hydrateWorkspaceInitializerWorker() {
+  if (!(yield* selectCanAdministerHost.effect())) return false;
   try {
     const setting = yield* call([appClient.settings, appClient.settings.get], SETTINGS_PATH);
     if (setting === null) throw new Error(`settings.get(${SETTINGS_PATH}) returned null`);
@@ -242,6 +254,13 @@ export function* hydrateWorkspaceInitializerWorker() {
       defaultParentPath:
         typeof daemonBag.defaultParentPath === 'string' ? daemonBag.defaultParentPath : undefined,
       recentRepos: objectArray<WorkspaceInitializerRecentRepo>(daemonBag.recentRepos),
+      dismissedRecentRepoKeys: isRecord(daemonBag.dismissedRecentRepoKeys)
+        ? Object.fromEntries(
+            Object.entries(daemonBag.dismissedRecentRepoKeys).filter(
+              (entry): entry is [string, true] => entry[1] === true,
+            ),
+          )
+        : undefined,
       remoteSetups: objectArray<WorkspaceInitializerRemoteSetup>(daemonBag.remoteSetups),
       lastSubmittedAgent: isRecord(daemonBag.lastSubmittedAgent)
         ? (daemonBag.lastSubmittedAgent as WorkspaceInitializerAgentSettings)
@@ -309,6 +328,7 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
       setWorkspaceInitializerBranchForRepo,
       setWorkspaceInitializerDefaultParentPath,
       setWorkspaceInitializerRecentRepos,
+      dismissWorkspaceInitializerRecentRepo,
       setWorkspaceInitializerRemoteSetups,
       upsertWorkspaceInitializerRemoteSetup,
       removeWorkspaceInitializerRemoteSetup,
@@ -331,16 +351,27 @@ function* watchWorkspaceInitializerPersistence(gate: HydrationGate) {
 }
 
 /** Unregistered until the S20 middleware cutover. */
-export function* workspaceInitializerSaga() {
+function* hydrateOwnerInitializer({ payload: context }: SelectorChannelPayload<string | null>) {
+  if (!context) return;
   const gate: HydrationGate = { settled: false, queued: false };
   const persistenceTask = yield* fork(watchWorkspaceInitializerPersistence, gate);
-  yield* fork(watchDebouncedOnboardingForm);
-  yield* fork(watchOnboardingReset);
 
   const hydrated = yield* call(hydrateWorkspaceInitializerWorker);
-  gate.settled = true;
-  if (gate.queued && hydrated) yield* call(persistWorkspaceInitializerWorker);
+  // Keep the watcher gated until startup writes finish. Mutations during a save
+  // request another latest-state snapshot, never a concurrent whole-bag update.
+  while (gate.queued && hydrated) {
+    gate.queued = false;
+    yield* call(persistWorkspaceInitializerWorker);
+  }
   gate.queued = false;
+  gate.settled = true;
 
   yield* join(persistenceTask);
+}
+
+export function* workspaceInitializerSaga() {
+  yield* fork(workspaceInitializerGitSaga);
+  yield* fork(watchDebouncedOnboardingForm);
+  yield* fork(watchOnboardingReset);
+  yield* takeLatestFromSelector(selectHostAdministrationContext, hydrateOwnerInitializer);
 }

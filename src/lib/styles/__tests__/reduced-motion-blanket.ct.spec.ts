@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../test/ct-test';
+import CommentThreadEditingHarness from '../../components/tiptap/comments/__tests__/CommentThreadEditingHarness.svelte';
 
 // Real-browser contract for the tokens.css global motion blanket: the root
 // `data-reduce-motion` attribute (battery saver) must zero the same surfaces
@@ -141,3 +142,156 @@ test('--motion-reduced mirrors both sources on the root', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   expect(await flag()).toBe('1');
 });
+
+test('catalog overrides keep the token and every blanket surface in agreement', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setBatteryAttribute(page, true);
+  const flag = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--motion-reduced').trim(),
+    );
+  await page.evaluate(() => document.documentElement.classList.add('catalog-full-motion'));
+  expect(await flag()).toBe('0');
+  expectAll(await readMotion(page), AUTHORED);
+  await page.evaluate(() => document.documentElement.classList.add('catalog-reduced-motion'));
+  expect(await flag()).toBe('1');
+  expectAll(await readMotion(page), REDUCED);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await setBatteryAttribute(page, false);
+  expectAll(await readMotion(page), REDUCED);
+  await page.evaluate(() => document.documentElement.classList.remove('catalog-reduced-motion'));
+  expectAll(await readMotion(page), AUTHORED);
+  await setBatteryAttribute(page, true);
+  await page.evaluate(() => document.documentElement.classList.remove('catalog-full-motion'));
+  expectAll(await readMotion(page), REDUCED);
+});
+
+// app.css's canonical scrollbar rule must not hand every element its own
+// `scrollbar-color` declaration: under the blanket's non-zero duration each restyle
+// of such an element started a `scrollbar-color` transition, so a busy subtree (the
+// diagram workbench rendering 43 cases) paid thousands of live transitions per pass
+// and reduced-motion readiness ran 3× slower than full motion (intent-hq/intent#5687).
+test('reduced motion: restyling descendants starts no scrollbar-color transitions', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // The media flip restyles the whole document once; let everything it started finish.
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  const result = await page.evaluate(async (id) => {
+    const className = `${id}-restyle`;
+    const style = document.createElement('style');
+    style.textContent = `.${className} { color: rgb(1, 2, 3); }`;
+    document.head.append(style);
+    const host = document.createElement('div');
+    const nodes = Array.from({ length: 40 }, () =>
+      host.appendChild(document.createElement('span')),
+    );
+    document.body.append(host);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    const transitionsOf = (property: string) =>
+      document
+        .getAnimations()
+        .filter((a) => a instanceof CSSTransition && a.transitionProperty === property).length;
+    const settled = document.getAnimations().length;
+    for (const node of nodes) node.classList.add(className);
+    void getComputedStyle(nodes[0]).color;
+    return {
+      settled,
+      color: transitionsOf('color'),
+      scrollbarColor: transitionsOf('scrollbar-color'),
+    };
+  }, PROBE_ID);
+  expect(result.settled).toBe(0);
+  // The blanket shortens transitions rather than removing them, so the restyle is observable.
+  expect(result.color).toBe(40);
+  expect(result.scrollbarColor).toBe(0);
+});
+
+test('the canonical scrollbar-color reaches descendants by inheritance', async ({ page }) => {
+  const result = await page.evaluate((id) => {
+    const wrapper = document.createElement('div');
+    const leaf = wrapper.appendChild(document.createElement('span'));
+    document.getElementById(id)!.append(wrapper);
+    const color = (element: Element) => getComputedStyle(element).scrollbarColor;
+    return { root: color(document.documentElement), leaf: color(leaf) };
+  }, PROBE_ID);
+  expect(result.root).not.toBe('auto');
+  expect(result.leaf).toBe(result.root);
+});
+
+// The oracle for "declared on every element" is the browser's own matcher: a bare,
+// class-less element must match no rule that declares `scrollbar-color`, whatever the
+// selector's spelling (`*`, `:where(:not(...))`, `html *`, ...).
+test('no stylesheet rule that matches a bare element declares scrollbar-color', async ({
+  page,
+}) => {
+  const offenders = await page.evaluate((id) => {
+    const parent = document.createElement('div');
+    const nested = parent.appendChild(document.createElement('span'));
+    const direct = document.createElement('span');
+    document.getElementById(id)!.append(parent, direct);
+    const probes = [direct, nested, parent];
+    const matched: string[] = [];
+    const visit = (rules: CSSRuleList) => {
+      for (const rule of rules) {
+        if (rule instanceof CSSStyleRule) {
+          if (rule.style.getPropertyValue('scrollbar-color') === '') continue;
+          let applies = false;
+          try {
+            applies = probes.some((probe) => probe.matches(rule.selectorText));
+          } catch {
+            applies = false;
+          }
+          if (applies) matched.push(rule.selectorText);
+        } else if ('cssRules' in rule) {
+          visit((rule as CSSGroupingRule).cssRules);
+        }
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      try {
+        visit(sheet.cssRules);
+      } catch {
+        // Cross-origin sheets are unreadable; none of ours are.
+      }
+    }
+    return matched;
+  }, PROBE_ID);
+  expect(offenders).toEqual([]);
+});
+
+// A component that overrides `scrollbar-color` on its own scroller (the comment thread's
+// `.custom-scrollbar`) must not restyle the editor it hosts while a comment is edited:
+// that nested scroller keeps the canonical colour in both themes.
+for (const theme of ['light', 'dark'] as const) {
+  test(`the editor opened inside a .custom-scrollbar comment keeps the canonical scrollbar-color (${theme})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.evaluate((selected) => {
+      document.documentElement.classList.toggle('dark', selected === 'dark');
+    }, theme);
+    const thread = await mount(CommentThreadEditingHarness);
+    // The action bar is revealed on hover; the edit mode is what is under test here.
+    await thread.getByRole('button', { name: 'Edit', exact: true }).dispatchEvent('click');
+    const editor = thread.locator('.custom-scrollbar .tiptap-container');
+    await expect(editor).toBeVisible();
+    const colors = await editor.evaluate((element) => {
+      const color = (target: Element) => getComputedStyle(target).scrollbarColor;
+      return {
+        root: color(document.documentElement),
+        host: color(element.closest('.custom-scrollbar')!),
+        editor: color(element),
+      };
+    });
+    expect(colors.root).not.toBe('auto');
+    // The component's own override is in effect on the host scroller ...
+    expect(colors.host).not.toBe(colors.root);
+    // ... and does not leak onto the scroller it hosts.
+    expect(colors.editor).toBe(colors.root);
+  });
+}

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readable, writable } from 'svelte/store';
 
@@ -93,7 +93,11 @@ vi.mock('$lib/components/ui/dropdown', async () => {
 });
 
 vi.mock('$features/agent/components/AgentProviderIcon.svelte', async () => {
-  const mod = await import('../../__tests__/mocks/ProviderIcon.svelte');
+  // Plain tsc's wildcard Svelte declaration omits module-script exports.
+  const mod =
+    (await import('../../__tests__/mocks/ProviderIcon.svelte')) as typeof import('../../__tests__/mocks/ProviderIcon.svelte') & {
+      hasProviderIcon: (providerId: string | undefined) => boolean;
+    };
   return { default: mod.default, hasProviderIcon: mod.hasProviderIcon };
 });
 
@@ -107,15 +111,11 @@ vi.mock('$features/agent/reasoning-effort', () => ({
   applyReasoningEffort: vi.fn(async () => true),
 }));
 
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
+function startCatalogOwner() {
+  disposeStore = appStore.init();
   // Hydrated catalog with the synthetic `anthropic` provider these regressions
   // use, so the real provider-catalog selectors resolve ids/display names.
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
-    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const providerCatalog = providerCatalogReducer(
-    initialState,
+  appStore.dispatch(
     providerCatalogLoaded({
       providers: [
         {
@@ -158,26 +158,31 @@ vi.mock('$store/renderer/store', async () => {
       defaultProviderId: 'auggie',
     }),
   );
-
-  return createAppStoreMockModule({
-    state: () => ({
-      sessions,
-      providerCatalog,
-      providerSettings: { enabledProviders: {} },
-      model: { defaultProviderId: 'auggie' },
-      // The picker's guest/collaborator gate reads the caller role: a settled
-      // owner window keeps these label regressions on the unlocked path.
-      workspace: { hasLoaded: false, workspaces: { idField: 'id', map: {}, ids: [] } },
-      connections: { windowBackendId: 'local', hasReceivedList: true },
-      guestSessions: {
-        sessions: { idField: 'id', map: {}, ids: [] },
-        hasReceivedList: true,
-        listUnavailable: false,
+  appStore.dispatch(hydrateDefaultProvider('auggie'));
+  appStore.dispatch(
+    workspaceCatalogReceived(
+      'ws-1',
+      {
+        catalog: { providers: Object.values(appStore.state.providerCatalog.providers.map) },
+        settings: [{ path: 'model.defaultProvider', value: 'auggie' }] as never,
+        specialists: [],
+        readiness: {},
       },
-    }),
-    dispatch: mockReduxDispatch,
+      appStore.state.providerCatalog.workspaceEpoch ?? 0,
+    ),
+  );
+  // Keep these label regressions on the settled owner-window path.
+  appStore.dispatch(
+    connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
+  );
+  appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
+  const dispatch = appStore.dispatch.bind(appStore);
+  vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+    mockReduxDispatch(action);
+    return dispatch(action);
   });
-});
+  cancelCatalog = appStore.runSaga(modelReloadSaga);
+}
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => {
   const selectAgentSession = Object.assign(
@@ -200,7 +205,10 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
   return { selectAgentSession, selectAgentReasoningEffort };
 });
 
-vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
+vi.mock('$store/renderer/slices/agent-session/agent-session-slice', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/agent-session/agent-session-slice')
+  >()),
   updateSession: (agentId: string, updates: Partial<Session>) => ({
     type: 'agentSessions/updateSession',
     payload: [agentId, updates],
@@ -230,6 +238,7 @@ vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
+  selectEnabledProviders: () => readable({}),
   selectModelFetchProviderIds: () => enabledProviderIds$,
   selectIsProviderModelAccessAllowed: () => readable(true),
   selectAvailableEnabledProviderIds: () => enabledProviderIds$,
@@ -253,7 +262,8 @@ vi.mock('$store/renderer/slices/model/model-utils', () => ({
   }),
 }));
 
-vi.mock('$shared/types/agent-session', () => ({
+vi.mock('$shared/types/agent-session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$shared/types/agent-session')>()),
   getAgentProvider: (session: Session) =>
     session.provider ?? (session.metadata?.provider as string | undefined),
   isAgentSession: (session: Session | undefined) => !!session && !('isPending' in session),
@@ -267,9 +277,19 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import {
+  providerCatalogLoaded,
+  workspaceCatalogReceived,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { getModelsForProviderForLoadingState } from '$store/renderer/slices/model/model-utils';
 import ModelPicker from '../ModelPicker.svelte';
+import { modelNameCacheSaga } from '$store/renderer/slices/provider-models/sagas/model-name-cache-saga';
+import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
 import { warmImport } from '../../../../../test/warm-import';
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -279,28 +299,42 @@ warmImport(() => import('../../../ui/__tests__/mocks/button.svelte'));
 warmImport(() => import('../../__tests__/mocks/SlotOnly.svelte'));
 warmImport(() => import('../../__tests__/mocks/ProviderIcon.svelte'));
 
+let disposeStore: () => void;
+let cancelCatalog: () => void;
+
 describe('ModelPicker trigger label regressions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessions.clear();
     sessionVersion$.set(0);
     selectedModel$.set('auggie:butler');
-    availableModels$.set([
-      { value: 'auggie:butler', label: 'Auggie Butler' },
-      { value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' },
-    ]);
+    availableModels$.set([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
     isLoadingModels$.set(false);
     activeProviderId$.set('auggie');
     enabledProviderIds$.set(['auggie']);
     providerWarnings$.set({});
+    startCatalogOwner();
   });
 
   afterEach(() => {
     cleanup();
+    cancelCatalog();
+    vi.restoreAllMocks();
+    disposeStore();
     document.body.innerHTML = '';
   });
 
   it('renders the selected model label instead of the first available model label', () => {
+    enabledProviderIds$.set(['auggie', 'anthropic']);
+    appStore.dispatch(
+      providerModelsLoaded(
+        'anthropic',
+        {
+          models: [{ value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' }],
+        },
+        0,
+      ),
+    );
     render(ModelPicker, {
       props: {
         selectedModel: 'anthropic:claude-opus-4-7',
@@ -328,12 +362,11 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await tick();
-
-    const text = screen.getByRole('button').textContent ?? '';
-    expect(text).toContain('Claude Opus 4.8');
-    expect(text).not.toContain('claude-opus-4-8');
+    await waitFor(() => {
+      const text = screen.getByRole('button').textContent ?? '';
+      expect(text).toContain('Claude Opus 4.8');
+      expect(text).not.toContain('claude-opus-4-8');
+    });
   });
 
   it('resolves a provider-prefixed session model id against a bare catalog row', () => {
@@ -365,10 +398,110 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await tick();
+    await waitFor(() =>
+      expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8 (High)'),
+    );
+  });
 
-    expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8 (High)');
+  it.each(
+    ['provider catalog', 'active catalog'].flatMap((foreignSource) =>
+      ['bare live', 'prefixed live', 'learned'].map((ownSource) => ({ foreignSource, ownSource })),
+    ),
+  )(
+    'keeps $ownSource names owned by Codex when a foreign $foreignSource has codex:foo',
+    ({ foreignSource, ownSource }) => {
+      activeProviderId$.set('codex');
+      enabledProviderIds$.set(['auggie', 'codex']);
+      const foreignModels = [{ value: 'codex:foo', label: 'Auggie custom model' }];
+      availableModels$.set(foreignSource === 'active catalog' ? foreignModels : []);
+      if (foreignSource === 'provider catalog')
+        appStore.dispatch(providerModelsLoaded('auggie', { models: foreignModels }, 0));
+      appStore.dispatch(
+        providerModelsLoaded(
+          'codex',
+          {
+            models: [{ value: 'foo', label: 'Remembered Codex model' }],
+          },
+          0,
+        ),
+      );
+      appStore.dispatch(
+        providerModelsLoaded(
+          'codex',
+          {
+            models:
+              ownSource === 'learned'
+                ? []
+                : [
+                    {
+                      value: ownSource === 'prefixed live' ? 'codex:foo' : 'foo',
+                      label: 'Current Codex model',
+                    },
+                  ],
+          },
+          0,
+        ),
+      );
+
+      render(ModelPicker, { selectedModel: 'foo', providerId: 'codex', isLocked: true });
+
+      const trigger = screen.getByRole('button');
+      expect(trigger.textContent).toContain(
+        ownSource === 'learned' ? 'Remembered Codex model' : 'Current Codex model',
+      );
+      expect(trigger.textContent).not.toContain('Auggie custom model');
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('codex');
+    },
+  );
+
+  it.each(['live', 'learned'])(
+    'formats minimal effort from %s labels and keeps exact slash IDs',
+    async (source) => {
+      activeProviderId$.set('codex');
+      enabledProviderIds$.set(['codex']);
+      availableModels$.set([]);
+      const publish = (models: ModelOption[]) => {
+        appStore.dispatch(providerModelsLoaded('codex', { models }, 0));
+        if (source === 'learned')
+          appStore.dispatch(providerModelsLoaded('codex', { models: [] }, 0));
+      };
+      publish([{ value: 'gpt-5', label: 'GPT-5' }]);
+      render(ModelPicker, {
+        selectedModel: 'codex:gpt-5/minimal',
+        providerId: 'codex',
+        isLocked: true,
+      });
+      expect(screen.getByRole('button').textContent).toContain('GPT-5 (Minimal)');
+      publish([
+        { value: 'gpt-5', label: 'GPT-5' },
+        { value: 'gpt-5/minimal', label: 'Exact minimal identity' },
+      ]);
+      await waitFor(() =>
+        expect(screen.getByRole('button').textContent).toContain('Exact minimal identity'),
+      );
+    },
+  );
+
+  it('prefers an exact colon-bearing ID over an earlier legacy-normalized row', () => {
+    availableModels$.set([
+      { value: 'butler', label: 'Base model' },
+      { value: 'auggie:butler', label: 'Exact model identity' },
+    ]);
+    render(ModelPicker, { selectedModel: 'auggie:butler', providerId: 'auggie', isLocked: true });
+    expect(screen.getByRole('button').textContent).toContain('Exact model identity');
+  });
+
+  it('keeps a never-seen colon-bearing ID intact without a provider prop', async () => {
+    activeProviderId$.set('codex');
+    selectedModel$.set('org/unknown:variant');
+    availableModels$.set([]);
+    enabledProviderIds$.set([]);
+    render(ModelPicker, {
+      selectedModel: 'org/unknown:variant',
+      updateGlobalDefault: true,
+      isLocked: true,
+    });
+    expect(screen.getByRole('button').textContent).toContain('org/unknown:variant');
   });
 
   it('does not silently flip to the first available model when selectedModel becomes undefined', async () => {
@@ -388,10 +521,16 @@ describe('ModelPicker trigger label regressions', () => {
   });
 
   it('treats provider-prefixed *:default ids as explicit selections', () => {
-    availableModels$.set([
-      { value: 'auggie:butler', label: 'Auggie Butler' },
-      { value: 'claude-code:default', label: 'Default (recommended)' },
-    ]);
+    enabledProviderIds$.set(['auggie', 'claude-code']);
+    appStore.dispatch(
+      providerModelsLoaded(
+        'claude-code',
+        {
+          models: [{ value: 'claude-code:default', label: 'Default (recommended)' }],
+        },
+        0,
+      ),
+    );
 
     render(ModelPicker, {
       props: {
@@ -435,7 +574,7 @@ describe('ModelPicker trigger label regressions', () => {
         selectedModel: undefined,
         defaultModelId: 'auggie:balanced',
         showDefaultOption: true,
-        formatDefaultModelLabel: (model) => `Inherited: ${model}`,
+        formatDefaultModelLabel: (model: string) => `Inherited: ${model}`,
         isLocked: true,
       },
     });
@@ -605,13 +744,14 @@ describe('ModelPicker trigger label regressions', () => {
       }),
     );
 
-    await tick();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'claude-code',
-    );
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    await waitFor(() => {
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+        'claude-code',
+      );
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code', {
+        workspaceId: 'ws-1',
+      });
+    });
   });
 
   it('attributes a bare session model to the agent provider when that provider is outside the enabled set (guest window)', async () => {
@@ -643,14 +783,15 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await tick();
-
-    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
-    expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8');
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'claude-code',
-    );
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code', {
+        workspaceId: 'ws-1',
+      });
+      expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8');
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+        'claude-code',
+      );
+    });
   });
 
   it('does not render a provider icon for unknown provider IDs', () => {
@@ -739,15 +880,14 @@ describe('ModelPicker trigger label regressions', () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await tick();
-
-    const text = screen.getByRole('button').textContent ?? '';
-    expect(text).toContain('Claude Opus 4.8');
-    expect(text).not.toContain('Sonnet 4.6');
-    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
-      'claude-code',
-    );
+    await waitFor(() => {
+      const text = screen.getByRole('button').textContent ?? '';
+      expect(text).toContain('Claude Opus 4.8');
+      expect(text).not.toContain('Sonnet 4.6');
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+        'claude-code',
+      );
+    });
   });
 
   it('maps a legacy <provider>:default selection to the catalog isDefault row', () => {
@@ -875,5 +1015,116 @@ describe('ModelPicker trigger label regressions', () => {
     const text = screen.getByRole('button').textContent ?? '';
     expect(text).toContain('Auggie Butler');
     expect(text).not.toContain('default');
+  });
+});
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const { selectProviderCatalogEntries } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+  return {
+    selectContextProviderEntries: selectProviderCatalogEntries,
+    selectContextDefaultProvider: () => readable('auggie'),
+    selectContextSelectedModel: () => selectedModel$,
+    selectContextEnabledProviders: () => readable({}),
+    selectContextAvailableProviderIds: () => enabledProviderIds$,
+    selectContextModelProviderIds: () => enabledProviderIds$,
+    selectContextReadinessLoaded: () => readable(true),
+    selectWorkspaceCatalogEpoch: () => readable(0),
+    selectContextProviderWarnings: () => providerWarnings$,
+    selectContextProviderStaleFlags: () => readable({}),
+  };
+});
+
+describe('learned picker labels after restart', () => {
+  it.each([
+    'pending',
+    'failed',
+    'default',
+    'settings',
+    'settings-known-prefix',
+    'default-known-prefix',
+    'default-known-prefix-fallback',
+    'default-known-prefix-explicit',
+  ] as const)('renders a persisted name immediately with %s discovery', async (outcome) => {
+    const modelId = outcome.includes('known-prefix') ? 'auggie:custom' : 'org/model:variant';
+    const storage = new Map<string, string>();
+    vi.mocked(window.localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
+    vi.mocked(window.localStorage.setItem).mockImplementation((key, value) => {
+      storage.set(key, value);
+    });
+    startCatalogOwner();
+    let cancelNames = appStore.runSaga(modelNameCacheSaga);
+    appStore.dispatch(
+      providerModelsLoaded(
+        'codex',
+        {
+          models: [
+            {
+              value: modelId,
+              label: 'Remembered custom model',
+              effortLevels: ['high'],
+              isDefault: true,
+            },
+          ],
+        },
+        0,
+      ),
+    );
+    cancelNames();
+    cancelCatalog();
+    disposeStore();
+    vi.restoreAllMocks();
+    let rejectDiscovery!: (reason: Error) => void;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDiscovery = reject;
+        }),
+    );
+    availableModels$.set([]);
+    isLoadingModels$.set(true);
+    enabledProviderIds$.set(['codex']);
+    activeProviderId$.set('codex');
+    selectedModel$.set(modelId);
+    startCatalogOwner();
+    cancelNames = appStore.runSaga(modelNameCacheSaga);
+    try {
+      render(ModelPicker, {
+        ...(outcome.startsWith('default')
+          ? {
+              selectedModel: null,
+              defaultModelId: modelId,
+              ...(outcome === 'default-known-prefix-explicit'
+                ? {}
+                : { fallbackProviderId: 'codex' }),
+            }
+          : { selectedModel: modelId }),
+        ...(outcome.startsWith('settings')
+          ? { updateGlobalDefault: true }
+          : outcome === 'default-known-prefix-fallback'
+            ? {}
+            : { providerId: 'codex' }),
+        isLocked: true,
+      });
+      expect(screen.getByRole('button').textContent).toContain('Remembered custom model');
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('codex');
+      expect(appStore.state.model.availableModels.ids).toEqual([]);
+      expect(appStore.state.providerModels.byProviderId).toEqual({});
+      await waitFor(() => expect(rejectDiscovery).toBeDefined());
+      if (outcome === 'failed') {
+        rejectDiscovery(new Error('Discovery unavailable'));
+        await waitFor(() =>
+          expect(appStore.state.providerModels.requests.map.codex?.status).toBe('error'),
+        );
+      }
+      expect(screen.getByRole('button').textContent).toContain('Remembered custom model');
+      expect(appStore.state.model.availableModels.ids).toEqual([]);
+    } finally {
+      cleanup();
+      cancelNames();
+      cancelCatalog();
+      vi.restoreAllMocks();
+      disposeStore();
+    }
   });
 });

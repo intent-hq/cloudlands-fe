@@ -160,7 +160,7 @@ function discardedLines(generated: string, template: string): DiscardedLine[] {
 let templateContent: string;
 try {
   templateContent = fs.readFileSync(preloadTemplatePath, 'utf-8');
-} catch (error) {
+} catch {
   // If template doesn't exist, use the current index.ts as template
   templateContent = fs.readFileSync(preloadOutputPath, 'utf-8');
 
@@ -268,7 +268,7 @@ if (placeholderIndex !== -1) {
   // Fallback: insert after imports
   const importEndMatch = templateContent.match(/(import[^;]+;[\s\n]*)+/);
   if (importEndMatch) {
-    const importEnd = importEndMatch.index! + importEndMatch[0].length;
+    const importEnd = (importEndMatch.index ?? 0) + importEndMatch[0].length;
     const beforeImports = templateContent.slice(0, importEnd);
     const afterImports = templateContent.slice(importEnd);
     templateContent = `${beforeImports}\n${inlineChannels}\n${afterImports}`;

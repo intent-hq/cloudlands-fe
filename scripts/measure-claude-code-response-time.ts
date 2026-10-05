@@ -92,7 +92,7 @@ async function measureResponseTime(model: string): Promise<TimingResult> {
             model,
           });
         }
-      } catch (e) {
+      } catch {
         // Ignore non-JSON lines
       }
     });

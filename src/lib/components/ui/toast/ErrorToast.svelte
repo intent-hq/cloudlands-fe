@@ -39,7 +39,8 @@
   class="relative flex w-full min-w-0 items-start gap-2.5 pr-6"
   data-toast-layout="application-error"
 >
-  <ToastGlyph variant={getGlyph(error.type)} />
+  <span class="first-line-icon toast-first-line"><ToastGlyph variant={getGlyph(error.type)} /></span
+  >
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
@@ -77,7 +78,8 @@
     overflow: hidden;
   }
 
-  .toast-title {
+  .toast-title,
+  .toast-first-line {
     color: hsl(var(--foreground));
     font-size: var(--toast-title-size, 0.8125rem);
     font-weight: 500;

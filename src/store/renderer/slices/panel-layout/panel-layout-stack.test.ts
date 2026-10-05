@@ -1,11 +1,13 @@
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 
 import { migratePanelLayoutForWorkspace } from './panel-layout-migration';
 import { selectPanelColumnStack, selectPanelColumnStacks } from './panel-layout-selectors';
 import {
   closeActiveTab,
+  closeTab,
   emptyWorkspaceState,
+  moveTabToPanel,
   openTab,
   openTabInAdjacentOrSplit,
   openTabInNewRootColumn,
@@ -141,6 +143,113 @@ describe('column stack algorithm', () => {
     const closed = panelLayoutReducer(initial, closeActiveTab(WS, 'p1', 20)).byWorkspaceId[WS];
     expect(closed.panels.p1.tabs.map((tab) => tab.id)).toEqual(['tab-p1']);
     expect(closed.panels.p1.activeTabId).toBe('tab-p1');
+  });
+
+  it('inserts after the active pane without moving an equivalent existing tab', () => {
+    const initial = state();
+    initial.byWorkspaceId[WS].panels.p1 = {
+      id: 'p1',
+      tabs: [note('A'), note('B'), note('C')],
+      activeTabId: 'B',
+    };
+    const opened = panelLayoutReducer(
+      initial,
+      openTab(WS, note('X'), 'p1', 'X', true, 10, undefined, undefined, true),
+    );
+    expect(opened.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual([
+      'A',
+      'B',
+      'X',
+      'C',
+    ]);
+    expect(opened.byWorkspaceId[WS].panels.p1.activeTabId).toBe('X');
+    const reused = panelLayoutReducer(
+      opened,
+      openTab(WS, note('B'), 'p1', 'ignored', true, 20, undefined, undefined, true),
+    );
+    expect(reused.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual([
+      'A',
+      'B',
+      'X',
+      'C',
+    ]);
+    expect(reused.byWorkspaceId[WS].panels.p1.activeTabId).toBe('B');
+  });
+
+  it('opens normally in a blank stack when there is no active pane to insert after', () => {
+    const initial = state();
+    initial.byWorkspaceId[WS].panels.p1 = { id: 'p1', tabs: [], activeTabId: null };
+    const opened = panelLayoutReducer(
+      initial,
+      openTab(WS, note('X'), 'p1', 'X', true, 10, undefined, undefined, true),
+    ).byWorkspaceId[WS];
+    expect(opened.panels.p1.tabs.map((tab) => tab.id)).toEqual(['X']);
+    expect(opened.panels.p1.activeTabId).toBe('X');
+  });
+
+  it('returns to a sub-agent opener when closing from the middle of a stack', () => {
+    const initial = state();
+    initial.byWorkspaceId[WS].panels.p1 = {
+      id: 'p1',
+      tabs: [note('A'), note('B'), { ...note('X'), openerTabId: 'B' }, note('C')],
+      activeTabId: 'X',
+    };
+    const closed = panelLayoutReducer(initial, closeActiveTab(WS, 'p1', 20)).byWorkspaceId[WS];
+    expect(closed.panels.p1.activeTabId).toBe('B');
+    expect(closed.panels.p1.tabs.map((tab) => tab.id)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('keeps the usual close fallback when the opener is gone', () => {
+    const initial = state();
+    initial.byWorkspaceId[WS].panels.p1 = {
+      id: 'p1',
+      tabs: [note('A'), { ...note('X'), openerTabId: 'B' }, note('C')],
+      activeTabId: 'X',
+    };
+    const closed = panelLayoutReducer(initial, closeActiveTab(WS, 'p1', 20)).byWorkspaceId[WS];
+    expect(closed.panels.p1.activeTabId).toBe('C');
+  });
+
+  it('keeps the close fallback when the opener moved into another panel', () => {
+    const initial = state(['p1', 'p2']);
+    initial.byWorkspaceId[WS].panels.p1 = {
+      id: 'p1',
+      tabs: [note('A'), note('B'), { ...note('X'), openerTabId: 'B' }, note('C')],
+      activeTabId: 'X',
+    };
+    const moved = panelLayoutReducer(initial, moveTabToPanel(WS, 'B', 'p1', 'p2', undefined, 10));
+    const closed = panelLayoutReducer(moved, closeTab(WS, 'X', 'p1', 20)).byWorkspaceId[WS];
+    expect(closed.panels.p1.activeTabId).toBe('C');
+    expect(closed.panels.p2.tabs.map((tab) => tab.id)).toEqual(['tab-p2', 'B']);
+  });
+
+  it('reuses an equivalent tab in another panel without changing its opener', () => {
+    const initial = state(['p1', 'p2']);
+    initial.byWorkspaceId[WS].panels.p2 = {
+      id: 'p2',
+      tabs: [note('B'), { ...note('X'), openerTabId: 'B' }, note('C')],
+      activeTabId: 'C',
+    };
+    const opened = panelLayoutReducer(
+      initial,
+      openTab(WS, note('X'), 'p1', 'ignored', true, 10, undefined, undefined, true),
+    );
+    expect(opened.byWorkspaceId[WS].focusedPanelId).toBe('p2');
+    expect(opened.byWorkspaceId[WS].panels.p1.tabs.map((tab) => tab.id)).toEqual(['tab-p1']);
+    expect(opened.byWorkspaceId[WS].panels.p2.tabs.map((tab) => tab.id)).toEqual(['B', 'X', 'C']);
+    const closed = panelLayoutReducer(opened, closeActiveTab(WS, 'p2', 20)).byWorkspaceId[WS];
+    expect(closed.panels.p2.activeTabId).toBe('B');
+  });
+
+  it('does not activate the opener when closing an inactive sub-agent', () => {
+    const initial = state();
+    initial.byWorkspaceId[WS].panels.p1 = {
+      id: 'p1',
+      tabs: [note('A'), note('B'), { ...note('X'), openerTabId: 'B' }, note('C')],
+      activeTabId: 'C',
+    };
+    const closed = panelLayoutReducer(initial, closeTab(WS, 'X', 'p1', 20)).byWorkspaceId[WS];
+    expect(closed.panels.p1.activeTabId).toBe('C');
   });
 
   it('selects ordered stack state and migrates attention metadata compatibly', () => {

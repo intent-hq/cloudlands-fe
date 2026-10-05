@@ -25,6 +25,10 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import {
+  DYNAMIC_CHANNEL_PATTERNS as registryDynamic,
+  EVENT_CHANNELS as registryEvents,
+} from '../../src/shared/ipc-registry';
 
 const repoRoot = path.resolve(__dirname, '../..');
 const generatorPath = path.join(repoRoot, 'scripts/inline-ipc-channels.ts');
@@ -40,7 +44,8 @@ afterAll(removeFixture);
 
 /**
  * Generate the preload from the real template into a throwaway project root
- * and return the output. The generator still imports the real
+ * (`<tmp>/fixtures`, so the generated file reads as the fixture it is) and
+ * return the output. The generator still imports the real
  * src/shared/ipc-registry (its import is relative to the script, not to the
  * root argument), so this is the same rendering path `pnpm run
  * generate:ipc-channels` takes, without touching the repo. Called from
@@ -50,11 +55,12 @@ afterAll(removeFixture);
 function generatePreload(templateContent: string): string {
   fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'preload-parity-'));
   try {
-    fs.mkdirSync(path.join(fixtureRoot, 'src/preload'), { recursive: true });
-    fs.writeFileSync(path.join(fixtureRoot, 'src/preload/index.template.ts'), templateContent);
+    const projectRoot = path.join(fixtureRoot, 'fixtures');
+    fs.mkdirSync(path.join(projectRoot, 'src/preload'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, 'src/preload/index.template.ts'), templateContent);
     // node --import tsx rather than the node_modules/.bin/tsx shim, which
     // spawnSync cannot execute without a shell on Windows.
-    const result = spawnSync(process.execPath, ['--import', 'tsx', generatorPath, fixtureRoot], {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', generatorPath, projectRoot], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -63,7 +69,7 @@ function generatePreload(templateContent: string): string {
         `preload generation failed (status ${result.status}):\n${result.stdout ?? ''}${result.stderr ?? ''}`,
       );
     }
-    return fs.readFileSync(path.join(fixtureRoot, 'src/preload/index.ts'), 'utf-8');
+    return fs.readFileSync(path.join(fixtureRoot, 'fixtures', 'src/preload/index.ts'), 'utf-8');
   } catch (error) {
     removeFixture();
     throw error;
@@ -281,10 +287,6 @@ describe('Preload IPC Allowlist Parity', () => {
   });
 
   describe('dynamic channel pattern allowlists', () => {
-    const registryPath = path.resolve(__dirname, '../../src/shared/ipc-registry.ts');
-    const registryContent = fs.readFileSync(registryPath, 'utf-8');
-    const registryDynamic = extractArrayEntries(registryContent, 'DYNAMIC_CHANNEL_PATTERNS');
-
     it('includes supported stream prefixes in generated preload and source files', () => {
       for (const dynamicPatterns of [indexDynamic, templateDynamic, registryDynamic]) {
         expect(dynamicPatterns).toContain('agent:stream:');
@@ -302,10 +304,6 @@ describe('Preload IPC Allowlist Parity', () => {
   describe('ipc-registry.ts EVENT_CHANNELS source of truth', () => {
     // Verify the source registry (which feeds the generator) has the channels.
     // This ensures regeneration won't drop them.
-    const registryPath = path.resolve(__dirname, '../../src/shared/ipc-registry.ts');
-    const registryContent = fs.readFileSync(registryPath, 'utf-8');
-    const registryEvents = extractArrayEntries(registryContent, 'EVENT_CHANNELS');
-
     for (const channel of REQUIRED_SUBSCRIPTION_CHANNELS) {
       it(`ipc-registry.ts EVENT_CHANNELS includes "${channel}"`, () => {
         expect(
@@ -334,10 +332,6 @@ describe('Preload IPC Allowlist Parity', () => {
   });
 
   describe('Required notification channels in ipc-registry.ts', () => {
-    const registryPath = path.resolve(__dirname, '../../src/shared/ipc-registry.ts');
-    const registryContent = fs.readFileSync(registryPath, 'utf-8');
-    const registryEvents = extractArrayEntries(registryContent, 'EVENT_CHANNELS');
-
     for (const channel of REQUIRED_NOTIFICATION_CHANNELS) {
       it(`ipc-registry.ts EVENT_CHANNELS includes "${channel}"`, () => {
         expect(

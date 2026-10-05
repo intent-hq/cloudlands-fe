@@ -1,3 +1,9 @@
+import { setAvailableModels } from '../model/model-slice';
+import { learnModelNames, type LearnedModelNames } from './model-name-cache';
+import {
+  hostExecutionConnectionChanged,
+  hostExecutionInvalidated,
+} from '../host-execution/host-execution-slice';
 /**
  * Provider Models Cache Slice
  *
@@ -9,18 +15,47 @@
  * backend reconnect by the provider-models seeder (RESUB-1 idiom — a daemon
  * restart may have changed adapters/catalogs).
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import {
+  upsertItem,
+  createCollection,
+  getItem,
+  removeItem,
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   ProviderModelsCacheEntry,
   ProviderModelsFetchResult,
+  ProviderModelsRequest,
+  ProviderModelsRequestMode,
+  ProviderModelsObserver,
   ProviderModelsState,
 } from './provider-models-types';
 
 export const initialState: ProviderModelsState = {
+  learnedNames: {},
   byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
   clearEpoch: 0,
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
+  observers: createCollection<ProviderModelsObserver, 'id'>('id'),
 };
+
+export const providerModelsObserved =
+  createAction<[id: string, providerIds: string[], workspaceId?: string]>(
+    'providerModels/observed',
+  );
+export const providerModelsReleased = createAction<[id: string]>('providerModels/released');
+export const providerModelsRequested = createAction<
+  [providerId: string, mode: ProviderModelsRequestMode, workspaceId?: string]
+>('providerModels/requested');
+export const providerModelsRequestStarted = createAction<[request: ProviderModelsRequest]>(
+  'providerModels/requestStarted',
+);
+export const providerModelsRequestSettled = createAction<[request: ProviderModelsRequest]>(
+  'providerModels/requestSettled',
+);
 
 /**
  * A provider's catalog fetch succeeded — cache the dropdown-ready result
@@ -34,12 +69,13 @@ export const initialState: ProviderModelsState = {
  * flight, so the rows came from the pre-restart daemon.
  */
 export const providerModelsLoaded = createAction<
-  [providerId: string, result: ProviderModelsFetchResult, epoch: number],
-  [providerId: string, entry: ProviderModelsCacheEntry, epoch: number]
->('providerModels/providerModelsLoaded', (providerId, result, epoch) => [
+  [providerId: string, result: ProviderModelsFetchResult, epoch: number, workspaceId?: string],
+  [providerId: string, entry: ProviderModelsCacheEntry, epoch: number, workspaceId?: string]
+>('providerModels/providerModelsLoaded', (providerId, result, epoch, workspaceId) => [
   providerId,
   { ...result, fetchedAt: new Date().toISOString() },
   epoch,
+  workspaceId,
 ]);
 
 /**
@@ -50,22 +86,139 @@ export const providerModelsLoaded = createAction<
  */
 export const providerModelsCacheCleared = createAction('providerModels/providerModelsCacheCleared');
 
+export const learnedModelNamesHydrated = createAction<[names: LearnedModelNames]>(
+  'providerModels/learnedModelNamesHydrated',
+);
+
 export const providerModelsReducer = createReducer<ProviderModelsState>(initialState);
 
 providerModelsReducer.with(
   providerModelsLoaded,
-  (state, { payload: [providerId, entry, epoch] }) =>
-    epoch !== state.clearEpoch
-      ? state
-      : {
-          ...state,
-          byProviderId: {
-            ...state.byProviderId,
-            [providerId]: entry,
-          },
+  (state, { payload: [providerId, entry, epoch, workspaceId] }) => {
+    if (epoch !== state.clearEpoch) return state;
+    const learnedNames = learnModelNames(state.learnedNames, providerId, entry.models);
+    const requests = workspaceId ? state.requestsByWorkspaceId?.[workspaceId] : state.requests;
+    const request = requests && getItem(requests, providerId);
+    const recovered = request?.error
+      ? upsertItem(requests!, { ...request, error: undefined })
+      : requests;
+    if (workspaceId)
+      return {
+        ...state,
+        learnedNames,
+        byWorkspaceId: {
+          ...state.byWorkspaceId,
+          [workspaceId]: { ...state.byWorkspaceId?.[workspaceId], [providerId]: entry },
         },
+        ...(recovered && {
+          requestsByWorkspaceId: { ...state.requestsByWorkspaceId, [workspaceId]: recovered },
+        }),
+      };
+    return {
+      ...state,
+      learnedNames,
+      byProviderId: {
+        ...state.byProviderId,
+        [providerId]: entry,
+      },
+      requests: recovered ?? state.requests,
+    };
+  },
 );
 providerModelsReducer.with(providerModelsCacheCleared, (state) => ({
+  ...state,
   byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
   clearEpoch: state.clearEpoch + 1,
 }));
+
+providerModelsReducer.with(hostExecutionConnectionChanged, (state) => ({
+  ...state,
+  byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
+  clearEpoch: state.clearEpoch + 1,
+}));
+providerModelsReducer.with(hostExecutionInvalidated, (state) => ({
+  ...state,
+  byProviderId: {},
+  byWorkspaceId: {},
+  requestsByWorkspaceId: {},
+  requests: createCollection<ProviderModelsRequest, 'providerId'>('providerId'),
+  clearEpoch: state.clearEpoch + 1,
+}));
+providerModelsReducer.with(
+  providerModelsObserved,
+  (state, { payload: [id, providerIds, workspaceId] }) => {
+    const previous = getItem(state.observers, id);
+    if (
+      previous?.workspaceId === workspaceId &&
+      previous?.providerIds.join('\0') === providerIds.join('\0')
+    )
+      return state;
+    return { ...state, observers: upsertItem(state.observers, { id, providerIds, workspaceId }) };
+  },
+);
+providerModelsReducer.with(providerModelsReleased, (state, { payload: [id] }) => {
+  if (!getItem(state.observers, id)) return state;
+  return { ...state, observers: removeItem(state.observers, id) };
+});
+providerModelsReducer.with(providerModelsRequestStarted, (state, { payload: [request] }) => {
+  if (request.epoch !== state.clearEpoch) return state;
+  const { workspaceId } = request;
+  const requests = workspaceId
+    ? (state.requestsByWorkspaceId?.[workspaceId] ??
+      createCollection<ProviderModelsRequest, 'providerId'>('providerId'))
+    : state.requests;
+  const previous = getItem(requests, request.providerId);
+  const next = upsertItem(requests, {
+    ...request,
+    error: request.mode === 'silentRetry' ? previous?.error : undefined,
+  });
+  return {
+    ...state,
+    ...(workspaceId
+      ? { requestsByWorkspaceId: { ...state.requestsByWorkspaceId, [workspaceId]: next } }
+      : { requests: next }),
+  };
+});
+providerModelsReducer.with(providerModelsRequestSettled, (state, { payload: [request] }) => {
+  const { workspaceId } = request;
+  const requests = workspaceId ? state.requestsByWorkspaceId?.[workspaceId] : state.requests;
+  const current = requests && getItem(requests, request.providerId);
+  if (request.epoch !== state.clearEpoch || current?.requestId !== request.requestId) return state;
+  const next = upsertItem(requests!, {
+    ...request,
+    // Silent failures/empty results only toast. Keep the prior actionable
+    // failure until providerModelsLoaded supplies an actual catalog.
+    error: request.mode === 'silentRetry' ? current.error : request.error,
+  });
+  return {
+    ...state,
+    ...(workspaceId
+      ? { requestsByWorkspaceId: { ...state.requestsByWorkspaceId, [workspaceId]: next } }
+      : { requests: next }),
+  };
+});
+
+// This action is published only after active-catalog request ownership checks.
+providerModelsReducer.with(setAvailableModels, (state, { payload: [models, providerId] }) => {
+  const learnedNames = learnModelNames(state.learnedNames, providerId, models);
+  return learnedNames === state.learnedNames ? state : { ...state, learnedNames };
+});
+
+providerModelsReducer.with(learnedModelNamesHydrated, (state, { payload: [names] }) => {
+  // If discovery already ran, its current labels win over persisted labels.
+  let learnedNames = names;
+  for (const [providerId, labels] of Object.entries(state.learnedNames)) {
+    learnedNames = learnModelNames(
+      learnedNames,
+      providerId,
+      Object.entries(labels).map(([value, label]) => ({ value, label })),
+    );
+  }
+  return { ...state, learnedNames };
+});

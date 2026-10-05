@@ -38,6 +38,7 @@ import './notification-bridge-seeder';
 import './quit-confirmation-bridge-seeder';
 import './invite-consent-bridge-seeder';
 import './invite-notice-bridge-seeder';
+import './invite-progress-bridge-seeder';
 import './language-preference-bridge-seeder';
 import './renderer-log-bridge-seeder';
 import './user-activity-bridge-seeder';

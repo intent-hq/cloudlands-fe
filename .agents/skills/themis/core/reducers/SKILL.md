@@ -1,14 +1,8 @@
 ---
 name: core/reducers
 description: >-
-  createReducer<State>(initialState) returns a reducer whose .with(action, fn)
-  chain-registers pure handlers and returns the same reducer (fluent builder —
-  no .build() needed). The reducer is a function (state = initialState, action)
-  that dispatches to the registered handler by action.type. Reducers must be
-  pure and immutable — no side effects, no mutation, no Date.now(). Reducers
-  update canonical state only and never maintain selector-derived fields. Return
-  the same reference when nothing changes so selector reference-equality
-  memoization and test ref-equality assertions pass. `.initialState` is exposed for tests.
+  Use when building Themis createReducer handlers, chaining actions, or
+  handling immutable canonical-state updates and no-op reference equality.
 type: sub-skill
 requires:
   - core
@@ -22,7 +16,7 @@ triggers:
 ---
 # Reducers — `createReducer`
 
-> Operational guidance for reducer implementation. Full API walkthrough and examples: `@augmentcode/themis/docs/REDUCERS.md` → Creating Reducers. Public API: `@augmentcode/themis/utils/store/create-reducer`; related guidance: `../SKILL.md` §3, §14.
+> Operational guidance for reducer implementation. Full API walkthrough and examples: `@themislib/themis/docs/REDUCERS.md` → Creating Reducers. Public API: `@themislib/themis/utils/store/create-reducer`; related guidance: [Actions — Do](../actions/SKILL.md#do) and [Testing — Layer rules](../testing/SKILL.md#layer-rules).
 
 ## Use when
 
@@ -51,8 +45,8 @@ triggers:
 ### Chain handlers on the reducer function
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type CounterState = { value: number };
 const increment = createAction<[amount: number]>("counter/increment");
@@ -66,9 +60,9 @@ export const counterReducer = createReducer<CounterState>({ value: 0 }).with(
 ### Immutable collection update with parent no-op guard
 
 ```ts
-import { type Collection, createCollection, updateItem } from "@augmentcode/themis/utils/collections/collection-utils";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { type Collection, createCollection, updateItem } from "@themislib/themis/utils/collections/collection-utils";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type Todo = { id: string; title: string };
 type TodosState = { todos: Collection<Todo, "id"> };
@@ -84,8 +78,8 @@ export const todosReducer = createReducer(initialState).with(renameTodo, (state,
 ### Explicit same-reference no-op for nested state
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 const setSearch = createAction<[query: string]>("todos/setSearch");
 
@@ -99,8 +93,8 @@ export const reducer = createReducer({ filters: { query: "" } }).with(
 ### Async request, success, and failure handlers
 
 ```ts
-import { createAsyncAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAsyncAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type Todo = { id: string; title: string };
 const loadTodo = createAsyncAction<[id: string], { id: string }, Todo>("todos/loadAsync", "todos/load", (id) => ({ id }));
@@ -114,9 +108,9 @@ export const reducer = createReducer({ loading: false, todo: undefined as Todo |
 ### ❌ Bad: mutation and reducer-created nondeterminism
 
 ```ts
-import { type Collection, createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { type Collection, createCollection } from "@themislib/themis/utils/collections/collection-utils";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 type Todo = { id: string; title: string };
 type TodosState = { todos: Collection<Todo, "id">; updatedAtMs: number };
@@ -134,8 +128,8 @@ export const reducer = createReducer(initialState).with(renameTodo, (state, { pa
 ### ❌ Bad: unconditional nested copies lose no-op identity
 
 ```ts
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from "@themislib/themis/utils/store/create-action";
+import { createReducer } from "@themislib/themis/utils/store/create-reducer";
 
 const setSearch = createAction<[query: string]>("todos/setSearch");
 
@@ -161,7 +155,7 @@ export const reducer = createReducer({ filters: { query: "" } }).with(setSearch,
 
 ## See also
 
-- `@augmentcode/themis/docs/REDUCERS.md` — human reference for reducer and action examples.
+- `@themislib/themis/docs/REDUCERS.md` — human reference for reducer and action examples.
 - `core/actions/SKILL.md` — action creator contracts consumed by `.with()`.
 - `core/collections/SKILL.md` — immutable entity updates.
 - Selected Store family selector skill — derived values belong in selectors.

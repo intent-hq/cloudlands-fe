@@ -1,14 +1,18 @@
 <script lang="ts">
+  import { setPendingAutoAction } from '$store/renderer/slices/changes/changes-slice';
   import { Button } from '$lib/components/ui/button';
-  /* eslint-disable max-lines */
   /**
    * SidebarChangesPanel - Timeline-based changes panel
    * Shows the git workflow as a vertical timeline: Unstaged → Staged → Commits → PRs
    */
-  import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
-  import { invoke } from '$shared/generated/ipc-client';
+  import {
+    prWorkflowRequested,
+    setPRWorkflowDrawer,
+  } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
+  import { selectPRWorkflow } from '$store/renderer/slices/pr-workflow/pr-workflow-selectors';
+  import { setMergeDrawerOpen } from '$store/renderer/slices/accept-workflow/accept-workflow-slice';
+  import { selectMergeDrawerOpen } from '$store/renderer/slices/accept-workflow/accept-workflow-selectors';
 
-  import { hydrateAgentLocks } from '$features/file-tracking/file-tracking.client';
   import {
     selectStagedWorkingChanges as selectFtStagedChanges,
     selectUnstagedWorkingChanges as selectFtUnstagedChanges,
@@ -16,23 +20,13 @@
     selectFileTrackingLoading as selectFtLoading,
     selectFileTrackingChangesTruncated as selectFtChangesTruncated,
     selectFileTrackingTotalChangesCount as selectFtTotalChangesCount,
-    selectPendingAutoAction,
     selectAcceptChangesState,
   } from '$store/renderer/slices/changes/changes-selectors';
-  import {
-    refreshRequested,
-    refreshAcceptChangesStatus,
-    setPendingAutoAction,
-  } from '$store/renderer/slices/changes/changes-slice';
-  import { refreshPRStatusRequested } from '$store/renderer/slices/pr-status/pr-status-slice';
+  import { setCommitMessage } from '$store/renderer/slices/changes/changes-slice';
   import { type TrackedChange } from '$features/file-tracking/types';
-  import { gitCache } from '$features/git/git-cache';
   import {
-    loadGitStatus,
     acceptChangesConsumerMounted,
     acceptChangesConsumerUnmounted,
-    setPostMergeState,
-    setGitOperationFlag,
   } from '$store/renderer/slices/git/git-slice';
   import {
     selectGitStatus,
@@ -41,15 +35,10 @@
     selectPostMergeState,
     selectGitOperationFlags,
   } from '$store/renderer/slices/git/git-selectors';
-  import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
-  import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
-  import {
-    addTerminal,
-    openTerminalOverlay,
-  } from '$store/renderer/slices/terminals/terminals-slice';
 
   import {
     selectIsWorkspaceCollaborator,
+    selectWorkspaceUpdateContext,
     selectWorkspaceById,
     selectWorkspaceActivePullRequest,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -57,14 +46,12 @@
   import { openWorkspaceLocalChanges } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
-  import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
   import { onMount, untrack, type Snippet } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { readable, toStore } from 'svelte/store';
   import {
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
@@ -78,6 +65,7 @@
     type WorkspaceGitRootEntry,
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
+  import RepositoryContextSummary from '$features/accept-changes/components/RepositoryContextSummary.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
   import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
@@ -128,31 +116,24 @@
     return () => onRefreshActionChange?.(undefined);
   });
 
-  const workspaceIdStore = writable('');
-  $effect(() => {
-    workspaceIdStore.set(workspaceId);
-  });
+  const workspaceIdStore = toStore(() => workspaceId);
 
   const workspace = selectWorkspaceById(workspaceIdStore);
 
-  // Multiplayer role gate for the whole Changes tab. A collaborator may only
-  // call the member class of the daemon's capability matrix (intentd
-  // `capability.rs` / transport `COLLABORATOR_METHODS`): git.stage / unstage /
-  // discard / push / pull / fetch and reads. Everything routed through
-  // `accept-changes.*` (commit, push-commits, undo, rebase, merge, PR create,
-  // reset-to-trunk), `github.*`, `workspace.setAutoCommit`, `workspace.archive`
-  // and the protected `workspace.update` fields (`branch`, `baseRef`,
-  // `baseCommitSha`) is owner-only, so those controls are not rendered for a
-  // collaborator. `selectIsWorkspaceCollaborator` fails closed — a guest window
-  // (multiplayer w4) reads as collaborator whatever `myRole` the row carries,
-  // as does every window until its identity has settled — while a missing
-  // `myRole` in a settled owner window is treated as owner, like the rest of
-  // the sidebar. Threaded to children as a prop.
+  // Host execution and protected workspace fields have separate gates. A
+  // scoped guest owner may update branch/base fields without access to the
+  // accept-changes, terminal, script or direct lifecycle methods below.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isOwner = $derived(!$isCollaborator$);
+  const updateContext$ = selectWorkspaceUpdateContext(
+    workspaceIdStore,
+    readable(['branch', 'baseRef', 'baseCommitSha']),
+  );
+  const canUpdateWorkspace = $derived($updateContext$ !== null);
 
   const acceptChangesState$ = selectAcceptChangesState(workspaceIdStore);
-  const pendingAutoAction$ = selectPendingAutoAction(workspaceIdStore);
+  const workflow$ = selectPRWorkflow(workspaceIdStore);
+  const mergeDrawerOpen$ = selectMergeDrawerOpen(workspaceIdStore);
   const postMergeState$ = selectPostMergeState(workspaceIdStore);
   const gitOps$ = selectGitOperationFlags(workspaceIdStore);
 
@@ -293,15 +274,22 @@
   const repoType = $derived<'local' | 'github'>($workspace?.isRemote ? 'github' : 'local');
 
   // Loading states
-  let isCommitting = $state(false);
+  const isCommitting = $derived($workflow$.operations.commit?.status === 'pending');
   let hasLoadedForWorkspace = $state(false);
   let lastWorkspaceId: string | null = null;
 
   // Drawer/form states (collapsed by default)
-  let commitDrawerOpen = $state(false);
-  let mergeDrawerOpen = $state(false);
-  let mergePanelRef: MergePanel | undefined = $state(undefined);
+  const hasUnstaged = $derived(unstagedChanges.length > 0);
+  const hasStaged = $derived(stagedChanges.length > 0);
+  const hasCommits = $derived(allCommits.length > 0);
+  const commitDrawerOpen = $derived($workflow$.commitDrawerOpen && hasStaged);
+  const mergeDrawerOpen = $derived($mergeDrawerOpen$ && (hasStaged || hasCommits));
   let prSectionRef: PRSection | undefined = $state(undefined);
+  export function observeNativeRetirement() {
+    const original = prSectionRef;
+    if (!original) throw new Error('Original PRSection instance missing');
+    return original.observeNativeRetirement();
+  }
   // Post-merge state — read from Redux via selector
   const isMergedToTrunk = $derived($postMergeState$.isMergedToTrunk);
   const mergeHeadSha = $derived($postMergeState$.mergeHeadSha);
@@ -309,8 +297,6 @@
   const hasRemote = $derived($postMergeState$.hasRemote);
   const isContentMergedToTrunk = $derived($postMergeState$.isContentMergedToTrunk);
   const hasResetToTrunk = $derived($postMergeState$.hasResetToTrunk);
-
-  const githubAuthIsAuthenticated$ = selectGitHubAuthIsAuthenticated();
 
   $effect(() => {
     const visibleWorkspaceId = workspaceId;
@@ -321,39 +307,8 @@
   // Git operation loading flag — used by the refresh button spinner
   const isRefreshingGitStatus = $derived($gitOps$.isRefreshingGitStatus);
 
-  // Clear post-merge state when conditions change:
-  // 1. hasResetToTrunk when PRs transition away from all-merged (e.g., new PR after reset)
-  // 2. merge state when user makes new commits after an in-session merge
-  $effect(() => {
-    const shouldClearResetFlag = pullRequests.length > 0 && !areAllPRsMerged;
-    const shouldClearMerge =
-      mergeHeadSha && allCommits[0]?.hash && mergeHeadSha !== allCommits[0].hash;
-
-    untrack(() => {
-      if (shouldClearResetFlag) {
-        const current = selectPostMergeState.select(appStore.state, workspaceId);
-        if (current.hasResetToTrunk) {
-          appStore.dispatch(setPostMergeState(workspaceId, { ...current, hasResetToTrunk: false }));
-        }
-      }
-      if (shouldClearMerge) {
-        const current = selectPostMergeState.select(appStore.state, workspaceId);
-        appStore.dispatch(
-          setPostMergeState(workspaceId, {
-            ...current,
-            isMergedToTrunk: false,
-            mergeHeadSha: null,
-            isContentMergedToTrunk: false,
-          }),
-        );
-      }
-    });
-  });
-
-  // Initialize GitHub auth state on mount
+  // Loading presentation is local; hydration/discovery are root-owned.
   onMount(() => {
-    appStore.dispatch(initializeGitHubAuth());
-
     // Check if store is already loaded for this workspace on mount
     // This handles the case where the accordion is expanded after the store has already initialized
     const storeWsId = fileTrackingWorkspaceId;
@@ -395,21 +350,12 @@
     // If workspace changed, update tracking, sync settings, and reset loaded state
     if (workspaceChanged) {
       lastWorkspaceId = workspaceId;
-      // Sync workspace settings for the new workspace
-      appStore.dispatch(syncWorkspaceSettings(workspaceId as string));
-      // Hydrate the daemon-computed agent-lock snapshot (PROTOCOL §5.19);
-      // live updates arrive via the `changes:agent-locks` event (§6.5).
-      void hydrateAgentLocks(workspaceId as string);
       // Reset form state that is workspace-specific to prevent leaking between workspaces
       targetBranch = '';
       // Post-merge state is now read from Redux via selectPostMergeState — no manual restoration needed
       // (git operation loading flags auto-reset via Redux workspace-scoped state)
       // Clear file selection on workspace switch
       selectedFiles = new Set();
-      // Reset PR discovery tracking for the new workspace so discovery can
-      // run again (for PR-review workspaces on existing remote branches with no pushed commits).
-      lastDiscoveredPushedCount = 0;
-      hasAttemptedInitialDiscovery = false;
       // Only reset to false if the new workspace isn't already loaded
       // This prevents a brief flash when accordion is first opened for an already-loaded workspace
       if (storeLoading || storeWsId !== workspaceId) {
@@ -438,114 +384,14 @@
   });
 
   // Handle manual git status refresh
-  async function handleRefreshGitStatus() {
-    if (isRefreshingGitStatus) return;
-    appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingGitStatus', true));
-    const refreshStart = Date.now();
-
-    // Timeout for git refresh operations (90 seconds)
-    // This prevents infinite spinner if git operations hang (network issues, credentials, etc.)
-    const REFRESH_TIMEOUT_MS = 90_000;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-    try {
-      // Invalidate cache and refresh stores
-      gitCache.invalidate(`git-status-${workspaceId}`);
-
-      // Create a timeout promise to prevent infinite spinner
-      // We track the timeoutId so we can clear it when operations complete
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error('Git refresh timed out')),
-          REFRESH_TIMEOUT_MS,
-        );
-      });
-
-      // Race the refresh operations against the timeout
-      await Promise.race([
-        Promise.all([
-          Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId)),
-          // Also refresh aheadOfTrunk, hasRemote, and isContentMergedToTrunk for merged state detection.
-          // accept-changes.getStatus is refused for a collaborator, so only the owner dispatches it.
-          ...(isOwner
-            ? [Promise.resolve(appStore.dispatch(refreshAcceptChangesStatus(workspaceId)))]
-            : []),
-        ]),
-        timeoutPromise,
-      ]);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('timed out')) {
-        logger.warn(
-          // i18n-ignore (log line)
-          '[SidebarChangesPanel] Git refresh timed out - this may indicate network issues or pending credential prompts',
-        );
-      } else {
-        logger.warn('[SidebarChangesPanel] Failed to refresh git status:', error);
-      }
-    } finally {
-      // Clear the timeout to prevent memory leaks
-      if (timeoutId) clearTimeout(timeoutId);
-
-      // Ensure minimum visible duration for the spinner
-      const elapsed = Date.now() - refreshStart;
-      if (elapsed < 300) {
-        await new Promise((resolve) => setTimeout(resolve, 300 - elapsed));
-      }
-      appStore.dispatch(setGitOperationFlag(workspaceId, 'isRefreshingGitStatus', false));
-    }
+  function handleRefreshGitStatus() {
+    appStore.dispatch(prWorkflowRequested(workspaceId, { kind: 'refresh' }));
   }
 
   // Accept-changes status is owned by the visibility/event-driven Redux saga.
 
-  // Track the last pushed commit count we triggered discovery for.
-  // When pushed commits increase (e.g., agent pushes), we re-trigger discovery.
-  // This is more robust than a one-shot boolean because it detects new pushes
-  // that may have created a PR (via agent, CLI, GitHub website, etc.).
-  let lastDiscoveredPushedCount = $state(0);
-
-  // Track whether we've already attempted initial PR discovery for this workspace
-  // (for workspaces on existing remote branches with no local pushed commits, e.g., PR review)
-  let hasAttemptedInitialDiscovery = false;
-
-  // Automatically discover PRs when workspace loads.
-  // Re-triggers when pushed commit count changes (e.g., agent pushes new commits and creates a PR).
-  // Discovery tracking (lastDiscoveredPushedCount, hasAttemptedInitialDiscovery) is reset
-  // in the workspace-switch block of the consolidated load-state effect above.
-  // Rate-limited by the PR status saga's built-in MIN_REFRESH_INTERVAL_MS (5s).
-  $effect(() => {
-    if (!hasLoadedForWorkspace) return;
-    if (!$githubAuthIsAuthenticated$) return;
-
-    const currentPushedCount = pushedCommits.length;
-
-    if (currentPushedCount > 0) {
-      if (currentPushedCount === lastDiscoveredPushedCount) return;
-      lastDiscoveredPushedCount = currentPushedCount;
-    } else {
-      if (hasAttemptedInitialDiscovery || !hasRemote) return;
-      hasAttemptedInitialDiscovery = true;
-    }
-
-    logger.debug('[SidebarChangesPanel] Auto-discovering PRs', { workspaceId });
-    appStore.dispatch(refreshPRStatusRequested(workspaceId, false, false));
-  });
-
-  // Auto-close drawers when reactive conditions change
-  $effect(() => {
-    // Read all reactive deps outside untrack
-    const shouldCloseCommit = commitDrawerOpen && !hasStaged;
-    const shouldCloseMerge = mergeDrawerOpen && !hasStaged && !hasCommits;
-
-    untrack(() => {
-      if (shouldCloseCommit) commitDrawerOpen = false;
-      if (shouldCloseMerge) mergeDrawerOpen = false;
-    });
-  });
-
   // Inline form states
-  let commitMessage = $state('');
+  const commitMessage = $derived($acceptChangesState$.commitMessage);
   let targetBranch = $state('');
 
   // Initialize target branch from reactive defaults
@@ -558,56 +404,22 @@
     });
   });
 
-  // Executor result handling is now in executor-result-saga.
-  // The saga watches setExecutorState and updates form fields via Redux actions,
-  // then dispatches pendingAutoAction for auto-commit/PR/merge workflows.
+  // Background-agent followups and canonical drafts are owned by the PR workflow saga.
 
-  // Sync commit message from Redux and handle pending auto-actions (executor-result-saga).
-  // PRSection owns prTitle/prDescription sync internally.
+  // The prepared native intent only opens its original confirmation; it cannot auto-write.
   $effect(() => {
-    const ac = $acceptChangesState$;
-    const pending = $pendingAutoAction$;
-    // While a secondary root is selected the primary body is unmounted, so
-    // prSectionRef/mergePanelRef are undefined — leave the pending action
-    // queued (unconsumed) until the selection returns to primary; reading
-    // the flag here re-runs the effect on that switch (monorepo#2053).
+    const pending = $acceptChangesState$.pendingAutoAction;
     const browsingSecondaryRoot = isBrowsingSecondaryRoot;
-    // Every auto-action routes through an owner-only RPC (accept-changes.*):
-    // a collaborator consumes the action without firing it.
     const owner = isOwner;
+    if (pending?.action !== 'native-review') return;
     untrack(() => {
-      if (ac.commitMessage && ac.commitMessage !== commitMessage) {
-        commitMessage = ac.commitMessage;
-      }
-
-      // Handle pending auto-actions
-      if (pending && !browsingSecondaryRoot) {
-        appStore.dispatch(setPendingAutoAction(workspaceId, null));
-        if (!owner) return;
-        if (pending.action === 'commit') {
-          isCommitting = true;
-          handleCommit(pending.workspaceId);
-          commitDrawerOpen = false;
-        } else if (pending.action === 'create-pr') {
-          prSectionRef?.triggerCreatePR({
-            workspaceId: pending.workspaceId,
-            targetBranch: pending.targetBranch,
-          });
-        } else if (pending.action === 'merge') {
-          if (mergePanelRef) {
-            const opts = mergePanelRef.getMergeOptions();
-            mergePanelRef.triggerMerge({ squash: opts.squash, localOnly: !opts.pushAfter });
-          }
-          mergeDrawerOpen = false;
-        }
-      }
+      appStore.dispatch(setPendingAutoAction(workspaceId, null));
+      if (!browsingSecondaryRoot && owner && pending.workspaceId === workspaceId)
+        void prSectionRef?.triggerNativeReview(pending.intent);
     });
   });
 
   // Computed
-  const hasUnstaged = $derived(unstagedChanges.length > 0);
-  const hasStaged = $derived(stagedChanges.length > 0);
-  const hasCommits = $derived(allCommits.length > 0);
   const hasPRs = $derived(pullRequests.length > 0);
 
   // Detect new work after a merge. Checks uncommitted changes, unpushed commits,
@@ -734,6 +546,8 @@
 
   // Handle keyboard navigation
   function handleChangesKeydown(e: KeyboardEvent) {
+    // Secondary-root controls own their keyboard actions; the primary list is hidden.
+    if (isBrowsingSecondaryRoot) return;
     // Don't handle if we're in an input or textarea
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
@@ -742,7 +556,7 @@
     // Summary controls own their native button and picker keyboard interactions.
     if (
       target.closest(
-        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"]',
+        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"], [data-repository-summary], [data-native-sidebar-review]',
       )
     ) {
       return;
@@ -959,73 +773,9 @@
     return list.find((c) => c.relativePath === path);
   }
 
-  async function handleCommit(targetWorkspaceId?: string) {
+  function handleCommit(targetWorkspaceId?: string) {
     const wsId = targetWorkspaceId ?? workspaceId;
-    if (!commitMessage.trim()) return;
-    isCommitting = true;
-    try {
-      const result = await backgroundGitActionsService.commit({
-        workspaceId: wsId,
-        commitMessage: commitMessage.trim(),
-      });
-
-      if (result.success) {
-        commitMessage = '';
-        commitDrawerOpen = false;
-        // Toast is handled by git:op-completed event in +layout.svelte
-      } else {
-        notify.error(result.error || m.workspace_sidebarChanges_commitFailed_error());
-      }
-    } catch {
-      notify.error(m.workspace_sidebarChanges_commitFailed_error());
-    } finally {
-      isCommitting = false;
-    }
-  }
-
-  /**
-   * Opens a terminal to run the rebase command, so the user can see the output
-   * and resolve any conflicts if needed.
-   */
-  async function openRebaseTerminal() {
-    if (!workspaceId) return;
-
-    const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
-    if (!worktreePath) {
-      notify.error(m.workspace_commitsTimeline_noSpacePath_error());
-      return;
-    }
-
-    try {
-      // Rebase command: fetch origin first, then rebase onto origin/trunk
-      const rebaseCommand = `git fetch origin ${targetBranch || trunkBranch} && git rebase origin/${targetBranch || trunkBranch}`;
-      const terminalTitle = m.workspace_prSection_rebaseOnto_label({
-        branch: targetBranch || trunkBranch,
-      });
-
-      // Create terminal with the rebase command
-      const result = await invoke<any>('terminal:createWithCommand', {
-        workspaceId,
-        command: rebaseCommand,
-        cwd: worktreePath,
-        title: terminalTitle,
-      });
-
-      if (result.ok && result.terminalId) {
-        // Open the terminal in the quake terminal bar
-        appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
-        appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
-
-        notify.success(m.workspace_sidebarChanges_rebaseStarted_label(), {
-          description: m.workspace_sidebarChanges_rebaseStarted_description(),
-        });
-      } else {
-        notify.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
-      }
-    } catch (error) {
-      logger.error('Failed to open rebase terminal', error as Error);
-      notify.error(m.workspace_commitsTimeline_openTerminalFailed_error());
-    }
+    appStore.dispatch(prWorkflowRequested(wsId, { kind: 'commit', commitMessage }));
   }
 
   function handleFileClick(
@@ -1040,7 +790,7 @@
 
   // Determine if trunk can be changed: only before the first push, and only
   // by the owner — `baseRef` is not collaborator-editable on `workspace.update`.
-  const canChangeTrunk = $derived(isOwner && !hasPushedCommits && unpushedCount === 0);
+  const canChangeTrunk = $derived(canUpdateWorkspace && !hasPushedCommits && unpushedCount === 0);
 
   // Track if we're in the middle of a workspace switch to disable animations
   let isWorkspaceSwitching = $state(false);
@@ -1114,6 +864,11 @@
             ? (action) => (secondaryRefreshAction = action)
             : undefined}
         />
+        <RepositoryContextSummary
+          root={selectedSecondaryRoot
+            ? { workspaceId, kind: 'registered', gitRootId: selectedSecondaryRoot.key }
+            : { workspaceId, kind: 'primary' }}
+        />
 
         {#if isBrowsingSecondaryRoot}
           <!-- PR sections follow the dropdown while browsing a secondary root:
@@ -1141,7 +896,7 @@
             {repoPath}
             {repoType}
             {canChangeTrunk}
-            {isOwner}
+            isOwner={canUpdateWorkspace}
           />
 
           <div class="relative flex items-center mb-2 h-7" data-changes-summary-count>
@@ -1236,9 +991,16 @@
             {#if isOwner}
               <CommitDrawer
                 {workspaceId}
-                bind:commitMessage
-                bind:isCommitting
-                bind:commitDrawerOpen
+                bind:commitMessage={
+                  () => commitMessage,
+                  (value) => appStore.dispatch(setCommitMessage(workspaceId, value))
+                }
+                {isCommitting}
+                bind:commitDrawerOpen={
+                  () => commitDrawerOpen,
+                  (open) =>
+                    appStore.dispatch(setPRWorkflowDrawer(workspaceId, 'commitDrawerOpen', open))
+                }
                 {hasStaged}
                 {stagedChanges}
                 onCommit={() => handleCommit()}
@@ -1252,6 +1014,7 @@
               {activeFileStaged}
               pullRequestCount={pullRequests.length}
               {isOwner}
+              canUpdateBaseCommit={canUpdateWorkspace}
             />
 
             {#snippet mergePanelContent()}
@@ -1269,12 +1032,7 @@
                 {repoPath}
                 {repoType}
                 {commitMessage}
-                onCommitMessageChange={(v) => (commitMessage = v)}
-                onMergeComplete={() => {
-                  mergeDrawerOpen = false;
-                }}
-                onOpenRebaseTerminal={openRebaseTerminal}
-                bind:this={mergePanelRef}
+                onCommitMessageChange={(v) => appStore.dispatch(setCommitMessage(workspaceId, v))}
               />
             {/snippet}
 
@@ -1286,10 +1044,11 @@
               otherTrackedPRs={orderedPRSections.otherTracked}
               {mergeDrawerOpen}
               onMergeDrawerToggle={(open) => {
-                mergeDrawerOpen = open;
+                appStore.dispatch(setMergeDrawerOpen(workspaceId, open));
               }}
               {mergePanelContent}
               bind:this={prSectionRef}
+              nativeReview
             />
 
             <!-- Post-merge options - shown when workspace is completed (commits merged to trunk).

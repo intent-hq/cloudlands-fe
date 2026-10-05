@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 import {
   panelLayoutReducer as rawPanelLayoutReducer,
   emptyWorkspaceState,
@@ -1740,6 +1740,30 @@ describe('panelLayoutReducer', () => {
   });
 
   describe('openTabInAdjacentOrSplit', () => {
+    it('keeps automatic restore origin out of layout state', () => {
+      const state = stateWithPanel('p1', []);
+      const tab = {
+        type: 'agent' as const,
+        title: 'Primary',
+        agentId: 'agent',
+        workspaceId: WS,
+        closable: true,
+      };
+      const options = { force: true, newTabId: 'fixed-tab', newPanelId: 'fixed-panel' };
+      const manual = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(WS, tab, 'p1', options, 1234),
+      );
+      const restored = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(WS, tab, 'p1', { ...options, origin: 'layout-restore' }, 1234),
+      );
+      expect(restored).toEqual(manual);
+      expect(restored.byWorkspaceId[WS].panels.p1.tabs).toContainEqual(
+        expect.objectContaining({ agentId: 'agent' }),
+      );
+    });
+
     it('does not split for a tab owned by another workspace', () => {
       const state = stateWithPanel('p1', [{ id: 'existing', type: 'file', title: 'Existing' }]);
       const result = panelLayoutReducer(
@@ -2754,7 +2778,7 @@ describe('panelLayoutReducer', () => {
       expect(result.layoutHistory).toHaveLength(1);
     });
 
-    it('flattens legacy split layouts to the selected fixed count', () => {
+    it('preserves vertical rows when reconciling the selected horizontal column count', () => {
       const state = stateWithPanel('p1', [{ id: 'one', type: 'note', title: 'One' }]);
       state.byWorkspaceId[WS] = {
         ...state.byWorkspaceId[WS],
@@ -2781,8 +2805,11 @@ describe('panelLayoutReducer', () => {
       expect(result.root).toMatchObject({
         type: 'split',
         direction: 'horizontal',
-        children: [{ type: 'panel' }, { type: 'panel' }],
+        children: [state.byWorkspaceId[WS].root, { type: 'panel' }],
       });
+      expect(result.panels.p1).toEqual(state.byWorkspaceId[WS].panels.p1);
+      expect(result.panels.p2).toEqual(state.byWorkspaceId[WS].panels.p2);
+      expect(result.columnCount).toBe(2);
     });
   });
 

@@ -32,7 +32,7 @@ async function measure(component: CtLocator) {
     };
     const content = inner.getBoundingClientRect();
     const style = getComputedStyle(inner);
-    const cardStyle = getComputedStyle(banner);
+    const noticeStyle = getComputedStyle(banner);
     return {
       banner: box(banner),
       message: box(message),
@@ -46,8 +46,7 @@ async function measure(component: CtLocator) {
       inTranscript: viewport.contains(banner),
       inComposer: composer.contains(banner),
       overflow: banner.scrollWidth - banner.clientWidth,
-      rounded: parseFloat(cardStyle.borderTopLeftRadius),
-      border: parseFloat(cardStyle.borderTopWidth),
+      border: parseFloat(noticeStyle.borderTopWidth),
     };
   });
 }
@@ -133,8 +132,7 @@ for (const width of [280, 720]) {
         expect(before.viewport.bottom).toBeLessThanOrEqual(before.composer.top + 1);
         expect(before.banner.bottom).toBeLessThanOrEqual(before.queue!.top);
         expect(before.overflow).toBeLessThanOrEqual(1);
-        expect(before.rounded).toBeGreaterThan(0);
-        expect(before.border).toBeGreaterThan(0);
+        expect(before.border).toBe(0);
 
         // Real wheel input releases follow-bottom ownership. Observe displacement
         // against both the scroll offset and a rendered message, not CSS spelling.
@@ -156,11 +154,15 @@ for (const width of [280, 720]) {
           1,
         );
         expect(Math.abs(moved.composer.top - before.composer.top)).toBeLessThanOrEqual(1);
-        expect(Math.abs(moved.queue!.top - before.queue!.top)).toBeLessThanOrEqual(1);
+        // The queue lives in the transcript utility stack, so it
+        // follows the same wheel displacement while the composer stays fixed.
+        expect(Math.abs(moved.queue!.top - before.queue!.top - displacement)).toBeLessThanOrEqual(
+          1,
+        );
         await page.mouse.wheel(0, -100_000);
         await expect.poll(async () => viewport.evaluate((node) => node.scrollTop)).toBeLessThan(1);
         await expect(banner).not.toBeInViewport();
-        // Offscreen message bodies may dehydrate; the card itself must still
+        // Offscreen message bodies may dehydrate; the notice itself must still
         // exist below the viewport, rather than disappearing with the composer.
         const bannerTop = await banner.evaluate((node) => node.getBoundingClientRect().top);
         const viewportBottom = await viewport.evaluate(
@@ -207,17 +209,27 @@ test('keeps attention in the transcript alongside questions and a queued draft u
   // before checking the overlay's inert composer and attention coexistence.
   await expect(editor).toContainText('My response is ready.');
   await expect(queue).toBeVisible();
+  // This imported row has no verified author, so even the host owner cannot edit it.
+  await expect(queue.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   await component.getByRole('button', { name: /Click to expand/i }).click();
   await expect(question).toBeVisible();
   await expect(composer).toHaveAttribute('inert', '');
   await expect(composer).toHaveAttribute('aria-hidden', 'true');
-  await expect(queue).toHaveCount(0);
+  // Keep the queue mounted to preserve local edit drafts while the wizard owns input.
+  await expect(queue).toHaveCount(1);
+  await expect(queue).toBeHidden();
+  await expect(queue.getByRole('button')).toHaveCount(0);
+  const queuedContent = queue.getByTestId('queued-message-content');
+  await queuedContent.focus();
+  await expect(queuedContent).not.toBeFocused();
   await component.update({ props: { attention: 'blocker' } });
   await expect(banner.getByTestId('attention-request-label')).toContainText(/blocker/i);
   await viewport.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   await expect(banner).toBeInViewport({ ratio: 0.95 });
   const open = await measure(component);
-  expect(open.queue).toBeNull();
+  expect(open.queue).not.toBeNull();
+  expect(open.queue!.bottom - open.queue!.top).toBe(0);
+  expect(open.queue!.right - open.queue!.left).toBe(0);
   expect(open.inTranscript).toBe(true);
   expect(open.inComposer).toBe(false);
   const questionBox = await question.boundingBox();
@@ -227,6 +239,7 @@ test('keeps attention in the transcript alongside questions and a queued draft u
   await expect(composer).not.toHaveAttribute('inert', '');
   await expect(composer).not.toHaveAttribute('aria-hidden', 'true');
   await expect(queue).toBeVisible();
+  await expect(queue.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   await editor.focus();
   await expect(editor).toBeFocused();
   await expect(editor).toContainText('My response is ready.');

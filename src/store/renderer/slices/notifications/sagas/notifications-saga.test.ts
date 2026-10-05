@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
@@ -52,10 +53,11 @@ class MockNotification {
   }
 }
 
-const state = (currentTabId: string | null = null) => ({
-  userPreferences: { enabled: true, soundOnlyWhenUnfocused: false },
-  tabState: { currentTabId },
-});
+const state = (currentTabId: string | null = null) =>
+  withLegacyPrincipal({
+    userPreferences: { enabled: true, soundOnlyWhenUnfocused: false },
+    tabState: { currentTabId },
+  });
 const idle = (data: Record<string, unknown> = {}, workspaceId = 'ws-1') => ({
   type: 'agent:idle',
   workspaceId,
@@ -375,6 +377,20 @@ describe('notification sagas', () => {
       throw new Error(`unexpected ${method}`);
     });
     emitMockIpcEvent('agent:idle', idle({ workspaceArchived: true }));
+    emitMockIpcEvent(
+      'agent:idle',
+      idle({
+        waitingOnScriptMonitors: [
+          {
+            monitorId: 's1',
+            scriptId: 'checks',
+            runId: 'r1',
+            scriptName: 'Checks',
+            expiresAt: '2026-10-02T10:10:00Z',
+          },
+        ],
+      }),
+    );
     emitMockIpcEvent('agent:idle', idle({ waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }] }));
     emitMockIpcEvent(
       'agent:idle',

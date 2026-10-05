@@ -1,3 +1,4 @@
+import type { AgentPlacement } from './agent-node';
 /**
  * Agent System Type Definitions
  *
@@ -12,6 +13,8 @@ export enum AgentStatus {
   // Current values
   Pending = 'pending',
   Active = 'active',
+  Halted = 'halted',
+  Resuming = 'resuming',
   // App-level runtime events (including Chief) can persist lowercase idle;
   // keep it valid so save/load round-trips do not repair or rewrite it.
   RuntimeIdle = 'idle',
@@ -129,6 +132,7 @@ import type { AgentSession } from './agent-session';
  * - Otherwise, a default name is generated based on workspace title
  */
 export interface UnifiedAgentConfig {
+  placement?: AgentPlacement;
   // Required
   workspaceId: BrandedWorkspaceId;
 
@@ -142,6 +146,9 @@ export interface UnifiedAgentConfig {
    * Omitted, the daemon treats any supplied name as explicitly set.
    */
   nameExplicitlySet?: boolean;
+
+  /** Remember this successful manual specialist choice for the workspace. */
+  rememberSpecialist?: boolean;
 
   // Optional
   id?: string; // Allow passing in a pre-generated agent ID

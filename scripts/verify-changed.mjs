@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
+import ts from 'typescript';
 import {
   CT_TEST_DIR,
   ctGeometryScene,
@@ -13,7 +14,14 @@ import {
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
+import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
+import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
+import { resolveUnitSelections } from './verify-unit-selection.mjs';
+import {
+  generatedBuildConfigPrerequisite,
+  requiresTransferSelectionFixtures,
+} from './unit-test-prerequisites.mjs';
 import {
   acquireVerificationLock,
   ctLockKey,
@@ -43,7 +51,7 @@ const SKIP_DIRS = new Set([
   'test-reports',
 ]);
 const CODE_EXTENSIONS = new Set(['.cjs', '.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
-const LINT_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
+const LINT_EXTENSIONS = new Set(['.cjs', '.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
 const FORMAT_EXTENSIONS = new Set([
   '.cjs',
   '.css',
@@ -61,6 +69,18 @@ const FORMAT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
+// This suite executes the full required scan with the checked-in baseline.
+const TRANSLATION_INVENTORY_SUITE = 'scripts/check-hardcoded-strings.test.ts';
+// Its final test executes the checker against the real repository catalogs.
+const LOCALE_COMPLETENESS_SUITE = 'scripts/check-i18n-completeness.test.ts';
+const LOCALE_COMPLETENESS_INPUTS = new Set([
+  'project.inlang/settings.json',
+  'scripts/i18n-equal-allowlist.json',
+  'scripts/check-i18n-completeness.mjs',
+  LOCALE_COMPLETENESS_SUITE,
+  'package.json',
+  'pnpm-lock.yaml',
+]);
 // Mirrors the runner-owned excludes in vitest.config.ts /
 // tests/integration/vitest.integration.config.ts. Neither Playwright pattern is
 // mirrored: `isCtSpec` and playwright-ct.config.ts both read
@@ -119,7 +139,14 @@ export function parseArgs(argv) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
-    else if (arg === '--help' || arg === '-h') result.help = true;
+    else if (arg === '--resolved-plan') result.resolvedPlan = true;
+    else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
+      const value =
+        arg === '--max-unit-files' ? argv[(index += 1)] : arg.slice('--max-unit-files='.length);
+      if (!/^\d+$/.test(value ?? '') || !Number.isSafeInteger(Number(value)))
+        throw new Error('--max-unit-files requires a nonnegative safe integer');
+      result.maxUnitFiles = Number(value);
+    } else if (arg === '--help' || arg === '-h') result.help = true;
     else if (arg === '--base' || arg.startsWith('--base=')) {
       const value = arg === '--base' ? argv[(index += 1)] : arg.slice('--base='.length);
       if (!value || value.startsWith('-')) throw new Error('missing value for option: --base');
@@ -127,6 +154,8 @@ export function parseArgs(argv) {
     } else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else result.paths.push(arg);
   }
+  if (result.dryRun && (result.resolvedPlan || result.maxUnitFiles !== undefined))
+    throw new Error('Use --resolved-plan instead of --dry-run to resolve or bound unit files');
   return result;
 }
 
@@ -173,16 +202,33 @@ function gitNames(args, root) {
     .map((file) => slash(file));
 }
 
+const DEFAULT_BASE = 'origin/main';
+
+function gitRevision(args, root) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
 function mergeBase(ref, root) {
   try {
-    return execFileSync('git', ['merge-base', ref, 'HEAD'], {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
+    return gitRevision(['merge-base', ref, 'HEAD'], root);
   } catch (error) {
     const detail = String(error?.stderr ?? error?.message ?? error).trim();
     throw new Error(`cannot resolve --base ${ref}: ${detail}`, { cause: error });
+  }
+}
+
+// True when HEAD has commits that `ref` does not; false when `ref` cannot be
+// resolved (no remote-tracking ref, detached fixture), so the caller can fall
+// back to the plain "nothing to verify" exit instead of throwing.
+function isAheadOf(ref, root) {
+  try {
+    return mergeBase(ref, root) !== gitRevision(['rev-parse', 'HEAD'], root);
+  } catch {
+    return false;
   }
 }
 
@@ -314,15 +360,184 @@ export function testRunner(file) {
 // Vitest's default `test.include`; vitest.config.ts does not override it.
 const VITEST_INCLUDE_GLOB = '**/*.{test,spec}.?(c|m)[jt]s?(x)';
 
+// Bounded static interpretation only: never evaluate a project's config while
+// planning. Unknown expressions must not establish equivalent inventory coverage.
+function literalProperty(object, name) {
+  if (
+    !object ||
+    !ts.isObjectLiteralExpression(object) ||
+    object.properties.some(
+      (property) => ts.isSpreadAssignment(property) || ts.isComputedPropertyName(property.name),
+    )
+  )
+    return null;
+  const matches = object.properties.filter((property) => property.name.text === name);
+  if (matches.length > 1 || (matches.length && !ts.isPropertyAssignment(matches[0]))) return null;
+  return matches[0]?.initializer;
+}
+
+function vitestExclusions(root, configFile = 'vitest.config.ts') {
+  const unknown = { patterns: [], exclusionsKnown: false, complete: false };
+  const configPath = resolve(root, configFile);
+  if (!existsSync(configPath)) return unknown;
+  const source = ts.createSourceFile(
+    configPath,
+    readFileSync(configPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    false,
+  );
+  if (source.parseDiagnostics.length) return unknown;
+  const imports = new Map();
+  for (const statement of source.statements.filter(ts.isImportDeclaration)) {
+    const clause = statement.importClause;
+    if (clause?.name) imports.set(clause.name.text, [statement.moduleSpecifier.text, 'default']);
+    if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+      for (const binding of clause.namedBindings.elements)
+        imports.set(binding.name.text, [
+          statement.moduleSpecifier.text,
+          (binding.propertyName ?? binding.name).text,
+        ]);
+    }
+  }
+  const imported = (node, module, name) =>
+    node && ts.isIdentifier(node) && imports.get(node.text)?.join(':') === `${module}:${name}`;
+  const shadowed = new Set();
+  const forgetBindings = (node) => {
+    if (ts.isIdentifier(node)) {
+      imports.delete(node.text);
+      shadowed.add(node.text);
+    } else if (ts.isBindingElement(node)) forgetBindings(node.name);
+    else ts.forEachChild(node, forgetBindings);
+  };
+  for (const statement of source.statements.filter(ts.isVariableStatement))
+    for (const declaration of statement.declarationList.declarations)
+      forgetBindings(declaration.name);
+  const exports = source.statements.filter(ts.isExportAssignment);
+  if (exports.length !== 1 || exports[0].isExportEquals) return unknown;
+  let config = exports[0].expression;
+  if (
+    ts.isCallExpression(config) &&
+    imported(config.expression, 'vitest/config', 'defineConfig') &&
+    config.arguments.length === 1
+  ) {
+    config = config.arguments[0];
+    if (ts.isArrowFunction(config) && config.parameters.length === 0 && ts.isBlock(config.body)) {
+      const statements = config.body.statements;
+      const returned = statements.at(-1);
+      if (
+        !returned ||
+        !ts.isReturnStatement(returned) ||
+        !statements.slice(0, -1).every(ts.isVariableStatement)
+      )
+        return unknown;
+      // A callback-local binding must not masquerade as one of the known imports.
+      for (const statement of statements.slice(0, -1))
+        for (const declaration of statement.declarationList.declarations)
+          forgetBindings(declaration.name);
+      config = returned.expression;
+    }
+  }
+  const test = literalProperty(config, 'test');
+  const exclude = literalProperty(test, 'exclude');
+  if (exclude === null || (exclude && !ts.isArrayLiteralExpression(exclude))) return unknown;
+  // Discovery and execution filters need a real config evaluator; keep the scan then.
+  const complete =
+    literalProperty(config, 'root') === undefined &&
+    [
+      'include',
+      'dir',
+      'root',
+      'projects',
+      'workspace',
+      'testNamePattern',
+      'typecheck',
+      'related',
+      'changed',
+      'shard',
+      'tagsFilter',
+      'cliExclude',
+      'listTags',
+      'clearCache',
+      'mergeReports',
+    ].every((name) => literalProperty(test, name) === undefined);
+  const patterns = [];
+  let exclusionsKnown = true;
+  for (const element of exclude?.elements ?? []) {
+    if (ts.isStringLiteral(element)) {
+      patterns.push(element.text);
+      continue;
+    }
+    // The repo's one computed exclusion source has an existing pure helper.
+    // Accept only its imported call with the exact root .gitignore argument.
+    const call = ts.isSpreadElement(element) ? element.expression : null;
+    const argument =
+      call && ts.isCallExpression(call) && call.arguments.length === 1 ? call.arguments[0] : null;
+    const callee = argument && ts.isCallExpression(argument) ? argument.expression : null;
+    if (
+      call &&
+      ts.isCallExpression(call) &&
+      imported(call.expression, './scripts/gitignore-dir-excludes.mjs', 'gitignoreDirExcludes') &&
+      callee &&
+      ts.isPropertyAccessExpression(callee) &&
+      callee.name.text === 'join' &&
+      (imported(callee.expression, 'path', 'default') ||
+        imported(callee.expression, 'node:path', 'default')) &&
+      argument.arguments.length === 2 &&
+      ts.isIdentifier(argument.arguments[0]) &&
+      argument.arguments[0].text === '__dirname' &&
+      !shadowed.has('__dirname') &&
+      ts.isStringLiteral(argument.arguments[1]) &&
+      argument.arguments[1].text === '.gitignore' &&
+      existsSync(resolve(root, '.gitignore'))
+    ) {
+      patterns.push(...gitignoreDirExcludes(resolve(root, '.gitignore')));
+    } else exclusionsKnown = false;
+  }
+  return { patterns, exclusionsKnown, complete: complete && exclusionsKnown };
+}
+
 export function vitestExcludePatterns(root = REPO_ROOT) {
-  const configPath = resolve(root, 'vitest.config.ts');
-  if (!existsSync(configPath)) return [];
-  const block = /\bexclude:\s*\[([\s\S]*?)\]/.exec(readFileSync(configPath, 'utf8'))?.[1] ?? '';
-  const code = block
-    .split('\n')
-    .map((line) => line.replace(/\/\/.*$/, ''))
-    .join('\n');
-  return [...code.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  return vitestExclusions(root).patterns;
+}
+
+function snapshotOwner(file, root) {
+  // Vitest's default external snapshot path preserves the complete test basename.
+  // Do not guess custom layouts or search for similarly named tests.
+  if (basename(dirname(file)) !== '__snapshots__') return null;
+  const owner = slash(join(dirname(dirname(file)), basename(file, '.snap')));
+  const runner = testRunner(owner);
+  if (!runner || runner === 'manual' || !CODE_EXTENSIONS.has(extname(owner))) return null;
+  try {
+    assertCanonicalPathInsideRoot(resolve(root, owner), root, owner);
+    if (!statSync(resolve(root, owner), { throwIfNoEntry: false })?.isFile()) return null;
+  } catch {
+    return null;
+  }
+
+  const exclusions =
+    runner === 'vitest'
+      ? vitestExclusions(root)
+      : runner === 'integration'
+        ? vitestExclusions(root, 'tests/integration/vitest.integration.config.ts')
+        : { patterns: ['**/node_modules/**'], exclusionsKnown: true };
+  // Unknown excludes must not look like an empty policy. Integration's supported
+  // root/include settings do not make its literal exclusion policy unknown.
+  if (!exclusions.exclusionsKnown) return null;
+  const exclude = exclusions.patterns;
+  const gitignore = resolve(root, '.gitignore');
+  // Only the unit config derives exclusions from .gitignore. The integration
+  // config has its own excludes; both Playwright configs set an explicit testDir.
+  if (runner === 'vitest' && existsSync(gitignore)) {
+    exclude.push(...gitignoreDirExcludes(gitignore));
+  }
+  const matches = globSync(escapeGlob(owner, { windowsPathsNoEscape: true }), {
+    cwd: root,
+    ignore: exclude,
+    nodir: true,
+    dot: true,
+    posix: true,
+  });
+  return matches.includes(owner) ? owner : null;
 }
 
 function hasRunnableUnitTests(directory, root, exclude) {
@@ -344,7 +559,7 @@ function survivingUnitTestDirectory(file, root, exclude) {
 
 function isLintable(file) {
   if (!LINT_EXTENSIONS.has(extname(file))) return false;
-  return !/^(?:scripts|e2e|test)\//.test(file) && !file.endsWith('.cjs');
+  return !/^(?:e2e|test)\//.test(file);
 }
 
 function isKnownNonCode(file) {
@@ -407,16 +622,22 @@ export function createVerificationPlan(files, options = {}) {
   const existing = files.filter((file) => isExisting(file, root));
   const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
   const lintFiles = existing.filter(isLintable);
-  const directTests = (runner) => existing.filter((file) => testRunner(file) === runner);
+  const snapshots = new Map(
+    files
+      .filter((file) => extname(file) === '.snap')
+      .map((file) => [file, snapshotOwner(file, root)]),
+  );
+  const testFiles = [...new Set([...existing, ...[...snapshots.values()].filter(Boolean)])];
+  const directTests = (runner) => testFiles.filter((file) => testRunner(file) === runner);
   const directCt = directTests('ct');
   const directIntegration = directTests('integration');
   const directPlaywright = directTests('playwright');
   const deletedUnitTests = files.filter(
     (file) => testRunner(file) === 'vitest' && !isExisting(file, root),
   );
-  const vitestExclude = deletedUnitTests.length ? vitestExcludePatterns(root) : [];
+  const vitestExclude = vitestExclusions(root);
   const deletedUnitDirectories = deletedUnitTests
-    .map((file) => survivingUnitTestDirectory(file, root, vitestExclude))
+    .map((file) => survivingUnitTestDirectory(file, root, vitestExclude.patterns))
     .filter(Boolean);
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
@@ -427,7 +648,7 @@ export function createVerificationPlan(files, options = {}) {
   );
   const uiInvariants = files.some(isRendererSource);
   const declaredUnit = selectDeclaredSuites(declared.suites, files).filter(
-    (suite) => !directUnit.includes(suite),
+    (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
   );
   let architecture = files.some(isArchitectureSource);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
@@ -446,6 +667,8 @@ export function createVerificationPlan(files, options = {}) {
   const fallbackReasons = [];
 
   for (const file of files) {
+    // A resolved snapshot selects its runner above; it did not change source or types.
+    if (snapshots.get(file)) continue;
     addBoundary(boundaries, file);
     if (file.endsWith('.svelte')) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
@@ -464,7 +687,7 @@ export function createVerificationPlan(files, options = {}) {
       /^(?:eslint|playwright|postcss|prettier|svelte|tailwind|tsconfig|vite|vitest)[^/]*\./.test(
         file,
       );
-    if (FULL_RISK_FILES.has(file) || !known) {
+    if (snapshots.has(file) || FULL_RISK_FILES.has(file) || !known) {
       fallbackReasons.push(file);
       architecture = true;
       fullUnit = true;
@@ -501,6 +724,37 @@ export function createVerificationPlan(files, options = {}) {
         'type-check:validate',
       ]),
     );
+  // Selected test coverage is only equivalent if the real-repository test can run.
+  const suiteCovered = (requiredSuite) =>
+    vitestExclude.complete &&
+    (fullUnit ||
+      [...directUnit, ...declaredUnit].some(
+        (suite) => suite === requiredSuite || requiredSuite.startsWith(`${suite}/`),
+      )) &&
+    globSync(requiredSuite, {
+      cwd: root,
+      ignore: vitestExclude.patterns,
+      nodir: true,
+    }).length > 0;
+  if (files.some(isEnforcedFile) && !suiteCovered(TRANSLATION_INVENTORY_SUITE))
+    checks.push(
+      command('i18n-strings', 'Translation strings (required inventory scan)', [
+        'run',
+        'lint:i18n-strings',
+      ]),
+    );
+  if (
+    files.some(
+      (file) => /^messages\/[^/]+\.json$/.test(file) || LOCALE_COMPLETENESS_INPUTS.has(file),
+    ) &&
+    !suiteCovered(LOCALE_COMPLETENESS_SUITE)
+  )
+    checks.push(
+      command('i18n-completeness', 'Locale catalog completeness', [
+        'run',
+        'lint:i18n-completeness',
+      ]),
+    );
   if (deadCode)
     checks.push(command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']));
   if (fullUnit)
@@ -525,18 +779,21 @@ export function createVerificationPlan(files, options = {}) {
         ]),
       );
     }
-    if (directIntegration.length) {
-      checks.push(
-        command('vitest-integration', 'Vitest integration (changed tests)', [
-          'exec',
-          'vitest',
-          'run',
-          '--config',
-          'tests/integration/vitest.integration.config.ts',
-          ...directIntegration,
-        ]),
-      );
-    }
+  }
+  // The unit fallback excludes integration tests, so it cannot replace this lane.
+  if (directIntegration.length) {
+    checks.push(
+      command('vitest-integration', 'Vitest integration (changed tests)', [
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'tests/integration/vitest.integration.config.ts',
+        ...directIntegration,
+      ]),
+    );
+  }
+  if (!fullUnit) {
     if (relatedSources.length) {
       checks.push(
         command('vitest-related', 'Vitest (tests related to changed sources)', [
@@ -654,8 +911,42 @@ export function createVerificationPlan(files, options = {}) {
       ]),
     );
   }
+  // These are planner-owned selections using the standard unit config. Pass only
+  // their file filters to the shared launcher policy; related selection remains
+  // conservative because it can reach any consumer through the import graph.
+  const unitSelections = new Map([
+    ['vitest-direct', directUnit],
+    ['vitest-declared', declaredUnit],
+    ['vitest-full', []],
+    ['vitest-related', ['related', ...relatedSources]],
+  ]);
+  const prerequisiteId = 'transfer-selection-fixtures';
+  const prerequisites = [];
+  const buildConfig = generatedBuildConfigPrerequisite({ root });
+  for (const check of checks) {
+    // Every unit lane imports generated config, including repo-wide UI invariants.
+    if (!check.id.startsWith('vitest-')) continue;
+    check.dependsOn = [buildConfig.id];
+    const selection = unitSelections.get(check.id);
+    if (selection && requiresTransferSelectionFixtures(selection, { root })) {
+      check.dependsOn.push(prerequisiteId);
+    }
+  }
+  if (checks.some((check) => check.dependsOn?.includes(buildConfig.id))) {
+    prerequisites.push(buildConfig);
+  }
+  if (checks.some((check) => check.dependsOn?.includes(prerequisiteId))) {
+    prerequisites.push({
+      id: prerequisiteId,
+      label: 'Validate canonical transfer-selection fixtures',
+      executable: process.execPath,
+      args: [resolve(REPO_ROOT, 'scripts/transfer-selection-fixtures.mjs')],
+      lockKind: null,
+    });
+  }
   return {
     files,
+    prerequisites,
     checks,
     fallbackReasons: [...new Set(fallbackReasons)].sort(),
     triggerViolations: declared.violations.map((entry) => entry.path),
@@ -683,16 +974,32 @@ export function printPlan(plan, dryRun, log = console.log) {
       `verify:changed: warning: ${plan.triggerViolations.length} vitest suite(s) read the tree from disk without a ${TRIGGER_MARKER} header and are never selected here; see pnpm run lint:verify-changed-triggers`,
     );
   }
+  if (plan.prerequisites?.length) {
+    log('verify:changed: prerequisites (before all selected checks)');
+    for (const prerequisite of plan.prerequisites) {
+      log(
+        `  - ${prerequisite.id}: ${[prerequisite.executable, ...prerequisite.args].map(shellQuote).join(' ')}`,
+      );
+    }
+  }
   log(`verify:changed: ${plan.checks.length} check(s)`);
   for (const check of plan.checks) {
-    log(`  - ${check.label}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`);
+    const dependencies = check.dependsOn?.length
+      ? ` [requires: ${check.dependsOn.join(', ')}]`
+      : '';
+    log(
+      `  - ${check.label}${dependencies}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`,
+    );
   }
   if (dryRun) log('verify:changed: dry-run; no commands were run');
 }
 
 async function runCheck(check, root, { heldLock = null } = {}) {
   console.log(`\n[verify:changed] ${check.label}`);
-  const launcher = pnpmInvocation(check.args);
+  const launcher =
+    check.executable === 'pnpm'
+      ? pnpmInvocation(check.args)
+      : { executable: check.executable, args: check.args, shell: false };
   // A locked check spawns the CT launcher, which takes the same `ct-<port>`
   // lock for direct runs; tell it the lock is already held so it does not
   // wait on its own parent.
@@ -725,6 +1032,50 @@ export async function runVerificationPlan(plan, root, options = {}) {
   const lockPath = options.lockPath ?? defaultLockPath;
   const log = options.log ?? console.log;
 
+  // Keep prerequisites separate from checks so {...plan, checks: selectedChecks}
+  // retains them. Resolve every reference before spawning anything, then validate
+  // once before ALL selected checks, including an earlier unrelated test lane.
+  const required = new Set(plan.checks.flatMap((check) => check.dependsOn ?? []));
+  const prerequisites = [...required].map((id) => {
+    const prerequisite = plan.prerequisites?.find((entry) => entry.id === id);
+    if (!prerequisite) throw new Error(`Missing prerequisite ${id} in verification plan`);
+    return prerequisite;
+  });
+  for (const prerequisite of prerequisites) await run(prerequisite, root);
+
+  let selections;
+  const printSelections = (resolved, complete) => {
+    const files = [...new Set(resolved.flatMap((selection) => selection.files))].sort();
+    log(
+      `verify:changed: ${complete ? 'resolved' : 'partially resolved'} unit files: ${files.length} unique`,
+    );
+    for (const file of files) log(`  - ${file}`);
+    for (const selection of resolved) {
+      log(`  ${selection.id}: ${selection.files.length} file(s)`);
+      for (const file of selection.files) log(`    - ${file}`);
+    }
+    return files;
+  };
+  try {
+    selections = await (options.resolveUnitSelections ?? resolveUnitSelections)(plan, root);
+  } catch (error) {
+    printSelections(error.selections ?? [], false);
+    throw new Error(
+      `${error.message}\nNo selected checks ran. Repair discovery and retry --resolved-plan; for an explicit full unit run: pnpm run test:unit --maxWorkers=1`,
+      { cause: error },
+    );
+  }
+  const unitFiles = printSelections(selections, true);
+  if (options.maxUnitFiles !== undefined && unitFiles.length > options.maxUnitFiles) {
+    throw new Error(
+      `${unitFiles.length} unit files exceed --max-unit-files ${options.maxUnitFiles}. No selected checks ran; no coverage was truncated.\nReview --resolved-plan, then rerun the same command with --max-unit-files ${unitFiles.length} (or omit the limit). Explicit full unit run: pnpm run test:unit --maxWorkers=1`,
+    );
+  }
+  if (options.resolvedPlan) {
+    log('verify:changed: resolved-plan; prerequisites and discovery only, no selected checks ran');
+    return;
+  }
+
   for (const check of plan.checks) {
     const lockKey = verificationLockKey(check, env);
     if (!lockKey) {
@@ -755,16 +1106,27 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
-    log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    log(
+      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--max-unit-files N] [--base <ref>] [paths...]',
+    );
+    log(
+      `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
+    );
     return 0;
   }
-  const files = args.paths.length
+  let base = args.base;
+  let files = args.paths.length
     ? expandInputPaths(args.paths, root)
-    : collectChangedFiles(root, { base: args.base });
+    : collectChangedFiles(root, { base });
+  if (!args.paths.length && !base && files.length === 0 && isAheadOf(DEFAULT_BASE, root)) {
+    base = DEFAULT_BASE;
+    log(`verify:changed: worktree clean; verifying commits since merge-base with ${base}`);
+    files = collectChangedFiles(root, { base });
+  }
   if (!args.paths.length && files.length === 0) {
-    const hint = args.base
-      ? ` and no files changed relative to the merge-base with ${args.base}`
-      : "; pass --base origin/main to verify this branch's commits against main";
+    const hint = base
+      ? ` and no files changed relative to the merge-base with ${base}`
+      : `; pass --base ${DEFAULT_BASE} to verify this branch's commits against main`;
     log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
     return 2;
   }
@@ -778,7 +1140,11 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   if (!deps.ok) throw new Error(deps.reason);
   const i18n = await ensureI18n(root);
   if (!i18n.ok) throw new Error(i18n.reason);
-  await runPlan(plan, root);
+  await runPlan(plan, root, {
+    resolvedPlan: args.resolvedPlan,
+    maxUnitFiles: args.maxUnitFiles,
+    log,
+  });
   return 0;
 }
 

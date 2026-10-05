@@ -125,34 +125,23 @@
       strategy="fixed"
       preventScroll={false}
       onOpenAutoFocus={handleOpenAutoFocus}
-      class="z-[100] py-0.5 min-w-40"
+      class="min-w-40"
       aria-label={m.navigation_linkActionMenu_menu_ariaLabel()}
     >
-      <Menu.Item
-        class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent text-foreground hover:bg-accent cursor-pointer"
-        onSelect={handleStartWorkspace}
-      >
-        {startWorkspaceLabel}
-      </Menu.Item>
-      <Menu.Separator />
-      <Menu.Item
-        class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent text-foreground hover:bg-accent cursor-pointer"
-        onSelect={handleOpenInBrowser}
-      >
+      {#if linkActionMenuState.gitHubRef}
+        <Menu.Item onSelect={handleStartWorkspace}>{startWorkspaceLabel}</Menu.Item>
+        <Menu.Separator />
+      {/if}
+      <Menu.Item onSelect={handleOpenInBrowser}>
         {m.navigation_linkActionMenu_openInBrowser_label()}
       </Menu.Item>
       {#if linkActionMenuState.workspaceId}
-        <Menu.Item
-          class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent text-foreground hover:bg-accent cursor-pointer"
-          onSelect={handleOpenInApp}
-        >
+        <Menu.Item onSelect={handleOpenInApp}>
           {m.navigation_linkActionMenu_openInApp_label()}
         </Menu.Item>
       {/if}
-      <Menu.Item
-        class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent text-foreground hover:bg-accent cursor-pointer"
-        onSelect={handleCopyLink}
-      >
+      <Menu.Separator />
+      <Menu.Item onSelect={handleCopyLink}>
         {m.navigation_linkActionMenu_copyLink_label()}
       </Menu.Item>
     </Menu.Content>

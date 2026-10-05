@@ -14,6 +14,7 @@ const THEMES = new Set(['light', 'dark', 'system']);
 const MOTIONS = new Set(['reduced', 'full']);
 const SCALES = new Set([1, 2]);
 
+// eslint-disable-next-line no-control-regex -- strips ANSI color escapes from dev-server output
 const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
 const OUTDATED_OPTIMIZE_DEP_STATUS = 'Outdated Optimize Dep';
 const OPTIMIZE_DEPS_PROCESSING_ERROR_STATUS = 'Optimize Deps Processing Error';

@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 /**
  * Regression test for the /hud chrome-less behavior restored after e10980e5.
  * The route group enforces the boundary structurally: the root owns shared Store
@@ -193,18 +194,21 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
   });
 
-  it('renders full chrome on non-HUD routes', () => {
+  it('renders Home chrome without the workspace sidebar', () => {
     mockPage.pathname = '/';
 
     render(AppLayout, { props: { children: childrenSnippet } });
 
     expect(screen.getAllByTestId('window-title-bar-marker').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('sidebar-nav-marker').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
     expect(screen.getAllByTestId('toast-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('radial-prompt-picker-overlay-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('action-key-hud-marker').length).toBeGreaterThan(0);
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
+    // The sandbox-isolation Playwright specs assert this marker has count 0 on
+    // preview routes; it must exist on the app shell for that check to mean anything.
+    expect(screen.getByTestId('app-ready')).toBeTruthy();
     expect(mocks.startAppStoreLifecycle).toHaveBeenCalledOnce();
   });
 
@@ -269,6 +273,7 @@ describe('+layout.svelte root terminal gating for collaborators (multiplayer w3)
   });
 
   function loadWorkspaces(role: Workspace['myRole']) {
+    admitLegacyPrincipal(role === 'owner' ? 'owner' : 'guest');
     // The window's guest/owner identity has settled (multiplayer w4): no host
     // joined, so only the workspace roles decide.
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));

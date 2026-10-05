@@ -64,11 +64,11 @@ function buildTree(dirPath, name, maxDepth = 50, currentDepth = 0) {
           children.push(child);
           totalSize += child.size;
         }
-      } catch (err) {
+      } catch {
         // Skip files we can't read
       }
     }
-  } catch (err) {
+  } catch {
     // Skip directories we can't read
   }
 

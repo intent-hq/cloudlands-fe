@@ -283,7 +283,9 @@ async function expectSubscriptionScreenshot(component: Locator, name: string, ra
 
 async function measure(component: Locator, page: Page) {
   await expect(component.getByTestId('agent-card-preview')).toBeVisible();
-  await expect(component.getByTestId('agent-card-trailing-slot').locator('[title]')).toHaveCount(1);
+  await expect(
+    component.getByTestId('agent-card-trailing-slot').locator('[data-slot="tooltip-trigger"]'),
+  ).toHaveCount(1);
   await page.waitForFunction(() => {
     const text = document.querySelector('[data-testid="agent-preview-tool-text"]');
     return !text || (text.textContent?.trim().length ?? 0) > 0;
@@ -296,7 +298,9 @@ async function measure(component: Locator, page: Page) {
       '[data-testid="agent-preview-tool-text"]',
     ) as HTMLElement | null;
     const name = element('agent-card-name');
-    const timestamp = element('agent-card-trailing-slot').querySelector('[title]') as HTMLElement;
+    const timestamp = element('agent-card-trailing-slot').querySelector(
+      '[data-slot="tooltip-trigger"]',
+    ) as HTMLElement;
     const row = element('agent-list-item').querySelector('button') as HTMLElement;
     const header = element('one-shot-summary-toggle');
     const rows = Array.from(root.querySelectorAll('[data-testid="agent-list-item"] button'));
@@ -374,7 +378,9 @@ test('keeps peek text and timestamp on the shared secondary primitive', async ({
             await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
             await page.mouse.move(0, 0);
             await expect(
-              component.getByTestId('agent-card-trailing-slot').locator('[title]'),
+              component
+                .getByTestId('agent-card-trailing-slot')
+                .locator('[data-slot="tooltip-trigger"]'),
             ).toHaveCSS('opacity', '1');
           }
           const value = await measure(component, page);
@@ -868,8 +874,8 @@ test('centers the finished summary and gives completed avatars a muted semantic 
         expect(
           Math.abs(geometry.titleCenterY - geometry.rowCenterY) * geometry.devicePixelRatio,
         ).toBeLessThanOrEqual(0.5);
-        expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
-        expect(geometry.iconHeight).toBeCloseTo(14 * zoom, 1);
+        expect(geometry.iconWidth).toBeCloseTo(16 * zoom, 1);
+        expect(geometry.iconHeight).toBeCloseTo(16 * zoom, 1);
 
         await summary.click();
         const completed = component
@@ -1085,7 +1091,7 @@ test('keeps the bell at the compact gap and on the outer-header text tone', asyn
             };
           });
           expect(geometry.slotWidth).toBeCloseTo(20 * zoom, 1);
-          expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
+          expect(geometry.iconWidth).toBeCloseTo(16 * zoom, 1);
           expect(geometry.iconCenterX).toBeCloseTo(geometry.slotCenterX, 1);
           expect(geometry.iconCenterY).toBeCloseTo(geometry.slotCenterY, 1);
           expect(geometry.titleLeft - geometry.slotRight).toBeCloseTo(8 * zoom, 1);

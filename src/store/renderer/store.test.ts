@@ -1,10 +1,14 @@
-import { readFileSync } from 'node:fs';
-
 import type { AgentMessage, AgentSession } from '$shared/types';
 import type { Readable } from 'svelte/store';
 import { readable, writable } from 'svelte/store';
-import type { Store } from '@augmentcode/themis/svelte-store';
+import { Store } from '@themislib/themis/svelte-store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const sagasModule = vi.hoisted(() => ({ loaded: vi.fn() }));
+vi.mock('./sagas', async (importOriginal) => {
+  sagasModule.loaded();
+  return importOriginal();
+});
 
 import { initAppStore, store as appStore } from './store';
 import {
@@ -15,7 +19,7 @@ import {
 } from './renderer-store-bridge';
 import { store as configuredStore } from './configured-store';
 import { reducers } from './reducer';
-import type { GenericAction } from '@augmentcode/themis/types';
+import type { GenericAction } from '@themislib/themis/types';
 import type { StoreState } from './types';
 import { addMessage, bulkUpsertSessions } from './slices/agent-session/agent-session-slice';
 import { selectAgentMessages } from './slices/agent-session/agent-session-selectors';
@@ -76,11 +80,10 @@ beforeEach(() => {
 
 describe('configured app Store', () => {
   it('constructs the core Store without importing app sagas', () => {
-    const source = readFileSync('src/store/renderer/configured-store.ts', 'utf8');
-
-    expect(source).not.toContain('from "./sagas"');
-    expect(source).toContain('new RendererStore(');
-    expect(source).not.toContain('new Store(reducers, sagas');
+    expect(sagasModule.loaded).not.toHaveBeenCalled();
+    expect(appStore).toBeInstanceOf(Store);
+    expect(Object.getPrototypeOf(appStore)).not.toBe(Store.prototype);
+    expect(typeof appStore.getReadableState).toBe('function');
     expect(appStore).toBe(configuredStore);
   });
 
@@ -130,14 +133,14 @@ describe('configured app Store', () => {
     }
   });
 
-  // Regression coverage for the @augmentcode/themis tracking-proxy cache (formerly
+  // Regression coverage for the @themislib/themis tracking-proxy cache (formerly
   // patches/@augmentcode__themis@0.2.4.patch, now upstream — augmentcode/themis#15):
   // cached proxies must keep recording accessed paths on every recompute, and path
   // keys must not collide.
   describe('patched selector-core tracking proxy cache', () => {
     it('memoizes and recomputes correctly across repeated selects through cached tracking proxies', async () => {
       const { createCachedSelector } =
-        await import('../../../node_modules/@augmentcode/themis/dist/utils/selector-core/create-cached-selector.js');
+        await import('../../../node_modules/@themislib/themis/dist/utils/selector-core/create-cached-selector.js');
       const selectorFn = vi.fn((state: any) => state.tracked.value);
       const cached = createCachedSelector(selectorFn);
 
@@ -170,7 +173,7 @@ describe('configured app Store', () => {
 
     it('does not collide path keys when a property name embeds another path', async () => {
       const { createCachedSelector } =
-        await import('../../../node_modules/@augmentcode/themis/dist/utils/selector-core/create-cached-selector.js');
+        await import('../../../node_modules/@themislib/themis/dist/utils/selector-core/create-cached-selector.js');
       // 'a\u0001b'-style keys would collide with nested a.b under naive separator
       // concatenation; the patch length-prefixes segments to prevent this.
       const flatKey = 'a\u0001b';

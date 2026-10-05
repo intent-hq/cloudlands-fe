@@ -1,3 +1,8 @@
+import {
+  currentWorkspaceDeletion,
+  terminalWorkspaceDeletion,
+  type WorkspaceDeletion,
+} from './workspace-deletion';
 /**
  * Workspace IPC Client
  *
@@ -21,6 +26,36 @@ import { invoke as invokeIpc } from '$shared/generated/ipc-client';
 import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 
+import { store } from '../../../store';
+import {
+  selectPrincipalActionContext,
+  selectWorkspaceCreationVisible,
+} from '../../principal/principal-selectors';
+import { selectWorkspaceActionContext, selectWorkspaceUpdateContext } from '../workspace-selectors';
+
+function captureMutation(workspaceId?: string, fields?: string[]) {
+  const context = () =>
+    workspaceId === undefined
+      ? selectWorkspaceCreationVisible.select(store.state)
+        ? selectPrincipalActionContext.select(store.state)
+        : null
+      : fields
+        ? selectWorkspaceUpdateContext.select(store.state, workspaceId, fields)
+        : selectWorkspaceActionContext.select(store.state, workspaceId);
+  const dispatch = store.dispatch;
+  const captured = context();
+  return () => {
+    try {
+      return store.dispatch === dispatch && captured !== null && captured === context();
+    } catch {
+      return false;
+    }
+  };
+}
+const authorityFailure = () => ({
+  ok: false as const,
+  error: m.workspace_client_accessChanged_error(),
+});
 const logger = new Logger('WorkspaceClient');
 const WORKSPACE_CLIENT_CACHE_MAX_ENTRIES = 100;
 
@@ -113,7 +148,14 @@ export class WorkspaceClient {
     try {
       const requestMutationCounter = this.mutationCounter;
       // Check for pending request (deduplication)
-      const cacheKey = this.getCacheKey(channel, data);
+      const cacheKey =
+        this.getCacheKey(channel, data) +
+        (channel === WORKSPACE_CHANNELS.LIST
+          ? JSON.stringify([
+              store.state.connections.windowBackendId,
+              selectPrincipalActionContext.select(store.state),
+            ])
+          : '');
       this.pruneExpiredCacheEntries();
       const pending = this.pendingRequests.get(cacheKey);
       if (pending) {
@@ -269,7 +311,9 @@ export class WorkspaceClient {
    * @param options.lite When true, skip heavy computations (diffSummary, agentSummary, taskStats, gitSummary)
    *                     to avoid blocking other IPC operations like workspace:create
    */
-  async list(options?: { lite?: boolean }): Promise<Result<Workspace[], string>> {
+  async list(options?: {
+    lite?: boolean;
+  }): Promise<Result<Workspace[], string> & { complete?: boolean }> {
     // For backward compatibility, handle both old and new response formats
     const result = await this.invoke<any>(WORKSPACE_CHANNELS.LIST, { lite: options?.lite });
 
@@ -279,7 +323,14 @@ export class WorkspaceClient {
         return { ok: true, data: result.data.workspaces.map(normalizeWorkspacePaths) };
       }
       // Old format - array of workspaces
-      return { ok: true, data: (result.data as Workspace[]).map(normalizeWorkspacePaths) };
+      // The array form is the unfiltered listAllWorkspaces IPC contract,
+      // including archived rows. Paginated compatibility responses above do
+      // not establish completeness, even when their last page has arrived.
+      return {
+        ok: true,
+        data: (result.data as Workspace[]).map(normalizeWorkspacePaths),
+        complete: true,
+      };
     }
 
     return result as Result<Workspace[], string>;
@@ -311,7 +362,10 @@ export class WorkspaceClient {
     logger.info(
       `[WorkspaceClient] create called: title=${request.title}, hasInitialAgent=${!!ia}, specialist=${ia?.specialist}, model=${ia?.model}, keys=${ia ? Object.keys(ia).join(',') : 'none'}`,
     );
+    const isCurrent = captureMutation();
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.create(request);
+    if (!isCurrent()) return authorityFailure();
     logger.info('[WorkspaceClient] create result', {
       success: result.success,
       scope: request.scope,
@@ -349,7 +403,10 @@ export class WorkspaceClient {
     // Daemon-backed mutation (`workspace.update`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:update` IPC path is gone. The
     // daemon returns the authoritative updated Workspace.
+    const isCurrent = captureMutation(request.id, Object.keys(request));
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.update(request);
+    if (!isCurrent()) return authorityFailure();
     if (result.success && result.workspace) {
       // Clear cache for this workspace after update
       this.clearCache(request.id);
@@ -363,12 +420,24 @@ export class WorkspaceClient {
   async delete(
     id: WorkspaceId,
     options?: { undoDelayMs?: number },
-  ): Promise<Result<{ scheduled?: boolean; deleteAt?: string } | void, string>> {
+    operation?: WorkspaceDeletion,
+  ): Promise<
+    | Result<{ scheduled?: boolean; deleteAt?: string } | void, string>
+    | { ok: false; error: string; obsolete: true }
+  > {
     // Daemon-backed mutation (`workspace.delete`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:delete` IPC path is gone. With
     // `undoDelayMs > 0` the daemon registers the delete grace window and
     // returns `{ scheduled, deleteAt }` — surfaced on the Result data.
+    const isCurrent = operation
+      ? () => currentWorkspaceDeletion(operation, id)
+      : captureMutation(id);
+    if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
     const result = await appClient.workspaces.delete(id, options);
+    // A terminal event may precede this reply. Preserve its actual result only
+    // for the original token/admission; it grants no further mutation authority.
+    if (!isCurrent() && !(operation && terminalWorkspaceDeletion(operation, id)))
+      return { ...authorityFailure(), obsolete: true };
     // Clear cache for this workspace after deletion
     if (result.success) {
       this.clearCache(id);
@@ -381,11 +450,21 @@ export class WorkspaceClient {
     return { ok: false, error: result.error || m.workspace_client_deleteFailed_error() };
   }
 
-  async cancelDelete(id: WorkspaceId): Promise<Result<{ cancelled: boolean }, string>> {
+  async cancelDelete(
+    id: WorkspaceId,
+    operation?: WorkspaceDeletion,
+  ): Promise<
+    Result<{ cancelled: boolean }, string> | { ok: false; error: string; obsolete: true }
+  > {
     // `workspace.cancelDelete` (PROTOCOL §5.1, delete grace window).
     // `cancelled: false` is a race-safe non-error — the deletion already
     // committed, or was never scheduled.
+    const isCurrent = operation
+      ? () => currentWorkspaceDeletion(operation, id)
+      : captureMutation(id);
+    if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
     const result = await appClient.workspaces.cancelDelete(id);
+    if (!isCurrent()) return { ...authorityFailure(), obsolete: true };
     if (result.success) {
       this.clearCache(id);
       // Also clear list cache since cancelling changes which workspaces are returned
@@ -398,7 +477,10 @@ export class WorkspaceClient {
   async archive(id: WorkspaceId): Promise<Result<void, string>> {
     // Daemon-backed mutation (`workspace.archive`, PROTOCOL §5.1) through the
     // AppClient seam; the legacy `workspace:archive` IPC path is gone.
+    const isCurrent = captureMutation(id);
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.archive(id);
+    if (!isCurrent()) return authorityFailure();
     // Clear cache for this workspace and list cache after archiving
     if (result.success) {
       this.clearCache(id);
@@ -412,7 +494,10 @@ export class WorkspaceClient {
   async unarchive(id: WorkspaceId): Promise<Result<void, string>> {
     // Daemon-backed mutation (`workspace.unarchive`, PROTOCOL §5.1) — the
     // archive-undo path routes through the same seam as archive.
+    const isCurrent = captureMutation(id);
+    if (!isCurrent()) return authorityFailure();
     const result = await appClient.workspaces.unarchive(id);
+    if (!isCurrent()) return authorityFailure();
     // Clear cache for this workspace and list cache after unarchiving
     if (result.success) {
       this.clearCache(id);

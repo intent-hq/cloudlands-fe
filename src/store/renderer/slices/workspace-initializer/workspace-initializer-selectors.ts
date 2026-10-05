@@ -1,5 +1,9 @@
+import {
+  selectCanCreateWorkspace,
+  selectPrincipalActionContext,
+} from '../principal/principal-selectors';
 import { store } from '../../store';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   selectOrchestratorSpecialist,
   selectSpecialists,
@@ -34,6 +38,10 @@ export const selectWorkspaceInitializerRecentRepos = store.createSelector((state
   getItems(state.workspaceInitializer.recentRepos),
 );
 
+export const selectWorkspaceInitializerDismissedRecentRepoKeys = store.createSelector(
+  (state) => state.workspaceInitializer.dismissedRecentRepoKeys,
+);
+
 export const selectWorkspaceInitializerRemoteSetups = store.createSelector((state) =>
   getItems(state.workspaceInitializer.remoteSetups),
 );
@@ -60,3 +68,18 @@ export const selectNewWorkspaceDefaultSpecialist = store.createSelector((state):
     orchestratorId: selectOrchestratorSpecialist.select(state)?.id ?? null,
   }),
 );
+
+/** A probe is requested on mount and renewed after connection/identity admission changes. */
+export const selectWorkspaceInitializerGitCheckContext = store.createSelector((state) => {
+  const request = state.workspaceInitializer.gitCheckRequest;
+  const context = selectPrincipalActionContext.select(state);
+  return request && context && selectCanCreateWorkspace.select(state)
+    ? JSON.stringify([context, request])
+    : null;
+});
+
+export const selectWorkspaceInitializerGitAvailability = store.createSelector((state) => {
+  const context = selectWorkspaceInitializerGitCheckContext.select(state);
+  const result = state.workspaceInitializer.gitCheck;
+  return context && result?.context === context ? result.available : null;
+});

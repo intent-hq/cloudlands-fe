@@ -23,8 +23,8 @@ describe('chat-polish sandbox preferences', () => {
       subscriptionBottomGap: 16,
       rowPadding: 12,
       cardRadius: 9,
-      failureNoticeTopGap: 16,
-      failureNoticeBottomGap: 16,
+      failureNoticeTopGap: 40,
+      failureNoticeBottomGap: 0,
       stickySimulation: false,
     });
     const storage = {
@@ -73,7 +73,7 @@ describe('chat-polish sandbox preferences', () => {
     expect(writeChatPolishPreferences({ setItem } as unknown as Storage, value)).toBe(true);
     expect(setItem).toHaveBeenCalledWith(CHAT_POLISH_STORAGE_KEY, JSON.stringify(value));
     expect(formatChatPolishGeometry(defaultChatPolishGeometry)).toBe(
-      'W510 · inset22 · user24 · ops4 · opText16 · nested6 · think16 · wake24/24 · subs16 · fail16/16 · rows12 · radius9 · regular · flow',
+      'W510 · inset22 · user24 · ops4 · opText16 · nested6 · think16 · wake24/24 · subs16 · fail40/0 · rows12 · radius9 · regular · flow',
     );
   });
 

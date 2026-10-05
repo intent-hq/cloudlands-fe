@@ -241,8 +241,8 @@
 {#if shouldShow}
   <!-- Horizontal banner bar at bottom of terminal -->
   <div bind:this={bannerEl} class="setup-script-banner border-t border-border bg-muted/30 shrink-0">
-    <div class="flex items-center gap-3 px-4 py-2">
-      <div class="flex items-center gap-2 text-subtle">
+    <div class="flex items-start gap-3 px-4 py-2">
+      <div class="first-line-icon text-sm text-subtle">
         <Fa icon={faWandMagicSparkles} class="w-3.5 h-3.5 text-primary-ink/70" />
       </div>
       <p class="text-sm text-subtle flex-1">
