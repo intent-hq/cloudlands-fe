@@ -596,7 +596,7 @@
     checked: primaryAlreadySelected,
     disabled: !canSetPrimaryClient,
     onClick: () => {
-      if (!canSetPrimaryClient) return;
+      if (!workspaceId || !canSetPrimaryClient) return;
       pendingPrimaryClient = {
         workspaceId,
         clientId: $drivingClient$.ownClientId,
