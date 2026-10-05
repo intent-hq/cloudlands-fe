@@ -146,14 +146,11 @@ describe('local OS onboarding authorization', () => {
 
 describe('helper permission response boundary', () => {
   it('accepts only observed permission booleans, not a generic success acknowledgement', async () => {
-    const request = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({
-        accessibility: false,
-        screenRecording: true,
-        screenCapture: 'ready',
-      });
+    const request = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({
+      accessibility: false,
+      screenRecording: true,
+      screenCapture: 'ready',
+    });
     const adapter = new DesktopNativeAdapter(request);
     await expect(adapter.requestPermissions('local', 'request')).rejects.toThrow();
     await expect(adapter.requestPermissions('local', 'request')).resolves.toEqual({
