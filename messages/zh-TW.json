@@ -2338,6 +2338,8 @@
   "chat_modelPicker_providerDefault_label": "提供者預設",
   "chat_modelPicker_providerDisabled_description": "{provider} 已在設定 > 代理程式中停用。",
   "chat_modelPicker_refreshGroup_title": "重新整理 {group} 模型",
+  "chat_modelPicker_errorDetails_label": "詳細資訊",
+  "chat_modelPicker_errorDetails_title": "{provider} 模型載入詳細資訊",
   "chat_modelPicker_retry_label": "重試",
   "chat_modelPicker_runLoginHint_label": "在終端中執行 \"{command}\"。",
   "chat_modelPicker_searchModels_placeholder": "搜尋模型…",

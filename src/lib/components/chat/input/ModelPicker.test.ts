@@ -290,8 +290,12 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectModelPickerCollapsedGroups: () => readable([]),
   selectIsLoadingModels: () => readable(false),
   selectLoadError: () => readable(mockModelState.loadError),
-  selectAllProviderWarnings: () => providerWarnings$,
-  selectAllProviderStaleFlags: () => providerStaleFlags$,
+  selectAllProviderWarnings: Object.assign(() => providerWarnings$, {
+    select: () => get(providerWarnings$),
+  }),
+  selectAllProviderStaleFlags: Object.assign(() => providerStaleFlags$, {
+    select: () => get(providerStaleFlags$),
+  }),
   selectAgentModelEffortLevels: Object.assign(() => agentModelEffortLevels$, {
     select: () => get(agentModelEffortLevels$),
   }),
@@ -2442,7 +2446,7 @@ describe('ModelPicker multi-provider mode', () => {
           models: providerId === 'auggie' ? models : [],
         }));
         await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-        await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(5));
+        await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(4));
       }
       await waitFor(() =>
         expect(onModelChange).toHaveBeenCalledWith('auggie:recovered', {
@@ -2453,9 +2457,7 @@ describe('ModelPicker multi-provider mode', () => {
       await fireEvent.input(search, { target: { value: '' } });
       expect(await screen.findByRole('option', { name: /Recovered model/ })).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
-      expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(
-        recoveryMode === 'silentRetry' ? 4 : 5,
-      );
+      expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(4);
     },
   );
 
@@ -2549,7 +2551,8 @@ describe('ModelPicker multi-provider mode', () => {
         await screen.findByRole('option', { name: /background catalog unavailable/ }),
       ).toBeTruthy();
       expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+      // A settled provider can retry independently while another is still loading.
+      expect(screen.getByRole('button', { name: 'Retry' }).hasAttribute('disabled')).toBe(false);
 
       rejectPending(new Error('second catalog unavailable'));
       await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
@@ -2564,6 +2567,88 @@ describe('ModelPicker multi-provider mode', () => {
         expect(screen.queryByRole('option')).toBeNull();
         expect(onModelChange).not.toHaveBeenCalled();
       }
+    },
+  );
+
+  it.each(['warning', 'error', 'stale'] as const)(
+    'shows diagnostic Details and retries only the affected workspace provider after %s',
+    async (failure) => {
+      const diagnostic = `Codex: adapter exited before reporting models: exit status: 254\nnpm error ENOENT: ${'/Users/clement/.npm/_npx/'.repeat(20)}package.json`;
+      const cachedModels = [{ value: 'codex:cached', label: 'Cached Codex model' }];
+      const otherModels = [{ value: 'other-model', label: 'Other provider model' }];
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (provider) => {
+        if (provider !== 'codex') return { models: otherModels };
+        if (failure === 'error') throw new Error(diagnostic);
+        return {
+          models: failure === 'stale' ? cachedModels : [],
+          warning: diagnostic,
+          stale: failure === 'stale',
+        };
+      });
+      enabledProviderIds$.set(['auggie', 'codex']);
+      render(ModelPicker, {
+        props: {
+          workspaceId: 'ws-1',
+          providerId: 'codex',
+          selectedModel: 'codex:cached',
+          showDefaultOption: true,
+          silentFallback: false,
+          portal: false,
+        },
+      });
+      await waitFor(() =>
+        expect(getModelsForProviderForLoadingState).toHaveBeenCalledWith('codex', {
+          workspaceId: 'ws-1',
+        }),
+      );
+      const trigger = screen.getByRole('button');
+      await fireEvent.click(trigger);
+      await fireEvent.click(await screen.findByRole('tab', { name: /Codex/ }));
+      expect(await screen.findByText(/Codex: Failed to load models/)).toBeTruthy();
+      await fireEvent.click(await screen.findByRole('button', { name: 'Details' }));
+      const dialog = await screen.findByRole('dialog', { name: /Codex/ });
+      expect(dialog.textContent).toContain(diagnostic);
+      await fireEvent.click(
+        within(dialog).getByRole('button', { name: 'Close dialog', exact: true }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await fireEvent.click(trigger);
+      await fireEvent.click(await screen.findByRole('tab', { name: /Codex/ }));
+      if (failure === 'stale')
+        expect(screen.getByRole('option', { name: /Cached Codex model/ })).toBeTruthy();
+      vi.mocked(getModelsForProviderForLoadingState).mockClear();
+      let rejectRetry!: (error: Error) => void;
+      vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectRetry = reject;
+          }),
+      );
+      await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+      await waitFor(() =>
+        expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('codex', {
+          forceRefresh: true,
+          workspaceId: 'ws-1',
+        }),
+      );
+      expect(
+        screen.getByRole('button', { name: 'Retry', exact: true }).hasAttribute('disabled'),
+      ).toBe(true);
+      rejectRetry(new Error('Still unavailable'));
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'Retry', exact: true }).hasAttribute('disabled'),
+        ).toBe(false),
+      );
+      vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: cachedModels });
+      await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Details' })).toBeNull());
+      expect(await screen.findByRole('option', { name: /Cached Codex model/ })).toBeTruthy();
+      expect(
+        vi
+          .mocked(getModelsForProviderForLoadingState)
+          .mock.calls.every(([provider]) => provider === 'codex'),
+      ).toBe(true);
     },
   );
 
@@ -5591,27 +5676,34 @@ describe('ModelPicker cache hydration and explicit revalidation', () => {
   });
 });
 
-vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
-  const { selectProviderCatalogEntries } =
-    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
-  return {
-    selectContextProviderEntries: () =>
-      derived(
-        [selectProviderCatalogEntries(), providerEntriesOverride$],
-        ([entries, override]) => override ?? entries,
-      ),
-    selectWorkspaceCatalogEpoch: () => workspaceCatalogEpoch$,
-    selectContextDefaultProvider: () => readable(mockModelState.defaultProviderId),
-    selectContextSelectedModel: () => readable(mockModelState.selectedModel),
-    selectContextEnabledProviders: () => enabledProvidersMap$,
-    selectContextAvailableProviderIds: () => availableEnabledProviderIds$,
-    selectContextModelProviderIds: () =>
-      derived(
-        [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
-        ([checked, enabled, available]) => (checked ? available : enabled),
-      ),
-    selectContextReadinessLoaded: () => hasCheckedOnce$,
-    selectContextProviderWarnings: () => providerWarnings$,
-    selectContextProviderStaleFlags: () => providerStaleFlags$,
-  };
-});
+vi.mock(
+  '$store/renderer/slices/provider-catalog/workspace-catalog-selectors',
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import('$store/renderer/slices/provider-catalog/workspace-catalog-selectors')
+      >();
+    const { selectProviderCatalogEntries } =
+      await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+    return {
+      selectContextProviderEntries: () =>
+        derived(
+          [selectProviderCatalogEntries(), providerEntriesOverride$],
+          ([entries, override]) => override ?? entries,
+        ),
+      selectWorkspaceCatalogEpoch: () => workspaceCatalogEpoch$,
+      selectContextDefaultProvider: () => readable(mockModelState.defaultProviderId),
+      selectContextSelectedModel: () => readable(mockModelState.selectedModel),
+      selectContextEnabledProviders: () => enabledProvidersMap$,
+      selectContextAvailableProviderIds: () => availableEnabledProviderIds$,
+      selectContextModelProviderIds: () =>
+        derived(
+          [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
+          ([checked, enabled, available]) => (checked ? available : enabled),
+        ),
+      selectContextReadinessLoaded: () => hasCheckedOnce$,
+      selectContextProviderWarnings: actual.selectContextProviderWarnings,
+      selectContextProviderStaleFlags: actual.selectContextProviderStaleFlags,
+    };
+  },
+);

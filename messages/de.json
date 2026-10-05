@@ -2338,6 +2338,8 @@
   "chat_modelPicker_providerDefault_label": "Anbieterstandard",
   "chat_modelPicker_providerDisabled_description": "{provider} ist unter Einstellungen > Agenten deaktiviert.",
   "chat_modelPicker_refreshGroup_title": "{group}-Modelle aktualisieren",
+  "chat_modelPicker_errorDetails_label": "Einzelheiten",
+  "chat_modelPicker_errorDetails_title": "Details zum Laden der Modelle von {provider}",
   "chat_modelPicker_retry_label": "Erneut versuchen",
   "chat_modelPicker_runLoginHint_label": "Führen Sie \"{command}\" in einem Terminal aus.",
   "chat_modelPicker_searchModels_placeholder": "Modelle durchsuchen...",

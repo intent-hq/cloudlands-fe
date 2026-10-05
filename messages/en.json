@@ -2338,6 +2338,8 @@
   "chat_modelPicker_providerDefault_label": "Provider default",
   "chat_modelPicker_providerDisabled_description": "{provider} is disabled in Settings > Agents.",
   "chat_modelPicker_refreshGroup_title": "Refresh {group} models",
+  "chat_modelPicker_errorDetails_label": "Details",
+  "chat_modelPicker_errorDetails_title": "{provider} model loading details",
   "chat_modelPicker_retry_label": "Retry",
   "chat_modelPicker_runLoginHint_label": "Run \"{command}\" in a terminal.",
   "chat_modelPicker_searchModels_placeholder": "Search models...",

@@ -2338,6 +2338,8 @@
   "chat_modelPicker_providerDefault_label": "提供方默认",
   "chat_modelPicker_providerDisabled_description": "{provider} 已在设置 > 代理中禁用。",
   "chat_modelPicker_refreshGroup_title": "刷新 {group} 模型",
+  "chat_modelPicker_errorDetails_label": "详情",
+  "chat_modelPicker_errorDetails_title": "{provider} 模型加载详情",
   "chat_modelPicker_retry_label": "重试",
   "chat_modelPicker_runLoginHint_label": "在终端中运行 \"{command}\"。",
   "chat_modelPicker_searchModels_placeholder": "搜索模型…",

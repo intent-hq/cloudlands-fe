@@ -27,3 +27,19 @@ it('keeps ordinary owner setup guidance', () => {
   admitLegacyPrincipal();
   expect(formatProviderLoadError('codex', new Error('CLI not found')).hint).toBeTruthy();
 });
+
+it('keeps the complete diagnostic separately from a concise summary', () => {
+  const diagnostic = `Codex: adapter exited before reporting models: exit status: 254\nnpm error ENOENT: ${'/Users/clement/.npm/_npx/'.repeat(30)}package.json`;
+  const result = formatProviderLoadError('codex', new Error(diagnostic));
+  expect(result.details).toBe(diagnostic);
+  expect(result.message).toBe('Failed to load models');
+  expect(result.hint).toBeUndefined();
+});
+
+it('keeps short unrelated errors readable without classifying their cause', () => {
+  expect(formatProviderLoadError('codex', 'Transport disconnected')).toMatchObject({
+    message: 'Transport disconnected',
+    details: 'Transport disconnected',
+    hint: undefined,
+  });
+});
