@@ -34,7 +34,7 @@ function controlledGrant(
   return {
     window,
     identity,
-    allowance: { retainedBytes: 8192, descriptors: 128, wireBytes: 8192 },
+    allowance: { retainedBytes: 8192, requests: 96, descriptors: 128, wireBytes: 8192 },
     current: () => true,
   };
 }
@@ -500,18 +500,23 @@ it('rejects actual Store HTML-entry paragraph text', async () => {
   ).toThrow(/Unsupported/);
 });
 
-it.each(['window', 'identity', 'retainedBytes', 'descriptors', 'wireBytes', 'released'] as const)(
-  'requires an admitted exact-window grant before reading: %s',
-  (kind) => {
-    const f = controlledDetails();
-    if (kind === 'window') Object.assign(f.grant, { window: { ...f.window } });
-    else if (kind === 'identity') Object.assign(f.grant, { identity: { ...f.identity } });
-    else if (kind === 'released') f.grant.current = () => false;
-    else Object.assign(f.grant.allowance, { [kind]: 0 });
-    expect(() => f.steps().next()).toThrow('resource grant unavailable');
-    expect(f.window.details).toEqual({});
-  },
-);
+it.each([
+  'window',
+  'identity',
+  'retainedBytes',
+  'requests',
+  'descriptors',
+  'wireBytes',
+  'released',
+] as const)('requires an admitted exact-window grant before reading: %s', (kind) => {
+  const f = controlledDetails();
+  if (kind === 'window') Object.assign(f.grant, { window: { ...f.window } });
+  else if (kind === 'identity') Object.assign(f.grant, { identity: { ...f.identity } });
+  else if (kind === 'released') f.grant.current = () => false;
+  else Object.assign(f.grant.allowance, { [kind]: 0 });
+  expect(() => f.steps().next()).toThrow('resource grant unavailable');
+  expect(f.window.details).toEqual({});
+});
 
 it('checks resource grant liveness after a yielded read', () => {
   const f = controlledDetails(),

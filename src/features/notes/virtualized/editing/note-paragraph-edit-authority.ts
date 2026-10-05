@@ -24,6 +24,7 @@ export interface NoteParagraphEditGrant {
   readonly identity: Identity;
   readonly allowance: Readonly<{
     retainedBytes: number;
+    requests: number;
     descriptors: number;
     wireBytes: number;
   }>;
@@ -87,6 +88,7 @@ export function* noteParagraphEditContextSteps(
   const admitted = () => {
     const required = {
       retainedBytes: NOTE_WINDOW_LIMITS.contextBytes - window.cost.contextBytes,
+      requests: NOTE_WINDOW_LIMITS.requests - window.cost.requests,
       descriptors: NOTE_WINDOW_LIMITS.descriptors - window.context.length,
       wireBytes: NOTE_WINDOW_LIMITS.wireBytes,
     };
