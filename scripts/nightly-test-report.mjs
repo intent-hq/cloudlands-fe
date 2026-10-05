@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { BROWSER_ARTIFACTS } from './browser-test-artifacts.mjs';
+import { BROWSER_ARTIFACTS, BROWSER_ARTIFACT_LAYOUTS } from './browser-test-artifacts.mjs';
 import { cleanLogLines } from './ct-run-failures-lib.mjs';
 
 export const SOURCE_REPO = 'intent-hq/cloudlands-fe';
@@ -189,16 +189,16 @@ export function parseReport(report, entry) {
   };
 }
 
-function jobName(entry) {
+function jobName(entry, ctShards) {
   if (entry.suite === 'manifest') return 'Expected browser reports';
   if (entry.suite === 'ct' || entry.suite === 'quarantine')
-    return `test-ct / Component Tests (shard ${entry.suite === 'quarantine' ? 1 : entry.shard}/4)`;
+    return `test-ct / Component Tests (shard ${entry.suite === 'quarantine' ? 1 : entry.shard}/${ctShards})`;
   return entry.suite === 'root'
     ? `test-playwright / Playwright (root ${entry.shard}/${entry.shardCount})`
     : 'test-electron / Electron Browser Lifetime';
 }
-function latestJob(jobs, entry, run) {
-  const name = jobName(entry);
+function latestJob(jobs, entry, run, ctShards) {
+  const name = jobName(entry, ctShards);
   // Each reusable-workflow call also emits skipped jobs for its other suites.
   // Bind to the owning call before checking attempts, uniqueness or conclusions.
   const matching = jobs.filter((job) => job.name === name);
@@ -272,16 +272,33 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
     return documents[name];
   };
   let validManifest = true;
+  let expectedArtifacts = BROWSER_ARTIFACTS;
   try {
     const job = latestJob(jobs, { suite: 'manifest' }, run);
     const manifest = archive('browser-test-manifest')?.manifest;
     validateContext(manifest, run, job);
     requireValue(job.conclusion === 'success', 'Manifest job did not succeed');
-    requireValue(
-      Array.isArray(manifest.artifacts) && manifest.artifacts.length === BROWSER_ARTIFACTS.length,
-      'Incomplete manifest',
+    // Select the known layout for diagnostics even if another manifest entry is
+    // missing. Acceptance still requires the entire exact layout below.
+    const ctShards = Array.isArray(manifest.artifacts)
+      ? manifest.artifacts.find((entry) => entry?.suite === 'ct')?.shardCount
+      : undefined;
+    expectedArtifacts =
+      BROWSER_ARTIFACT_LAYOUTS.find((candidate) => candidate[0].shardCount === ctShards) ??
+      BROWSER_ARTIFACTS;
+    const layout = BROWSER_ARTIFACT_LAYOUTS.find(
+      (candidate) =>
+        Array.isArray(manifest.artifacts) &&
+        manifest.artifacts.length === candidate.length &&
+        candidate.every((entry) =>
+          manifest.artifacts.some((value) =>
+            Object.entries(entry).every(([key, expected]) => value?.[key] === expected),
+          ),
+        ),
     );
-    for (const entry of BROWSER_ARTIFACTS) {
+    requireValue(layout, 'Incomplete manifest');
+    expectedArtifacts = layout;
+    for (const entry of expectedArtifacts) {
       const matches = manifest.artifacts.filter((a) => a.artifactName === entry.artifactName);
       requireValue(matches.length === 1, 'Incomplete manifest');
       validateEntry(matches[0], entry);
@@ -290,9 +307,14 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
     validManifest = false;
     incidents.push(`manifest: ${error.message}`);
   }
-  for (const entry of BROWSER_ARTIFACTS) {
+  for (const entry of expectedArtifacts) {
     try {
-      const job = latestJob(jobs, entry, run);
+      const job = latestJob(
+        jobs,
+        entry,
+        run,
+        expectedArtifacts.find((value) => value.suite === 'ct').shardCount,
+      );
       const doc = archive(entry.artifactName);
       validateContext(doc?.outcome, run, job);
       validateEntry(doc.outcome, entry);

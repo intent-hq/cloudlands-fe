@@ -99,7 +99,16 @@ export function report(status = 'expected', project = 'chromium') {
 }
 export const testRecord = (value) => value.suites[0].suites[0].specs[0].tests[0];
 
-export function fixture() {
+export function fixture(ctShards = 4) {
+  const fixtureEntries = [
+    ...Array.from({ length: ctShards }, (_, index) => ({
+      ...entries[0],
+      shard: index + 1,
+      shardCount: ctShards,
+      artifactName: `playwright-ct-report-${index + 1}-of-${ctShards}`,
+    })),
+    ...entries.filter((entry) => entry.suite !== 'ct'),
+  ];
   const run = {
     id: 1234,
     run_attempt: 1,
@@ -144,14 +153,16 @@ export function fixture() {
       workflow_run: { id: 1234, head_sha: run.head_sha, repository_id: 12 },
     },
   ];
-  const documents = { 'browser-test-manifest': { manifest: { ...context, artifacts: entries } } };
-  for (const [index, entry] of entries.entries()) {
+  const documents = {
+    'browser-test-manifest': { manifest: { ...context, artifacts: fixtureEntries } },
+  };
+  for (const [index, entry] of fixtureEntries.entries()) {
     if (entry.suite !== 'quarantine')
       jobs.push({
         id: 11 + index,
         name:
           entry.suite === 'ct'
-            ? `test-ct / Component Tests (shard ${entry.shard}/4)`
+            ? `test-ct / Component Tests (shard ${entry.shard}/${ctShards})`
             : entry.suite === 'root'
               ? `test-playwright / Playwright (root ${entry.shard}/4)`
               : 'test-electron / Electron Browser Lifetime',
