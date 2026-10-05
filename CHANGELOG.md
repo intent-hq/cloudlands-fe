@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.209.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.208.0...v2.209.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* simplify command palette layout and filters ([#3225](https://github.com/intent-hq/cloudlands-fe/issues/3225)) ([e471efb](https://github.com/intent-hq/cloudlands-fe/commit/e471efbd1b5b69da29acd1d7d2ed70580c65c825))
+
 ## [2.208.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.207.0...v2.208.0) (2026-10-05)
 
 
