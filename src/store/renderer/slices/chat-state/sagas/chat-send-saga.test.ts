@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
@@ -91,6 +92,15 @@ import {
 } from '$features/agent/agent-queue-read-service';
 import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
 import {
+  pendingScopeActivated,
+  pendingSubmissionsReducer,
+} from '../../pending-submissions/pending-submissions-slice';
+import type {
+  PendingSubmissionsState,
+  SubmissionScope,
+} from '../../pending-submissions/pending-submissions-types';
+import { selectWorkspaceParticipationContext } from '../../workspace/workspace-selectors';
+import {
   chatQueueProcessingReceived,
   chatQueuedRetryRecordSet,
   chatLastAttemptedMessageSet,
@@ -167,6 +177,7 @@ function harness(
   let agentSessions = agentSessionReducer(sessionInitialState, bulkUpsertSessions(seedSessions));
   let chatState = chatInitialState;
   let agentQueue = queueInitialState;
+  let pendingSubmissions: PendingSubmissionsState = { byAgentId: {} };
   const workspaceEntities =
     workspaceRecord === null
       ? []
@@ -175,10 +186,20 @@ function harness(
     ...workspaceInitialState,
     workspaces: createCollection('id', workspaceEntities),
   };
+  const state = () =>
+    withLegacyPrincipal({
+      agentSessions,
+      chatState,
+      agentQueue,
+      pendingSubmissions,
+      workspace,
+      model: { providerModels },
+    });
   const dispatch = vi.fn((action) => {
     agentSessions = agentSessionReducer(agentSessions, action);
     chatState = chatStateReducer(chatState, action);
     agentQueue = agentQueueReducer(agentQueue, action);
+    pendingSubmissions = pendingSubmissionsReducer(pendingSubmissions, action);
     return action;
   });
   const task = runSaga(
@@ -188,7 +209,7 @@ function harness(
       getState: () => {
         const error = getStateError?.();
         if (error) throw error;
-        return { agentSessions, chatState, agentQueue, workspace, model: { providerModels } };
+        return state();
       },
     },
     chatSendSaga,
@@ -197,6 +218,7 @@ function harness(
     channel,
     dispatch,
     task,
+    state,
     /** Dispatch a queued mutation through the reducer and the saga channel, as the store does. */
     request: (action: ReturnType<typeof queuedMessageMutationRequested>) => {
       agentQueue = agentQueueReducer(agentQueue, action);
@@ -492,6 +514,65 @@ describe('chatSendSaga', () => {
     run.task.cancel();
     await run.task.toPromise();
   });
+
+  it.each([
+    ['edit', { kind: 'edit', content: 'revised' }],
+    ['remove', { kind: 'remove' }],
+  ] as const)(
+    'rejects a queued %s when submission reconciliation blocks it at execution time',
+    async (_kind, operation) => {
+      const preceding: QueuedMessage = {
+        id: 'preceding',
+        content: 'first',
+        queuedAt: '2026-10-05T00:00:00.000Z',
+        position: 0,
+      };
+      const message: QueuedMessage = {
+        id: 'reconciling',
+        content: 'original',
+        queuedAt: '2026-10-05T00:00:00.000Z',
+        position: 1,
+      };
+      let resolveFirst!: (result: { success: true }) => void;
+      mocks.removeQueued.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      );
+      const run = harness(session(), undefined, {
+        id: WS,
+        name: 'Workspace',
+        path: '/repo',
+        myRole: 'owner',
+      } as Workspace);
+      run.dispatch(replaceAgentQueue(AGENT, [preceding, message], WS));
+      run.request(queuedMutation(preceding.id, { kind: 'remove' }));
+      await vi.waitFor(() => expect(mocks.removeQueued).toHaveBeenCalledTimes(1));
+      const currentState = run.state();
+      const scope: SubmissionScope = {
+        agentId: AGENT,
+        workspaceId: WS,
+        authority: 'authority',
+        principalId: currentState.principal.snapshot!.principal.id,
+        participation: selectWorkspaceParticipationContext.select(currentState, WS)!,
+        owner: 'owner',
+      };
+      run.dispatch(pendingScopeActivated(scope, 1));
+
+      const action = run.request(queuedMutation(message.id, operation));
+      resolveFirst({ success: true });
+
+      await expect(run.outcome(action)).resolves.toMatchObject({ status: 'failed' });
+      expect(mocks.editQueued).not.toHaveBeenCalled();
+      expect(mocks.removeQueued).toHaveBeenCalledTimes(1);
+      expect(getItem(run.queue().byAgentId[AGENT]!.messages, message.id)).toMatchObject({
+        id: message.id,
+        content: message.content,
+      });
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
 
   it('keeps send-now atomic and queue removal optimistic when transport fails', async () => {
     mocks.sendQueuedNow.mockResolvedValue({ success: true, turnId: 'turn-1' });

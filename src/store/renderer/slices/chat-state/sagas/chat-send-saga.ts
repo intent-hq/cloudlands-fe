@@ -305,6 +305,14 @@ function* performQueuedMutation(
   request: QueuedMessageMutationRequest,
 ): SagaGenerator<QueuedMessageMutationResult> {
   if (yield* requestIsStale(request)) return { status: 'cancelled' };
+  if (
+    yield* selectQueueMutationBlocked.effect(
+      request.agentId,
+      request.workspaceId,
+      request.messageId,
+    )
+  )
+    return { status: 'failed', error: m.agent_chatSend_sendNowRejected_error() };
   const { operation } = request;
   if (operation.kind === 'edit') {
     return yield* call(editQueued, request, operation.content, operation.editing);
