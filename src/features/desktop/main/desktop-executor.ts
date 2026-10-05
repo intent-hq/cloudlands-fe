@@ -488,6 +488,7 @@ export class DesktopExecutor {
     this.session = s;
     this.inFlight.add(s);
     this.armLease(s);
+    let readinessCleanup: Promise<void> | undefined;
     try {
       const identity = await this.native.identity();
       this.check(s);
@@ -515,7 +516,15 @@ export class DesktopExecutor {
           void this.stop(p.sessionId).catch(() => {});
         },
         (reason) => {
-          void this.invalidate(reason, true, p.sessionId).catch(() => {});
+          if (reason === 'executor_failed' && s.phase === 'starting' && this.session === s) {
+            // The pending start RPC carries ordinary readiness failure. A
+            // competing revoke would consume its outcome before that error.
+            // Still report if local cleanup cannot be confirmed.
+            readinessCleanup = this.invalidate(reason, 'cleanup_failure', p.sessionId);
+            void readinessCleanup.catch(() => {});
+          } else {
+            void this.invalidate(reason, true, p.sessionId).catch(() => {});
+          }
         },
       );
       this.check(s);
@@ -525,6 +534,7 @@ export class DesktopExecutor {
       return { ready: true, sessionId: p.sessionId, computerId: p.computerId };
     } catch (error) {
       await this.invalidate('executor_failed', false).catch(() => {});
+      if (readinessCleanup) await readinessCleanup;
       if (error instanceof ReverseRpcHandlerError) throw error;
       throw desktopFailure('desktop-execution-failed', 'Local desktop readiness failed');
     } finally {
@@ -532,7 +542,11 @@ export class DesktopExecutor {
     }
   }
   /** Invalidate synchronously, before disk/network/overlay teardown awaits. */
-  invalidate(reason: DesktopEndReason, report = true, expectedSessionId?: string): Promise<void> {
+  invalidate(
+    reason: DesktopEndReason,
+    report: boolean | 'cleanup_failure' = true,
+    expectedSessionId?: string,
+  ): Promise<void> {
     const s = this.session;
     if (expectedSessionId && s?.request.sessionId !== expectedSessionId) return Promise.resolve();
     if (!s) return this.cleanup ?? Promise.resolve();
@@ -545,11 +559,15 @@ export class DesktopExecutor {
         this.native.release(),
         this.overlay.deactivate(s.request.sessionId),
       ]);
-      if (report && reason !== 'disconnected')
+      const cleanupFailed = results.some((r) => r.status === 'rejected');
+      if (
+        (report === true || (report === 'cleanup_failure' && cleanupFailed)) &&
+        reason !== 'disconnected'
+      )
         void s.connection
           .revoke({ workspaceId: s.request.workspaceId, sessionId: s.request.sessionId, reason })
           .catch(() => {});
-      if (results.some((r) => r.status === 'rejected'))
+      if (cleanupFailed)
         throw desktopFailure(
           'desktop-execution-failed',
           'Local desktop cleanup could not be confirmed',

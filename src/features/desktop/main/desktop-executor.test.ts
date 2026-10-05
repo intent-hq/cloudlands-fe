@@ -586,6 +586,124 @@ describe('desktop executor authority and command tickets', () => {
   });
 });
 
+describe('desktop startup failure authority', () => {
+  it('waits for cleanup, preserves the structured start error and fences late callbacks from a successor', async () => {
+    const t = setup();
+    const release = deferred<void>();
+    const entered = deferred<void>();
+    const failure = desktopFailure(
+      'desktop-execution-failed',
+      'Overlay readiness refused',
+      'not_started',
+    );
+    let invalidate!: Parameters<DesktopOverlay['activate']>[2];
+    vi.mocked(t.native.release).mockImplementationOnce(() => release.promise);
+    vi.mocked(t.overlay.activate).mockImplementationOnce(async (_session, _stop, ended) => {
+      invalidate = ended;
+      ended('executor_failed');
+      entered.resolve();
+      throw failure;
+    });
+    let settled = false;
+    const pending = t.activate().catch((error) => {
+      settled = true;
+      return error;
+    });
+    await entered.promise;
+    expect(vi.mocked(t.native.acquire).mock.calls[0][0].aborted).toBe(true);
+    await expect(t.handle({ ...start, sessionId: 'successor' })).rejects.toMatchObject(
+      error('desktop-busy'),
+    );
+    expect(settled).toBe(false);
+    expect(t.connection.revoke).not.toHaveBeenCalled();
+    release.resolve();
+    expect(await pending).toBe(failure);
+    expect(t.connection.revoke).not.toHaveBeenCalled();
+    // If the error reply is lost, neither a renewal nor the daemon's later
+    // endControl cleanup can revive this locally released session.
+    await expect(
+      t.handle({ operation: 'renew', ...session, leaseMs: 15000 }),
+    ).rejects.toMatchObject(error('desktop-not-active'));
+    await expect(t.handle({ operation: 'endControl', ...session })).resolves.toMatchObject({
+      ended: false,
+    });
+    await expect(t.handle({ ...start, sessionId: 'successor' })).resolves.toMatchObject({
+      ready: true,
+    });
+    invalidate('executor_failed');
+    await expect(
+      t.handle({ operation: 'renew', ...session, sessionId: 'successor', leaseMs: 15000 }),
+    ).resolves.toMatchObject({ renewed: true });
+    expect(t.native.release).toHaveBeenCalledOnce();
+    await t.executor.invalidate('agent_end', false);
+  });
+
+  it('continues reporting executor failures after activation', async () => {
+    const t = setup();
+    await t.activate();
+    vi.mocked(t.overlay.activate).mock.calls[0][2]('executor_failed');
+    await t.executor.invalidate('executor_failed');
+    expect(t.connection.revoke).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'ws',
+      sessionId: 'session',
+      reason: 'executor_failed',
+    });
+    expect(t.reports.queue).not.toHaveBeenCalled();
+    await expect(
+      t.handle({ operation: 'renew', ...session, leaseMs: 15000 }),
+    ).rejects.toMatchObject(error('desktop-not-active'));
+  });
+
+  it.each(['user_stop', 'screen_locked', 'lease_expired', 'disconnected'] as const)(
+    'preserves %s during readiness and refuses late readiness completion',
+    async (reason) => {
+      const t = setup();
+      const entered = deferred<void>();
+      const ready = deferred<void>();
+      let stop!: () => void;
+      let invalidate!: Parameters<DesktopOverlay['activate']>[2];
+      vi.mocked(t.overlay.activate).mockImplementationOnce(async (_session, stopped, ended) => {
+        stop = stopped;
+        invalidate = ended;
+        entered.resolve();
+        await ready.promise;
+      });
+      const pending = t.activate().catch((error) => error);
+      await entered.promise;
+      if (reason === 'user_stop') stop();
+      else if (reason === 'disconnected') t.executor.disconnect(t.connection);
+      else if (reason === 'lease_expired') {
+        t.advance(15000);
+        await expect(
+          t.handle({ operation: 'renew', ...session, leaseMs: 15000 }),
+        ).rejects.toMatchObject(error('desktop-not-active'));
+      } else invalidate(reason);
+      await t.executor.invalidate(reason, false);
+      expect(vi.mocked(t.native.acquire).mock.calls[0][0].aborted).toBe(true);
+      ready.resolve();
+      expect(await pending).toMatchObject(error('desktop-not-active'));
+      expect(t.native.validateExclusion).not.toHaveBeenCalled();
+      expect(t.native.input).not.toHaveBeenCalled();
+      if (reason === 'user_stop') {
+        expect(t.reports.queue).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ sessionId: 'session' }),
+        );
+        expect(t.connection.revoke).not.toHaveBeenCalled();
+      } else if (reason === 'disconnected') {
+        expect(t.reports.queue).not.toHaveBeenCalled();
+        expect(t.connection.revoke).not.toHaveBeenCalled();
+      } else {
+        expect(t.connection.revoke).toHaveBeenCalledExactlyOnceWith({
+          workspaceId: 'ws',
+          sessionId: 'session',
+          reason,
+        });
+        expect(t.reports.queue).not.toHaveBeenCalled();
+      }
+    },
+  );
+});
+
 describe('strict desktop validation', () => {
   it.each([
     { kind: 'type', text: 'é'.repeat(8193) },

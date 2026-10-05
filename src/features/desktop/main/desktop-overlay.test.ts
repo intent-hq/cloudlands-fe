@@ -68,6 +68,7 @@ vi.mock('./desktop-overlay-navigation', () => ({ openDesktopControllingAgent: vi
 vi.mock('../../../main/window-backend', () => ({ stampWindowWithBackend: vi.fn() }));
 import { ipcMain, powerMonitor, screen } from 'electron';
 import { DesktopControlOverlay } from './desktop-overlay';
+import { DesktopExecutor, type DesktopNative } from './desktop-executor';
 
 const session = {
   backendId: 'backend-a',
@@ -262,5 +263,97 @@ describe('desktop overlay native lifecycle', () => {
     await rejected;
     expect(stop).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalledWith('executor_failed');
+  });
+});
+
+describe('desktop executor and overlay startup failures', () => {
+  function execution() {
+    const native: DesktopNative = {
+      identity: vi.fn(async () => ({
+        computerId: session.computerId,
+        computerName: session.computerName,
+        platform: 'macos',
+      })),
+      acquire: vi.fn(async () => {}),
+      release: vi.fn(async () => {}),
+      check: vi.fn(async () => {}),
+      validateExclusion: vi.fn(async () => {}),
+      layout: vi.fn(async () => []),
+      capture: vi.fn(async () => []),
+      input: vi.fn(async () => {}),
+    };
+    const reports = { retain: vi.fn(async () => {}), queue: vi.fn(async () => {}) };
+    const connection = {
+      backendId: session.backendId,
+      saveAsset: vi.fn(),
+      revoke: vi.fn(async () => ({})),
+    };
+    const executor = new DesktopExecutor(native, overlay, reports);
+    const binding = {
+      workspaceId: session.workspaceId,
+      agentId: session.agentId,
+      principalId: 'human',
+      connectionEpoch: 'epoch',
+    };
+    const start = async () => {
+      await executor.handle(connection, { operation: 'prepare', ...binding });
+      return executor.handle(connection, {
+        operation: 'startControl',
+        ...binding,
+        computerId: session.computerId,
+        sessionId: session.sessionId,
+        agentName: session.agentName,
+        leaseMs: 15000,
+        stopReportToken: 'a'.repeat(43),
+      });
+    };
+    return { native, reports, connection, executor, start };
+  }
+
+  it('returns a failed start after overlay load failure without a competing session-ended report', async () => {
+    const t = execution();
+    mocks.failLoad = true;
+    await expect(t.start()).rejects.toMatchObject({ data: { code: 'desktop-execution-failed' } });
+    expect(t.connection.revoke).not.toHaveBeenCalled();
+    expect(t.reports.queue).not.toHaveBeenCalled();
+    expect(t.native.release).toHaveBeenCalledOnce();
+    expect(t.native.input).not.toHaveBeenCalled();
+    expect(mocks.windows).toHaveLength(4);
+    expect(mocks.windows.every((w) => w.dead && !w.visible)).toBe(true);
+  });
+
+  it('returns a failed start when overlay readiness times out, even if ready arrives later', async () => {
+    const t = execution();
+    const result = t.start().catch((error) => error);
+    await vi.waitFor(() => expect(mocks.windows).toHaveLength(4));
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(await result).toMatchObject({ data: { code: 'desktop-execution-failed' } });
+    for (const window of mocks.windows) {
+      send(window, 'ready');
+      window.emit('ready-to-show');
+    }
+    expect(t.connection.revoke).not.toHaveBeenCalled();
+    expect(t.native.release).toHaveBeenCalledOnce();
+    expect(mocks.windows.every((w) => w.dead && !w.visible)).toBe(true);
+    expect(t.native.validateExclusion).not.toHaveBeenCalled();
+  });
+
+  it('reports executor failure if native cleanup cannot be confirmed after overlay load failure', async () => {
+    const t = execution();
+    mocks.failLoad = true;
+    vi.mocked(t.native.release).mockRejectedValue(new Error('release unavailable'));
+    await expect(t.start()).rejects.toMatchObject({
+      data: {
+        code: 'desktop-execution-failed',
+        detail: 'Local desktop cleanup could not be confirmed',
+      },
+    });
+    expect(t.connection.revoke).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: session.workspaceId,
+      sessionId: session.sessionId,
+      reason: 'executor_failed',
+    });
+    expect(t.reports.queue).not.toHaveBeenCalled();
+    expect(mocks.windows.every((w) => w.dead)).toBe(true);
   });
 });
