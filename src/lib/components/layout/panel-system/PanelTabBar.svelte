@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { observeOverflow } from '$lib/actions/observe-overflow';
+
+  let selectorTitleOverflow = $state(false);
+  let tabTitleOverflow = $state<Record<string, boolean>>({});
   import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
@@ -1463,7 +1467,8 @@
               .join(' · ')}
             side="bottom"
             delayDuration={300}
-            disabled={paneStackMenuOpen}
+            disabled={paneStackMenuOpen ||
+              (!!activeTab && !activePath && !commitHash && !selectorTitleOverflow)}
           >
             <Button
               {...props}
@@ -1494,6 +1499,7 @@
                 </span>
                 <span
                   class="panel-selector-title min-w-0 flex-1 truncate text-left"
+                  use:observeOverflow={(overflow) => (selectorTitleOverflow = overflow)}
                   data-panel-header-title
                 >
                   {getTabTitle(activeTab)}
@@ -1613,6 +1619,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
         <Tooltip
           content={shortcutKey && isFocused ? `${tabTitle} (${shortcutKey})` : tabTitle}
+          disabled={!(shortcutKey && isFocused) && !tabTitleOverflow[tab.id]}
           side="bottom"
           delayDuration={500}
         >
@@ -1696,7 +1703,11 @@
                   ondblclick={(e) => e.stopPropagation()}
                 />
               {:else}
-                <span class="tab-title font-medium truncate max-w-24">{tabTitle}</span>
+                <span
+                  class="tab-title font-medium truncate max-w-24"
+                  use:observeOverflow={(overflow) => (tabTitleOverflow[tab.id] = overflow)}
+                  >{tabTitle}</span
+                >
               {/if}
 
               {#if isBackgroundAgent(tab)}

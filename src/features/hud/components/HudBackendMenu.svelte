@@ -17,6 +17,7 @@
   import { faPlus, faCheck } from '@fortawesome/free-solid-svg-icons';
   import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import Header from '$lib/components/ui/Header.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
@@ -124,7 +125,10 @@
               class="cursor-pointer text-xs"
               onSelect={() => handleOpenConnection(conn.id)}
             >
-              <span class="min-w-0 flex-1 truncate" title={connectionDisplayLabel(conn.id)}>
+              <span
+                class="min-w-0 flex-1 truncate"
+                use:truncatedTitle={connectionDisplayLabel(conn.id)}
+              >
                 {conn.isLocal
                   ? m.layout_daemonStatus_localConnection_label()
                   : formatConnectionLabel(conn)}

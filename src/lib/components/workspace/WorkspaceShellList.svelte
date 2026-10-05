@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import SidebarGroupHeader from './sidebar/SidebarGroupHeader.svelte';
@@ -243,7 +244,7 @@
               ></span>
               <span
                 class="min-w-0 flex-1 truncate type-body font-normal text-foreground"
-                title={script.name}
+                use:truncatedTitle={script.name}
               >
                 {script.name}
               </span>
