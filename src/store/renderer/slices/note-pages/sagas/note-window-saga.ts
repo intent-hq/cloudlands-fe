@@ -19,6 +19,7 @@ import * as a from '../note-pages-slice';
 import type { NotePageRequest, NoteReadPage } from '$lib/client/note-pages';
 import type { NotePageSession } from '../note-pages-types';
 type Action = { type: string; payload?: unknown };
+const isNotePageEvent = (event: Action) => event.type.startsWith('notePages/');
 const belongs = (event: Action, ws: string, id?: string) =>
   Array.isArray(event.payload) &&
   event.payload[0] === ws &&
@@ -31,6 +32,8 @@ function* readPage(
   assembly: NoteAssemblyLease,
 ): SagaGenerator<NoteReadPage> {
   const key = notePageRequestKey(request, assembly);
+  const isReadSettled = (event: Action) =>
+    event.type === a.pageReadSettled.type && belongs(event, ws, id);
   yield* put(a.pageRequested(ws, id, request, assembly));
   while (true) {
     let input:
@@ -49,10 +52,7 @@ function* readPage(
       input = undefined;
       // The DATA reservation covers the retained page even if its cache lease is
       // evicted here. CONTROL cannot back the next read before this one settles.
-      while (yield* selectNoteAssemblyReadBusy.effect(assembly.owner))
-        yield* take(
-          (event: Action) => event.type === a.pageReadSettled.type && belongs(event, ws, id),
-        );
+      while (yield* selectNoteAssemblyReadBusy.effect(assembly.owner)) yield* take(isReadSettled);
       return page;
     }
     if (input.error) throw new Error(input.error);
@@ -113,10 +113,7 @@ function* assemble(action: ReturnType<typeof a.pageWindowRequested>) {
         throw new Error(
           status === 'stale' ? 'Note window superseded' : 'Note assembly reservation unavailable',
         );
-      yield* take(
-        (event: Action) =>
-          event.type.startsWith('notePages/') || event.type === workspaceUnmounted.type,
-      );
+      yield* take([workspaceUnmounted, isNotePageEvent]);
     }
     steps = noteWindowSteps(address);
     let next = steps.next();

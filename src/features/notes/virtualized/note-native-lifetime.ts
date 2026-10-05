@@ -59,11 +59,11 @@ export class NoteNativeLifetime {
     return flattenExtensions(extensions).map((extension) => {
       const copy = extension.extend({ addExtensions: () => [] });
       if (copy.type !== 'node') return copy;
-      const lifetime = this;
+      const track = this.track.bind(this);
       return (copy as Node).extend({
         addNodeView() {
           const factory = this.parent?.();
-          return factory ? (props) => lifetime.track(factory(props)) : null;
+          return factory ? (props) => track(factory(props)) : null;
         },
       });
     });
