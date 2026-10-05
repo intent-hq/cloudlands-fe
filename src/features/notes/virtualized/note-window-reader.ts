@@ -29,6 +29,8 @@ export interface NoteWindow {
   scope: NoteScope;
   sourceRevision: string;
   snapshotId: string;
+  /** Exact original page deadline; absent only on legacy manually constructed windows. */
+  expiresAt?: string;
   sourceLength: number;
   range: SourceRange;
   text: string;
@@ -88,6 +90,7 @@ function* assembleWindowSteps(
     peak: number;
     canonicalWorkBytes: number;
     snapshotId?: string;
+    expiresAt?: string;
   },
 ): Generator<NotePageRequest, NoteWindow, NoteReadPage> {
   let snapshotId = work.snapshotId ?? address.snapshotId;
@@ -114,12 +117,15 @@ function* assembleWindowSteps(
     if (
       !('sourceRevision' in page) ||
       !('snapshotId' in page) ||
+      !('expiresAt' in page) ||
+      (work.expiresAt !== undefined && page.expiresAt !== work.expiresAt) ||
       !sameNoteScope(page.scope, address.scope) ||
       page.sourceRevision !== address.sourceRevision ||
       (snapshotId !== undefined && page.snapshotId !== snapshotId)
     )
       throw new Error('Note window snapshot mismatch');
     snapshotId = work.snapshotId = page.snapshotId;
+    work.expiresAt = page.expiresAt;
     const responseBytes = encoded(page);
     work.wireBytes += responseBytes;
     work.peak = Math.max(work.peak, responseBytes + 2 * cost.sourceBytes + 2 * cost.contextBytes);
@@ -411,6 +417,7 @@ function* assembleWindowSteps(
     scope: address.scope,
     sourceRevision: address.sourceRevision,
     snapshotId: snapshotId!,
+    expiresAt: work.expiresAt,
     range: { start, end },
     sourceLength,
     text,

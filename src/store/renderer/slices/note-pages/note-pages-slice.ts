@@ -89,6 +89,9 @@ export const pageResourcesRequested = createAction<
   [owner: string, resources: NoteResourceReservation[], ownerSlots?: number]
 >('notePages/resourcesRequested');
 export const pageResourcesReleased = createAction<[owner: string]>('notePages/resourcesReleased');
+export const pageAssemblyDataRetained = createAction<[assembly: NoteAssemblyLease, owner: string]>(
+  'notePages/assemblyDataRetained',
+);
 export const pageCachedRetained = createAction<
   [
     workspaceId: string,
@@ -260,6 +263,21 @@ notePagesReducer.with(pageResourcesReleased, (state, { payload: [owner] }) =>
     resourceLedger: releaseNoteResources(state.resourceLedger, owner),
   }),
 );
+notePagesReducer.with(pageAssemblyDataRetained, (s, { payload: [assembly, owner] }) => {
+  const held = s.resourceLedger.owners[assembly.owner];
+  if (
+    !held?.includes(assembly.data) ||
+    !held.includes(assembly.control) ||
+    Object.values(s.physicalReads).some((read) => read.assembly?.owner === assembly.owner)
+  )
+    return s;
+  return {
+    ...s,
+    resourceLedger: retainNoteResourcesFrom(s.resourceLedger, assembly.owner, owner, [
+      assembly.data,
+    ]),
+  };
+});
 notePagesReducer.with(pageResourcesTransferred, (state, { payload: [from, to] }) => ({
   ...state,
   resourceLedger: transferNoteResources(state.resourceLedger, from, to),

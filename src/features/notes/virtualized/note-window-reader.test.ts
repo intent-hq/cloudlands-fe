@@ -103,6 +103,22 @@ describe('production bounded note window assembly', () => {
       ),
     ).rejects.toThrow(/snapshot/i);
   });
+  it('retains the original deadline spelling and rejects a changed context deadline', async () => {
+    const b = backend('hello');
+    const window = await readNoteWindow(b.read, { at: 0, ...identity });
+    expect(window.expiresAt).toBe(identity.expiresAt);
+    await expect(
+      readNoteWindow(
+        async (q) => {
+          const page = await b.read(q);
+          return q.kind === 'context'
+            ? ({ ...page, expiresAt: '2099-01-01T00:00:00.000Z' } as NoteReadPage)
+            : page;
+        },
+        { at: 0, ...identity },
+      ),
+    ).rejects.toThrow(/snapshot/i);
+  });
   it('rejects a source gap instead of concatenating noncontiguous pages', async () => {
     const b = backend('word '.repeat(500));
     await expect(
