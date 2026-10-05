@@ -50,10 +50,12 @@ import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice
 import { removeScript } from '../../scripts/scripts-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  bootstrapNewWorkspaceLayout,
   clearPanelLayout,
   closeTab,
   emptyWorkspaceState,
   initializeLayout,
+  openHiddenTab,
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
   panelLayoutReducer as rawPanelLayoutReducer,
@@ -262,6 +264,51 @@ describe('browserTabRegistrySaga', () => {
   });
 
   describe('host reporting', () => {
+    it.each([false, true])(
+      'reports tabs opened in a workspace bootstrapped after the connection sync (hidden: %s)',
+      async (hidden) => {
+        const h = start({ workspaceIds: [WS] });
+        await flush();
+        expect(mocks.syncTabs).toHaveBeenCalledTimes(1);
+        h.dispatch(bootstrapNewWorkspaceLayout(WS, 'agent-1', 'Coordinator', true));
+        const tab = browserTab({ browserUrl: 'http://a.test/', ownerAgentId: 'agent-1' });
+        h.dispatch(
+          hidden
+            ? openHiddenTab(WS, tab, 'b1')
+            : openTabInRightmostColumn(WS, tab, { newTabId: 'b1' }),
+        );
+        await flush();
+
+        expect(mocks.upsertTab.mock.calls).toEqual([
+          [
+            WS,
+            expectedInput({
+              ownerAgentId: 'agent-1',
+              visibility: hidden ? 'hidden' : 'visible',
+              displayed: !hidden,
+            }),
+          ],
+        ]);
+        expect((hidden ? h.hidden() : h.tabs()).find((tab) => tab.id === 'b1')).toMatchObject({
+          hostClientId: OWN,
+          ownerAgentId: 'agent-1',
+        });
+        mocks.listTabs.mockResolvedValue([row({ ...mocks.upsertTab.mock.calls[0][1] })]);
+        h.setHealth('healthy', 2);
+        h.dispatch(connectionStatusChanged('connected'));
+        await flush();
+        expect(mocks.upsertTab).toHaveBeenCalledTimes(1);
+        expect(mocks.syncTabs).toHaveBeenLastCalledWith([
+          expect.objectContaining({
+            tabId: 'b1',
+            ownerAgentId: 'agent-1',
+            visibility: hidden ? 'hidden' : 'visible',
+          }),
+        ]);
+        await stop(h);
+      },
+    );
+
     it('reports a newly opened hosted tab with browser.upsertTab and records the host', async () => {
       const h = start({ layouts: { [WS]: settledLayout([]) }, health: 'down', applied: true });
       h.setHealth('healthy', 1);

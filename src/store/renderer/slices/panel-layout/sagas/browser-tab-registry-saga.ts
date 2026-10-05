@@ -141,6 +141,7 @@ import {
   PANEL_LAYOUT_HANDLED_ACTION_TYPES,
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
+  bootstrapNewWorkspaceLayout,
   browserTabRegistryReportRequested,
   closeTab,
   destroyTabsByType,
@@ -712,6 +713,17 @@ function* loadUnder(
 function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGenerator<void> {
   const [wsId, status] = action.payload;
   if (status !== 'restored' && status !== 'empty' && status !== 'invalid') return;
+  yield* call(reconcileWorkspace, wsId);
+}
+
+/** New workspaces settle in the bootstrap reducer, without setRestoreStatus. */
+function* reconcileOnBootstrap(
+  action: ReturnType<typeof bootstrapNewWorkspaceLayout>,
+): SagaGenerator<void> {
+  yield* call(reconcileWorkspace, action.payload.wsId);
+}
+
+function* reconcileWorkspace(wsId: string): SagaGenerator<void> {
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
   const ownClientId = yield* waitForOwnClientId();
   yield* call(loadWorkspace, wsId, ownClientId);
@@ -1192,6 +1204,7 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   yield* takeEvery(browserTabRegistryReportRequested, onReportRequested, reports);
   yield* takeSingleFlightInContext(reports, (wsId) => wsId, reportHostedTabs);
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
+  yield* takeEvery(bootstrapNewWorkspaceLayout, reconcileOnBootstrap);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);
   yield* takeEvery(connectionStatusChanged, onConnectionStatus);

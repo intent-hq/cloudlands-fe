@@ -1780,6 +1780,7 @@ export async function executeActions(
   getLoopbackContext?: () => LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
   deadline?: number,
+  waitForRegistry?: (tabId: string, deadline?: number) => Promise<boolean>,
 ): Promise<ExecutionResult> {
   // Validate input against schema
   const parseResult = ActionSequenceSchema.safeParse(input);
@@ -1801,7 +1802,7 @@ export async function executeActions(
   const ownerNameCache: OwnerNameCache = new Map();
 
   for (const action of actions) {
-    const result = await executeAction(
+    let result = await executeAction(
       action,
       defaultTabId,
       openTabFn,
@@ -1812,6 +1813,27 @@ export async function executeActions(
       ownerNameCache,
       deadline,
     );
+    // Local webview registration does not make a tab addressable through
+    // the daemon. Check every successful open, including reuse/replace,
+    // before running the next action or returning the handle (#2756).
+    if (result.action === 'openTab' && result.success && waitForRegistry) {
+      const tabId = result.result?.tabId;
+      let registered = false;
+      try {
+        registered = typeof tabId === 'string' && (await waitForRegistry(tabId, deadline));
+      } catch (error) {
+        logger.warn('Could not confirm daemon tab registration', { tabId, error });
+      }
+      if (!registered) {
+        result = {
+          ...result,
+          success: false,
+          result: { ...result.result, success: false },
+          // i18n-ignore (agent-facing protocol error, not user-facing)
+          error: `Tab ${tabId ?? '(unknown)'} could not be confirmed in the daemon browser registry before the registration deadline. Check { action: "listTabs" } before retrying the open.`,
+        };
+      }
+    }
     results.push(result);
 
     if (!result.success) {
