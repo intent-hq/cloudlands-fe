@@ -168,7 +168,7 @@ import {
   setLabsMultiplayerEnabled,
   userPreferencesReducer,
 } from '../../user-preferences/user-preferences-slice';
-import { setAgents } from '../../workspace-agents/workspace-agents-slice';
+import { setAgents, setAgentsLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { removeScript } from '../../scripts/scripts-slice';
 import {
   applyLocalNoteUpdate,
@@ -360,12 +360,16 @@ function startRestoreSaga(
       panelLayout: panelLayoutReducer(state.panelLayout, action),
       workspaceNotes: workspaceNotesReducer(state.workspaceNotes, action),
     };
+    if (action.type === setAgentsLoaded.type) {
+      const [wsId, loaded] = action.payload;
+      state.workspaceAgents.byWorkspaceId[wsId].agentsLoaded = loaded;
+    }
     if (action.type === setAgents.type) {
       const [wsId, sessions] = action.payload;
       state.workspaceAgents = {
         byWorkspaceId: {
           [wsId]: {
-            agentsLoaded: true,
+            agentsLoaded: state.workspaceAgents.byWorkspaceId[wsId]?.agentsLoaded ?? false,
             agentIds: sessions.map((session: AgentSession) => String(session.id)),
             foregroundAgentIds: sessions.map((session: AgentSession) => String(session.id)),
           },
@@ -2346,6 +2350,9 @@ describe('panelLayoutSaga', () => {
         await settle();
         loadSpec(run);
         expect(tabs(run)).toEqual([]);
+        // Production hydration marks readiness before publishing the complete list.
+        run.dispatch(setAgentsLoaded(WS_1, true));
+        expect(tabs(run)).toEqual([]);
         run.dispatch(setAgents(WS_1, [first, coordinator]));
         expectPair(run, 'coordinator');
         await cancelSaga(run.task);
@@ -2386,6 +2393,15 @@ describe('panelLayoutSaga', () => {
         expect(spec).toBeDefined();
         run.dispatch(closeTab(WS_1, spec.id));
         loadSpec(run);
+        expect(tabs(run)).toHaveLength(1);
+        await cancelSaga(run.task);
+      });
+
+      it('restores a populated saved layout without reading agent state', async () => {
+        const run = startRestoreSaga(layout, []);
+        delete run.getState().workspaceAgents;
+        await settle();
+        expect(run.getState().panelLayout.byWorkspaceId[WS_1].restoreStatus).toBe('restored');
         expect(tabs(run)).toHaveLength(1);
         await cancelSaga(run.task);
       });
