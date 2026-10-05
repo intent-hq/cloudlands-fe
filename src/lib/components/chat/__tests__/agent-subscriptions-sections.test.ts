@@ -108,17 +108,6 @@ vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
 vi.mock('$features/agent/components/agent-avatar/AgentAvatarWithState.svelte', async () => ({
   default: (await import('./mocks/MockAvatarWithState.svelte')).default,
 }));
-vi.mock('$lib/components/ui/tooltip', async () => {
-  const SlotOnly = (await import('./mocks/SlotOnly.svelte')).default;
-  return {
-    Provider: SlotOnly,
-    Root: SlotOnly,
-    Trigger: SlotOnly,
-    Content: SlotOnly,
-    TooltipShortcut: SlotOnly,
-  };
-});
-
 import { store as appStore } from '$store/renderer/store';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -626,7 +615,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     const trailingSlot = within(agentRow('agent-active')).getByTestId('agent-card-trailing-slot');
     expect(trailingSlot.className).toContain('w-14');
-    const timestamp = trailingSlot.querySelector('[title]');
+    const timestamp = trailingSlot.querySelector('[data-tooltip-trigger]');
     expect(timestamp?.className).toContain('type-caption');
     expect(timestamp?.className).toContain('text-right');
     expect(timestamp?.className).toContain('group-hover/watch:opacity-0');

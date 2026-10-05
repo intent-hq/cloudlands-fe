@@ -194,13 +194,13 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(screen.getByTestId('hud-gating-children')).toBeTruthy();
   });
 
-  it('renders full chrome on non-HUD routes', () => {
+  it('renders Home chrome without the workspace sidebar', () => {
     mockPage.pathname = '/';
 
     render(AppLayout, { props: { children: childrenSnippet } });
 
     expect(screen.getAllByTestId('window-title-bar-marker').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('sidebar-nav-marker').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
     expect(screen.getAllByTestId('toast-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('radial-prompt-picker-overlay-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);

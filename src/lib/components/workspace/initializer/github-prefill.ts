@@ -3,7 +3,8 @@
  * into the selection shape consumed by the initializer's issue-select path
  * (`handleIssueSelect` → `insertContextMention` with itemType `github-issue`).
  *
- * PRs fetch branch info via the existing `git-tracking:get-pull-request` IPC
+ * Home supplies already-read head/target branches on all platforms. Other
+ * PR entry points fetch branch info via the existing `git-tracking:get-pull-request` IPC
  * (mirroring IssueSuggestions' handleGitHubPRClick) so source-branch
  * auto-linking works; fetch failures degrade to a minimal mention
  * (identifier + URL). Issues have no single-fetch IPC and always resolve to
@@ -53,10 +54,21 @@ export async function resolveGitHubPrefillSelection(
   const minimal: GitHubPrefillSelection = {
     type: 'github',
     identifier,
-    title: `#${number}`,
+    title: prefill.title || `#${number}`,
     url,
     metadata: { project: `${owner}/${repo}` },
   };
+
+  if (kind === 'pr' && prefill.sourceBranch) {
+    return {
+      ...minimal,
+      metadata: {
+        ...minimal.metadata,
+        sourceBranch: prefill.sourceBranch,
+        targetBranch: prefill.targetBranch,
+      },
+    };
+  }
 
   if (kind !== 'pr' || !isElectronPlatform()) {
     return minimal;

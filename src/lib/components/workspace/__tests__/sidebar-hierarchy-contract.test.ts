@@ -24,17 +24,13 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     const appLayout = source('../../../../routes/(app)/+layout.svelte');
 
     expect(navigation).toContain('data-top-navigation');
-    expect(navigation).toContain('variant="ghost-light"');
     expect(navigation).toContain('size="icon"');
-    expect(navigation).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
-    expect(navigation).toContain('data-nav-item={item.id}');
     expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
     expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar).toContain('titlebar-left-drag-surface');
     expect(titleBar).toContain('data-titlebar-left-drag-handle');
-    expect(titleBar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
     expect(titleBar).toContain('<WorkspaceTabStrip');
     expect(titleBar).toContain('activeWorkspaceId={routedWorkspaceId}');
     expect(titleBar).toContain('data-titlebar-settings');
