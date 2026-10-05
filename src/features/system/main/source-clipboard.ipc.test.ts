@@ -1,0 +1,166 @@
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+const mocks = vi.hoisted(() => ({
+  handle: vi.fn(),
+  publish: vi.fn(async (_text: string) => {}),
+  getPath: vi.fn(),
+  fromWebContents: vi.fn(),
+  backend: vi.fn(),
+  invoke: vi.fn(),
+  electron: vi.fn(() => true),
+}));
+vi.mock('electron', () => ({
+  app: { getPath: mocks.getPath },
+  BrowserWindow: { fromWebContents: mocks.fromWebContents },
+  clipboard: { writeText: mocks.publish },
+  ipcMain: { handle: mocks.handle },
+}));
+vi.mock('../../backend/main/backend.ipc', () => ({ getBackendClientForIpcEvent: mocks.backend }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke, isElectron: mocks.electron }));
+import { registerSourceClipboardIPC } from './source-clipboard.ipc';
+import { stampWindowWithBackend } from '../../../main/window-backend';
+import type { BrowserWindow } from 'electron';
+import { openNoteSourceClipboardSink } from '$lib/utils/source-clipboard';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+const c = IPC_CHANNELS.SYSTEM;
+const handlers = new Map<string, (event: unknown, params: unknown) => Promise<unknown>>();
+let directory: string;
+let sender: EventEmitter & { mainFrame: object; isDestroyed(): boolean };
+let client: EventEmitter & { getStatus(): string };
+let window: BrowserWindow;
+let event: { sender: typeof sender; senderFrame: object };
+beforeAll(async () => {
+  directory = await fs.mkdtemp(join(tmpdir(), 'source-clipboard-ipc-'));
+  mocks.getPath.mockReturnValue(directory);
+  mocks.handle.mockImplementation((channel, handler) => {
+    handlers.set(channel, handler);
+  });
+  registerSourceClipboardIPC();
+});
+afterAll(async () => {
+  expect(await fs.readdir(directory)).toEqual([]);
+  await fs.rm(directory, { recursive: true, force: true });
+});
+beforeEach(() => {
+  mocks.publish.mockReset();
+  mocks.publish.mockResolvedValue(undefined);
+  mocks.electron.mockReturnValue(true);
+  sender = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false });
+  window = Object.assign(new EventEmitter(), {
+    webContents: sender,
+    isDestroyed: () => false,
+  }) as unknown as BrowserWindow;
+  mocks.fromWebContents.mockReturnValue(window);
+  stampWindowWithBackend(window, 'b');
+  client = Object.assign(new EventEmitter(), { getStatus: () => 'connected' });
+  event = { sender, senderFrame: sender.mainFrame };
+  mocks.backend.mockReturnValue({ backendId: 'b', client });
+  mocks.invoke.mockReset();
+  mocks.invoke.mockImplementation(async (channel, params) => {
+    const h = handlers.get(channel);
+    if (!h) throw new Error('Unregistered channel');
+    return h(event, params);
+  });
+});
+const input = (length: number) => ({ id: randomUUID(), length, expiresAt: Date.now() + 50000 });
+it('connects real renderer adapter to registered main handlers and awaits native publication', async () => {
+  const sink = await openNoteSourceClipboardSink(input(8));
+  await sink.write('abc');
+  await sink.write('😀\r\nz');
+  let resolve!: () => void;
+  const held = new Promise<void>((r) => {
+    resolve = r;
+  });
+  mocks.publish.mockReturnValue(held);
+  let done = false;
+  const pending = Promise.resolve(sink.commit()).then(() => {
+    done = true;
+  });
+  await vi.waitFor(() => expect(mocks.publish).toHaveBeenCalledWith('abc😀\r\nz'));
+  expect(done).toBe(false);
+  expect(await fs.readdir(directory)).toHaveLength(1);
+  resolve();
+  await pending;
+  expect(await fs.readdir(directory)).toEqual([]);
+  expect(sender.listenerCount('destroyed')).toBe(1); // Existing strict document binding observer.
+  expect(client.listenerCount('status')).toBe(0);
+  expect(mocks.invoke.mock.calls.map(([channel]) => channel)).toEqual([
+    c.SOURCE_CLIPBOARD_BEGIN,
+    c.SOURCE_CLIPBOARD_WRITE,
+    c.SOURCE_CLIPBOARD_WRITE,
+    c.SOURCE_CLIPBOARD_COMMIT,
+  ]);
+});
+it.each(['frame', 'backend', 'disconnect', 'restamp'])(
+  'refuses %s owner replacement before native handoff',
+  async (kind) => {
+    const sink = await openNoteSourceClipboardSink(input(1));
+    await sink.write('a');
+    if (kind === 'frame') sender.emit('did-start-navigation', {}, 'other', false, true);
+    if (kind === 'restamp') {
+      stampWindowWithBackend(window, 'other');
+      stampWindowWithBackend(window, 'b');
+    }
+    if (kind === 'backend') {
+      stampWindowWithBackend(window, 'other');
+      mocks.backend.mockReturnValue({ backendId: 'other', client });
+    }
+    if (kind === 'disconnect') {
+      client.emit('status', 'disconnected');
+      client.emit('status', 'connected');
+    }
+    await expect(sink.commit()).rejects.toThrow(/REVOKED|UNKNOWN|OWNER/);
+    await sink.abort().catch(() => undefined);
+    await vi.waitFor(async () => expect(await fs.readdir(directory)).toEqual([]));
+    expect(mocks.publish).not.toHaveBeenCalled();
+    expect(await fs.readdir(directory)).toEqual([]);
+  },
+);
+it('rejects non-main-frame IPC and malformed/unbounded chunks without native calls', async () => {
+  const begin = handlers.get(c.SOURCE_CLIPBOARD_BEGIN);
+  if (!begin) throw new Error('Missing registered handler');
+  expect(await begin({ ...event, senderFrame: {} }, input(1))).toMatchObject({
+    success: false,
+    error: { code: 'SOURCE_CLIPBOARD_OWNER' },
+  });
+  const sink = await openNoteSourceClipboardSink(input(5000));
+  await expect(sink.write('x'.repeat(4097))).rejects.toThrow('INVALID');
+  await sink.abort();
+  expect(mocks.publish).not.toHaveBeenCalled();
+});
+it('cleans an allocated operation after a lost begin acknowledgement', async () => {
+  const invoke = mocks.invoke.getMockImplementation();
+  if (!invoke) throw new Error('Missing registered bridge');
+  mocks.invoke.mockImplementation(async (channel, params) => {
+    const result = await invoke(channel, params);
+    if (channel === c.SOURCE_CLIPBOARD_BEGIN) throw new Error('Lost acknowledgement');
+    return result;
+  });
+  await expect(openNoteSourceClipboardSink(input(1))).rejects.toThrow('Lost acknowledgement');
+  expect(await fs.readdir(directory)).toEqual([]);
+  expect(mocks.publish).not.toHaveBeenCalled();
+});
+it('refuses unavailable platforms without browser clipboard fallback or IPC', async () => {
+  mocks.electron.mockReturnValue(false);
+  await expect(openNoteSourceClipboardSink(input(1))).rejects.toThrow('UNSUPPORTED');
+  expect(mocks.invoke).not.toHaveBeenCalled();
+  expect(mocks.publish).not.toHaveBeenCalled();
+});
+it('rejects a corrupted receipt without retrying or rolling back the clipboard', async () => {
+  const invoke = mocks.invoke.getMockImplementation();
+  if (!invoke) throw new Error('Missing registered bridge');
+  mocks.invoke.mockImplementation(async (channel, params) => {
+    const result = await invoke(channel, params);
+    if (channel === c.SOURCE_CLIPBOARD_COMMIT) return { success: true, data: {} };
+    return result;
+  });
+  const sink = await openNoteSourceClipboardSink(input(1));
+  await sink.write('a');
+  await expect(sink.commit()).rejects.toThrow();
+  await sink.abort();
+  expect(mocks.publish).toHaveBeenCalledExactlyOnceWith('a');
+});

@@ -1,4 +1,6 @@
 import { v4 as uuid } from 'uuid';
+import { openNoteSourceClipboardSink } from '$lib/utils/source-clipboard';
+import type { SourceClipboardBegin } from '$shared/ipc/source-clipboard';
 import { sameNoteScope } from '$lib/client/note-pages';
 import {
   stageTextDigest,
@@ -46,7 +48,7 @@ interface Options {
   current(): boolean;
   /** Admission for an external atomic sink, before any staging RPC. Unsupported
    * platforms reject here; they never fall back to copying the visible window. */
-  openSink(): Promise<NoteSourceSink>;
+  openSink?(capture: SourceClipboardBegin): Promise<NoteSourceSink>;
   now?: () => number;
 }
 const journalUnits = 262144;
@@ -70,7 +72,8 @@ export function createNoteSourceCopyOwner(
       if (cancelActive) throw new Error('Document copy already in progress');
       const { port } = options,
         now = options.now ?? Date.now;
-      const owner = `source-copy:${uuid()}`;
+      const copyId = uuid();
+      const owner = `source-copy:${copyId}`;
       let revoked = false,
         committed = false,
         sealed = false;
@@ -273,7 +276,11 @@ export function createNoteSourceCopyOwner(
           },
           eligible,
         );
-        sink = await options.openSink();
+        sink = await (options.openSink ?? openNoteSourceClipboardSink)({
+          id: copyId,
+          length: document.length,
+          expiresAt: deadline,
+        });
         check();
         await operation.begin();
         let textId = 0;

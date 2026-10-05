@@ -1,5 +1,12 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createSourceClipboard } from '$features/system/main/source-clipboard';
+import { invoke } from '$lib/electron-bridge';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn(), isElectron: () => true }));
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   onBackendNotification: vi.fn(),
@@ -846,5 +853,49 @@ it('checks the original deadline after cancellation settlement before publicatio
     expect(f.read().resourceLedger.used.physicalReads).toBe(0);
   } finally {
     clock.mockRestore();
+  }
+});
+
+it('drains actual Live/Redux capture through the default platform adapter into main-owned disk staging', async () => {
+  const f = fixture('z'.repeat(17000));
+  const directory = await fs.mkdtemp(join(tmpdir(), 'source-copy-platform-'));
+  const publish = vi.fn(async (_text: string) => {});
+  const errors = vi.fn();
+  const main = createSourceClipboard({
+    directory,
+    publish,
+    maxNativeBytes: 1024 * 1024,
+    cleanupError: errors,
+  });
+  const mainOwner = { key: {}, current: () => true, subscribe: () => () => {} };
+  const c = IPC_CHANNELS.SYSTEM;
+  vi.mocked(invoke).mockImplementation(async (channel, params) => {
+    const p = params as never;
+    if (channel === c.SOURCE_CLIPBOARD_BEGIN)
+      return { success: true, data: await main.begin(mainOwner, p) };
+    if (channel === c.SOURCE_CLIPBOARD_WRITE)
+      return { success: true, data: await main.write(mainOwner, p) };
+    if (channel === c.SOURCE_CLIPBOARD_COMMIT)
+      return { success: true, data: await main.commit(mainOwner, p) };
+    if (channel === c.SOURCE_CLIPBOARD_ABORT) {
+      await main.abort(mainOwner, p);
+      return { success: true, data: {} };
+    }
+    throw new Error('Unexpected sink IPC');
+  });
+  const owner = createNoteSourceCopyOwner({ ...f.options, openSink: undefined });
+  const before = f.read().byWorkspaceId.w.notes.n;
+  try {
+    await owner.copyDocument();
+    expect(publish).toHaveBeenCalledExactlyOnceWith(f.complete);
+    expect(f.options.openSink).not.toHaveBeenCalled();
+    expect(f.read().byWorkspaceId.w.notes.n).toBe(before);
+    expect(f.read().resourceLedger.used.physicalReads).toBe(0);
+    expect(f.listeners.size).toBe(0);
+    expect(main.usage()).toEqual({ owners: 0, admittedBytes: 0 });
+    expect(await fs.readdir(directory)).toEqual([]);
+    expect(errors).not.toHaveBeenCalled();
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
   }
 });

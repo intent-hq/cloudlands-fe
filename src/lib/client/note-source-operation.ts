@@ -17,7 +17,7 @@ export interface NoteSourceOperationInput {
     selection: 'all';
   };
 }
-export interface NoteStageTextReference {
+interface NoteStageTextReference {
   textId: string;
   length: number;
   utf8Bytes: number;
