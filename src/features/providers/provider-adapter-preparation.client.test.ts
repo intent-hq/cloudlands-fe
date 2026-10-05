@@ -1,18 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 const mocks = vi.hoisted(() => ({ electron: false, invoke: vi.fn(), resolve: vi.fn() }));
 vi.mock('$lib/utils/platform-capabilities', () => ({ isElectronPlatform: () => mocks.electron }));
-vi.mock('$lib/client/live/backend-transport', () => ({
-  electronAPI: () => ({ invoke: mocks.invoke }),
-}));
+vi.mock('$lib/client/live/backend-transport', async () => {
+  const { electronAPI } = await import('$lib/client/live/electron-ipc-transport');
+  return { electronAPI };
+});
 vi.mock('$lib/client/live/backend-transport-factory', () => ({
   resolveBackendTransport: mocks.resolve,
 }));
 import { prepareOnboardingAdapters } from './provider-adapter-preparation.client';
 
 describe('onboarding preparation transport', () => {
+  const originalApi = window.electronAPI;
+  afterEach(() => {
+    window.electronAPI = originalApi;
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.electron = false;
+    window.electronAPI = { invoke: mocks.invoke } as unknown as Window['electronAPI'];
   });
   it('captures the web transport once and uses the exact daemon contract', async () => {
     const request = vi.fn(async (method) =>
@@ -31,8 +38,22 @@ describe('onboarding preparation transport', () => {
   it('uses one Electron IPC operation so main captures the sender route before discovery', async () => {
     mocks.electron = true;
     mocks.invoke.mockResolvedValue(undefined);
-    await prepareOnboardingAdapters('remote:1');
-    expect(mocks.invoke).toHaveBeenCalledWith('providers:prepare-adapters', 'remote:1');
+    const mockRoute = vi.fn();
+    const restore = overrideMockIpcHandler('providers:prepare-adapters', mockRoute);
+    try {
+      await prepareOnboardingAdapters('remote:1');
+      expect(mocks.invoke).toHaveBeenCalledWith('providers:prepare-adapters', 'remote:1');
+      expect(mockRoute).not.toHaveBeenCalled();
+      expect(mocks.resolve).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+  it('skips Electron preparation without a preload bridge instead of entering the mock router', async () => {
+    mocks.electron = true;
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+    await expect(prepareOnboardingAdapters('missing:1')).resolves.toBeUndefined();
+    expect(mocks.invoke).not.toHaveBeenCalled();
     expect(mocks.resolve).not.toHaveBeenCalled();
   });
   it('quietly ignores unavailable Electron IPC on older clients', async () => {
