@@ -380,6 +380,60 @@ writeFileSync('skipped-imported', 'yes'); it.skip('skip', () => { throw new Erro
     expect(existsSync(join(root, 'skipped-imported'))).toBe(false);
   });
 
+  it.each([
+    { name: 'configured Vite root', testRoot: false, cliRoot: false },
+    { name: 'explicit CLI root', testRoot: false, cliRoot: true },
+    { name: 'configured test.root', testRoot: true, cliRoot: false },
+    { name: 'test.root over CLI root', testRoot: true, cliRoot: true },
+  ])('preserves root precedence and execution identity: $name', ({ testRoot, cliRoot }) => {
+    const { root, write, bodies } = fixture();
+    write(
+      'vitest.config.ts',
+      'export default ' +
+        JSON.stringify({
+          root: join(root, 'suite'),
+          test: {
+            environment: 'node',
+            maxWorkers: 1,
+            include: ['[abc].test.ts'],
+            ...(testRoot ? { root: join(root, 'test-suite') } : {}),
+          },
+        }),
+    );
+    for (const file of [
+      'a.test.ts',
+      'suite/b.test.ts',
+      'suite/c.test.ts',
+      'test-suite/b.test.ts',
+      'test-suite/c.test.ts',
+    ]) {
+      write(
+        file,
+        `import { it } from 'vitest'; import { appendFileSync } from 'node:fs';
+appendFileSync(${JSON.stringify(join(root, 'imports.jsonl'))}, 'imported\\n');
+it('body', () => appendFileSync(${JSON.stringify(join(root, 'bodies.jsonl'))}, ${JSON.stringify(JSON.stringify(file) + '\n')}));`,
+      );
+    }
+    const expected = testRoot
+      ? ['test-suite/b.test.ts', 'test-suite/c.test.ts']
+      : cliRoot
+        ? ['a.test.ts']
+        : ['suite/b.test.ts', 'suite/c.test.ts'];
+    const selected = plan(check('vitest-full', 'run', ...(cliRoot ? ['--root', root] : [])));
+    const rejected = isolatedRun(root, selected, expected.length - 1);
+    expect(rejected.status).toBe(1);
+    expect(rejected.error).toMatch(/unit files exceed/);
+    expect(bodies()).toEqual([]);
+    expect(existsSync(join(root, 'imports.jsonl'))).toBe(false);
+    const accepted = isolatedRun(root, selected, expected.length);
+    expect(accepted.status).toBe(0);
+    const paths = accepted.lines
+      .filter((line: string) => line.startsWith('  - '))
+      .map((line: string) => line.slice(4));
+    expect(paths).toEqual(expected);
+    expect(bodies()).toEqual(expected);
+  });
+
   it('accepts explicit planning and nonnegative integer budgets; rejects ambiguous or malformed limits', () => {
     expect(parseArgs(['--resolved-plan', '--max-unit-files', '0', 'src/source.ts'])).toMatchObject({
       resolvedPlan: true,

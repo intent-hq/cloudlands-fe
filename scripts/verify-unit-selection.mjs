@@ -79,7 +79,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(self)) {
     if (filter.some((file) => file.includes(':'))) options.includeTaskLocation ??= true;
     vitest = await createVitest('test', {
       ...options,
-      root: options.root ?? process.cwd(),
       watch: false,
       run: true,
     });
