@@ -99,8 +99,6 @@ import {
   chatStateReducer,
   refreshChatTranscriptRequested,
   sendMessage,
-  sendQueuedMessagesNowRequested,
-  clearQueuedMessagesRequested,
   streamActivityReceived,
   streamStatusReceived,
   transcriptHydrationSettled,

@@ -9,7 +9,6 @@
     pendingSubmissionMessage,
     processingSubmissionMessage,
   } from './pending-submission-message';
-  import { CHAT_PAGE_SIZE } from '$shared/constants';
   import { provideOperationalPanel } from './operational-panel.svelte';
   import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
@@ -124,7 +123,6 @@
   import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
 
   import {
-    sendMessage,
     sendQueuedMessagesNowRequested,
     clearQueuedMessagesRequested,
     initializeChatRequested,

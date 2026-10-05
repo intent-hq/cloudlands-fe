@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines -- Correlated queue-mutation ownership keeps legacy callback consumers and Redux callers on one public component boundary. */
   import {
     projectPendingSubmissions,
     queueDisplayBlocksMutation,
