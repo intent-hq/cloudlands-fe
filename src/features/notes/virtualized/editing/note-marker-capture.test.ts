@@ -154,31 +154,68 @@ it.each(['# x', '> x', '**x'])(
   },
 );
 
-it.each(['forward', 'reverse', 'token', 'attrs', 'parent', 'projection', 'identity', 'state'])(
-  'rejects final current callback changing %s',
-  async (kind) => {
+it.each([
+  'forward',
+  'intrinsic',
+  'reverse',
+  'token',
+  'attrs',
+  'parent',
+  'projection',
+  'identity',
+  'state',
+])('rejects final current callback changing %s', async (kind) => {
+  const f = await fixture();
+  let calls = 0;
+  const input = {
+    ...f.input,
+    current: () => {
+      if (++calls === 2) {
+        if (kind === 'forward') f.projection.positions.set(f.input.position, 0);
+        if (kind === 'intrinsic')
+          Map.prototype.set.call(f.projection.positions, f.input.position, 0);
+        if (kind === 'reverse') vi.spyOn(f.projection, 'pmAt').mockReturnValue(1);
+        if (kind === 'token')
+          f.projection.tokens.find((t) => t.pm === f.input.position)!.raw = 'bad';
+        if (kind === 'attrs')
+          Reflect.set(f.editor.state.doc.nodeAt(f.input.position)!.attrs, 'id', 'bad');
+        if (kind === 'parent') Reflect.set(f.editor.state.doc.firstChild!.attrs, 'extra', 'bad');
+        if (kind === 'projection')
+          input.projection = new SourceProjection(f.projection.source, f.projection.start);
+        if (kind === 'identity') input.identity = { ...input.identity, snapshotId: 'other' };
+        if (kind === 'state')
+          f.editor.view.dispatch(f.editor.state.tr.setSelection(f.editor.state.selection));
+      }
+      return true;
+    },
+  };
+  try {
+    expect(() => captureNoteMarker(f.editor.view, input)).toThrow();
+  } finally {
+    f.editor.destroy();
+  }
+});
+
+it.each(['commentId', 'type'])(
+  'rejects final fallback mapping callback changing %s',
+  async (key) => {
     const f = await fixture();
+    const original = f.projection.pmAt;
+    let final = false;
     let calls = 0;
     const input = {
       ...f.input,
       current: () => {
-        if (++calls === 2) {
-          if (kind === 'forward') f.projection.positions.set(f.input.position, 0);
-          if (kind === 'reverse') vi.spyOn(f.projection, 'pmAt').mockReturnValue(1);
-          if (kind === 'token')
-            f.projection.tokens.find((t) => t.pm === f.input.position)!.raw = 'bad';
-          if (kind === 'attrs')
-            Reflect.set(f.editor.state.doc.nodeAt(f.input.position)!.attrs, 'id', 'bad');
-          if (kind === 'parent') Reflect.set(f.editor.state.doc.firstChild!.attrs, 'extra', 'bad');
-          if (kind === 'projection')
-            input.projection = new SourceProjection(f.projection.source, f.projection.start);
-          if (kind === 'identity') input.identity = { ...input.identity, snapshotId: 'other' };
-          if (kind === 'state')
-            f.editor.view.dispatch(f.editor.state.tr.setSelection(f.editor.state.selection));
-        }
+        final = ++calls === 2;
         return true;
       },
     };
+    vi.spyOn(f.projection, 'pmAt').mockImplementation((source, affinity) => {
+      const result = original.call(f.projection, source, affinity);
+      if (final && source === f.projection.start + f.projection.source.length && affinity === -1)
+        Reflect.set(f.editor.state.doc.nodeAt(f.input.position)!.attrs, key, 'changed');
+      return result;
+    });
     try {
       expect(() => captureNoteMarker(f.editor.view, input)).toThrow();
     } finally {
@@ -186,6 +223,56 @@ it.each(['forward', 'reverse', 'token', 'attrs', 'parent', 'projection', 'identi
     }
   },
 );
+
+it.each(['raw', 'from', 'to', 'text', 'marks'])(
+  'rejects first fallback mapping callback changing later token %s',
+  async (key) => {
+    const f = await fixture();
+    const original = f.projection.pmAt;
+    let final = false;
+    let calls = 0;
+    let mutated = false;
+    const input = {
+      ...f.input,
+      current: () => {
+        final = ++calls === 2;
+        return true;
+      },
+    };
+    vi.spyOn(f.projection, 'pmAt').mockImplementation((source, affinity) => {
+      const result = original.call(f.projection, source, affinity);
+      if (final && !mutated) {
+        mutated = true;
+        const token = f.projection.tokens.at(-1)!;
+        if (key === 'marks') token.marks = [{ type: 'bold' }];
+        else if (key === 'from' || key === 'to') token[key]++;
+        else if (key === 'raw' || key === 'text') token[key] = 'changed';
+      }
+      return result;
+    });
+    try {
+      expect(() => captureNoteMarker(f.editor.view, input)).toThrow();
+      expect(mutated).toBe(true);
+    } finally {
+      f.editor.destroy();
+    }
+  },
+);
+
+it('retains valid delegating scalar mapping at the original boundary sites', async () => {
+  const f = await fixture();
+  const original = f.projection.pmAt;
+  const inverse = vi
+    .spyOn(f.projection, 'pmAt')
+    .mockImplementation((source, affinity) => original.call(f.projection, source, affinity));
+  try {
+    const capture = captureNoteMarker(f.editor.view, f.input);
+    expect(capture.canonicalId).toBe('legacy-id');
+    expect(inverse).toHaveBeenCalled();
+  } finally {
+    f.editor.destroy();
+  }
+});
 
 it('rechecks endpoint mapping after executable clock callback', async () => {
   const f = await fixture();

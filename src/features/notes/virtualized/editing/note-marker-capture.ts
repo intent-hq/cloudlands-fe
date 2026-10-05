@@ -2,6 +2,11 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import type { EditorView } from '@tiptap/pm/view';
 import { sameNoteScope } from '$lib/client/note-pages';
 import type { SourceProjection } from '../projection/source-projection';
+import {
+  canBatchExactSourceMappings,
+  verifyExactSourceMappings,
+  type ExactSourceMapping,
+} from '../projection/exact-source-mappings';
 import type { NoteSelectionMarkdownIdentity } from './note-selection-markdown-capture';
 
 export class UnsupportedNoteMarkerCapture extends Error {}
@@ -231,10 +236,13 @@ function capture(view: EditorView, input: NoteMarkerCaptureInput) {
       }
       return token;
     };
-    const boundary = (pm: number, sourcePosition: number, affinity: -1 | 1) => {
-      if (
-        projection.sourceAt(pm, affinity) !== sourcePosition ||
-        projection.pmAt(sourcePosition, affinity) !== pm
+    const mappings: ExactSourceMapping[] = [];
+    const batch = canBatchExactSourceMappings(projection);
+    const boundary = (pm: number, source: number, affinity: -1 | 1) => {
+      if (batch) mappings.push({ pm, source, affinity });
+      else if (
+        projection.sourceAt(pm, affinity) !== source ||
+        projection.pmAt(source, affinity) !== pm
       )
         throw unsupported();
     };
@@ -270,6 +278,10 @@ function capture(view: EditorView, input: NoteMarkerCaptureInput) {
         }
       } else throw unsupported();
     });
+    // Only callback-free dispatch can be deferred; custom checks stay inline
+    // before the next token is examined, as well as before final attributes.
+    if (batch && !verifyExactSourceMappings(projection, mappings, noteMarkerCaptureLimits.tokens))
+      throw unsupported();
     if (
       consumed !== indexed.size ||
       firstSource < 0 ||

@@ -4,6 +4,11 @@ import type { EditorView } from '@tiptap/pm/view';
 import { sameNoteScope } from '$lib/client/note-pages';
 import { serializeSelectionToMarkdown } from '$lib/utils/selected-note-markdown-copy';
 import type { SourceProjection } from '../projection/source-projection';
+import {
+  canBatchExactSourceMappings,
+  verifyExactSourceMappings,
+  type ExactSourceMapping,
+} from '../projection/exact-source-mappings';
 import { captureNoteMarker } from './note-marker-capture';
 import type { NoteSelectionMarkdownIdentity } from './note-selection-markdown-capture';
 
@@ -197,6 +202,16 @@ function capture(view: EditorView, input: NoteMarkerSelectionInput) {
     emptyAttributes(right);
   };
   const mapping = () => {
+    const mappings: ExactSourceMapping[] = [];
+    const batch = canBatchExactSourceMappings(projection);
+    const boundary = (pm: number, source: number, affinity: -1 | 1) => {
+      if (batch) mappings.push({ pm, source, affinity });
+      else if (
+        projection.sourceAt(pm, affinity) !== source ||
+        projection.pmAt(source, affinity) !== pm
+      )
+        throw unsupported();
+    };
     for (const [node, from, to, sourceFrom, sourceTo] of [
       [left, leftFrom, markerFrom, leftSource, leftEnd],
       [right, rightFrom, rightTo, rightSource, rightEnd],
@@ -212,24 +227,16 @@ function capture(view: EditorView, input: NoteMarkerSelectionInput) {
         throw unsupported();
       for (let pm = from; pm <= to; pm++) {
         for (const affinity of [-1, 1]) {
-          if (
-            projection.sourceAt(pm, affinity) !== sourceFrom + pm - from ||
-            projection.pmAt(sourceFrom + pm - from, affinity) !== pm
-          )
-            throw unsupported();
+          boundary(pm, sourceFrom + pm - from, affinity as -1 | 1);
         }
       }
     }
     for (const key of ['anchor', 'head'] as const) {
       const affinity = selection[key === 'anchor' ? 'anchorAffinity' : 'headAffinity'];
-      if (
-        !uint(selection[key]) ||
-        (affinity !== -1 && affinity !== 1) ||
-        projection.sourceAt(selected[key], affinity) !== selection[key] ||
-        projection.pmAt(selection[key], affinity) !== selected[key]
-      )
-        throw unsupported();
+      if (!uint(selection[key]) || (affinity !== -1 && affinity !== 1)) throw unsupported();
+      boundary(selected[key], selection[key], affinity);
     }
+    if (batch && !verifyExactSourceMappings(projection, mappings, 32768)) throw unsupported();
   };
   shape();
   mapping();
