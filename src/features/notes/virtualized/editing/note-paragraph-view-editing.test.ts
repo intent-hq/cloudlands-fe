@@ -673,3 +673,60 @@ it('does not publish a rejected nonborrowed document binding as a history owner'
     f.stop();
   }
 });
+
+it('rejects silently discarded candidate attributes before mount and releases only the rejected borrower', async () => {
+  const f = await fixture();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const view = new NoteWindowView(host, {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+  });
+  const rejectedRelease = vi.fn();
+  try {
+    const editing = (await f.offer.ready)!;
+    expect(view.showPrepared(f.window, editing)).toBe(true);
+    const editor = view.editor!,
+      before = f.note().document,
+      drafts = f.note().drafts;
+    vi.spyOn(editor.view, 'posAtCoords').mockReturnValue(null);
+    const altered: NoteViewEditing = {
+      ...editing,
+      borrow(window) {
+        const borrowed = editing.borrow!(window);
+        return {
+          release() {
+            rejectedRelease();
+            borrowed.release();
+          },
+          bind(window, projection, doc) {
+            const owner = borrowed.bind(window, projection, doc)!;
+            const content = structuredClone(owner.initial.projection.content);
+            content.content![0].attrs = { unexpected: 'must not disappear' };
+            // The old constructor-only check accepted this lossy normalization.
+            expect(doc.type.schema.nodeFromJSON(content).eq(owner.initial.doc)).toBe(true);
+            const invalidProjection = Object.create(owner.initial.projection);
+            Object.defineProperty(invalidProjection, 'content', { value: content });
+            return { ...owner, initial: { ...owner.initial, projection: invalidProjection } };
+          },
+        };
+      },
+    };
+    expect(() => view.showPrepared(f.window, altered)).toThrow('Unknown native attribute');
+    await vi.waitFor(() => expect(rejectedRelease).toHaveBeenCalledOnce());
+    expect(view.editor).toBe(editor);
+    expect(editor.isDestroyed).toBe(false);
+    expect(view.host.textContent).toBe('abc');
+    expect(f.note().document).toBe(before);
+    expect(f.note().drafts).toBe(drafts);
+    expect(f.read().resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+  } finally {
+    view.destroy();
+    f.unmount();
+    await f.offer.release();
+    f.stop();
+  }
+  expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
+  expect(f.listeners.size).toBe(0);
+});

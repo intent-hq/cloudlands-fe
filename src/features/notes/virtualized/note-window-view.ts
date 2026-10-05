@@ -9,6 +9,7 @@ import { createEditorConfig } from '$lib/utils/editor-config';
 import { NoteNativeLifetime } from './note-native-lifetime';
 import { logger } from '$lib/utils/client-logger';
 import { measureNoteProjection } from './note-view-cost';
+import { validateNoteNativeOutput } from './note-native-output-validation';
 import { measureNoteDom } from './note-dom-cost';
 import { projectNoteWindow } from './note-window-projection';
 import type { SourceProjection } from './projection/source-projection';
@@ -660,7 +661,11 @@ export class NoteWindowView {
         if (
           !editOwner.current() ||
           initial.doc.type.schema !== candidate.schema ||
-          !initial.doc.eq(candidate.schema.nodeFromJSON(initial.projection.content))
+          !initial.doc.eq(
+            validateNoteNativeOutput(candidate.schema, initial.projection.content, {
+              current: () => editOwner?.current() ?? false,
+            }),
+          )
         )
           // i18n-ignore (internal validation; the view displays a localized error)
           throw new Error('Invalid initial note edit authority');
@@ -793,7 +798,11 @@ export class NoteWindowView {
       const initial = plan.initial;
       if (
         initial.doc.type.schema !== editor.schema ||
-        !initial.doc.eq(editor.schema.nodeFromJSON(initial.projection.content))
+        !initial.doc.eq(
+          validateNoteNativeOutput(editor.schema, initial.projection.content, {
+            current: () => plan?.current() ?? false,
+          }),
+        )
       )
         return false;
       measureNoteProjection(initial.projection);
