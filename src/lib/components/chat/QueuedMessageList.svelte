@@ -34,7 +34,7 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
+  import { observeAttachmentImageUrl } from './attachment-image-url';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -485,36 +485,31 @@
   let lightboxImageName = $state('');
   let lightboxOpenerElement: HTMLButtonElement | null = $state(null);
 
-  // Resolved workspace-file:// URLs for queued attachment-reference image
-  // blocks (monorepo#3338), keyed by attachmentId.
-  let referenceImageUrls = $state<Record<string, string>>({});
-  // Attachment ids whose resolved <img> failed to load in this instance: they
-  // keep the placeholder here (no resolve/fail loop), while the evicted
-  // module cache lets the next render elsewhere retry.
-  let failedReferenceImages = $state<Record<string, true>>({});
+  let referenceImageUrls = $state<Record<string, string | null>>({});
+  const referenceImageObservers = new Map<string, ReturnType<typeof observeAttachmentImageUrl>>();
   $effect(() => {
     if (!workspaceId) return;
     for (const message of displayMessages) {
       for (const block of message.imageBlocks ?? []) {
         const attachmentId = block.attachmentId;
-        if (
-          !attachmentId ||
-          referenceImageUrls[attachmentId] !== undefined ||
-          failedReferenceImages[attachmentId]
-        ) {
-          continue;
-        }
-        void resolveAttachmentImageUrl(workspaceId, attachmentId).then((url) => {
-          if (url) referenceImageUrls = { ...referenceImageUrls, [attachmentId]: url };
-        });
+        if (!attachmentId || referenceImageObservers.has(attachmentId)) continue;
+        referenceImageObservers.set(
+          attachmentId,
+          observeAttachmentImageUrl(workspaceId, attachmentId, (url) => {
+            referenceImageUrls[attachmentId] = url;
+          }),
+        );
       }
     }
+    return () => {
+      for (const observer of referenceImageObservers.values()) observer.dispose();
+      referenceImageObservers.clear();
+    };
   });
 
   /** Renderable src for a queued image block: inline data URL or resolved reference URL. */
   function queuedImageSrc(block: NonNullable<QueuedMessage['imageBlocks']>[number]): string | null {
     if (block.attachmentId) {
-      if (failedReferenceImages[block.attachmentId]) return null;
       return referenceImageUrls[block.attachmentId] ?? null;
     }
     if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
@@ -531,10 +526,7 @@
     const attachmentId = block.attachmentId;
     if (!attachmentId) return;
     console.warn('Attachment thumbnail failed to load', { attachmentId, url: src });
-    if (workspaceId) evictAttachmentImageUrl(workspaceId, attachmentId);
-    const { [attachmentId]: _dropped, ...rest } = referenceImageUrls;
-    referenceImageUrls = rest;
-    failedReferenceImages = { ...failedReferenceImages, [attachmentId]: true };
+    referenceImageObservers.get(attachmentId)?.imageFailed();
   }
 
   // Open a queued image attachment in the lightbox
