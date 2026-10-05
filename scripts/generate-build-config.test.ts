@@ -1,7 +1,7 @@
 // @verify-changed-triggers: scripts/generate-build-config.cjs, package.json, scripts/pnpm-run.mjs, scripts/pnpm-launcher.mjs, scripts/type-check.ts, vitest.config.ts, tests/integration/vitest.integration.config.ts
 // @vitest-environment node
 
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -310,5 +310,125 @@ describe('cold prebuild configuration', () => {
 
     expect(existsSync(outputPath(root))).toBe(true);
     expect(result.status).toBe(1);
+  });
+});
+
+describe('generate-build-config --if-stale', () => {
+  function config(root: string) {
+    const emitted = ts.transpileModule(readFileSync(outputPath(root), 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS },
+    }).outputText;
+    const exports: { BUILD_CONFIG?: Record<string, string> } = {};
+    runInNewContext(emitted, { exports });
+    return exports.BUILD_CONFIG!;
+  }
+
+  it('creates missing output and repairs the historical single-field shape', () => {
+    const root = fixtureRoot();
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(config(root)).toMatchObject({
+      ISOLATED_TEST_BUILD_ID: '',
+      ISOLATED_TEST_BACKEND_SHA: '',
+    });
+    writeFileSync(
+      outputPath(root),
+      'export const BUILD_CONFIG = { GIT_COMMIT_HASH: "1515d8f61" } as const;',
+    );
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(config(root)).toMatchObject({
+      ISOLATED_TEST_BUILD_ID: '',
+      ISOLATED_TEST_BACKEND_SHA: '',
+    });
+  });
+
+  it('keeps fresh bytes and mtime including the original timestamp', () => {
+    const root = fixtureRoot();
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    const before = readFileSync(outputPath(root), 'utf8');
+    const mtime = statSync(outputPath(root)).mtimeMs;
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(readFileSync(outputPath(root), 'utf8')).toBe(before);
+    expect(statSync(outputPath(root)).mtimeMs).toBe(mtime);
+  });
+
+  it('refreshes when generator identity changes even if its config values do not', () => {
+    const root = fixtureRoot();
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    const before = readFileSync(outputPath(root), 'utf8');
+    const script = join(root, 'scripts', SCRIPT);
+    writeFileSync(
+      script,
+      readFileSync(script, 'utf8') + '\n// Revised generator schema identity\n',
+    );
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    const changed = readFileSync(outputPath(root), 'utf8');
+    const stable = (text: string) => text.replace(/^ \* Generated at: .*$/m, '');
+    expect(stable(changed)).not.toBe(stable(before));
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(readFileSync(outputPath(root), 'utf8')).toBe(changed);
+  });
+
+  it('refreshes actual isolated inputs and clears them for an ordinary build', () => {
+    const root = fixtureRoot();
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', 'a'.repeat(40));
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(config(root)).toMatchObject({
+      ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+      ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+    });
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', 'b'.repeat(40));
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(config(root).ISOLATED_TEST_BACKEND_SHA).toBe('b'.repeat(40));
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', '');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', '');
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(config(root)).toMatchObject({
+      ISOLATED_TEST_BUILD_ID: '',
+      ISOLATED_TEST_BACKEND_SHA: '',
+    });
+  });
+
+  it('refreshes the current Git commit input', () => {
+    const root = fixtureRoot();
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+    git('init', '-q');
+    git(
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.com',
+      'commit',
+      '--allow-empty',
+      '-qm',
+      'first',
+    );
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    const original = config(root).GIT_COMMIT_HASH;
+    git(
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.com',
+      'commit',
+      '--allow-empty',
+      '-qm',
+      'second',
+    );
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    expect(config(root).GIT_COMMIT_HASH).toBe(git('rev-parse', '--short', 'HEAD'));
+    expect(config(root).GIT_COMMIT_HASH).not.toBe(original);
+  });
+
+  it('rejects invalid current inputs even when generated output already exists', () => {
+    const root = fixtureRoot();
+    expect(runGenerator(root, '--if-stale').status).toBe(0);
+    const before = readFileSync(outputPath(root), 'utf8');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+    vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', '');
+    expect(runGenerator(root, '--if-stale').status).not.toBe(0);
+    expect(readFileSync(outputPath(root), 'utf8')).toBe(before);
   });
 });

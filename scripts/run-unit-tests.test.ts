@@ -1,5 +1,5 @@
 // @vitest-environment node
-// @verify-changed-triggers: package.json, scripts/run-unit-tests.mjs, scripts/unit-test-prerequisites.mjs, scripts/transfer-selection-fixtures.mjs
+// @verify-changed-triggers: package.json, scripts/run-unit-tests.mjs, scripts/unit-test-prerequisites.mjs, scripts/generate-build-config.cjs, scripts/transfer-selection-fixtures.mjs
 import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
@@ -56,6 +56,11 @@ if (process.env.PREP_SIGNAL) process.kill(process.pid, process.env.PREP_SIGNAL);
 else process.exitCode = Number(process.env.PREP_EXIT || 0);
 `,
   );
+  mkdirSync(join(root, 'src/main'), { recursive: true });
+  copyFileSync(
+    join(repo, 'scripts/generate-build-config.cjs'),
+    join(root, 'scripts/generate-build-config.cjs'),
+  );
   const launcher = join(repo, 'scripts/run-unit-tests.mjs');
   copyFileSync(launcher, join(root, 'scripts/run-unit-tests.mjs'));
   for (const file of ['transfer-selection-fixtures.mjs', 'unit-test-prerequisites.mjs']) {
@@ -92,6 +97,10 @@ it('unselected name', () => { throw new Error('name filter was lost'); });
     write(
       'node_modules/vitest/vitest.mjs',
       `import { appendFileSync } from 'node:fs';
+if (process.env.OBSERVE_BUILD_CONFIG) {
+  const { BUILD_CONFIG } = await import('../../src/main/build-config.generated.ts');
+  appendFileSync('observed-config.json', JSON.stringify(BUILD_CONFIG));
+}
 appendFileSync('children.jsonl', JSON.stringify({ child: 'vitest', args: process.argv.slice(2) }) + '\\n');
 if (process.env.TEST_SIGNAL) process.kill(process.pid, process.env.TEST_SIGNAL);
 else process.exitCode = Number(process.env.TEST_EXIT || 0);
@@ -449,5 +458,44 @@ describe('canonical fixture preflight before Vitest', () => {
     expect(result.output).toContain(
       generated || 'TRANSFER_SELECTION_GENERATED must be a non-empty path',
     );
+  });
+});
+
+describe('generated build input launcher prerequisite', () => {
+  it.each(['missing', 'obsolete'])(
+    'prepares %s input before the test child imports it',
+    (state) => {
+      const { root, write } = fixture();
+      if (state === 'obsolete')
+        write(
+          'src/main/build-config.generated.ts',
+          'export const BUILD_CONFIG = { GIT_COMMIT_HASH: "1515d8f61" } as const;',
+        );
+      const result = run(root, ['selected.test.ts'], {
+        OBSERVE_BUILD_CONFIG: '1',
+        INTENT_ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+        INTENT_ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+      });
+      expect(result.status, result.output).toBe(0);
+      expect(JSON.parse(readFileSync(join(root, 'observed-config.json'), 'utf8'))).toMatchObject({
+        ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+        ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+      });
+    },
+  );
+
+  it('rejects invalid inputs with existing output before spawning Vitest', () => {
+    const { root, write } = fixture();
+    write(
+      'src/main/build-config.generated.ts',
+      'export const BUILD_CONFIG = { GIT_COMMIT_HASH: "1515d8f61" } as const;',
+    );
+    const result = run(root, ['selected.test.ts'], {
+      INTENT_ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+      INTENT_ISOLATED_TEST_BACKEND_SHA: '',
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toContain('Isolated test builds require');
+    expect(result.children.map((child) => child.child)).toEqual(['prepare']);
   });
 });
