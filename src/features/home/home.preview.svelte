@@ -1,13 +1,23 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  import { WorkspaceStatus, type Workspace } from '$shared/types';
-  import { WorkspaceId } from '$shared/types/branded-ids';
+  import { AgentStatus, WorkspaceStatus, type AgentSession, type Workspace } from '$shared/types';
+  import { AgentId, CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
+  import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+
+  declare global {
+    interface Window {
+      __homeAssistantPreview?: { removeSelectedThread: () => void };
+    }
+  }
 
   interface Props {
     scenario?:
       | 'populated'
       | 'board'
       | 'empty'
+      | 'assistant'
+      | 'assistant-many'
+      | 'assistant-empty'
       | 'error'
       | 'collaborator'
       | 'prs'
@@ -23,6 +33,9 @@
       populated: { props: { scenario: 'populated' } },
       board: { props: { scenario: 'board' } },
       empty: { props: { scenario: 'empty' } },
+      assistant: { props: { scenario: 'assistant' } },
+      'assistant-many': { props: { scenario: 'assistant-many' } },
+      'assistant-empty': { props: { scenario: 'assistant-empty' } },
       error: { props: { scenario: 'error' } },
       collaborator: { props: { scenario: 'collaborator' } },
       prs: { props: { scenario: 'prs' } },
@@ -111,6 +124,45 @@
         id: WorkspaceId(item.id),
       }) as Workspace,
   );
+  const assistantFixtures: AgentSession[] = Array.from({ length: 36 }, (_, index) => {
+    const name =
+      [
+        'Plan the next release',
+        'Review open pull requests',
+        'Find the workspaces that need my attention before the next release and summarize what is blocking them',
+      ][index] ?? `Assistant conversation ${index + 1}`;
+    const timestamp = new Date(Date.UTC(2026, 8, 29, 12, 0, 0) - index * 60_000).toISOString();
+    return {
+      id: AgentId(`home-assistant-${index}`),
+      backendSessionId: null,
+      workspaceId: CHIEF_WORKSPACE_ID,
+      name,
+      status: AgentStatus.Active,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      lastActivity: timestamp,
+      messages: [
+        {
+          id: `home-assistant-prompt-${index}`,
+          role: 'user',
+          timestamp,
+          contentBlocks: [{ type: 'text', text: name }],
+        },
+        {
+          id: `home-assistant-reply-${index}`,
+          role: 'assistant',
+          timestamp,
+          contentBlocks: [
+            {
+              type: 'text',
+              text: 'Your workspaces are ready to review. The onboarding flow needs your feedback, and search improvements are in progress.',
+            },
+          ],
+        },
+      ],
+      metadata: { specialist: CHIEF_SPECIALIST_ID, chiefPromptVersion: CHIEF_PROMPT_VERSION },
+    };
+  });
 </script>
 
 <script lang="ts">
@@ -129,14 +181,23 @@
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
     closePanel,
+    openPanel,
+    setChiefActiveAgentId,
     setShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { resetHomeWorkspaceView, updateHomeWorkspaceView } from './home-workspaces-slice';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
-  import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-  import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    removeAgent,
+    setAgents,
+    setAgentsLoaded,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    bulkUpsertSessions,
+    removeSession,
+  } from '$store/renderer/slices/agent-session/agent-session-slice';
 
   let { scenario = 'populated' }: Props = $props();
   const dispose = startHomePreview(() => [setupHomeIntegrationsFixtures(store)]);
@@ -146,9 +207,28 @@
   store.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
   store.dispatch(closePanel());
   store.dispatch(setShowCreateModal(false));
+  window.__homeAssistantPreview = {
+    removeSelectedThread() {
+      const id = store.state.sidebarNav.chiefActiveAgentId;
+      if (!id) return;
+      store.dispatch(removeAgent(CHIEF_WORKSPACE_ID, id));
+      store.dispatch(removeSession(id));
+    },
+  };
   $effect.pre(() => {
     admitLegacyPrincipal(scenario === 'collaborator' ? 'guest' : 'owner');
     store.dispatch(resetHomeWorkspaceView());
+    assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
+    const threads =
+      scenario === 'assistant-many'
+        ? assistantFixtures
+        : scenario === 'assistant'
+          ? assistantFixtures.slice(0, 3)
+          : [];
+    store.dispatch(setAgents(CHIEF_WORKSPACE_ID, threads));
+    store.dispatch(bulkUpsertSessions(threads));
+    store.dispatch(setChiefActiveAgentId(threads[0]?.id ?? null));
+    store.dispatch(scenario === 'assistant-empty' ? openPanel('chief') : closePanel());
     store.dispatch(
       replaceWorkspaceList(
         scenario === 'empty'
@@ -196,7 +276,11 @@
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
       store.dispatch(updateHomeWorkspaceView({ tab: 'linear' }));
   });
-  onDestroy(dispose);
+  onDestroy(() => {
+    assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
+    delete window.__homeAssistantPreview;
+    dispose();
+  });
 </script>
 
 <div class="h-[720px] w-full bg-sidebar text-foreground" data-home-preview>

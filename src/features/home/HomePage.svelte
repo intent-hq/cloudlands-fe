@@ -36,6 +36,7 @@
   import HomeLoading from './HomeLoading.svelte';
   import { fly, animatedHeight } from '$lib/motion';
   import ChiefCard from '$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte';
+  import HomeAssistantThreads from './HomeAssistantThreads.svelte';
   import HomeActivityTime from './HomeActivityTime.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
@@ -186,7 +187,17 @@
   $effect(() => {
     if (!preview && !$collaborator$ && !$knownReposLoaded$) store.dispatch(loadKnownRepos());
   });
-  const destination = $derived($panelItem$ === 'chief' ? 'assistant' : 'workspaces');
+  const destination = $derived(
+    !$collaborator$ && $panelItem$ === 'chief' ? 'assistant' : 'workspaces',
+  );
+  let assistantActivated = $state(false);
+  $effect(() => {
+    if (destination === 'assistant') assistantActivated = true;
+  });
+  function chooseDestination(value: string) {
+    if (value === 'assistant' && !$collaborator$) store.dispatch(openPanel('chief'));
+    else if (value === 'workspaces') store.dispatch(closePanel());
+  }
   const view$ = selectHomeWorkspaceView();
   const workspaceError$ = selectHomeWorkspaceError();
   const repoKey = $derived($view$.repoKey);
@@ -529,170 +540,196 @@
   <ResizablePanel
     storageKey="home-repository-sidebar-width"
     side="left"
-    minWidth={160}
+    minWidth={200}
     maxWidth={360}
     defaultWidth={224}
     className="home-sidebar-resizable h-full"
     handleClassName="home-sidebar-resize-handle"
   >
     <nav
-      class="home-sidebar h-full min-h-0 overflow-y-auto px-2 py-3"
+      class="home-sidebar flex h-full min-h-0 flex-col px-2 py-3"
       aria-label={m.home_navigation_label()}
     >
-      {#if !$collaborator$}
-        <Button
-          variant="ghost"
-          active={destination === 'assistant'}
-          aria-current={destination === 'assistant' ? 'page' : undefined}
-          class="mb-1 h-9 w-full justify-start px-2 py-2"
-          onclick={() => {
-            store.dispatch(openPanel('chief'));
-          }}
-        >
-          <span class="flex-1 text-left">{m.home_assistant()}</span>
-        </Button>
-      {/if}
-      {#snippet sidebarCounts(items: readonly Workspace[], showStatus = true)}
-        {@const needsYou = countNeedsYou(items) > 0}
-        {@const running = items.some((workspace) => matchesHomeFilter(workspace, 'running'))}
-        {#if showStatus && (needsYou || running)}
-          <Tooltip.Provider
-            ><Tooltip.Root
-              ><Tooltip.Trigger
-                >{#snippet child({ props: homeTooltipProps })}<span
-                    {...homeTooltipProps}
-                    class="size-1.5 shrink-0 rounded-full"
-                    style:background={needsYou
-                      ? 'hsl(var(--workspace-status-unread))'
-                      : 'hsl(var(--warning))'}
-                    role="img"
-                    aria-label={needsYou ? m.home_filter_attention() : m.home_filter_running()}
-                  ></span>{/snippet}</Tooltip.Trigger
-              ><Tooltip.Content
-                >{needsYou ? m.home_filter_attention() : m.home_filter_running()}</Tooltip.Content
-              ></Tooltip.Root
-            ></Tooltip.Provider
-          >
-        {/if}
-        <span class="shrink-0 text-xs font-normal tabular-nums text-muted-foreground"
-          >{formatInteger(items.filter(isActive).length)}</span
-        >
-      {/snippet}
-      {#snippet repoButton(repo: (typeof repositoryGroups)[number])}
-        <Tooltip.Tooltip content={repo.label} class="flex w-full">
-          <Button
-            variant="ghost"
-            active={repoKey === repo.key && destination === 'workspaces'}
-            class="w-full justify-start px-2"
-            aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
-              ? m.fileTracking_startNew_noRepository_label()
-              : repo.label}
-            onclick={() => chooseRepo(repo.key)}
-          >
-            <span class="flex-1 truncate text-left font-normal"
-              >{repo.key === m.workspace_grouping_unknownRepository_label()
-                ? m.fileTracking_startNew_noRepository_label()
-                : repo.name || repo.label}</span
-            >
-            {@render sidebarCounts(repo.workspaces)}
-          </Button>
-        </Tooltip.Tooltip>
-      {/snippet}
-      <Button
-        variant="ghost"
-        active={repoKey === null && destination === 'workspaces'}
-        class="mb-1 h-9 w-full justify-start px-2 py-2"
-        onclick={() => chooseRepo(null)}
-        ><span class="flex-1 text-left">{m.home_all_repositories()}</span>{@render sidebarCounts(
-          workspaces,
-          false,
-        )}</Button
+      <Tabs.Root
+        value={destination}
+        onValueChange={chooseDestination}
+        size="compact"
+        class="flex min-h-0 flex-1 flex-col"
       >
-      {#each sidebar.groups as group (group.key)}
-        {@const expansionKey = `sidebar:${group.key}`}
-        {@const expanded = $view$.expandedGroups[expansionKey] !== false}
-        <div class="mt-4" data-home-repository-group={group.owner ?? group.key}>
-          <div class="group/org relative flex items-center">
-            <Button
-              variant="ghost"
-              active={repoKey === expansionKey && destination === 'workspaces'}
-              class="h-9 w-full justify-start gap-2 pl-9 pr-2 text-muted-foreground"
-              onclick={() => chooseRepo(expansionKey)}
-            >
+        {#if !$collaborator$}
+          <Tabs.List
+            aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
+            class="mb-2 grid w-full shrink-0 grid-cols-2 rounded-lg bg-muted/60 p-1"
+          >
+            <Tabs.Trigger value="workspaces" class="min-w-0 px-1 font-medium">
+              {m.home_tab_workspaces()}
+            </Tabs.Trigger>
+            <Tabs.Trigger value="assistant" class="min-w-0 px-1 font-medium">
+              {m.home_assistant()}
+            </Tabs.Trigger>
+          </Tabs.List>
+        {/if}
+        <Tabs.Content value="workspaces" class="mt-0 min-h-0 flex-1 overflow-y-auto">
+          {#snippet sidebarCounts(items: readonly Workspace[], showStatus = true)}
+            {@const needsYou = countNeedsYou(items) > 0}
+            {@const running = items.some((workspace) => matchesHomeFilter(workspace, 'running'))}
+            {#if showStatus && (needsYou || running)}
               <Tooltip.Provider
                 ><Tooltip.Root
                   ><Tooltip.Trigger
                     >{#snippet child({ props: homeTooltipProps })}<span
                         {...homeTooltipProps}
-                        class="min-w-0 flex-1 truncate text-left font-medium">{group.label}</span
-                      >{/snippet}</Tooltip.Trigger
-                  ><Tooltip.Content>{group.label}</Tooltip.Content></Tooltip.Root
+                        class="size-1.5 shrink-0 rounded-full"
+                        style:background={needsYou
+                          ? 'hsl(var(--workspace-status-unread))'
+                          : 'hsl(var(--warning))'}
+                        role="img"
+                        aria-label={needsYou ? m.home_filter_attention() : m.home_filter_running()}
+                      ></span>{/snippet}</Tooltip.Trigger
+                  ><Tooltip.Content
+                    >{needsYou
+                      ? m.home_filter_attention()
+                      : m.home_filter_running()}</Tooltip.Content
+                  ></Tooltip.Root
                 ></Tooltip.Provider
               >
-              {#if !expanded}{@render sidebarCounts(
-                  group.items.flatMap((repo) => repo.workspaces),
-                )}{/if}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="absolute left-1 size-7"
-              aria-label={group.label}
-              aria-expanded={expanded}
-              onclick={() =>
-                updateView({
-                  expandedGroups: { ...$view$.expandedGroups, [expansionKey]: !expanded },
-                })}
+            {/if}
+            <span class="shrink-0 text-xs font-normal tabular-nums text-muted-foreground"
+              >{formatInteger(items.filter(isActive).length)}</span
             >
-              <span
-                class="flex size-5 items-center justify-center group-hover/org:opacity-0 group-focus-within/org:opacity-0"
+          {/snippet}
+          {#snippet repoButton(repo: (typeof repositoryGroups)[number])}
+            <Tooltip.Tooltip content={repo.label} class="flex w-full">
+              <Button
+                variant="ghost"
+                active={repoKey === repo.key && destination === 'workspaces'}
+                class="w-full justify-start px-2"
+                aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
+                  ? m.fileTracking_startNew_noRepository_label()
+                  : repo.label}
+                onclick={() => chooseRepo(repo.key)}
               >
-                {#if group.owner}<GitHubAvatar
-                    identity={group.owner}
-                    size={20}
-                    class="shrink-0 rounded-sm"
-                  />{:else}<Fa icon={faFolder} />{/if}
-              </span>
-              <span
-                class="absolute flex items-center justify-center opacity-0 group-hover/org:opacity-100 group-focus-within/org:opacity-100"
-              >
-                <Fa
-                  icon={faChevronRight}
-                  class={expanded ? 'size-3! rotate-90' : 'size-3!'}
-                  size={12}
-                />
-              </span>
-            </Button>
-          </div>
-          <div use:animatedHeight={expanded} inert={!expanded} aria-hidden={!expanded}>
-            <div class="pl-7">
-              {#each group.items as repo (repo.key)}
+                <span class="flex-1 truncate text-left font-normal"
+                  >{repo.key === m.workspace_grouping_unknownRepository_label()
+                    ? m.fileTracking_startNew_noRepository_label()
+                    : repo.name || repo.label}</span
+                >
+                {@render sidebarCounts(repo.workspaces)}
+              </Button>
+            </Tooltip.Tooltip>
+          {/snippet}
+          <Button
+            variant="ghost"
+            active={repoKey === null && destination === 'workspaces'}
+            class="mb-1 h-9 w-full justify-start px-2 py-2"
+            onclick={() => chooseRepo(null)}
+            ><span class="flex-1 text-left">{m.home_all_repositories()}</span
+            >{@render sidebarCounts(workspaces, false)}</Button
+          >
+          {#each sidebar.groups as group (group.key)}
+            {@const expansionKey = `sidebar:${group.key}`}
+            {@const expanded = $view$.expandedGroups[expansionKey] !== false}
+            <div class="mt-4" data-home-repository-group={group.owner ?? group.key}>
+              <div class="group/org relative flex items-center">
+                <Button
+                  variant="ghost"
+                  active={repoKey === expansionKey && destination === 'workspaces'}
+                  class="h-9 w-full justify-start gap-2 pl-9 pr-2 text-muted-foreground"
+                  onclick={() => chooseRepo(expansionKey)}
+                >
+                  <Tooltip.Provider
+                    ><Tooltip.Root
+                      ><Tooltip.Trigger
+                        >{#snippet child({ props: homeTooltipProps })}<span
+                            {...homeTooltipProps}
+                            class="min-w-0 flex-1 truncate text-left font-medium"
+                            >{group.label}</span
+                          >{/snippet}</Tooltip.Trigger
+                      ><Tooltip.Content>{group.label}</Tooltip.Content></Tooltip.Root
+                    ></Tooltip.Provider
+                  >
+                  {#if !expanded}{@render sidebarCounts(
+                      group.items.flatMap((repo) => repo.workspaces),
+                    )}{/if}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  class="absolute left-1 size-7"
+                  aria-label={group.label}
+                  aria-expanded={expanded}
+                  onclick={() =>
+                    updateView({
+                      expandedGroups: { ...$view$.expandedGroups, [expansionKey]: !expanded },
+                    })}
+                >
+                  <span
+                    class="flex size-5 items-center justify-center group-hover/org:opacity-0 group-focus-within/org:opacity-0"
+                  >
+                    {#if group.owner}<GitHubAvatar
+                        identity={group.owner}
+                        size={20}
+                        class="shrink-0 rounded-sm"
+                      />{:else}<Fa icon={faFolder} />{/if}
+                  </span>
+                  <span
+                    class="absolute flex items-center justify-center opacity-0 group-hover/org:opacity-100 group-focus-within/org:opacity-100"
+                  >
+                    <Fa
+                      icon={faChevronRight}
+                      class={expanded ? 'size-3! rotate-90' : 'size-3!'}
+                      size={12}
+                    />
+                  </span>
+                </Button>
+              </div>
+              <div use:animatedHeight={expanded} inert={!expanded} aria-hidden={!expanded}>
+                <div class="pl-7">
+                  {#each group.items as repo (repo.key)}
+                    {@render repoButton(repo)}
+                  {/each}
+                </div>
+              </div>
+            </div>
+          {/each}
+          {#if sidebar.unassigned.length}
+            <div class="mt-4">
+              {#each sidebar.unassigned as repo (repo.key)}
                 {@render repoButton(repo)}
               {/each}
             </div>
-          </div>
-        </div>
-      {/each}
-      {#if sidebar.unassigned.length}
-        <div class="mt-4">
-          {#each sidebar.unassigned as repo (repo.key)}
-            {@render repoButton(repo)}
-          {/each}
-        </div>
-      {/if}
-      {#if repositoryGroups.length === 0 && $hasLoaded$}<p
-          class="px-2 py-3 type-caption text-muted-foreground"
-        >
-          {m.home_no_repositories()}
-        </p>{/if}
+          {/if}
+          {#if repositoryGroups.length === 0 && $hasLoaded$}<p
+              class="px-2 py-3 type-caption text-muted-foreground"
+            >
+              {m.home_no_repositories()}
+            </p>{/if}
+        </Tabs.Content>
+        {#if !$collaborator$}
+          <Tabs.Content value="assistant" class="mt-0 flex min-h-0 flex-1 flex-col">
+            <HomeAssistantThreads />
+          </Tabs.Content>
+        {/if}
+      </Tabs.Root>
     </nav>
   </ResizablePanel>
   <Screen class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
-    {#if destination === 'assistant' && !$collaborator$}
-      <div class="min-h-0 flex-1 overflow-hidden home-panel bg-background">
-        <ChiefCard expanded embedded pageLayout isActive />
+    {#if assistantActivated && !$collaborator$}
+      <div
+        class="min-h-0 flex-1 overflow-hidden home-panel bg-background"
+        hidden={destination !== 'assistant'}
+        inert={destination !== 'assistant'}
+      >
+        <ChiefCard
+          expanded
+          embedded
+          pageLayout
+          threadPicker={false}
+          isActive={destination === 'assistant'}
+        />
       </div>
-    {:else}
+    {/if}
+    {#if destination === 'workspaces'}
       {#key tab}
         <Tabs.Root
           value={tab}

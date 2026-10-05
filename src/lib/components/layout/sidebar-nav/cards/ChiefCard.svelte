@@ -86,6 +86,7 @@
     embedded?: boolean;
     /** Full-page Assistant uses one thread-switching header and roomier chat insets. */
     pageLayout?: boolean;
+    threadPicker?: boolean;
     /** Mount chat on first activation, then retain drafts without claiming focus or read state. */
     isActive?: boolean;
     collapsed?: boolean;
@@ -96,6 +97,7 @@
     expanded = false,
     embedded = false,
     pageLayout = false,
+    threadPicker = true,
     isActive = true,
     collapsed = false,
     ontoggle,
@@ -173,6 +175,10 @@
     if (selectedAgentId && $chiefThreads$.some((thread) => thread.agentId === selectedAgentId))
       return;
     selectedAgentId = defaultThread?.agentId ?? null;
+    if ($chiefActiveAgentId$ && selectedAgentId !== $chiefActiveAgentId$) {
+      appStore.dispatch(setChiefActiveAgentId(selectedAgentId));
+      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, selectedAgentId));
+    }
   });
 
   $effect(() => {
@@ -345,40 +351,46 @@
             </span>
           </Button>
         {:else}
-          <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
-            <Select.Trigger
-              variant="ghost"
-              aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
-              class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
-            >
-              <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
-                {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
-              </span>
-              {#if pageLayout}<Fa
-                  icon={faChevronDown}
-                  class="shrink-0 text-muted-foreground"
-                />{/if}
-            </Select.Trigger>
-            <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
-              {#each $chiefThreads$ as thread (thread.agentId)}
-                <Select.Item value={thread.agentId} label={thread.title}>
-                  <span class="flex min-w-0 items-center gap-1.5">
-                    {#if thread.isActive}
-                      <span
-                        class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                        aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
-                      ></span>
-                    {/if}
-                    <span class="truncate">{thread.title}</span>
-                  </span>
-                </Select.Item>
-              {:else}
-                <div role="status" class="type-caption px-3 py-4 text-center text-subtle">
-                  {m.layout_chiefCard_noThreads_label()}
-                </div>
-              {/each}
-            </Select.Content>
-          </Select.Root>
+          {#if threadPicker}
+            <Select.Root value={selectedAgentId ?? ''} onchange={handleThreadChange}>
+              <Select.Trigger
+                variant="ghost"
+                aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
+                class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
+              >
+                <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
+                  {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
+                </span>
+                {#if pageLayout}<Fa
+                    icon={faChevronDown}
+                    class="shrink-0 text-muted-foreground"
+                  />{/if}
+              </Select.Trigger>
+              <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
+                {#each $chiefThreads$ as thread (thread.agentId)}
+                  <Select.Item value={thread.agentId} label={thread.title}>
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      {#if thread.isActive}
+                        <span
+                          class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                          aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
+                        ></span>
+                      {/if}
+                      <span class="truncate">{thread.title}</span>
+                    </span>
+                  </Select.Item>
+                {:else}
+                  <div role="status" class="type-caption px-3 py-4 text-center text-subtle">
+                    {m.layout_chiefCard_noThreads_label()}
+                  </div>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          {:else}
+            <h2 class="min-w-0 truncate type-body font-medium" title={activeThread?.title}>
+              {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
+            </h2>
+          {/if}
           {#if activeThread && !$hidesAgentLifecycleActions$}
             <Button
               variant="ghost"
