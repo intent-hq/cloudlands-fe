@@ -1817,7 +1817,11 @@ export async function executeActions(
     // the daemon. Check every successful open, including reuse/replace,
     // before running the next action or returning the handle (#2756).
     if (result.action === 'openTab' && result.success && waitForRegistry) {
-      const tabId = result.result?.tabId;
+      const opened =
+        result.result && typeof result.result === 'object'
+          ? (result.result as Record<string, unknown>)
+          : undefined;
+      const tabId = typeof opened?.tabId === 'string' ? opened.tabId : undefined;
       let registered = false;
       try {
         registered = typeof tabId === 'string' && (await waitForRegistry(tabId, deadline));
@@ -1828,7 +1832,7 @@ export async function executeActions(
         result = {
           ...result,
           success: false,
-          result: { ...result.result, success: false },
+          result: { ...opened, success: false },
           // i18n-ignore (agent-facing protocol error, not user-facing)
           error: `Tab ${tabId ?? '(unknown)'} could not be confirmed in the daemon browser registry before the registration deadline. Check { action: "listTabs" } before retrying the open.`,
         };
