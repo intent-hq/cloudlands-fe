@@ -89,7 +89,7 @@ async function construct(context: NativeConstructionContext, lifetime: AbortSign
       });
       inspect();
     });
-    observer.disconnect();
+    observer?.disconnect();
     await document.fonts.ready;
     await frame();
     const scroller = construction.querySelector<HTMLElement>('.mermaid-svg-viewport');
