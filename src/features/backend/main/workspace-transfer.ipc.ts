@@ -62,7 +62,7 @@ async function createTargetClient(connectionId: string): Promise<TargetClientHan
   const { config } = await buildConfigForConnection(connectionId);
   const client = new JsonRpcClient({
     config,
-    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+    helloParams: async () => ({ clientId: await getOrCreateClientId(config) }),
   });
   client.on('error', (error: Error) => {
     logger.warn('Transfer target client transport error', { error: error.message });

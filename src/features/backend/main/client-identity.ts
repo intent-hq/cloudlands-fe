@@ -10,7 +10,8 @@
  * the shared main-process JsonRpcClient to present on every (re)connect.
  */
 
-import { randomUUID } from 'crypto';
+import { createHmac, randomBytes, randomUUID } from 'crypto';
+import type { BackendConnectionConfig } from './backend-connection';
 import { hostname as osHostname } from 'node:os';
 import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
 import { isDetectedDeviceKind, type DetectedDeviceKind } from '../../../shared/types/connections';
@@ -84,9 +85,11 @@ export function getClientHostIdentity(): ClientHostIdentity {
  * `clientId` — they must never advertise `browserExec`, since the capability
  * marks exactly the connection that serves the `browser.exec` reverse handler.
  */
-export async function buildMainClientHelloParams(): Promise<MainClientHelloParams> {
+export async function buildMainClientHelloParams(
+  config?: BackendConnectionConfig,
+): Promise<MainClientHelloParams> {
   return {
-    clientId: await getOrCreateClientId(),
+    clientId: await getOrCreateClientId(config),
     name: DESKTOP_CLIENT_NAME,
     capabilities: { browserExec: true },
     ...getClientHostIdentity(),
@@ -106,7 +109,7 @@ let cached: Promise<string> | null = null;
  * first use. Concurrent callers share a single resolution so two racing
  * connects can never mint two identities.
  */
-export function getOrCreateClientId(): Promise<string> {
+function getInstallClientId(): Promise<string> {
   if (!cached) {
     cached = (async () => {
       const existing = await getLocalPref<string>(PREF_KEY);
@@ -125,16 +128,87 @@ export function getOrCreateClientId(): Promise<string> {
 }
 
 /**
- * Persist a daemon-returned clientId (the daemon mints one when the client
- * presented none, §5.17) so it is re-presented on every later hello.
- *
- * The in-memory cache is updated regardless of whether the disk write
- * succeeds (`setLocalPref` logs-and-swallows failures): this session must
- * keep presenting the id the daemon just confirmed. If the write did fail,
- * the only consequence is that the NEXT launch re-runs first-run minting —
- * a degraded-but-safe outcome; connects are never blocked on prefs I/O.
+ * Canonical IDs are hints for one authenticated transport context, never routing
+ * authority. Keep the legacy install seed opaque: it may already be scoped and
+ * cannot safely be split or migrated to another principal's state.
  */
-export async function persistClientId(clientId: string): Promise<void> {
-  cached = Promise.resolve(clientId);
-  await setLocalPref(PREF_KEY, clientId);
+const CONTEXT_PREF_KEY = 'backendClientIdentitiesV1';
+interface ContextIdentities {
+  key: string;
+  canonicalIds: Record<string, string>;
+}
+let contexts: Promise<ContextIdentities> | undefined;
+
+function getContexts(): Promise<ContextIdentities> {
+  return (contexts ??= (async () => {
+    const saved = await getLocalPref<ContextIdentities>(CONTEXT_PREF_KEY);
+    if (
+      saved &&
+      typeof saved.key === 'string' &&
+      /^[a-f0-9]{64}$/.test(saved.key) &&
+      saved.canonicalIds &&
+      typeof saved.canonicalIds === 'object' &&
+      !Array.isArray(saved.canonicalIds)
+    ) {
+      return {
+        key: saved.key,
+        canonicalIds: Object.fromEntries(
+          Object.entries(saved.canonicalIds).filter(
+            ([key, id]) => /^[a-f0-9]{64}$/.test(key) && typeof id === 'string' && id.length > 0,
+          ),
+        ),
+      };
+    }
+    const initial = { key: randomBytes(32).toString('hex'), canonicalIds: {} };
+    await setLocalPref(CONTEXT_PREF_KEY, initial);
+    return initial;
+  })());
+}
+
+/**
+ * Bind to the endpoint AND credentials used by this connection, not its mutable
+ * UI connection ID. WSS authenticates the certificate pin and bearer credential;
+ * UDS uses the local OS/socket trust boundary. A changed endpoint, pin or token
+ * conservatively starts from the install seed. Host-race candidates all use the
+ * same pinned certificate/credential and therefore share the primary's context.
+ * Only a keyed digest is stored: never persist tokens or credential-bearing URLs
+ * here, log them, or parse an alleged principal out of a canonical client ID.
+ */
+function contextKey(config: BackendConnectionConfig, key: string): string {
+  return createHmac('sha256', key)
+    .update(
+      JSON.stringify([
+        config.transport,
+        config.socketPath ?? null,
+        config.host ?? null,
+        config.port ?? null,
+        config.wsUrl ?? null,
+        config.tls ?? null,
+        config.fingerprint?.replaceAll(':', '').toUpperCase() ?? null,
+        config.token ?? null,
+      ]),
+    )
+    .digest('hex');
+}
+
+/** Without a transport context, return only the unchanged install/legacy seed. */
+export async function getOrCreateClientId(config?: BackendConnectionConfig): Promise<string> {
+  if (config) {
+    const state = await getContexts();
+    const canonical = state.canonicalIds[contextKey(config, state.key)];
+    if (canonical) return canonical;
+  }
+  return getInstallClientId();
+}
+
+/** Save an accepted hello only within its authenticated transport context. */
+export async function persistClientId(
+  clientId: string,
+  config: BackendConnectionConfig,
+): Promise<void> {
+  const state = await getContexts();
+  state.canonicalIds[contextKey(config, state.key)] = clientId;
+  // Snapshot each write so concurrently completed hellos retain both entries.
+  // local-prefs serializes disk writes; the session keeps its ID on I/O failure.
+  await setLocalPref(CONTEXT_PREF_KEY, { key: state.key, canonicalIds: { ...state.canonicalIds } });
 }

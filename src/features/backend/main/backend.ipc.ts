@@ -1909,7 +1909,7 @@ function createAdditionalBackendClient(
     // it alone advertises `capabilities.browserExec` plus the app's name and
     // host identification (the auxiliary setup/transfer/quit clients stay
     // clientId-only).
-    helloParams: async () => ({ ...(await buildMainClientHelloParams()) }),
+    helloParams: async () => ({ ...(await buildMainClientHelloParams(config)) }),
     onHelloResult: (result, producer) =>
       poolWork(
         'hello-result',
@@ -1920,8 +1920,12 @@ function createAdditionalBackendClient(
               ? (result as { clientId?: unknown; protocolVersion?: unknown })
               : undefined;
           const clientId = obj?.clientId;
-          if (typeof clientId === 'string' && clientId.length > 0) {
-            void poolWork('persist-client-id', owner, () => persistClientId(clientId));
+          if (
+            backendClients.get(id) === instance &&
+            typeof clientId === 'string' &&
+            clientId.length > 0
+          ) {
+            void poolWork('persist-client-id', owner, () => persistClientId(clientId, config));
           }
           // T15: `protocolVersion` from the handshake feeds the protocol-compat
           // check — record it for local, compare it against local for a remote,
@@ -3523,7 +3527,7 @@ async function requestGuestWorkspaceLeave(id: string, workspaceId: string): Prom
   const { config } = await buildConfigForConnection(id);
   const client = new JsonRpcClient({
     config,
-    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+    helloParams: async () => ({ clientId: await getOrCreateClientId(config) }),
   });
   client.on('error', () => {});
   let timer: NodeJS.Timeout | undefined;

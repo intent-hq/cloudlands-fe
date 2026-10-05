@@ -120,6 +120,9 @@ beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
   fixture.options = [];
+  vi.mocked((await import('../connections-store')).getDecryptedToken).mockResolvedValue(
+    'test-only-token',
+  );
   fixture.userData = await mkdtemp(join(tmpdir(), 'identity-isolation-'));
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
   vi.spyOn(app, 'getPath').mockReturnValue(fixture.userData);
@@ -201,5 +204,46 @@ describe('pooled canonical client identity isolation', () => {
     // A was started earlier but its authenticated response arrives last.
     await a.onHelloResult(helloResult(A));
     expect((await b.helloParams()).clientId).toBe(B);
+  });
+  it('starts a fresh identity context when the same backend changes credentials', async () => {
+    const { mod, a } = await pool();
+    await a.onHelloResult(helloResult(A));
+    const store = await import('../connections-store');
+    vi.mocked(store.getDecryptedToken).mockResolvedValue('different-principal-token');
+    mod.disconnectBackendClient('backend-a');
+    await mod.openBackendWindow('backend-a');
+    const replacement = fixture.options[3];
+    expect((await replacement.helloParams()).clientId).toBe(RAW);
+    await replacement.onHelloResult(helloResult(B));
+    await a.onHelloResult(helloResult('obsolete-canonical'));
+    expect((await replacement.helloParams()).clientId).toBe(B);
+    vi.mocked(store.getDecryptedToken).mockResolvedValue('test-only-token');
+    mod.disconnectBackendClient('backend-a');
+    await mod.openBackendWindow('backend-a');
+    expect((await fixture.options[4].helloParams()).clientId).toBe(A);
+  });
+
+  it('ignores late canonical replies from replaced pool members in the same context', async () => {
+    const { mod, a } = await pool();
+    await a.onHelloResult(helloResult(A));
+    mod.disconnectBackendClient('backend-a');
+    await mod.openBackendWindow('backend-a');
+    const replacement = fixture.options[3];
+    await replacement.onHelloResult(helloResult('current-canonical'));
+    await a.onHelloResult(helloResult('obsolete-canonical'));
+    expect((await replacement.helloParams()).clientId).toBe('current-canonical');
+  });
+
+  it('preserves opaque legacy seed bytes without rewriting them after canonical replies', async () => {
+    const legacy = 'unknown:principal:opaque:legacy-id';
+    const prefs = await import('../../../../main/local-prefs');
+    await prefs.setLocalPref('backendClientId', legacy);
+    const { local, a, b } = await pool();
+    expect((await a.helloParams()).clientId).toBe(legacy);
+    await a.onHelloResult(helloResult(`authenticated-a:${legacy}`));
+    expect((await b.helloParams()).clientId).toBe(legacy);
+    expect((await local.helloParams()).clientId).toBe(legacy);
+    await drainPrefs();
+    expect(await prefs.getLocalPref('backendClientId')).toBe(legacy);
   });
 });

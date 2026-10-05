@@ -32,7 +32,7 @@ export class AntigravitySetupSession {
       config,
       requestTimeoutMs: 10_000,
       helloParams: async () => ({
-        clientId: await getOrCreateClientId(),
+        clientId: await getOrCreateClientId(config),
         name: 'Intent Antigravity setup', // i18n-ignore (wire client identity)
         capabilities: { antigravitySetup: 1 },
       }),

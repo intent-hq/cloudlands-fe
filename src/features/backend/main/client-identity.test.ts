@@ -64,16 +64,68 @@ describe('client-identity (§5.17 stable clientId)', () => {
     expect(second).toBe(first);
   });
 
-  it('persists a daemon-minted clientId and presents it thereafter', async () => {
+  it('persists a daemon-minted clientId only for its transport context', async () => {
     const { getOrCreateClientId, persistClientId } = await import('./client-identity');
-    await getOrCreateClientId();
-    await persistClientId('cli-9b21');
-    expect(await getOrCreateClientId()).toBe('cli-9b21');
+    const seed = await getOrCreateClientId();
+    const config = { transport: 'uds' as const, socketPath: '/test/daemon.sock' };
+    await persistClientId('cli-9b21', config);
+    expect(await getOrCreateClientId(config)).toBe('cli-9b21');
+    expect(await getOrCreateClientId()).toBe(seed);
 
     await (await import('../../../main/local-prefs')).__drainLocalPrefsWriteChainForTesting();
     vi.resetModules();
     mockElectron();
-    expect(await (await import('./client-identity')).getOrCreateClientId()).toBe('cli-9b21');
+    expect(await (await import('./client-identity')).getOrCreateClientId(config)).toBe('cli-9b21');
+  });
+  it('isolates credentials, certificate pins, endpoints and local sockets across restart', async () => {
+    const identity = await import('./client-identity');
+    const seed = await identity.getOrCreateClientId();
+    const config = {
+      transport: 'wss' as const,
+      host: 'daemon.test',
+      port: 443,
+      fingerprint: 'AA:BB',
+      token: 'private-fixture-token',
+    };
+    await identity.persistClientId('canonical-one', config);
+    const variants = [
+      { ...config, token: 'another-principal-token' },
+      { ...config, fingerprint: 'CC:DD' },
+      { ...config, host: 'another-daemon.test' },
+      { ...config, port: 444 },
+      { transport: 'uds' as const, socketPath: '/different/daemon.sock' },
+    ];
+    for (const variant of variants) expect(await identity.getOrCreateClientId(variant)).toBe(seed);
+    await identity.persistClientId('canonical-two', variants[0]);
+    await (await import('../../../main/local-prefs')).__drainLocalPrefsWriteChainForTesting();
+    const serialized = await fs.readFile(path.join(tmpDir, 'local-prefs.json'), 'utf8');
+    for (const secret of [config.token, 'another-principal-token', config.host]) {
+      expect(serialized).not.toContain(secret);
+    }
+    vi.resetModules();
+    mockElectron();
+    const restarted = await import('./client-identity');
+    expect(await restarted.getOrCreateClientId(config)).toBe('canonical-one');
+    expect(await restarted.getOrCreateClientId(variants[0])).toBe('canonical-two');
+    expect(await restarted.getOrCreateClientId()).toBe(seed);
+  });
+
+  it('preserves concurrent canonical writes and normalizes certificate formatting', async () => {
+    const identity = await import('./client-identity');
+    const first = { transport: 'wss' as const, host: 'one', token: 'one', fingerprint: 'AA:BB' };
+    const second = { ...first, token: 'two' };
+    await Promise.all([
+      identity.persistClientId('canonical-one', first),
+      identity.persistClientId('canonical-two', second),
+    ]);
+    await (await import('../../../main/local-prefs')).__drainLocalPrefsWriteChainForTesting();
+    vi.resetModules();
+    mockElectron();
+    const restarted = await import('./client-identity');
+    expect(await restarted.getOrCreateClientId({ ...first, fingerprint: 'aabb' })).toBe(
+      'canonical-one',
+    );
+    expect(await restarted.getOrCreateClientId(second)).toBe('canonical-two');
   });
 });
 

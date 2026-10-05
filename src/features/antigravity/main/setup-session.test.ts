@@ -3,15 +3,20 @@ import { AntigravitySetupSession } from './setup-session';
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
+  identity: vi.fn(async () => 'app-client'),
+  helloParams: null as null | (() => Promise<Record<string, unknown>>),
   dispose: vi.fn(),
   handlers: new Map<string, (params: unknown) => Promise<unknown>>(),
   events: new Map<string, (value: string) => void>(),
 }));
 vi.mock('../../backend/main/client-identity', () => ({
-  getOrCreateClientId: async () => 'app-client',
+  getOrCreateClientId: mocks.identity,
 }));
 vi.mock('../../backend/main/json-rpc-client', () => ({
   JsonRpcClient: class {
+    constructor(options: { helloParams: () => Promise<Record<string, unknown>> }) {
+      mocks.helloParams = options.helloParams;
+    }
     request = mocks.request;
     dispose = mocks.dispose;
     on(event: string, handler: (value: string) => void) {
@@ -54,6 +59,15 @@ function session(current = () => true) {
 }
 
 describe('Antigravity private setup session', () => {
+  it('uses the setup transport identity without browser authority', async () => {
+    session();
+    const hello = await mocks.helloParams?.();
+    expect(mocks.identity).toHaveBeenLastCalledWith({
+      transport: 'uds',
+      socketPath: '/fixture/socket',
+    });
+    expect(hello?.capabilities).toEqual({ antigravitySetup: 1 });
+  });
   it.each([
     [
       'status',
