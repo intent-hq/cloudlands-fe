@@ -21,7 +21,10 @@ type Locator = ReturnType<CtPage['getByTestId']>;
 
 async function queueScreenshot(component: Locator) {
   const queue = component.getByTestId('queued-messages-container');
-  return (await queue.count()) ? queue.screenshot() : component.screenshot();
+  if (!(await queue.count())) return component.screenshot();
+  const showAll = queue.getByRole('button', { name: 'Show all queued messages', exact: true });
+  if (await showAll.count()) await showAll.click();
+  return queue.screenshot();
 }
 
 test.beforeEach(async ({ page }) => {
