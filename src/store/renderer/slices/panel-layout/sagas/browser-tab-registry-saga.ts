@@ -141,7 +141,6 @@ import {
   PANEL_LAYOUT_HANDLED_ACTION_TYPES,
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
-  bootstrapNewWorkspaceLayout,
   browserTabRegistryReportRequested,
   closeTab,
   destroyTabsByType,
@@ -716,13 +715,6 @@ function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGe
   yield* call(reconcileWorkspace, wsId);
 }
 
-/** New workspaces settle in the bootstrap reducer, without setRestoreStatus. */
-function* reconcileOnBootstrap(
-  action: ReturnType<typeof bootstrapNewWorkspaceLayout>,
-): SagaGenerator<void> {
-  yield* call(reconcileWorkspace, action.payload.wsId);
-}
-
 function* reconcileWorkspace(wsId: string): SagaGenerator<void> {
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
   const ownClientId = yield* waitForOwnClientId();
@@ -764,9 +756,25 @@ function changedWorkspaces(layouts: Record<string, WorkspacePanelLayoutState>): 
  * A mutation the reducer answered with the same state changes no workspace
  * and reports nothing.
  */
-function* onLayoutMutation(reports: Channel<string>): SagaGenerator<void> {
-  const changed = changedWorkspaces(yield* selectPanelLayoutWorkspaces.effect());
-  for (const wsId of changed) yield* call(requestReport, reports, wsId);
+function* onLayoutMutation(
+  reports: Channel<string>,
+  action: { type: string },
+): SagaGenerator<void> {
+  const previous = seenLayouts;
+  const layouts = yield* selectPanelLayoutWorkspaces.effect();
+  const changed = changedWorkspaces(layouts);
+  for (const wsId of changed) {
+    // Bootstrap settles a new workspace directly in the reducer. Observe
+    // that transition here too; setRestoreStatus already has its own loader.
+    if (
+      action.type !== setRestoreStatus.type &&
+      layouts[wsId] &&
+      isSettled(layouts[wsId]) &&
+      (!previous[wsId] || !isSettled(previous[wsId]))
+    )
+      yield* fork(reconcileWorkspace, wsId);
+    yield* call(requestReport, reports, wsId);
+  }
 }
 
 /**
@@ -1204,7 +1212,6 @@ export function* browserTabRegistrySaga(): SagaGenerator<void> {
   yield* takeEvery(browserTabRegistryReportRequested, onReportRequested, reports);
   yield* takeSingleFlightInContext(reports, (wsId) => wsId, reportHostedTabs);
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
-  yield* takeEvery(bootstrapNewWorkspaceLayout, reconcileOnBootstrap);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);
   yield* takeEvery(connectionStatusChanged, onConnectionStatus);
