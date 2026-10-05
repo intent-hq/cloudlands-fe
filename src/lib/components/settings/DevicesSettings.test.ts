@@ -87,6 +87,8 @@ vi.mock('$lib/components/ui/toast', () => ({
 }));
 
 import DevicesSettings from './DevicesSettings.svelte';
+import MobileSettings from '$features/settings/MobileSettings.svelte';
+import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { selectCollaborationCapabilities } from '$store/renderer/slices/principal/principal-selectors';
@@ -276,24 +278,43 @@ describe('DevicesSettings', () => {
     expect(screen.getByText('This machine (local)')).toBeTruthy();
     await openAction('Connect');
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
-    await fireEvent.click(screen.getByRole('button', { name: 'Add device' }));
+    await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
-  it('preserves local administration and legacy pairing with personal capabilities enabled', async () => {
+  it('preserves local icon editing and Mobile configuration with personal capabilities enabled', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
     mocks.settingsList.mockResolvedValue([
       { path: 'server.wsApi.enabled', value: true },
       { path: 'server.wsApi.port', value: 5181 },
     ]);
-    render(DevicesSettings, undefined, true);
+    const machines = render(DevicesSettings, undefined, true);
     await openAction('Edit', m.layout_daemonStatus_localConnection_label());
     expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
-    expect(screen.getByRole('spinbutton', { name: 'Port' })).toBeTruthy();
-    await fireEvent.click(
-      await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() }),
-    );
-    await waitFor(() => expect(mocks.pairingInfo).toHaveBeenCalled());
+    expect(screen.getByTestId('device-icon-picker-trigger')).toBeTruthy();
+    machines.unmount();
+    const stopApi = store.runSaga(websocketApiSaga);
+    try {
+      renderComponent(MobileSettings);
+      const copy = screen.getByRole('button', { name: m.settings_wsApi_shareLink_label() });
+      await waitFor(() => expect(copy.hasAttribute('disabled')).toBe(false));
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.settings_devices_advanced_label(), exact: true }),
+      );
+      expect((screen.getByRole('spinbutton', { name: 'Port' }) as HTMLInputElement).value).toBe(
+        '5181',
+      );
+      await fireEvent.click(copy);
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith(
+          'intent://pair?token=test-token&host=127.0.0.1&port=5181&path=/ws&certFingerprint=AA%3ABB',
+        ),
+      );
+      expect(mocks.pairingInfo).toHaveBeenCalled();
+    } finally {
+      stopApi();
+    }
   });
 
   it('shows named remotes without duplicating their address or visible status text', () => {
