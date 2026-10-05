@@ -6710,6 +6710,7 @@
   "workspace_drivingClient_setPrimary_label": "Establecer el cliente actual como principal",
   "workspace_drivingClient_setPrimaryDialog_title": "¿Establecer este cliente como principal?",
   "workspace_drivingClient_setPrimaryDialog_description": "El navegador de este espacio de trabajo lo controla actualmente {host}. Se fijará a este cliente y todas las pestañas de los agentes se moverán aquí. El estado de la página no se conserva; las pestañas que abrió usted mismo no se ven afectadas.",
+  "workspace_drivingClient_setPrimaryDialog_unresolved_description": "El navegador de este espacio de trabajo se fijará a este cliente y todas las pestañas de sus agentes se moverán aquí. No se conservará el estado de las páginas; las pestañas que abriste no se verán afectadas.",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Cerrar",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Cancelar",
   "workspace_drivingClient_setPrimaryDialog_confirm_label": "Establecer como principal",

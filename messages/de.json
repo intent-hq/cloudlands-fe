@@ -6710,6 +6710,7 @@
   "workspace_drivingClient_setPrimary_label": "Aktuellen Client als primär festlegen",
   "workspace_drivingClient_setPrimaryDialog_title": "Diesen Client als primär festlegen?",
   "workspace_drivingClient_setPrimaryDialog_description": "Der Browser dieses Workspace wird derzeit von {host} gesteuert. Er wird an diesen Client gebunden, und alle Tabs der Agents werden hierher verschoben. Der Seitenzustand bleibt nicht erhalten; selbst geöffnete Tabs sind nicht betroffen.",
+  "workspace_drivingClient_setPrimaryDialog_unresolved_description": "Der Browser dieses Arbeitsbereichs wird an diesen Client gebunden und alle Tabs seiner Agenten werden hierher verschoben. Der Seitenzustand bleibt nicht erhalten; selbst geöffnete Tabs sind nicht betroffen.",
   "workspace_drivingClient_setPrimaryDialog_close_ariaLabel": "Schließen",
   "workspace_drivingClient_setPrimaryDialog_cancel_label": "Abbrechen",
   "workspace_drivingClient_setPrimaryDialog_confirm_label": "Als primär festlegen",

@@ -184,6 +184,20 @@ export const selectWorkspaceIsWaiting = store.createSelector<[wsId: string], boo
   (state, wsId) => selectWorkspaceById.select(state, wsId)?.waiting === true,
 );
 
+/** Primary selection uses the transport host-member gate, independently of Labs. */
+export const selectCanSetWorkspacePrimaryClient = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => {
+    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return false;
+    const snapshot = selectPrincipalSnapshot.select(state);
+    const role = selectHostRole.select(state);
+    const workspace = selectWorkspaceById.select(state, wsId);
+    if (!snapshot || !role || !workspace) return false;
+    if (snapshot.capabilities.hostMembership && !selectWorkspaceCapabilitiesReady.select(state))
+      return false;
+    return role === 'owner' || role === 'member';
+  },
+);
+
 /** Server management authority, independent of owner metadata and experimental visibility. */
 export const selectCanManageWorkspace = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => {

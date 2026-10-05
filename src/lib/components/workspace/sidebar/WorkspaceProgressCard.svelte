@@ -92,7 +92,9 @@
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
-  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
+  import { selectCanSetWorkspacePrimaryClient } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
+  import { browserClientDisplayName } from '$lib/components/workspace/driving-indicator';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
     presencePersonNameWithForge,
@@ -560,41 +562,67 @@
   // eligible client could take over (or the pin is offline).
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
   const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
-  const drivingClientSwitch = $derived(resolveDrivingClientSwitch($drivingClient$));
+  const canSetPrimaryClient$ = selectCanSetWorkspacePrimaryClient(workspaceIdStore);
+  const principalActionContext$ = selectPrincipalActionContext();
+  const primaryAlreadySelected = $derived(
+    Boolean(
+      $drivingClient$.ownClientId && $drivingClient$.pinnedClientId === $drivingClient$.ownClientId,
+    ),
+  );
+  const canSetPrimaryClient = $derived(
+    Boolean(
+      workspaceId &&
+      $canSetPrimaryClient$ &&
+      !primaryAlreadySelected &&
+      $drivingClient$.eligibleClients.some(
+        (client) => client.clientId === $drivingClient$.ownClientId && client.connected,
+      ),
+    ),
+  );
 
-  // "Set Current Client as Primary": pin this workspace's browser to this
-  // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
-  // here (PROTOCOL §5.1 workspace.setBrowserClient). Offered only while
-  // another client drives (or the pin is offline); hidden when this app
-  // already drives or its own clientId is unknown. The menu action only opens
-  // the confirmation; the RPC is dispatched on confirm.
-  let confirmingSetPrimaryClient = $state(false);
+  // Recovery remains discoverable even when a stale claimed-tab host leaves
+  // driving unresolved. Only explicit confirmation can pin and re-home tabs.
+  let pendingPrimaryClient = $state<{
+    workspaceId: string;
+    clientId: string;
+    context: string | null;
+  } | null>(null);
 
-  const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
-    const ownClientId = $drivingClient$.ownClientId;
-    if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
-    return {
-      id: 'set-primary-client',
-      label: m.workspace_drivingClient_setPrimary_label(),
-      icon: faGlobe,
-      dividerBefore: true,
-      onClick: () => {
-        confirmingSetPrimaryClient = true;
-      },
-    };
+  const setPrimaryClientAction: MenuAction = $derived({
+    id: 'set-primary-client',
+    label: m.workspace_drivingClient_setPrimary_label(),
+    icon: faGlobe,
+    dividerBefore: true,
+    checked: primaryAlreadySelected,
+    disabled: !canSetPrimaryClient,
+    onClick: () => {
+      if (!workspaceId || !canSetPrimaryClient) return;
+      pendingPrimaryClient = {
+        workspaceId,
+        clientId: $drivingClient$.ownClientId,
+        context: $principalActionContext$,
+      };
+    },
   });
 
   function handleConfirmSetPrimaryClient() {
-    confirmingSetPrimaryClient = false;
-    const ownClientId = $drivingClient$.ownClientId;
-    if (!workspaceId || !ownClientId) return;
-    appStore.dispatch(setWorkspaceBrowserClientRequested(workspaceId, ownClientId));
+    const pending = pendingPrimaryClient;
+    pendingPrimaryClient = null;
+    if (
+      !pending ||
+      !canSetPrimaryClient ||
+      pending.workspaceId !== workspaceId ||
+      pending.clientId !== $drivingClient$.ownClientId ||
+      pending.context !== $principalActionContext$
+    )
+      return;
+    appStore.dispatch(setWorkspaceBrowserClientRequested(pending.workspaceId, pending.clientId));
   }
 
   const additionalActions: MenuAction[] = $derived([
     sidebarToggleAction,
     sidebarSideAction,
-    ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
+    setPrimaryClientAction,
     ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
@@ -1405,12 +1433,14 @@
   </div>
 </div>
 
-{#if drivingClientSwitch}
+{#if pendingPrimaryClient}
   <SetPrimaryClientConfirmDialog
-    open={confirmingSetPrimaryClient}
-    currentHost={drivingClientSwitch.hostName}
+    open
+    currentHost={$drivingClient$.driving
+      ? browserClientDisplayName($drivingClient$.driving)
+      : undefined}
     onConfirm={handleConfirmSetPrimaryClient}
-    onCancel={() => (confirmingSetPrimaryClient = false)}
+    onCancel={() => (pendingPrimaryClient = null)}
   />
 {/if}
 
