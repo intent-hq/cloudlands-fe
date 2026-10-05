@@ -740,6 +740,7 @@ describe('paged selection copy callback', () => {
           return result;
         }),
         cancelSelectionCopy: vi.fn(),
+        cancelRenderedSearch: vi.fn(),
         selectionChanged: vi.fn(),
         fullOperation: vi.fn(),
       };
@@ -753,6 +754,7 @@ describe('paged selection copy callback', () => {
       expect(surface.fullOperation).not.toHaveBeenCalled();
       unmount();
       expect(surface.cancelSelectionCopy).toHaveBeenCalledOnce();
+      expect(surface.cancelRenderedSearch).toHaveBeenCalledOnce();
     },
   );
   it('preserves explicit full-operation handling when selection adapter is absent', async () => {

@@ -29,6 +29,19 @@ export type NoteSelectionOperationInput = Omit<NoteSourceOperationInput, 'header
   };
   expectedOutput: string;
 };
+export type NoteRenderedSearchOperationInput = Omit<NoteSourceOperationInput, 'header'> & {
+  header: Omit<NoteSourceOperationInput['header'], 'output' | 'selection'> & {
+    output: 'search';
+    selection: 'ranges';
+    query: { text: string; caseSensitive: false; mode: 'renderedText' };
+  };
+};
+export interface NoteRenderedOperationPage {
+  items: unknown[];
+  nextCursor: string | null;
+  scannedThrough?: unknown;
+  count?: unknown;
+}
 interface NoteStageTextReference {
   textId: string;
   length: number;
@@ -113,6 +126,15 @@ export function createNoteSelectionOperation(
   return createSourceStage(send, input, current, now, 'read', 'selectionMarkdown');
 }
 
+export function createNoteRenderedSearchOperation(
+  send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  input: NoteRenderedSearchOperationInput,
+  current: () => boolean,
+  now: () => number = Date.now,
+) {
+  return createSourceStage(send, input, current, now, 'read', 'search');
+}
+
 /** Dirty-only save staging. The caller proves native grouping and owns commit.
  * There is no mutation, selection or live projection fallback. */
 export function createNoteStagedSaveOperation(
@@ -125,11 +147,15 @@ export function createNoteStagedSaveOperation(
 }
 function createSourceStage(
   send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
-  input: NoteSourceOperationInput | NoteStagedSaveInput | NoteSelectionOperationInput,
+  input:
+    | NoteSourceOperationInput
+    | NoteStagedSaveInput
+    | NoteSelectionOperationInput
+    | NoteRenderedSearchOperationInput,
   current: () => boolean,
   now: () => number,
   action: 'read' | 'mutate',
-  output: 'source' | 'selectionMarkdown',
+  output: 'source' | 'selectionMarkdown' | 'search',
 ) {
   const scope = Object.freeze({
     backendId: input.scope.backendId,
@@ -145,7 +171,7 @@ function createSourceStage(
     h.action !== action ||
     h.output !== output ||
     h.selection !== (output === 'source' ? 'all' : 'ranges') ||
-    'query' in h
+    (output === 'search' ? !('query' in h) : 'query' in h)
   )
     throw new Error('Unsupported staged output');
   const expectedOutput =
@@ -158,6 +184,25 @@ function createSourceStage(
       size(expectedOutput) > 16384)
   )
     throw new Error('Invalid captured selection output');
+  const query =
+    output === 'search' && 'query' in h
+      ? Object.freeze({
+          text: h.query.text,
+          caseSensitive: h.query.caseSensitive,
+          mode: h.query.mode,
+        })
+      : undefined;
+  if (
+    output === 'search' &&
+    (!query ||
+      !validStageText(query.text) ||
+      !query.text.length ||
+      query.text.length > 1024 ||
+      size(query.text) > 1024 ||
+      query.caseSensitive !== false ||
+      query.mode !== 'renderedText')
+  )
+    throw new Error('Invalid rendered search query');
   const header = Object.freeze({
     baseRevision: h.baseRevision,
     editorSessionId: h.editorSessionId,
@@ -167,6 +212,7 @@ function createSourceStage(
     action: h.action,
     output: h.output,
     selection: h.selection,
+    ...(query ? { query } : {}),
   });
   const { operationId, expiresAt } = input;
   const deadline = Date.parse(expiresAt);
@@ -320,12 +366,12 @@ function createSourceStage(
             textBytes += size(r.text);
             return { kind: r.kind, id: r.id, offset: r.offset, text: r.text };
           }
-          if (output === 'selectionMarkdown' && stream === 'selection' && r.kind === 'range') {
+          if (output !== 'source' && stream === 'selection' && r.kind === 'range') {
             if (
               r.ordinal !== manifest[2].records + index ||
               r.ordinal !== 0 ||
               ![r.start, r.end].every(uint) ||
-              r.end <= r.start ||
+              (output === 'search' ? r.end < r.start : r.end <= r.start) ||
               !['before', 'after'].includes(r.anchorAffinity) ||
               !['before', 'after'].includes(r.headAffinity) ||
               !['forward', 'backward'].includes(r.direction)
@@ -341,7 +387,7 @@ function createSourceStage(
               direction: r.direction,
             };
           }
-          if (output === 'selectionMarkdown' && stream === 'live' && r.kind === 'projection') {
+          if (output !== 'source' && stream === 'live' && r.kind === 'projection') {
             if (
               ![r.ordinal, r.sourceRange.start, r.sourceRange.end].every(uint) ||
               r.ordinal > 1 ||
@@ -396,7 +442,7 @@ function createSourceStage(
         if (textBytes > 16384) throw new Error('Staged text chunk exceeded');
         const m = manifest[streams.indexOf(stream)];
         if (
-          output === 'selectionMarkdown' &&
+          output !== 'source' &&
           ((stream === 'selection' && m.records + records.length > 1) ||
             (stream === 'live' && m.records + records.length > 2))
         )
@@ -424,10 +470,7 @@ function createSourceStage(
       return exclusive(async () => {
         check();
         if (!begun || sealed) throw new Error('Staged seal unavailable');
-        if (
-          output === 'selectionMarkdown' &&
-          (manifest[2].records !== 1 || manifest[4].records !== 2)
-        )
+        if (output !== 'source' && (manifest[2].records !== 1 || manifest[4].records !== 2))
           throw new Error('Incomplete captured selection manifest');
         payloadDigest = await hash({ headerDigest, manifest });
         const p = await rpc('note.operation.seal', { ...identity(), manifest, payloadDigest });
@@ -441,7 +484,7 @@ function createSourceStage(
     async read(consume: (text: string) => Promise<void>) {
       return exclusive(async () => {
         check();
-        if (!sealed || done || viewLength === undefined)
+        if (output === 'search' || !sealed || done || viewLength === undefined)
           throw new Error('Staged source read unavailable');
         const extent = expectedOutput?.length ?? viewLength;
         const p = await rpc('note.operation.read', {
@@ -502,6 +545,64 @@ function createSourceStage(
         done = nextCursor === null;
         cursor = nextCursor ?? undefined;
         return done;
+      });
+    },
+    /** Search and reached detail resources share the original sealed view. This
+     * validates bounded envelopes only; the native consumer validates item meaning.
+     * JSON bounds apply after transport decode, not to its predecode allocation. */
+    async readRendered(request: {
+      kind: 'search' | 'detail';
+      ref?: string;
+      cursor?: string;
+    }): Promise<NoteRenderedOperationPage> {
+      return exclusive(async () => {
+        check();
+        const { kind, ref, cursor: requestedCursor } = request;
+        if (
+          output !== 'search' ||
+          !sealed ||
+          viewLength === undefined ||
+          !['search', 'detail'].includes(kind) ||
+          (kind === 'detail' ? !token(ref) : ref !== undefined) ||
+          (requestedCursor !== undefined && !token(requestedCursor))
+        )
+          throw new Error('Invalid rendered search read');
+        const p = await rpc('note.operation.read', {
+          ...identity(),
+          kind,
+          ...(ref === undefined ? {} : { ref }),
+          ...(requestedCursor === undefined ? {} : { cursor: requestedCursor }),
+          maxItems: 16,
+          maxSourceBytes: 1024,
+          maxWireBytes: 8192,
+        });
+        envelope(p, 8192);
+        if (
+          p.kind !== 'noteOperationPage' ||
+          p.outputKind !== kind ||
+          p.headerDigest !== headerDigest ||
+          p.payloadDigest !== payloadDigest ||
+          p.sourceLength !== viewLength ||
+          p.expiresAt !== expiresAt ||
+          !token(p.viewId) ||
+          (viewId !== undefined && p.viewId !== viewId) ||
+          'beforeRevision' in p ||
+          'afterRevision' in p ||
+          !Array.isArray(p.items) ||
+          p.items.length > 16 ||
+          (p.nextCursor !== null && (!token(p.nextCursor) || p.nextCursor === requestedCursor))
+        )
+          throw new Error('Mismatched rendered search page');
+        check();
+        viewId = p.viewId;
+        // Snapshot the bounded decoded JSON before any downstream callbacks/awaits.
+        return JSON.parse(
+          JSON.stringify({
+            items: p.items,
+            nextCursor: p.nextCursor,
+            ...(kind === 'search' ? { scannedThrough: p.scannedThrough, count: p.count } : {}),
+          }),
+        ) as NoteRenderedOperationPage;
       });
     },
     async cancel() {

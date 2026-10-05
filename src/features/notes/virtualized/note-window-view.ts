@@ -23,6 +23,11 @@ import {
   type NoteSelectionMarkdownIdentity,
 } from './editing/note-selection-markdown-capture';
 
+import {
+  captureNoteRenderedSearch,
+  type NoteRenderedSearchInput,
+} from './editing/note-rendered-search-capture';
+import type { NoteRenderedSearchPage } from './editing/note-rendered-search-results';
 import type { NoteSourceSelection } from './note-source-selection';
 export type { NoteSourceSelection } from './note-source-selection';
 
@@ -66,6 +71,15 @@ export interface NoteReadingSurface {
    * configured-schema, transport and platform sink prerequisites are supplied. */
   copySelection?(): Promise<'copied' | 'noCopy'>;
   cancelSelectionCopy?(): void;
+  /** Explicit captured native rendered search; callback settlement retains DATA.
+   * Page references are borrowed until callback settlement; callers retaining
+   * them afterward must separately admit/copy their state.
+   * A supplied operation is independent of normal route/capability activation. */
+  searchRendered?(
+    query: string,
+    consume: (page: NoteRenderedSearchPage) => Promise<void>,
+  ): Promise<void>;
+  cancelRenderedSearch?(): void;
   selectionChanged(selection: NoteSourceSelection): void;
   fullOperation: NoteWindowViewOptions['fullOperation'];
   editing?: NoteViewEditing;
@@ -106,6 +120,40 @@ export class NoteWindowView {
   borrowSelectionMarkdown(
     identity: NoteSelectionMarkdownIdentity,
     operationCurrent: () => boolean,
+  ) {
+    return this.borrowNativeCapture(identity, operationCurrent, (editor, authority, current) =>
+      captureNoteSelectionMarkdown(editor.view, {
+        authority,
+        identity,
+        selection: this.getSelection(),
+        current,
+      }),
+    );
+  }
+  borrowRenderedSearch(
+    identity: NoteSelectionMarkdownIdentity,
+    query: NoteRenderedSearchInput['query'],
+    operationCurrent: () => boolean,
+  ) {
+    return this.borrowNativeCapture(
+      identity,
+      operationCurrent,
+      (editor, authority, current) =>
+        captureNoteRenderedSearch(editor.view, {
+          authority,
+          identity,
+          query,
+          selection: this.getSelection(),
+          current,
+        }),
+      true,
+    );
+  }
+  private borrowNativeCapture<T>(
+    identity: NoteSelectionMarkdownIdentity,
+    operationCurrent: () => boolean,
+    captureNative: (editor: Editor, authority: NoteEditAuthority, current: () => boolean) => T,
+    verifyCorrespondence = false,
   ) {
     const editor = this.editor,
       window = this.window,
@@ -151,6 +199,7 @@ export class NoteWindowView {
     };
     let checkOperation: (() => boolean) | undefined = operationCurrent;
     let retained: (() => void) | undefined;
+    let captured: T | undefined;
     let lost = false,
       released = false;
     const listeners = new Set<() => void>();
@@ -167,6 +216,7 @@ export class NoteWindowView {
       // Drop native graph references immediately; the shared context lease stays
       // charged until the consumer settles its IO and explicitly releases.
       snapshot = undefined;
+      captured = undefined;
       checkOperation = undefined;
       for (const changed of [...listeners]) notify(changed);
     };
@@ -214,6 +264,13 @@ export class NoteWindowView {
         const s = snapshot;
         if (!same(s) || !s.owner.current() || !checkOperation?.() || !s.owner.current() || !same(s))
           lose();
+        if (!lost && verifyCorrespondence && captured !== undefined) {
+          // Ownership callbacks above may mutate correspondence in place. Repeat
+          // the bounded native proof after the last such callback; this final
+          // capture uses no external owner callback and never publishes a new DTO.
+          const verified = captureNative(s.editor, s.authority, () => true);
+          if (JSON.stringify(verified) !== JSON.stringify(captured)) lose();
+        }
       } catch {
         lose();
       }
@@ -236,12 +293,8 @@ export class NoteWindowView {
     };
     try {
       retained = lease.retain();
-      const capture = captureNoteSelectionMarkdown(editor.view, {
-        authority,
-        identity: capturedIdentity,
-        selection: this.getSelection(),
-        current,
-      });
+      const capture = captureNative(editor, authority, current);
+      captured = capture;
       if (!current()) throw new Error('Native selection changed during borrow');
       const subscribe = (changed: () => void) => {
         if (!current()) {

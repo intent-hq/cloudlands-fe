@@ -103,6 +103,7 @@
     return () => {
       surface?.cancelCopy?.();
       surface?.cancelSelectionCopy?.();
+      surface?.cancelRenderedSearch?.();
     };
   });
   // The tab owns negotiation across legacy/paged renderer changes. Keeping this
