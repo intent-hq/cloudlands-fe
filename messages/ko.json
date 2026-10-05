@@ -5509,7 +5509,6 @@
   "lib_commandPalette_all_label": "전체",
   "lib_commandPalette_workspaces_label": "워크스페이스",
   "lib_commandPalette_filters_ariaLabel": "결과 필터링",
-  "lib_commandPalette_filter_label": "필터링",
   "lib_commandPalette_emptyFilter_message": "아직 항목이 없습니다. 다른 카테고리를 선택해 보세요.",
   "lib_commandPalette_resultsCount_status": "결과 {count}개",
   "lib_commandPalette_esc_label": "ESC",

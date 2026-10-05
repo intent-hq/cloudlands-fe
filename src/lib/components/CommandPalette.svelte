@@ -1151,38 +1151,6 @@
           <p class="text-[13px] text-subtle">{m.lib_commandPalette_startTyping_message()}</p>
         </div>
       {/if}
-
-      <div class="h-px shrink-0 bg-border"></div>
-      <div
-        data-palette-hints
-        class="flex shrink-0 items-center gap-4 whitespace-nowrap bg-muted/30 px-4 py-3 type-caption text-muted-foreground"
-      >
-        <span class="flex items-center gap-1.5">
-          <span class="sr-only min-[480px]:not-sr-only"
-            >{m.lib_commandPalette_navigate_label()}</span
-          >
-          <ShortcutChip class="rounded bg-muted px-1.5 py-1">↑</ShortcutChip>
-          <ShortcutChip class="rounded bg-muted px-1.5 py-1">↓</ShortcutChip>
-        </span>
-        <span class="flex items-center gap-1.5">
-          <span class="sr-only min-[480px]:not-sr-only">{m.lib_commandPalette_select_label()}</span>
-          <ShortcutChip class="rounded bg-muted px-1.5 py-1">↵</ShortcutChip>
-        </span>
-        {#if !isGoToLineMode}
-          <span class="flex items-center gap-1.5">
-            <span class="sr-only min-[480px]:not-sr-only"
-              >{m.lib_commandPalette_filter_label()}</span
-            >
-            <ShortcutChip class="rounded bg-muted px-1.5 py-1">⇥</ShortcutChip>
-          </span>
-        {/if}
-        <span class="ml-auto flex items-center gap-1.5">
-          <span>{m.lib_commandPalette_footerClose_label()}</span>
-          <ShortcutChip class="rounded bg-muted px-1.5 py-1"
-            >{m.lib_commandPalette_esc_label()}</ShortcutChip
-          >
-        </span>
-      </div>
     </div>
   </div>
 {/if}

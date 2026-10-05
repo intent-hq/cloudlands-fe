@@ -5509,7 +5509,6 @@
   "lib_commandPalette_all_label": "すべて",
   "lib_commandPalette_workspaces_label": "ワークスペース",
   "lib_commandPalette_filters_ariaLabel": "結果を絞り込む",
-  "lib_commandPalette_filter_label": "絞り込み",
   "lib_commandPalette_emptyFilter_message": "まだ何もありません。別のカテゴリーをお試しください。",
   "lib_commandPalette_resultsCount_status": "{count} 件の結果",
   "lib_commandPalette_esc_label": "ESC",

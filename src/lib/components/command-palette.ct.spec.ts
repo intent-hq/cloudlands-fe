@@ -57,7 +57,7 @@ test('GitLab command supports keyboard activation and reopening at compact width
 });
 
 for (const width of [1280, 360]) {
-  test(`palette keeps results, filters, and footer on one line at ${width}px`, async ({
+  test(`palette keeps results and filters on one line at ${width}px`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -109,13 +109,6 @@ for (const width of [1280, 360]) {
       .getByRole('button')
       .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top));
     expect(Math.max(...filterTops) - Math.min(...filterTops)).toBeLessThanOrEqual(1);
-    const footerCenters = await dialog.locator('[data-palette-hints] > span').evaluateAll((hints) =>
-      hints.map((hint) => {
-        const rect = hint.getBoundingClientRect();
-        return rect.top + rect.height / 2;
-      }),
-    );
-    expect(Math.max(...footerCenters) - Math.min(...footerCenters)).toBeLessThanOrEqual(1);
     await testInfo.attach(`single-line-palette-${width}px`, {
       body: await dialog.screenshot(),
       contentType: 'image/png',

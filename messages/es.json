@@ -5509,7 +5509,6 @@
   "lib_commandPalette_all_label": "Todo",
   "lib_commandPalette_workspaces_label": "Espacios de trabajo",
   "lib_commandPalette_filters_ariaLabel": "Filtrar resultados",
-  "lib_commandPalette_filter_label": "Filtrar",
   "lib_commandPalette_emptyFilter_message": "Aún no hay nada aquí. Prueba otra categoría.",
   "lib_commandPalette_resultsCount_status": "{count} resultados",
   "lib_commandPalette_esc_label": "ESC",

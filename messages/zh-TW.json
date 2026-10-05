@@ -5509,7 +5509,6 @@
   "lib_commandPalette_all_label": "全部",
   "lib_commandPalette_workspaces_label": "工作區",
   "lib_commandPalette_filters_ariaLabel": "篩選結果",
-  "lib_commandPalette_filter_label": "篩選",
   "lib_commandPalette_emptyFilter_message": "這裡還沒有內容，請嘗試其他分類。",
   "lib_commandPalette_resultsCount_status": "{count} 個結果",
   "lib_commandPalette_esc_label": "ESC",
