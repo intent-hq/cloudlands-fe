@@ -7270,5 +7270,12 @@
   "gitlabCheckout_emptyRepository_description": "此儲存庫尚無可簽出的分支。",
   "gitlabCheckout_branchChanged_description": "分支已變更。請重新整理並確認目前的提交。",
   "gitlabCheckout_createRecovery_description": "無法取出。請重新整理並確認專案、分支和提交，然後再次選擇「建立」。",
-  "gitlabCheckout_useLink_label": "使用連結"
+  "gitlabCheckout_useLink_label": "使用連結",
+  "settings_machineName_title": "電腦名稱",
+  "settings_machineName_description": "向共用工作區和共用執行個體中的協作者顯示。留空則使用預設電腦名稱。",
+  "settings_machineName_reset_label": "使用預設名稱",
+  "settings_machineName_invalid_error": "最多輸入100個字元，不能包含控制字元。",
+  "settings_machineName_load_error": "無法載入電腦名稱，請重試。",
+  "settings_machineName_save_error": "無法儲存電腦名稱，請重試。",
+  "settings_machineName_saved": "電腦名稱已儲存"
 }

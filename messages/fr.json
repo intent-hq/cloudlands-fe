@@ -7270,5 +7270,12 @@
   "gitlabCheckout_emptyRepository_description": "Ce dépôt ne contient pas encore de branche à extraire.",
   "gitlabCheckout_branchChanged_description": "La branche a changé. Actualisez et confirmez son commit actuel.",
   "gitlabCheckout_createRecovery_description": "Le checkout est indisponible. Actualisez pour vérifier le projet, la branche et le commit avant de choisir à nouveau Créer.",
-  "gitlabCheckout_useLink_label": "Utiliser le lien"
+  "gitlabCheckout_useLink_label": "Utiliser le lien",
+  "settings_machineName_title": "Nom de la machine",
+  "settings_machineName_description": "Visible par les collaborateurs des espaces de travail et instances partagés. Laissez vide pour utiliser le nom par défaut.",
+  "settings_machineName_reset_label": "Utiliser le nom par défaut",
+  "settings_machineName_invalid_error": "Utilisez au maximum 100 caractères, sans caractères de contrôle.",
+  "settings_machineName_load_error": "Impossible de charger le nom de la machine. Réessayez.",
+  "settings_machineName_save_error": "Impossible d’enregistrer le nom de la machine. Réessayez.",
+  "settings_machineName_saved": "Nom de la machine enregistré"
 }

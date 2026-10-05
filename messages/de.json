@@ -7270,5 +7270,12 @@
   "gitlabCheckout_emptyRepository_description": "Dieses Repository hat noch keinen Branch zum Auschecken.",
   "gitlabCheckout_branchChanged_description": "Der Branch hat sich geändert. Aktualisiere und bestätige den aktuellen Commit.",
   "gitlabCheckout_createRecovery_description": "Der Checkout ist nicht verfügbar. Aktualisiere die Auswahl, um Projekt, Branch und Commit zu prüfen, bevor du erneut „Erstellen“ wählst.",
-  "gitlabCheckout_useLink_label": "Link verwenden"
+  "gitlabCheckout_useLink_label": "Link verwenden",
+  "settings_machineName_title": "Computername",
+  "settings_machineName_description": "Wird Mitwirkenden in geteilten Arbeitsbereichen und Instanzen angezeigt. Leer lassen, um den Standardnamen zu verwenden.",
+  "settings_machineName_reset_label": "Standardnamen verwenden",
+  "settings_machineName_invalid_error": "Verwenden Sie höchstens 100 Zeichen ohne Steuerzeichen.",
+  "settings_machineName_load_error": "Der Computername konnte nicht geladen werden. Versuchen Sie es erneut.",
+  "settings_machineName_save_error": "Der Computername konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+  "settings_machineName_saved": "Computername gespeichert"
 }

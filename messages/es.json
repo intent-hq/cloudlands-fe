@@ -7270,5 +7270,12 @@
   "gitlabCheckout_emptyRepository_description": "Este repositorio aún no tiene una rama para copiar.",
   "gitlabCheckout_branchChanged_description": "La rama cambió. Actualiza y confirma su commit actual.",
   "gitlabCheckout_createRecovery_description": "El checkout no está disponible. Actualiza para revisar el proyecto, la rama y el commit antes de volver a elegir Crear.",
-  "gitlabCheckout_useLink_label": "Usar enlace"
+  "gitlabCheckout_useLink_label": "Usar enlace",
+  "settings_machineName_title": "Nombre del equipo",
+  "settings_machineName_description": "Se muestra a los colaboradores de espacios de trabajo e instancias compartidos. Déjalo vacío para usar el nombre predeterminado.",
+  "settings_machineName_reset_label": "Usar nombre predeterminado",
+  "settings_machineName_invalid_error": "Usa hasta 100 caracteres sin caracteres de control.",
+  "settings_machineName_load_error": "No se pudo cargar el nombre del equipo. Inténtalo de nuevo.",
+  "settings_machineName_save_error": "No se pudo guardar el nombre del equipo. Inténtalo de nuevo.",
+  "settings_machineName_saved": "Nombre del equipo guardado"
 }

@@ -7270,5 +7270,12 @@
   "gitlabCheckout_emptyRepository_description": "此仓库尚无可检出的分支。",
   "gitlabCheckout_branchChanged_description": "分支已更改。请刷新并确认当前提交。",
   "gitlabCheckout_createRecovery_description": "检出不可用。请刷新并确认项目、分支和提交，然后再次选择“创建”。",
-  "gitlabCheckout_useLink_label": "使用链接"
+  "gitlabCheckout_useLink_label": "使用链接",
+  "settings_machineName_title": "计算机名称",
+  "settings_machineName_description": "向共享工作区和共享实例中的协作者显示。留空则使用默认计算机名称。",
+  "settings_machineName_reset_label": "使用默认名称",
+  "settings_machineName_invalid_error": "最多输入100个字符，不能包含控制字符。",
+  "settings_machineName_load_error": "无法加载计算机名称，请重试。",
+  "settings_machineName_save_error": "无法保存计算机名称，请重试。",
+  "settings_machineName_saved": "计算机名称已保存"
 }

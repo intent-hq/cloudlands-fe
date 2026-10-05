@@ -17,6 +17,7 @@
    * membership delta drops the row from *Shared by me* mid-flight still
    * reports each failed step, with its retry, until dismissed by a retry.
    */
+  import CollaborationMachineNameSettings from './CollaborationMachineNameSettings.svelte';
   import HostMembershipSettingsHost from '$features/host-membership/HostMembershipSettingsHost.svelte';
   import {
     selectCanCreateWorkspace,
@@ -449,6 +450,9 @@
       </p>
     </div>
 
+    {#if $ready$ && $hostRole$ === 'owner' && $actionContext$}
+      {#key $actionContext$}<CollaborationMachineNameSettings context={$actionContext$} />{/key}
+    {/if}
     <HostMembershipSettingsHost />
 
     {#snippet sharedWorkspaces()}

@@ -1,3 +1,5 @@
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+import { collaborationMachineNameClient } from './collaboration-machine-name.client';
 import { appClient } from '$lib/client';
 import { hostUserPresenceSaga } from '$store/renderer/slices/host-membership/sagas/host-user-presence-saga';
 import { store } from '$store/renderer/store';
@@ -34,6 +36,13 @@ export function setupCollaborationSettingsPreview(
   mixed = false,
 ) {
   const before = store.state;
+  const originalNameClient = { ...collaborationMachineNameClient };
+  let machineName = populated ? 'Team studio' : '';
+  collaborationMachineNameClient.read = async () => ({ name: machineName, fallback: 'Studio' });
+  collaborationMachineNameClient.save = async (name) => {
+    machineName = name.trim();
+    return machineName;
+  };
   const originalClient = { ...hostMembershipClient };
   const originalListClients = appClient.clients.list;
   appClient.clients.list = async () => {
@@ -277,9 +286,12 @@ export function setupCollaborationSettingsPreview(
       }),
     );
   }
+  const stopName = store.runSaga(settingsFormSaga);
   const stop = store.runSaga(hostMembershipSaga);
   const stopPresence = store.runSaga(hostUserPresenceSaga);
   return () => {
+    stopName();
+    Object.assign(collaborationMachineNameClient, originalNameClient);
     stop();
     stopPresence();
     appClient.clients.list = originalListClients;

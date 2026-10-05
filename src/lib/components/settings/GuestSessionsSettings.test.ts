@@ -418,7 +418,11 @@ describe('GuestSessionsSettings', () => {
     const joined = screen.getByTestId('guest-sessions-instances');
     expect(within(joined).queryByRole('list')).toBeNull();
     expect(within(joined).queryByRole('status')).toBeNull();
-    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(
+      mocks.dispatch.mock.calls.filter(
+        ([action]) => !['settings/formOpened', 'settings/formLoadRequested'].includes(action.type),
+      ),
+    ).toEqual([]);
   });
 
   it('never shows the owner-side hosting section to a collaborator-only client', () => {

@@ -1,3 +1,4 @@
+import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { createNativeReviewFeed } from './native-review-feed';
 import { registerNativeReviewHandlers } from './native-review-lifecycle';
@@ -2486,12 +2487,52 @@ function captureRemoteHostnameOwned(id: string, parent?: PoolOwner): Promise<voi
   );
 }
 
+// One generation across hello captures and renderer polls: the newest request owns the label.
+const guestHostnameReads = new WeakMap<JsonRpcClient, number>();
+function beginGuestHostnameRead(
+  id: string,
+  client: JsonRpcClient,
+): guestSessionsStore.InvitedCommitGuard | undefined {
+  const admitted = invitedConnectionGuards.get(id);
+  if (!admitted?.()) return undefined;
+  const generation = (guestHostnameReads.get(client) ?? 0) + 1;
+  guestHostnameReads.set(client, generation);
+  return Object.assign(
+    () =>
+      backendClients.get(id) === client &&
+      admitted() &&
+      guestHostnameReads.get(client) === generation,
+    { credential: admitted.credential },
+  );
+}
+
+function refreshGuestHostname(
+  id: string,
+  result: unknown,
+  guard: guestSessionsStore.InvitedCommitGuard,
+  parent?: PoolOwner,
+): Promise<void> {
+  return poolWork('refreshGuestHostname', parent, async (owner) => {
+    try {
+      if (!guard()) return;
+      const name = collaborationMachineName(result);
+      if (name && (await guestSessionsStore.setHostname(id, name, guard)))
+        await broadcastGuestSessionsChangedOwned(owner);
+    } catch (error) {
+      recordPoolError(owner, error);
+      logger.warn('Failed to refresh collaboration machine name', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
+
 async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Promise<void> {
   try {
     // Snapshot this backend's pooled client; the id-keyed pool lookup below
     // protects against a stale capture after the client is disposed.
     const client = poolClient(owner, getBackendClientForId(id));
-    const guard = invitedConnectionGuards.get(id);
+    const guard = beginGuestHostnameRead(id, client);
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
     const result = await observeStatus(client, 'captureRemoteHostname', owner, () =>
@@ -2504,9 +2545,7 @@ async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Pro
     if (backendClients.get(id) === client) {
       if (guest) {
         if (!guard?.()) return;
-        if (hostname && (await guestSessionsStore.setHostname(id, hostname, guard))) {
-          await broadcastGuestSessionsChangedOwned(owner);
-        }
+        await refreshGuestHostname(id, result, guard, owner);
         return;
       }
       const kindChanged = await connectionsStore.setDetectedDeviceKind(id, deviceKind);
@@ -4320,7 +4359,10 @@ export function registerBackendHandlers(): void {
           );
           return { ok: true, result };
         }
+        const nameGuard =
+          method === 'system.status' ? beginGuestHostnameRead(backendId, client) : undefined;
         const result = await client.request(method, payload?.params, { timeoutMs });
+        if (nameGuard?.()) void refreshGuestHostname(backendId, result, nameGuard);
         const expected = invitedClientCredentials.get(client);
         if (expected && method === 'principal.me') {
           const snapshot = parsePrincipalSnapshot(invitedClientHellos.get(client), result);
