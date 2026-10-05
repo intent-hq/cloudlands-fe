@@ -700,6 +700,32 @@ describe('learned model display names', () => {
     expect(selectModelDisplayName.select(state, 'codex', 'shared/high')).toBe('Exact slash model');
   });
 
+  it.each(['live', 'learned'])(
+    'formats minimal effort from %s names without losing exact slash identities',
+    (source) => {
+      const state = learnedState();
+      if (source === 'live') {
+        state.model.availableModelsProviderId = 'codex';
+        state.model.availableModels = createCollection('value', [
+          { value: 'shared', label: 'Current Codex' },
+        ]);
+      }
+      const base = source === 'live' ? 'Current Codex' : 'Remembered Codex';
+      expect(selectModelDisplayName.select(state, 'codex', 'codex:shared/minimal')).toBe(
+        `${base} (Minimal)`,
+      );
+      if (source === 'live') {
+        state.model.availableModels = createCollection('value', [
+          { value: 'shared', label: base },
+          { value: 'shared/minimal', label: 'Exact minimal identity' },
+        ]);
+      } else state.providerModels.learnedNames.codex['shared/minimal'] = 'Exact minimal identity';
+      expect(selectModelDisplayName.select(state, 'codex', 'codex:shared/minimal')).toBe(
+        'Exact minimal identity',
+      );
+    },
+  );
+
   it('normalizes advertised provider aliases and their legacy prefixes', () => {
     const state = learnedState();
     state.providerCatalog.providers = createCollection('id', [

@@ -19,7 +19,7 @@ export function resolveModelDisplayName(
 ): string | undefined {
   const exact = lookup(modelId);
   if (exact) return exact;
-  const match = /\/(low|medium|high|xhigh|max|ultra|none)$/i.exec(modelId);
+  const match = /\/(minimal|low|medium|high|xhigh|max|ultra|none)$/i.exec(modelId);
   if (!match || match.index === 0) return undefined;
   const label = lookup(modelId.slice(0, match.index));
   const effort = match[1].toLowerCase();

@@ -897,19 +897,16 @@
     const lookup = (id: string): string | undefined => {
       const target = modelIdForDisplay(id, provider, normalizeProviderId);
       const find = (models: { value: string; label: string }[], catalogProvider: string) => {
-        if (normalizeProviderId(catalogProvider) === provider) {
-          const exact = models.find((row) => row.value === id);
-          if (exact) return exact.label;
-        }
-        return models.find((row) => {
-          const prefix = splitLegacyCompoundId(row.value).providerId;
-          const rowProvider = prefix && hasResolvedProvider(prefix) ? prefix : catalogProvider;
-          return (
-            normalizeProviderId(rowProvider) === provider &&
-            (row.value === id ||
-              modelIdForDisplay(row.value, provider, normalizeProviderId) === target)
-          );
-        })?.label;
+        // Catalog ownership is authoritative: a custom colon-bearing ID in
+        // another provider's catalog must never supply this provider's name.
+        if (normalizeProviderId(catalogProvider) !== provider) return undefined;
+        const exact = models.find((row) => row.value === id);
+        return (
+          exact ??
+          models.find(
+            (row) => modelIdForDisplay(row.value, provider, normalizeProviderId) === target,
+          )
+        )?.label;
       };
       for (const [rowProvider, models] of Object.entries(allProviderModels)) {
         const label = find(models, rowProvider);

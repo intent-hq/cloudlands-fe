@@ -308,10 +308,7 @@ describe('ModelPicker trigger label regressions', () => {
     sessions.clear();
     sessionVersion$.set(0);
     selectedModel$.set('auggie:butler');
-    availableModels$.set([
-      { value: 'auggie:butler', label: 'Auggie Butler' },
-      { value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' },
-    ]);
+    availableModels$.set([{ value: 'auggie:butler', label: 'Auggie Butler' }]);
     isLoadingModels$.set(false);
     activeProviderId$.set('auggie');
     enabledProviderIds$.set(['auggie']);
@@ -328,6 +325,16 @@ describe('ModelPicker trigger label regressions', () => {
   });
 
   it('renders the selected model label instead of the first available model label', () => {
+    enabledProviderIds$.set(['auggie', 'anthropic']);
+    appStore.dispatch(
+      providerModelsLoaded(
+        'anthropic',
+        {
+          models: [{ value: 'anthropic:claude-opus-4-7', label: 'Claude Opus 4.7' }],
+        },
+        0,
+      ),
+    );
     render(ModelPicker, {
       props: {
         selectedModel: 'anthropic:claude-opus-4-7',
@@ -396,6 +403,85 @@ describe('ModelPicker trigger label regressions', () => {
     );
   });
 
+  it.each(
+    ['provider catalog', 'active catalog'].flatMap((foreignSource) =>
+      ['bare live', 'prefixed live', 'learned'].map((ownSource) => ({ foreignSource, ownSource })),
+    ),
+  )(
+    'keeps $ownSource names owned by Codex when a foreign $foreignSource has codex:foo',
+    ({ foreignSource, ownSource }) => {
+      activeProviderId$.set('codex');
+      enabledProviderIds$.set(['auggie', 'codex']);
+      const foreignModels = [{ value: 'codex:foo', label: 'Auggie custom model' }];
+      availableModels$.set(foreignSource === 'active catalog' ? foreignModels : []);
+      if (foreignSource === 'provider catalog')
+        appStore.dispatch(providerModelsLoaded('auggie', { models: foreignModels }, 0));
+      appStore.dispatch(
+        providerModelsLoaded(
+          'codex',
+          {
+            models: [{ value: 'foo', label: 'Remembered Codex model' }],
+          },
+          0,
+        ),
+      );
+      appStore.dispatch(
+        providerModelsLoaded(
+          'codex',
+          {
+            models:
+              ownSource === 'learned'
+                ? []
+                : [
+                    {
+                      value: ownSource === 'prefixed live' ? 'codex:foo' : 'foo',
+                      label: 'Current Codex model',
+                    },
+                  ],
+          },
+          0,
+        ),
+      );
+
+      render(ModelPicker, { selectedModel: 'foo', providerId: 'codex', isLocked: true });
+
+      const trigger = screen.getByRole('button');
+      expect(trigger.textContent).toContain(
+        ownSource === 'learned' ? 'Remembered Codex model' : 'Current Codex model',
+      );
+      expect(trigger.textContent).not.toContain('Auggie custom model');
+      expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe('codex');
+    },
+  );
+
+  it.each(['live', 'learned'])(
+    'formats minimal effort from %s labels and keeps exact slash IDs',
+    async (source) => {
+      activeProviderId$.set('codex');
+      enabledProviderIds$.set(['codex']);
+      availableModels$.set([]);
+      const publish = (models: ModelOption[]) => {
+        appStore.dispatch(providerModelsLoaded('codex', { models }, 0));
+        if (source === 'learned')
+          appStore.dispatch(providerModelsLoaded('codex', { models: [] }, 0));
+      };
+      publish([{ value: 'gpt-5', label: 'GPT-5' }]);
+      render(ModelPicker, {
+        selectedModel: 'codex:gpt-5/minimal',
+        providerId: 'codex',
+        isLocked: true,
+      });
+      expect(screen.getByRole('button').textContent).toContain('GPT-5 (Minimal)');
+      publish([
+        { value: 'gpt-5', label: 'GPT-5' },
+        { value: 'gpt-5/minimal', label: 'Exact minimal identity' },
+      ]);
+      await waitFor(() =>
+        expect(screen.getByRole('button').textContent).toContain('Exact minimal identity'),
+      );
+    },
+  );
+
   it('prefers an exact colon-bearing ID over an earlier legacy-normalized row', () => {
     availableModels$.set([
       { value: 'butler', label: 'Base model' },
@@ -435,10 +521,16 @@ describe('ModelPicker trigger label regressions', () => {
   });
 
   it('treats provider-prefixed *:default ids as explicit selections', () => {
-    availableModels$.set([
-      { value: 'auggie:butler', label: 'Auggie Butler' },
-      { value: 'claude-code:default', label: 'Default (recommended)' },
-    ]);
+    enabledProviderIds$.set(['auggie', 'claude-code']);
+    appStore.dispatch(
+      providerModelsLoaded(
+        'claude-code',
+        {
+          models: [{ value: 'claude-code:default', label: 'Default (recommended)' }],
+        },
+        0,
+      ),
+    );
 
     render(ModelPicker, {
       props: {
