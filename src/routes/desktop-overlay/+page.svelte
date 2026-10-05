@@ -14,6 +14,10 @@
       : 'glow';
   let pulse = $state(0);
   onMount(() => {
+    // This isolated route skips app startup. Remove its static shell before
+    // readiness permits native windows to show; never cover the Stop controls.
+    document.getElementById('splash')?.remove();
+    document.getElementById('app-drag-region')?.remove();
     // Electron's nativeTheme.themeSource reflects Intent's chosen appearance.
     const scheme = window.matchMedia('(prefers-color-scheme: dark)');
     const applyScheme = () => document.documentElement.classList.toggle('dark', scheme.matches);

@@ -68,6 +68,7 @@ vi.mock('./desktop-overlay-navigation', () => ({ openDesktopControllingAgent: vi
 vi.mock('../../../main/window-backend', () => ({ stampWindowWithBackend: vi.fn() }));
 import { ipcMain, powerMonitor, screen } from 'electron';
 import { DesktopControlOverlay } from './desktop-overlay';
+import { DesktopNativeAdapter } from './desktop-native';
 import { DesktopExecutor, type DesktopNative } from './desktop-executor';
 
 const session = {
@@ -309,6 +310,76 @@ describe('desktop executor and overlay startup failures', () => {
     };
     return { native, reports, connection, executor, start };
   }
+
+  it.each(['darwin', 'win32'] as const)(
+    'passes every glow and control window to native screenshot exclusion on %s',
+    async (platform) => {
+      overlay = new DesktopControlOverlay({
+        url: 'app://workspaces/desktop-overlay',
+        preload: '/preload.js',
+        platform,
+      });
+      const t = execution();
+      const display = {
+        displayId: '1',
+        width: 2880,
+        height: 1800,
+        originX: -2880,
+        originY: 0,
+        scaleFactor: 2,
+      };
+      const request = vi.fn(async (operation: string) =>
+        operation === 'layout'
+          ? [display]
+          : operation === 'capture'
+            ? [{ ...display, data: 'cG5n' }]
+            : { ok: true },
+      );
+      const adapter = new DesktopNativeAdapter(request);
+      t.native.validateExclusion = adapter.validateExclusion.bind(adapter);
+      t.native.layout = adapter.layout.bind(adapter);
+      t.native.capture = adapter.capture.bind(adapter);
+      t.connection.saveAsset.mockResolvedValue({
+        assetId: 'asset',
+        url: 'workspace-asset://ws-a/asset',
+      });
+      const starting = t.start();
+      await vi.waitFor(() => expect(mocks.windows).toHaveLength(4));
+      ready();
+      await starting;
+      expect(request).toHaveBeenCalledWith('validateExclusion', {
+        excludedWindows: ['1', '2', '3', '4'],
+      });
+      const binding = {
+        workspaceId: session.workspaceId,
+        agentId: session.agentId,
+        principalId: 'human',
+        connectionEpoch: 'epoch',
+        computerId: session.computerId,
+        sessionId: session.sessionId,
+        commandId: 'capture',
+        sequence: 1,
+      };
+      const ticket = (await t.executor.handle(t.connection, {
+        operation: 'prepareCommand',
+        ...binding,
+        action: { kind: 'screenshot' },
+      })) as { deadlineId: string };
+      await t.executor.handle(t.connection, {
+        operation: 'execute',
+        ...binding,
+        deadlineId: ticket.deadlineId,
+      });
+      expect(request).toHaveBeenCalledWith('capture', {
+        excludedWindows: ['1', '2', '3', '4'],
+        display,
+        layout: [display],
+      });
+      expect(mocks.windows.every((w) => w.visible && !w.dead)).toBe(true);
+      expect(mocks.windows[1].webContents.send).not.toHaveBeenCalledWith('desktop-overlay:pulse');
+      await t.executor.invalidate('user_stop');
+    },
+  );
 
   it('returns a failed start after overlay load failure without a competing session-ended report', async () => {
     const t = execution();
