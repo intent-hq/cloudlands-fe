@@ -229,6 +229,29 @@ describe('LiveGitClient reads (fake transport)', () => {
     });
   });
 
+  it('prRefresh forwards automatic provenance and preserves cached linkage on admission skip', async () => {
+    const pullRequests = [{ number: 300, status: 'Open' }];
+    mockedRequest.mockResolvedValueOnce({
+      outcome: 'skipped',
+      prNumber: 300,
+      prUrl: 'https://example.test/pr/300',
+      prStatus: 'Open',
+      pullRequests,
+    });
+    const result = await new LiveGitClient().prRefresh('ws-1', { automatic: true });
+    expect(mockedRequest).toHaveBeenCalledWith('pr.refresh', {
+      workspaceId: 'ws-1',
+      automatic: true,
+    });
+    expect(result).toEqual({
+      outcome: 'skipped',
+      prNumber: 300,
+      prUrl: 'https://example.test/pr/300',
+      prStatus: 'Open',
+      pullRequests,
+    });
+  });
+
   it('prRefresh maps a no-PR refresh (outcome without linkage fields) to an empty-list result', async () => {
     mockedRequest.mockResolvedValueOnce({
       outcome: 'unchanged',
