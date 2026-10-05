@@ -1,3 +1,4 @@
+import type { NoteViewCoordinates } from './note-view-coordinates';
 import type { Workspace } from '$shared/types';
 import { Editor, Extension } from '@tiptap/core';
 import { AllSelection, TextSelection, EditorState } from '@tiptap/pm/state';
@@ -55,11 +56,36 @@ export interface NoteReadingSurface {
 export class NoteWindowView {
   editor?: Editor;
   private committedProjection?: SourceProjection;
+  private committedCoordinates?: NoteViewCoordinates;
   private transactionRelay?: ReturnType<typeof createNoteTransactionRelay>;
   get projection() {
     if (this.transactionRelay?.busy && this.editor)
       return this.transactionRelay.projectionAt(this.editor.state) ?? this.committedProjection;
     return this.committedProjection;
+  }
+  private get coordinates(): NoteViewCoordinates | undefined {
+    if (this.transactionRelay?.busy && this.editor) {
+      const provisional = this.transactionRelay.coordinatesAt(this.editor.state);
+      if (provisional) return provisional;
+    }
+    if (this.committedCoordinates) return this.committedCoordinates;
+    const window = this.window;
+    return (
+      window && {
+        start: window.range.start,
+        end: window.range.end,
+        length: window.sourceLength,
+        toBase: (position: number) => position,
+      }
+    );
+  }
+  private seekCurrent(position: number, affinity: -1 | 1 = 1) {
+    const coordinates = this.coordinates;
+    if (coordinates)
+      this.options.seek(
+        coordinates.toBase(Math.max(0, Math.min(coordinates.length, position)), affinity),
+      );
+    else this.options.seek(Math.max(0, position));
   }
   window?: NoteWindow;
   private pending?: NoteWindow;
@@ -164,10 +190,10 @@ export class NoteWindowView {
     return { ...this.selection };
   }
   private command(kind: 'copy' | 'search' | 'selectAll') {
-    if (kind === 'selectAll' && this.window) {
+    if (kind === 'selectAll' && this.coordinates) {
       this.selection = {
         anchor: 0,
-        head: this.window.sourceLength,
+        head: this.coordinates.length,
         anchorAffinity: 1,
         headAffinity: 1,
       };
@@ -209,15 +235,9 @@ export class NoteWindowView {
       event.preventDefault();
       return;
     }
-    const w = this.window,
+    const w = this.coordinates,
       s = this.selection;
-    if (
-      w &&
-      (s.anchor < w.range.start ||
-        s.anchor > w.range.end ||
-        s.head < w.range.start ||
-        s.head > w.range.end)
-    ) {
+    if (w && (s.anchor < w.start || s.anchor > w.end || s.head < w.start || s.head > w.end)) {
       event.preventDefault();
       event.stopPropagation();
       this.command('copy');
@@ -251,21 +271,25 @@ export class NoteWindowView {
   }
   reveal(position: number) {
     this.navigationAnchor = { source: position, offset: this.scroller.clientHeight / 3 };
-    if (this.window && position >= this.window.range.start && position <= this.window.range.end) {
+    if (
+      this.coordinates &&
+      position >= this.coordinates.start &&
+      position <= this.coordinates.end
+    ) {
       this.anchor = this.navigationAnchor;
       this.navigationAnchor = undefined;
       this.restoreAnchor();
-    } else this.options.seek(Math.max(0, position - 1024));
+    } else this.seekCurrent(Math.max(0, position - 1024));
   }
   setSelection(selection: NoteSourceSelection) {
     if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
     this.selection = { ...selection };
-    const w = this.window,
+    const w = this.coordinates,
       p = this.projection,
       e = this.editor;
-    if (!w || !p || !e || selection.head < w.range.start || selection.head > w.range.end) {
+    if (!w || !p || !e || selection.head < w.start || selection.head > w.end) {
       this.navigationAnchor = { source: selection.head, offset: this.scroller.clientHeight / 3 };
-      this.options.seek(Math.max(0, selection.head - 1024));
+      this.seekCurrent(Math.max(0, selection.head - 1024), selection.headAffinity);
       return;
     }
     this.applying = true;
@@ -276,7 +300,7 @@ export class NoteWindowView {
             TextSelection.create(
               e.state.doc,
               p.pmAt(
-                Math.max(w.range.start, Math.min(w.range.end, selection.anchor)),
+                Math.max(w.start, Math.min(w.end, selection.anchor)),
                 selection.anchorAffinity,
               ),
               p.pmAt(selection.head, selection.headAffinity),
@@ -369,6 +393,7 @@ export class NoteWindowView {
       let boundEditing = this.options.editing;
       let editOwner: NoteTransactionOwner | undefined;
       let currentProjection = projection;
+      let currentCoordinates: NoteViewCoordinates | undefined;
       const transactions = createNoteTransactionRelay(() =>
         this.editor === candidate && this.options.editing === boundEditing ? editOwner : undefined,
       );
@@ -436,11 +461,13 @@ export class NoteWindowView {
                 event.preventDefault();
                 return true;
               }
+              const coordinates = this.coordinates;
               if (
-                this.selection.anchor < window.range.start ||
-                this.selection.anchor > window.range.end ||
-                this.selection.head < window.range.start ||
-                this.selection.head > window.range.end
+                coordinates &&
+                (this.selection.anchor < coordinates.start ||
+                  this.selection.anchor > coordinates.end ||
+                  this.selection.head < coordinates.start ||
+                  this.selection.head > coordinates.end)
               ) {
                 event.preventDefault();
                 this.command('copy');
@@ -457,14 +484,16 @@ export class NoteWindowView {
               event.key === 'ArrowLeft'
             ) {
               const direction = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1;
-              const edge = direction > 0 ? window.range.end : window.range.start;
+              const coordinates = this.coordinates;
+              if (!coordinates) return false;
+              const edge = direction > 0 ? coordinates.end : coordinates.start;
               if (
                 Math.abs(this.selection.head - edge) < 2 &&
                 edge > 0 &&
-                edge < window.sourceLength
+                edge < coordinates.length
               ) {
                 const head = Math.min(
-                  window.sourceLength,
+                  coordinates.length,
                   Math.max(0, this.selection.head + direction),
                 );
                 this.selection = {
@@ -473,7 +502,7 @@ export class NoteWindowView {
                   head,
                 };
                 this.options.selectionChanged(this.selection);
-                this.options.seek(head);
+                this.seekCurrent(head, direction);
                 event.preventDefault();
                 return true;
               }
@@ -494,6 +523,9 @@ export class NoteWindowView {
             }
             currentProjection = accepted.projection;
             this.committedProjection = accepted.projection;
+            currentCoordinates = accepted.coordinates;
+            this.committedCoordinates = accepted.coordinates;
+            this.layout();
             this.cost.projectionPeakBytes = Math.max(
               this.cost.projectionPeakBytes,
               this.cost.derivedBytes + accepted.cost.derivedBytes,
@@ -539,6 +571,7 @@ export class NoteWindowView {
           EditorState.create({ schema: candidate.schema, doc: initial.doc }),
         );
         currentProjection = initial.projection;
+        currentCoordinates = initial.coordinates;
       }
       candidate.setEditable(!!editOwner, false);
       candidate.mount(candidateHost);
@@ -546,12 +579,18 @@ export class NoteWindowView {
       this.host.replaceChildren(candidateHost);
       candidateHost.removeAttribute('style');
       this.committedProjection = currentProjection;
+      this.committedCoordinates = currentCoordinates;
       this.window = window;
       this.editor = candidate;
       this.transactionRelay = transactions;
       this.bindEditing = (editing) => {
         boundEditing = editing;
         editOwner = editing?.bind(window, currentProjection, editor.state.doc);
+        if (editOwner && !editOwner.initial.doc.eq(editor.state.doc)) editOwner = undefined;
+        if (editOwner) {
+          currentCoordinates = editOwner.initial.coordinates;
+          this.committedCoordinates = currentCoordinates;
+        }
         return !!editOwner;
       };
       this.currentLease = lease;
@@ -572,12 +611,22 @@ export class NoteWindowView {
       this.measureDom();
       this.requested = -1;
       this.layout();
-      if (anchor && anchor.source >= window.range.start && anchor.source <= window.range.end) {
+      const coordinates = this.coordinates;
+      if (
+        coordinates &&
+        anchor &&
+        anchor.source >= coordinates.start &&
+        anchor.source <= coordinates.end
+      ) {
         this.anchor = anchor;
         this.navigationAnchor = undefined;
         this.restoreAnchor();
       }
-      if (this.selection.head >= window.range.start && this.selection.head <= window.range.end) {
+      if (
+        coordinates &&
+        this.selection.head >= coordinates.start &&
+        this.selection.head <= coordinates.end
+      ) {
         this.setSelection(this.selection);
       }
       this.options.changed?.();
@@ -598,12 +647,12 @@ export class NoteWindowView {
     }
   }
   private layout() {
-    const w = this.window;
+    const w = this.coordinates;
     if (!w) return;
     // A compressed document extent stays within browser layout coordinate limits.
-    const rate = Math.min(this.rate, 8_000_000 / Math.max(1, w.sourceLength));
-    this.before.style.height = `${w.range.start * rate}px`;
-    this.after.style.height = `${(w.sourceLength - w.range.end) * rate}px`;
+    const rate = Math.min(this.rate, 8_000_000 / Math.max(1, w.length));
+    this.before.style.height = `${w.start * rate}px`;
+    this.after.style.height = `${(w.length - w.end) * rate}px`;
   }
   private restoreAnchor() {
     if (!this.anchor || !this.editor || !this.projection) return;
@@ -618,12 +667,13 @@ export class NoteWindowView {
     }
   }
   private measure() {
-    if (!this.window || this.disposed) return;
+    const coordinates = this.coordinates;
+    if (!coordinates || this.disposed) return;
     this.scheduleDomMeasurement();
     const anchor = this.anchor ?? this.captureAnchor();
     const height = this.host.getBoundingClientRect().height;
     if (height > 0) {
-      this.rate = height / Math.max(1, this.window.range.end - this.window.range.start);
+      this.rate = height / Math.max(1, coordinates.end - coordinates.start);
       this.layout();
     }
     this.anchor = anchor;
@@ -634,25 +684,25 @@ export class NoteWindowView {
       this.programmatic = false;
       return;
     }
-    const w = this.window;
+    const w = this.coordinates;
     if (!w) return;
     const viewport = this.scroller.getBoundingClientRect(),
       rect = this.host.getBoundingClientRect();
     this.anchor = this.captureAnchor();
     let target: number | undefined;
     if (rect.bottom < viewport.top || rect.top > viewport.bottom) {
-      const rate = Math.min(this.rate, 8_000_000 / Math.max(1, w.sourceLength));
+      const rate = Math.min(this.rate, 8_000_000 / Math.max(1, w.length));
       target = Math.floor(this.scroller.scrollTop / rate);
-    } else if (rect.bottom < viewport.bottom + 120 && w.range.end < w.sourceLength) {
-      target = Math.max(w.range.start, w.range.end - 1024);
-    } else if (rect.top > viewport.top - 120 && w.range.start > 0) {
-      target = Math.max(0, w.range.start - 3072);
+    } else if (rect.bottom < viewport.bottom + 120 && w.end < w.length) {
+      target = Math.max(w.start, w.end - 1024);
+    } else if (rect.top > viewport.top - 120 && w.start > 0) {
+      target = Math.max(0, w.start - 3072);
     }
     if (target !== undefined) {
-      target = Math.max(0, Math.min(w.sourceLength - 1, target));
+      target = Math.max(0, Math.min(w.length - 1, target));
       if (target !== this.requested) {
         this.requested = target;
-        this.options.seek(target);
+        this.seekCurrent(target, target < w.start ? -1 : 1);
       }
     }
   };
@@ -665,6 +715,7 @@ export class NoteWindowView {
     this.lifetime = undefined;
     this.currentLease = undefined;
     this.committedProjection = undefined;
+    this.committedCoordinates = undefined;
     this.transactionRelay = undefined;
     this.window = undefined;
     if (lifetime) {
@@ -699,6 +750,7 @@ export class NoteWindowView {
     this.host.removeEventListener('compositionend', this.compositionEnd);
     this.destroyEditor();
     this.committedProjection = undefined;
+    this.committedCoordinates = undefined;
     this.window = undefined;
     this.pending = undefined;
     this.pendingLease?.();

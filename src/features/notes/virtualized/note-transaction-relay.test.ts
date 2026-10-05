@@ -140,12 +140,14 @@ describe('accepted native transaction ownership', () => {
     expect(f.commit).toHaveBeenCalledTimes(2);
   });
 
-  it.each(['throw', 'projection'] as const)(
+  it.each(['throw', 'projection', 'coordinates'] as const)(
     'restores native state when finalization rejects by %s',
     (kind) => {
       const f = nativeFixture({
         finalize(after) {
           if (kind === 'throw') throw new Error('Unsupported final selection');
+          if (kind === 'coordinates')
+            return { ...after, coordinates: { start: 0, end: 1, length: 1, toBase: () => 0 } };
           return { ...after, projection: new SourceProjection('unowned', 100) };
         },
       });

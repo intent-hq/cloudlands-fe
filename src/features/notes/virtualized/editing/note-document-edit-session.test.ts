@@ -670,7 +670,12 @@ it('bridges an accepted native chain into one prepared document history and draf
   expect(first.transactions).toHaveLength(2);
   expect(prepare).toHaveBeenCalledTimes(2);
   expect(current).toBe(f.session);
-  relay.adopt(first.transactions, first.state);
+  const provisionalCoordinates = relay.coordinatesAt(first.state);
+  expect(provisionalCoordinates).toMatchObject({ start: 100, end: 105, length: 1002 });
+  expect(provisionalCoordinates?.toBase(802)).toBe(800);
+  expect(owner.initial.coordinates).toMatchObject({ start: 100, end: 103, length: 1000 });
+  const adopted = relay.adopt(first.transactions, first.state);
+  expect(adopted?.coordinates).toBe(provisionalCoordinates);
   expect(finalize).toHaveBeenCalledOnce();
   expect(finalize.mock.results[0].type).toBe('return');
   expect(finalize.mock.results[0].value).toBeDefined();
@@ -691,6 +696,8 @@ it('bridges an accepted native chain into one prepared document history and draf
   expect(current.history).toHaveLength(2);
   expect(batches).toHaveLength(2);
   expect(current.length).toBe(1003);
+  expect(relay.coordinatesAt(next.state)).toMatchObject({ start: 100, end: 106, length: 1003 });
+  expect(relay.coordinatesAt(next.state)?.toBase(803)).toBe(800);
 });
 
 it('materializes retained source edits before creating a fresh native owner', () => {

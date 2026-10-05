@@ -1,3 +1,4 @@
+import type { NoteViewCoordinates } from './note-view-coordinates';
 import {
   Plugin,
   PluginKey,
@@ -13,6 +14,7 @@ import { measureNoteProjection } from './note-view-cost';
 interface Candidate {
   readonly doc: PMNode;
   readonly projection: SourceProjection;
+  readonly coordinates?: NoteViewCoordinates;
 }
 
 /** A mounted document owner's pure preparation and synchronous accepted-chain adoption.
@@ -118,6 +120,12 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
       if (local?.candidate.doc.eq(state.doc)) return local.candidate.projection;
       const initial = getOwner()?.initial;
       return initial?.doc.eq(state.doc) ? initial.projection : undefined;
+    },
+    coordinatesAt(state: EditorState) {
+      const local = key.getState(state);
+      if (local?.candidate.doc.eq(state.doc)) return local.candidate.coordinates;
+      const initial = getOwner()?.initial;
+      return initial?.doc.eq(state.doc) ? initial.coordinates : undefined;
     },
     /** Coalesce the four view lifecycle intents until application/adoption finishes. */
     defer(kind: 'owner' | 'window' | 'selection' | 'destroy', action: () => void) {
@@ -241,7 +249,8 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
           if (
             !candidate ||
             candidate.doc !== after.doc ||
-            candidate.projection !== after.projection
+            candidate.projection !== after.projection ||
+            candidate.coordinates !== after.coordinates
           )
             return refuseAdoption();
           after = candidate;
@@ -259,7 +268,11 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
       });
       adopted = true;
       finalized.set(last.after, after);
-      return { projection: last.after.projection, cost: last.cost };
+      return {
+        projection: last.after.projection,
+        coordinates: last.after.coordinates,
+        cost: last.cost,
+      };
     },
   };
 }

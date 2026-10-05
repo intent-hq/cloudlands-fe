@@ -1,3 +1,4 @@
+import { noteDocumentCoordinates } from './note-document-coordinates';
 import { EditorState, Selection } from '@tiptap/pm/state';
 import type { NoteSplice } from '$lib/client/note-pages';
 import type { NoteTransactionOwner } from '../note-transaction-relay';
@@ -36,7 +37,11 @@ export function createNoteDocumentTransactionOwner(
   if (!original) throw new Error('Missing note document session');
   const authority = materializeNoteDocumentAuthority(original, base);
   let committed = original;
-  const initial = { doc: authority.doc, projection: authority };
+  const initial = {
+    doc: authority.doc,
+    projection: authority,
+    coordinates: noteDocumentCoordinates(original, authority),
+  };
   const candidates = new WeakMap<Candidate, Prepared>();
   candidates.set(initial, {
     origin: original,
@@ -78,7 +83,11 @@ export function createNoteDocumentTransactionOwner(
       const batches = [...(root ? [] : prior.batches), { splices: next.splices }];
       const splices = composeNoteEdits(origin.length, batches);
       if (!admit(origin, next.state, splices)) return undefined;
-      const candidate = { doc: next.authority.doc, projection: next.authority };
+      const candidate = {
+        doc: next.authority.doc,
+        projection: next.authority,
+        coordinates: noteDocumentCoordinates(next.state, next.authority),
+      };
       candidates.set(candidate, {
         origin,
         state: next.state,
@@ -105,7 +114,11 @@ export function createNoteDocumentTransactionOwner(
       );
       if (!admit(prepared.origin, final.state, prepared.splices)) return undefined;
       // Selection/history metadata may change; native content and its map cannot.
-      const candidate = { doc: after.doc, projection: after.projection };
+      const candidate = {
+        doc: after.doc,
+        projection: after.projection,
+        coordinates: after.coordinates,
+      };
       candidates.set(candidate, { ...prepared, state: final.state });
       return candidate;
     },
