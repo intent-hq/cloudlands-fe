@@ -5,8 +5,11 @@ import { IPC_CHANNELS } from '../../../../shared/ipc-registry';
 
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
+  connection: {},
   backendClient: {
     getConfig: vi.fn(() => ({ transport: 'uds' as const, socketPath: '/tmp/intentd.sock' })),
+    getRepositoryConnection: vi.fn(),
+    requestOnCapturedConnection: vi.fn(),
   },
 }));
 
@@ -44,6 +47,10 @@ vi.mock('../embedded-browser-cdp-service', () => ({
     registerTab: vi.fn(),
     unregisterTab: vi.fn(),
     waitForTabRegistration: vi.fn().mockResolvedValue(true),
+    listAllTabs: vi.fn(async () => {
+      const tab = mocks.sendToWorkspaceWindows.mock.calls.at(-1)?.[2];
+      return { tabs: tab ? [{ ...tab, mounted: true }] : [], stale: false };
+    }),
     reportTabViewBounds: vi.fn(),
     clearTabViewBounds: vi.fn(),
     setTabViewport: vi.fn(),
@@ -69,6 +76,27 @@ describe('browser:exec IPC workspace routing', () => {
   beforeEach(() => {
     vi.mocked(ipcMain.handle).mockReset();
     mocks.sendToWorkspaceWindows.mockReset();
+    mocks.backendClient.getRepositoryConnection.mockReturnValue(mocks.connection);
+    mocks.backendClient.requestOnCapturedConnection.mockImplementation(
+      async (connection, method, params) => {
+        expect(connection).toBe(mocks.connection);
+        expect(method).toBe('browser.listTabs');
+        const tab = mocks.sendToWorkspaceWindows.mock.calls.at(-1)?.[2];
+        expect(params).toEqual({ workspaceId: tab.workspaceId });
+        return {
+          tabs: [
+            {
+              ...tab,
+              hostClientId: 'fixture-client',
+              hostConnected: true,
+              visibility: 'visible',
+              createdAt: '2026-10-05T06:00:00Z',
+              updatedAt: '2026-10-05T06:00:00Z',
+            },
+          ],
+        };
+      },
+    );
     mocks.sendToWorkspaceWindows.mockReturnValue({
       windowCount: 1,
       browserClientsNotified: false,
