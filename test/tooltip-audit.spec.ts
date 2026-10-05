@@ -37,19 +37,29 @@ async function leaveHover(page: Page) {
   await expect(page.getByRole('tooltip')).toHaveCount(0);
 }
 
-test('the pictured agent selector suppresses repeated names and still opens its menu by keyboard', async ({
+async function expectNoDelayedTooltip(page: Page) {
+  // Observe beyond the pane selector's 300ms hover delay.
+  await page.waitForTimeout(500);
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+}
+
+test('the pictured agent selector suppresses repeated names and opens by pointer and keyboard', async ({
   page,
 }, testInfo) => {
   const selector = page.getByTestId('pane-stack-selector-trigger');
   await selector.hover();
-  await expect(selector).toHaveAttribute('data-disabled', '');
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await expect(selector).toBeEnabled();
+  await expectNoDelayedTooltip(page);
   await page.screenshot({ path: testInfo.outputPath('short-name-after.png') });
   await testInfo.attach('Short name: no redundant popup', {
     path: testInfo.outputPath('short-name-after.png'),
     contentType: 'image/png',
   });
-  await selector.focus();
+  await selector.click();
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(selector).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menu')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -75,7 +85,8 @@ test('clipped names keep keyboard help and react to renaming', async ({ page }, 
   await page.getByRole('textbox', { name: 'Example name' }).fill('dev bro');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
   await selector.hover();
-  await expect(selector).toHaveAttribute('data-disabled', '');
+  await expect(selector).toBeEnabled();
+  await expectNoDelayedTooltip(page);
 });
 
 test('file selectors retain hidden paths even when the visible filename fits', async ({ page }) => {
