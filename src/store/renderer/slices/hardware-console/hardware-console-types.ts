@@ -54,6 +54,8 @@ export interface HardwareConsoleState {
   isConsoleOwner: boolean;
   /** True once the persisted enabled flag was read from the daemon settings bag. */
   enabledHydrated: boolean;
+  /** False for failed reads that merely installed fallback defaults. */
+  enabledHydrationSucceeded: boolean;
   /** Left rotary encoder behavior, shared by both supported models. */
   encoderBehavior: HardwareConsoleEncoderBehavior;
   encoderBehaviorHydrated: boolean;
@@ -104,6 +106,7 @@ export interface HardwareConsoleState {
   actionMappingByModel: Record<HardwareDeviceModel, ActionKeyActionId[]>;
   /** True once the persisted mapping was read from the daemon settings bag. */
   actionMappingHydrated: boolean;
+  actionMappingHydrationSucceeded: boolean;
   /**
    * Per-family scope of the togglable agent-cycle actions: `all` includes
    * delegated sub-agents in the walk, `top-level` cycles foreground agents
