@@ -536,7 +536,21 @@ function* reconcileStatus(
     const status = yield* call(readStatus, host);
     if (!status || superseded(fence, generation) || fence.statusRevision !== statusRevision) return;
     const payload = statusPayload(status, host);
-    if (payload) yield* put(setGitLabAuthStatus(payload));
+    if (!payload) return;
+    yield* put(setGitLabAuthStatus(payload));
+    // A retained terminal slot must not fail a PAT connect with no displayed grant.
+    if (!(yield* selectGitLabAuthDeviceFlow.effect())) return;
+    switch (status.deviceFlow?.status) {
+      case 'denied':
+        yield* put(setGitLabAuthError(m.gitlabAuth_service_denied_error()));
+        break;
+      case 'expired':
+        yield* put(setGitLabAuthError(m.gitlabAuth_service_codeExpired_error()));
+        break;
+      case 'error':
+        yield* put(setGitLabAuthError(m.gitlabAuth_service_failed_error()));
+        break;
+    }
   } catch (error) {
     logger.error('Failed to reconcile GitLab auth status', error);
   }
