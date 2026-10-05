@@ -23,16 +23,37 @@ function member(hostRole: 'owner' | 'member' | 'guest', myRole?: 'owner' | 'coll
   state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
   return state;
 }
-describe('primary selection workspace-member authority', () => {
+describe('primary selection host-member authority', () => {
   it.each(['owner', 'member'] as const)('allows host %s independent of Labs', (role) => {
     expect(selectCanSetWorkspacePrimaryClient.select(member(role), id)).toBe(true);
   });
   it.each(['owner', 'collaborator'] as const)(
-    'allows guest workspace %s independent of Labs',
+    'rejects guest workspace %s at the host-member transport gate',
     (role) => {
-      expect(selectCanSetWorkspacePrimaryClient.select(member('guest', role), id)).toBe(true);
+      expect(selectCanSetWorkspacePrimaryClient.select(member('guest', role), id)).toBe(false);
     },
   );
+  it.each(['owner', 'member'] as const)(
+    'rejects a demoted host %s with retained workspace ownership',
+    (role) => {
+      const state = member(role, 'owner');
+      expect(selectCanSetWorkspacePrimaryClient.select(state, id)).toBe(true);
+      state.principal.snapshot!.principal.hostRole = 'guest';
+      state.principal.snapshot!.principal.hostMembershipRevision = 2;
+      state.workspace.capabilityContext = selectPrincipalActionContext.select(state);
+      expect(selectCanSetWorkspacePrimaryClient.select(state, id)).toBe(false);
+    },
+  );
+
+  it('permits a legacy administrator without host membership capability', () => {
+    const state = member('owner');
+    state.principal.snapshot!.capabilities.hostMembership = false;
+    state.principal.snapshot!.principal.isAdministrator = true;
+    expect(selectCanSetWorkspacePrimaryClient.select(state, id)).toBe(true);
+    state.principal.snapshot!.principal.isAdministrator = false;
+    expect(selectCanSetWorkspacePrimaryClient.select(state, id)).toBe(false);
+  });
+
   it('rejects a nonmember and virtual workspace', () => {
     expect(selectCanSetWorkspacePrimaryClient.select(member('guest'), id)).toBe(false);
     expect(selectCanSetWorkspacePrimaryClient.select(member('owner'), CHIEF_WORKSPACE_ID)).toBe(
