@@ -7587,31 +7587,7 @@
                   externalDropTarget
                   requiresModelSwitchConfirmation={!canChangeProvider}
                   providerId={inputProviderId}
-                >
-                  {#snippet queueRegion()}
-                    <div
-                      class:hidden={!queuedMessagesVisibility.showQueue &&
-                        visibleQueuedMessages.length > 0}
-                    >
-                      <QueuedMessageList
-                        bind:this={queuedMessageListRef}
-                        messages={visibleQueuedMessages}
-                        authors={queuedMessageAuthors}
-                        ownPrincipalId={queuePrincipalId}
-                        presentationPrincipalId={$presenceOwnPrincipalId$}
-                        ownerPrincipalId={workspace?.ownerPrincipalId}
-                        isHostOwner={$isHostOwner$}
-                        {agentId}
-                        workspaceId={workspace?.id}
-                        onsendall={handleSendAllQueuedMessages}
-                        onclearall={handleClearAllQueuedMessages}
-                        onsenddelivered={() =>
-                          void performLocalSendCleanup({ clearInput: false, followBottom: true })}
-                        ondone={() => inputComponent?.focus?.()}
-                      />
-                    </div>
-                  {/snippet}
-                </SimpleRichInput>
+                />
               {/if}
             </QuestionComposer>
           {/if}

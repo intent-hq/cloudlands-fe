@@ -388,7 +388,7 @@ function* handleClearQueued(action: ClearQueuedAction): SagaGenerator<void> {
         throw new Error(m.agent_chatSend_sendNowRejected_error());
       if (!(yield* mutationIsCurrent(agentId, ownership))) throw new Error(CANCELLED_ERROR);
       const result = yield* call(
-        [appClient.agents, appClient.agents.removeQueued],
+        { context: appClient.agents, fn: appClient.agents.removeQueued },
         agentId,
         messageId,
         wsId,

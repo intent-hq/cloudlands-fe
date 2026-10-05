@@ -4,8 +4,7 @@ import {
   buildQueuedRecordedAttempt,
   buildProcessedRecordedAttempt,
 } from '$features/agent/utils/build-recorded-attempt';
-import { createAction } from '@themislib/themis/utils/store/create-action';
-import { createAsyncAction } from '@themislib/themis/utils/store/create-async-action';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
