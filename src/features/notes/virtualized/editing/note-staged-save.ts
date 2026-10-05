@@ -1,3 +1,8 @@
+import {
+  captureNoteNativeHistoryWitness,
+  currentNoteNativeHistoryWitness,
+  type NoteNativeHistoryWitness,
+} from './note-native-history-witness';
 import { v4 as uuid } from 'uuid';
 import {
   sameNoteScope,
@@ -120,8 +125,8 @@ interface Port {
   subscribe(listener: () => void): () => void;
 }
 /** Explicit saga integration only. Normal save callers never select this path.
- * Staged effects/inverse adoption is unsupported: committed receipt + unchanged
- * document/history remain gated for reconciliation. No source flattening upload. */
+ * A committed receipt stays gated until exact-local native reconciliation proves
+ * continuity of the captured history. No source flattening upload. */
 export async function stageNoteDocumentSave(
   port: Port,
   client: NotePagesClient,
@@ -148,9 +153,11 @@ export async function stageNoteDocumentSave(
   )
     throw new Error('Staged save unavailable');
   const operationId = uuid(),
-    owner = `staged-save:${operationId}`;
+    owner = `staged-save:${operationId}`,
+    witnessOwner = `staged-native:${operationId}`;
   const expiresAt = new Date(Date.now() + 600000).toISOString();
   const deadline = Date.parse(expiresAt);
+  let nativeWitness: NoteNativeHistoryWitness | undefined;
   let lost = false,
     handedOff = false;
   let admittedOperation: NoteStagedSaveOperation | undefined;
@@ -180,7 +187,8 @@ export async function stageNoteDocumentSave(
       d.cursor !== doc.cursor ||
       d.dirty !== doc.dirty ||
       d.replay !== doc.replay ||
-      !sameNoteScope(d.scope, doc.scope);
+      !sameNoteScope(d.scope, doc.scope) ||
+      (nativeWitness !== undefined && !currentNoteNativeHistoryWitness(d, nativeWitness));
     return !lost;
   };
   const check = () => {
@@ -210,6 +218,28 @@ export async function stageNoteDocumentSave(
       ),
     );
     check();
+    port.dispatch(
+      a.pageResourcesRequested(
+        witnessOwner,
+        [
+          {
+            id: witnessOwner,
+            cost: {
+              payloadBytes: 8 * units,
+              stringUnits: 8 * units,
+              objectNodes: 4 * 32768,
+              physicalReads: 0,
+              assemblies: 0,
+              domNodes: 0,
+            },
+          },
+        ],
+        1,
+      ),
+    );
+    if (!Object.hasOwn(port.read().resourceLedger.owners, witnessOwner))
+      throw new Error('Native witness admission denied');
+    nativeWitness = captureNoteNativeHistoryWitness(doc);
     const captured = capture(initial);
     check();
     stage = client.createSaveOperation(
@@ -272,6 +302,8 @@ export async function stageNoteDocumentSave(
     check();
     admittedOperation = {
       ...stage.sealedSave(),
+      nativeWitness,
+      witnessOwner,
       splices: doc.dirty,
       documentGeneration: doc.generation,
       documentCursor: doc.cursor,
@@ -311,6 +343,29 @@ export async function stageNoteDocumentSave(
     } finally {
       unsubscribe();
       port.dispatch(a.pageResourcesReleased(owner));
+      // Native references outlive commit IO through uncertain status and receipt
+      // verification. Transfer their DATA to the exact Redux operation lifetime.
+      // Failed/rejected preparation, adoption and discarded operations release it.
+      let stopped = false,
+        installed = false;
+      let stop = () => {};
+      const retire = () => {
+        const n = read();
+        if (
+          !stopped &&
+          (!admittedOperation ||
+            (n?.pending?.operation !== admittedOperation &&
+              n?.committedDocumentSave?.operation !== admittedOperation))
+        ) {
+          stopped = true;
+          if (installed) stop();
+          port.dispatch(a.pageResourcesReleased(witnessOwner));
+        }
+      };
+      stop = port.subscribe(retire);
+      installed = true;
+      if (stopped) stop();
+      retire();
     }
   }
   if (primary) throw primary;

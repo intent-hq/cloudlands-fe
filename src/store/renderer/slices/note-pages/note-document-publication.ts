@@ -1,5 +1,11 @@
+import { currentNoteNativeHistoryWitness } from '$features/notes/virtualized/editing/note-native-history-witness';
 import type { NoteDocumentSession } from '$features/notes/virtualized/editing/note-document-edit-session';
-import { sameNoteScope, type NoteSpliceOperation, type NoteSplice } from '$lib/client/note-pages';
+import {
+  sameNoteScope,
+  type NoteSpliceOperation,
+  type NoteStagedSaveOperation,
+  type NoteSplice,
+} from '$lib/client/note-pages';
 import type { NoteDraft, NotePageSession, NoteDocumentSaveCapture } from './note-pages-types';
 
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
@@ -83,11 +89,26 @@ export function prepareNoteDocumentPublication(
  * is still legal, but it requires the general later-edit rebase, not this token. */
 export function captureNoteDocumentSave(
   note: NotePageSession,
-  operation: NoteSpliceOperation,
+  operation: NoteSpliceOperation | NoteStagedSaveOperation,
   throughSequence: number,
-): { operation: NoteSpliceOperation; document: NoteDocumentSaveCapture } | undefined {
+):
+  | { operation: NoteSpliceOperation | NoteStagedSaveOperation; document: NoteDocumentSaveCapture }
+  | undefined {
   const doc = note.document;
-  if ('headerDigest' in operation) return undefined;
+  const staged = 'headerDigest' in operation;
+  if (staged && (!doc || !currentNoteNativeHistoryWitness(doc, operation.nativeWitness)))
+    return undefined;
+  if (
+    staged &&
+    (!doc ||
+      operation.documentGeneration !== doc.generation ||
+      operation.documentCursor !== doc.cursor ||
+      operation.baseLength !== doc.baseLength ||
+      operation.viewLength !== doc.length ||
+      operation.splices !== doc.dirty ||
+      !/^[0-9a-f]{64}$/.test(operation.headerDigest))
+  )
+    return undefined;
   if (
     !doc ||
     ![doc.generation, doc.baseLength, doc.length, doc.cursor, throughSequence].every(
@@ -99,7 +120,7 @@ export function captureNoteDocumentSave(
     note.drafts.length === 0 ||
     note.drafts.at(-1)?.sequence !== throughSequence ||
     operation.splices.length === 0 ||
-    operation.splices.length > 32 ||
+    operation.splices.length > (staged ? 512 : 32) ||
     operation.splices.length !== doc.dirty.length ||
     !/^[0-9a-f]{64}$/.test(operation.payloadDigest) ||
     operation.splices.some(
@@ -113,15 +134,17 @@ export function captureNoteDocumentSave(
   let textBytes = 0;
   for (const s of operation.splices) {
     textBytes += new TextEncoder().encode(s.text).length;
-    if (textBytes > 16_384) return undefined;
+    if (textBytes > (staged ? 262144 : 16_384)) return undefined;
   }
-  const captured = Object.freeze({
-    ...operation,
-    scope: Object.freeze({ ...operation.scope }),
-    splices: operation.splices.map((s) =>
-      Object.freeze({ start: s.start, end: s.end, text: s.text }),
-    ),
-  });
+  const captured = staged
+    ? operation
+    : Object.freeze({
+        ...operation,
+        scope: Object.freeze({ ...operation.scope }),
+        splices: operation.splices.map((s) =>
+          Object.freeze({ start: s.start, end: s.end, text: s.text }),
+        ),
+      });
   Object.freeze(captured.splices);
   return {
     operation: captured,
@@ -163,6 +186,8 @@ export function currentNoteDocumentSave(
     doc.baseRevision === operation.baseRevision &&
     receipt.operationId === operation.operationId &&
     receipt.payloadDigest === operation.payloadDigest &&
+    (!('headerDigest' in operation) ||
+      currentNoteNativeHistoryWitness(doc, operation.nativeWitness)) &&
     doc.generation === saved.generation &&
     Number.isSafeInteger(doc.generation + 1) &&
     doc.baseLength === saved.baseLength &&

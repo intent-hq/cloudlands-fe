@@ -21,6 +21,8 @@ import {
   createNoteDocumentSession,
   prepareNoteDocumentEdit,
   reconcileNoteDocumentSave,
+  moveNoteDocumentHistory,
+  materializeNoteDocumentAuthority,
 } from './note-document-edit-session';
 import { stageNoteDocumentSave, retryStagedDocumentSave } from './note-staged-save';
 const schema = new Schema({
@@ -190,7 +192,7 @@ function setup(text = 'X', single = false) {
     a.pageResourceLimitsConfigured({
       payloadBytes: 10_000_000,
       stringUnits: 10_000_000,
-      objectNodes: 100_000,
+      objectNodes: 400_000,
       physicalReads: 2,
       assemblies: 2,
       domNodes: 0,
@@ -355,6 +357,10 @@ function setup(text = 'X', single = false) {
     return task;
   };
   const clean = () => {
+    if (read()?.pending || read()?.committedDocumentSave) {
+      expect(state.resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+      dispatch(a.pageSessionDiscarded('w', 'n'));
+    }
     expect(state.resourceLedger.used.payloadBytes).toBe(0);
     expect(state.resourceLedger.used.physicalReads).toBe(0);
     expect(listeners.size).toBe(0);
@@ -433,7 +439,7 @@ it('uses actual native root/appended groups through explicit save saga, preservi
   expect(f.read().document?.history).toBe(before.history);
   expect(f.read().needsReconcile).toBe(true);
   expect(f.read().drafts).toEqual([]);
-  expect(f.read().committedDocumentSave).toBeUndefined();
+  expect(f.read().committedDocumentSave?.receipt).toBe(f.read().receipts[0]);
   expect(rpc.mock.calls.filter(([m]) => m === 'note.operation.commit')).toHaveLength(1);
 });
 it('preserves forty existing native groups without flattening them into one save gesture', async () => {
@@ -480,7 +486,8 @@ it('retains exact sealed operation after lost commit acknowledgement and status-
   expect(pending.status).toBe('unknown');
   expect(pending.operation).toHaveProperty('headerDigest');
   expect(f.read().drafts).toHaveLength(3);
-  f.clean();
+  expect(f.port.read().resourceLedger.used.physicalReads).toBe(0);
+  expect(f.port.read().resourceLedger.used.payloadBytes).toBeGreaterThan(0);
   f.startSaga();
   f.dispatch(a.pageSaveRetryRequested('w', 'n'));
   await vi.waitFor(() => expect(f.read().receipts).toHaveLength(1));
@@ -709,5 +716,537 @@ it('uploads an owned empty text record for a native deletion without inventing a
   expect(f.uploaded.has(ref.textId)).toBe(true);
   expect(f.uploaded.get(ref.textId)).toBe('');
   expect(ref.sha256).toBe('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+  f.clean();
+});
+
+function receiptFixture(
+  f: ReturnType<typeof setup>,
+  mutate?: (kind: string, page: Record<string, unknown>) => void,
+) {
+  f.dispatch(
+    a.pageResourceLimitsConfigured({
+      payloadBytes: 10_000_000,
+      stringUnits: 10_000_000,
+      objectNodes: 400_000,
+      physicalReads: 2,
+      assemblies: 2,
+      domNodes: 0,
+    }),
+  );
+  const doc = f.read().document!;
+  const nativeGroups = doc.history.slice(doc.cursor - doc.replay.length, doc.cursor).reverse();
+  const texts = new Map<string, string>();
+  const inverse = nativeGroups.flatMap((g, i) =>
+    g.inverse.map((s, ordinal) => {
+      const textId = `removed:${i}:${ordinal}`;
+      texts.set(textId, s.text);
+      return {
+        historyGroup: i === 0 ? '00' : `opaque:${i}`, // opaque; not local numeric IDs
+        inputState: i === 0 ? 'r-final' : `intermediate:${i}`,
+        outputState: i === nativeGroups.length - 1 ? doc.baseRevision : `intermediate:${i + 1}`,
+        ordinal,
+        start: s.start,
+        end: s.end,
+        replacement: {
+          textId,
+          length: s.text.length,
+          utf8Bytes: Buffer.byteLength(s.text),
+          sha256: createHash('sha256').update(s.text).digest('hex'),
+        },
+        provenanceRef: `retained:${i}:${ordinal}`,
+      };
+    }),
+  );
+  const details = new Map<string, unknown[]>();
+  const encode = (
+    ref: string,
+    value: unknown,
+    parentId: string | null = null,
+    key?: string,
+  ): unknown => {
+    const id = `${ref}:node`;
+    const entry = { id, parentId, ...(key === undefined ? {} : { key }) };
+    if (typeof value === 'object' && value !== null) {
+      const childrenRef = `${ref}:children`;
+      details.set(
+        childrenRef,
+        Object.entries(value)
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([k, v]) => encode(`${ref}:${k}`, v, id, k)),
+      );
+      return { ...entry, type: 'object', childrenRef };
+    }
+    return { ...entry, type: typeof value, value };
+  };
+  for (let i = 0; i < nativeGroups.length; i++) {
+    const g = nativeGroups[i];
+    for (let j = 0; j < g.inverse.length; j++) {
+      const item = inverse.find((r) => r.provenanceRef === `retained:${i}:${j}`)!;
+      details.set(item.provenanceRef, [
+        encode(item.provenanceRef, {
+          kind: 'sourceProvenance',
+          inputState: item.inputState,
+          outputState: item.outputState,
+          baseRange: { start: g.forward[j].start, end: g.forward[j].end },
+          finalRange: { start: item.start, end: item.end },
+          replacement: item.replacement,
+        }),
+      ]);
+    }
+  }
+  const readPage = async (raw: unknown) => {
+    const p = raw as Record<string, unknown>,
+      r = f.receipt();
+    expect(p.headerDigest).toBe(r.headerDigest);
+    expect(p).not.toHaveProperty('payloadDigest');
+    expect(p.operationId).toBe(r.operationId);
+    expect(f.port.read().resourceLedger.used.physicalReads).toBeGreaterThan(0);
+    const page: Record<string, unknown> = {
+      kind: 'noteOperationPage',
+      scope,
+      operationId: r.operationId,
+      payloadDigest: r.payloadDigest,
+      headerDigest: r.headerDigest,
+      viewId: r.viewId,
+      outputKind: p.kind,
+      sourceLength:
+        p.kind === 'mapping' || p.kind === 'effects' || p.kind === 'detail'
+          ? doc.baseLength
+          : doc.length,
+      expiresAt: r.receiptExpiresAt,
+      nextCursor: null,
+    };
+    if (p.kind === 'mapping') {
+      expect(p.ref).toBe(r.mappingRef);
+      page.items = doc.dirty.map((s) => ({
+        start: s.start,
+        end: s.end,
+        insertedLength: s.text.length,
+      }));
+    } else if (p.kind === 'effects') {
+      expect(p.ref).toBe(r.effectsRef);
+      page.convertedCount = 0;
+      page.items = [
+        {
+          kind: 'annotationInvalidation',
+          sourceRevision: 'r-final',
+          attributionGeneration: '2',
+          commentRevision: '2',
+        },
+      ];
+    } else if (p.kind === 'inverse') {
+      expect(p.ref).toBe(r.inverseRef);
+      const i = p.cursor === undefined ? 0 : Number(String(p.cursor).slice(5));
+      page.items = inverse.slice(i, i + 1);
+      page.nextCursor = i + 1 < inverse.length ? `next:${i + 1}` : null;
+    } else if (p.kind === 'detail') {
+      expect(details.has(String(p.ref))).toBe(true);
+      page.items = details.get(String(p.ref));
+    } else {
+      expect(p.kind).toBe('inverseText');
+      expect(p.ref).toBe(r.inverseRef);
+      expect(p.maxItems).toBe(1);
+      expect(p.maxSourceBytes).toBe(4096);
+      const text = texts.get(String(p.textId))!;
+      const offset = p.cursor === undefined ? Number(p.offset) : Number(String(p.cursor).slice(5));
+      if (p.cursor !== undefined) expect(p).not.toHaveProperty('offset');
+      const fragment = [...text.slice(offset)][0] ?? '';
+      page.items = [{ textId: p.textId, offset, text: fragment }];
+      page.nextCursor =
+        offset + fragment.length < text.length ? `text:${offset + fragment.length}` : null;
+    }
+    mutate?.(String(p.kind), page);
+    return page;
+  };
+  rpc.mockImplementation((m, p) => (m === 'note.operation.read' ? readPage(p) : f.transport(m, p)));
+  return { doc, inverse, readPage };
+}
+function publishSavedState(f: ReturnType<typeof setup>) {
+  const n = f.read();
+  f.dispatch(
+    a.pageStateReceived('w', 'n', n.generation, {
+      ...n.state!,
+      sourceRevision: 'r-final',
+      stateGeneration: '2',
+    }),
+  );
+}
+it('adopts exact staged native groups through real saga and rematerializes saved-base undo/redo without changing history identities', async () => {
+  const f = setup();
+  const { doc } = receiptFixture(f);
+  await f.run();
+  f.startSaga();
+  publishSavedState(f);
+  await vi.waitFor(() => expect(f.read().needsReconcile).toBe(false));
+  const saved = f.read().document!;
+  expect(saved.baseRevision).toBe('r-final');
+  expect(saved.history).toBe(doc.history);
+  expect(saved.cursor).toBe(doc.cursor);
+  expect(saved.dirty).toEqual([]);
+  expect(saved.replay).toEqual([]);
+  expect(f.read().drafts).toEqual([]);
+  expect(f.read().receipts).toEqual([]);
+  const text =
+    'abc'.slice(0, doc.dirty[0].start) + doc.dirty[0].text + 'abc'.slice(doc.dirty[0].end);
+  const fresh = nativeFixture(text, 0, text.length);
+  fresh.w.sourceRevision = 'r-final';
+  const base = createNoteEditAuthority(
+    fresh.w,
+    fresh.projection,
+    [fresh.owner],
+    fresh.authority.doc,
+  );
+  const undo = moveNoteDocumentHistory(saved, 'undo')!.state;
+  const native = materializeNoteDocumentAuthority(undo, base);
+  expect(native.doc.textContent).toBe('aYXbc');
+  const redo = moveNoteDocumentHistory(undo, 'redo')!.state;
+  expect(materializeNoteDocumentAuthority(redo, base).source).toBe(text);
+  const later = prepareNoteDocumentEdit(
+    redo,
+    EditorState.create({ doc: materializeNoteDocumentAuthority(redo, base).doc }).tr.insertText(
+      'Q',
+      2,
+    ),
+    materializeNoteDocumentAuthority(redo, base),
+  );
+  expect(
+    materializeNoteDocumentAuthority(moveNoteDocumentHistory(later.state, 'undo')!.state, base)
+      .source,
+  ).toBe(text);
+  await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+});
+it.each([
+  'sourceEffect',
+  'converted',
+  'missingGroup',
+  'groupIdentity',
+  'ordinal',
+  'stateChain',
+  'digest',
+  'text',
+  'expiry',
+  'provenance',
+])('retains staged receipt, document and reconciliation gate on %s', async (failure) => {
+  const f = setup('🙂');
+  const { doc } = receiptFixture(f, (kind, p) => {
+    if (failure === 'sourceEffect' && kind === 'effects') p.items = [{ kind: 'sourceEffect' }];
+    if (failure === 'converted' && kind === 'effects') {
+      p.convertedCount = 1;
+      p.items = [];
+    }
+    if (failure === 'missingGroup' && kind === 'inverse') p.nextCursor = null;
+    if (kind === 'inverse') {
+      const item = (p.items as Array<Record<string, unknown>>)[0];
+      if (failure === 'groupIdentity') item.historyGroup = 'duplicate';
+      if (failure === 'ordinal') item.ordinal = 1;
+      if (failure === 'stateChain') item.inputState = 'foreign';
+      if (failure === 'digest')
+        (item.replacement as Record<string, unknown>).sha256 = 'a'.repeat(64);
+    }
+    if (failure === 'text' && kind === 'inverseText')
+      (p.items as Array<Record<string, unknown>>)[0].text = 'wrong';
+    if (failure === 'expiry') p.expiresAt = '2098-01-01T00:00:00Z';
+    if (failure === 'provenance' && kind === 'detail')
+      (p.items as Array<Record<string, unknown>>)[0].parentId = 'foreign';
+  });
+  await f.run();
+  f.startSaga();
+  publishSavedState(f);
+  await vi.waitFor(() =>
+    expect(rpc.mock.calls.some(([m]) => m === 'note.operation.read')).toBe(true),
+  );
+  await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+  expect(f.read().needsReconcile).toBe(true);
+  expect(f.read().document).toBe(doc);
+  expect(f.read().document!.history).toBe(doc.history);
+  expect(f.read().receipts).toHaveLength(1);
+});
+it('holds physical DATA through inverse text cancellation and permanently refuses panel loss plus revival', async () => {
+  const f = setup();
+  receiptFixture(f);
+  const transport = rpc.getMockImplementation()!,
+    held = deferred();
+  let entered = false;
+  rpc.mockImplementation(async (m, raw) => {
+    if (m === 'note.operation.read' && (raw as { kind: string }).kind === 'inverseText') {
+      entered = true;
+      await held.promise;
+    }
+    return transport(m, raw);
+  });
+  await f.run();
+  f.startSaga();
+  publishSavedState(f);
+  await vi.waitFor(() => expect(entered).toBe(true));
+  const before = f.read();
+  f.replace({ ...before, panels: {} });
+  f.replace(before);
+  expect(f.port.read().resourceLedger.used.physicalReads).toBe(1);
+  held.resolve();
+  await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+  expect(f.read().needsReconcile).toBe(true);
+  expect(f.read().document).toBe(before.document);
+});
+it('preserves older saved groups and permits undo across the adopted suffix and prior saved base', async () => {
+  const f = setup();
+  f.rebase();
+  f.edit('C');
+  const { doc } = receiptFixture(f);
+  await f.run();
+  expect(f.port.read().resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+  f.startSaga();
+  publishSavedState(f);
+  await vi.waitFor(() => expect(f.read().needsReconcile).toBe(false));
+  const saved = f.read().document!;
+  expect(saved.history).toBe(doc.history);
+  const text = 'aCZYXbc',
+    fresh = nativeFixture(text, 0, text.length);
+  fresh.w.sourceRevision = 'r-final';
+  const base = createNoteEditAuthority(
+    fresh.w,
+    fresh.projection,
+    [fresh.owner],
+    fresh.authority.doc,
+  );
+  const undo = moveNoteDocumentHistory(saved, 'undo')!.state;
+  expect(materializeNoteDocumentAuthority(undo, base).source).toBe('aZYXbc');
+  const older = moveNoteDocumentHistory(undo, 'undo')!.state;
+  expect(materializeNoteDocumentAuthority(older, base).source).toBe('aYXbc');
+  expect(
+    materializeNoteDocumentAuthority(
+      moveNoteDocumentHistory(moveNoteDocumentHistory(older, 'redo')!.state, 'redo')!.state,
+      base,
+    ).source,
+  ).toBe(text);
+  await vi.waitFor(() => expect(f.port.read().resourceLedger.used.payloadBytes).toBe(0));
+});
+it.each(['selection', 'nativeToken'] as const)(
+  'checks retained native history during held receipt IO: %s',
+  async (change) => {
+    const f = setup();
+    receiptFixture(f);
+    const transport = rpc.getMockImplementation()!,
+      held = deferred();
+    let entered = false;
+    rpc.mockImplementation(async (m, raw) => {
+      if (m === 'note.operation.read' && (raw as { kind: string }).kind === 'inverseText') {
+        entered = true;
+        await held.promise;
+      }
+      return transport(m, raw);
+    });
+    await f.run();
+    f.startSaga();
+    publishSavedState(f);
+    await vi.waitFor(() => expect(entered).toBe(true));
+    const before = f.read().document!;
+    if (change === 'selection')
+      f.dispatch(
+        a.pageDocumentSelectionChanged('w', 'n', f.read().generation, before, {
+          anchor: 3,
+          head: 1,
+          anchorAffinity: -1,
+          headAffinity: 1,
+        }),
+      );
+    if (change === 'nativeToken') {
+      const history = [...before.history];
+      history[0] = { ...history[0], inverseReplay: [...history[0].inverseReplay] };
+      f.replace({ ...f.read(), document: { ...before, history } });
+    }
+    const expected = f.read().document!;
+    expect(f.port.read().resourceLedger.used.physicalReads).toBe(1);
+    held.resolve();
+    await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+    if (change === 'selection') {
+      expect(f.read().needsReconcile).toBe(false);
+      expect(f.read().document!.selection).toEqual(expected.selection);
+      expect(f.read().document!.history).toBe(expected.history);
+      expect(f.port.read().resourceLedger.used.payloadBytes).toBe(0);
+    } else {
+      expect(f.read().needsReconcile).toBe(true);
+      expect(f.read().document).toBe(expected);
+      expect(f.read().receipts).toHaveLength(1);
+      f.clean();
+    }
+  },
+);
+it.each(['range', 'missing', 'cycle', 'extra'] as const)(
+  'refuses incomplete or divergent resolved inverse provenance: %s',
+  async (failure) => {
+    const f = setup();
+    const { doc } = receiptFixture(f, (kind, page) => {
+      if (kind !== 'detail') return;
+      const items = page.items as Array<Record<string, unknown>>;
+      if (failure === 'range') for (const item of items) if (item.key === 'start') item.value = 999;
+      if (failure === 'missing') page.items = [];
+      if (failure === 'cycle')
+        for (const item of items) if (item.childrenRef) item.childrenRef = 'retained:0:0';
+      if (failure === 'extra')
+        items.push({ id: 'extra', parentId: null, type: 'number', value: 1 });
+    });
+    await f.run();
+    f.startSaga();
+    publishSavedState(f);
+    await vi.waitFor(() =>
+      expect(
+        rpc.mock.calls.some(
+          ([m, p]) => m === 'note.operation.read' && (p as { kind: string }).kind === 'detail',
+        ),
+      ).toBe(true),
+    );
+    await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+    expect(f.read().needsReconcile).toBe(true);
+    expect(f.read().document).toBe(doc);
+    f.clean();
+  },
+);
+it('refuses unadmitted native witness before any RPC and retires both reservations', async () => {
+  const f = setup();
+  f.dispatch(
+    a.pageResourceLimitsConfigured({
+      payloadBytes: 10_000_000,
+      stringUnits: 10_000_000,
+      objectNodes: 10_000,
+      physicalReads: 2,
+      assemblies: 2,
+      domNodes: 0,
+    }),
+  );
+  await expect(f.run()).rejects.toThrow('Native witness admission denied');
+  expect(rpc).not.toHaveBeenCalled();
+  f.clean();
+});
+it('retains the native witness allocation after discard until the physical inverse read settles', async () => {
+  const f = setup();
+  receiptFixture(f);
+  const transport = rpc.getMockImplementation()!,
+    held = deferred();
+  let entered = false;
+  rpc.mockImplementation(async (m, raw) => {
+    if (m === 'note.operation.read' && (raw as { kind: string }).kind === 'inverseText') {
+      const response = await transport(m, raw);
+      entered = true;
+      await held.promise;
+      return response;
+    }
+    return transport(m, raw);
+  });
+  await f.run();
+  const operation = f.read().committedDocumentSave!.operation;
+  if (!('witnessOwner' in operation)) throw new Error('Expected staged witness');
+  f.startSaga();
+  publishSavedState(f);
+  await vi.waitFor(() => expect(entered).toBe(true));
+  const cost = f.port.read().resourceLedger.resources[operation.witnessOwner].cost;
+  f.dispatch(a.pageSessionDiscarded('w', 'n'));
+  const ledger = f.port.read().resourceLedger;
+  expect(ledger.owners).not.toHaveProperty(operation.witnessOwner);
+  expect(ledger.resources[operation.witnessOwner].cost).toEqual(cost);
+  expect(Object.values(ledger.owners).some((ids) => ids.includes(operation.witnessOwner))).toBe(
+    true,
+  );
+  expect(ledger.used.physicalReads).toBe(1);
+  held.resolve();
+  await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+  expect(f.port.read().resourceLedger.resources).not.toHaveProperty(operation.witnessOwner);
+  f.clean();
+});
+it.each(['edit', 'undo'] as const)(
+  'retains later native %s and every draft when the staged commit acknowledgement is pending',
+  async (change) => {
+    const f = setup();
+    receiptFixture(f);
+    const transport = rpc.getMockImplementation()!,
+      held = deferred();
+    let entered = false;
+    rpc.mockImplementation(async (m, raw) => {
+      const response = await transport(m, raw);
+      if (m === 'note.operation.commit') {
+        entered = true;
+        await held.promise;
+      }
+      return response;
+    });
+    const running = f.run();
+    await vi.waitFor(() => expect(entered).toBe(true));
+    const before = f.read().document!;
+    if (change === 'edit') f.edit('Q');
+    else {
+      const undo = moveNoteDocumentHistory(before, 'undo')!;
+      f.dispatch(
+        a.pageDocumentPublished('w', 'n', f.read().generation, before, undo.state, undo.splices),
+      );
+      expect(f.read().document).toBe(undo.state);
+    }
+    const later = f.read().document!,
+      lastDraft = f.read().drafts.at(-1)!;
+    expect(later.generation).toBeGreaterThan(before.generation);
+    held.resolve();
+    await running;
+    f.startSaga();
+    publishSavedState(f);
+    expect(f.read().needsReconcile).toBe(true);
+    expect(f.read().document).toBe(later);
+    expect(f.read().drafts).toEqual([lastDraft]);
+    expect(f.read().receipts).toHaveLength(1);
+    expect(rpc.mock.calls.filter(([m]) => m === 'note.operation.read')).toEqual([]);
+    f.clean();
+  },
+);
+it('latches owner loss and revival during the final witness borrower release before adoption', async () => {
+  const f = setup();
+  receiptFixture(f);
+  await f.run();
+  let borrowed = false,
+    changed = false;
+  const stop = f.port.subscribe(() => {
+    const hasBorrower = Object.keys(f.port.read().resourceLedger.owners).some(
+      (id) => id.startsWith('staged-native:') && id.includes(':receipt:'),
+    );
+    if (hasBorrower) borrowed = true;
+    if (borrowed && !hasBorrower && !changed) {
+      changed = true;
+      const before = f.read();
+      f.replace({ ...before, panels: {} });
+      f.replace(before);
+    }
+  });
+  f.startSaga();
+  publishSavedState(f);
+  await vi.waitFor(() => expect(changed).toBe(true));
+  expect(f.read().needsReconcile).toBe(true);
+  expect(f.read().document!.baseRevision).toBe('r1');
+  stop();
+  f.clean();
+});
+it('refuses further nested provenance reads after transcript allocation loss and restoration', async () => {
+  const f = setup();
+  receiptFixture(f);
+  const transport = rpc.getMockImplementation()!,
+    held = deferred();
+  let entered = false;
+  rpc.mockImplementation(async (m, raw) => {
+    const response = await transport(m, raw);
+    if (m === 'note.operation.read' && (raw as { kind: string }).kind === 'detail' && !entered) {
+      entered = true;
+      await held.promise;
+    }
+    return response;
+  });
+  await f.run();
+  f.startSaga();
+  publishSavedState(f);
+  await vi.waitFor(() => expect(entered).toBe(true));
+  const ledger = f.port.read().resourceLedger;
+  const owner = Object.keys(ledger.owners).find((id) => id.startsWith('receipt:'))!;
+  const resources = ledger.owners[owner].map((id) => ({ id, cost: ledger.resources[id].cost }));
+  const calls = rpc.mock.calls.length;
+  f.dispatch(a.pageResourcesReleased(owner));
+  f.dispatch(a.pageResourcesRequested(owner, resources, 1));
+  held.resolve();
+  await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+  expect(rpc.mock.calls).toHaveLength(calls);
+  expect(f.read().needsReconcile).toBe(true);
   f.clean();
 });

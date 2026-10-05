@@ -9,6 +9,7 @@ import {
   composeNoteEdits,
   prepareNoteSave,
 } from '$features/notes/virtualized/editing/note-edit-plan';
+import { readNoteStagedReceiptResult } from '$features/notes/virtualized/editing/note-staged-receipt-result';
 import { readNoteLocalReceiptResult } from '$features/notes/virtualized/editing/note-receipt-local-result';
 import { currentNoteDocumentSave } from '../note-document-publication';
 import type { NotePagesState } from '../note-pages-types';
@@ -397,26 +398,45 @@ function* reconcileSave(
   >('reduxStore');
   if (!redux) return;
   const read = () => redux.getState().notePages.byWorkspaceId[ws]?.notes[id];
-  const current = () => currentNoteDocumentSave(read(), capture);
+  const panels = Object.keys(read()?.panels ?? {});
+  const current = () =>
+    currentNoteDocumentSave(read(), capture) &&
+    panels.length > 0 &&
+    panels.every((panel) => panel in (read()?.panels ?? {}));
   if (!current()) return;
   const abort = new AbortController();
   try {
-    const proof = yield* call(
-      readNoteLocalReceiptResult,
-      {
-        read: () => redux.getState().notePages,
-        dispatch: (action: Parameters<typeof redux.dispatch>[0]) => {
-          redux.dispatch(action);
-        },
-        subscribe: (changed: () => void) => redux.subscribe(changed),
+    const port = {
+      read: () => redux.getState().notePages,
+      dispatch: (action: Parameters<typeof redux.dispatch>[0]) => {
+        redux.dispatch(action);
       },
-      client,
-      capture.receipt,
-      capture.operation,
-      capture.document.baseLength,
-      current,
-      abort.signal,
-    );
+      subscribe: (changed: () => void) => redux.subscribe(changed),
+    };
+    const capturedDocument = read()?.document;
+    if (!capturedDocument) return;
+    const proof =
+      'headerDigest' in capture.operation
+        ? yield* call(
+            readNoteStagedReceiptResult,
+            port,
+            client,
+            capture.receipt,
+            capture.operation,
+            capturedDocument,
+            current,
+            abort.signal,
+          )
+        : yield* call(
+            readNoteLocalReceiptResult,
+            port,
+            client,
+            capture.receipt,
+            capture.operation,
+            capture.document.baseLength,
+            current,
+            abort.signal,
+          );
     // No async cleanup remains. The reducer repeats this CAS after middleware.
     const before = (yield* session(ws, id))?.document;
     if (!before || !current()) return;

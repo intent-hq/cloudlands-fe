@@ -66,7 +66,7 @@ export interface NotePageSession {
   /** Captured before IO; retained after its matching receipt, never reconstructed
    * from later drafts or the refreshed source. This alone is not a rebase proof. */
   committedDocumentSave?: {
-    operation: NoteSpliceOperation;
+    operation: NoteSpliceOperation | NoteStagedSaveOperation;
     document: NoteDocumentSaveCapture;
     receipt: NoteCommitReceipt;
   };

@@ -889,6 +889,11 @@ notePagesReducer.with(
   (s, { payload: [ws, id, capture, before, proof, observedAt] }) =>
     update(s, ws, id, (n) => {
       if (n.document !== before || !currentNoteDocumentSave(n, capture)) return n;
+      if (
+        'headerDigest' in capture.operation &&
+        !Object.hasOwn(s.resourceLedger.owners, capture.operation.witnessOwner)
+      )
+        return n;
       const receipt = capture.receipt;
       const deadline = deadlineNanoseconds(receipt.receiptExpiresAt);
       if (

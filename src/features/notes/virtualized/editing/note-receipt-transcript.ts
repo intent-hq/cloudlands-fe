@@ -13,7 +13,7 @@ interface Port {
   ): void;
   subscribe(changed: () => void): () => void;
 }
-type Kind = 'mapping' | 'effects';
+type Kind = 'mapping' | 'effects' | 'inverse';
 const frameBytes = 8192;
 // One decoded frame, its JSON sizing scratch, receipt metadata and two cursors.
 // Accounting allowances are separate units, not a measured JavaScript heap bound.
@@ -33,7 +33,11 @@ export function reserveNoteReceiptTranscript(
   ownerCurrent: () => boolean,
   signal?: AbortSignal,
   now: () => number = Date.now,
+  semanticUnits = 0,
 ) {
+  if (!Number.isSafeInteger(semanticUnits) || semanticUnits < 0 || semanticUnits > 262144)
+    throw new Error('Invalid receipt semantic allowance');
+  const allowance = residentAllowance + 8 * semanticUnits;
   const receipt = Object.freeze({ ...original, scope: Object.freeze({ ...original.scope }) });
   const deadline = parseSourceDeadline(receipt.receiptExpiresAt);
   const id = uuid();
@@ -48,9 +52,9 @@ export function reserveNoteReceiptTranscript(
     {
       id: assembly.data,
       cost: {
-        payloadBytes: residentAllowance,
-        stringUnits: residentAllowance,
-        objectNodes: residentAllowance,
+        payloadBytes: allowance,
+        stringUnits: allowance,
+        objectNodes: residentAllowance + (semanticUnits > 0 ? 8192 : 0),
         domNodes: 0,
         physicalReads: 0,
         assemblies: 0,
@@ -78,6 +82,7 @@ export function reserveNoteReceiptTranscript(
   const states: Record<Kind, { cursor?: string; done: boolean }> = {
     mapping: { done: false },
     effects: { done: false },
+    inverse: { done: false },
   };
   const notify = () => {
     for (const listener of [...changed]) listener();

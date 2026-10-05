@@ -1,4 +1,5 @@
 import type { NoteCommitReceipt } from './note-pages';
+import { validStageText } from './note-source-operation';
 import { beforeSourceDeadline, parseSourceDeadline } from '$shared/source-session-expiry';
 
 /** One receipt page. Item semantics and complete-transcript proof belong to the
@@ -18,9 +19,16 @@ type ReceiptPageIdentity =
   | { headerDigest: string; viewId: string; beforeRevision?: never; afterRevision?: never };
 export type NoteReceiptPage = NoteReceiptEnvelope &
   ReceiptPageIdentity &
-  ({ outputKind: 'mapping' } | { outputKind: 'effects'; convertedCount: number });
+  (
+    | { outputKind: 'mapping' | 'inverse' | 'inverseText' | 'detail' }
+    | { outputKind: 'effects'; convertedCount: number }
+  );
 export interface NoteReceiptReadRequest {
-  kind: 'mapping' | 'effects';
+  kind: 'mapping' | 'effects' | 'inverse' | 'inverseText' | 'detail';
+  ref?: string;
+  textId?: string;
+  offset?: number;
+  maxSourceBytes?: number;
   /** Captured input extent, not the receipt's final source length. */
   baseLength: number;
   cursor?: string;
@@ -62,7 +70,10 @@ export async function readNoteReceiptPage(
     viewId: receipt.viewId,
   };
   const staged = 'headerDigest' in receipt || 'viewId' in receipt;
-  const { kind, baseLength, cursor, maxItems, maxWireBytes } = request;
+  const { kind, baseLength, cursor, maxItems, maxWireBytes, textId, offset, maxSourceBytes } =
+    request;
+  const textRead = kind === 'inverseText';
+  const sourceLength = kind === 'inverse' || textRead ? receipt.sourceLength : baseLength;
   if (
     receipt.kind !== 'noteCommitReceipt' ||
     receipt.outcome !== 'committed' ||
@@ -72,8 +83,17 @@ export async function readNoteReceiptPage(
     !digest(identity.payloadDigest) ||
     !token(identity.beforeRevision) ||
     !token(identity.afterRevision) ||
-    !['mapping', 'effects'].includes(kind) ||
+    !['mapping', 'effects', 'inverse', 'inverseText', 'detail'].includes(kind) ||
+    (kind === 'detail' ? !token(request.ref) : request.ref !== undefined) ||
     !uint(baseLength) ||
+    !uint(sourceLength) ||
+    (textRead
+      ? !token(textId) ||
+        !uint(maxSourceBytes) ||
+        Number(maxSourceBytes) < 4 ||
+        Number(maxSourceBytes) > 16384 ||
+        (offset !== undefined && (!uint(offset) || cursor !== undefined))
+      : textId !== undefined || offset !== undefined || maxSourceBytes !== undefined) ||
     !Number.isSafeInteger(maxItems) ||
     maxItems < 1 ||
     maxItems > 128 ||
@@ -83,7 +103,14 @@ export async function readNoteReceiptPage(
     (cursor !== undefined && !token(cursor))
   )
     throw new Error('Invalid receipt read');
-  const ref = kind === 'mapping' ? receipt.mappingRef : receipt.effectsRef;
+  const ref =
+    kind === 'detail'
+      ? request.ref
+      : kind === 'mapping'
+        ? receipt.mappingRef
+        : kind === 'effects'
+          ? receipt.effectsRef
+          : receipt.inverseRef;
   if (!token(ref)) throw new Error('Invalid receipt root reference');
   const deadline = parseSourceDeadline(identity.expiresAt);
   if (!beforeSourceDeadline(now(), deadline)) throw new Error('Receipt expired');
@@ -98,6 +125,7 @@ export async function readNoteReceiptPage(
     ...(cursor === undefined ? {} : { cursor }),
     maxItems,
     maxWireBytes,
+    ...(textRead ? { textId, maxSourceBytes, ...(offset === undefined ? {} : { offset }) } : {}),
   });
   if (!beforeSourceDeadline(now(), deadline)) throw new Error('Receipt expired');
   const page = record(result),
@@ -117,7 +145,7 @@ export async function readNoteReceiptPage(
         'headerDigest' in page ||
         'viewId' in page) ||
     page.expiresAt !== identity.expiresAt ||
-    page.sourceLength !== baseLength ||
+    page.sourceLength !== sourceLength ||
     Object.entries(scope).some(([key, value]) => returnedScope[key] !== value) ||
     'note' in page ||
     'content' in page ||
@@ -128,6 +156,21 @@ export async function readNoteReceiptPage(
     new TextEncoder().encode(JSON.stringify(result)).length > maxWireBytes
   )
     throw new Error('Mismatched or oversized receipt page');
+  if (textRead) {
+    if (page.items.length !== 1) throw new Error('Invalid inverse text fragment');
+    const fragment = record(page.items[0]);
+    if (
+      Object.keys(fragment).length !== 3 ||
+      fragment.textId !== textId ||
+      !uint(fragment.offset) ||
+      (offset !== undefined && fragment.offset !== offset) ||
+      typeof fragment.text !== 'string' ||
+      !validStageText(fragment.text) ||
+      new TextEncoder().encode(fragment.text).length > Number(maxSourceBytes) ||
+      (!fragment.text.length && page.nextCursor !== null)
+    )
+      throw new Error('Invalid inverse text fragment');
+  }
   if (!beforeSourceDeadline(now(), deadline)) throw new Error('Receipt expired');
   return result as NoteReceiptPage;
 }

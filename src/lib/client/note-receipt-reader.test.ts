@@ -271,3 +271,117 @@ it('applies the original receipt deadline after staged page validation', async (
     ),
   ).rejects.toThrow('Receipt expired');
 });
+
+it('binds staged inverse and scalar text reads to retained header/root and final extent', async () => {
+  const staged = { ...receipt, headerDigest: 'b'.repeat(64), viewId: 'retained-view' };
+  const response = {
+    ...page(),
+    headerDigest: staged.headerDigest,
+    viewId: staged.viewId,
+    outputKind: 'inverse',
+    sourceLength: receipt.sourceLength,
+    items: [],
+  } as Record<string, unknown>;
+  delete response.beforeRevision;
+  delete response.afterRevision;
+  const send = vi.fn().mockResolvedValue(response);
+  await readNoteReceiptPage(send, staged, { ...request, kind: 'inverse' });
+  expect(send).toHaveBeenCalledExactlyOnceWith({
+    ...receipt.scope,
+    operationId: receipt.operationId,
+    headerDigest: staged.headerDigest,
+    kind: 'inverse',
+    ref: receipt.inverseRef,
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+  send.mockResolvedValue({
+    ...response,
+    outputKind: 'inverseText',
+    items: [{ textId: 'removed', offset: 0, text: '🙂' }],
+  });
+  await readNoteReceiptPage(send, staged, {
+    ...request,
+    kind: 'inverseText',
+    textId: 'removed',
+    offset: 0,
+    maxSourceBytes: 4,
+  });
+  expect(send).toHaveBeenLastCalledWith({
+    ...receipt.scope,
+    operationId: receipt.operationId,
+    headerDigest: staged.headerDigest,
+    kind: 'inverseText',
+    ref: receipt.inverseRef,
+    textId: 'removed',
+    offset: 0,
+    maxSourceBytes: 4,
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+  await readNoteReceiptPage(send, staged, {
+    ...request,
+    kind: 'inverseText',
+    textId: 'removed',
+    cursor: 'next',
+    maxSourceBytes: 4,
+  });
+  expect(send.mock.calls.at(-1)![0]).not.toHaveProperty('offset');
+});
+it.each([
+  { kind: 'inverseText', textId: '', maxSourceBytes: 4 },
+  { kind: 'inverseText', textId: 'text', maxSourceBytes: 3 },
+  { kind: 'inverseText', textId: 'text', maxSourceBytes: 4, cursor: 'next', offset: 0 },
+  { kind: 'inverse', textId: 'text' },
+] as const)('refuses malformed inverse selectors before RPC %j', async (delta) => {
+  const send = vi.fn();
+  await expect(readNoteReceiptPage(send, receipt, { ...request, ...delta })).rejects.toThrow();
+  expect(send).not.toHaveBeenCalled();
+});
+it('binds provenance detail reads to the original receipt and base extent', async () => {
+  const response = { ...stagedPage(), outputKind: 'detail', items: [] };
+  const send = vi.fn().mockResolvedValue(response);
+  await readNoteReceiptPage(send, stagedReceipt, {
+    ...request,
+    kind: 'detail',
+    ref: 'owned-provenance',
+  });
+  expect(send).toHaveBeenCalledExactlyOnceWith({
+    ...receipt.scope,
+    operationId: receipt.operationId,
+    headerDigest: stagedReceipt.headerDigest,
+    kind: 'detail',
+    ref: 'owned-provenance',
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+  send.mockClear();
+  await expect(
+    readNoteReceiptPage(send, stagedReceipt, { ...request, kind: 'detail' }),
+  ).rejects.toThrow();
+  expect(send).not.toHaveBeenCalled();
+});
+it.each([
+  { text: '🙂a' },
+  { text: '\ud800' },
+  { text: '\0' },
+  { offset: -1 },
+  { textId: 'foreign' },
+  { extra: true },
+])('refuses malformed or source-overbudget inverse text %j', async (delta) => {
+  const response = {
+    ...stagedPage(),
+    sourceLength: receipt.sourceLength,
+    outputKind: 'inverseText',
+    items: [{ textId: 'removed', offset: 0, text: '🙂', ...delta }],
+  };
+  await expect(
+    readNoteReceiptPage(vi.fn().mockResolvedValue(response), stagedReceipt, {
+      ...request,
+      kind: 'inverseText',
+      textId: 'removed',
+      offset: 0,
+      maxSourceBytes: 4,
+    }),
+  ).rejects.toThrow('Invalid inverse text fragment');
+});

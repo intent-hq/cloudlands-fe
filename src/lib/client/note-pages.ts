@@ -1,3 +1,4 @@
+import type { NoteNativeHistoryWitness } from '$features/notes/virtualized/editing/note-native-history-witness';
 import type { NoteStagedSaveInput, createNoteStagedSaveOperation } from './note-source-operation';
 import type { NoteReceiptPage, NoteReceiptReadRequest } from './note-receipt-reader';
 /** Prepared note paging contract; never interchangeable with a complete Note. */
@@ -262,6 +263,8 @@ export interface NoteSpliceOperation {
   splices: NoteSplice[];
 }
 export interface NoteStagedSaveOperation extends NoteSpliceOperation {
+  nativeWitness: NoteNativeHistoryWitness;
+  witnessOwner: string;
   /** Sealed manifest identity. splices are a local comparison only, never the staged wire payload. */
   headerDigest: string;
   viewLength: number;
