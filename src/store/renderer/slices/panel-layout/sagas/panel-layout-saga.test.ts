@@ -317,6 +317,7 @@ function startRestoreSaga(
   contextLinks?: ContextLink[],
   opts: {
     workspaceListLoaded?: boolean;
+    agentsLoaded?: boolean;
     slimRow?: boolean;
     myRole?: 'owner' | 'collaborator';
   } = {},
@@ -329,6 +330,7 @@ function startRestoreSaga(
     workspaceAgents: {
       byWorkspaceId: {
         [WS_1]: {
+          agentsLoaded: opts.agentsLoaded ?? true,
           agentIds: agents.map((agent) => String(agent.id)),
           foregroundAgentIds: agents.map((agent) => agent.id),
         },
@@ -353,7 +355,28 @@ function startRestoreSaga(
   };
   const channel = stdChannel();
   const dispatch = vi.fn((action) => {
-    state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
+    state = {
+      ...state,
+      panelLayout: panelLayoutReducer(state.panelLayout, action),
+      workspaceNotes: workspaceNotesReducer(state.workspaceNotes, action),
+    };
+    if (action.type === setAgents.type) {
+      const [wsId, sessions] = action.payload;
+      state.workspaceAgents = {
+        byWorkspaceId: {
+          [wsId]: {
+            agentsLoaded: true,
+            agentIds: sessions.map((session: AgentSession) => String(session.id)),
+            foregroundAgentIds: sessions.map((session: AgentSession) => String(session.id)),
+          },
+        },
+      };
+      state.agentSessions = {
+        byAgentId: Object.fromEntries(
+          sessions.map((session: AgentSession) => [String(session.id), session]),
+        ),
+      };
+    }
     if (action.type === setWorkspaceEntity.type) {
       const [workspace, options] = action.payload;
       state = {
@@ -2170,200 +2193,217 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(run.task);
     });
 
-    describe('first-open context-link seeding (workspaces created elsewhere)', () => {
-      afterEach(() => mocks.getWorkspace.mockReset());
-
-      const contextLinks: ContextLink[] = [
-        {
-          kind: 'issue',
-          url: 'https://github.com/acme/widgets/issues/7',
-          owner: 'acme',
-          repo: 'widgets',
-          number: 7,
-        },
-        {
-          kind: 'pr',
-          url: 'https://github.com/acme/widgets/pull/9',
-          owner: 'acme',
-          repo: 'widgets',
-          number: 9,
-        },
-      ];
-
-      function expectSeededSplit(workspace: any, agentId: string) {
-        expect(workspace.root.type).toBe('split');
-        const order = workspace.root.type === 'split' ? workspace.root.children : [];
-        const agentPanelId = order[0]?.type === 'panel' ? order[0].panelId : '';
-        const browserPanelId = order[1]?.type === 'panel' ? order[1].panelId : '';
-        expect(workspace.panels[agentPanelId].tabs).toEqual([
-          expect.objectContaining({ type: 'agent', agentId }),
-        ]);
-        expect(workspace.panels[browserPanelId].tabs).toEqual(
-          contextLinks.map((link) =>
-            expect.objectContaining({ type: 'browser', browserUrl: link.url }),
-          ),
+    describe('existing-workspace default panels', () => {
+      const coordinator = agent('coordinator', 'Coordinator', undefined, {
+        metadata: { specialist: 'spec-writer' },
+      });
+      const first = agent('first', 'First');
+      const child = agent('child', 'Delegated coordinator', undefined, {
+        parentAgentId: 'parent',
+        isInitialAgent: true,
+      });
+      const tabs = (run: ReturnType<typeof startRestoreSaga>) =>
+        Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
+          (panel: any) => panel.tabs,
         );
-        expect(workspace.columnCount).toBe(2);
+      const loadSpec = (run: ReturnType<typeof startRestoreSaga>, content = '') =>
+        run.dispatch(loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [specNote(content)] }));
+      function expectPair(run: ReturnType<typeof startRestoreSaga>, agentId: string) {
+        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+        expect(workspace.root).toMatchObject({ type: 'split', direction: 'horizontal' });
+        const panels = workspace.root.children.map((node: any) => workspace.panels[node.panelId]);
+        expect(panels.map((panel: any) => panel.tabs)).toEqual([
+          [expect.objectContaining({ type: 'agent', agentId })],
+          [expect.objectContaining({ type: 'note', noteId: 'spec' })],
+        ]);
+        expect(panels.every((panel: any) => panel.activeTabId === panel.tabs[0].id)).toBe(true);
       }
 
-      it('seeds the split on a missing restore when the workspace has context links', async () => {
-        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
-        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, contextLinks);
-        await settle();
+      it.each(['', '# Existing plan'])(
+        'opens an existing spec even with content %j',
+        async (content) => {
+          const run = startRestoreSaga(undefined, [child, first, coordinator]);
+          await settle();
+          loadSpec(run, content);
+          expectPair(run, 'coordinator');
+          await cancelSaga(run.task);
+        },
+      );
 
-        expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial');
-        expect(mocks.setJSON.mock.calls.at(-1)?.[1]).toMatchObject({
-          panels: run.getState().panelLayout.byWorkspaceId[WS_1].panels,
+      it('uses the first top-level agent without requiring chat history', async () => {
+        const run = startRestoreSaga(undefined, [child, first, agent('later', 'Later')]);
+        await settle();
+        loadSpec(run);
+        expectPair(run, 'first');
+        await cancelSaga(run.task);
+      });
+
+      it('prefers a later coordinator over an initial non-coordinator', async () => {
+        const initial = agent('initial', 'Implementor', undefined, {
+          isInitialAgent: true,
+          metadata: { specialist: 'implementor' },
         });
+        const run = startRestoreSaga(undefined, [initial, coordinator]);
+        await settle();
+        loadSpec(run);
+        expectPair(run, 'coordinator');
         await cancelSaga(run.task);
       });
 
-      it('seeds once when the agent snapshot arrives after the missing restore', async () => {
-        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
-        const run = startRestoreSaga(undefined, [], emptyWorkspaceState, contextLinks);
-        await settle();
-
-        expect(
-          Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
-            (panel: any) => panel.tabs,
-          ),
-        ).toEqual([]);
-
-        run.dispatch(setAgents(WS_1, [initial]));
-        run.dispatch(setAgents(WS_1, [initial]));
-        await settle();
-
-        expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial');
-        expect(
-          run.dispatch.mock.calls.filter(
-            ([action]) => action.type === openTabInAdjacentOrSplit.type,
-          ),
-        ).toHaveLength(1);
-        await cancelSaga(run.task);
-      });
-
-      it.each([
-        ['a stored tabless layout', emptyStoredLayout],
-        ['an invalid stored layout', { bad: true }],
-      ])('does not seed after %s', async (_name, stored) => {
-        const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
-        const run = startRestoreSaga(stored, [recent], emptyWorkspaceState, contextLinks);
-        await settle();
-
-        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
-        expect(workspace.root.type).toBe('panel');
-        const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
-        expect(tabs).toEqual([expect.objectContaining({ type: 'agent', agentId: 'agent-recent' })]);
-        await cancelSaga(run.task);
-      });
-
-      it('does not seed when no agent is resolvable yet', async () => {
-        const run = startRestoreSaga(undefined, [], emptyWorkspaceState, contextLinks);
-        await settle();
-
-        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
-        expect(workspace.root.type).toBe('panel');
-        expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([]);
-        await cancelSaga(run.task);
-      });
-
-      it('defers a first open that races the workspace-list load, then seeds when the entity arrives', async () => {
-        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
-        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
-          workspaceListLoaded: false,
+      it('keeps list order when a later non-coordinator has an initial marker', async () => {
+        const initial = agent('initial', 'Implementor', undefined, {
+          isInitialAgent: true,
+          metadata: { specialist: 'implementor' },
         });
+        const run = startRestoreSaga(undefined, [first, initial]);
         await settle();
-
-        // Record not landed + list not loaded: no tab may open, or the seed
-        // would be permanently lost to a persisted linkless layout.
-        expect(
-          Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
-            (panel: any) => panel.tabs,
-          ),
-        ).toEqual([]);
-
-        run.dispatch(setWorkspaceEntity({ id: WS_1, contextLinks } as unknown as Workspace));
-        await settle();
-
-        expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial');
+        loadSpec(run);
+        expectPair(run, 'first');
         await cancelSaga(run.task);
       });
 
-      it('pulls detail via workspace.get when the slim list row omits contextLinks, then seeds once', async () => {
-        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
-        mocks.getWorkspace.mockResolvedValue({ id: WS_1, contextLinks } as unknown as Workspace);
-        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
-          slimRow: true,
-        });
-
-        await vi.waitFor(() =>
-          expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial'),
-        );
-        expect(mocks.getWorkspace).toHaveBeenCalledTimes(1);
-        expect(mocks.getWorkspace).toHaveBeenCalledWith(WS_1);
-        expect(run.getState().workspace.detailHydrated[WS_1]).toBe(true);
-        expect(
-          run.dispatch.mock.calls.filter(
-            ([action]) => action.type === openTabInAdjacentOrSplit.type,
-          ),
-        ).toHaveLength(1);
+      it('prefers a coordinator role over an earlier ordinary agent', async () => {
+        const run = startRestoreSaga(undefined, [
+          first,
+          agent('role', 'Planner', undefined, {
+            metadata: { specialist: 'spec-writer' },
+          }),
+        ]);
+        await settle();
+        loadSpec(run);
+        expectPair(run, 'role');
         await cancelSaga(run.task);
       });
 
-      it('opens the plain agent tab when the slim row detail read yields nothing', async () => {
-        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
-        mocks.getWorkspace.mockResolvedValue(null);
-        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
-          slimRow: true,
-        });
+      it.each(['notes-first', 'agents-first', 'restore-last'])(
+        'handles %s arrival without duplicate tabs',
+        async (order) => {
+          let finishRestore!: (value: unknown) => void;
+          const stored =
+            order === 'restore-last'
+              ? new Promise((resolve) => {
+                  finishRestore = resolve;
+                })
+              : undefined;
+          const run = startRestoreSaga(stored, []);
+          await settle();
+          if (order === 'agents-first') run.dispatch(setAgents(WS_1, [first, coordinator]));
+          loadSpec(run);
+          run.dispatch(setAgents(WS_1, [first, coordinator]));
+          if (order === 'restore-last') finishRestore(undefined);
+          await settle();
+          loadSpec(run);
+          run.dispatch(setAgents(WS_1, [first, coordinator]));
+          expectPair(run, 'coordinator');
+          await cancelSaga(run.task);
+        },
+      );
 
-        await vi.waitFor(() => {
+      it('opens only the agent when no spec exists, ignoring context links and later note creation', async () => {
+        const run = startRestoreSaga(undefined, [coordinator], emptyWorkspaceState, [
+          {
+            kind: 'issue',
+            url: 'https://github.com/acme/widgets/issues/7',
+            owner: 'acme',
+            repo: 'widgets',
+            number: 7,
+          },
+        ]);
+        await settle();
+        run.dispatch(loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [] }));
+        loadSpec(run);
+        expect(tabs(run)).toEqual([
+          expect.objectContaining({ type: 'agent', agentId: 'coordinator' }),
+        ]);
+        expect(mocks.getWorkspace).not.toHaveBeenCalled();
+        await cancelSaga(run.task);
+      });
+
+      it.each(['close', 'open', 'resize'])(
+        'does not overwrite a user %s while notes are loading',
+        async (edit) => {
+          const run = startRestoreSaga(undefined, [coordinator]);
+          await settle();
           const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
-          expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([
-            expect.objectContaining({ type: 'agent', agentId: 'agent-initial' }),
-          ]);
+          if (edit === 'close') run.dispatch(closeAllTabs(WS_1, workspace.focusedPanelId));
+          if (edit === 'open')
+            run.dispatch(
+              openTab(WS_1, { type: 'note', noteId: 'mine', title: 'My note', closable: true }),
+            );
+          if (edit === 'resize') run.dispatch(resizePanelLayoutRightEdge(WS_1, 720, 1200, 1200));
+          const edited = run.getState().panelLayout.byWorkspaceId[WS_1];
+          loadSpec(run);
+          run.dispatch(setAgents(WS_1, [coordinator]));
+          expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toBe(edited);
+          await cancelSaga(run.task);
+        },
+      );
+
+      it('waits for the complete agent snapshot before choosing a default', async () => {
+        const run = startRestoreSaga(undefined, [first], emptyWorkspaceState, undefined, {
+          agentsLoaded: false,
         });
-        expect(run.getState().panelLayout.byWorkspaceId[WS_1].root.type).toBe('panel');
-        expect(run.getState().workspace.detailHydrated[WS_1]).toBeUndefined();
+        await settle();
+        loadSpec(run);
+        expect(tabs(run)).toEqual([]);
+        run.dispatch(setAgents(WS_1, [first, coordinator]));
+        expectPair(run, 'coordinator');
         await cancelSaga(run.task);
       });
 
-      it('opens the plain agent tab when the record is still missing after the list load', async () => {
-        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
-        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
-          workspaceListLoaded: false,
-        });
+      it('respects user edits before the agent snapshot arrives', async () => {
+        const run = startRestoreSaga(undefined, []);
         await settle();
-
-        expect(
-          Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
-            (panel: any) => panel.tabs,
+        run.dispatch(
+          splitPanel(
+            WS_1,
+            run.getState().panelLayout.byWorkspaceId[WS_1].focusedPanelId,
+            'horizontal',
           ),
-        ).toEqual([]);
-
-        run.dispatch(setWorkspaceHasLoaded(true));
-        await settle();
-
-        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
-        expect(workspace.root.type).toBe('panel');
-        const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
-        expect(tabs).toEqual([
-          expect.objectContaining({ type: 'agent', agentId: 'agent-initial' }),
-        ]);
+        );
+        const edited = run.getState().panelLayout.byWorkspaceId[WS_1];
+        run.dispatch(setAgents(WS_1, [coordinator]));
+        loadSpec(run);
+        expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toBe(edited);
         await cancelSaga(run.task);
       });
 
-      it('keeps the plain single-agent reconciliation without context links', async () => {
-        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
-        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, []);
+      it('allows automatic column initialization before agents and notes arrive', async () => {
+        const run = startRestoreSaga(undefined, []);
         await settle();
+        run.dispatch(reconcilePanelColumnCount(WS_1, 2));
+        run.dispatch(setAgents(WS_1, [coordinator]));
+        loadSpec(run);
+        expectPair(run, 'coordinator');
+        await cancelSaga(run.task);
+      });
 
-        const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
-        expect(workspace.root.type).toBe('panel');
-        const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
-        expect(tabs).toEqual([
-          expect.objectContaining({ type: 'agent', agentId: 'agent-initial' }),
-        ]);
+      it('never reopens a spec closed after default panels settle', async () => {
+        const run = startRestoreSaga(undefined, [coordinator]);
+        await settle();
+        loadSpec(run);
+        const spec = tabs(run).find((tab: PanelTab) => tab.noteId === 'spec');
+        expect(spec).toBeDefined();
+        run.dispatch(closeTab(WS_1, spec.id));
+        loadSpec(run);
+        expect(tabs(run)).toHaveLength(1);
+        await cancelSaga(run.task);
+      });
+
+      it('leaves saved layouts authoritative when a spec arrives', async () => {
+        const run = startRestoreSaga(layout, [coordinator]);
+        await settle();
+        const restored = run.getState().panelLayout.byWorkspaceId[WS_1];
+        loadSpec(run);
+        expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toBe(restored);
+        await cancelSaga(run.task);
+      });
+
+      it('does not open a delegated initial agent or an orphan spec', async () => {
+        const run = startRestoreSaga(undefined, [child]);
+        await settle();
+        loadSpec(run);
+        expect(tabs(run)).toEqual([]);
         await cancelSaga(run.task);
       });
     });
