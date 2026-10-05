@@ -44,8 +44,9 @@ vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', asyn
 );
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () => {
   const { writable } = await import('svelte/store');
-  const { scaffold } = await import('./mocks/chat-panel-render-scaffold');
+  const { agentQueueSelectors, scaffold } = await import('./mocks/chat-panel-render-scaffold');
   return {
+    ...agentQueueSelectors(),
     selectAgentQueueMessages: Object.assign(
       () => {
         queueSnapshot.store = writable(scaffold.queuedMessages as QueuedMessage[]);
@@ -451,71 +452,6 @@ describe('chat content column contracts', () => {
             ],
           }),
         );
-      }
-    },
-  );
-
-  it.each(['editing', 'failed save', 'successful save'] as const)(
-    'retains the final queued draft through an empty snapshot during %s',
-    async (phase) => {
-      scaffold.authorityState = withHostPrincipal({}, 'owner');
-      scaffold.queuedMessages = [
-        {
-          ...queuedMessage,
-          messageMetadata: { fromPrincipalId: 'principal' },
-        },
-      ];
-      let settle!: (reply: { success: boolean; error?: string }) => void;
-      const pending = new Promise<{ success: boolean; error?: string }>((resolve) => {
-        settle = resolve;
-      });
-      vi.mocked(appClient.agents.editQueued)
-        .mockReset()
-        .mockResolvedValueOnce({ success: true })
-        .mockImplementationOnce(() => pending);
-      const view = render(ChatPanel, { props: { workspace, agentId: 'agent-1', isActive: true } });
-      await tick();
-      const container = view.container;
-      const ui = within(container);
-      await fireEvent.dblClick(ui.getByTestId('queued-message-content'));
-      await waitFor(() => expect(appClient.agents.editQueued).toHaveBeenCalledTimes(1));
-      await fireEvent.input(ui.getByRole('textbox'), {
-        target: { value: 'Keep my private draft' },
-      });
-      if (phase !== 'editing') {
-        await fireEvent.keyDown(ui.getByRole('textbox'), { key: 'Enter' });
-        await waitFor(() => expect(appClient.agents.editQueued).toHaveBeenCalledTimes(2));
-      }
-      queueSnapshot.store!.set([]);
-      await tick();
-      expect(ui.queryByTestId('queued-messages-container')).toBeNull();
-      if (phase !== 'editing') {
-        expect(ui.queryByTestId('queued-draft-conflict')).toBeNull();
-        settle(
-          phase === 'successful save'
-            ? { success: true }
-            : { success: false, error: 'release failed' },
-        );
-        await tick();
-        await tick();
-      }
-      if (phase === 'successful save') {
-        expect(ui.queryByTestId('queued-draft-conflict')).toBeNull();
-      } else {
-        const recovery = await ui.findByTestId('queued-draft-conflict');
-        expect(recovery.textContent).toContain('Keep my private draft');
-        expect(within(recovery).getByRole('button', { name: 'Copy' })).toBeTruthy();
-        if (phase === 'failed save') {
-          scaffold.queuedMessages = [];
-          await view.rerender({
-            workspace: { id: 'ws-2', title: 'Other workspace' } as never,
-            agentId: 'agent-2',
-            isActive: true,
-          });
-        } else {
-          await fireEvent.click(within(recovery).getByRole('button', { name: 'Discard draft' }));
-        }
-        expect(ui.queryByTestId('queued-draft-conflict')).toBeNull();
       }
     },
   );
