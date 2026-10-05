@@ -1,5 +1,6 @@
 // @vitest-environment node
 // @verify-changed-triggers: scripts/verify-changed.mjs, scripts/verify-unit-selection.mjs
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -14,6 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs, runCli, runVerificationPlan } from './verify-changed.mjs';
 
+const plannerUrl = new URL('./verify-changed.mjs', import.meta.url).href;
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 afterEach(() => vi.unstubAllEnvs());
@@ -27,10 +29,8 @@ function fixture() {
   };
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'junction');
   write('package.json', '{"type":"module"}');
-  write(
-    'vitest.config.ts',
-    `export default { resolve: { alias: { '@source': ${JSON.stringify(join(root, 'src'))} } }, test: { environment: 'node', exclude: ['**/node_modules/**', '**/excluded/**'], maxWorkers: 1 } };`,
-  );
+  const config = `export default { resolve: { alias: { '@source': ${JSON.stringify(join(root, 'src'))} } }, test: { environment: 'node', exclude: ['**/node_modules/**', '**/excluded/**'], maxWorkers: 1 } };`;
+  write('vitest.config.ts', config);
   write('src/source.ts', 'export const value = 1;');
   write('src/middle.ts', "export { value } from '@source/source';");
   for (const file of [
@@ -56,7 +56,7 @@ it('selected name', () => { appendFileSync('bodies.jsonl', JSON.stringify(${JSON
           .map((line) => JSON.parse(line))
           .sort()
       : [];
-  return { root, write, bodies };
+  return { root, write, bodies, config };
 }
 function check(id: string, ...args: string[]) {
   return {
@@ -76,6 +76,43 @@ const selection = () =>
     check('vitest-related', 'related', '--run', 'src/source.ts'),
     check('vitest-declared', 'run', 'declared.test.ts', 'direct.test.ts'),
   );
+function isolatedRun(
+  root: string,
+  selected: ReturnType<typeof plan>,
+  maxUnitFiles: number,
+  nodeEnv?: string,
+) {
+  const driver = join(root, 'run-plan.mjs');
+  writeFileSync(
+    driver,
+    `import { writeFileSync } from 'node:fs';
+import { runVerificationPlan } from ${JSON.stringify(plannerUrl)};
+const lines = [];
+let error;
+try { await runVerificationPlan(${JSON.stringify(selected)}, process.cwd(), { maxUnitFiles: ${maxUnitFiles}, log: line => lines.push(line) }); }
+catch (cause) { error = cause.message; process.exitCode = 1; }
+writeFileSync('plan-result.json', JSON.stringify({ lines, error }));`,
+  );
+  const env = { ...process.env };
+  // An outer Vitest worker already supplies these; a real CLI invocation need not.
+  delete env.VITEST;
+  delete env.TEST;
+  delete env.NODE_ENV;
+  if (nodeEnv !== undefined) env.NODE_ENV = nodeEnv;
+  const child = spawnSync(process.execPath, [driver], {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+    timeout: 20_000,
+  });
+  expect(child.error, child.stdout + child.stderr).toBeUndefined();
+  expect(child.signal).toBeNull();
+  return {
+    ...JSON.parse(readFileSync(join(root, 'plan-result.json'), 'utf8')),
+    status: child.status,
+  };
+}
+
 describe('resolved unit selections with installed Vitest', () => {
   it('resolves direct, transitive alias-related and declared paths without executing bodies, and counts their union', async () => {
     const { root, bodies } = fixture();
@@ -253,6 +290,94 @@ it('unselected', () => { throw new Error('name filter lost'); });`,
       { maxUnitFiles: 1, log() {} },
     );
     expect(existsSync(join(root, 'filtered-ran'))).toBe(true);
+  });
+
+  it.each([undefined, 'production'])(
+    'matches CLI environment defaults outside a Vitest worker (NODE_ENV=%s)',
+    (nodeEnv) => {
+      const { root, write, bodies } = fixture();
+      write(
+        'vitest.config.ts',
+        `export default { test: { environment: 'node', maxWorkers: 1,
+include: process.env.VITEST === 'true' && process.env.TEST === 'true' && process.env.NODE_ENV === ${JSON.stringify(nodeEnv ?? 'test')} ? ['direct.test.ts', 'declared.test.ts'] : ['direct.test.ts'] } };`,
+      );
+      const selected = plan(check('vitest-full', 'run'));
+      const rejected = isolatedRun(root, selected, 1, nodeEnv);
+      expect(rejected.status).toBe(1);
+      expect(rejected.error).toMatch(/2 unit files exceed/);
+      expect(bodies()).toEqual([]);
+      expect(existsSync(join(root, 'imports.jsonl'))).toBe(false);
+      const accepted = isolatedRun(root, selected, 2, nodeEnv);
+      expect(accepted.status).toBe(0);
+      const paths = accepted.lines
+        .filter((line: string) => line.startsWith('  - '))
+        .map((line: string) => line.slice(4));
+      expect(paths).toEqual(bodies());
+    },
+  );
+
+  it.each([{ extraArgs: [] }, { extraArgs: ['--shard=2/2'] }])(
+    'matches config sharding and CLI overrides outside a worker: %j',
+    ({ extraArgs }) => {
+      const { root, write, bodies, config } = fixture();
+      write('vitest.config.ts', config.replace('maxWorkers: 1', "maxWorkers: 1, shard: '1/2'"));
+      const result = isolatedRun(root, plan(check('vitest-full', 'run', ...extraArgs)), 3);
+      expect(result.status).toBe(0);
+      const paths = result.lines
+        .filter((line: string) => line.startsWith('  - '))
+        .map((line: string) => line.slice(4));
+      expect(paths).toEqual(bodies());
+      expect(paths).toHaveLength(extraArgs.length ? 1 : 2);
+      rmSync(join(root, 'bodies.jsonl'));
+      const bounded = isolatedRun(
+        root,
+        plan(check('vitest-full', 'run', ...extraArgs)),
+        paths.length,
+      );
+      expect(bounded.status).toBe(0);
+      expect(bodies()).toEqual(paths);
+    },
+  );
+
+  it('uses the configured shard sequencer and rejects invalid shard counts before imports', () => {
+    const { root, write, bodies, config } = fixture();
+    write('vitest.config.ts', config.replace('maxWorkers: 1', "maxWorkers: 1, shard: '1/9'"));
+    const selected = plan(check('vitest-full', 'run'));
+    const rejected = isolatedRun(root, selected, 3);
+    expect(rejected.status).toBe(1);
+    expect(rejected.error).toMatch(/shard count exceeds/);
+    expect(existsSync(join(root, 'imports.jsonl'))).toBe(false);
+    write(
+      'vitest.config.ts',
+      `import { BaseSequencer } from 'vitest/node';
+class FocusedShard extends BaseSequencer { async shard(files) { return files.filter(file => file.moduleId.endsWith('/direct.test.ts')); } }
+${config.replace('maxWorkers: 1', "maxWorkers: 1, shard: '1/2', sequence: { sequencer: FocusedShard }")}`,
+    );
+    const accepted = isolatedRun(root, selected, 1);
+    expect(accepted.status).toBe(0);
+    expect(accepted.lines).toContain('verify:changed: resolved unit files: 1 unique');
+    expect(bodies()).toEqual(['direct.test.ts']);
+  });
+
+  it('matches static pre-parse file selection without importing skipped suites', () => {
+    const { root, write, bodies, config } = fixture();
+    write(
+      'vitest.config.ts',
+      config.replace('maxWorkers: 1', 'maxWorkers: 1, experimental: { preParse: true }'),
+    );
+    write(
+      'declared.test.ts',
+      `import { it } from 'vitest'; import { writeFileSync } from 'node:fs';
+writeFileSync('skipped-imported', 'yes'); it.skip('skip', () => { throw new Error('skipped body ran'); });`,
+    );
+    const result = isolatedRun(root, plan(check('vitest-full', 'run')), 3);
+    expect(result.status).toBe(0);
+    const paths = result.lines
+      .filter((line: string) => line.startsWith('  - '))
+      .map((line: string) => line.slice(4));
+    expect(paths).toEqual(bodies());
+    expect(paths).toEqual(['direct.test.ts', 'related.test.ts']);
+    expect(existsSync(join(root, 'skipped-imported'))).toBe(false);
   });
 
   it('accepts explicit planning and nonnegative integer budgets; rejects ambiguous or malformed limits', () => {

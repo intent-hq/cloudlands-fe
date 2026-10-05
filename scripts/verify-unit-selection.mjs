@@ -65,6 +65,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(self)) {
   let vitest;
   try {
     const { createVitest, parseCLI } = await import('vitest/node');
+    // Match prepareVitest's CLI defaults before evaluating user configuration.
+    process.env.TEST = 'true';
+    process.env.VITEST = 'true';
+    process.env.NODE_ENV ??= 'test';
     const [output, ...argv] = process.argv.slice(2);
     const { filter, options } = parseCLI(['vitest', ...argv]);
     // Match the CLI normalization; discovery never collects/imports test bodies.
@@ -79,9 +83,31 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(self)) {
       watch: false,
       run: true,
     });
-    const specifications = await vitest.getRelevantTestSpecifications(filter);
+    let specifications = await vitest.getRelevantTestSpecifications(filter);
+    if (vitest.config.experimental.preParse) {
+      // The runner can discard statically skipped files before sharding. Its
+      // parser reads syntax only; it does not import suites or execute bodies.
+      await vitest.experimental_parseSpecifications(specifications);
+      specifications = specifications.filter(
+        (spec) => !spec.testModule || spec.testModule.task.mode !== 'skip',
+      );
+    }
     if (!specifications.length && !vitest.config.passWithNoTests)
       throw new Error('Vitest selected no test files');
+    // Discovery is pre-shard. Use the configured runner sequencer, including
+    // custom implementations, so the file budget describes the actual shard.
+    if (specifications.length && vitest.config.shard) {
+      const { index, count } = vitest.config.shard;
+      if (!vitest.config.passWithNoTests && count > specifications.length) {
+        throw new Error(
+          `Resolved ${specifications.length} test files for --shard=${index}/${count}; shard count exceeds test file count`,
+        );
+      }
+      await vitest.cache.stats.populateStats(vitest.config.root, specifications);
+      const sequencer = new vitest.config.sequence.sequencer(vitest);
+      specifications = await sequencer.shard([...specifications]);
+    }
+
     writeFileSync(
       output,
       JSON.stringify(
