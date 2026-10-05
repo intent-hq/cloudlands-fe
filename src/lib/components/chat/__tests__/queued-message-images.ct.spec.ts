@@ -373,7 +373,7 @@ test('a retry displays ordered groups with parent controls and edits the full pa
   await expect(groups).toHaveCount(3);
   await expect(groups.nth(0).getByTestId('queued-message-text')).toHaveText('Text before images');
   await expect(groups.nth(0).getByTestId('queued-image-thumbnail')).toHaveCount(0);
-  await expect(groups.nth(1).getByTestId('queued-message-text')).toHaveText('');
+  await expect(groups.nth(1).getByTestId('queued-message-content')).toHaveCount(0);
   await expect(groups.nth(1).getByTestId('queued-image-thumbnail')).toHaveCount(1);
   await expect(groups.nth(2).getByTestId('queued-message-text')).toHaveText('Multiple images');
   await expect(groups.nth(2).getByTestId('queued-image-thumbnail')).toHaveCount(2);
@@ -400,6 +400,8 @@ test('a retry displays ordered groups with parent controls and edits the full pa
   });
   await page.keyboard.press('Escape');
   await expect(thumbnail).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(groups.nth(2).getByTestId('queued-image-thumbnail').first()).toBeFocused();
   await row.getByTestId('queued-message-content').first().press('F2');
   await expect(row.getByRole('textbox')).toHaveValue(retry.content);
   await info.attach('retry-parent-full-editor.png', {
