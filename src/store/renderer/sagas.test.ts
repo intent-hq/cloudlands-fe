@@ -79,6 +79,7 @@ describe('renderer app saga registry', () => {
       'modelBootSaga',
       'modelReloadSaga',
       'providerAvailabilitySaga',
+      'providerAdapterPreparationSaga',
       'setupPromptSaga',
       'backgroundHooksSaga',
       'hostOwnerServicesSaga',

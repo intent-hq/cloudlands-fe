@@ -45,6 +45,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  providerSetupHydrated,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
@@ -161,7 +162,8 @@ describe('userPreferencesPersistenceSaga', () => {
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([
       [SYSTEM_CHANNELS.LIST_FONTS, undefined],
     ]);
-    expect(dispatch.mock.calls).toEqual([[setSystemFonts(fonts)]]);
+    expect(dispatch.mock.calls).toContainEqual([setSystemFonts(fonts)]);
+    expect(dispatch.mock.calls).toContainEqual([providerSetupHydrated('local', false)]);
     task.cancel();
     await task.toPromise();
   });
@@ -231,6 +233,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setShowArchived(true)],
       [setGroupByRepo(false)],
       [setHasCompletedProviderSetup(true)],
+      [providerSetupHydrated('local', true)],
       [setShowReasoningBlocks(true)],
       [setChatAuroraEnabled(false)],
       [setShellTransparencyEnabled(false)],
@@ -258,7 +261,10 @@ describe('userPreferencesPersistenceSaga', () => {
       const dispatch = vi.fn();
       await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-      expect(dispatch.mock.calls).toEqual([[setReduceMotionOnBattery(stored)]]);
+      expect(dispatch.mock.calls).toEqual([
+        [providerSetupHydrated('local', false)],
+        [setReduceMotionOnBattery(stored)],
+      ]);
       const hydrated = dispatch.mock.calls.reduce(
         (state, [action]) => userPreferencesReducer(state, action),
         initialState,
@@ -276,7 +282,10 @@ describe('userPreferencesPersistenceSaga', () => {
       const dispatch = vi.fn();
       await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-      expect(dispatch.mock.calls).toEqual([[setLabsMultiplayerEnabled(stored)]]);
+      expect(dispatch.mock.calls).toEqual([
+        [providerSetupHydrated('local', false)],
+        [setLabsMultiplayerEnabled(stored)],
+      ]);
       const hydrated = dispatch.mock.calls.reduce(
         (state, [action]) => userPreferencesReducer(state, action),
         initialState,
@@ -548,7 +557,7 @@ describe('userPreferencesPersistenceSaga', () => {
     const dispatch = vi.fn();
     await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-    expect(dispatch.mock.calls).toEqual([]);
+    expect(dispatch.mock.calls).toEqual([[providerSetupHydrated('local', false)]]);
   });
 
   it('hydrates and persists shortcut overrides through the preference storage', async () => {
@@ -886,6 +895,28 @@ describe('userPreferencesPersistenceSaga', () => {
       expect(dispatch.mock.calls).not.toContainEqual([setHasCompletedProviderSetup(true)]);
     });
 
+    it('does not apply an old host completion read after switching hosts', async () => {
+      let finishRead!: (value: boolean) => void;
+      const pending = new Promise<boolean>((resolve) => {
+        finishRead = resolve;
+      });
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'workspace-list:completedProviderSetup' ? pending : undefined,
+      );
+      let activeId = 'local';
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { dispatch, getState: () => stateFor(activeId) },
+        hydrateUserPreferencesWorker,
+      );
+      await settle();
+      activeId = 'remote-1';
+      finishRead(true);
+      await task.toPromise();
+      expect(dispatch.mock.calls).not.toContainEqual([setHasCompletedProviderSetup(true)]);
+      expect(dispatch.mock.calls).not.toContainEqual([providerSetupHydrated('local', true)]);
+    });
+
     it('re-hydrates the flag from the scoped key when the active backend changes', async () => {
       const stored: Record<string, unknown> = {
         'workspace-list:completedProviderSetup': true,
@@ -912,6 +943,7 @@ describe('userPreferencesPersistenceSaga', () => {
       await settle();
       // Fresh remote: no scoped value stored, so the flag resets to false.
       expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(false)]);
+      expect(dispatch.mock.calls).toContainEqual([providerSetupHydrated('remote-1', false)]);
 
       dispatch.mockClear();
       stored['backend:remote-2:workspace-list:completedProviderSetup'] = true;
@@ -925,6 +957,7 @@ describe('userPreferencesPersistenceSaga', () => {
       );
       await settle();
       expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(true)]);
+      expect(dispatch.mock.calls).toContainEqual([providerSetupHydrated('remote-2', true)]);
 
       // Same backend id again: no re-hydration dispatch.
       dispatch.mockClear();

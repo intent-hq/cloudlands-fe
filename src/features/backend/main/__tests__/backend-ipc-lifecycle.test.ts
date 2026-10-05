@@ -2223,10 +2223,14 @@ describe('M genuine delayed feed producers', () => {
 
 describe('M actual fixture original Member fence', () => {
   it('M24 shares original intermediate quiescence and admits Guest only after its member closes', async () => {
+    // Remote status refresh reads local preferences before lazily probing the
+    // local daemon. One event-loop turn does not join that filesystem read.
+    const localProbe = nextFrame('server.pairingInfo', 'local');
     const observed = await loadDirect();
     const { pool, lifecycle } = observed;
     const client = await pool.connectBackendClient('remote-A');
     await connection(client);
+    await localProbe;
     await settledTurn();
     const initialSockets = [...edge.sockets];
     const memberSocket = edge.sockets.find((socket) => socket.owner === 'remote-A.test')!;

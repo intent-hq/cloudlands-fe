@@ -51,6 +51,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  providerSetupHydrated,
   setLabsSettingsVisible,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
@@ -168,9 +169,13 @@ export function* hydrateUserPreferencesWorker() {
   const groupByRepo = yield* getLocalStorageJSON<boolean>(GROUP_BY_REPO_STORAGE_KEY);
   if (typeof groupByRepo === 'boolean') yield* put(setGroupByRepo(groupByRepo));
 
-  const providerSetup = yield* getLocalStorageJSON<boolean>(yield* providerSetupStorageKey());
-  if (typeof providerSetup === 'boolean') {
-    yield* put(setHasCompletedProviderSetup(providerSetup));
+  const setupBackendId = yield* selectActiveBackendId();
+  const providerSetup = yield* getLocalStorageJSON<boolean>(
+    namespaceBackendKey(COMPLETED_PROVIDER_SETUP_STORAGE_KEY, setupBackendId),
+  );
+  if (setupBackendId === (yield* selectActiveBackendId())) {
+    if (typeof providerSetup === 'boolean') yield* put(setHasCompletedProviderSetup(providerSetup));
+    yield* put(providerSetupHydrated(setupBackendId, providerSetup === true));
   }
 
   const showReasoningBlocks = yield* getLocalStorageJSON<boolean>(
@@ -301,7 +306,9 @@ function* watchBackendForProviderSetup() {
     const stored = yield* getLocalStorageJSON<boolean>(
       namespaceBackendKey(COMPLETED_PROVIDER_SETUP_STORAGE_KEY, backendId),
     );
+    if (backendId !== (yield* selectActiveBackendId())) return;
     yield* put(setHasCompletedProviderSetup(stored === true));
+    yield* put(providerSetupHydrated(backendId, stored === true));
   });
 }
 

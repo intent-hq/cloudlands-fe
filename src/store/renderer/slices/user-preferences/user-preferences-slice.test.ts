@@ -27,6 +27,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  providerSetupHydrated,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
@@ -830,5 +831,20 @@ describe('userPreferencesReducer', () => {
       ).toBe('start-workspace');
       expect(selectGithubLinkDefaultAction.select({} as any)).toBe('show-choices');
     });
+  });
+});
+
+describe('provider setup hydration identity', () => {
+  it('starts unhydrated and applies the completion value with its backend identity', () => {
+    expect(initialState.providerSetupHydratedBackendId).toBeNull();
+    const complete = userPreferencesReducer(initialState, providerSetupHydrated('local', true));
+    expect(complete.hasCompletedProviderSetup).toBe(true);
+    expect(complete.providerSetupHydratedBackendId).toBe('local');
+    const fresh = userPreferencesReducer(complete, providerSetupHydrated('remote', false));
+    expect(fresh.hasCompletedProviderSetup).toBe(false);
+    expect(fresh.providerSetupHydratedBackendId).toBe('remote');
+    const finished = userPreferencesReducer(fresh, setHasCompletedProviderSetup(true));
+    expect(finished.providerSetupHydratedBackendId).toBe('remote');
+    expect(finished.hasCompletedProviderSetup).toBe(true);
   });
 });
