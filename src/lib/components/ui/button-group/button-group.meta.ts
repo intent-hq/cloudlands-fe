@@ -9,7 +9,7 @@ export const buttonGroupMetadata = parseUiComponentMetadata({
   exports: ['ButtonGroup'],
   category: 'primitive',
   owner: '007-B1',
-  callers: [],
+  callers: ['src/lib/components/CommandPaletteFilters.svelte'],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/button-group/button-group.test.ts',
   removalGate: 'Retain while exported and group semantics and fixtures pass.',
