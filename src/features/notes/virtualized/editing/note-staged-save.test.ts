@@ -1,3 +1,4 @@
+import { readNoteStagedReceiptResult } from './note-staged-receipt-result';
 import { noteStagedSaveContinuity } from './note-staged-save-continuity';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -1596,6 +1597,26 @@ it.each(['same-length', 'changed-length'])(
     });
     await f.run();
     const retainedReceipt = f.read().receipts[0];
+    const capture = f.read().committedDocumentSave!;
+    if (!('headerDigest' in capture.operation)) throw new Error('Expected staged capture');
+    // Successful canonical decoding must reach the explicit adoption refusal.
+    // Any swallowed scalar, digest or metadata error would fail this assertion.
+    await expect(
+      readNoteStagedReceiptResult(
+        f.port,
+        f.client,
+        retainedReceipt,
+        capture.operation,
+        fixture.doc,
+        () => true,
+      ),
+    ).rejects.toThrow(
+      mode === 'same-length'
+        ? 'Canonical staged effects unsupported'
+        : 'Unsupported staged receipt capture',
+    );
+    expect(f.port.read().resourceLedger.used.physicalReads).toBe(0);
+    rpc.mockClear();
     f.startSaga();
     publishSavedState(f);
     if (mode === 'same-length') {
