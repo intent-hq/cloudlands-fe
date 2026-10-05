@@ -45,9 +45,9 @@ function deferred() {
 
 // Controlled mapping/native lease for owner races, with the actual configured
 // serializer and Live client. Native view lifetime is tested separately at its seam.
-function fixture(from = 1, to = 6) {
-  const source = 'alpha beta',
-    editor = nativeFixtureEditor('<p>alpha beta</p>');
+function fixture(from = 1, to = 6, source = 'alpha beta', outputChunk = 2) {
+  const sourceLength = Math.max(1000, 100 + source.length);
+  const editor = nativeFixtureEditor(`<p>${source}</p>`);
   cleanups.push(() => editor.destroy());
   editor.commands.setTextSelection({ from, to });
   const projection = new SourceProjection(source, 100),
@@ -63,9 +63,9 @@ function fixture(from = 1, to = 6) {
     editor.state.doc,
     [],
     { forward, backward: new Map(forward), original: projection, changes: [] },
-    1000,
+    sourceLength,
   );
-  const document = createNoteDocumentSession(scope, 'r', 1000);
+  const document = createNoteDocumentSession(scope, 'r', sourceLength);
   let state: NotePagesState = a.notePagesReducer(undefined, a.pagePanelOpened('w', 'n', 'p'));
   const note = state.byWorkspaceId.w.notes.n;
   state = {
@@ -173,7 +173,7 @@ function fixture(from = 1, to = 6) {
     expiresAt: identity.expiresAt,
     phase,
     streams: streams.map((s) => ({ ...s })),
-    ...(phase === 'sealed' ? { payloadDigest: payload, viewLength: 1000 } : {}),
+    ...(phase === 'sealed' ? { payloadDigest: payload, viewLength: sourceLength } : {}),
   });
   const respond = async (method: string, raw: unknown): Promise<any> => {
     expect(state.resourceLedger.used.physicalReads).toBe(1);
@@ -247,7 +247,7 @@ function fixture(from = 1, to = 6) {
     expect(p.kind).toBe('selectionMarkdown');
     expect(p).not.toHaveProperty('payloadDigest');
     const expected = source.slice(Math.min(from, to) - 1, Math.max(from, to) - 1).trim();
-    const text = expected.slice(offset, offset + 2),
+    const text = expected.slice(offset, offset + outputChunk),
       start = offset;
     offset += text.length;
     return {
@@ -258,7 +258,7 @@ function fixture(from = 1, to = 6) {
       payloadDigest: payload,
       viewId: 'view',
       outputKind: 'selectionMarkdown',
-      sourceLength: 1000,
+      sourceLength,
       expiresAt: identity.expiresAt,
       items: [{ offset: start, text }],
       nextCursor: offset === expected.length ? null : `cursor-${offset}`,
@@ -698,5 +698,35 @@ it('refuses a missing original window expiry before admission or native capture'
   expect(f.borrow).not.toHaveBeenCalled();
   expect(rpc).not.toHaveBeenCalled();
   expect(f.options.openSink).not.toHaveBeenCalled();
+  expect(f.debt()).toBe(0);
+});
+
+it('streams a supported paragraph through three exactly bounded selection requests', async () => {
+  const source = 'a'.repeat(2050),
+    f = fixture(1, 2051, source, 1024);
+  expect(await f.owner.copySelection()).toBe('copied');
+  expect(f.published()).toBe(source);
+  const reads = rpc.mock.calls
+    .filter(([method]) => method === 'note.operation.read')
+    .map(([, p]) => p);
+  expect(reads).toHaveLength(3);
+  expect(reads.map((p) => (p as any).cursor)).toEqual([undefined, 'cursor-1024', 'cursor-2048']);
+  for (const params of reads)
+    expect(params).toMatchObject({
+      kind: 'selectionMarkdown',
+      maxSourceBytes: 1024,
+      maxWireBytes: 8192,
+      maxItems: 64,
+    });
+  expect(f.sink.write.mock.calls.map(([text]) => text.length)).toEqual([1024, 1024, 2]);
+  expect(f.sink.commit).toHaveBeenCalledOnce();
+  expect(f.debt()).toBe(0);
+});
+it('refuses an otherwise matching selection fragment over the actual requested byte budget', async () => {
+  const f = fixture(1, 2051, 'a'.repeat(2050), 1025);
+  await expect(f.owner.copySelection()).rejects.toThrow('Staged source page exceeded');
+  expect(f.sink.write).not.toHaveBeenCalled();
+  expect(f.sink.commit).not.toHaveBeenCalled();
+  expect(f.sink.abort).toHaveBeenCalledOnce();
   expect(f.debt()).toBe(0);
 });

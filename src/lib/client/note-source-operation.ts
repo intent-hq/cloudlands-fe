@@ -137,6 +137,9 @@ function createSourceStage(
     noteId: input.scope.noteId,
     noteInstanceId: input.scope.noteInstanceId,
   });
+  // Keep selection output fragmented within the supported native paragraph;
+  // whole-source streaming retains its existing page budget.
+  const readBytes = output === 'selectionMarkdown' ? 1024 : 4096;
   const h = input.header;
   if (
     h.action !== action ||
@@ -446,7 +449,7 @@ function createSourceStage(
           kind: header.output,
           ...(cursor === undefined ? {} : { cursor }),
           maxItems: 64,
-          maxSourceBytes: 4096,
+          maxSourceBytes: readBytes,
           maxWireBytes: 8192,
         });
         envelope(p, 8192);
@@ -477,7 +480,7 @@ function createSourceStage(
             throw new Error('Selection output differs from native serializer');
           next += item.text.length;
           textBytes += size(item.text);
-          if (!uint(next) || next > extent || textBytes > 4096)
+          if (!uint(next) || next > extent || textBytes > readBytes)
             throw new Error('Staged source page exceeded');
           return item.text;
         });
