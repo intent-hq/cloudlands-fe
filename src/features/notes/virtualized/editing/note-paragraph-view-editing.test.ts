@@ -80,6 +80,7 @@ async function fixture(raw: { calls: unknown[]; at: number } = capture) {
     }),
   );
   dispatch(a.pagePanelOpened(ws, id, 'p'));
+  dispatch(a.pagePanelOpened(ws, id, 'other'));
   dispatch(
     a.pageStateReceived(ws, id, 0, {
       kind: 'notePageState',
@@ -140,6 +141,17 @@ async function fixture(raw: { calls: unknown[]; at: number } = capture) {
     offer,
     transport,
     listeners,
+    closeAndReopenPanel() {
+      // This fixture seeds subscription state above. Drive the real lifecycle
+      // reducer without inventing a second wire subscription/reconnect event.
+      started = false;
+      try {
+        dispatch(a.pagePanelClosed(ws, id, 'p'));
+        dispatch(a.pagePanelOpened(ws, id, 'p'));
+      } finally {
+        started = true;
+      }
+    },
     async navigate() {
       dispatch(a.pageWindowRequested(ws, id, 'p', raw.at));
       await vi.waitFor(() => {
@@ -310,5 +322,59 @@ it('accepts the final composing edit before materializing a navigation replaceme
     f.stop();
   }
   expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
+  expect(f.listeners.size).toBe(0);
+});
+
+it('refuses edits from an old native borrower after two-panel close/reopen and admits a fresh owner', async () => {
+  const f = await fixture();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const view = new NoteWindowView(host, {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+  });
+  let next: Awaited<ReturnType<typeof f.navigate>> | undefined;
+  try {
+    const oldEditing = await f.offer.ready;
+    view.showPrepared(f.window, oldEditing);
+    const old = view.editor!;
+    vi.spyOn(old.view, 'posAtCoords').mockReturnValue(null);
+    view.setSelection({ anchor: 65539, head: 65539, anchorAffinity: 1, headAffinity: 1 });
+    const before = f.note().document;
+    const generation = f.note().generation;
+    f.closeAndReopenPanel();
+    expect(f.note().generation).toBe(generation);
+    expect(f.note().state!.sourceRevision).toBe(f.window.sourceRevision);
+    expect(f.note().panels).toHaveProperty('other');
+    expect(f.note().panels).toHaveProperty('p');
+    expect(f.read().resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+    expect(() => oldEditing!.borrow!(f.window)).toThrow(/unavailable/);
+    old.commands.insertContent('X');
+    expect(old.state.doc.textContent).toBe('abc');
+    expect(f.note().document).toBe(before);
+    expect(f.note().drafts).toHaveLength(0);
+    const previousReads = f.transport.mock.calls.length;
+    next = await f.navigate();
+    const fresh = await next.offer.ready;
+    expect(f.transport.mock.calls.length).toBeGreaterThan(previousReads);
+    expect(fresh).not.toBe(oldEditing);
+    view.showPrepared(next.window, fresh);
+    expect(old.isDestroyed).toBe(true);
+    view.setSelection({ anchor: 65539, head: 65539, anchorAffinity: 1, headAffinity: 1 });
+    view.editor!.commands.insertContent('Y');
+    expect(view.editor!.state.doc.textContent).toBe('aYbc');
+    expect(f.note().document!.dirty).toEqual([{ start: 65539, end: 65539, text: 'Y' }]);
+    expect(f.note().drafts).toHaveLength(1);
+    await f.offer.release();
+  } finally {
+    view.destroy();
+    f.unmount();
+    await f.offer.release();
+    if (next) await next.offer.release();
+    f.stop();
+  }
+  expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
+  expect(f.read().resourceLedger.used.physicalReads).toBe(0);
   expect(f.listeners.size).toBe(0);
 });
