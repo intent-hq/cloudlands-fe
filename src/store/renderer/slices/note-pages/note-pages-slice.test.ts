@@ -9,6 +9,8 @@ import {
   pageDraftChanged,
   pageSaveStarted,
   pageSaveSettled,
+  pageSavePreparationFailed,
+  pageDraftsUnchanged,
 } from './note-pages-slice';
 const scope = { backendId: 'db-a', workspaceId: 'ws-a', noteId: 'spec', noteInstanceId: 'inc-a' };
 const tuple = {
@@ -36,6 +38,35 @@ const source = {
   contextRef: 'ctx',
   metadataRef: 'meta',
 };
+it('ignores stale save preparation and local cancellation results', () => {
+  let state = opened();
+  const generation = state.byWorkspaceId['ws-a'].notes.spec.generation;
+  state = notePagesReducer(
+    state,
+    pageDraftChanged('ws-a', 'spec', {
+      scope,
+      sequence: 1,
+      baseRevision: 'r:7',
+      splices: [{ start: 0, end: 0, text: 'x' }],
+      selection: { anchor: 1, head: 1, anchorAffinity: 'after', headAffinity: 'after' },
+    }),
+  );
+  const current = state;
+  state = notePagesReducer(
+    state,
+    pageSavePreparationFailed('ws-a', 'spec', generation + 1, 'late'),
+  );
+  state = notePagesReducer(state, pageDraftsUnchanged('ws-a', 'spec', generation + 1, 'r:7', 1));
+  state = notePagesReducer(state, pageDraftsUnchanged('ws-a', 'spec', generation, 'other', 1));
+  expect(state).toEqual(current);
+  state = notePagesReducer(
+    state,
+    pageSavePreparationFailed('ws-a', 'spec', generation, 'staged save needed'),
+  );
+  expect(state.byWorkspaceId['ws-a'].notes.spec.error).toBe('staged save needed');
+  expect(state.byWorkspaceId['ws-a'].notes.spec.drafts).toHaveLength(1);
+  expect(state.byWorkspaceId['ws-a'].notes.spec.status).toBe('ready');
+});
 function opened() {
   let s = notePagesReducer(undefined, pagePanelOpened('ws-a', 'spec', 'panel-a'));
   s = notePagesReducer(s, pageStateReceived('ws-a', 'spec', 0, tuple));

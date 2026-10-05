@@ -169,6 +169,21 @@ export const pageRequestFailed =
   >('notePages/requestFailed');
 export const pageDraftChanged =
   createAction<[workspaceId: string, noteId: string, draft: NoteDraft]>('notePages/draftChanged');
+export const pageSaveDraftsRequested = createAction<[workspaceId: string, noteId: string]>(
+  'notePages/saveDraftsRequested',
+);
+export const pageSavePreparationFailed = createAction<
+  [workspaceId: string, noteId: string, generation: number, error: string]
+>('notePages/savePreparationFailed');
+export const pageDraftsUnchanged = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    generation: number,
+    baseRevision: string,
+    throughSequence: number,
+  ]
+>('notePages/draftsUnchanged');
 export const pageSaveRequested =
   createAction<
     [workspaceId: string, noteId: string, operation: NoteSpliceOperation, throughSequence: number]
@@ -638,8 +653,27 @@ notePagesReducer.with(pageSaveStarted, (s, { payload: [ws, id, operation, throug
       operation.baseRevision !== n.state.sourceRevision
     )
       return n;
-    return { ...n, pending: { operation, throughSequence, status: 'saving' } };
+    return { ...n, error: null, pending: { operation, throughSequence, status: 'saving' } };
   }),
+);
+notePagesReducer.with(pageSavePreparationFailed, (s, { payload: [ws, id, generation, error] }) =>
+  update(s, ws, id, (n) => (n.generation === generation ? { ...n, error } : n)),
+);
+notePagesReducer.with(
+  pageDraftsUnchanged,
+  (s, { payload: [ws, id, generation, revision, through] }) =>
+    update(s, ws, id, (n) => {
+      if (
+        n.generation !== generation ||
+        n.state?.sourceRevision !== revision ||
+        n.pending ||
+        n.needsReconcile
+      )
+        return n;
+      // The captured edit prefix only inserted and removed its own text. No
+      // remote write happened; chronological history still belongs to the note.
+      return { ...n, drafts: n.drafts.filter((d) => d.sequence > through), error: null };
+    }),
 );
 notePagesReducer.with(pageSaveUnknown, (s, { payload: [ws, id, operationId] }) =>
   update(s, ws, id, (n) =>

@@ -49,6 +49,7 @@ afterEach(() => {
   tasks.length = 0;
   appClient.notes.pages = original;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 function run(client: MockNotePagesClient) {
   appClient.notes.pages = client;
@@ -816,4 +817,108 @@ it('finishes every visible panel window after saturated physical reads drain', a
   ]);
   expect(peak).toBeLessThanOrEqual(4);
   expect(outstanding).toBe(0);
+});
+
+// Real edit composition and digest, controlled RPC outcomes. These controls do
+// not stand in for the backend's atomic receipt transaction.
+async function draftSaveHarness() {
+  const { webcrypto } = await import('node:crypto');
+  vi.stubGlobal('crypto', webcrypto);
+  const save = vi.fn(async () => {
+    throw new Error('acknowledgement lost');
+  });
+  const client = new MockNotePagesClient({
+    capabilities: { backendId: 'db-a', annotations: false },
+    save,
+    read: async (_ws, _id, q) =>
+      q.kind === 'context'
+        ? {
+            kind: 'noteContextPage',
+            scope,
+            sourceRevision: 'r:7',
+            snapshotId: 'snap',
+            expiresAt: page.expiresAt,
+            items: [],
+            nextCursor: null,
+          }
+        : page,
+  });
+  const r = run(client);
+  r.dispatch(a.pagePanelOpened('ws-a', 'spec', 'p'));
+  r.dispatch(a.pageWindowRequested('ws-a', 'spec', 'p', 0));
+  await flush();
+  client.push(tuple);
+  await flush();
+  await flush();
+  const draft = (sequence: number, start: number, end: number, text: string) =>
+    r.dispatch(
+      a.pageDraftChanged('ws-a', 'spec', {
+        scope,
+        sequence,
+        baseRevision: 'r:7',
+        splices: [{ start, end, text }],
+        selection: {
+          anchor: start + text.length,
+          head: start + text.length,
+          anchorAffinity: 'after',
+          headAffinity: 'after',
+        },
+      }),
+    );
+  return { ...r, save, client, draft };
+}
+
+it('builds one base-revision save from local typing and retains its lost-ack identity', async () => {
+  const r = await draftSaveHarness();
+  r.draft(1, 0, 1, 'first');
+  r.draft(2, 1, 5, 'inal');
+  r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
+  await vi.waitFor(() => expect(r.save).toHaveBeenCalledTimes(1));
+  const pending = r.state().byWorkspaceId['ws-a'].notes.spec.pending!;
+  expect(pending.operation.splices).toEqual([{ start: 0, end: 1, text: 'final' }]);
+  expect(pending.operation.payloadDigest).toMatch(/^[a-f0-9]{64}$/);
+  expect(pending.throughSequence).toBe(2);
+  r.draft(3, 5, 5, '!');
+  r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
+  await flush();
+  expect(r.save).toHaveBeenCalledTimes(1);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.pending?.operation).toBe(pending.operation);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.drafts).toHaveLength(3);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.history).toHaveLength(3);
+  vi.unstubAllGlobals();
+});
+
+it('does not adopt a prepared save when the document changes while hashing', async () => {
+  const r = await draftSaveHarness();
+  const { webcrypto } = await import('node:crypto');
+  const hashed = deferred<ArrayBuffer>();
+  vi.spyOn(webcrypto.subtle, 'digest').mockReturnValue(hashed.promise);
+  r.draft(1, 0, 1, 'local');
+  r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
+  await flush();
+  r.client.push({ ...tuple, stateGeneration: '11', sourceRevision: 'r:8' });
+  hashed.resolve(new ArrayBuffer(32));
+  await flush();
+  expect(r.task.isRunning()).toBe(true);
+  expect(r.save).not.toHaveBeenCalled();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.drafts[0].splices[0].text).toBe('local');
+  vi.unstubAllGlobals();
+});
+
+it('keeps oversized edits dirty and only clears a proven local insertion/inverse prefix', async () => {
+  const r = await draftSaveHarness();
+  r.draft(1, 0, 0, '🦀');
+  r.draft(2, 0, 2, '');
+  r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
+  await flush();
+  expect(r.save).not.toHaveBeenCalled();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.drafts).toHaveLength(0);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.history).toHaveLength(2);
+  r.draft(3, 0, 1, 'x'.repeat(16_385));
+  r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
+  await flush();
+  expect(r.save).not.toHaveBeenCalled();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.error).toContain('staged save');
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.drafts[0].splices[0].text).toHaveLength(16_385);
+  vi.unstubAllGlobals();
 });

@@ -15,6 +15,8 @@ export interface NoteDraft {
   scope: NoteScope;
   sequence: number;
   baseRevision: string;
+  /** One native transaction's coordinates after all earlier dirty drafts.
+   * The save planner composes these into the wire's single-base batch. */
   splices: NoteSplice[];
   selection: {
     anchor: number;

@@ -1,6 +1,10 @@
 import { v4 as uuid } from 'uuid';
 import { notePageRequestKey } from '$features/notes/virtualized/note-assembly-reservation';
 import { noteWindowSaga } from './note-window-saga';
+import {
+  composeNoteEdits,
+  prepareNoteSave,
+} from '$features/notes/virtualized/editing/note-edit-plan';
 import type { NotePageSession } from '../note-pages-types';
 import { eventChannel, buffers } from 'redux-saga';
 import { call, put, race, take, takeEvery, fork } from 'typed-redux-saga';
@@ -12,6 +16,7 @@ import type {
   NoteReadPage,
   NotePagingCapabilities,
 } from '$lib/client/note-pages';
+import { sameNoteScope } from '$lib/client/note-pages';
 import {
   selectNotePageSession,
   selectPhysicalNoteReadCount,
@@ -30,6 +35,9 @@ import {
 const session = selectNotePageSession.effect;
 const key = (ws: string, id: string) => JSON.stringify([ws, id]);
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// A predicate for admission changes across all notes, not an action creator's
+// `.type` string. Every ownership action may release the next global slot.
+const isNotePageEvent = (event: ObservedAction) => event.type.startsWith('notePages/');
 
 type StreamEvent = { epoch: number } & ({ state: NotePageState } | { reset: true; error?: string });
 function* stream(ws: string, id: string) {
@@ -177,10 +185,7 @@ function* read(action: ReturnType<typeof actions.pageRequested>) {
     while (!(yield* selectNoteReadAdmitted.effect(ticket))) {
       if (!(yield* selectNoteReadCurrent.effect(ws, id, generation))) return;
       // Any note may release the next global slot. Never wait only for this note.
-      yield* take(
-        (event: ObservedAction) =>
-          event.type.startsWith('notePages/') || event.type === workspaceUnmounted.type,
-      );
+      yield* take([workspaceUnmounted, isNotePageEvent]);
     }
     if (!(yield* selectNoteReadCurrent.effect(ws, id, generation))) return;
     const page = yield* call([client, client.read], ws, id, scopedRequest);
@@ -217,6 +222,72 @@ function* save(action: ReturnType<typeof actions.pageSaveRequested>) {
     const outcome = rejectedNoteSave(error, operation);
     if (outcome) yield* put(actions.pageSaveSettled(ws, id, outcome));
     else yield* put(actions.pageSaveUnknown(ws, id, operation.operationId));
+  }
+}
+function* saveDrafts(action: ReturnType<typeof actions.pageSaveDraftsRequested>) {
+  const [ws, id] = action.payload;
+  let before: NotePageSession | undefined = yield* session(ws, id);
+  if (
+    !before?.state ||
+    before.status !== 'ready' ||
+    before.pending ||
+    before.needsReconcile ||
+    !before.drafts.length
+  )
+    return;
+  const { generation, state } = before;
+  const drafts = before.drafts.slice();
+  const through = drafts[drafts.length - 1].sequence;
+  try {
+    let window = Object.values(before.windows).find(
+      (w) =>
+        w.value?.sourceRevision === state.sourceRevision &&
+        sameNoteScope(w.value.scope, state.scope),
+    )?.value;
+    if (!window) throw new Error('Saving needs the current note source identity');
+    const sourceLength = window.sourceLength;
+    window = undefined;
+    before = undefined;
+    if (
+      drafts.some(
+        (d) => d.baseRevision !== state.sourceRevision || !sameNoteScope(d.scope, state.scope),
+      )
+    )
+      throw new Error('Note drafts require reconciliation before saving');
+    const splices = composeNoteEdits(sourceLength, drafts);
+    if (!splices.length) {
+      yield* put(actions.pageDraftsUnchanged(ws, id, generation, state.sourceRevision, through));
+      return;
+    }
+    const now = Date.now();
+    const operation = yield* call(
+      prepareNoteSave,
+      {
+        scope: state.scope,
+        sourceLength,
+        baseRevision: state.sourceRevision,
+        operationId: uuid(),
+        expiresAt: new Date(now + 86_400_000).toISOString(),
+        splices,
+      },
+      now,
+    );
+    const current = yield* session(ws, id);
+    // Hashing is asynchronous. Later typing may remain dirty, but a replaced
+    // document, rebase or recovered save must never adopt this captured plan.
+    if (
+      !current?.state ||
+      current.generation !== generation ||
+      current.state.sourceRevision !== state.sourceRevision ||
+      !sameNoteScope(current.state.scope, state.scope) ||
+      current.pending ||
+      current.needsReconcile ||
+      drafts.some((d, i) => current.drafts[i] !== d)
+    )
+      return;
+    yield* put(actions.pageSaveRequested(ws, id, operation, through));
+  } catch (error) {
+    yield* put(actions.pageSavePreparationFailed(ws, id, generation, message(error)));
   }
 }
 function* retry(action: ReturnType<typeof actions.pageSaveRetryRequested>) {
@@ -275,6 +346,11 @@ function* ownSession(
 export function* notePagesSaga() {
   yield* fork(noteWindowSaga);
   yield* takeEvery(actions.pageRequested, read);
+  yield* takeSingleFlightInContext(
+    actions.pageSaveDraftsRequested,
+    (a) => key(a.payload[0], a.payload[1]),
+    saveDrafts,
+  );
   yield* takeSingleFlightInContext(
     actions.pageSaveRequested,
     (a) => key(a.payload[0], a.payload[1]),
