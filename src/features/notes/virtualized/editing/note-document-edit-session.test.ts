@@ -730,3 +730,21 @@ it('does not publish a prepared document candidate after session replacement', (
   expect(publications).toBe(0);
   expect(current.dirty).toEqual([]);
 });
+
+it('refuses journal admission before native application and leaves the external session untouched', () => {
+  const f = fixture();
+  const publish = vi.fn();
+  const admit = vi.fn<NonNullable<Parameters<typeof createNoteDocumentTransactionOwner>[3]>>(
+    () => false,
+  );
+  const owner = createNoteDocumentTransactionOwner(f.authority, () => f.session, publish, admit);
+  const relay = createNoteTransactionRelay(() => owner);
+  const state = EditorState.create({ doc: owner.initial.doc, plugins: [relay.plugin] });
+  const result = state.applyTransaction(state.tr.insertText('X', 2));
+  expect(admit).toHaveBeenCalledTimes(1);
+  expect(admit.mock.calls[0]?.[0]).toBe(f.session);
+  expect(result.transactions).toEqual([]);
+  expect(result.state).toBe(state);
+  expect(publish).not.toHaveBeenCalled();
+  expect(f.session.history).toEqual([]);
+});

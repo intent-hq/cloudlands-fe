@@ -1,4 +1,5 @@
 import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
+import type { NoteDocumentSession } from '$features/notes/virtualized/editing/note-document-edit-session';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
 import type { NoteResourceLedger } from '$features/notes/virtualized/note-resource-ledger';
@@ -50,6 +51,8 @@ export interface NotePageSession {
   deferredRead: NotePageRequest | null;
   /** Session-owned, never evicted with clean pages. Preserved until explicit discard. */
   drafts: NoteDraft[];
+  /** Serializable document history; native documents and provisional plans stay outside Redux. */
+  document?: NoteDocumentSession;
   history: NoteDraft[];
   receipts: NoteCommitReceipt[];
   pending: {

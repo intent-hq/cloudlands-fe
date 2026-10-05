@@ -1,4 +1,9 @@
 import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
+import {
+  createNoteDocumentSession,
+  type NoteDocumentSession,
+} from '$features/notes/virtualized/editing/note-document-edit-session';
+import { prepareNoteDocumentPublication } from './note-document-publication';
 import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
 import {
   createNoteResourceLedger,
@@ -26,6 +31,7 @@ import type {
   NoteReadPage,
   NoteSaveOutcome,
   NoteSpliceOperation,
+  NoteSplice,
   SourceRange,
 } from '$lib/client/note-pages';
 import { sameNoteScope } from '$lib/client/note-pages';
@@ -176,6 +182,25 @@ export const pageRequestFailed =
   >('notePages/requestFailed');
 export const pageDraftChanged =
   createAction<[workspaceId: string, noteId: string, draft: NoteDraft]>('notePages/draftChanged');
+export const pageDocumentSelectionChanged = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    generation: number,
+    before: NoteDocumentSession,
+    selection: NoteDocumentSession['selection'],
+  ]
+>('notePages/documentSelectionChanged');
+export const pageDocumentPublished = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    generation: number,
+    before: NoteDocumentSession,
+    after: NoteDocumentSession,
+    splices: NoteSplice[],
+  ]
+>('notePages/documentPublished');
 export const pageSaveDraftsRequested = createAction<[workspaceId: string, noteId: string]>(
   'notePages/saveDraftsRequested',
 );
@@ -320,6 +345,18 @@ function reclaimCleanPages(initial: NotePagesState): NotePagesState {
   }
   return state;
 }
+function hasRetainedDocumentWork(n: NotePageSession): boolean {
+  return !!(
+    n.drafts.length ||
+    n.history.length ||
+    n.pending ||
+    n.receipts.length ||
+    n.document?.history.length ||
+    n.document?.dirty.length ||
+    n.document?.replay.length ||
+    (n.document && n.document.length !== n.document.baseLength)
+  );
+}
 function invalidate(n: NotePageSession): NotePageSession {
   return {
     ...n,
@@ -380,7 +417,7 @@ notePagesReducer.with(pageReset, (s, { payload: [ws, id, error] }) =>
 );
 notePagesReducer.with(pageLegacySelected, (s, { payload: [ws, id] }) =>
   update(s, ws, id, (n) => {
-    const retained = n.drafts.length || n.history.length || n.pending || n.receipts.length;
+    const retained = hasRetainedDocumentWork(n);
     return {
       ...invalidate(n),
       status: retained ? 'error' : 'legacy',
@@ -394,9 +431,11 @@ notePagesReducer.with(pageStateReceived, (s, { payload: [ws, id, generation, sta
       return n;
     if (n.state) {
       if (!sameNoteScope(n.state.scope, state.scope)) {
-        if (!n.drafts.length && !n.history.length && !n.pending && !n.receipts.length)
+        if (!hasRetainedDocumentWork(n))
           return {
             ...invalidate(n),
+            document: undefined,
+            needsReconcile: false,
             state,
             status: state.deleted ? 'deleted' : 'ready',
             error: null,
@@ -418,13 +457,12 @@ notePagesReducer.with(pageStateReceived, (s, { payload: [ws, id, generation, sta
       }
     }
     const changed = n.state !== null && !sameTuple(n.state, state);
+    const sourceChanged = n.state !== null && n.state.sourceRevision !== state.sourceRevision;
+    const retained = hasRetainedDocumentWork(n);
     return {
       ...(changed ? invalidate(n) : n),
-      needsReconcile:
-        n.needsReconcile ||
-        (n.drafts.length > 0 &&
-          n.state !== null &&
-          n.state.sourceRevision !== state.sourceRevision),
+      document: sourceChanged && !retained ? undefined : n.document,
+      needsReconcile: sourceChanged ? retained : n.needsReconcile,
       state,
       status: state.deleted ? 'deleted' : 'ready',
       error: null,
@@ -649,8 +687,57 @@ notePagesReducer.with(pageDraftChanged, (s, { payload: [ws, id, draft] }) =>
   update(s, ws, id, (n) => {
     if (!n.state || !sameNoteScope(draft.scope, n.state.scope)) return n;
     if (n.history.length && draft.sequence <= n.history[n.history.length - 1].sequence) return n;
-    return { ...n, drafts: [...n.drafts, draft], history: [...n.history, draft] };
+    return {
+      ...n,
+      drafts: [...n.drafts, draft],
+      history: [...n.history, draft],
+      needsReconcile: n.needsReconcile || !!n.document,
+    };
   }),
+);
+notePagesReducer.with(
+  pageDocumentSelectionChanged,
+  (s, { payload: [ws, id, generation, before, selection] }) =>
+    update(s, ws, id, (n) => {
+      if (
+        n.generation !== generation ||
+        n.document !== before ||
+        n.status !== 'ready' ||
+        n.needsReconcile ||
+        n.state?.sourceRevision !== before.baseRevision ||
+        !sameNoteScope(n.state.scope, before.scope) ||
+        ![selection.anchor, selection.head].every(
+          (p) => Number.isSafeInteger(p) && p >= 0 && p <= before.length,
+        ) ||
+        ![-1, 1].includes(selection.anchorAffinity) ||
+        ![-1, 1].includes(selection.headAffinity)
+      )
+        return n;
+      if (
+        Object.entries(selection).every(
+          ([key, value]) => before.selection[key as keyof typeof selection] === value,
+        )
+      )
+        return n;
+      return { ...n, document: { ...before, selection: { ...selection } } };
+    }),
+);
+notePagesReducer.with(
+  pageDocumentPublished,
+  (s, { payload: [ws, id, generation, before, after, splices] }) =>
+    update(s, ws, id, (n) => {
+      if (n.generation !== generation) return n;
+      const admitted = prepareNoteDocumentPublication(n, before, after, splices);
+      if (!admitted) return n;
+      return {
+        ...n,
+        document: after,
+        drafts: admitted.draft ? [...n.drafts, admitted.draft] : n.drafts,
+        // The document session owns undo. This journal keeps only the monotonic
+        // sequence checkpoint; pending drafts retain their chronological batches.
+        history: admitted.draft ? [admitted.draft] : n.history,
+      };
+    }),
 );
 notePagesReducer.with(pageSaveStarted, (s, { payload: [ws, id, operation, throughSequence] }) =>
   update(s, ws, id, (n) => {
@@ -767,7 +854,7 @@ notePagesReducer.with(workspaceUnmounted, (s, { payload: [ws] }) => {
     for (const window of Object.values(n.windows))
       if (window.resourceOwner)
         resourceLedger = releaseNoteResources(resourceLedger, window.resourceOwner);
-    if (n.drafts.length || n.history.length || n.pending)
+    if (hasRetainedDocumentWork(n))
       notes[id] = {
         ...invalidate(n),
         generation: nextGeneration++,
@@ -865,6 +952,23 @@ notePagesReducer.with(
       };
     return update(s, ws, id, (note) => ({
       ...note,
+      ...(value?.native &&
+      note.status === 'ready' &&
+      !note.needsReconcile &&
+      !note.document &&
+      !hasRetainedDocumentWork(note)
+        ? {
+            document: {
+              ...createNoteDocumentSession(value.scope, value.sourceRevision, value.sourceLength),
+              selection: {
+                anchor: value.range.start,
+                head: value.range.start,
+                anchorAffinity: 1,
+                headAffinity: 1,
+              },
+            },
+          }
+        : {}),
       windows: {
         ...note.windows,
         [panel]: {

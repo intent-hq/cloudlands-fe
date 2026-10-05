@@ -14,12 +14,9 @@ import type { NoteWindow } from './note-window-reader';
 import type { NoteResourceCost } from './note-resource-ledger';
 import { createNoteTransactionRelay, type NoteTransactionOwner } from './note-transaction-relay';
 
-export interface NoteSourceSelection {
-  anchor: number;
-  head: number;
-  anchorAffinity: -1 | 1;
-  headAffinity: -1 | 1;
-}
+import type { NoteSourceSelection } from './note-source-selection';
+export type { NoteSourceSelection } from './note-source-selection';
+
 export interface NoteViewEditing {
   /** Resolve a current document-owned authority for this mounted window. Binding is
    * pure; an unsupported or stale window remains read-only. */

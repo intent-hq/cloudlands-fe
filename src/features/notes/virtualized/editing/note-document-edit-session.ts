@@ -1,7 +1,7 @@
 import type { Transaction } from '@tiptap/pm/state';
 import { ReplaceStep } from '@tiptap/pm/transform';
 import { sameNoteScope, type NoteScope, type NoteSplice } from '$lib/client/note-pages';
-import type { NoteSourceSelection } from '../note-window-view';
+import type { NoteSourceSelection } from '../note-source-selection';
 import type { NoteEditAuthority, NoteReplayEdit } from './note-edit-authority';
 import { composeNoteEdits } from './note-edit-plan';
 

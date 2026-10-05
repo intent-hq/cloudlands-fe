@@ -26,6 +26,11 @@ export function createNoteDocumentTransactionOwner(
   base: NoteEditAuthority,
   read: () => NoteDocumentSession | undefined,
   publish: (before: NoteDocumentSession, after: NoteDocumentSession, splices: NoteSplice[]) => void,
+  admit: (
+    before: NoteDocumentSession,
+    after: NoteDocumentSession,
+    splices: NoteSplice[],
+  ) => boolean = () => true,
 ): NoteTransactionOwner {
   const original = read();
   if (!original) throw new Error('Missing note document session');
@@ -40,7 +45,22 @@ export function createNoteDocumentTransactionOwner(
     batches: [],
     splices: [],
   });
-  const current = () => read() === committed;
+  // A selection-only Redux publication preserves all content/history identities.
+  // Accept it for the next root, but never change a plan's captured origin during
+  // native application: finalization still compares that exact object.
+  const sameContent = (state: NoteDocumentSession | undefined) =>
+    !!state &&
+    state.scope === committed.scope &&
+    state.baseRevision === committed.baseRevision &&
+    state.baseLength === committed.baseLength &&
+    state.length === committed.length &&
+    state.generation === committed.generation &&
+    state.history === committed.history &&
+    state.cursor === committed.cursor &&
+    state.dirty === committed.dirty &&
+    state.replay === committed.replay &&
+    state.limits === committed.limits;
+  const current = () => sameContent(read());
   return {
     initial,
     current,
@@ -48,14 +68,16 @@ export function createNoteDocumentTransactionOwner(
       const prior = candidates.get(before);
       if (!prior || !current()) return undefined;
       const root = prior.state === committed;
-      const origin = root ? committed : prior.origin;
+      const origin = root ? read()! : prior.origin;
       const next = prepareNoteDocumentEdit(
-        prior.state,
+        root ? origin : prior.state,
         transaction,
         prior.authority,
         root ? {} : { appendTo: prior.group },
       );
       const batches = [...(root ? [] : prior.batches), { splices: next.splices }];
+      const splices = composeNoteEdits(origin.length, batches);
+      if (!admit(origin, next.state, splices)) return undefined;
       const candidate = { doc: next.authority.doc, projection: next.authority };
       candidates.set(candidate, {
         origin,
@@ -63,13 +85,13 @@ export function createNoteDocumentTransactionOwner(
         authority: next.authority,
         group: next.historyGroup,
         batches,
-        splices: composeNoteEdits(origin.length, batches),
+        splices,
       });
       return candidate;
     },
     finalize(after, selection) {
       const prepared = candidates.get(after);
-      if (!prepared || prepared.origin !== committed || !current()) return undefined;
+      if (!prepared || prepared.origin !== read() || !current()) return undefined;
       // Native application and pure step preparation can produce equivalent,
       // distinct PM documents. Resolve the final selection against this exact doc.
       const transaction = EditorState.create({ doc: after.doc }).tr.setSelection(
@@ -81,6 +103,7 @@ export function createNoteDocumentTransactionOwner(
         prepared.authority,
         prepared.group === undefined ? {} : { appendTo: prepared.group },
       );
+      if (!admit(prepared.origin, final.state, prepared.splices)) return undefined;
       // Selection/history metadata may change; native content and its map cannot.
       const candidate = { doc: after.doc, projection: after.projection };
       candidates.set(candidate, { ...prepared, state: final.state });
@@ -88,7 +111,7 @@ export function createNoteDocumentTransactionOwner(
     },
     commit({ after }) {
       const prepared = candidates.get(after);
-      if (!prepared || prepared.origin !== committed || !current())
+      if (!prepared || prepared.origin !== read() || !current())
         throw new Error('Lost prepared note adoption');
       publish(prepared.origin, prepared.state, prepared.splices);
       if (read() !== prepared.state) throw new Error('Note document adoption was not acknowledged');
