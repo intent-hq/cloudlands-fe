@@ -1040,8 +1040,9 @@
                       <div class="queued-message-body min-w-0 flex-1">
                         {#each message.deliveryGroups?.length ? message.deliveryGroups : [message] as group, index (index)}
                           <div
-                            class="mb-1 last:mb-0"
-                            class:contents={!message.deliveryGroups?.length}
+                            class={message.deliveryGroups?.length
+                              ? 'mb-2 border-b border-border pb-2 last:mb-0 last:border-b-0 last:pb-0'
+                              : 'contents'}
                             data-testid={message.deliveryGroups?.length
                               ? 'queued-message-delivery-group'
                               : undefined}
