@@ -1,3 +1,4 @@
+// @vitest-environment node
 // @verify-changed-triggers: package.json, scripts/run-unit-tests.mjs, scripts/unit-test-prerequisites.mjs, scripts/transfer-selection-fixtures.mjs
 import { spawnSync } from 'node:child_process';
 import {
@@ -13,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { parseCLI } from 'vitest/node';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 
@@ -248,6 +250,45 @@ describe('test:unit package-script boundary', () => {
 
 describe('canonical fixture preflight before Vitest', () => {
   it.each([
+    { args: ['--maxWorkers=', '1'], filters: [] },
+    { args: ['-t=', 'unrelated-name'], filters: [] },
+    { args: ['--silent=', 'passed-only'], filters: [] },
+    {
+      args: ['--globals=ModelPicker', 'unrelated.test.ts'],
+      filters: ['ModelPicker', 'unrelated.test.ts'],
+    },
+    {
+      args: ['--isolate=src/lib/components/chat', 'unrelated.test.ts'],
+      filters: ['src/lib/components/chat', 'unrelated.test.ts'],
+    },
+  ])('preflights ambiguous equals arguments $args using the Vitest parser', ({ args, filters }) => {
+    // The installed parser is independent of our conservative selection helper:
+    // empty equals consumes the next value; boolean equals can add a file filter.
+    const parsed = parseCLI(['vitest', 'run', '--config', 'vitest.config.ts', ...args]);
+    expect(parsed.filter).toEqual(filters);
+    expect(filters.length === 0 || filters.some((filter) => contractTest.includes(filter))).toBe(
+      true,
+    );
+
+    const { root, fixtureRoot } = fixture();
+    rmSync(join(fixtureRoot, 'public-sessions.json'));
+    const missing = run(root, args);
+    expect(missing.children, missing.output).toEqual([{ child: 'prepare', args: [] }]);
+    expect(missing.status).toBe(1);
+    expect(missing.output).toContain(join(fixtureRoot, 'public-sessions.json'));
+    expect(missing.output).toContain('TRANSFER_SELECTION_FIXTURE_ROOT=');
+
+    copyFileSync(canonical.paths.generated, join(fixtureRoot, 'public-sessions.json'));
+    rmSync(join(root, 'children.jsonl'));
+    const valid = run(root, args);
+    expect(valid.status, valid.output).toBe(0);
+    expect(valid.children).toEqual([
+      { child: 'prepare', args: [] },
+      { child: 'vitest', args: ['run', '--config', 'vitest.config.ts', ...args] },
+    ]);
+  });
+
+  it.each([
     [],
     [contractTest],
     ['src/lib/components/chat'],
@@ -297,6 +338,7 @@ describe('canonical fixture preflight before Vitest', () => {
     ['unrelated.test.ts', '-t', '--'],
     ['unrelated.test.ts', '--silent', 'passed-only'],
     ['unrelated.test.ts', '--coverage=false', '--maxWorkers=1'],
+    ['unrelated.test.ts', '--globals=true', '--isolate=false'],
   ])('keeps unrelated focused selection independent of fixtures %j', (...args: string[]) => {
     const { root } = fixture();
     rmSync(join(root, 'shared'), { recursive: true });

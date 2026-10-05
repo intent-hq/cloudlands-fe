@@ -57,6 +57,9 @@ export function requiresTransferSelectionFixtures(args, { root = repo } = {}) {
       continue;
     }
     const option = arg.split('=', 1)[0];
+    const equalsValue = arg.includes('=') ? arg.slice(option.length + 1) : undefined;
+    // Vitest can consume the next token after an empty equals value.
+    if (equalsValue === '') return true;
     if (valueOptions.has(option)) {
       if (!arg.includes('=')) {
         if (++index >= args.length) return true;
@@ -65,6 +68,8 @@ export function requiresTransferSelectionFixtures(args, { root = repo } = {}) {
       // Unlike the boolean flags, silent accepts an optional string (passed-only).
       if (!arg.includes('=') && args[index + 1] && !args[index + 1].startsWith('-')) index++;
     } else if (booleanOptions.has(option)) {
+      // Non-boolean equals values can become positional file filters in Vitest.
+      if (equalsValue !== undefined && !['true', 'false'].includes(equalsValue)) return true;
       if (!arg.includes('=') && ['true', 'false'].includes(args[index + 1])) index++;
     } else {
       return true;
