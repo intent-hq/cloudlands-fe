@@ -372,6 +372,7 @@ import { selectModel } from '$store/renderer/slices/model/model-slice';
 import { store as mockAppStore } from '$store/renderer/store';
 import {
   providerModelsCacheCleared,
+  providerModelsLoaded,
   providerModelsReducer,
   providerModelsRequested,
   initialState as providerModelsInitialState,
@@ -5101,6 +5102,54 @@ describe('ModelPicker cache hydration and explicit revalidation', () => {
     if (workspaceId) mockProviderModelsState.byWorkspaceId = { [workspaceId]: entries };
     else mockProviderModelsState.byProviderId = entries;
   }
+
+  it('shows a learned label while discovery is pending without making it selectable or inferring effort', async () => {
+    mockAppStore.dispatch(
+      providerModelsLoaded(
+        'auggie',
+        {
+          models: [
+            {
+              value: 'sonnet4.6',
+              label: 'Remembered Sonnet',
+              effortLevels: ['high'],
+              isDefault: true,
+            },
+          ],
+        },
+        0,
+      ),
+    );
+    mockAppStore.dispatch(providerModelsCacheCleared());
+    let finish!: (value: { models: [] }) => void;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const onModelChange = vi.fn();
+    render(ModelPicker, {
+      selectedModel: 'sonnet4.6',
+      providerId: 'auggie',
+      showReasoning: true,
+      onModelChange,
+      portal: false,
+    });
+    const trigger = screen.getByRole('button');
+    expect(trigger.textContent).toContain('Remembered Sonnet');
+    await fireEvent.click(trigger);
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(screen.queryByRole('option', { name: /Remembered Sonnet/ })).toBeNull();
+    expect(screen.queryByRole('slider')).toBeNull();
+    finish({ models: [] });
+    await waitFor(() =>
+      expect(mockProviderModelsState.requests.map.auggie?.status).toBe('success'),
+    );
+    expect(trigger.textContent).toContain('Remembered Sonnet');
+    expect(screen.queryByRole('option', { name: /Remembered Sonnet/ })).toBeNull();
+    expect(onModelChange).not.toHaveBeenCalled();
+  });
 
   it('renders the cached label without a remount fetch and keeps it during explicit refresh', async () => {
     seedCache('ws-1');

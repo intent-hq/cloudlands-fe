@@ -9,6 +9,9 @@
    * never sent to the provider.
    */
   import Fa from 'svelte-fa';
+  import { toStore } from 'svelte/store';
+  import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
+  import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { faArrowRightArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { formatProviderRehomedLabel, type ProviderRehomedNoticeInfo } from './rehome-notice';
@@ -26,7 +29,22 @@
     fallbackText = m.chat_providerRehomedNotice_fallback_label(),
   }: Props = $props();
 
-  const label = $derived(formatProviderRehomedLabel(notice, fallbackText, workspaceId));
+  const fromProvider = toStore(() => notice.fromProvider ?? '');
+  const toProvider = toStore(() => notice.toProvider ?? '');
+  const fromName$ = selectModelDisplayName(
+    fromProvider,
+    toStore(() => notice.from ?? ''),
+    toStore(() => workspaceId),
+  );
+  const fromProviderName$ = selectProviderDisplayName(fromProvider);
+  const toProviderName$ = selectProviderDisplayName(toProvider);
+  const label = $derived.by(() => {
+    // Keep mounted transcript rows current when discovery or hydration supplies names.
+    void $fromName$;
+    void $fromProviderName$;
+    void $toProviderName$;
+    return formatProviderRehomedLabel(notice, fallbackText, workspaceId);
+  });
 </script>
 
 <div class="provider-rehomed-notice my-4 flex w-full min-w-0 items-center gap-3" role="status">

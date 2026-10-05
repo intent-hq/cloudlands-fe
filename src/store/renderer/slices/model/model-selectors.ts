@@ -13,6 +13,8 @@ import {
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+import { modelIdForDisplay, resolveModelDisplayName } from '$shared/utils/model-display-name';
+import { selectLearnedModelDisplayName } from '../provider-models/provider-models-selectors';
 import {
   selectActiveProviderId,
   selectAvailableEnabledProviderIds,
@@ -202,32 +204,46 @@ export const selectModelFallbackInfo = store.createSelector((state, agentId: str
   return state.model.fallbackInfoByAgentId[agentId] ?? null;
 });
 
-/**
- * Pretty display name (catalog `label`) for a (provider, bare model id) pair,
- * or `undefined` on a lookup miss (catalog not loaded for that provider /
- * unknown model). Catalog rows carry bare ids: the active catalog resolves
- * when its `availableModelsProviderId` provenance matches, and other
- * providers resolve through the session-lifetime provider-models cache.
- */
-export const selectModelDisplayName = store.createSelector(
-  (state, providerId: string, modelId: string, workspaceId?: string): string | undefined => {
-    const bareId = splitLegacyCompoundId(modelId).modelId;
+/** Authoritative model metadata only; learned display names never establish capabilities. */
+export const selectModelCatalogEntry = store.createSelector(
+  (state, providerId: string, modelId: string, workspaceId?: string): AuggieModel | undefined => {
+    const normalize = (id: string) => selectNormalizedProviderId.select(state, id, workspaceId);
+    const provider = normalize(providerId);
+    const bareId = modelIdForDisplay(modelId, provider, normalize);
     const models: Collection<AuggieModel, 'value'> | undefined = state.model?.availableModels;
     if (
       !workspaceId &&
       models &&
-      (!providerId || providerId === state.model.availableModelsProviderId)
+      (!provider || provider === state.model.availableModelsProviderId)
     ) {
-      const label = getItem(models, bareId)?.label;
-      if (label) return label;
+      const row = getItem(models, modelId) ?? getItem(models, bareId);
+      if (row) return row;
     }
-    if (providerId) {
-      const cached = workspaceId
-        ? state.providerModels?.byWorkspaceId?.[workspaceId]?.[providerId]
-        : state.providerModels?.byProviderId[providerId];
-      return cached?.models.find((model) => model.value === bareId)?.label;
-    }
-    return undefined;
+    const cached = workspaceId
+      ? state.providerModels?.byWorkspaceId?.[workspaceId]?.[provider]
+      : state.providerModels?.byProviderId?.[provider];
+    return (
+      cached?.models.find((model) => model.value === modelId) ??
+      cached?.models.find((model) => modelIdForDisplay(model.value, provider, normalize) === bareId)
+    );
+  },
+);
+
+/** Live labels in the requested scope win; persisted names are a synchronous display-only fallback. */
+export const selectModelDisplayName = store.createSelector(
+  (state, providerId: string, modelId: string, workspaceId?: string): string | undefined => {
+    const normalize = (id: string) => selectNormalizedProviderId.select(state, id, workspaceId);
+    const provider = normalize(providerId);
+    const bareId = modelIdForDisplay(modelId, provider, normalize);
+    const live = (id: string) =>
+      selectModelCatalogEntry.select(state, provider, id, workspaceId)?.label;
+    const learned = (id: string) => selectLearnedModelDisplayName.select(state, provider, id);
+    return (
+      resolveModelDisplayName(modelId, live) ??
+      (bareId !== modelId ? resolveModelDisplayName(bareId, live) : undefined) ??
+      learned(modelId) ??
+      resolveModelDisplayName(bareId, learned)
+    );
   },
 );
 

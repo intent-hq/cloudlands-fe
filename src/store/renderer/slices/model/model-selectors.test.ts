@@ -661,3 +661,70 @@ it.each(['acp', 'default', 'augment'])(
     expect(selectAgentModelEffortLevels.select(state, 'b')).toEqual(['medium', 'max']);
   },
 );
+
+describe('learned model display names', () => {
+  function learnedState() {
+    const state = mockState();
+    state.providerModels.learnedNames = {
+      codex: {
+        shared: 'Remembered Codex',
+        'org/model:variant': 'Custom identity',
+        org: 'Wrong base',
+      },
+      auggie: { shared: 'Remembered Auggie' },
+    };
+    return state;
+  }
+
+  it('resolves learned names without live catalogs and keeps provider identities separate', () => {
+    const state = learnedState();
+    expect(selectModelDisplayName.select(state, 'codex', 'shared')).toBe('Remembered Codex');
+    expect(selectModelDisplayName.select(state, 'auggie', 'shared', 'ws-1')).toBe(
+      'Remembered Auggie',
+    );
+    expect(selectModelDisplayName.select(state, 'codex', 'never-seen')).toBeUndefined();
+    expect(selectProviderModelEffortLevels.select(state, 'codex', 'shared')).toBeUndefined();
+    expect(selectHasResolvableModel.select(state, 'codex')).toBe(false);
+  });
+
+  it('preserves full slash/colon identities and only formats recognized legacy effort suffixes', () => {
+    const state = learnedState();
+    expect(selectModelDisplayName.select(state, 'codex', 'org/model:variant')).toBe(
+      'Custom identity',
+    );
+    expect(selectModelDisplayName.select(state, 'codex', 'org/unknown')).toBeUndefined();
+    expect(selectModelDisplayName.select(state, 'codex', 'codex:shared/high')).toBe(
+      'Remembered Codex (High)',
+    );
+    state.providerModels.learnedNames.codex['shared/high'] = 'Exact slash model';
+    expect(selectModelDisplayName.select(state, 'codex', 'shared/high')).toBe('Exact slash model');
+  });
+
+  it('normalizes advertised provider aliases and their legacy prefixes', () => {
+    const state = learnedState();
+    state.providerCatalog.providers = createCollection('id', [
+      { id: 'codex', legacyAliases: ['old-codex'] },
+    ] as never);
+    expect(selectModelDisplayName.select(state, 'old-codex', 'old-codex:shared')).toBe(
+      'Remembered Codex',
+    );
+  });
+
+  it('prefers live labels in the requested scope, including legacy effort base labels', () => {
+    const state = learnedState();
+    state.model.availableModelsProviderId = 'codex';
+    state.model.availableModels = createCollection('value', [
+      { value: 'shared', label: 'Active name' },
+    ]);
+    state.providerModels.learnedNames.codex['shared/high'] = 'Old effort name';
+    state.providerModels.byWorkspaceId = {
+      'ws-1': { codex: { models: [{ value: 'shared', label: 'Workspace name' }], fetchedAt: '' } },
+    };
+    expect(selectModelDisplayName.select(state, 'codex', 'shared')).toBe('Active name');
+    expect(selectModelDisplayName.select(state, 'codex', 'shared/high')).toBe('Active name (High)');
+    expect(selectModelDisplayName.select(state, 'codex', 'shared', 'ws-1')).toBe('Workspace name');
+    expect(selectModelDisplayName.select(state, 'codex', 'shared', 'ws-2')).toBe(
+      'Remembered Codex',
+    );
+  });
+});
