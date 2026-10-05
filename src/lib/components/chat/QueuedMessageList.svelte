@@ -510,7 +510,6 @@
     };
   });
 
-  /** Renderable src for a queued image block: inline data URL or resolved reference URL. */
   function queuedImageSrc(block: NonNullable<QueuedMessage['imageBlocks']>[number]): string | null {
     if (block.attachmentId) {
       return referenceImageUrls[block.attachmentId] ?? null;
@@ -519,9 +518,7 @@
     return null;
   }
 
-  // A resolved reference thumbnail failed to load (the protocol handler
-  // refused the read, e.g. its backend is disconnected): fall back to the
-  // placeholder tile and evict the URL so the next render re-resolves.
+  // Retry failed reference images when the connection returns.
   function handleReferenceImageError(
     block: NonNullable<QueuedMessage['imageBlocks']>[number],
     src: string,
@@ -532,7 +529,6 @@
     referenceImageObservers.get(attachmentId)?.imageFailed();
   }
 
-  // Open a queued image attachment in the lightbox
   function openImageLightbox(
     block: NonNullable<QueuedMessage['imageBlocks']>[number],
     openerElement: HTMLButtonElement,
@@ -546,10 +542,6 @@
     lightboxOpen = true;
   }
 
-  // Click on a queued attachment-reference file chip: the workspace-navigation
-  // tab saga resolves the registry row by attachmentId (file.getAttachmentInfo,
-  // PROTOCOL §5.9) and opens the stored path in a file tab; missing file →
-  // toast. The workspace id is captured from immutable route context at init.
   function openQueuedFileAttachment(block: NonNullable<QueuedMessage['fileBlocks']>[number]) {
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceAttachment(workspaceId, block.attachmentId, block.fileName));
