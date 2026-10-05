@@ -93,7 +93,10 @@ function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
 }
 
 export class LiveNotePagesClient extends NotePageReader implements NotePagesClient {
-  createSaveOperation(input: NoteStagedSaveInput, current: () => boolean) {
+  createSaveOperation(
+    input: NoteStagedSaveInput,
+    current: () => boolean,
+  ): ReturnType<typeof createNoteStagedSaveOperation> {
     return createNoteStagedSaveOperation(
       (method, params) => backendRequest(method, params),
       input,
@@ -148,7 +151,10 @@ export class LiveNotePagesClient extends NotePageReader implements NotePagesClie
       op,
     );
   }
-  createSourceOperation(input: NoteSourceOperationInput, current: () => boolean) {
+  createSourceOperation(
+    input: NoteSourceOperationInput,
+    current: () => boolean,
+  ): ReturnType<typeof createNoteSourceOperation> {
     return createNoteSourceOperation(
       (method, params) => backendRequest(method, params),
       input,
