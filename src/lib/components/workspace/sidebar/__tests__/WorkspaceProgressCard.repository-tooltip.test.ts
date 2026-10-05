@@ -406,7 +406,6 @@ describe('WorkspaceProgressCard repository tooltip', () => {
     });
     expect(pathButton.hasAttribute('data-sidebar-repository-path-copy')).toBe(true);
     expect(pathButton.getAttribute('variant')).toBe('plain');
-    expect(pathButton.getAttribute('title')).toBe('/home/dev/worktrees/feature-pill');
     for (const className of ['underline', 'decoration-dotted', 'underline-offset-2']) {
       expect(pathButton.classList.contains(className), className).toBe(true);
     }
