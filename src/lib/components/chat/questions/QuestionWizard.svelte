@@ -31,7 +31,8 @@
     draftKey?: string;
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
-    onComplete?: (answers: QuestionAnswer[]) => boolean | void;
+    /** Return false to decline admission; legacy notification callbacks remain valid. */
+    onComplete?: ((answers: QuestionAnswer[]) => boolean) | ((answers: QuestionAnswer[]) => void);
     onDismiss?: () => Promise<void> | void;
   }
 

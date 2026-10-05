@@ -98,7 +98,9 @@ for (const outcome of ['rejected', 'uncertain'] as const) {
         component.getByRole('checkbox', { name: /Start with the smallest change/ }),
       ).toBeVisible();
       await component.getByRole('button', { name: 'Hide', exact: true }).click();
+      await expect(component.getByRole('checkbox')).toHaveCount(0);
     } else await expect(component.getByRole('checkbox')).toHaveCount(0);
+    await expect(editor).toBeVisible();
     await expect(editor).toHaveText('Keep this newer draft');
     await page.screenshot({ path: info.outputPath(`${outcome}-recovery.png`) });
   });
