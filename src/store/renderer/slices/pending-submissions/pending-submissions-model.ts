@@ -118,8 +118,16 @@ export function retireSubmissions(
     // Processing snapshots outlive terminal retention. Do not restart an evicted
     // terminal clock merely because another observation touches that snapshot.
     const operation = getItem(entry.operations, id);
-    if (prior || getItem(entry.submissions, id) || (operation && !operation.observed))
-      tombstones.push({ id, at: prior?.at ?? now, reason });
+    const submission = getItem(entry.submissions, id);
+    if (prior || submission || (operation && !operation.observed)) {
+      const messageMetadata = prior?.messageMetadata ?? submission?.messageMetadata;
+      tombstones.push({
+        id,
+        at: prior?.at ?? now,
+        reason,
+        ...(messageMetadata ? { messageMetadata } : {}),
+      });
+    }
   }
   return pruneSubmissionTombstones(
     {
