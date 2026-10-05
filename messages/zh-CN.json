@@ -7270,5 +7270,18 @@
   "gitlabCheckout_emptyRepository_description": "此仓库尚无可检出的分支。",
   "gitlabCheckout_branchChanged_description": "分支已更改。请刷新并确认当前提交。",
   "gitlabCheckout_createRecovery_description": "检出不可用。请刷新并确认项目、分支和提交，然后再次选择“创建”。",
-  "gitlabCheckout_useLink_label": "使用链接"
+  "gitlabCheckout_useLink_label": "使用链接",
+  "agent_hub_checkpointRequired": "合并前需要成功的检查点。",
+  "agent_placement_backendChanged": "准备请求时后端发生了变化。请重试。",
+  "agent_hub_discardDescription": "停止此代理并丢弃其隔离检出和恢复引用？",
+  "agent_placement_specialistUnavailable": "所选专家不可用。请重新选择专家。",
+  "agent_hub_merge": "合并检查点",
+  "agent_placement_retiredIsolation": "已停止支持单个代理的 CoW 隔离。",
+  "agent_placement_unavailable": "此守护进程不支持节点执行。",
+  "agent_hub_discard": "丢弃隔离工作",
+  "agent_hub_merged": "已合并检查点。",
+  "agent_hub_discarded": "已丢弃隔离工作。",
+  "agent_placement_incompatibleIsolation": "部署位置不能与旧版隔离设置同时使用。",
+  "agent_hub_blocked": "合并需要处理：{detail}",
+  "agent_placement_labsRequired": "开始远程工作前，请在 Labs 中启用远程代理。"
 }

@@ -4,6 +4,7 @@ import { createMockWorkspace } from '../../../../../test/factories/workspace.fac
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { AgentStatus } from '$shared/types/agent.types';
 vi.mock('$lib/client/live/backend-transport', () => ({
+  observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
   backendRequest: vi.fn(),
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),

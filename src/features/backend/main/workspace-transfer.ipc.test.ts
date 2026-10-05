@@ -144,6 +144,8 @@ describe('workspace-transfer IPC — per-window affinity wiring', () => {
     // — the transfer relay's target connection identifies itself by clientId
     // alone so the daemon never routes `browser.exec` to it.
     await expect(opts.helloParams()).resolves.toEqual({ clientId: 'client-1' });
+    const { getOrCreateClientId } = await import('./client-identity');
+    expect(getOrCreateClientId).toHaveBeenLastCalledWith({ kind: 'remote' });
   });
 });
 

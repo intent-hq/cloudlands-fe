@@ -4,6 +4,44 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.205.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.204.0...v2.205.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* add agent node placement and hub controls ([#3015](https://github.com/intent-hq/cloudlands-fe/issues/3015)) ([ed88004](https://github.com/intent-hq/cloudlands-fe/commit/ed88004df0cabf5d171e077cabf7ed1c0983b14f))
+
+
+### 🐛 Bug Fixes
+
+* keep hardware window cycling available in shared windows ([#3197](https://github.com/intent-hq/cloudlands-fe/issues/3197)) ([f66fd7e](https://github.com/intent-hq/cloudlands-fe/commit/f66fd7ec7621b60f62e32a3780137e9e4f62c6a3))
+* keep opened browser tabs registered with the daemon ([#3194](https://github.com/intent-hq/cloudlands-fe/issues/3194)) ([f84cd63](https://github.com/intent-hq/cloudlands-fe/commit/f84cd636d1840835dc5260f68b4baf1fdb48fc3e))
+
+## [2.204.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.7...v2.204.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* add qualified GitLab repository checkout ([#3167](https://github.com/intent-hq/cloudlands-fe/issues/3167)) ([66f9cb0](https://github.com/intent-hq/cloudlands-fe/commit/66f9cb0b77cee2de9e29d03778530ab98a8eb547))
+* distinguish automatic workspace PR refreshes ([#3179](https://github.com/intent-hq/cloudlands-fe/issues/3179)) ([1cc2226](https://github.com/intent-hq/cloudlands-fe/commit/1cc2226897e82299131b48bc063728cf99f326a7))
+* prepare provider adapters during first-time onboarding ([#3177](https://github.com/intent-hq/cloudlands-fe/issues/3177)) ([99d3ccd](https://github.com/intent-hq/cloudlands-fe/commit/99d3ccd5cde2778ff91ce69cfb0876bcf3b5e433))
+* remember model display names across restarts ([#3182](https://github.com/intent-hq/cloudlands-fe/issues/3182)) ([43a4d0b](https://github.com/intent-hq/cloudlands-fe/commit/43a4d0b398ea735d79291f837473e58d2638e171))
+* **settings:** Prioritize agents and separate machines from mobile ([#3189](https://github.com/intent-hq/cloudlands-fe/issues/3189)) ([adae812](https://github.com/intent-hq/cloudlands-fe/commit/adae812d8a6f22f3622d184094afba6bc081e755))
+
+
+### 🐛 Bug Fixes
+
+* add provider retry and diagnostic details ([#3178](https://github.com/intent-hq/cloudlands-fe/issues/3178)) ([97afbdb](https://github.com/intent-hq/cloudlands-fe/commit/97afbdb65ab6c4e83e4a86529240b252f88fccb5))
+* bump intentd sidecar to v0.10.14 ([#3184](https://github.com/intent-hq/cloudlands-fe/issues/3184)) ([0c88d3e](https://github.com/intent-hq/cloudlands-fe/commit/0c88d3e2e06bca9f64da0b456af2deaca520bb53))
+* bump intentd sidecar to v0.10.15 ([#3191](https://github.com/intent-hq/cloudlands-fe/issues/3191)) ([7a9e6d9](https://github.com/intent-hq/cloudlands-fe/commit/7a9e6d95d04bf4fce7988b39db6324c6b51564e4))
+* bump intentd sidecar to v0.10.16 ([#3195](https://github.com/intent-hq/cloudlands-fe/issues/3195)) ([0671fb1](https://github.com/intent-hq/cloudlands-fe/commit/0671fb1caeda6cb88b8484ccf650182ae7faaa36))
+* dismiss answered Q&A immediately after local admission ([#3190](https://github.com/intent-hq/cloudlands-fe/issues/3190)) ([923dccf](https://github.com/intent-hq/cloudlands-fe/commit/923dccfad5da85b3fad8e6075ccdff68d748fc55))
+* polish shared-instance author labels and navigation ([#3180](https://github.com/intent-hq/cloudlands-fe/issues/3180)) ([6cd9e3f](https://github.com/intent-hq/cloudlands-fe/commit/6cd9e3f7f54a7614b7c396af4b46540b091f3dc5))
+* preserve Settings return navigation ([#3185](https://github.com/intent-hq/cloudlands-fe/issues/3185)) ([bffd66d](https://github.com/intent-hq/cloudlands-fe/commit/bffd66d84cf1fbcf4c9e99178bc2960cf32db972))
+* remove collaboration identity section from settings ([#3187](https://github.com/intent-hq/cloudlands-fe/issues/3187)) ([13902c2](https://github.com/intent-hq/cloudlands-fe/commit/13902c2b78abee21e273572ab13e098b43e6c005))
+* simplify guest session menu connection status ([#3192](https://github.com/intent-hq/cloudlands-fe/issues/3192)) ([1fa8a6a](https://github.com/intent-hq/cloudlands-fe/commit/1fa8a6a448ac96dc3f94edbde1c2ef8817f44b29))
+* validate shared transfer fixtures before selected unit tests ([#3188](https://github.com/intent-hq/cloudlands-fe/issues/3188)) ([0820a3f](https://github.com/intent-hq/cloudlands-fe/commit/0820a3f2fa6d7dfcd60486e536934565010b89d9))
+
 ## [2.203.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.6...v2.203.7) (2026-10-05)
 
 

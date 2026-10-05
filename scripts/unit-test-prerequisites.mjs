@@ -2,6 +2,17 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Both test entry points must validate the real build environment before imports.
+export function generatedBuildConfigPrerequisite({ root = repo } = {}) {
+  return {
+    id: 'generated-build-config',
+    label: 'Prepare current generated build config',
+    executable: process.execPath,
+    args: [resolve(root, 'scripts/generate-build-config.cjs'), '--if-stale'],
+    lockKind: null,
+  };
+}
+
 const fixtureConsumers = [
   'src/lib/components/chat/input/ModelPicker.transfer-selection-contract.test.ts',
   'scripts/transfer-selection-fixtures.test.ts',

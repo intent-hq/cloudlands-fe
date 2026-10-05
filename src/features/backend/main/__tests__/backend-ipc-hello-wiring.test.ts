@@ -185,7 +185,10 @@ describe('backend.ipc client identity wiring (§5.17)', () => {
     expect(typeof onHelloResult).toBe('function');
 
     onHelloResult({ clientId: 'cli-9b21', protocolVersion: '2.2', server: {} });
-    expect(mockPersistClientId).toHaveBeenCalledWith('cli-9b21');
+    expect(mockPersistClientId).toHaveBeenCalledWith(
+      'cli-9b21',
+      expect.objectContaining({ transport: 'uds' }),
+    );
 
     onHelloResult(undefined);
     onHelloResult(null);

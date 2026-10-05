@@ -281,9 +281,6 @@ vi.mock('$lib/components/ui/button', async () => ({
   Button: (await import('../../ui/__tests__/mocks/button.svelte')).default,
 }));
 
-vi.mock('../CreateAgentSection.svelte', async () => ({
-  default: (await import('../sidebar/__tests__/mocks/MockSimple.svelte')).default,
-}));
 vi.mock('../WorkspaceAgentsList.svelte', async () => ({
   default: (await import('./mocks/WorkspaceAgentsList.svelte')).default,
 }));
@@ -1546,12 +1543,18 @@ describe('MultiSelectTabbedSidebar Files Open In', () => {
     cleanup();
     mocks.agents = [makeAgent('agent-1')];
     mocks.selectedTabs = ['agents'];
-    const agents = render(Sidebar, { props: { workspaceId: 'ws-1' } });
+    const onCreateAgent = vi.fn();
+    const agents = render(Sidebar, { props: { workspaceId: 'ws-1', onCreateAgent } });
     const agentsCard = agents.container.querySelector<HTMLElement>('.sidebar-expanded-card')!;
     expect(within(agentsCard).queryByText(agentsDescription)).toBeNull();
     expect(within(agentsCard).queryByText(shellDescription)).toBeNull();
     // The initializer's orchestration mode copy belongs to the picker, not the sidebar.
     expect(agents.queryByText(orchestrationLabel)).toBeNull();
     expect(agents.queryByLabelText(orchestrationLabel)).toBeNull();
+    expect(agents.queryByRole('combobox', { name: 'New agent placement' })).toBeNull();
+    expect(agents.queryByText('Remote isolated checkout')).toBeNull();
+    await fireEvent.click(agents.getByRole('button', { name: 'Create new agent' }));
+    expect(onCreateAgent).toHaveBeenCalledOnce();
+    expect(agents.queryByRole('dialog')).toBeNull();
   });
 });
