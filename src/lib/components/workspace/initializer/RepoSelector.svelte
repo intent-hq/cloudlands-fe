@@ -16,7 +16,6 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
-  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import * as Popover from '$lib/components/ui/popover';
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
@@ -29,7 +28,6 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { invoke } from '$lib/electron-bridge';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import { ActionRow, menuItem } from '$lib/components/ui/menu';
   import * as Menu from '$lib/components/ui/menu';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
@@ -63,6 +61,8 @@
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
   import GitLabProjectPicker from './GitLabProjectPicker.svelte';
+  import RepositoryPickerList from './RepositoryPickerList.svelte';
+  import RepositoryPickerRow from './RepositoryPickerRow.svelte';
   import type { GitLabProjectPickerProps } from './gitlab-picker-types';
   import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
   import { pickDirectory } from '$lib/directory-picker-service';
@@ -105,7 +105,6 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
-  const forgeLabels = { github: 'GitHub', gitlab: 'GitLab' }; // i18n-ignore (brand names)
   const dialogPortalTarget = useDialogPortalTarget();
 
   // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
@@ -494,15 +493,10 @@
 
   // Filter repos based on search term and active tab type
   const filteredRepos = $derived(() => {
-    // First filter by tab type
-    const typeFiltered = recentRepos.filter((repo) => {
-      if (activeTab === 'local') return repo.type === 'local';
-      if (!repositoryTabActive || repo.type !== 'github') return false;
-      const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl);
-      if (identity?.provider === 'gitlab')
-        return activeTab === 'gitlab' && identity.instanceBaseUrl === gitlab?.instanceBaseUrl;
-      return identity?.provider === activeTab || (!identity && activeTab === 'github');
-    });
+    // Discovery choice does not partition saved repositories. Local copy keeps its own list.
+    const typeFiltered = recentRepos.filter((repo) =>
+      activeTab === 'local' ? repo.type === 'local' : repositoryTabActive && repo.type === 'github',
+    );
 
     // Each forge keeps its own query; local/GitHub retain the existing search behavior.
     const query = activeTab === 'gitlab' ? (gitlab?.query ?? '') : searchTerm;
@@ -1342,10 +1336,13 @@
       if (
         !gitlab?.authenticated ||
         identity.instanceBaseUrl !== gitlab.instanceBaseUrl ||
-        !gitlab.scopeKey
+        (!gitlab.scopeKey && !gitlab.onSelectRecent) ||
+        gitlab.page.status === 'unavailable'
       )
         return;
-      gitlab.onSelect(identity.projectPath, gitlab.scopeKey);
+      if (gitlab.onSelectRecent)
+        gitlab.onSelectRecent(identity.projectPath, identity.instanceBaseUrl);
+      else gitlab.onSelect(identity.projectPath, gitlab.scopeKey);
       isOpen = false;
       return;
     }
@@ -1876,61 +1873,31 @@
                   class="mt-2"
                   message={m.workspace_repoSelector_githubSignIn_description()}
                 />
-              {:else if $githubReposError$}
-                <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
-                  <span
-                    >{$hostMember$
-                      ? $githubReposError$
-                      : m.workspace_repoSelector_suggestionsUnavailable_label()}</span
-                  >
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    class="underline underline-offset-2 cursor-pointer hover:no-underline"
-                    onclick={retryGithubRepos}
-                  >
-                    {m.workspace_repoSelector_retrySuggestions_label()}
-                  </Button>
-                </div>
-              {:else if githubSuggestions.length > 0}
-                <div
+              {:else if canBrowseGithub}
+                <RepositoryPickerList
                   id={suggestionsId}
-                  role="listbox"
-                  aria-label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
-                  class="mt-2 max-h-56 overflow-y-auto"
-                >
-                  {#each githubSuggestions as repo, index (repo.id)}
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      id={`${suggestionsId}-${index}`}
-                      role="option"
-                      tabindex={-1}
-                      aria-selected={index === suggestionIndex}
-                      class={`${menuItem()} gap-2 py-1.5 cursor-pointer ${
-                        index === suggestionIndex ? 'bg-accent/20' : 'hover:bg-muted/50'
-                      }`}
-                      onclick={() => handleSelectGithubSuggestion(repo)}
-                      onmousemove={() => (suggestionIndex = index)}
-                    >
-                      <GitHubAvatar
-                        identity={repo.owner}
-                        alt={repo.owner}
-                        class="w-4 h-4 rounded-full shrink-0"
-                      />
-                      <span class="text-sm text-foreground truncate">
-                        <span class="text-subtle mr-1">{repo.owner} /</span>{repo.name}
-                      </span>
-                    </Button>
-                  {/each}
-                </div>
-              {:else if githubQuery && $githubSearchLoading$}
-                <div class="mt-2 flex items-center gap-2 px-1 text-sm text-subtle">
-                  <IntentMarkLoader size={12} />
-                  <span
-                    >{m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })}</span
-                  >
-                </div>
+                  items={githubSuggestions}
+                  getKey={(repo) => repo.id}
+                  getOwner={(repo) => repo.owner}
+                  getName={(repo) => repo.name}
+                  provider="github"
+                  label={m.workspace_repoSelector_githubSuggestions_ariaLabel()}
+                  loading={!githubSuggestions.length &&
+                    ($githubReposLoading$ || Boolean(githubQuery && $githubSearchLoading$))}
+                  loadingLabel={githubQuery
+                    ? m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })
+                    : m.gitlabCheckout_loading_label()}
+                  emptyLabel={m.hud_filter_noRepositories_label()}
+                  error={$githubReposError$
+                    ? $hostMember$
+                      ? $githubReposError$
+                      : m.workspace_repoSelector_suggestionsUnavailable_label()
+                    : undefined}
+                  retryLabel={m.workspace_repoSelector_retrySuggestions_label()}
+                  onRetry={retryGithubRepos}
+                  bind:activeIndex={suggestionIndex}
+                  onSelect={handleSelectGithubSuggestion}
+                />
               {/if}
               <!-- Detected repo + select button (hidden when it would duplicate a
                suggestion row; Enter-to-confirm still works via handleConfirmGitHubPick) -->
@@ -2129,7 +2096,7 @@
             </div>
           {/if}
 
-          <!-- Recent repositories for the selected source. -->
+          <!-- One shared Recent list; local-copy entries remain separate. -->
           {#if (activeTab === 'local' || repositoryTabActive) && (isLoading || filteredRepos().length > 0)}
             <div class="min-h-16 overflow-y-auto flex-1 px-4 pb-3 pt-2">
               <Header size={5} class="mb-2">{m.workspace_repoSelector_recent_label()}</Header>
@@ -2144,64 +2111,51 @@
                 </div>
               {:else}
                 <div class="-mx-2" data-testid="recent-repositories">
-                  {#each filteredRepos() as repo, index (repo.path || repo.name)}
+                  {#each filteredRepos() as repo, index (recentRepoKey(repo))}
                     {@const label = getRecentRepoLabel(repo)}
                     {@const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl)}
                     {@const owner = identity
                       ? identity.projectPath.split('/').slice(0, -1).join('/')
                       : label.ownerPrefix}
                     {@const tooltip = getRecentRepoTooltip(repo)}
+                    {@const avatarUrl =
+                      identity?.provider === 'gitlab' &&
+                      gitlab?.authenticated &&
+                      gitlab.scopeKey &&
+                      identity.instanceBaseUrl === gitlab.instanceBaseUrl &&
+                      gitlab.page.status === 'ready'
+                        ? (
+                            gitlab.page.items.find(
+                              (project) => project.projectPath === identity.projectPath,
+                            ) ??
+                            (gitlab.selectedProject?.projectPath === identity.projectPath
+                              ? gitlab.selectedProject
+                              : undefined)
+                          )?.ownerAvatarUrl
+                        : undefined}
                     <div class="group/recent-repo flex min-w-0 items-center" data-recent-repo-row>
                       {#snippet repoRow()}
-                        <ActionRow
+                        <RepositoryPickerRow
+                          {owner}
+                          name={identity && repo.type !== 'local'
+                            ? identity.projectPath.split('/').at(-1)!
+                            : label.primary}
+                          suffix={label.suffix}
+                          provider={identity?.provider}
+                          {avatarUrl}
+                          showOwner={repo.type !== 'local'}
+                          showForge
+                          recent
                           selected={index === highlightedIndex}
-                          class="cursor-pointer flex-1"
+                          class="flex-1"
                           onclick={() => handleSelectRepo(repo)}
                           disabled={repo.type !== 'local' &&
                             identity?.provider === 'gitlab' &&
-                            !gitlab?.scopeKey}
-                        >
-                          {#snippet leading()}
-                            {#if owner && identity?.provider === 'github'}
-                              <GitHubAvatar identity={owner} class="size-4 rounded-full">
-                                {#snippet fallback()}
-                                  <PrincipalAvatar label={owner} size={16} />
-                                {/snippet}
-                              </GitHubAvatar>
-                            {:else if owner}
-                              <PrincipalAvatar label={owner} size={16} />
-                            {:else}
-                              <Fa icon={faFolder} class="text-subtle opacity-50" size={12} />
-                            {/if}
-                          {/snippet}
-                          {#snippet title()}
-                            <span class="flex min-w-0 items-center gap-2">
-                              <span class="truncate" data-recent-repo-label>
-                                {#if owner && repo.type !== 'local'}
-                                  <span class="text-subtle mr-1">{owner} /</span>
-                                {/if}
-                                {identity && repo.type !== 'local'
-                                  ? identity.projectPath.split('/').at(-1)
-                                  : label.primary}
-                                {#if label.suffix}
-                                  <span class="text-subtle ml-1">({label.suffix})</span>
-                                {/if}
-                              </span>
-                              {#if identity}
-                                <span
-                                  role="img"
-                                  aria-label={forgeLabels[identity.provider]}
-                                  class="text-subtle shrink-0"
-                                >
-                                  <Fa
-                                    icon={identity.provider === 'github' ? faGithub : faGitlab}
-                                    size={12}
-                                  />
-                                </span>
-                              {/if}
-                            </span>
-                          {/snippet}
-                        </ActionRow>
+                            (!gitlab?.authenticated ||
+                              identity.instanceBaseUrl !== gitlab.instanceBaseUrl ||
+                              (!gitlab.scopeKey && !gitlab.onSelectRecent) ||
+                              gitlab.page.status === 'unavailable')}
+                        />
                       {/snippet}
                       {#if tooltip}
                         <Tooltip
