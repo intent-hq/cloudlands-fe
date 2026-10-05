@@ -33,3 +33,15 @@ precondition(readiness.observe(requestId: "third", granted: false, now: 27000) =
 readiness.complete(third, ready: true)
 precondition(readiness.state == "unavailable")
 print("PASS: delayed SCK readiness, polling cancellation, late completion and successor fencing")
+var concurrent = PermissionReadiness()
+let owner = concurrent.observe(requestId: "owner", granted: true, now: 0)!
+precondition(concurrent.observe(requestId: "other", granted: true, now: 1000) == nil, "A competing request must not replace the pending probe")
+precondition(concurrent.generation == owner)
+precondition(concurrent.observe(requestId: "owner", granted: true, now: 2000) == nil)
+concurrent.complete(owner, ready: true)
+let other = concurrent.observe(requestId: "other", granted: true, now: 2001)!
+precondition(concurrent.observe(requestId: "owner", granted: true, now: 2002) == nil, "A completed owner must not cancel its successor probe")
+precondition(concurrent.generation == other)
+concurrent.complete(other, ready: false)
+precondition(concurrent.observe(requestId: "other", granted: true, now: 2500) == nil, "Failed observation must not silently retry")
+print("PASS: concurrent permission observations retain each request outcome without probe churn")

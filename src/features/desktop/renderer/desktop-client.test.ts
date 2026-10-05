@@ -95,6 +95,27 @@ describe('desktop wire validation', () => {
 });
 
 describe('native permission check responses', () => {
+  it('explains recovery when both OS flags are granted but capture setup ended unavailable', async () => {
+    localPermissions.mockResolvedValue({
+      ok: true,
+      result: {
+        platform: 'macos',
+        accessibility: true,
+        screenRecording: true,
+        screenCapture: 'unavailable',
+      },
+    });
+    const guidance = await desktopClient.requestPermissions(
+      'workspace',
+      'agent',
+      'request',
+      'allow_once',
+    );
+    expect(guidance).toContain('Deny this request');
+    expect(guidance).toContain('new session');
+    expect(guidance).not.toContain('Waiting for macOS');
+  });
+
   it.each([
     [true, false, 'Screen Recording'],
     [false, true, 'Accessibility'],
