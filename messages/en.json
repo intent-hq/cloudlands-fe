@@ -7283,5 +7283,12 @@
   "agent_hub_discarded": "Isolated work discarded.",
   "agent_placement_incompatibleIsolation": "Placement cannot be combined with legacy isolation.",
   "agent_hub_blocked": "Merge needs attention: {detail}",
-  "agent_placement_labsRequired": "Enable Remote agents in Labs before starting remote work."
+  "agent_placement_labsRequired": "Enable Remote agents in Labs before starting remote work.",
+  "settings_machineName_title": "Machine name",
+  "settings_machineName_description": "Shown to collaborators in shared workspaces and shared instances. Leave blank to use the default machine name.",
+  "settings_machineName_reset_label": "Use default name",
+  "settings_machineName_invalid_error": "Use up to 100 characters without control characters.",
+  "settings_machineName_load_error": "Could not load the machine name. Try again.",
+  "settings_machineName_save_error": "Could not save the machine name. Try again.",
+  "settings_machineName_saved": "Machine name saved"
 }

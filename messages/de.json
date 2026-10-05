@@ -7283,5 +7283,12 @@
   "agent_hub_discarded": "Isolierte Arbeit verworfen.",
   "agent_placement_incompatibleIsolation": "Die Platzierung kann nicht mit der bisherigen Isolation kombiniert werden.",
   "agent_hub_blocked": "Zusammenführung erfordert Aufmerksamkeit: {detail}",
-  "agent_placement_labsRequired": "Aktivieren Sie entfernte Agenten in Labs, bevor Sie entfernte Arbeit starten."
+  "agent_placement_labsRequired": "Aktivieren Sie entfernte Agenten in Labs, bevor Sie entfernte Arbeit starten.",
+  "settings_machineName_title": "Computername",
+  "settings_machineName_description": "Wird Mitwirkenden in geteilten Arbeitsbereichen und Instanzen angezeigt. Leer lassen, um den Standardnamen zu verwenden.",
+  "settings_machineName_reset_label": "Standardnamen verwenden",
+  "settings_machineName_invalid_error": "Verwenden Sie höchstens 100 Zeichen ohne Steuerzeichen.",
+  "settings_machineName_load_error": "Der Computername konnte nicht geladen werden. Versuchen Sie es erneut.",
+  "settings_machineName_save_error": "Der Computername konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+  "settings_machineName_saved": "Computername gespeichert"
 }

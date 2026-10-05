@@ -7283,5 +7283,12 @@
   "agent_hub_discarded": "Trabajo aislado descartado.",
   "agent_placement_incompatibleIsolation": "La ubicación no se puede combinar con el aislamiento anterior.",
   "agent_hub_blocked": "La fusión requiere atención: {detail}",
-  "agent_placement_labsRequired": "Activa los agentes remotos en Labs antes de iniciar trabajo remoto."
+  "agent_placement_labsRequired": "Activa los agentes remotos en Labs antes de iniciar trabajo remoto.",
+  "settings_machineName_title": "Nombre del equipo",
+  "settings_machineName_description": "Se muestra a los colaboradores de espacios de trabajo e instancias compartidos. Déjalo vacío para usar el nombre predeterminado.",
+  "settings_machineName_reset_label": "Usar nombre predeterminado",
+  "settings_machineName_invalid_error": "Usa hasta 100 caracteres sin caracteres de control.",
+  "settings_machineName_load_error": "No se pudo cargar el nombre del equipo. Inténtalo de nuevo.",
+  "settings_machineName_save_error": "No se pudo guardar el nombre del equipo. Inténtalo de nuevo.",
+  "settings_machineName_saved": "Nombre del equipo guardado"
 }

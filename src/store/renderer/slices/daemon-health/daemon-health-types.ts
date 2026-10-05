@@ -86,6 +86,8 @@ export interface SystemStatusWirePayload {
   fingerprint?: string | null;
   /** Local OS hostname (additive routing field, §5.7). May be missing on older daemons. */
   hostname?: string;
+  /** Collaborator-only display override; null restores the ordinary hostname. */
+  collaborationName?: string | null;
   protocolVersion: string;
   host: {
     os: string;

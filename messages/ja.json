@@ -7283,5 +7283,12 @@
   "agent_hub_discarded": "分離された作業を破棄しました。",
   "agent_placement_incompatibleIsolation": "配置と従来の分離設定を併用することはできません。",
   "agent_hub_blocked": "マージの確認が必要です：{detail}",
-  "agent_placement_labsRequired": "リモート作業を開始する前に Labs でリモートエージェントを有効にしてください。"
+  "agent_placement_labsRequired": "リモート作業を開始する前に Labs でリモートエージェントを有効にしてください。",
+  "settings_machineName_title": "マシン名",
+  "settings_machineName_description": "共有ワークスペースや共有インスタンスの共同作業者に表示されます。空欄にすると既定のマシン名を使用します。",
+  "settings_machineName_reset_label": "既定の名前を使用",
+  "settings_machineName_invalid_error": "制御文字を含めず、100文字以内で入力してください。",
+  "settings_machineName_load_error": "マシン名を読み込めませんでした。もう一度お試しください。",
+  "settings_machineName_save_error": "マシン名を保存できませんでした。もう一度お試しください。",
+  "settings_machineName_saved": "マシン名を保存しました"
 }

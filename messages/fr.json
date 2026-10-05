@@ -7283,5 +7283,12 @@
   "agent_hub_discarded": "Travail isolé abandonné.",
   "agent_placement_incompatibleIsolation": "Le placement ne peut pas être combiné avec l’ancien mode d’isolation.",
   "agent_hub_blocked": "La fusion nécessite votre attention : {detail}",
-  "agent_placement_labsRequired": "Activez les agents distants dans Labs avant de lancer un travail distant."
+  "agent_placement_labsRequired": "Activez les agents distants dans Labs avant de lancer un travail distant.",
+  "settings_machineName_title": "Nom de la machine",
+  "settings_machineName_description": "Visible par les collaborateurs des espaces de travail et instances partagés. Laissez vide pour utiliser le nom par défaut.",
+  "settings_machineName_reset_label": "Utiliser le nom par défaut",
+  "settings_machineName_invalid_error": "Utilisez au maximum 100 caractères, sans caractères de contrôle.",
+  "settings_machineName_load_error": "Impossible de charger le nom de la machine. Réessayez.",
+  "settings_machineName_save_error": "Impossible d’enregistrer le nom de la machine. Réessayez.",
+  "settings_machineName_saved": "Nom de la machine enregistré"
 }

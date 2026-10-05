@@ -7283,5 +7283,12 @@
   "agent_hub_discarded": "已捨棄隔離工作。",
   "agent_placement_incompatibleIsolation": "部署位置不能與舊版隔離設定同時使用。",
   "agent_hub_blocked": "合併需要處理：{detail}",
-  "agent_placement_labsRequired": "開始遠端工作前，請在 Labs 中啟用遠端代理程式。"
+  "agent_placement_labsRequired": "開始遠端工作前，請在 Labs 中啟用遠端代理程式。",
+  "settings_machineName_title": "電腦名稱",
+  "settings_machineName_description": "向共用工作區和共用執行個體中的協作者顯示。留空則使用預設電腦名稱。",
+  "settings_machineName_reset_label": "使用預設名稱",
+  "settings_machineName_invalid_error": "最多輸入100個字元，不能包含控制字元。",
+  "settings_machineName_load_error": "無法載入電腦名稱，請重試。",
+  "settings_machineName_save_error": "無法儲存電腦名稱，請重試。",
+  "settings_machineName_saved": "電腦名稱已儲存"
 }
