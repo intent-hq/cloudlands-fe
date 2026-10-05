@@ -143,9 +143,29 @@ export function prepareNoteDocumentEdit(
     anchorAffinity: 1,
     headAffinity: 1,
   };
+  const previous = options.appendTo === undefined ? undefined : state.history[state.cursor - 1];
+  if (options.appendTo !== undefined) {
+    const pending = state.replay.at(-1);
+    if (
+      !previous ||
+      previous.id !== options.appendTo ||
+      state.cursor !== state.history.length ||
+      pending?.id !== previous.id ||
+      pending.direction !== 'redo'
+    )
+      throw new Error('Stale appended note history group');
+  }
   if (!splices.length)
     return {
-      state: { ...state, selection },
+      state: {
+        ...state,
+        selection,
+        // A selection-only appended transaction finishes the accepted chain.
+        // Ordinary user navigation must not rewrite the last edit's redo caret.
+        history: previous
+          ? [...state.history.slice(0, -1), { ...previous, after: selection }]
+          : state.history,
+      },
       authority: next,
       splices,
       historyGroup: options.appendTo,
@@ -162,17 +182,7 @@ export function prepareNoteDocumentEdit(
   };
   let kept = state.history.slice(0, state.cursor);
   let previousReplay = state.replay;
-  if (options.appendTo !== undefined) {
-    const previous = kept.at(-1),
-      pending = state.replay.at(-1);
-    if (
-      !previous ||
-      previous.id !== options.appendTo ||
-      state.cursor !== state.history.length ||
-      pending?.id !== previous.id ||
-      pending.direction !== 'redo'
-    )
-      throw new Error('Stale appended note history group');
+  if (previous) {
     entry = {
       ...entry,
       id: previous.id,

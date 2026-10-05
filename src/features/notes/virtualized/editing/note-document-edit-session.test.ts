@@ -430,12 +430,16 @@ describe('document-owned edits', () => {
     expect(moveNoteDocumentHistory(candidate.state, 'undo')!.state.dirty).toEqual([]);
   });
 
-  it('groups an accepted root and appended edit into one undo entry at the history limit', () => {
+  it('groups root, document-appended and final selection-only changes into one undo entry', () => {
     const f = fixture();
     f.session.limits = { ...f.session.limits, historyEntries: 1 };
+    f.session.selection = { anchor: 102, head: 101, anchorAffinity: -1, headAffinity: 1 };
     const root = prepareNoteDocumentEdit(
       f.session,
-      EditorState.create({ doc: f.authority.doc }).tr.insertText('X', 2),
+      EditorState.create({
+        doc: f.authority.doc,
+        selection: TextSelection.create(f.authority.doc, 3, 2),
+      }).tr.insertText('X', 2),
       f.authority,
     );
     const appended = prepareNoteDocumentEdit(
@@ -446,17 +450,68 @@ describe('document-owned edits', () => {
     );
     expect(appended.state.history).toHaveLength(1);
     expect(appended.authority.source).toBe('aXYbc');
-    const undone = moveNoteDocumentHistory(appended.state, 'undo')!;
+    const final = prepareNoteDocumentEdit(
+      appended.state,
+      EditorState.create({ doc: appended.authority.doc }).tr.setSelection(
+        TextSelection.create(appended.authority.doc, 5, 2),
+      ),
+      appended.authority,
+      { appendTo: root.historyGroup },
+    );
+    expect(final.state.selection).toEqual({
+      anchor: 104,
+      head: 101,
+      anchorAffinity: 1,
+      headAffinity: 1,
+    });
+    expect(final.state.history).toHaveLength(1);
+    expect(final.state.dirty).toBe(appended.state.dirty);
+    expect(final.state.replay).toBe(appended.state.replay);
+    expect(final.splices).toEqual([]);
+    const undone = moveNoteDocumentHistory(final.state, 'undo')!;
     expect(undone.state.dirty).toEqual([]);
     expect(undone.state.replay).toEqual([]);
-    expect(
-      materializeNoteDocumentAuthority(
-        moveNoteDocumentHistory(undone.state, 'redo')!.state,
-        fixture().authority,
-      ).source,
-    ).toBe('aXYbc');
+    expect(undone.state.selection).toEqual(f.session.selection);
+    expect(materializeNoteDocumentAuthority(undone.state, fixture().authority).source).toBe('abc');
+    const redone = moveNoteDocumentHistory(undone.state, 'redo')!;
+    expect(redone.state.selection).toEqual(final.state.selection);
+    expect(materializeNoteDocumentAuthority(redone.state, fixture().authority).source).toBe(
+      'aXYbc',
+    );
     expect(f.session.history).toEqual([]);
     expect(root.authority.source).toBe('aXbc');
+  });
+
+  it('rejects stale selection-only appended groups and keeps unrelated selections out of edit history', () => {
+    const f = fixture();
+    const root = prepareNoteDocumentEdit(
+      f.session,
+      EditorState.create({ doc: f.authority.doc }).tr.insertText('X', 2),
+      f.authority,
+    );
+    const selection = EditorState.create({ doc: root.authority.doc }).tr.setSelection(
+      TextSelection.create(root.authority.doc, 4, 2),
+    );
+    expect(() =>
+      prepareNoteDocumentEdit(root.state, selection, root.authority, { appendTo: 999 }),
+    ).toThrow(/Stale appended/);
+    const unrelated = prepareNoteDocumentEdit(root.state, selection, root.authority);
+    expect(unrelated.state.selection).not.toEqual(root.state.selection);
+    expect(unrelated.state.history).toBe(root.state.history);
+    expect(unrelated.state.history[0].after).toEqual(root.state.selection);
+    expect(root.state.selection).toEqual(root.state.history[0].after);
+    const undo = moveNoteDocumentHistory(root.state, 'undo')!.state;
+    const authority = materializeNoteDocumentAuthority(undo, fixture().authority);
+    expect(() =>
+      prepareNoteDocumentEdit(
+        undo,
+        EditorState.create({ doc: authority.doc }).tr.setSelection(
+          TextSelection.create(authority.doc, 2),
+        ),
+        authority,
+        { appendTo: root.historyGroup },
+      ),
+    ).toThrow(/Stale appended/);
   });
 
   it('reserves inverse retention so reaching edit pressure never disables undo', () => {
