@@ -1046,25 +1046,27 @@
                               {handleReferenceImageError}
                               {openQueuedFileAttachment}
                             />
-                            <Button
-                              variant="plain"
-                              size="compact"
-                              class="type-body h-auto min-h-0 w-full min-w-0 cursor-default justify-start whitespace-normal p-0 text-left font-normal!"
-                              truncateLabel={false}
-                              labelClass="block!"
-                              data-testid="queued-message-content"
-                              data-mode="display"
-                              aria-label={memberMentionsToText(group.content)}
-                              ondblclick={() => startEdit(message)}
-                              onkeydown={(event) => handleDisplayKeydown(event, message)}
-                            >
-                              <span
-                                class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
-                                data-testid="queued-message-text"
+                            {#if group.content.trim()}
+                              <Button
+                                variant="plain"
+                                size="compact"
+                                class="type-body h-auto min-h-0 w-full min-w-0 cursor-default justify-start whitespace-normal p-0 text-left font-normal!"
+                                truncateLabel={false}
+                                labelClass="block!"
+                                data-testid="queued-message-content"
+                                data-mode="display"
+                                aria-label={memberMentionsToText(group.content)}
+                                ondblclick={() => startEdit(message)}
+                                onkeydown={(event) => handleDisplayKeydown(event, message)}
                               >
-                                {memberMentionsToText(group.content)}
-                              </span>
-                            </Button>
+                                <span
+                                  class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
+                                  data-testid="queued-message-text"
+                                >
+                                  {memberMentionsToText(group.content)}
+                                </span>
+                              </Button>
+                            {/if}
                           </div>
                         {/each}
                         {#if message.requeuedAfterFailure && !isSending(message.id)}
