@@ -1,3 +1,8 @@
+import plainOne from './__fixtures__/note-paragraph/plain-paragraph-one.json';
+import plainTwo from './__fixtures__/note-paragraph/plain-paragraph-two.json';
+import htmlTail from './__fixtures__/note-paragraph/plain-paragraph-html-tail.json';
+import { projectNoteWindow } from '../note-window-projection';
+import { EditorState } from '@tiptap/pm/state';
 import { createHash } from 'node:crypto';
 import { expect, it } from 'vitest';
 import {
@@ -11,13 +16,19 @@ import { readNoteWindow } from '../note-window-reader';
 import { NoteCanonicalProjection } from '../note-canonical-projection';
 import { nativeFixtureEditor } from '../__tests__/canonical-table-fixture';
 import { createNoteEditAuthority } from './note-edit-authority';
-import { createNoteDocumentSession, prepareNoteDocumentEdit } from './note-document-edit-session';
+import {
+  createNoteDocumentSession,
+  prepareNoteDocumentEdit,
+  materializeNoteDocumentAuthority,
+  moveNoteDocumentHistory,
+  overlayNoteDocumentSource,
+} from './note-document-edit-session';
 
 // Historical actual Store closure, including original signed handles and expiry.
 // This is replay evidence, not a live grant. Do not fill lexical fields, decode
 // references, substitute paragraph aliases or repair the producer's response.
-async function capturedWindow() {
-  const calls = capture.calls as unknown as Array<{
+async function capturedWindow(raw: { at: number; calls: unknown[] } = capture) {
+  const calls = raw.calls as unknown as Array<{
     request: NotePageRequest;
     response: NoteReadPage;
   }>;
@@ -47,12 +58,16 @@ async function capturedWindow() {
   });
   const window = await readNoteWindow(
     (q) => reader.read(identity.scope.workspaceId, identity.scope.noteId, q),
-    { ...identity, at: capture.at },
+    { ...identity, at: raw.at },
   );
-  expect(window.native).toBeDefined();
   expect(window.cost.requests).toBeLessThanOrEqual(96);
-  expect(window.cost.canonicalBytes).toBeLessThanOrEqual(8192);
-  return { window, identity, requests };
+  expect(window.cost.canonicalBytes ?? 0).toBeLessThanOrEqual(8192);
+  return {
+    window,
+    identity,
+    requests,
+    read: (q: NotePageRequest) => reader.read(identity.scope.workspaceId, identity.scope.noteId, q),
+  };
 }
 
 it('keeps a real Store markdownBlock read-only without lexical edit authority', async () => {
@@ -348,4 +363,114 @@ it('rejects a source window changed while its lexical context was loading', () =
   iterator.next();
   f.window.text = 'xyz\r\n';
   expect(() => iterator.next(f.replies['opaque-directory'])).toThrow('source window changed');
+});
+
+async function realPlain(raw: typeof plainOne | typeof plainTwo) {
+  const f = await capturedWindow(raw);
+  const projection = projectNoteWindow(f.window);
+  const editor = nativeFixtureEditor(projection.content);
+  const iterator = noteParagraphEditContextSteps(
+    f.window,
+    f.identity,
+    () => true,
+    () => Date.parse(f.identity.expiresAt) - 1,
+  );
+  try {
+    let next = iterator.next();
+    while (!next.done) next = iterator.next(await f.read(next.value));
+    const authority = createNoteParagraphEditAuthority(
+      f.window,
+      projection,
+      next.value,
+      editor.state.doc,
+    );
+    return { ...f, authority, editor };
+  } catch (error) {
+    editor.destroy();
+    throw error;
+  } finally {
+    iterator.return(undefined as never);
+  }
+}
+
+it.each([
+  ['one', plainOne],
+  ['two', plainTwo],
+] as const)(
+  'edits ordinary Store %s paragraph source and restores it after reload and undo',
+  async (_name, raw) => {
+    const f = await realPlain(raw);
+    try {
+      expect(f.window.native).toBeUndefined();
+      const session = createNoteDocumentSession(
+        f.window.scope,
+        f.window.sourceRevision,
+        f.window.sourceLength,
+      );
+      session.selection = { anchor: 2, head: 1, anchorAffinity: -1, headAffinity: 1 };
+      const first = prepareNoteDocumentEdit(
+        session,
+        EditorState.create({ doc: f.authority.doc }).tr.insertText('X', 2),
+        f.authority,
+      );
+      const second = prepareNoteDocumentEdit(
+        first.state,
+        EditorState.create({ doc: first.authority.doc }).tr.insertText(
+          'Y',
+          raw === plainTwo ? 8 : 3,
+        ),
+        first.authority,
+      );
+      const expected = raw === plainTwo ? 'aXbc\n\ndYef' : 'aXYbc';
+      expect(second.authority.source).toBe(expected);
+      expect(
+        overlayNoteDocumentSource(second.state, 0, raw.source, f.window.sourceRevision).text,
+      ).toBe(expected);
+      f.editor.destroy();
+      // A fresh actual Store reader/projection/native editor replaces the old mount.
+      const fresh = await realPlain(raw);
+      try {
+        const reloaded = materializeNoteDocumentAuthority(second.state, fresh.authority);
+        expect(reloaded.source).toBe(expected);
+        expect(reloaded.doc.textContent).toBe(raw === plainTwo ? 'aXbcdYef' : 'aXYbc');
+        const undoSecond = moveNoteDocumentHistory(second.state, 'undo')!;
+        expect(materializeNoteDocumentAuthority(undoSecond.state, fresh.authority).source).toBe(
+          'aXbc' + raw.source.slice(3),
+        );
+        const undoFirst = moveNoteDocumentHistory(undoSecond.state, 'undo')!;
+        expect(materializeNoteDocumentAuthority(undoFirst.state, fresh.authority).source).toBe(
+          raw.source,
+        );
+        expect(undoFirst.state.selection).toEqual(session.selection);
+        const redoFirst = moveNoteDocumentHistory(undoFirst.state, 'redo')!;
+        const redoSecond = moveNoteDocumentHistory(redoFirst.state, 'redo')!;
+        expect(materializeNoteDocumentAuthority(redoSecond.state, fresh.authority).source).toBe(
+          expected,
+        );
+        expect(f.requests.filter((q) => q.kind === 'source')).toHaveLength(1);
+      } finally {
+        fresh.editor.destroy();
+      }
+    } finally {
+      f.editor.destroy();
+    }
+  },
+);
+
+it('rejects actual Store HTML-entry paragraph text', async () => {
+  const f = await capturedWindow(htmlTail);
+  expect(
+    f.window.context.some(
+      (item) =>
+        item.kind === 'boundary' && item.construct === 'paragraph' && item.entryPath === 'html',
+    ),
+  ).toBe(true);
+  expect(() =>
+    noteParagraphEditContextSteps(
+      f.window,
+      f.identity,
+      () => true,
+      () => Date.parse(f.identity.expiresAt) - 1,
+    ).next(),
+  ).toThrow(/Unsupported/);
 });

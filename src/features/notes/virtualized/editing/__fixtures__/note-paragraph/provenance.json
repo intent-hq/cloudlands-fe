@@ -1,0 +1,21 @@
+{
+  "baseHead": "89a58418c38e9e6c617223cdb5d05b65d7407200",
+  "state": "tested uncommitted paragraph delta",
+  "files": {
+    "crates/intent-store/src/note_page_index.rs": "92663c0dedf37c9d9a86fe69a8c41e0918eb5df826f824d08c4b5bcd455e8406",
+    "crates/intent-store/src/note_page_html.rs": "64661ee041805c92d1bc89b33245f1a4fb7d45607fa7bad5ab1c199d91c9c416",
+    "crates/intent-store/src/note_page_html/entry.rs": "9cb75cae0937facbe8a5c6063de14000997efd91a6d942e8659a8e99a67d6310",
+    "crates/intent-store/src/note_page_html/index.rs": "83dc51f72345f3b458d4c9a27f8949b945c222606b417ad24186030d3196fb96",
+    "crates/intent-store/src/note_page_html/markdown.rs": "7cb5bb51f64a82b9680a8b0e4d2b40a105831eac828d1e847eb18ce0002461b4",
+    "crates/intent-store/src/tests/note_pages.rs": "88abb32f526e9abfd6f19ab1436c1d153cd1cc1a16e399fd51949cabef6be875",
+    "crates/intent-store/src/tests/note_pages/plain_source_capture.rs": "89e34b45e3cb5364b5a60e27f151e8485a69f7d928a66229d6b2c11bcd842a37"
+  },
+  "trackedPatchSha256": "a8e3898ece7d55a18fa21aec7252c55a4550e43a7b0f4335eb5d279b621ade1a",
+  "captures": {
+    "plain-paragraph-two.json": "218b463ede533607e38a568ddcbd62a6f8a3946a5f0d9f7dbe761f09315bde98",
+    "plain-paragraph-html-tail.json": "eb0e044a9258b543a976a6f325fbbe1494a502e08c63dbd07674d951fa4593cf",
+    "plain-paragraph-one.json": "ce85e50a0210fe4357ac24567510486342c996f20f9ae81d35eda49344a5d03c"
+  },
+  "producerTest": "intent-store tests::note_pages::plain_source_capture (direct Store read_note_page responses)",
+  "scope": "Frozen actual RPC closure with original opaque refs and expiry; replay is not a live authenticated lease. No source or descriptor rewriting."
+}
