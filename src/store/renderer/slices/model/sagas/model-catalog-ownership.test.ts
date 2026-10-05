@@ -1,3 +1,11 @@
+import { modelNameCacheSaga } from '../../provider-models/sagas/model-name-cache-saga';
+import { selectLearnedModelDisplayName } from '../../provider-models/provider-models-selectors';
+import { MODEL_NAMES_STORAGE_KEY } from '../../provider-models/model-name-cache';
+import {
+  providerModelsCacheCleared,
+  providerModelsLoaded,
+} from '../../provider-models/provider-models-slice';
+import { hostExecutionInvalidated } from '../../host-execution/host-execution-slice';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -290,4 +298,66 @@ describe('catalog ownership across the real selection, provider, boot and reload
     await settle();
     expect(store.state.model).toBe(model);
   });
+});
+
+it.each([providerModelsCacheCleared(), hostExecutionInvalidated()])(
+  'does not learn or persist an active catalog reply held across $type',
+  async (invalidate) => {
+    const storage = new Map<string, string>();
+    vi.mocked(window.localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
+    vi.mocked(window.localStorage.setItem).mockImplementation((key, value) => {
+      storage.set(key, value);
+    });
+    cancellations.push(store.runSaga(modelNameCacheSaga));
+    await start();
+    const name = (id: string) => selectLearnedModelDisplayName.select(store.state, 'codex', id);
+    expect(name('initial')).toBe('initial');
+    store.dispatch(reloadModelsForProvider());
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    const old = pending[1];
+    store.dispatch(invalidate);
+    store.dispatch(
+      providerModelsLoaded(
+        'codex',
+        { models: [{ value: 'initial', label: 'Fresh label' }] },
+        store.state.providerModels.clearEpoch,
+      ),
+    );
+    const writes = vi.mocked(window.localStorage.setItem).mock.calls.length;
+    old.resolve({
+      ...wire('codex', 'obsolete'),
+      models: [
+        { id: 'initial', name: 'Obsolete label' },
+        { id: 'obsolete', name: 'obsolete' },
+      ],
+    });
+    await settle();
+    expect(name('obsolete')).toBeUndefined();
+    expect(name('initial')).toBe('Fresh label');
+    expect(window.localStorage.setItem).toHaveBeenCalledTimes(writes);
+    expect(JSON.parse(storage.get(MODEL_NAMES_STORAGE_KEY)!).names.codex).toEqual({
+      initial: 'Fresh label',
+    });
+    store.dispatch(reloadModelsForProvider());
+    await vi.waitFor(() => expect(pending).toHaveLength(3));
+    pending[2].resolve(wire('codex', 'current'));
+    await vi.waitFor(() => expect(name('current')).toBe('current'));
+  },
+);
+
+it('starts a current reload instead of sharing a boot request from an invalidated epoch', async () => {
+  cancellations.push(store.runSaga(modelNameCacheSaga));
+  cancellations.push(store.runSaga(modelReloadSaga));
+  cancellations.push(store.runSaga(modelBootSaga));
+  await vi.waitFor(() => expect(pending).toHaveLength(1));
+  store.dispatch(providerModelsCacheCleared());
+  store.dispatch(reloadModelsForProvider());
+  await vi.waitFor(() => expect(pending).toHaveLength(2));
+  pending[1].resolve(wire('codex', 'current'));
+  await vi.waitFor(() =>
+    expect(selectLearnedModelDisplayName.select(store.state, 'codex', 'current')).toBe('current'),
+  );
+  pending[0].resolve(wire('codex', 'obsolete'));
+  await settle();
+  expect(selectLearnedModelDisplayName.select(store.state, 'codex', 'obsolete')).toBeUndefined();
 });

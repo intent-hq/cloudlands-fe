@@ -30,6 +30,7 @@
       identity: { provider: 'gitlab', host, externalUserId: '526899' },
     },
     { principalId: null, displayName: null, login: null, avatarUrl: null },
+    { principalId: 'owner', displayName: 'Owner Person', login: 'owner', avatarUrl: null },
   ]);
   const messages = $derived<AgentMessage[]>(
     authors.map((author, i) => ({
