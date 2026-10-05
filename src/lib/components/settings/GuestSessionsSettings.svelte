@@ -2,7 +2,7 @@
   /**
    * Settings → Collaboration.
    *
-   * Current identity and instance sharing precede workspace guest sharing and
+   * Instance sharing precedes workspace guest sharing and
    * separately joined instances. Instance membership never appears as a set of
    * individually leaveable workspaces. Saved workspace-only sessions keep their
    * existing per-workspace controls. Every destructive action confirms.
@@ -19,7 +19,6 @@
    */
   import HostMembershipSettingsHost from '$features/host-membership/HostMembershipSettingsHost.svelte';
   import {
-    selectPrincipalSnapshot,
     selectCanCreateWorkspace,
     selectHostRole,
     selectCollaborationReady,
@@ -40,12 +39,7 @@
     connectionWorkflowRequested,
     connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
-  import {
-    selectConnectionWorkflow,
-    selectConnectionsLoaded,
-    selectCurrentConnectionId,
-  } from '$store/renderer/slices/connections/connections-selectors';
-  import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import { selectConnectionWorkflow } from '$store/renderer/slices/connections/connections-selectors';
   import {
     selectGuestSessions,
     selectHostedSharingLoadState,
@@ -67,7 +61,6 @@
     selectHostedClearingIds,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
-    collaborationSignInRequested,
     guestLeaveConfirmed,
     leaveGuestSessionRequested,
     leaveGuestWorkspaceRequested,
@@ -81,19 +74,32 @@
 
   import { store as appStore } from '$store/renderer/store';
 
-  const identitySchema = $derived(
+  const sharingSchema = $derived(
     defineSettings({
       sections: [
         {
-          id: 'collaboration-identity-summary',
-          title: m.settings_collaboration_identity_title(),
+          id: 'collaboration-workspaces',
+          title: m.settings_collaboration_workspaces_title(),
           entries: [
             {
-              id: 'collaboration-account',
+              id: 'collaboration-workspaces-content',
               kind: 'custom',
               layout: 'full-width',
-              label: m.settings_collaboration_identity_title(),
-              class: 'px-4',
+              label: m.settings_collaboration_workspaces_title(),
+              class: 'py-0 first:pt-0 last:pb-0',
+            },
+          ],
+        },
+        {
+          id: 'collaboration-joined-instances',
+          title: m.collaboration_lists_joinedInstances_title(),
+          entries: [
+            {
+              id: 'collaboration-joined-instances-content',
+              kind: 'custom',
+              layout: 'full-width',
+              label: m.collaboration_lists_joinedInstances_title(),
+              class: 'py-0 first:pt-0 last:pb-0',
             },
           ],
         },
@@ -110,20 +116,12 @@
   const actionContext$ = selectPrincipalActionContext();
   const currentSession$ = selectWindowGuestSession();
   const hostRole$ = selectHostRole();
-  const principal$ = selectPrincipalSnapshot();
   const openIds$ = selectGuestSessionsOpenIds();
   const connectedIds$ = selectGuestSessionsConnectedIds();
   const loaded$ = selectGuestSessionsLoaded();
   const hosted$ = selectHostedWorkspaces();
   const canCreateWorkspace$ = selectCanCreateWorkspace();
   const ready$ = selectCollaborationReady();
-  const connectionId$ = selectCurrentConnectionId();
-  const connectionsLoaded$ = selectConnectionsLoaded();
-  // The sign-in IPC selects identity on the local daemon, never a remote host.
-  const localIdentityAction = $derived(
-    $connectionsLoaded$ && $connectionId$ === LOCAL_CONNECTION_ID,
-  );
-  const currentIdentity = $derived($ready$ ? $principal$?.principal.identity : undefined);
   const leavingIds$ = selectGuestLeavingIds();
   const leavingWorkspaceKeys$ = selectGuestLeavingWorkspaceKeys();
   const failedLeaves$ = selectGuestFailedLeaves();
@@ -451,147 +449,99 @@
       </p>
     </div>
 
-    {#snippet identitySummary()}
-      <div data-testid="collaboration-current-identity">
-        {#if !$ready$}
-          <p class="type-body text-muted-foreground" role="status">
-            {m.settings_collaboration_identity_unavailable_description()}
-          </p>
-        {:else if currentIdentity}
-          <p class="type-body font-medium break-words text-foreground">
-            {$principal$?.principal.displayName ||
-              $principal$?.principal.login ||
-              m.settings_collaboration_profileUnavailable_label()}
-          </p>
-          <p class="type-caption break-words text-muted-foreground">
-            {#if $principal$?.principal.login}@{$principal$.principal.login} ·
+    <HostMembershipSettingsHost />
+
+    {#snippet sharedWorkspaces()}
+      <div class="divide-y divide-border">
+        {#if $ready$ && ($canCreateWorkspace$ || $hosted$.length > 0)}
+          <div class="p-4" data-testid="guest-sessions-hosting">
+            <h3 class="type-body mb-3 font-medium text-foreground">
+              {m.settings_guestSessions_hosting_title()}
+            </h3>
+            {#if $sharingLoad$ !== 'loaded'}
+              <p class="type-body text-muted-foreground" role="status">
+                {$sharingLoad$ === 'error'
+                  ? m.collaboration_lists_sharingLoad_error()
+                  : m.collaboration_lists_sharingLoading_label()}
+              </p>
             {/if}
-            {currentIdentity.provider === 'github'
-              ? m.workspace_share_pinProvider_github_label()
-              : m.workspace_share_pinProvider_gitlab_label({ host: currentIdentity.host })}
-          </p>
-        {:else}
-          <p class="type-body text-muted-foreground">
-            {localIdentityAction
-              ? m.settings_collaboration_identity_empty_description()
-              : m.settings_collaboration_identity_remoteEmpty_description()}
-          </p>
+            {#if $hosted$.length > 0}
+              <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
+                {#each $hosted$ as workspace (workspace.id)}
+                  <HostedWorkspaceRoster
+                    {workspace}
+                    onRemoveAll={() => removeAllGuests(workspace.id)}
+                  />
+                {/each}
+              </div>
+            {:else if $sharingLoad$ === 'loaded'}
+              <div class="space-y-1">
+                <p class="type-body font-medium text-foreground">
+                  {m.settings_guestSessions_hosting_empty_title()}
+                </p>
+                <p class="type-body text-muted-foreground">
+                  {m.settings_guestSessions_hosting_empty_description()}
+                </p>
+              </div>
+            {/if}
+            {#each $removeAllReports$ as report (report.workspaceId)}
+              {@const failures = removeAllFailureLines(report)}
+              <div
+                class="mt-3 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
+                role="alert"
+                data-testid="hosted-roster-remove-all-error"
+                data-workspace-id={report.workspaceId}
+              >
+                <div class="min-w-0 type-body text-danger">
+                  <p>
+                    {m.settings_guestSessions_removeAll_error({
+                      workspace: workspaceLabel({ title: report.workspaceTitle }),
+                    })}
+                  </p>
+                  {#if failures.length > 0}
+                    <ul class="mt-1 space-y-1">
+                      {#each failures as line, index (index)}
+                        <li>{line}</li>
+                      {/each}
+                    </ul>
+                  {/if}
+                </div>
+                <Button
+                  variant="ghost"
+                  disabled={$sweepingWorkspaceIds$.includes(report.workspaceId)}
+                  onclick={() => removeAllGuests(report.workspaceId)}
+                >
+                  {m.settings_guestSessions_retry_label()}
+                </Button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        {#if $workspaceSessions$.length > 0}
+          {@render joinedRows($workspaceSessions$, false)}
         {/if}
       </div>
     {/snippet}
-    <SettingsSection
-      id="collaboration-identity"
-      title={m.settings_collaboration_identity_title()}
-      description={m.settings_collaboration_identity_description()}
-    >
-      {#snippet actions()}
-        {#if localIdentityAction}
-          <Button
-            variant="outline"
-            disabled={!$ready$}
-            onclick={() => {
-              if (
-                selectConnectionsLoaded.select(appStore.state) &&
-                selectCurrentConnectionId.select(appStore.state) === LOCAL_CONNECTION_ID &&
-                actionReady()
-              )
-                appStore.dispatch(collaborationSignInRequested());
-            }}
-            >{currentIdentity
-              ? m.collaborationAuth_signIn_label()
-              : m.collaborationAuth_title()}</Button
-          >
-        {/if}
-      {/snippet}
-      <SettingsForm
-        schema={identitySchema}
-        custom={{ 'collaboration-account': identitySummary }}
-        embedded
-      />
-    </SettingsSection>
 
-    <HostMembershipSettingsHost />
-
-    <SettingsSection
-      id="collaboration-workspaces"
-      title={m.settings_collaboration_workspaces_title()}
-    >
-      {#if $ready$ && ($canCreateWorkspace$ || $hosted$.length > 0)}
-        <div class="p-4" data-testid="guest-sessions-hosting">
-          <h3 class="type-body mb-3 font-medium text-foreground">
-            {m.settings_guestSessions_hosting_title()}
-          </h3>
-          {#if $sharingLoad$ !== 'loaded'}
-            <p class="type-body text-muted-foreground" role="status">
-              {$sharingLoad$ === 'error'
-                ? m.collaboration_lists_sharingLoad_error()
-                : m.collaboration_lists_sharingLoading_label()}
-            </p>
-          {/if}
-          {#if $hosted$.length > 0}
-            <div class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
-              {#each $hosted$ as workspace (workspace.id)}
-                <HostedWorkspaceRoster
-                  {workspace}
-                  onRemoveAll={() => removeAllGuests(workspace.id)}
-                />
-              {/each}
-            </div>
-          {:else if $sharingLoad$ === 'loaded'}
-            <div class="space-y-1">
-              <p class="type-body font-medium text-foreground">
-                {m.settings_guestSessions_hosting_empty_title()}
-              </p>
-              <p class="type-body text-muted-foreground">
-                {m.settings_guestSessions_hosting_empty_description()}
-              </p>
-            </div>
-          {/if}
-          {#each $removeAllReports$ as report (report.workspaceId)}
-            {@const failures = removeAllFailureLines(report)}
-            <div
-              class="mt-3 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
-              role="alert"
-              data-testid="hosted-roster-remove-all-error"
-              data-workspace-id={report.workspaceId}
-            >
-              <div class="min-w-0 type-body text-danger">
-                <p>
-                  {m.settings_guestSessions_removeAll_error({
-                    workspace: workspaceLabel({ title: report.workspaceTitle }),
-                  })}
-                </p>
-                {#if failures.length > 0}
-                  <ul class="mt-1 space-y-1">
-                    {#each failures as line, index (index)}
-                      <li>{line}</li>
-                    {/each}
-                  </ul>
-                {/if}
-              </div>
-              <Button
-                variant="ghost"
-                disabled={$sweepingWorkspaceIds$.includes(report.workspaceId)}
-                onclick={() => removeAllGuests(report.workspaceId)}
-              >
-                {m.settings_guestSessions_retry_label()}
-              </Button>
-            </div>
-          {/each}
-        </div>
-      {/if}
-
-      {#if $workspaceSessions$.length > 0}
-        {@render joinedRows($workspaceSessions$, false)}
-      {/if}
-    </SettingsSection>
-
-    <SettingsSection
-      id="collaboration-joined-instances"
-      title={m.collaboration_lists_joinedInstances_title()}
-    >
+    {#snippet joinedInstances()}
       {@render joinedRows($instanceSessions$, true)}
-    </SettingsSection>
+    {/snippet}
+
+    {#each sharingSchema.sections as section (section.id)}
+      <SettingsSection id={section.id} title={section.title}>
+        {#if section.id === 'collaboration-joined-instances' || ($ready$ && ($canCreateWorkspace$ || $hosted$.length > 0)) || $workspaceSessions$.length > 0}
+          <SettingsForm
+            schema={{ sections: [section] }}
+            custom={{
+              'collaboration-workspaces-content': sharedWorkspaces,
+              'collaboration-joined-instances-content': joinedInstances,
+            }}
+            embedded
+          />
+        {/if}
+      </SettingsSection>
+    {/each}
 
     {#if openError}
       <div
