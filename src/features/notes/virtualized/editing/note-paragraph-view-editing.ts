@@ -1,5 +1,6 @@
 import { UnsupportedParagraphEdit } from './note-paragraph-edit-authority';
 import { sameNoteScope } from '$lib/client/note-pages';
+import type { NoteTransactionOwner } from '../note-transaction-relay';
 import type { NoteViewEditing } from '../note-window-view';
 import { prepareNoteParagraphContext } from './note-paragraph-edit-context';
 import { createReduxNoteDocumentOwner } from './note-document-redux-owner';
@@ -27,42 +28,64 @@ export function prepareNoteParagraphViewEditing(
     release: offer.release,
     retire: offer.retire,
     ready: offer.ready
-      .then((context): NoteViewEditing => ({
-        ...history,
-        bind: () => undefined,
-        borrow(target) {
-          if (target !== window) throw new Error('Foreign paragraph view');
-          const borrow = context.borrow();
-          return {
-            release: borrow.release,
-            bind(target, projection, doc) {
-              if (target !== window || !context.current()) throw new Error('Stale paragraph view');
-              let base;
-              try {
-                base = borrow.create(projection, doc);
-              } catch (error) {
-                if (error instanceof UnsupportedParagraphEdit) return undefined;
-                throw error;
+      .then((context): NoteViewEditing => {
+        const guard = (owner: NoteTransactionOwner): NoteTransactionOwner => ({
+          ...owner,
+          current: () => context.current() && owner.current(),
+          history(direction) {
+            if (!context.current()) return undefined;
+            const plan = owner.history?.(direction);
+            return (
+              plan && {
+                ...plan,
+                adopted: () => context.current() && plan.adopted(),
+                current: () => context.current() && plan.current(),
+                commit() {
+                  if (!context.current()) throw new Error('Stale paragraph history');
+                  plan.commit();
+                },
               }
-              const owner = createReduxNoteDocumentOwner(base, read, port.dispatch);
-              return { ...owner, current: () => context.current() && owner.current() };
-            },
-          };
-        },
-        selectionChanged(selection) {
-          const note = read();
-          if (!context.current() || !note?.document || note.generation !== generation) return;
-          port.dispatch(
-            pageDocumentSelectionChanged(
-              window.scope.workspaceId,
-              window.scope.noteId,
-              generation,
-              note.document,
-              selection,
-            ),
-          );
-        },
-      }))
+            );
+          },
+        });
+        return {
+          ...history,
+          bind: () => undefined,
+          borrow(target) {
+            if (target !== window) throw new Error('Foreign paragraph view');
+            const borrow = context.borrow();
+            return {
+              release: borrow.release,
+              bind(target, projection, doc) {
+                if (target !== window || !context.current())
+                  throw new Error('Stale paragraph view');
+                let base;
+                try {
+                  base = borrow.create(projection, doc);
+                } catch (error) {
+                  if (error instanceof UnsupportedParagraphEdit) return undefined;
+                  throw error;
+                }
+                const owner = createReduxNoteDocumentOwner(base, read, port.dispatch);
+                return guard(owner);
+              },
+            };
+          },
+          selectionChanged(selection) {
+            const note = read();
+            if (!context.current() || !note?.document || note.generation !== generation) return;
+            port.dispatch(
+              pageDocumentSelectionChanged(
+                window.scope.workspaceId,
+                window.scope.noteId,
+                generation,
+                note.document,
+                selection,
+              ),
+            );
+          },
+        };
+      })
       .catch((error): undefined => {
         const note = read();
         if (

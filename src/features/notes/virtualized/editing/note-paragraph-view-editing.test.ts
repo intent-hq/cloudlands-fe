@@ -12,7 +12,7 @@ import htmlCapture from './__fixtures__/note-paragraph/plain-paragraph-html-tail
 import { readNoteWindow } from '../note-window-reader';
 import { noteAssemblyResources } from '../note-assembly-reservation';
 import { prepareNoteParagraphViewEditing } from './note-paragraph-view-editing';
-import { NoteWindowView } from '../note-window-view';
+import { NoteWindowView, type NoteViewEditing } from '../note-window-view';
 import StarterKit from '@tiptap/starter-kit';
 vi.mock('$lib/utils/editor-config', () => ({
   createEditorConfig: () => ({ extensions: [StarterKit] }),
@@ -141,6 +141,25 @@ async function fixture(raw: { calls: unknown[]; at: number } = capture) {
     offer,
     transport,
     listeners,
+    markSavePending() {
+      const draft = state.byWorkspaceId[ws].notes[id].drafts[0];
+      dispatch(
+        a.pageSaveStarted(
+          ws,
+          id,
+          {
+            scope: window.scope,
+            baseRevision: window.sourceRevision,
+            operationId: '00000000-0000-4000-8000-000000000001',
+            expiresAt: identity.expiresAt,
+            payloadDigest: '0'.repeat(64),
+            splices: draft.splices,
+          },
+          draft.sequence,
+        ),
+      );
+      return state.byWorkspaceId[ws].notes[id].pending;
+    },
     closeAndReopenPanel() {
       // This fixture seeds subscription state above. Drive the real lifecycle
       // reducer without inventing a second wire subscription/reconnect event.
@@ -377,4 +396,280 @@ it('refuses edits from an old native borrower after two-panel close/reopen and a
   expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
   expect(f.read().resourceLedger.used.physicalReads).toBe(0);
   expect(f.listeners.size).toBe(0);
+});
+
+it('publishes document undo and redo through bounded native remounts with directional selection and drafts intact', async () => {
+  const f = await fixture();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const view = new NoteWindowView(host, {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+  });
+  try {
+    view.showPrepared(f.window, await f.offer.ready);
+    view.setSelection({ anchor: 65539, head: 65539, anchorAffinity: -1, headAffinity: -1 });
+    view.editor!.commands.insertContent('X');
+    const first = f.note().document!;
+    const old = view.editor!;
+    vi.spyOn(old.view, 'posAtCoords').mockReturnValue(null);
+    expect(view.history('undo')).toBe(true);
+    expect(old.isDestroyed).toBe(true);
+    expect(view.editor!.state.doc.textContent).toBe('abc');
+    expect(view.getSelection()).toEqual(first.history[0].before);
+    expect(f.note().document!.cursor).toBe(0);
+    expect(f.note().document!.dirty).toEqual([]);
+    expect(f.note().drafts.map((d) => d.splices)).toEqual([
+      [{ start: 65539, end: 65539, text: 'X' }],
+      [{ start: 65539, end: 65540, text: '' }],
+    ]);
+    await Promise.resolve();
+    vi.spyOn(view.editor!.view, 'posAtCoords').mockReturnValue(null);
+    expect(view.history('redo')).toBe(true);
+    expect(view.editor!.state.doc.textContent).toBe('aXbc');
+    expect(f.note().document!.cursor).toBe(1);
+    expect(f.note().document!.history).toHaveLength(1);
+    expect(view.getSelection()).toEqual(first.history[0].after);
+    expect(f.note().drafts).toHaveLength(3);
+    expect(f.note().drafts[2].splices).toEqual([{ start: 65539, end: 65539, text: 'X' }]);
+  } finally {
+    view.destroy();
+    f.unmount();
+    await f.offer.release();
+    f.stop();
+  }
+  expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
+});
+
+it('defers undo until final composition and preserves pending-save and later draft batches while fencing the remount gap', async () => {
+  const f = await fixture();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const selected = vi.fn(),
+    seek = vi.fn(),
+    copied = vi.fn();
+  const view = new NoteWindowView(host, {
+    seek,
+    selectionChanged: selected,
+    fullOperation: copied,
+  });
+  let gap = false;
+  try {
+    const editing = await f.offer.ready;
+    view.showPrepared(f.window, editing);
+    view.setSelection({ anchor: 65539, head: 65539, anchorAffinity: -1, headAffinity: -1 });
+    view.editor!.commands.insertContent('X');
+    const afterFirst = f.note().document!;
+    // A controlled in-flight save state, not a mocked committed receipt or wire write.
+    const pending = f.markSavePending();
+    const old = view.editor!;
+    vi.spyOn(old.view, 'posAtCoords').mockReturnValue(null);
+    view.host.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    expect(view.history('undo')).toBe(false);
+    expect(f.note().document).toBe(afterFirst);
+    old.commands.insertContent('Y');
+    expect(old.state.doc.textContent).toBe('aXYbc');
+    const observe = () => {
+      const document = f.note().document!;
+      if (gap || document.history.length !== 2 || document.cursor !== 1) return;
+      gap = true;
+      expect(old.isDestroyed).toBe(true);
+      expect(view.editor).toBeUndefined();
+      expect(view.host.textContent).toBe('');
+      const count = selected.mock.calls.length;
+      view.setSelection({ anchor: 0, head: 0, anchorAffinity: 1, headAffinity: 1 });
+      expect(selected).toHaveBeenCalledTimes(count);
+      view.reveal(0);
+      expect(seek).not.toHaveBeenCalled();
+      const copy = new Event('copy', { bubbles: true, cancelable: true });
+      view.scroller.dispatchEvent(copy);
+      expect(copy.defaultPrevented).toBe(true);
+      expect(copied).not.toHaveBeenCalled();
+      expect(view.showPrepared(f.window, editing)).toBe(false);
+    };
+    f.listeners.add(observe);
+    view.host.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    await vi.waitFor(() => expect(view.editor).not.toBe(old));
+    f.listeners.delete(observe);
+    expect(gap).toBe(true);
+    expect(view.editor!.state.doc.textContent).toBe('aXbc');
+    expect(f.note().pending).toBe(pending);
+    expect(view.getSelection()).toEqual(afterFirst.selection);
+    expect(f.note().document!.history).toHaveLength(2);
+    expect(f.note().document!.cursor).toBe(1);
+    expect(f.note().drafts.map((d) => d.splices)).toEqual([
+      [{ start: 65539, end: 65539, text: 'X' }],
+      [{ start: 65540, end: 65540, text: 'Y' }],
+      [{ start: 65540, end: 65541, text: '' }],
+    ]);
+  } finally {
+    view.destroy();
+    f.unmount();
+    await f.offer.release();
+    f.stop();
+  }
+});
+
+it('preserves the exact document and native view when replacement borrow admission fails', async () => {
+  const f = await fixture();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const view = new NoteWindowView(host, {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+  });
+  try {
+    const editing = (await f.offer.ready)!;
+    const borrow = vi
+      .fn(editing.borrow!)
+      .mockImplementationOnce(editing.borrow!)
+      .mockImplementation(() => {
+        throw new Error('Admission denied');
+      });
+    view.showPrepared(f.window, { ...editing, borrow });
+    view.setSelection({ anchor: 65539, head: 65539, anchorAffinity: 1, headAffinity: 1 });
+    view.editor!.commands.insertContent('X');
+    const before = f.note().document,
+      drafts = f.note().drafts,
+      editor = view.editor;
+    expect(view.history('undo')).toBe(false);
+    expect(borrow).toHaveBeenCalledTimes(2);
+    expect(f.note().document).toBe(before);
+    expect(f.note().drafts).toBe(drafts);
+    expect(view.editor).toBe(editor);
+    expect(editor!.isDestroyed).toBe(false);
+    expect(view.host.textContent).toBe('aXbc');
+  } finally {
+    view.destroy();
+    f.unmount();
+    await f.offer.release();
+    f.stop();
+  }
+});
+
+it('refuses a history plan if replacement retention synchronously replaces its mounted owner', async () => {
+  const f = await fixture();
+  const host = document.createElement('div');
+  document.body.append(host);
+  let revoke = false;
+  const released = vi.fn();
+  const view = new NoteWindowView(host, {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+    retainWindow: () => {
+      if (revoke) view.updateEditing(undefined);
+      return released;
+    },
+  });
+  try {
+    view.showPrepared(f.window, await f.offer.ready);
+    view.setSelection({ anchor: 65539, head: 65539, anchorAffinity: 1, headAffinity: 1 });
+    view.editor!.commands.insertContent('X');
+    const before = f.note().document,
+      drafts = f.note().drafts,
+      old = view.editor;
+    revoke = true;
+    expect(view.history('undo')).toBe(false);
+    expect(f.note().document).toBe(before);
+    expect(f.note().drafts).toBe(drafts);
+    expect(view.editor).toBe(old);
+    expect(old!.isDestroyed).toBe(false);
+    expect(old!.isEditable).toBe(false);
+    expect(view.host.textContent).toBe('aXbc');
+    expect(released).toHaveBeenCalledOnce();
+  } finally {
+    view.destroy();
+    f.unmount();
+    await f.offer.release();
+    f.stop();
+  }
+});
+
+it.each(['revoked', 'replaced'] as const)(
+  'refuses history after a borrowed adapter is %s before command entry',
+  async (kind) => {
+    const f = await fixture();
+    const host = document.createElement('div');
+    document.body.append(host);
+    const view = new NoteWindowView(host, {
+      seek: vi.fn(),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    });
+    try {
+      const editing = (await f.offer.ready)!;
+      view.showPrepared(f.window, editing);
+      view.setSelection({ anchor: 65539, head: 65539, anchorAffinity: 1, headAffinity: 1 });
+      view.editor!.commands.insertContent('X');
+      view.editor!.commands.insertContent('Y');
+      const before = f.note().document,
+        drafts = f.note().drafts,
+        editor = view.editor;
+      expect(before!.history).toHaveLength(2);
+      view.updateEditing(kind === 'revoked' ? undefined : { ...editing });
+      expect(view.history('undo')).toBe(false);
+      expect(f.note().document).toBe(before);
+      expect(f.note().drafts).toBe(drafts);
+      expect(view.editor).toBe(editor);
+      expect(editor!.isDestroyed).toBe(false);
+      expect(editor!.isEditable).toBe(false);
+      expect(view.host.textContent).toBe('aXYbc');
+    } finally {
+      view.destroy();
+      f.unmount();
+      await f.offer.release();
+      f.stop();
+    }
+    expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
+  },
+);
+
+it('does not publish a rejected nonborrowed document binding as a history owner', async () => {
+  const f = await fixture();
+  const host = document.createElement('div');
+  document.body.append(host);
+  const view = new NoteWindowView(host, {
+    seek: vi.fn(),
+    selectionChanged: vi.fn(),
+    fullOperation: vi.fn(),
+  });
+  const history = vi.fn();
+  try {
+    // Settle the fixture's prepared offer before independently testing plain binding.
+    await f.offer.ready;
+    view.show(f.window);
+    const editor = view.editor!,
+      before = f.note().document,
+      drafts = f.note().drafts;
+    const bind = vi.fn<NoteViewEditing['bind']>((_window, projection, doc) => ({
+      initial: {
+        doc: doc.type.create(
+          null,
+          doc.type.schema.nodes.paragraph.create(null, doc.type.schema.text('different')),
+        ),
+        projection,
+      },
+      current: () => true,
+      history,
+      prepare: () => undefined,
+      commit: vi.fn(),
+    }));
+    view.updateEditing({ bind, undo: vi.fn(), redo: vi.fn() });
+    expect(bind).toHaveBeenCalledOnce();
+    expect(editor.isEditable).toBe(false);
+    expect(view.history('undo')).toBe(false);
+    expect(history).not.toHaveBeenCalled();
+    expect(view.editor).toBe(editor);
+    expect(view.host.textContent).toBe('abc');
+    expect(f.note().document).toBe(before);
+    expect(f.note().drafts).toBe(drafts);
+  } finally {
+    view.destroy();
+    f.unmount();
+    await f.offer.release();
+    f.stop();
+  }
 });

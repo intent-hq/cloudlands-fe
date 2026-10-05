@@ -97,6 +97,7 @@ export class NoteWindowView {
     );
   }
   private seekCurrent(position: number, affinity: -1 | 1 = 1) {
+    if (this.historyBusy) return;
     const coordinates = this.coordinates;
     if (coordinates)
       this.options.seek(
@@ -108,6 +109,12 @@ export class NoteWindowView {
   private pending?: NoteWindow;
   private currentLease?: WindowLease;
   private mountedEditing?: NoteViewEditing;
+  private historyOwner?: NoteTransactionOwner;
+  private historyLease?: WindowLease;
+  private historyEditing?: NoteViewEditing;
+  private historyBusy = false;
+  private historyCancelled = false;
+  private pendingHistory?: 'undo' | 'redo';
   private lifetime?: NoteNativeLifetime;
   private bindEditing?: (editing: NoteViewEditing | undefined) => boolean;
   private pendingLease?: WindowLease;
@@ -199,11 +206,19 @@ export class NoteWindowView {
     for (const root of measured.shadowRoots) this.observeDom(root);
   }
   updateEditing(editing?: NoteViewEditing) {
+    if (this.historyBusy) {
+      this.historyCancelled = true;
+      this.options.editing = editing;
+      return;
+    }
     if (this.transactionRelay?.defer('owner', () => this.updateEditing(editing))) return;
     const changed = editing !== this.options.editing || editing !== this.mountedEditing;
     this.options.editing = editing;
     this.mountedEditing = editing;
     if (changed) {
+      this.historyOwner = undefined;
+      this.historyLease = undefined;
+      this.historyEditing = undefined;
       // A borrowed factory is single-use and refers to the original base document.
       // The caller supplies the next prepared context to show(), which remounts it.
       const borrowed = this.currentLease?.borrowed || editing?.borrow;
@@ -211,6 +226,7 @@ export class NoteWindowView {
     }
   }
   private publishSelection() {
+    if (this.historyBusy) return;
     const selection = this.getSelection();
     this.mountedEditing?.selectionChanged?.(selection);
     this.options.selectionChanged(selection);
@@ -219,6 +235,7 @@ export class NoteWindowView {
     return { ...this.selection };
   }
   private command(kind: 'copy' | 'search' | 'selectAll') {
+    if (this.historyBusy) return;
     if (kind === 'selectAll' && this.coordinates) {
       this.selection = {
         anchor: 0,
@@ -260,7 +277,7 @@ export class NoteWindowView {
     }
   };
   private copy = (event: Event) => {
-    if (this.transactionRelay?.busy) {
+    if (this.historyBusy || this.transactionRelay?.busy) {
       event.preventDefault();
       return;
     }
@@ -297,6 +314,11 @@ export class NoteWindowView {
       const pending = this.pending;
       this.show(pending);
     }
+    if (!this.pins.size && this.pendingHistory) {
+      const direction = this.pendingHistory;
+      this.pendingHistory = undefined;
+      this.history(direction);
+    }
   }
   reveal(position: number) {
     this.navigationAnchor = { source: position, offset: this.scroller.clientHeight / 3 };
@@ -311,6 +333,7 @@ export class NoteWindowView {
     } else this.seekCurrent(Math.max(0, position - 1024));
   }
   setSelection(selection: NoteSourceSelection) {
+    if (this.historyBusy) return;
     if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
     this.selection = { ...selection };
     this.publishSelection();
@@ -387,6 +410,7 @@ export class NoteWindowView {
   /** Navigation changes the desired window, not the owner of a still-composing
    * mounted view. Its context independently checks revision, expiry and revocation. */
   showPrepared(window: NoteWindow, editing?: NoteViewEditing) {
+    if (this.historyBusy) return false;
     if (
       this.window &&
       this.currentLease?.borrowed &&
@@ -397,7 +421,8 @@ export class NoteWindowView {
     else this.updateEditing(editing);
     return this.show(window);
   }
-  show(window: NoteWindow) {
+  show(window: NoteWindow, history?: { lease: WindowLease }) {
+    if (this.historyBusy && !history) return false;
     if (this.disposed) return false;
     if (this.transactionRelay?.busy) {
       if (this.pending !== window || this.pendingLease?.editing !== this.options.editing) {
@@ -418,7 +443,7 @@ export class NoteWindowView {
       this.pendingLease = undefined;
       return true;
     }
-    if (this.pins.size || this.editor?.view.composing) {
+    if (!history && (this.pins.size || this.editor?.view.composing)) {
       if (this.pending === window && this.pendingLease?.editing === this.options.editing)
         return false;
       this.releasePending();
@@ -433,7 +458,7 @@ export class NoteWindowView {
         ? this.pendingLease
         : undefined;
     if (!retained) this.releasePending();
-    const lease = retained ?? this.retain(window);
+    const lease = history?.lease ?? retained ?? this.retain(window);
     this.pending = undefined;
     this.pendingLease = undefined;
     const lifetime = new NoteNativeLifetime();
@@ -472,7 +497,9 @@ export class NoteWindowView {
       let currentProjection = projection;
       let currentCoordinates: NoteViewCoordinates | undefined;
       const transactions = createNoteTransactionRelay(() =>
-        this.editor === candidate && this.mountedEditing === boundEditing ? editOwner : undefined,
+        !this.historyBusy && this.editor === candidate && this.mountedEditing === boundEditing
+          ? editOwner
+          : undefined,
       );
       const retireFailedView = () => {
         if (this.editor !== candidate) return;
@@ -503,11 +530,11 @@ export class NoteWindowView {
         },
         addKeyboardShortcuts: () => ({
           'Mod-z': () => {
-            this.mountedEditing?.undo();
+            this.history('undo');
             return true;
           },
           'Mod-Shift-z': () => {
-            this.mountedEditing?.redo();
+            this.history('redo');
             return true;
           },
           'Mod-a': () => {
@@ -534,7 +561,7 @@ export class NoteWindowView {
           handleDOMEvents: {
             ...config.editorProps?.handleDOMEvents,
             copy: (_view, event) => {
-              if (transactions.busy) {
+              if (this.historyBusy || transactions.busy) {
                 event.preventDefault();
                 return true;
               }
@@ -588,7 +615,7 @@ export class NoteWindowView {
           },
         },
         onTransaction: ({ transaction, appendedTransactions }) => {
-          if (!candidate || this.applying || this.editor !== candidate) return;
+          if (!candidate || this.historyBusy || this.applying || this.editor !== candidate) return;
           const chain = [transaction, ...appendedTransactions];
           if (chain.some((step) => step.docChanged)) {
             const accepted = transactions.adopt(chain, this.editor.state);
@@ -663,13 +690,20 @@ export class NoteWindowView {
       this.bindEditing = (editing) => {
         boundEditing = editing;
         editOwner = editing?.bind(window, currentProjection, editor.state.doc);
-        if (editOwner && !editOwner.initial.doc.eq(editor.state.doc)) editOwner = undefined;
+        if (editOwner && (!editOwner.current() || !editOwner.initial.doc.eq(editor.state.doc)))
+          editOwner = undefined;
+        this.historyOwner = editOwner;
+        this.historyLease = editOwner ? this.currentLease : undefined;
+        this.historyEditing = editOwner ? editing : undefined;
         if (editOwner) {
           currentCoordinates = editOwner.initial.coordinates;
           this.committedCoordinates = currentCoordinates;
         }
         return !!editOwner;
       };
+      this.historyOwner = editOwner;
+      this.historyLease = editOwner ? lease : undefined;
+      this.historyEditing = editOwner ? lease.editing : undefined;
       this.currentLease = lease;
       this.mountedEditing = lease.editing;
       this.lifetime = lifetime;
@@ -722,6 +756,88 @@ export class NoteWindowView {
         candidateHost?.remove();
       }
       throw error;
+    }
+  }
+  /** A bounded document command, never the disposable editor's local history. */
+  history(direction: 'undo' | 'redo') {
+    if (this.disposed || this.historyBusy) return false;
+    if (this.transactionRelay?.defer('history', () => this.history(direction))) return false;
+    if (this.pins.size || this.editor?.view.composing) {
+      // At most one command waits for the current composition; further commands
+      // are refused until it settles, rather than retaining an unbounded queue.
+      this.pendingHistory ??= direction;
+      return false;
+    }
+    const owner = this.historyOwner,
+      editor = this.editor,
+      window = this.window,
+      editing = this.mountedEditing;
+    if (!owner?.history) {
+      this.mountedEditing?.[direction]();
+      return false;
+    }
+    if (
+      !editor ||
+      !window ||
+      this.historyLease !== this.currentLease ||
+      this.historyEditing !== editing ||
+      this.options.editing !== editing ||
+      !owner.current()
+    )
+      return false;
+    let plan: ReturnType<NonNullable<NoteTransactionOwner['history']>>;
+    let lease: WindowLease | undefined;
+    try {
+      plan = owner.history(direction);
+      if (!plan || !plan.current()) return false;
+      const initial = plan.initial;
+      if (
+        initial.doc.type.schema !== editor.schema ||
+        !initial.doc.eq(editor.schema.nodeFromJSON(initial.projection.content))
+      )
+        return false;
+      measureNoteProjection(initial.projection);
+      lease = this.retain(window);
+      if (
+        this.editor !== editor ||
+        this.window !== window ||
+        this.historyOwner !== owner ||
+        this.mountedEditing !== editing ||
+        !plan.current()
+      ) {
+        lease.release();
+        return false;
+      }
+    } catch {
+      lease?.release();
+      return false;
+    }
+    this.historyBusy = true;
+    this.historyCancelled = false;
+    let mounted = false,
+      transferred = false;
+    try {
+      // Admission is complete. Hide/retire old native text before publication;
+      // callbacks cannot publish selection, navigation, copy or edits in this gap.
+      this.destroyEditor();
+      this.host.replaceChildren();
+      this.window = undefined;
+      if (this.historyCancelled || !plan.current()) return false;
+      plan.commit();
+      if (this.historyCancelled || !plan.adopted()) return false;
+      this.selection = { ...plan.selection };
+      transferred = true;
+      mounted = this.show(window, { lease });
+      return mounted;
+    } catch (error) {
+      this.options.failed?.();
+      logger.error('Failed to adopt note history', error);
+      return false;
+    } finally {
+      this.historyBusy = false;
+      if (!transferred) lease.release();
+      if (this.historyCancelled) this.destroy();
+      else if (mounted) this.setSelection(plan.selection);
     }
   }
   private layout() {
@@ -793,6 +909,9 @@ export class NoteWindowView {
     this.lifetime = undefined;
     this.currentLease = undefined;
     this.mountedEditing = undefined;
+    this.historyOwner = undefined;
+    this.historyLease = undefined;
+    this.historyEditing = undefined;
     this.committedProjection = undefined;
     this.committedCoordinates = undefined;
     this.transactionRelay = undefined;
@@ -814,6 +933,10 @@ export class NoteWindowView {
     }
   }
   destroy() {
+    if (this.historyBusy) {
+      this.historyCancelled = true;
+      return;
+    }
     if (this.transactionRelay?.defer('destroy', () => this.destroy())) return;
     this.disposed = true;
     cancelAnimationFrame(this.frame);
@@ -835,6 +958,7 @@ export class NoteWindowView {
     this.pendingLease?.release();
     this.pendingLease = undefined;
     this.pins.clear();
+    this.pendingHistory = undefined;
     this.before.remove();
     this.host.remove();
     this.after.remove();

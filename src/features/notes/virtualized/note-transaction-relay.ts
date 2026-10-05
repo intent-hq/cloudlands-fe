@@ -1,3 +1,4 @@
+import type { NoteSourceSelection } from './note-source-selection';
 import type { NoteViewCoordinates } from './note-view-coordinates';
 import {
   Plugin,
@@ -22,6 +23,16 @@ interface Candidate {
 export interface NoteTransactionOwner {
   readonly initial: Candidate;
   current(): boolean;
+  /** Pure document-history admission; native adoption is owned by the view. */
+  history?(direction: 'undo' | 'redo'):
+    | {
+        initial: Candidate;
+        selection: NoteSourceSelection;
+        current(): boolean;
+        adopted(): boolean;
+        commit(): void;
+      }
+    | undefined;
   prepare(transaction: Transaction, before: Candidate): Candidate | undefined;
   /** Pure final selection/history preparation. Must preserve the exact accepted
    * document and projection; refusal still precedes external owner adoption. */
@@ -57,7 +68,7 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
   let unowned = false;
   let commitStarted = false;
   let adopted = false;
-  const deferred = new Map<'owner' | 'window' | 'selection' | 'destroy', () => void>();
+  const deferred = new Map<'owner' | 'window' | 'selection' | 'destroy' | 'history', () => void>();
   const pending: Array<{
     transaction: Transaction;
     next: (tr: Transaction) => void;
@@ -127,8 +138,8 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
       const initial = getOwner()?.initial;
       return initial?.doc.eq(state.doc) ? initial.coordinates : undefined;
     },
-    /** Coalesce the four view lifecycle intents until application/adoption finishes. */
-    defer(kind: 'owner' | 'window' | 'selection' | 'destroy', action: () => void) {
+    /** Coalesce bounded view lifecycle intents until application/adoption finishes. */
+    defer(kind: 'owner' | 'window' | 'selection' | 'destroy' | 'history', action: () => void) {
       if (!busy) return false;
       deferred.set(kind, action);
       return true;
