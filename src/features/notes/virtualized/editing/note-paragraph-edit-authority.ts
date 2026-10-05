@@ -16,6 +16,20 @@ type Fragment = Extract<Page['items'][number], { kind: 'fragment' }>;
 type Steps<T> = Generator<NotePageRequest, T, NoteReadPage>;
 type ResolvedOwner = { owner: Owner; opening: string; closing: string };
 
+/** Issued by DATA only after reserving the existing assembly owner. The exact
+ * source header and window bind the allowance; current checks that its resource
+ * lease remains held. DATA retains/releases that lease through IO settlement. */
+export interface NoteParagraphEditGrant {
+  readonly window: NoteWindow;
+  readonly identity: Identity;
+  readonly allowance: Readonly<{
+    retainedBytes: number;
+    descriptors: number;
+    wireBytes: number;
+  }>;
+  current(): boolean;
+}
+
 /** Runtime-only receipt minted by the DATA-driven resolver below. */
 export interface NoteParagraphEditContext {
   readonly cost: Readonly<{ requests: number; wireBytes: number; retainedBytes: number }>;
@@ -55,7 +69,8 @@ function assertIdentity(
 
 /** The caller drives requests through DATA and supplies the original source-page
  * identity, including its original expiry. Before driving this iterator DATA
- * must reserve the remaining context allowance and one wire-frame allowance;
+ * must reserve the remaining context allowance and one wire-frame allowance
+ * and supply their exact-window grant;
  * receipt.cost is final accounting, not permission to allocate retroactively.
  * DATA also owns the complete escaped RPC frame bound. No transport, prefix read or metadata
  * interpretation is owned here. Ordinary lexical paragraphs have no ownerRef;
@@ -64,15 +79,38 @@ export function* noteParagraphEditContextSteps(
   window: NoteWindow,
   original: Identity,
   current: () => boolean,
+  grant: NoteParagraphEditGrant,
   now: () => number = Date.now,
 ): Steps<NoteParagraphEditContext> {
+  // No owner copies or read requests precede admission. The grant belongs to
+  // the caller's existing DATA ledger, never to a second resource registry.
+  const admitted = () => {
+    const required = {
+      retainedBytes: NOTE_WINDOW_LIMITS.contextBytes - window.cost.contextBytes,
+      descriptors: NOTE_WINDOW_LIMITS.descriptors - window.context.length,
+      wireBytes: NOTE_WINDOW_LIMITS.wireBytes,
+    };
+    if (
+      !grant ||
+      grant.window !== window ||
+      grant.identity !== original ||
+      !grant.current() ||
+      Object.entries(required).some(([key, value]) => {
+        const allowance = grant.allowance[key as keyof typeof required];
+        return !Number.isSafeInteger(allowance) || allowance < value || allowance < 0;
+      })
+    )
+      throw new Error('Paragraph edit resource grant unavailable');
+    return current();
+  };
+  assertIdentity(window, original, admitted, now);
   const identity = { ...original, scope: { ...original.scope } };
   const source = window.text,
     start = window.range.start,
     end = window.range.end,
     sourceLength = window.sourceLength;
   const check = () => {
-    assertIdentity(window, identity, current, now);
+    assertIdentity(window, identity, admitted, now);
     if (
       window.text !== source ||
       window.range.start !== start ||
@@ -214,7 +252,7 @@ export function* noteParagraphEditContextSteps(
     sourceLength: window.sourceLength,
     identity,
     owners: resolved,
-    current,
+    current: admitted,
     now,
   });
   return receipt;

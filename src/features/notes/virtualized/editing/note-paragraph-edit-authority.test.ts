@@ -8,6 +8,7 @@ import { expect, it } from 'vitest';
 import {
   createNoteParagraphEditAuthority,
   noteParagraphEditContextSteps,
+  type NoteParagraphEditGrant,
 } from './note-paragraph-edit-authority';
 import { NotePageReader } from '$lib/client/note-page-reader';
 import type { NotePageRequest, NoteReadPage } from '$lib/client/note-pages';
@@ -23,6 +24,20 @@ import {
   moveNoteDocumentHistory,
   overlayNoteDocumentSource,
 } from './note-document-edit-session';
+
+// Controlled resource-owner seam only: live DATA admission/release is tested
+// by its driver. These grants do not turn captured responses into live leases.
+function controlledGrant(
+  window: NoteParagraphEditGrant['window'],
+  identity: NoteParagraphEditGrant['identity'],
+): NoteParagraphEditGrant {
+  return {
+    window,
+    identity,
+    allowance: { retainedBytes: 8192, descriptors: 128, wireBytes: 8192 },
+    current: () => true,
+  };
+}
 
 // Historical actual Store closure, including original signed handles and expiry.
 // This is replay evidence, not a live grant. Do not fill lexical fields, decode
@@ -135,6 +150,7 @@ it('refuses canonical owners before requesting ordinary paragraph details', asyn
     window,
     identity,
     () => true,
+    controlledGrant(window, identity),
     () => Date.parse(identity.expiresAt) - 1,
   );
   expect(() => steps.next()).toThrow('Unsupported canonical paragraph edit context');
@@ -147,14 +163,17 @@ it('rejects expired, replaced and cancelled paragraph contexts before reading', 
       window,
       identity,
       () => true,
+      controlledGrant(window, identity),
       () => Date.parse(identity.expiresAt),
     ).next(),
   ).toThrow('Stale paragraph');
+  const replaced = { ...identity, snapshotId: 'different' };
   expect(() =>
     noteParagraphEditContextSteps(
       window,
-      { ...identity, snapshotId: 'different' },
+      replaced,
       () => true,
+      controlledGrant(window, replaced),
       () => Date.parse(identity.expiresAt) - 1,
     ).next(),
   ).toThrow('Stale paragraph');
@@ -163,6 +182,7 @@ it('rejects expired, replaced and cancelled paragraph contexts before reading', 
       window,
       identity,
       () => false,
+      controlledGrant(window, identity),
       () => Date.parse(identity.expiresAt) - 1,
     ).next(),
   ).toThrow('superseded');
@@ -248,11 +268,13 @@ function controlledDetails() {
     'suffix-fragment': page([fragment('closingSource', '\r', 0, 'suffix-continuation')]),
     'suffix-continuation': page([fragment('closingSource', '\n', 1)]),
   };
+  const grant = controlledGrant(window, identity);
   const steps = () =>
     noteParagraphEditContextSteps(
       window,
       identity,
       () => current,
+      grant,
       () => time,
     );
   const finish = (iterator: ReturnType<typeof steps>) => {
@@ -269,6 +291,7 @@ function controlledDetails() {
     window,
     identity,
     replies,
+    grant,
     steps,
     finish,
     cancel: () => {
@@ -373,6 +396,7 @@ async function realPlain(raw: typeof plainOne | typeof plainTwo) {
     f.window,
     f.identity,
     () => true,
+    controlledGrant(f.window, f.identity),
     () => Date.parse(f.identity.expiresAt) - 1,
   );
   try {
@@ -470,7 +494,44 @@ it('rejects actual Store HTML-entry paragraph text', async () => {
       f.window,
       f.identity,
       () => true,
+      controlledGrant(f.window, f.identity),
       () => Date.parse(f.identity.expiresAt) - 1,
     ).next(),
   ).toThrow(/Unsupported/);
+});
+
+it.each(['window', 'identity', 'retainedBytes', 'descriptors', 'wireBytes', 'released'] as const)(
+  'requires an admitted exact-window grant before reading: %s',
+  (kind) => {
+    const f = controlledDetails();
+    if (kind === 'window') Object.assign(f.grant, { window: { ...f.window } });
+    else if (kind === 'identity') Object.assign(f.grant, { identity: { ...f.identity } });
+    else if (kind === 'released') f.grant.current = () => false;
+    else Object.assign(f.grant.allowance, { [kind]: 0 });
+    expect(() => f.steps().next()).toThrow('resource grant unavailable');
+    expect(f.window.details).toEqual({});
+  },
+);
+
+it('checks resource grant liveness after a yielded read', () => {
+  const f = controlledDetails(),
+    iterator = f.steps();
+  expect(iterator.next().done).toBe(false);
+  f.grant.current = () => false;
+  expect(() => iterator.next(f.replies['opaque-directory'])).toThrow('resource grant unavailable');
+});
+
+it('refuses a completed receipt after its resource grant is released', () => {
+  const f = controlledDetails(),
+    receipt = f.finish(f.steps());
+  const projection = projectNoteWindow(f.window),
+    editor = nativeFixtureEditor(projection.content);
+  try {
+    f.grant.current = () => false;
+    expect(() =>
+      createNoteParagraphEditAuthority(f.window, projection, receipt, editor.state.doc),
+    ).toThrow('resource grant unavailable');
+  } finally {
+    editor.destroy();
+  }
 });
