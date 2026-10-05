@@ -20,7 +20,11 @@ export function retainCanonicalRegion(
   bindings: NoteWindow['mapBindings'],
   native: NoteCanonicalResources,
   range: NoteWindow['range'],
-) {
+): {
+  context: Descriptor[];
+  native: NoteCanonicalResources;
+  owners: NoteCanonicalOwner[] | undefined;
+} {
   const byId = new Map(context.map((item) => [item.id, item]));
   const region = context.find((item) => {
     if (
