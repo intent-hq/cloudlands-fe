@@ -50,6 +50,8 @@ import type { HostCertMismatch, RaceConnectInfo } from './backend-connection';
 import { resolveSocketPath } from './intentd-sidecar';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
+import { inspectPersonalCredential, invitedRole } from './invited-principal';
+import { readPinnedVersion } from './intentd-version-pin';
 import { createTunneledSocket, TUNNEL_CONNECT_TIMEOUT_MS } from './tailcat-tunnel';
 import * as tailcatTunnel from './tailcat-tunnel';
 
@@ -741,6 +743,114 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
     client.dispose();
   });
+
+  it.each([
+    ['owner', true, { hostMembership: 1 }, null],
+    ['member', false, { hostMembership: 1 }, 'member'],
+    ['guest', false, { hostMembership: 1 }, 'guest'],
+    ['legacy owner', true, {}, null],
+    ['legacy collaborator', false, {}, 'guest'],
+  ])(
+    'classifies %s from authenticated identity replies over pinned WSS',
+    async (role, administrator, capabilities, expectedRole) => {
+      const requests: unknown[] = [];
+      daemon.handler = (req) => {
+        requests.push(req);
+        return {
+          result:
+            req.method === 'client.hello'
+              ? { server: { capabilities } }
+              : {
+                  id: 'person',
+                  login: null,
+                  displayName: null,
+                  avatarUrl: null,
+                  isAdministrator: administrator,
+                  ...(role.startsWith('legacy')
+                    ? {}
+                    : { hostRole: role, hostMembershipRevision: 1 }),
+                },
+        };
+      };
+      const snapshot = await inspectPersonalCredential({
+        host: daemon.host,
+        hosts: [daemon.host],
+        port: daemon.port,
+        fingerprint: daemon.fingerprint,
+        token: TOKEN,
+        tcAddress: null,
+      });
+      expect(requests).toEqual([
+        { jsonrpc: '2.0', id: 1, method: 'client.hello' },
+        { jsonrpc: '2.0', id: 2, method: 'principal.me' },
+      ]);
+      expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+      expect(new URL(daemon.lastUpgradeUrl!, 'https://localhost').pathname).toBe('/ws');
+      expect(snapshot.principal.isAdministrator).toBe(administrator);
+      expect(invitedRole(snapshot)).toBe(expectedRole);
+    },
+  );
+
+  it('rejects the intentd 0.9.12 hello before sending an unsupported identity request', async () => {
+    const requests: unknown[] = [];
+    daemon.handler = (request) => {
+      requests.push(request);
+      return {
+        result: {
+          clientId: 'test-client',
+          protocolVersion: '9.4',
+          server: {
+            locality: 'remote',
+            hasDisplay: false,
+            osArch: 'linux/x86_64',
+            version: '0.9.12',
+            protocolVersion: '9.4',
+            capabilities: { liveState: true },
+          },
+        },
+      };
+    };
+    const error = await inspectPersonalCredential({
+      host: daemon.host,
+      hosts: [daemon.host],
+      port: daemon.port,
+      fingerprint: daemon.fingerprint,
+      token: TOKEN,
+      tcAddress: null,
+    }).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('0.9.12');
+    const pin = readPinnedVersion();
+    expect(pin).not.toBeNull();
+    expect((error as Error).message).toContain(pin!);
+    expect(requests).toEqual([{ jsonrpc: '2.0', id: 1, method: 'client.hello' }]);
+  });
+
+  it.each(['client.hello', 'principal.me'])(
+    'identifies unavailable %s over the real WSS transport',
+    async (missingMethod) => {
+      const requests: string[] = [];
+      daemon.handler = (req) => {
+        requests.push(req.method);
+        return req.method === missingMethod
+          ? { error: { code: -32601, message: 'Method not found' } }
+          : { result: { server: { capabilities: {} } } };
+      };
+      await expect(
+        inspectPersonalCredential({
+          host: daemon.host,
+          hosts: [daemon.host],
+          port: daemon.port,
+          fingerprint: daemon.fingerprint,
+          token: TOKEN,
+          tcAddress: null,
+        }),
+      ).rejects.toThrow(missingMethod);
+      expect(requests).toEqual(
+        missingMethod === 'client.hello' ? ['client.hello'] : ['client.hello', 'principal.me'],
+      );
+    },
+  );
 
   it('pins a case/separator-variant fingerprint (normalization)', async () => {
     daemon.handler = () => ({ result: 'ok' });

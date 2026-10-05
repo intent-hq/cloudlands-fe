@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { expect, it } from 'vitest';
 import { consumeCanonicalSource } from './canonical-source-consumer';
 import type {
@@ -10,12 +11,12 @@ import type {
 
 // Immutable real Store pages inside a CONTROLLED local facade. Historical clock
 // and fixture identity do not authenticate a new session or exercise Electron IPC.
-const directory = new URL(
+const directory = resolve(
+  import.meta.dirname,
   '../../features/notes/virtualized/primitives/mermaid/__tests__/fixtures/canonical-source/',
-  import.meta.url,
 );
-const manifest = JSON.parse(readFileSync(new URL('manifest.json', directory), 'utf8'));
-const oracles = JSON.parse(readFileSync(new URL('note_primitive_native.json', directory), 'utf8'));
+const manifest = JSON.parse(readFileSync(resolve(directory, 'manifest.json'), 'utf8'));
+const oracles = JSON.parse(readFileSync(resolve(directory, 'note_primitive_native.json'), 'utf8'));
 const normalized = (value: Record<string, unknown>) =>
   JSON.stringify(
     Object.fromEntries(
@@ -28,7 +29,7 @@ const normalized = (value: Record<string, unknown>) =>
 it.each(Object.entries(manifest.artifacts))(
   'streams original Store/native predecoder witness %s',
   async (name, evidence: any) => {
-    const bytes = readFileSync(new URL(name, directory));
+    const bytes = readFileSync(resolve(directory, name));
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(evidence.sha256);
     const capture = JSON.parse(bytes.toString('utf8'));
     const native = oracles

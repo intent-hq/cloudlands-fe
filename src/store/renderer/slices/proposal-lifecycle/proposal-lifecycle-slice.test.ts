@@ -194,3 +194,41 @@ describe('proposalLifecycleReducer', () => {
     expect(again).toBe(dismissed);
   });
 });
+
+it('keeps transfer checkpoints through failure and retry, and ignores unrelated progress', async () => {
+  const { proposalTransferCheckpoint, proposalTransferProgress } =
+    await import('./proposal-lifecycle-slice');
+  let state = proposalLifecycleReducer(
+    initialState,
+    proposalApplyStarted({ proposalId: 'p', startedAt: 10 }),
+  );
+  const transfer = {
+    workspaceId: 'w',
+    sourceWorkspacePath: '/w',
+    sourceConnectionId: 's',
+    destinationConnectionId: 'd',
+    phase: 'imported' as const,
+  };
+  state = proposalLifecycleReducer(
+    state,
+    proposalTransferCheckpoint({ proposalId: 'p', transfer }),
+  );
+  state = proposalLifecycleReducer(
+    state,
+    proposalTransferProgress({ proposalId: 'p', phase: 'committing' }),
+  );
+  expect(state.p.transferProgress).toBe('committing');
+  state = proposalLifecycleReducer(
+    state,
+    proposalFailed({ proposalId: 'p', error: 'offline', completedAt: 20, lastAction: 'apply' }),
+  );
+  expect(
+    proposalLifecycleReducer(
+      state,
+      proposalTransferProgress({ proposalId: 'p', phase: 'relaying' }),
+    ),
+  ).toBe(state);
+  state = proposalLifecycleReducer(state, proposalApplyStarted({ proposalId: 'p', startedAt: 30 }));
+  expect(state.p.result?.transfer).toEqual(transfer);
+  expect(pruneAppliedProposalLifecycleEntries(state, 30).p.result?.transfer).toEqual(transfer);
+});

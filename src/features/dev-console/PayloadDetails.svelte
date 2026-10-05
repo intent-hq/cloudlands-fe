@@ -2,12 +2,9 @@
   import { Button } from '$lib/components/ui/button';
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { formatInteger } from '$lib/i18n/format';
-  import type {
-    DevConsolePayload,
-    DevConsoleRecord,
-    DevConsoleRow,
-  } from '$shared/types/dev-console';
-  import { readablePayload } from './traffic-view';
+  import type { DevConsoleRecord, DevConsoleRow } from '$shared/types/dev-console';
+  import PayloadViewer from './PayloadViewer.svelte';
+  import { frameMetadata, payloadSide } from './payload-stream';
   import * as m from '$shared/paraglide/messages.js';
   let {
     row,
@@ -15,21 +12,56 @@
     full,
     ontoggle,
     onclose,
+    height,
+    onminimumheight,
   }: {
     row: DevConsoleRow;
     record: DevConsoleRecord | null;
     full: boolean;
     ontoggle: (enabled: boolean) => void;
     onclose: () => void;
+    height?: number;
+    onminimumheight?: (height: number) => void;
   } = $props();
   let copied = $state('');
-  const stateLabel = (payload: DevConsolePayload) =>
-    ({
-      complete: m.devConsole_fullState_label,
-      truncated: m.devConsole_truncated_label,
-      absent: m.devConsole_absent_label,
-      unserializable: m.devConsole_unserializable_label,
-    })[payload.state]();
+  const request = $derived(record ? payloadSide(record, 'request') : null);
+  const response = $derived(record ? payloadSide(record, 'response') : null);
+  let root: HTMLElement;
+  const minimumEditorHeight = 80;
+  let payloadMinimum = $state(minimumEditorHeight);
+  $effect(() => {
+    // Reobserve when replies, capture state, or copy status change the controls.
+    void record;
+    void copied;
+    const shared = [
+      ...root.querySelectorAll<HTMLElement>(
+        ':scope > header, :scope > .capture, :scope > .retention, :scope > .copy-status',
+      ),
+    ];
+    const panes = [...root.querySelectorAll<HTMLElement>('.payload')].map((pane) => [
+      ...pane.querySelectorAll<HTMLElement>('.payload-heading, [data-payload-toolbar]'),
+    ]);
+    function measure() {
+      const sum = (nodes: HTMLElement[]) =>
+        nodes.reduce((total, node) => total + node.getBoundingClientRect().height, 0);
+      // Native find controls, padding, and at least two lines of payload text.
+      const minimum = Math.ceil(minimumEditorHeight + Math.max(0, ...panes.map(sum)));
+      payloadMinimum = minimum;
+      const style = getComputedStyle(root);
+      onminimumheight?.(
+        Math.ceil(
+          sum(shared) +
+            minimum +
+            parseFloat(style.borderTopWidth || '0') +
+            parseFloat(style.borderBottomWidth || '0'),
+        ),
+      );
+    }
+    const observer = new ResizeObserver(measure);
+    for (const node of [...shared, ...panes.flat()]) observer.observe(node);
+    measure();
+    return () => observer.disconnect();
+  });
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -40,7 +72,12 @@
   }
 </script>
 
-<section class="details" aria-label={row.method}>
+<section
+  class="details"
+  aria-label={row.method}
+  bind:this={root}
+  style:flex-basis={height === undefined ? 'auto' : `${height}px`}
+>
   <header>
     <strong>{row.method}</strong><span
       >{m.devConsole_connection_label()}: {row.connectionId} / {row.connectionGeneration}</span
@@ -49,6 +86,7 @@
       variant="ghost"
       wrapContent={false}
       class="payload-control"
+      data-close-details
       onclick={onclose}>{m.devConsole_closeDetails_label()}</Button
     >
   </header>
@@ -62,50 +100,62 @@
       />{m.devConsole_full_label()}</label
     ><span>{m.devConsole_prospective_label()}</span>
   </div>
-  {#snippet payloadBlock(label: string, payload: DevConsolePayload)}
+  {#if record?.droppedFrames}
+    <div class="retention" role="status">
+      {m.devConsole_droppedFrames_description({
+        count: formatInteger(record.droppedFrames),
+      })}
+    </div>
+  {/if}
+  {#snippet payloadBlock(label: string, content: ReturnType<typeof payloadSide>)}
     <section class="payload">
       <div class="payload-heading">
-        <strong>{label}</strong><span class:truncated={payload.state === 'truncated'}
-          >{stateLabel(payload)} · {m.devConsole_payloadBytes_label({
-            retained: formatInteger(payload.retainedBytes),
-            original:
-              payload.originalBytes === null
-                ? m.devConsole_unknown_label()
-                : formatInteger(payload.originalBytes),
-          })}</span
-        ><Button
+        <strong>{label}</strong>
+        <Button
           size="compact"
           variant="ghost"
           wrapContent={false}
           class="payload-control"
-          disabled={!payload.text}
-          onclick={() => copy(payload.text)}>{m.devConsole_copy_label()}</Button
+          disabled={!content.copyText}
+          onclick={() => copy(content.copyText)}>{m.devConsole_copy_label()}</Button
         >
+        {#if content.frames.length === 1}
+          <span
+            class="frame-metadata"
+            class:truncated={content.frames[0].payload.state === 'truncated'}
+          >
+            {frameMetadata(content.frames[0])}
+          </span>
+        {:else}
+          <span
+            >{m.devConsole_retainedFrames_label({
+              count: formatInteger(content.frames.length),
+            })}</span
+          >
+        {/if}
       </div>
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable payload must be keyboard reachable.) -->
-      <pre tabindex="0">{readablePayload(payload.text)}</pre>
+      <PayloadViewer text={content.text} {label} />
     </section>
   {/snippet}
-  <div class="payloads">
-    {#if record}
+  <div class="payloads" style:min-height={`${payloadMinimum}px`}>
+    {#if request && response}
       {@render payloadBlock(
         row.kind === 'request' ? m.devConsole_request_label() : m.devConsole_event_label(),
-        record.payload,
+        request,
       )}
-      {#if record.response}{@render payloadBlock(
+      {#if response.frames.length}{@render payloadBlock(
           m.devConsole_response_label(),
-          record.response,
+          response,
         )}{/if}
     {:else}<p>{m.devConsole_loading_label()}</p>{/if}
   </div>
-  {#if copied}<span role="status">{copied}</span>{/if}
+  {#if copied}<span class="copy-status" role="status">{copied}</span>{/if}
 </section>
 
 <style>
   .details {
-    flex: 0 0 38%;
-    min-height: min(180px, 55%);
-    max-height: 55%;
+    flex: 0 0 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     border-top: 1px solid hsl(var(--border));
@@ -116,7 +166,8 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 5px 10px;
+    padding: 2px 10px;
+    flex-shrink: 0;
     background: hsl(var(--muted));
   }
   header strong {
@@ -134,7 +185,6 @@
     border-radius: 3px;
   }
   .details :global(.payload-control):focus-visible,
-  pre:focus-visible,
   .details :global(.payload-checkbox):focus-visible {
     outline: 2px solid hsl(var(--ring));
   }
@@ -145,7 +195,8 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px 18px;
-    padding: 6px 10px;
+    padding: 2px 10px;
+    flex-shrink: 0;
     border-bottom: 1px solid hsl(var(--border));
   }
   label {
@@ -172,15 +223,9 @@
     flex-wrap: wrap;
     gap: 4px 10px;
   }
-  pre {
-    flex: 1;
-    min-height: 60px;
-    overflow: auto;
-    white-space: pre;
-    padding: 8px 12px;
-    margin: 0;
-    line-height: 1.45;
-    user-select: text;
+  .frame-metadata {
+    flex-basis: 100%;
+    white-space: pre-line;
   }
   .truncated {
     color: hsl(var(--danger));
@@ -197,23 +242,12 @@
     height: 13px;
     padding: 0;
   }
-  @media (max-height: 500px) {
-    .details {
-      flex: 0 0 calc(100% - 78px);
-      min-height: 0;
-      max-height: none;
-    }
-    header,
-    .payload-heading {
-      padding-block: 2px;
-      flex-shrink: 0;
-    }
-    .capture {
-      padding-block: 2px;
-      flex-shrink: 0;
-    }
-    pre {
-      min-height: 0;
-    }
+  .retention {
+    padding: 2px 10px;
+    color: hsl(var(--muted-foreground));
+    flex-shrink: 0;
+  }
+  .copy-status {
+    flex-shrink: 0;
   }
 </style>

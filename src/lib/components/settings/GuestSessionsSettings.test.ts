@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   clearingIds: [] as string[],
   collaboratorOnly: false,
   signIn: vi.fn(),
+  syncPolicy: vi.fn(async () => true),
   dispatch: vi.fn(),
   leave: vi.fn(),
   leaveWorkspace: vi.fn(),
@@ -63,21 +64,32 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$features/collaboration-auth/renderer/collaboration-auth.client', () => ({
   openCollaborationSignIn: mocks.signIn,
+  syncCollaborationPolicy: mocks.syncPolicy,
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-selectors', async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import('$store/renderer/slices/workspace/workspace-selectors')
-  >()),
-  selectIsCollaboratorOnlyClient: () => mocks.readable(() => mocks.collaboratorOnly),
-}));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$store/renderer/slices/principal/principal-selectors')>();
+  return {
+    ...actual,
+    selectCanCreateWorkspace: Object.assign(() => mocks.readable(() => !mocks.collaboratorOnly), {
+      select: actual.selectCanCreateWorkspace.select,
+      effect: actual.selectCanCreateWorkspace.effect,
+    }),
+  };
+});
 
+import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import GuestSessionsSettings from './GuestSessionsSettings.svelte';
 import { store as appStore } from '$store/renderer/store';
 import * as guestActions from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { guestSessionsSaga } from '$store/renderer/slices/guest-sessions/sagas/guest-sessions-saga';
 import { connectionsSaga } from '$store/renderer/slices/connections/sagas/connections-saga';
-import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  replaceWorkspaceList,
+  setWorkspaceHasLoaded,
+  setWorkspaceError,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { RemoveAllHostedGuestsResult } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 
@@ -105,9 +117,10 @@ function publishFixtures() {
     ...mocks.hosted,
     ...knownWorkspaces
       .filter((ws) => !mocks.hosted.some((current) => current.id === ws.id))
-      .map((ws) => ({ ...ws, memberCount: 1 })),
+      .map((ws) => ({ ...ws, memberCount: 1, openInviteCount: 0 })),
   ];
   appStore.dispatch(replaceWorkspaceList(knownWorkspaces));
+  appStore.dispatch(setWorkspaceHasLoaded(true, appStore.state.connections.windowBackendId));
 }
 
 function render(component: typeof GuestSessionsSettings) {
@@ -115,7 +128,9 @@ function render(component: typeof GuestSessionsSettings) {
   for (const [id, roster] of Object.entries(mocks.rosters)) {
     if (roster.status === 'withheld') appStore.dispatch(guestActions.hostedRosterWithheld(id));
     else {
-      appStore.dispatch(guestActions.hostedRosterReceived(id, roster.members));
+      appStore.dispatch(
+        guestActions.hostedRosterReceived(id, roster.members, roster.guestCount, roster.guestLimit),
+      );
       if (roster.status === 'error') appStore.dispatch(guestActions.hostedRosterFailed(id));
     }
   }
@@ -195,8 +210,68 @@ const sweepClean = {
 };
 
 describe('GuestSessionsSettings', () => {
+  it('does not open an invited instance when policy publication fails, and allows a fresh retry', async () => {
+    mocks.sessions = [{ ...guest, hostRole: 'member' }];
+    mocks.syncPolicy.mockResolvedValueOnce(false);
+    render(GuestSessionsSettings);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await screen.findByTestId('guest-sessions-open-error');
+    expect(mocks.open).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+  });
+  it.each(['session', 'principal', 'flag'] as const)(
+    'cancels an Open whose %s changes while policy publishes',
+    async (change) => {
+      mocks.sessions = [{ ...guest, hostRole: 'member', pairedAt: 1 }];
+      const pending = Promise.withResolvers<boolean>();
+      mocks.syncPolicy.mockImplementationOnce(() => pending.promise);
+      render(GuestSessionsSettings);
+      await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+      await waitFor(() => expect(mocks.syncPolicy).toHaveBeenCalledTimes(1));
+      if (change === 'session') {
+        mocks.sessions = [{ ...mocks.sessions[0], pairedAt: 2 }];
+        mocks.publish();
+      } else if (change === 'principal') {
+        appStore.dispatch(principalContextChanged(null));
+      } else {
+        const { setLabsMultiplayerEnabled } =
+          await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+        appStore.dispatch(setLabsMultiplayerEnabled(false));
+      }
+      pending.resolve(true);
+      await waitFor(() => expect(appStore.state.connections.openingIds).toEqual([]));
+      expect(mocks.open).not.toHaveBeenCalled();
+    },
+  );
+  it('rehydrates window policy before reopening an invited instance after in-page navigation', async () => {
+    mocks.sessions = [{ ...guest, hostRole: 'member' }];
+    let published = false;
+    mocks.syncPolicy.mockImplementation(async () => {
+      published = true;
+      return true;
+    });
+    mocks.open.mockImplementation((id) => ({
+      promise: published
+        ? Promise.resolve({ status: 'opened', id })
+        : Promise.reject(new Error('Multiplayer is unavailable')),
+    }));
+    render(GuestSessionsSettings);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await waitFor(() => expect(mocks.syncPolicy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+    published = false;
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await waitFor(() => expect(mocks.syncPolicy).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+  });
+
   beforeEach(async () => {
     vi.clearAllMocks();
+    mocks.syncPolicy.mockReset().mockResolvedValue(true);
     mocks.loaded = true;
     mocks.sessions = [];
     mocks.openIds = [];
@@ -303,7 +378,11 @@ describe('GuestSessionsSettings', () => {
           mocks.loadRoster(params.workspaceId);
           const roster = mocks.rosters[params.workspaceId];
           if (roster?.status === 'error') throw new Error('list failed');
-          return { members: roster?.members ?? [] };
+          return {
+            members: roster?.members ?? [],
+            guestCount: roster?.guestCount,
+            guestLimit: roster?.guestLimit,
+          };
         }
         if (method === 'workspace.members.remove')
           return mocks.removeMember(params.workspaceId, params.principalId).promise;
@@ -327,7 +406,7 @@ describe('GuestSessionsSettings', () => {
     appStore.init();
     mocks.loaded = false;
     render(GuestSessionsSettings);
-    const joined = screen.getByTestId('guest-sessions-joined');
+    const joined = screen.getByTestId('guest-sessions-instances');
     expect(within(joined).getByRole('status')).toBeTruthy();
     expect(within(joined).queryByRole('list')).toBeNull();
   });
@@ -336,7 +415,7 @@ describe('GuestSessionsSettings', () => {
     render(GuestSessionsSettings);
     expect(screen.getByTestId('guest-sessions-hosting')).toBeTruthy();
     expect(screen.queryByTestId('hosted-workspace-roster')).toBeNull();
-    const joined = screen.getByTestId('guest-sessions-joined');
+    const joined = screen.getByTestId('guest-sessions-instances');
     expect(within(joined).queryByRole('list')).toBeNull();
     expect(within(joined).queryByRole('status')).toBeNull();
     expect(mocks.dispatch).not.toHaveBeenCalled();
@@ -344,7 +423,7 @@ describe('GuestSessionsSettings', () => {
 
   it('never shows the owner-side hosting section to a collaborator-only client', () => {
     mocks.collaboratorOnly = true;
-    mocks.hosted = [hostedWorkspace];
+    mocks.hosted = [{ ...hostedWorkspace, myRole: 'collaborator' }];
     render(GuestSessionsSettings);
     expect(screen.queryByTestId('guest-sessions-hosting')).toBeNull();
     expect(mocks.loadRoster).not.toHaveBeenCalled();
@@ -364,6 +443,48 @@ describe('GuestSessionsSettings', () => {
     expect(
       rows[1].querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
     ).toBe('true');
+  });
+
+  it('uses each joined account profile and provider without exposing identity keys', () => {
+    mocks.sessions = [
+      {
+        ...guest,
+        login: 'joined-person',
+        identity: { provider: 'github', host: 'github.com', externalUserId: '900101' },
+      },
+      {
+        ...guest,
+        id: 'guest-2',
+        login: 'other-person',
+        identity: { provider: 'gitlab', host: 'gitlab.team.example', externalUserId: '900102' },
+      },
+      {
+        ...guest,
+        id: 'guest-3',
+        login: null,
+        principalId: 'missing-profile-stable',
+        identity: { provider: 'github', host: 'github.com', externalUserId: '900103' },
+      },
+    ];
+    render(GuestSessionsSettings);
+    const rows = Array.from(
+      screen.getByTestId('guest-sessions-joined').querySelectorAll('[data-session-id]'),
+    );
+    expect(rows[0].textContent).toContain('@joined-person');
+    expect(rows[0].textContent).toContain('GitHub');
+    expect(rows[1].textContent).toContain('@other-person');
+    expect(rows[1].textContent).toContain('GitLab (gitlab.team.example)');
+    expect(rows[2].textContent).toContain('Profile unavailable');
+    expect(rows[2].textContent).not.toContain('@joined-person');
+    for (const key of [
+      'github@',
+      'gitlab@',
+      '900101',
+      '900102',
+      '900103',
+      'missing-profile-stable',
+    ])
+      expect(rows.map((r) => r.textContent).join('')).not.toContain(key);
   });
 
   it('labels a joined host by its captured hostname and keeps the dialled address as secondary text', () => {
@@ -473,6 +594,156 @@ describe('GuestSessionsSettings', () => {
     await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledTimes(2));
     expect(mocks.leaveWorkspace).toHaveBeenLastCalledWith('guest-1', 'ws-a');
     await waitFor(() => expect(screen.queryByTestId('guest-leave-workspace-error')).toBeNull());
+  });
+
+  it.each(['host', 'workspace'] as const)(
+    'C1 retries a confirmed %s leave after a same-admission Settings remount',
+    async (kind) => {
+      mocks.sessions = [guest];
+      const call = kind === 'host' ? mocks.leave : mocks.leaveWorkspace;
+      call.mockImplementationOnce((...args) => ({
+        promise: Promise.reject(new Error('transport')),
+        payload: args,
+      }));
+      const mounted = render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const row = screen
+        .getByTestId('guest-sessions-joined')
+        .querySelector(
+          kind === 'host' ? '[data-session-id="guest-1"]' : '[data-workspace-id="ws-a"]',
+        ) as HTMLElement;
+      await fireEvent.click(within(row).getByRole('button', { name, exact: true }));
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name, exact: true }),
+      );
+      const errorId = kind === 'host' ? 'guest-leave-error' : 'guest-leave-workspace-error';
+      await screen.findByTestId(errorId);
+      await mounted.unmount();
+      render(GuestSessionsSettings);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+      expect(call).toHaveBeenLastCalledWith(
+        ...(kind === 'host' ? ['guest-1'] : ['guest-1', 'ws-a']),
+      );
+    },
+  );
+
+  async function replaceAdmission() {
+    const { setLabsMultiplayerEnabled } =
+      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+    const { principalReceived } = await import('$store/renderer/slices/principal/principal-slice');
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
+    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    const current = appStore.state.principal;
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: current.context!,
+          invalidation: current.invalidation,
+          presentationVersion: current.presentationVersion,
+        },
+        current.snapshot!,
+      ),
+    );
+  }
+
+  it.each(['host', 'workspace'] as const)(
+    'C1 a different confirmation under a replaced admission cannot authorize an old %s retry',
+    async (kind) => {
+      mocks.sessions = [
+        guest,
+        { ...guest, id: 'guest-2', label: 'second.local', hostname: 'second.local' },
+      ];
+      const call = kind === 'host' ? mocks.leave : mocks.leaveWorkspace;
+      call.mockImplementationOnce(() => ({ promise: Promise.reject(new Error('transport')) }));
+      render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const selectorA =
+        kind === 'host'
+          ? '[data-session-id="guest-1"]'
+          : '[data-session-id="guest-1"] [data-workspace-id="ws-a"]';
+      const selectorB =
+        kind === 'host'
+          ? '[data-session-id="guest-2"]'
+          : '[data-session-id="guest-1"] [data-workspace-id="ws-b"]';
+      const clickRow = async (selector: string) =>
+        fireEvent.click(
+          within(
+            screen.getByTestId('guest-sessions-joined').querySelector(selector) as HTMLElement,
+          ).getByRole('button', { name, exact: true }),
+        );
+      const confirm = async () => {
+        await fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name, exact: true }),
+        );
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      };
+      await clickRow(selectorA);
+      await confirm();
+      const errorId = kind === 'host' ? 'guest-leave-error' : 'guest-leave-workspace-error';
+      await screen.findByTestId(errorId);
+      await replaceAdmission();
+      await clickRow(selectorB);
+      await confirm();
+      expect(call).toHaveBeenCalledTimes(2);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      expect(call).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('dialog').textContent).toContain(
+        kind === 'host' ? 'studio.local' : 'Design system',
+      );
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(call).toHaveBeenCalledTimes(2);
+      await fireEvent.click(
+        within(screen.getByTestId(errorId)).getByRole('button', { name: 'Retry' }),
+      );
+      await confirm();
+      expect(call).toHaveBeenCalledTimes(3);
+      expect(call).toHaveBeenLastCalledWith(
+        ...(kind === 'host' ? ['guest-1'] : ['guest-1', 'ws-a']),
+      );
+    },
+  );
+
+  it.each(['host', 'workspace'] as const)(
+    'C1 rejects an unconfirmed %s dialog from an older admission',
+    async (kind) => {
+      mocks.sessions = [guest];
+      render(GuestSessionsSettings);
+      const name = kind === 'host' ? 'Leave host' : 'Leave';
+      const row = screen
+        .getByTestId('guest-sessions-joined')
+        .querySelector(
+          kind === 'host' ? '[data-session-id="guest-1"]' : '[data-workspace-id="ws-a"]',
+        ) as HTMLElement;
+      await fireEvent.click(within(row).getByRole('button', { name, exact: true }));
+      const confirm = within(screen.getByRole('dialog')).getByRole('button', { name, exact: true });
+      await replaceAdmission();
+      await fireEvent.click(confirm);
+      expect(mocks.leave).not.toHaveBeenCalled();
+      expect(mocks.leaveWorkspace).not.toHaveBeenCalled();
+    },
+  );
+
+  it('C2 same-id guest readmission replaces instance presentation without losing direct workspace controls', async () => {
+    mocks.sessions = [{ ...guest, pairedAt: 100, hostRole: 'member' }];
+    render(GuestSessionsSettings);
+    expect(screen.queryByTestId('guest-session-workspaces')).toBeNull();
+    mocks.sessions = [{ ...guest, pairedAt: 101, hostRole: 'guest' }];
+    mocks.publish();
+    const button = await screen.findAllByRole('button', { name: 'Leave', exact: true });
+    await fireEvent.click(button[0]);
+    expect(mocks.leaveWorkspace).not.toHaveBeenCalled();
+    await fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Leave', exact: true }),
+    );
+    await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledWith('guest-1', 'ws-a'));
   });
 
   describe('a joined workspace the host projects with an empty title', () => {
@@ -1285,29 +1556,126 @@ describe('GuestSessionsSettings', () => {
       expect(mocks.removeAll).toHaveBeenCalledWith('ws-1');
     });
   });
-});
 
-describe('local collaboration sign-in entry', () => {
-  beforeEach(() => mocks.signIn.mockClear());
-  it.each([false, true])('requires Multiplayer even when GitLab is enabled=%s', async (gitlab) => {
-    const { setLabsGitLabEnabled, setLabsMultiplayerEnabled } =
-      await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-    appStore.dispatch(setLabsGitLabEnabled(gitlab));
-    appStore.dispatch(setLabsMultiplayerEnabled(false));
-    render(GuestSessionsSettings);
-    expect(screen.queryByRole('button', { name: 'Sign in for collaboration' })).toBeNull();
-    appStore.dispatch(setLabsMultiplayerEnabled(true));
-    await fireEvent.click(await screen.findByRole('button', { name: 'Sign in for collaboration' }));
-    expect(mocks.signIn).toHaveBeenCalledOnce();
-  });
-  it('keeps local sign-in available in a member window without exposing host account controls', async () => {
-    mocks.collaboratorOnly = true;
+  it('hides Collaboration without loading or revoking saved access when Multiplayer is disabled', async () => {
     const { setLabsMultiplayerEnabled } =
       await import('$store/renderer/slices/user-preferences/user-preferences-slice');
-    appStore.dispatch(setLabsMultiplayerEnabled(true));
+    const { getItems } = await import('@themislib/themis/utils/collections/collection-utils');
+    mocks.sessions = [guest];
+    mocks.hosted = [hostedWorkspace];
+    appStore.dispatch(setLabsMultiplayerEnabled(false));
     render(GuestSessionsSettings);
-    expect(screen.queryByTestId('guest-sessions-hosting')).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Sign in for collaboration' }));
-    expect(mocks.signIn).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('guest-sessions-settings')).toBeNull();
+    appStore.dispatch(
+      guestActions.removeHostedMemberRequested(hostedWorkspace.id, collaborator.principalId),
+    );
+    appStore.dispatch(guestActions.removeAllHostedGuestsRequested(hostedWorkspace.id));
+    appStore.dispatch(guestActions.leaveGuestSessionRequested(guest.id));
+    appStore.dispatch(guestActions.leaveGuestWorkspaceRequested(guest.id, 'ws-a'));
+    appStore.dispatch(guestActions.collaborationSignInRequested());
+    await Promise.resolve();
+    expect(transport.request).not.toHaveBeenCalled();
+    expect(mocks.leave).not.toHaveBeenCalled();
+    expect(mocks.leaveWorkspace).not.toHaveBeenCalled();
+    expect(mocks.signIn).not.toHaveBeenCalled();
+    expect(getItems(appStore.state.guestSessions.sessions)).toEqual([guest]);
+  });
+
+  it('withholds owner controls and disables joined-session actions for unknown authority', async () => {
+    mocks.sessions = [guest];
+    render(GuestSessionsSettings);
+    appStore.dispatch(principalContextChanged(null));
+    await waitFor(() => expect(screen.queryByTestId('host-membership-settings')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Open' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Leave host' }).hasAttribute('disabled')).toBe(true);
+  });
+  it('omits ordinary workspaces whose effective members all inherit instance access', async () => {
+    mocks.hosted = [hostedWorkspace];
+    mocks.rosters = {
+      'ws-1': {
+        status: 'loaded',
+        members: [owner, { ...collaborator, hostRole: 'member' }],
+        guestCount: 0,
+        guestLimit: 10,
+      },
+    };
+    render(GuestSessionsSettings);
+    await waitFor(() => expect(screen.queryByTestId('hosted-workspace-roster')).toBeNull());
+    expect(screen.queryByText('Guests 0/10')).toBeNull();
+  });
+
+  it('shows a joined instance once without workspace children while retaining workspace-only sessions', async () => {
+    mocks.sessions = [
+      { ...guest, id: 'instance-1', hostname: 'Joined instance', hostRole: 'member' },
+      {
+        ...guest,
+        id: 'workspace-guest',
+        hostname: 'Workspace host',
+        hostRole: 'guest',
+        workspaces: [{ id: 'direct-ws', title: 'Direct shared workspace' }],
+      },
+    ];
+    const { container } = render(GuestSessionsSettings);
+    expect(screen.getByRole('heading', { name: 'Joined instances' })).toBeTruthy();
+    const instance = container.querySelector('[data-session-id="instance-1"]')!;
+    expect(within(instance as HTMLElement).queryByTestId('guest-session-workspaces')).toBeNull();
+    expect(
+      within(instance as HTMLElement).getByRole('button', { name: 'Leave instance' }),
+    ).toBeTruthy();
+    expect(screen.getByText('Direct shared workspace')).toBeTruthy();
+    await fireEvent.click(within(instance as HTMLElement).getByRole('button', { name: 'Open' }));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledWith('instance-1'));
+  });
+  it('retains pending-only sharing without an empty guest badge and targets the existing Share dialog', async () => {
+    mocks.hosted = [{ ...hostedWorkspace, memberCount: 1, openInviteCount: 1 }];
+    mocks.rosters = {
+      'ws-1': { status: 'loaded', members: [owner], guestCount: 1, guestLimit: 10 },
+    };
+    render(GuestSessionsSettings);
+    expect(screen.getByText('Pending invitations: 1')).toBeTruthy();
+    expect(screen.queryByTestId('hosted-guest-seats')).toBeNull();
+    expect(screen.queryByText('No items')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Manage sharing' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceShare/openDialog',
+        payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Shared project' }],
+      }),
+    );
+    mocks.hosted = [{ ...hostedWorkspace, memberCount: 1, openInviteCount: 0 }];
+    mocks.publish();
+    await waitFor(() => expect(screen.queryByTestId('hosted-workspace-roster')).toBeNull());
+  });
+
+  it('does not attach an old Open failure to a same-id replacement instance', async () => {
+    mocks.sessions = [{ ...guest, hostRole: 'member', pairedAt: 1 }];
+    const pending = pendingAction('connections/openRequested', ['guest-1']);
+    mocks.open.mockImplementationOnce(() => pending.action);
+    render(GuestSessionsSettings);
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    mocks.sessions = [
+      { ...guest, hostRole: 'member', pairedAt: 2, hostname: 'Replacement instance' },
+    ];
+    mocks.publish();
+    pending.reject(new Error('old-session-failure'));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Open', exact: true }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Open', exact: true }));
+    await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('guest-sessions-open-error')).toBeNull();
+  });
+
+  it('keeps unfinished and failed workspace sharing lists distinct from an empty list', async () => {
+    render(GuestSessionsSettings);
+    appStore.dispatch(setWorkspaceHasLoaded(false));
+    expect(await screen.findByText('Loading workspace sharing…')).not.toBeNull();
+    expect(screen.queryByText('No shared workspaces')).toBeNull();
+    appStore.dispatch(setWorkspaceError('controlled failure'));
+    expect(await screen.findByText('Workspace sharing could not be loaded.')).not.toBeNull();
+    expect(screen.queryByText('No shared workspaces')).toBeNull();
   });
 });

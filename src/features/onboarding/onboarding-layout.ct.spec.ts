@@ -1,6 +1,218 @@
 import { expect, test } from '../../test/ct-test';
 import Preview from './onboarding-layout.preview.svelte';
 
+for (const width of [360, 960]) {
+  for (const supported of [false, true]) {
+    test(`full-instance setup ${supported ? 'supported' : 'requires update'} at ${width}px`, async ({
+      mount,
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      const instance = 'https://gitlab.example.test:8443/Parent/Forge';
+      const component = await mount(Preview, {
+        props: {
+          step: 'forge',
+          gitlabEnabled: true,
+          gitlabSetupSupported: supported,
+          gitlabInstanceBaseUrl: instance,
+        },
+      });
+      await component.getByRole('button', { name: 'Connect GitLab', exact: true }).click();
+      const form = component.getByTestId('gitlab-connect-form');
+      const address = form.getByLabel('GitLab instance URL');
+      await expect(address).toHaveValue(instance);
+      await expect(form.getByRole('button', { name: 'Connect GitLab', exact: true })).toBeEnabled({
+        enabled: supported,
+      });
+      await expect(address).toBeEnabled({ enabled: supported });
+      const explanation = form.getByTestId('gitlab-instance-update-required');
+      if (supported) {
+        await expect(explanation).toHaveCount(0);
+        await address.focus();
+        await page.keyboard.press('Tab');
+        await expect(
+          form.getByRole('button', { name: 'Connect GitLab', exact: true }),
+        ).toBeFocused();
+      } else {
+        await expect(explanation).toBeVisible();
+        await expect(explanation).toContainText('Update this host');
+      }
+      expect(
+        await form.evaluate((element) => element.scrollWidth - element.clientWidth),
+      ).toBeLessThanOrEqual(1);
+      await testInfo.attach('full-instance-setup', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+    });
+  }
+}
+
+for (const scenario of [
+  {
+    name: 'GitHub onboarding',
+    forge: 'github-device',
+    width: 720,
+    uri: 'https://github.com/login/device',
+    openLabel: 'Open GitHub',
+    settings: false,
+  },
+  {
+    name: 'narrow GitLab onboarding',
+    forge: 'gitlab-device',
+    width: 480,
+    uri: 'https://gitlab.example.com/oauth/device',
+    openLabel: 'Open GitLab',
+    settings: false,
+  },
+  ...[360, 420, 720].map((width) => ({
+    name: `GitLab settings at ${width}px with a long instance URI`,
+    forge: 'gitlab-device' as const,
+    width,
+    uri: 'https://engineeringgitlabinstancewithaverylongunbrokensubdomain.internal.example.test:8443/company/platform/identity/authorization/device',
+    openLabel: 'Open GitLab',
+    settings: true,
+  })),
+] as const) {
+  test(`${scenario.name} keeps the complete device URI selectable and actions usable`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: scenario.width, height: 900 });
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    const opened: unknown[] = [];
+    const component = await mount(Preview, {
+      props: {
+        step: 'forge',
+        forge: scenario.forge,
+        gitlabEnabled: true,
+        settings: scenario.settings,
+        verificationUri: scenario.uri,
+        onOpenExternal: (payload: unknown) => opened.push(payload),
+      },
+    });
+    const uri = component.getByText(scenario.uri, { exact: true });
+    await expect(uri).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    if (scenario.settings) {
+      const title = component.getByText('GitLab', { exact: true });
+      await expect(title).toBeVisible();
+      const header = await title.evaluate((element) => {
+        const content = element.parentElement!.parentElement!;
+        const description = content.nextElementSibling!;
+        const bounds = content.getBoundingClientRect();
+        const descriptionBounds = description.getBoundingClientRect();
+        const titleBounds = element.getBoundingClientRect();
+        const statusElement = content.lastElementChild!;
+        const statusBounds = statusElement.getBoundingClientRect();
+        const text = document.createRange();
+        text.selectNodeContents(description);
+        return {
+          content: bounds.toJSON(),
+          title: titleBounds.toJSON(),
+          status: statusBounds.toJSON(),
+          statusText: statusElement.textContent?.trim(),
+          description: descriptionBounds.toJSON(),
+          descriptionLines: [...text.getClientRects()].map((rect) => rect.toJSON()),
+          width: content.clientWidth,
+          scrollWidth: content.scrollWidth,
+        };
+      });
+      expect(header.statusText).toBe('Waiting for authorization...');
+      expect(header.scrollWidth).toBeLessThanOrEqual(header.width + 1);
+      // The explanation gets the content width, independent of the status width.
+      expect(Math.abs(header.description.left - header.content.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(header.description.right - header.content.right)).toBeLessThanOrEqual(1);
+      expect(header.description.top).toBeGreaterThanOrEqual(header.status.bottom - 1);
+      expect(
+        header.status.left >= header.title.right - 1 ||
+          header.status.top >= header.title.bottom - 1,
+      ).toBe(true);
+      for (const bounds of [header.title, header.status, ...header.descriptionLines]) {
+        expect(bounds.left).toBeGreaterThanOrEqual(header.content.left - 1);
+        expect(bounds.right).toBeLessThanOrEqual(header.content.right + 1);
+      }
+      await testInfo.attach('connection-header-layout', {
+        body: JSON.stringify(header, null, 2),
+        contentType: 'application/json',
+      });
+    }
+    const geometry = await uri.evaluate((element) => {
+      const paragraph = element.parentElement!;
+      const bounds = paragraph.getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(element);
+      const lines = [...text.getClientRects()].map((rect) => ({
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+      }));
+      const introduction = document.createRange();
+      introduction.selectNodeContents(paragraph);
+      introduction.setEndBefore(element);
+      return {
+        text: element.textContent,
+        width: paragraph.clientWidth,
+        scrollWidth: paragraph.scrollWidth,
+        left: bounds.left,
+        right: bounds.right,
+        bottom: bounds.bottom,
+        introductionBottom: introduction.getBoundingClientRect().bottom,
+        lines,
+      };
+    });
+    expect(geometry.text).toBe(scenario.uri);
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
+    expect(geometry.lines.length).toBeGreaterThan(0);
+    // The address starts after the explanation, rather than sharing its remaining line width.
+    expect(geometry.lines[0]!.top).toBeGreaterThanOrEqual(geometry.introductionBottom - 1);
+    for (const line of geometry.lines) {
+      expect(line.left).toBeGreaterThanOrEqual(geometry.left - 1);
+      expect(line.right).toBeLessThanOrEqual(geometry.right + 1);
+      expect(line.bottom).toBeLessThanOrEqual(geometry.bottom + 1);
+    }
+    // A short final path segment fits intact; long host segments still have a wrap fallback.
+    expect(
+      await uri.evaluate((element) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        let text = walker.nextNode();
+        while (text && !text.textContent?.includes('device')) text = walker.nextNode();
+        if (!text) throw new Error('Complete final URI segment is missing');
+        const range = document.createRange();
+        range.setStart(text, text.textContent!.lastIndexOf('device'));
+        range.setEnd(text, text.textContent!.length);
+        return range.getClientRects().length;
+      }),
+    ).toBe(1);
+    await testInfo.attach('device-uri-view', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await uri.dblclick();
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(scenario.uri);
+    const copy = component.getByRole('button', { name: 'Copy code', exact: true });
+    await copy.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('WDJB-MJHT');
+    await page.keyboard.press('Tab');
+    const open = component.getByRole('button', { name: scenario.openLabel, exact: true });
+    await expect(open).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => opened).toEqual([{ url: scenario.uri }]);
+    await page.keyboard.press('Tab');
+    if (scenario.forge === 'gitlab-device') {
+      await expect(component.getByRole('button', { name: 'Use a token instead' })).toBeFocused();
+      await page.keyboard.press('Tab');
+    }
+    await expect(component.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await testInfo.attach('device-uri-layout', {
+      body: JSON.stringify(geometry, null, 2),
+      contentType: 'application/json',
+    });
+  });
+}
+
 for (const width of [720, 1280]) {
   for (const step of ['welcome', 'forge', 'project', 'configuring'] as const) {
     test(`${step} shares the content edge at ${width}px`, async ({ mount, page }) => {

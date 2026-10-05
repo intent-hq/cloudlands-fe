@@ -1,3 +1,4 @@
+import { selectProviderModelsClearEpoch } from '../../provider-models/provider-models-selectors';
 import { call, getContext, put } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -10,6 +11,7 @@ type Models = Awaited<ReturnType<typeof appClient.models.list>>;
 type Outcome = { models: Models } | { error: unknown };
 type CatalogRequest = {
   context: string;
+  epoch: number;
   providerId: string;
   explicit: boolean;
   loadingStarted: boolean;
@@ -51,7 +53,8 @@ function* isCurrent(owner: object, request: CatalogRequest) {
   const providerId = yield* selectActiveProviderId.effect();
   return (
     (!providerId || providerId === request.providerId) &&
-    request.context === (yield* selectModelBootContext.effect())
+    request.context === (yield* selectModelBootContext.effect()) &&
+    request.epoch === (yield* selectProviderModelsClearEpoch.effect())
   );
 }
 
@@ -65,11 +68,13 @@ export function* loadModelCatalog(
   const owner = yield* getContext<object | undefined>('reduxStore');
   if (!owner || context !== (yield* selectModelBootContext.effect())) return false;
 
+  const epoch = yield* selectProviderModelsClearEpoch.effect();
   const previous = requests.get(owner);
   const pending =
     previous &&
     !previous.settled &&
     previous.context === context &&
+    previous.epoch === epoch &&
     previous.providerId === providerId;
   // A switch's readiness and explicit actions share one read. A subsequent
   // explicit reload, or a reconnect, takes a new token even for the same provider.
@@ -78,6 +83,7 @@ export function* loadModelCatalog(
       ? previous
       : {
           context,
+          epoch,
           providerId,
           explicit: explicit || !!(force && pending && previous.explicit),
           loadingStarted: false,

@@ -50,12 +50,26 @@ import {
 } from './agent-queue-read-service';
 import {
   chatLastAttemptedMessageSet,
+  chatQueuedRetryRecordSet,
+  chatQueueProcessingReceived,
+  chatSendFailed,
   chatReset,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
 import type { BrowserElementCapture } from '$store/renderer/slices/browser/browser-types';
 import { browserCaptureToContextItems } from '$lib/components/chat/browser-capture-context';
+
+import { admitAgentSubmission } from '$store/renderer/slices/pending-submissions/pending-submissions-admission';
+import { selectPendingSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+import { pendingScopeReleased } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+import {
+  observeSubmissionEvidence,
+  announceSubmissionDelivery,
+  beginSubmissionRead,
+  submissionHistoryEvidence,
+} from './submission-evidence';
+import { createMessageId } from '$shared/types/branded-ids';
 
 const WS = 'c6df5dce-f8c6-44fe-8a2d-227a8815f2af';
 const AGENT = 'agent-373f33d3-0a26-4b8b-9ecf-f114bfa47df4';
@@ -144,6 +158,8 @@ describe('agent-send wire contract (pending agent, first message)', () => {
   });
 
   afterEach(() => {
+    const scope = appStore.state.pendingSubmissions.byAgentId[AGENT]?.scope;
+    if (scope) appStore.dispatch(pendingScopeReleased(scope));
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(chatReset(AGENT));
     __resetAgentQueueReadServiceForTests();
@@ -345,6 +361,252 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     });
   }, 30000);
 
+  it.each(['response-first', 'event-first', 'drained-first'])(
+    'reconciles an auto-queued append without duplicate rows (%s)',
+    async (order) => {
+      const first: QueuedMessage = {
+        id: 'survivor',
+        turnId: 'survivor',
+        content: 'first',
+        queuedAt: '2026-10-02T00:00:00Z',
+        position: 0,
+        imageBlocks: [{ type: 'image', attachmentId: 'first-image' }],
+        messageMetadata: { fromPrincipalId: 'alice' },
+        author: { principalId: 'alice', displayName: 'Alice', login: null, avatarUrl: null },
+      };
+      const system: QueuedMessage = {
+        ...first,
+        id: 'system',
+        turnId: 'system',
+        position: 1,
+        content: 'wake',
+        messageMetadata: { source: 'system' },
+      };
+      const merged = {
+        ...first,
+        content: 'first\n\nsecond',
+        fileBlocks: [
+          { type: 'file' as const, attachmentId: 'second-file', fileName: 'report.txt' },
+        ],
+      };
+      const latest = { ...merged, content: 'first\n\nsecond\n\nthird' };
+      appStore.dispatch(replaceAgentQueue(AGENT, [first, system], WS));
+      backendRequestMock.mockImplementation(async (method: string) => {
+        if (method === 'agent.get') return { agent: daemonPendingAgent };
+        if (method === 'agent.getQueue')
+          return { success: true, queue: order === 'drained-first' ? [] : [latest, system] };
+        if (method === 'agent.sendMessage') {
+          if (order !== 'response-first') {
+            appStore.dispatch(
+              replaceAgentQueue(AGENT, order === 'drained-first' ? [] : [latest, system], WS),
+            );
+            noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          }
+          return {
+            success: true,
+            queued: true,
+            turnId: first.id,
+            queuedMessage: { ...merged, author: null },
+          };
+        }
+        return {};
+      });
+      await sendMessage(AGENT, 'second', workspace(), {
+        userAppMessageId: 'append-attempt',
+        fileBlocks: merged.fileBlocks,
+      });
+      expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual(
+        order === 'drained-first' ? [] : [order === 'event-first' ? latest : merged, system],
+      );
+      expect(
+        appStore.state.agentSessions.byAgentId[AGENT]?.messages.some(
+          (message) => message.appMessageId === 'append-attempt',
+        ),
+      ).toBe(false);
+      if (order === 'response-first') {
+        appStore.dispatch(replaceAgentQueue(AGENT, [latest, system], WS));
+        noteAgentQueueEventSnapshotApplied(AGENT, WS);
+        expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([latest, system]);
+      }
+      if (order !== 'drained-first') {
+        expect(
+          appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords.survivor.record,
+        ).toMatchObject({
+          text: latest.content,
+          options: { imageBlocks: first.imageBlocks, fileBlocks: merged.fileBlocks },
+        });
+      }
+    },
+  );
+
+  it.each(
+    [true, false].flatMap((prior) =>
+      [
+        'snapshot-first',
+        'processing-first',
+        'ack-only',
+        'lagged-old-snapshot',
+        'stale-after-processing',
+        'legacy-lagged',
+        'batch',
+        'recovered-before-ack',
+      ].map((order) => [prior, order] as const),
+    ),
+  )(
+    'keeps the processed canonical retry after a delayed response (prior record: %s, order: %s)',
+    async (hasPriorRecord, order) => {
+      const first: QueuedMessage = {
+        id: 'survivor',
+        turnId: 'survivor',
+        content: 'first',
+        position: 0,
+        queuedAt: '2026-10-02T00:00:00Z',
+      };
+      const latest: QueuedMessage = {
+        ...first,
+        content: 'first\n\nsecond\n\nthird',
+        fileBlocks: [
+          { type: 'file', attachmentId: 'first-file', fileName: 'first.txt' },
+          { type: 'file', attachmentId: 'third-file', fileName: 'third.txt' },
+        ],
+        messageMetadata: {
+          mergedMessageMetadata: [
+            { type: 'question_answers', answeredQuestionsMessageId: 'question-one' },
+            { type: 'question_answers', answeredQuestionsMessageId: 'question-two' },
+          ],
+        },
+      };
+      const bob: QueuedMessage = {
+        ...first,
+        id: 'bob',
+        turnId: 'bob-turn',
+        content: 'Bob input',
+        fileBlocks: [{ type: 'file', attachmentId: 'bob-file', fileName: 'bob.txt' }],
+        messageMetadata: {
+          fromPrincipalId: 'bob',
+          type: 'question_answers',
+          answeredQuestionsMessageId: 'question-bob',
+        },
+      };
+      const processedRows = order === 'batch' ? [latest, bob] : [latest];
+      const expectedContent = order === 'batch' ? latest.content + '\n\nBob input' : latest.content;
+      const expectedFiles =
+        order === 'batch' ? [...latest.fileBlocks!, ...bob.fileBlocks!] : latest.fileBlocks;
+      const expectedMetadata =
+        order === 'batch'
+          ? {
+              mergedMessageMetadata: [
+                ...(latest.messageMetadata!.mergedMessageMetadata as unknown[]),
+                bob.messageMetadata,
+              ],
+            }
+          : latest.messageMetadata;
+      if (hasPriorRecord)
+        appStore.dispatch(
+          chatQueuedRetryRecordSet(AGENT, first.id, { text: first.content }, first.id),
+        );
+      appStore.dispatch(chatLastAttemptedMessageSet(AGENT, { text: 'second' }));
+      appStore.dispatch(replaceAgentQueue(AGENT, [first], WS));
+      backendRequestMock.mockImplementation(async (method: string) => {
+        if (method === 'agent.get') return { agent: daemonPendingAgent };
+        if (method === 'agent.getQueue') return { success: true, queue: [] };
+        if (method === 'agent.sendMessage') {
+          if (order === 'lagged-old-snapshot' || order === 'legacy-lagged') {
+            appStore.dispatch(replaceAgentQueue(AGENT, [first], WS));
+            noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          }
+          if (order !== 'snapshot-first')
+            appStore.dispatch(
+              chatQueueProcessingReceived(
+                AGENT,
+                first.id,
+                order === 'legacy-lagged'
+                  ? undefined
+                  : order === 'recovered-before-ack'
+                    ? [first]
+                    : processedRows,
+              ),
+            );
+          if (
+            order !== 'ack-only' &&
+            order !== 'lagged-old-snapshot' &&
+            order !== 'legacy-lagged'
+          ) {
+            appStore.dispatch(replaceAgentQueue(AGENT, [latest], WS));
+            noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          }
+          if (order === 'snapshot-first')
+            appStore.dispatch(
+              chatQueueProcessingReceived(
+                AGENT,
+                first.id,
+                order === 'legacy-lagged'
+                  ? undefined
+                  : order === 'recovered-before-ack'
+                    ? [first]
+                    : processedRows,
+              ),
+            );
+          if (order === 'recovered-before-ack') {
+            appStore.dispatch(
+              chatQueueProcessingReceived(AGENT, first.id, [{ ...latest, id: 'recovered-id' }]),
+            );
+          }
+          if (order === 'stale-after-processing') {
+            appStore.dispatch(replaceAgentQueue(AGENT, [first], WS));
+            noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          }
+          appStore.dispatch(replaceAgentQueue(AGENT, [], WS));
+          noteAgentQueueEventSnapshotApplied(AGENT, WS);
+          return {
+            success: true,
+            queued: true,
+            turnId: order === 'batch' ? bob.turnId : first.id,
+            queuedMessage:
+              order === 'batch'
+                ? bob
+                : order === 'ack-only' ||
+                    order === 'lagged-old-snapshot' ||
+                    order === 'legacy-lagged'
+                  ? latest
+                  : { ...first, content: 'first\n\nsecond' },
+          };
+        }
+        return {};
+      });
+      await sendMessage(AGENT, 'second', workspace());
+      appStore.dispatch(chatSendFailed(AGENT, 'turn failed', first.id));
+      expect(appStore.state.chatState.byAgentId[AGENT].lastAttemptedMessage).toEqual({
+        text: expectedContent,
+        options: { fileBlocks: expectedFiles, messageMetadata: expectedMetadata },
+      });
+      expect(appStore.state.chatState.byAgentId[AGENT].queuedRetryRecords).toEqual({});
+    },
+  );
+
+  it('preserves another participant as a barrier when the daemon returns a fresh ID', async () => {
+    const queued = (id: string, principal: string, position: number): QueuedMessage => ({
+      id,
+      turnId: id,
+      content: id,
+      position,
+      queuedAt: '2026-10-02T00:00:00Z',
+      messageMetadata: { fromPrincipalId: principal },
+    });
+    const alice = queued('alice-first', 'alice', 0);
+    const bob = queued('bob', 'bob', 1);
+    const second = queued('alice-second', 'alice', 2);
+    appStore.dispatch(replaceAgentQueue(AGENT, [alice, bob], WS));
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage')
+        return { success: true, queued: true, turnId: second.id, queuedMessage: second };
+      return {};
+    });
+    await sendMessage(AGENT, second.content, workspace());
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([alice, bob, second]);
+  });
+
   it('does not re-seed the queue when a live agent:queue:updated snapshot superseded the send (monorepo#2481)', async () => {
     // The daemon delivered the queued entry and emitted an EMPTY
     // agent:queue:updated snapshot while the RPC response was still in
@@ -371,12 +633,9 @@ describe('agent-send wire contract (pending agent, first message)', () => {
 
     const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
     expect(queueMessages).toEqual([]);
-    // The retry-record park is turn-scoped and cleaned by
-    // agent:queue:processing — it stays untouched by the seed guard.
+    // A drained row must not regain a stale parked retry payload.
     const chatAgent = appStore.state.chatState.byAgentId[AGENT];
-    expect(chatAgent.queuedRetryRecords['queued-msg-superseded']).toMatchObject({
-      turnId: 'turn-superseded',
-    });
+    expect(chatAgent.queuedRetryRecords['queued-msg-superseded']).toBeUndefined();
   }, 30000);
 
   it('does not re-seed the queue when a hydrate-reconciled fold superseded the send (monorepo#2486)', async () => {
@@ -617,4 +876,196 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     const session = appStore.state.agentSessions?.byAgentId[AGENT];
     expect(session?.isStreaming).toBe(false);
   }, 30000);
+  function stage(content = 'staged before restore') {
+    const admission = admitAgentSubmission(appStore, AGENT, WS, 1, {
+      content,
+      destination: 'conversation',
+      appMessageId: 'logical-user-id',
+      imageBlocks: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
+      fileBlocks: [{ type: 'file', attachmentId: 'attachment', fileName: 'notes.txt' }],
+    })!;
+    expect(admission).not.toBeNull();
+    return {
+      ...admission,
+      display: () => selectPendingSubmissionDisplay.select(appStore.state, admission.scope),
+      options: {
+        submission: { scope: admission.scope, id: admission.submission.id },
+        userAppMessageId: admission.submission.appMessageId,
+        imageBlocks: admission.submission.imageBlocks,
+        fileBlocks: admission.submission.fileBlocks,
+      },
+    };
+  }
+
+  it('does not downgrade a released submission into a legacy send', async () => {
+    const staged = stage();
+    appStore.dispatch(pendingScopeReleased(staged.scope));
+    await sendMessage(AGENT, staged.submission.content, workspace(), staged.options);
+    expect(
+      backendRequestMock.mock.calls.filter(([method]) => method === 'agent.sendMessage'),
+    ).toEqual([]);
+    expect(appStore.state.agentSessions.byAgentId[AGENT].messages).toEqual([]);
+  });
+
+  it('keeps text and attachments visible while restore and the send RPC are deferred, without saving a synthetic row', async () => {
+    const staged = stage();
+    let firstRestore = true;
+    let restore!: (value: unknown) => void;
+    let reply!: (value: unknown) => void;
+    backendRequestMock.mockImplementation((method: string) => {
+      if (method === 'agent.get') {
+        if (!firstRestore) return Promise.resolve({ agent: daemonPendingAgent });
+        firstRestore = false;
+        return new Promise((resolve) => {
+          restore = resolve;
+        });
+      }
+      if (method === 'agent.sendMessage')
+        return new Promise((resolve) => {
+          reply = resolve;
+        });
+      if (method === 'agent.getQueue') return Promise.resolve({ queue: [] });
+      if (method === 'agent.getConversation') return Promise.resolve({ messages: [] });
+      return Promise.resolve({});
+    });
+    const running = sendMessage(AGENT, staged.submission.content, workspace(), staged.options);
+    expect(staged.display().conversation[0]).toMatchObject({
+      content: 'staged before restore',
+      imageBlocks: staged.options.imageBlocks,
+      fileBlocks: staged.options.fileBlocks,
+    });
+    expect(appStore.state.agentSessions.byAgentId[AGENT].messages).toEqual([]);
+    await vi.waitFor(() => expect(restore).toBeTypeOf('function'));
+    restore({ agent: daemonPendingAgent });
+    await vi.waitFor(() => expect(reply).toBeTypeOf('function'));
+    expect(staged.display().conversation).toHaveLength(1);
+    const request = backendRequestMock.mock.calls.find(
+      ([method]) => method === 'agent.sendMessage',
+    )![1];
+    expect(request).toEqual({
+      agentId: AGENT,
+      workspaceId: WS,
+      content: staged.submission.content,
+      messageId: staged.submission.id,
+      userAppMessageId: 'logical-user-id',
+      assistantMessageId: expect.any(String),
+      assistantAppMessageId: expect.any(String),
+      model: 'opus4.7',
+      contextReferences: undefined,
+      imageBlocks: staged.options.imageBlocks,
+      fileBlocks: staged.options.fileBlocks,
+      noteIds: undefined,
+      stdinContext: undefined,
+      priority: undefined,
+    });
+    expect(request.messageId).not.toBe(request.userAppMessageId);
+    reply({
+      success: true,
+      queued: false,
+      messageId: staged.submission.id,
+      submissionIds: [staged.submission.id],
+    });
+    await running;
+    expect(staged.display().conversation).toHaveLength(1);
+    expect(appStore.state.agentSessions.byAgentId[AGENT].messages).toEqual([]);
+  });
+
+  it.each(['ack-first', 'event-first', 'delivery-first'] as const)(
+    'reconciles direct-send queue fallback in %s order without losing or resurrecting content',
+    async (order) => {
+      const staged = stage();
+      const row: QueuedMessage = {
+        id: staged.submission.id,
+        content: staged.submission.content,
+        queuedAt: new Date().toISOString(),
+        position: 0,
+        turnId: 'turn-queue',
+        submissionIds: [staged.submission.id],
+        origin: 'user',
+        author: {
+          principalId: staged.scope.principalId,
+          login: null,
+          displayName: null,
+          avatarUrl: null,
+        },
+      };
+      let reply!: (value: unknown) => void;
+      backendRequestMock.mockImplementation(async (method: string) => {
+        if (method === 'agent.get') return { agent: daemonPendingAgent };
+        if (method === 'agent.sendMessage')
+          return new Promise((resolve) => {
+            reply = resolve;
+          });
+        if (method === 'agent.getQueue') return { queue: order === 'delivery-first' ? [] : [row] };
+        return {};
+      });
+      const running = sendMessage(AGENT, row.content, workspace(), staged.options);
+      await vi.waitFor(() => expect(reply).toBeTypeOf('function'));
+      const queueEvent = () => {
+        observeSubmissionEvidence(AGENT, WS, 'queue', [row]);
+        appStore.dispatch(replaceAgentQueue(AGENT, [row], WS));
+      };
+      if (order === 'event-first') queueEvent();
+      if (order === 'delivery-first') {
+        announceSubmissionDelivery(AGENT, WS, [row]);
+        expect(staged.display().conversation).toHaveLength(1);
+      }
+      reply({ success: true, queued: true, queuedMessage: row, submissionIds: row.submissionIds });
+      await running;
+      if (order === 'ack-first') queueEvent();
+      if (order === 'delivery-first') {
+        expect(appStore.state.agentSessions.byAgentId[AGENT].isStreaming).toBe(true);
+        expect(staged.display().queue).toEqual([]);
+        expect(staged.display().conversation).toHaveLength(1);
+      } else {
+        expect(staged.display().conversation).toEqual([]);
+        expect(staged.display().queue.map((item) => item.content)).toEqual([row.content]);
+      }
+      observeSubmissionEvidence(
+        AGENT,
+        WS,
+        'history',
+        submissionHistoryEvidence([
+          {
+            id: createMessageId(row.id),
+            role: 'user',
+            contentBlocks: [{ type: 'text', text: row.content }],
+            timestamp: new Date().toISOString(),
+            author: row.author,
+            metadata: { submissionIds: row.submissionIds },
+          },
+        ]),
+      );
+      observeSubmissionEvidence(AGENT, WS, 'queue', []);
+      appStore.dispatch(replaceAgentQueue(AGENT, [], WS));
+      expect(staged.display().conversation).toEqual([]);
+      expect(staged.display().queue).toEqual([]);
+    },
+  );
+
+  it('fences a pre-admission history read and a queue read overtaken by an accepted ACK', async () => {
+    const oldHistory = beginSubmissionRead(AGENT, WS, 'history');
+    const staged = stage();
+    expect(oldHistory.isCurrent()).toBe(false);
+    const oldQueue = beginSubmissionRead(AGENT, WS, 'queue');
+    await sendMessage(AGENT, staged.submission.content, workspace(), staged.options);
+    expect(oldQueue.isCurrent()).toBe(false);
+    expect(staged.display().conversation).toHaveLength(1);
+  });
+
+  it('retains uncertain content and makes only one transport attempt', async () => {
+    const staged = stage();
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage') throw new Error('connection lost after write');
+      return {};
+    });
+    await expect(
+      sendMessage(AGENT, staged.submission.content, workspace(), staged.options),
+    ).rejects.toThrow();
+    expect(
+      backendRequestMock.mock.calls.filter(([method]) => method === 'agent.sendMessage'),
+    ).toHaveLength(1);
+    expect(staged.display().conversation[0].status).toBe('uncertain');
+  });
 });

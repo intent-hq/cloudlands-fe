@@ -146,6 +146,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatError: testState.selector(null),
   selectChatFailureCorrelation: testState.selector(undefined),
   selectChatLastChunkTime: testState.selector(null),
+  selectChatLastAttemptedMessage: testState.selector(null),
   selectChatLiveStreamPhase: testState.selector(null),
   selectChatModelUnavailable: testState.selector(null),
   selectChatQuotaExceeded: testState.selector(null),
@@ -347,6 +348,24 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it('does not acquire task demand merely because a hydrated chat reports header progress', async () => {
+    testState.transcriptHydration = 'settled';
+    testState.transcriptHydratedOnce = true;
+    await renderInitialWorkspaceChatPanel(vi.fn());
+    expect(testState.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      'workspaceTasks/acquireWorkspaceTasksDemand',
+    );
+  });
+
+  it('does not request task rows for a chat without a displayed header task consumer', async () => {
+    testState.transcriptHydration = 'settled';
+    testState.transcriptHydratedOnce = true;
+    await renderInitialWorkspaceChatPanel();
+    expect(testState.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      'workspaceTasks/acquireWorkspaceTasksDemand',
+    );
   });
 
   it('renders skeleton rows WITHOUT the setup card while the first hydration is in flight', async () => {

@@ -31,7 +31,7 @@
     cancelGitLabAuth,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import {
-    selectGitLabAuthHost,
+    selectGitLabAuthInstanceBaseUrl,
     selectGitLabAuthIsAuthenticating,
     selectGitLabAuthIsConfigured,
     selectGitLabAuthUser,
@@ -66,7 +66,7 @@
   const gitlabIsConfigured$ = selectGitLabAuthIsConfigured();
   const gitlabIsAuthenticating$ = selectGitLabAuthIsAuthenticating();
   const gitlabUser$ = selectGitLabAuthUser();
-  const gitlabHost$ = selectGitLabAuthHost();
+  const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
   const gitlabSupported$ = selectDaemonSupportsSourceControlAuth();
   const gitlabEnabled$ = selectLabsGitLabEnabled();
   const gitlabSetupAvailable = $derived($gitlabEnabled$ && $gitlabSupported$);
@@ -155,9 +155,9 @@
         </div>
       {/if}
       {#if $gitlabIsConfigured$}
-        <div class="flex items-center gap-3">
+        <div class="flex min-w-0 items-start gap-3">
           <Fa icon={faGitlab} class="text-foreground" />
-          <span class="flex items-center gap-2">
+          <span class="flex min-w-0 flex-wrap items-center gap-2">
             <Fa icon={faCheck} class="text-success" />
             {#if $gitlabUser$}
               <!-- i18n-ignore (brand name) -->
@@ -169,7 +169,7 @@
               <!-- i18n-ignore (brand name) -->
               {m.onboarding_forgeStep_connected_label({ provider: 'GitLab' })}
             {/if}
-            <span class="text-subtle text-sm">{$gitlabHost$}</span>
+            <span class="break-all text-subtle text-sm">{$gitlabInstance$}</span>
           </span>
         </div>
       {/if}

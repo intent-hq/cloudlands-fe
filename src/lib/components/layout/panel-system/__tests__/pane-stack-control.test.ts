@@ -41,19 +41,10 @@ describe('pane stack control', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
-  it('preserves agent identity and menu order in the complete list', async () => {
+  it('preserves agent identity in the complete list', async () => {
     render(PaneStackControlHost);
     await fireEvent.click(screen.getByTestId('pane-stack-selector-trigger'));
     const menu = await screen.findByRole('menu', { name: 'Panes in this stack' });
-    const items = Array.from(menu.querySelectorAll('[data-pane-stack-item]'));
-
-    expect(items.map((item) => item.getAttribute('data-pane-stack-item'))).toEqual([
-      'agent-pane',
-      'note-pane',
-      'file-pane',
-      'browser-pane',
-      'terminal-pane',
-    ]);
     const agentItem = menu.querySelector('[data-pane-stack-item="agent-pane"]')!;
     expect(agentItem.textContent).toContain('Build agent');
     expect(

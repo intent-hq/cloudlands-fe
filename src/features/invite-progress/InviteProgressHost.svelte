@@ -12,17 +12,16 @@
     retryInviteProgress,
     installInviteProgressService,
   } from './invite-progress-service';
-  import { store } from '$store/renderer/store';
-  import { openPalette } from '$store/renderer/slices/palette/palette-slice';
-  import { selectIsPaletteOpen } from '$store/renderer/slices/palette/palette-selectors';
-  const paletteOpen$ = selectIsPaletteOpen();
-
+  let recoveryState = $state({ busy: false, failed: false });
   let open = $state(false);
   let payload = $state<InviteProgressShowPayload | null>(null);
 
   onMount(() =>
     // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous IPC listener install/dispose for a transient main-process progress dialog (ephemeral UI state, not Redux domain data)
     installInviteProgressService({
+      onRecoveryState: (next) => {
+        recoveryState = next;
+      },
       onShow: (next) => {
         payload = next;
         open = true;
@@ -37,10 +36,6 @@
     }),
   );
 
-  function findMultiplayer() {
-    store.dispatch(openPalette('Multiplayer')); // i18n-ignore (feature command search)
-  }
-
   function cancel() {
     payload = null;
     // eslint-disable-next-line intent/no-component-async-data-fetch -- fire-and-forget cancel of the transient progress dialog; nothing is loaded
@@ -52,10 +47,10 @@
   bind:open
   {payload}
   onCancel={cancel}
-  recoveryHidden={$paletteOpen$}
-  onFindMultiplayer={findMultiplayer}
-  onRetry={() => {
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- explicit retry of an ephemeral main-process invitation; no domain data is fetched here
+  busy={recoveryState.busy}
+  failed={recoveryState.failed}
+  onEnable={() => {
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- explicit enable for an ephemeral main-process invitation; no domain data is fetched here
     void retryInviteProgress().catch(() => {});
   }}
 />

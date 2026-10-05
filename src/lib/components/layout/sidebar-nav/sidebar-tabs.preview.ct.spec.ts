@@ -4,11 +4,18 @@ import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
 test.use({ reducedMotion: 'reduce' });
 
-test('withholds the Intent tab until the preview caller is admitted', async ({ mount }) => {
+test('withholds the switcher until the preview caller is admitted', async ({
+  mount,
+  page,
+}, testInfo) => {
   const component = await mount(SidebarTabsPreview, { props: { admittedOwner: false } });
-  await expect(component.getByRole('tab', { name: 'Workspaces', exact: true })).toBeVisible();
-  await expect(component.getByRole('tab', { name: 'Intent', exact: true })).toHaveCount(0);
+  await expect(component.getByRole('tablist')).toHaveCount(0);
+  await expect(component.getByRole('tab', { name: 'Assistant', exact: true })).toHaveCount(0);
   await expect(component.locator('[data-workspace-card-row]')).toHaveCount(4);
+  await testInfo.attach('restricted-sidebar', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 async function expectNoFocusRing(tab: Locator) {

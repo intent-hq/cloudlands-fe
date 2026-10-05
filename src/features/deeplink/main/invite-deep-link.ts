@@ -8,6 +8,7 @@
  * sessions and final redemption remain in the existing guest-session flow.
  */
 import { app, dialog, type MessageBoxOptions } from 'electron';
+import { isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { captureInviteAttempt, type InviteAttempt } from './invite-attempt';
 import { inspectPersonalCredential, invitedRole } from '../../backend/main/invited-principal';
 import { randomUUID } from 'node:crypto';
@@ -311,7 +312,7 @@ async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
   let recovery: InviteProgressHandle | undefined;
   const show = () => {
     if (!attempt.alive()) return;
-    recovery?.dismiss();
+    if (recovery?.replay()) return;
     recovery = showInviteProgress(
       { requestId, phase: 'admission' },
       {
@@ -323,7 +324,7 @@ async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
     );
     void recovery.cancelled.then(() => settle(false));
   };
-  // First policy publication also retries presentation after renderer startup. It never admits.
+  // Publication replays readiness in the original renderer. Only its acknowledged response admits.
   const offPolicy = onCollaborationPolicyPublished(attempt.parent.webContents.id, show);
   const timer = setTimeout(() => settle(false), 5 * 60_000);
   show();
@@ -342,6 +343,14 @@ async function admitInvite(attempt: InviteAttempt): Promise<boolean> {
  * rejects — failures are logged (scrubbed) and surfaced in a notice dialog.
  */
 export async function handleInviteDeepLink(url: string): Promise<void> {
+  if (isIsolatedTestBuild()) {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: m.isolatedTest_invitationUnavailable_title(),
+      message: m.isolatedTest_invitationUnavailable_description(),
+    });
+    return;
+  }
   activeInviteAttempt?.release();
   const attempt = captureInviteAttempt();
   activeInviteAttempt = attempt;
@@ -827,15 +836,32 @@ async function createProof(
       nonce,
       hostLabel,
     );
+    // GitHub creates a gist without returning a stable account ID. The host
+    // resolves that ID when verifying the gist; proveIdentity still rechecks
+    // the local account and consented login before sending it to the host.
+    // GitLab must return its actual snippet author's matching stable ID.
+    const account = isCollaborationIdentity(proof) ? proof : null;
     if (
-      !isCollaborationIdentity(proof) ||
-      !identitiesEqual(proof, prepared.identity) ||
+      !proof ||
+      proof.provider !== prepared.identity.provider ||
+      proof.host !== prepared.identity.host ||
+      !(
+        (proof.provider === 'github' &&
+          proof.host === 'github.com' &&
+          proof.externalUserId === null) ||
+        (account && identitiesEqual(account, prepared.identity))
+      ) ||
       typeof proof.proofId !== 'string' ||
-      !proof.proofId ||
+      !nonBlank(proof.proofId) ||
+      proof.proofId.trim() !== proof.proofId ||
       typeof proof.login !== 'string' ||
-      !proof.login
+      !nonBlank(proof.login) ||
+      proof.login.trim() !== proof.login ||
+      !(proof.avatarUrl === null || typeof proof.avatarUrl === 'string') ||
+      (proof.gistId !== undefined &&
+        (proof.provider !== 'github' || proof.gistId !== proof.proofId))
     ) {
-      if (typeof proof.proofId === 'string')
+      if (typeof proof?.proofId === 'string')
         await new CollaborationIdentityClient(prepared.local)
           .deleteProof(prepared.identity, proof.proofId)
           .catch(() => {});
@@ -848,7 +874,7 @@ async function createProof(
           host: proof.host,
           proofId: proof.proofId,
           login: proof.login,
-          account: proof,
+          account,
           collaboration: prepared,
         };
   }

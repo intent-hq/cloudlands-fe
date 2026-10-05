@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -73,12 +74,13 @@ const mocks = vi.hoisted(() => {
       { path?: string; worktreePath?: string; repositoryPath?: string } | undefined,
     workspaceSelectCalls: [] as string[],
     // Model ids the loaded `availableModels` catalog knows about — drives the
-    // selectModelDisplayName lookup that gates default-effort clearing.
+    // selectModelCatalogEntry lookup that gates default-effort clearing.
     catalogModels: { value: [] as string[] },
     // Raw store state for the unmocked selectors (e.g. the default provider
     // read by selectEffectiveDefaultProviderId).
     storeState: { value: {} as Record<string, unknown> },
     rulesState: undefined as unknown,
+    creationState: undefined as unknown,
     rulesDispatch: (_action: { type: string }) => {},
     emitRulesState: () => {},
     dispatched: [] as { type: string; payload: unknown[] }[],
@@ -101,8 +103,14 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   const { select } = await import('typed-redux-saga');
   const module = createAppStoreMockModule({
-    state: () => ({ ...mocks.storeState.value, userPreferences: mocks.rulesState }),
+    state: () =>
+      withLegacyPrincipal({
+        ...mocks.storeState.value,
+        userPreferences: mocks.rulesState,
+        specialists: mocks.creationState,
+      }),
     dispatch: (action: { type: string; payload: unknown[] }) => {
+      mocks.creationState = specialistsReducer(mocks.creationState as never, action as never);
       mocks.dispatched.push(action);
       mocks.rulesDispatch(action);
     },
@@ -119,7 +127,10 @@ vi.mock('$store/renderer/store', async () => {
   return module;
 });
 
-vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/specialists/specialists-selectors')
+  >()),
   selectSpecialists: Object.assign(() => mocks.specialists$, { select: () => [] }),
   selectFileSpecialists: () => mocks.fileSpecialists$,
   selectIsBuiltIn: {
@@ -167,11 +178,8 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 vi.mock(
   '$store/renderer/slices/provider-settings/provider-settings-slice',
   async (importOriginal) => ({
-    // Keep the real action creators/reducer (e.g. `atomicDefaultModelAccepted`,
-    // `activeProviderPersistRejected`) so the model-slice reducer this file
-    // exercises directly in the monorepo#4102 reproduction test below stays
-    // wired to its actual dependencies; only `setActiveProvider` is
-    // overridden for the dispatch-shape assertions elsewhere in this file.
+    // Keep real exports for reducer dependencies; only `setActiveProvider`
+    // is overridden for the dispatch-shape assertions in this file.
     ...(await importOriginal<
       typeof import('$store/renderer/slices/provider-settings/provider-settings-slice')
     >()),
@@ -191,7 +199,10 @@ vi.mock('$store/renderer/slices/model/model-slice', async (importOriginal) => ({
   }),
 }));
 
-vi.mock('$store/renderer/slices/specialists/specialists-slice', () => ({
+vi.mock('$store/renderer/slices/specialists/specialists-slice', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/specialists/specialists-slice')
+  >()),
   deleteFileSpecialist: (ref: unknown) => ({
     type: 'specialists/deleteFileSpecialist',
     payload: [ref],
@@ -234,11 +245,17 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
         ? mocks.effortLevels.value[providerId ? `${providerId}:${modelId}` : modelId]
         : undefined,
   },
-  selectModelDisplayName: {
+  selectModelCatalogEntry: {
     select: (_state: unknown, providerId: string, modelId: string) =>
       mocks.catalogModels.value.includes(`${providerId}:${modelId}`) ||
       mocks.catalogModels.value.includes(modelId)
-        ? modelId
+        ? {
+            value: modelId,
+            label: modelId,
+            effortLevels:
+              mocks.effortLevels.value[`${providerId}:${modelId}`] ??
+              mocks.effortLevels.value[modelId],
+          }
         : undefined,
   },
 }));
@@ -260,8 +277,12 @@ vi.mock('svelte-fa', async () => ({
 import {
   initialState as modelInitialState,
   modelReducer,
+  loadProviderModelsFromStorage,
+  hydrateDefaultProvider,
 } from '$store/renderer/slices/model/model-slice';
-import { atomicDefaultModelAccepted } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { specialistsReducer } from '$store/renderer/slices/specialists/specialists-slice';
+import { selectSpecialistCreation } from '$store/renderer/slices/specialists/specialists-selectors';
+import { store as appStore } from '$store/renderer/store';
 import AIBehaviorEditor from './AIBehaviorEditor.svelte';
 import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
 import { userPreferencesReducer } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -269,6 +290,7 @@ import { agentRulesSaga } from '$store/renderer/slices/user-preferences/sagas/ag
 
 let rulesTask: Task;
 beforeEach(() => {
+  mocks.creationState = specialistsReducer(undefined, { type: '@@init' });
   let userPreferences = userPreferencesReducer(undefined, { type: '@@init' } as never);
   mocks.rulesState = userPreferences;
   const channel = stdChannel();
@@ -279,7 +301,20 @@ beforeEach(() => {
     channel.put(action);
   };
   rulesTask = runSaga(
-    { channel, dispatch: mocks.rulesDispatch, getState: () => ({ userPreferences }) },
+    {
+      channel,
+      dispatch: mocks.rulesDispatch,
+      getState: () => withLegacyPrincipal({ userPreferences }),
+      context: {
+        reduxStore: {
+          getState: () => withLegacyPrincipal({ userPreferences }),
+          subscribe: () => () => {},
+        },
+        reportRuntimeError: (error: unknown) => {
+          throw error;
+        },
+      },
+    },
     agentRulesSaga,
   );
 });
@@ -450,23 +485,19 @@ describe('DefaultAgentModelSettings Default model picker', () => {
     );
     expect(mocks.dispatched.some((a) => a.type === 'model/reloadModelsForProvider')).toBe(false);
 
-    // Drive the REAL (unmocked) production reducer through the exact action
-    // the picker's `updateGlobalDefault` dispatch resolves to
-    // (`model-selection-saga` persists a cross-provider pick as one
-    // `atomicDefaultModelAccepted` action — see model-selection-saga.test.ts's
-    // "persists a cross-provider default as one revision-bearing atomic
-    // batch"), so this assertion exercises the actual persistence contract
-    // rather than a value poked directly into the mocked selector.
+    // Daemon receipts are the only source of the displayed default pair.
     const modelState = modelReducer(
-      modelInitialState,
-      atomicDefaultModelAccepted({ providerId: 'codex', model: 'cross-provider-model' }),
+      modelReducer(modelInitialState, hydrateDefaultProvider('codex')),
+      loadProviderModelsFromStorage({ codex: 'cross-provider-model' }),
     );
     expect(modelState.defaultProviderId).toBe('codex');
     expect(modelState.providerModels.codex).toBe('cross-provider-model');
 
     // Leave and return to Providers with that persisted state hydrated
     // (`selectSelectedModel` reading `providerModels`/`defaultProviderId`).
-    selectedModel$.set('codex:cross-provider-model');
+    selectedModel$.set(
+      `${modelState.defaultProviderId}:${modelState.providerModels[modelState.defaultProviderId]}`,
+    );
     cleanup();
     render(DefaultAgentModelSettings);
 
@@ -1291,8 +1322,7 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Create Specialist' }));
 
-    const save = mocks.dispatched.find((a) => a.type === 'specialists/saveFileSpecialist')
-      ?.payload[0] as Record<string, unknown>;
+    const save = selectSpecialistCreation.select(appStore.state, 'user').draft;
     expect(save).toMatchObject({ name: 'Reviewer', reasoningEffort: 'high' });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
@@ -1317,8 +1347,7 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Create Specialist' }));
 
-    const save = mocks.dispatched.find((a) => a.type === 'specialists/saveFileSpecialist')
-      ?.payload[0] as Record<string, unknown>;
+    const save = selectSpecialistCreation.select(appStore.state, 'user').draft;
     expect(save).toMatchObject({
       name: 'Reviewer',
       codingAgent: 'codex',
@@ -1342,8 +1371,7 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
       target: { value: 'Reviewer' },
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Create Specialist' }));
-    return mocks.dispatched.find((a) => a.type === 'specialists/saveFileSpecialist')
-      ?.payload[0] as Record<string, unknown>;
+    return selectSpecialistCreation.select(appStore.state, 'user').draft;
   }
 
   it('keeps a supported effort when reverting to the inherited default model (provider-scoped lookup)', async () => {
@@ -1391,12 +1419,48 @@ describe('AIBehaviorEditor create-specialist model reasoning', () => {
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Create Specialist' }));
 
-    const save = mocks.dispatched.find((a) => a.type === 'specialists/saveFileSpecialist')
-      ?.payload[0] as Record<string, unknown>;
+    const save = selectSpecialistCreation.select(appStore.state, 'user').draft;
     expect(save).toMatchObject({
       name: 'Reviewer',
       codingAgent: 'codex',
       model: 'bare-picked-model',
     });
+  });
+});
+
+describe('specialist draft lifetime', () => {
+  afterEach(() => {
+    selectedModel$.set('');
+    mocks.effortLevels.value = {};
+  });
+  it('restores every field after a specialist switch and an editor remount', async () => {
+    mocks.effortLevels.value = { 'codex:bare-picked-model': ['high'] };
+    const view = render(AIBehaviorEditor, { activeView: { type: 'create-specialist' } });
+    await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Draft reviewer' } });
+    await fireEvent.input(screen.getByLabelText('Description'), {
+      target: { value: 'Description' },
+    });
+    await fireEvent.input(document.getElementById('create-specialist-prompt')!, {
+      target: { value: 'Prompt' },
+    });
+    await fireEvent.click(screen.getByTestId('pick-model-with-triple'));
+    await fireEvent.click(screen.getByTestId('pick-reasoning'));
+    await view.rerender({ activeView: { type: 'specialist', id: 'implementor' } });
+    await view.rerender({ activeView: { type: 'create-specialist' } });
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft reviewer');
+    view.unmount();
+    render(AIBehaviorEditor, { activeView: { type: 'create-specialist' } });
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft reviewer');
+    expect((screen.getByLabelText('Description') as HTMLInputElement).value).toBe('Description');
+    expect((document.getElementById('create-specialist-prompt') as HTMLTextAreaElement).value).toBe(
+      'Prompt',
+    );
+    expect(screen.getByTestId('picker-selected').textContent).toBe('bare-picked-model');
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('high');
+    expect(selectSpecialistCreation.select(appStore.state, 'user').draft.codingAgent).toBe('codex');
+    await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('');
+    expect(screen.getByTestId('picker-selected').textContent).toBe('');
+    expect(screen.getByTestId('picker-reasoning').textContent).toBe('');
   });
 });

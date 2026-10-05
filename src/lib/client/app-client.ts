@@ -1,9 +1,25 @@
 import type { NotePagesClient } from './note-pages';
+import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type {
   ScriptArchiveFilter,
   ScriptArchiveResult,
   ScriptRestoreResult,
 } from '$features/scripts/types';
+import type {
+  NativeReviewOwner,
+  NativeReviewInput,
+  NativeReviewRetirement,
+  NativeReviewSession,
+} from '$shared/types/native-review-operation';
+import type {
+  RepositorySelectionEdit,
+  RepositorySelectionSession,
+  SelectionRetirement,
+} from '$shared/types/repository-selection';
+import type {
+  RepositoryContextRequest,
+  RepositoryContextResponse,
+} from '$shared/types/repository-context';
 /**
  * AppClient — the single boundary the renderer uses to reach "the backend".
  *
@@ -55,7 +71,7 @@ import type {
   ScriptWithState,
   WorkspaceScript,
 } from '$store/renderer/slices/scripts/scripts-types';
-import type { ScriptCategory, ScriptMode, ScriptPurpose } from '$features/scripts/types';
+import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
 import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
@@ -105,7 +121,7 @@ export type Unsubscribe = () => void;
 export type SubscriptionHandler<T> = (snapshot: T) => void;
 
 /** Uniform result for mutation methods. */
-export interface MutationResult {
+export interface MutationResult extends SubmissionCorrelation {
   success: boolean;
   error?: string;
   /**
@@ -151,6 +167,8 @@ export interface MutationResult {
   /** sendQueuedMessageNow may restore the entry instead of delivering it (§5.5). */
   queued?: boolean;
   quarantined?: boolean;
+  /** IDs acknowledged by an explicit queued batch send. */
+  messageIds?: string[];
   /**
    * Turn-correlation id (PROTOCOL §5.5/§6.6, monorepo#1022) surfaced when the
    * daemon returns one by the seam mutations that extract it: `queueMessage`
@@ -198,6 +216,7 @@ export interface AgentCreateRequest {
   /** Reasoning effort for the session's model (Option B session field, §5.5). */
   reasoningEffort?: string;
   specialist?: string | null;
+  rememberSpecialist?: boolean;
   name?: string;
   nameExplicitlySet?: boolean;
   agentId?: string;
@@ -274,13 +293,6 @@ export interface UserMessageIndexItem {
 export type UserMessageIndexResult =
   | { ok: true; items: UserMessageIndexItem[]; total: number }
   | { ok: false; unsupported: boolean; error: string };
-
-/** Pull-request summary surfaced by the git domain. */
-export interface PrStatusSummary {
-  prNumber?: number;
-  url?: string;
-  state?: string;
-}
 
 /**
  * Post-refresh linkage state returned by `pr.refresh` (PROTOCOL §5.7
@@ -387,7 +399,25 @@ export interface WorkspaceCancelDeleteResult extends MutationResult {
   cancelled?: boolean;
 }
 
+export type RepositoryContextUpdate =
+  | { type: 'received'; response: RepositoryContextResponse }
+  | { type: 'unavailable' | 'retired'; request: RepositoryContextRequest };
+
 export interface WorkspacesClient {
+  beginNativeReview(
+    owner: NativeReviewOwner,
+    input: NativeReviewInput,
+    handler: (kind: NativeReviewRetirement) => void,
+  ): Promise<NativeReviewSession>;
+  beginRepositorySelectionEdit(
+    request: RepositorySelectionEdit,
+    handler: (kind: SelectionRetirement) => void,
+  ): Promise<RepositorySelectionSession>;
+  /** One inventory read, retaining its resource until retirement or unsubscribe. */
+  observeRepositoryContext(
+    request: RepositoryContextRequest,
+    handler: (update: RepositoryContextUpdate) => void,
+  ): Promise<Unsubscribe>;
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**
@@ -724,6 +754,8 @@ export interface AgentsClient {
     message: string,
     options?: {
       workspaceId?: string;
+      /** Canonical submission identity, distinct from appMessageId. */
+      messageId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;
@@ -756,14 +788,20 @@ export interface AgentsClient {
    * NOT idempotent: a missing entry (already drained/removed) rejects with
    * `-32602`, folded into `{ success: false, error }` like the other
    * mutations. The delivered arm carries `turnId` (the entry's preserved
-   * turn-correlation id, §5.5 — this RPC's response replaces the
-   * `agent:queue:processing` event, which is NOT emitted for this path),
+   * turn-correlation id, §5.5). Admitted sends also emit `agent:queue:processing`
+   * with the complete consumed entries; the response is a legacy promotion fallback,
    * surfaced on the MutationResult (monorepo#1057).
    */
   sendQueuedNow(params: {
     agentId: string;
     workspaceId: string;
     messageId: string;
+  }): Promise<MutationResult>;
+  /** Send exactly the selected ready entries together in one interrupt turn. */
+  sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
   }): Promise<MutationResult>;
   /**
    * Read the agent's persisted message queue (`agent.getQueue`, §5.5/§6.6).
@@ -892,6 +930,7 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult>;
@@ -1014,23 +1053,25 @@ export interface AgentsClient {
  * terminal `streamingComplete` frames.
  */
 export interface ChatTranscript {
+  /** Exclusive older-page continuation from the authoritative snapshot. */
+  nextToken?: string | null;
   messages: AgentMessage[];
   truncated: boolean;
   totalMessages: number;
   isStreaming: boolean;
   /**
-   * Resume disposition (PROTOCOL §7.1 `sinceMessageId`), stamped ONLY on the
-   * emit produced by the seq-0 snapshot of a registration that requested a
-   * resume: `true` — the snapshot was a delta from the requested anchor,
-   * merged onto the retained baseline; `false` — the daemon did not honor
-   * the resume (unknown/pruned id) and replied with the standard newest-page
-   * snapshot, so the subscriber must fully rehydrate older history. Absent
-   * on every other emit (delta emits, non-resume snapshots).
+   * Resume/reset disposition (PROTOCOL §7.1), forwarded on snapshot emits:
+   * `true` means a post-anchor delta merged onto the retained baseline;
+   * `false` means a newest-page reset after a missing resume anchor,
+   * transcript edit/replacement, or lag recovery. Subscribers must discard
+   * cached history on `false`, including mid-stream snapshots on registrations
+   * that never requested resume. Absent on delta emits and snapshots whose
+   * wire payload carries no disposition.
    */
   resumed?: boolean;
   /**
-   * Stamped `true` ONLY on the emit produced by applying a seq-0 snapshot
-   * push (fresh registration, gap resnapshot, reconnect re-registration) —
+   * Stamped `true` on the emit produced by applying any snapshot push
+   * (initial hydration, re-registration, or mid-stream recovery/reset) —
    * absent on delta emits. Consumers use it to tell "the daemon just served
    * the authoritative newest page (with the in-flight assistant merged)"
    * apart from incremental delta reconciliation, e.g. the chat-subscribe
@@ -1065,6 +1106,8 @@ export interface ChatClient {
    * snapshot then carries only messages after that id with `resumed: true`,
    * or falls back to the standard newest-page snapshot with `resumed: false`
    * when the daemon no longer knows the id (see `ChatTranscript.resumed`).
+   * Later reset snapshots can also carry `resumed: false`, regardless of
+   * whether resume was requested; consumers must discard cached history.
    */
   subscribe(
     agentId: string,
@@ -1415,14 +1458,14 @@ export interface GitClient {
     commitHash: string,
     opts?: { gitRootId?: string },
   ): Promise<CommitDetailsResult | null>;
-  prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   /**
    * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,
    * relink-after-merge, stale-link clearing) for one workspace on demand and
-   * returns the post-refresh linkage state. Unlike `pr.status` it does NOT
-   * require an active PR. Errors fold to `null`.
+   * returns the post-refresh linkage state. An active PR is not required.
+   * Automatic callers opt into daemon idle admission; omitted options preserve
+   * explicit refresh semantics. Errors fold to `null`.
    */
-  prRefresh(workspaceId: string): Promise<PrRefreshResult | null>;
+  prRefresh(workspaceId: string, options?: { automatic: boolean }): Promise<PrRefreshResult | null>;
   /**
    * Path-based branch listing (`git.getBranches`, §5.6). Used by the
    * workspace initializer to populate the branch picker against an arbitrary
@@ -1848,7 +1891,7 @@ export interface ScriptCreateInput {
   mode: ScriptMode;
   cwd?: string;
   env?: Record<string, string>;
-  category?: ScriptCategory;
+  category?: string;
   autoStart?: boolean;
   scriptId?: string;
 }
@@ -2330,6 +2373,17 @@ export interface GitHubIssueDetails {
 }
 
 export interface IntegrationsClient {
+  captureRepositoryCheckout(
+    query: import('$shared/types/repository-checkout').CheckoutCaptureQuery,
+  ): Promise<
+    import('$shared/types/repository-checkout').CheckoutResult<
+      import('$shared/types/repository-checkout').RepositoryCheckoutSession
+    >
+  >;
+  /** Admitted GitLab details on the original workspace connection; never falls back. */
+  captureRepositoryResource(
+    workspaceId: string,
+  ): Promise<import('$shared/types/repository-resource-read').RepositoryResourceSession>;
   githubUser(workspaceId?: string): Promise<GitHubUser | null>;
   /**
    * One pull request by number (`github.pulls.get`, §5.27). THROWS on

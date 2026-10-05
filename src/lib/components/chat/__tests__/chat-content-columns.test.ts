@@ -1,7 +1,10 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, within, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import type { Writable } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withHostPrincipal } from '../../../../test/fixtures/principal-state';
+import { appClient } from '$lib/client';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentMessage, QueuedMessage } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -9,6 +12,8 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '../chat-queue-edge-layout';
 import type { PinnedPromptTrackerOptions } from '../pinned-prompt';
 import { resetScaffold, scaffold } from './mocks/chat-panel-render-scaffold';
+
+const queueSnapshot = vi.hoisted(() => ({ store: null as Writable<QueuedMessage[]> | null }));
 
 const pinnedTracker = vi.hoisted(() => ({ options: null as PinnedPromptTrackerOptions | null }));
 
@@ -38,9 +43,19 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', async () =>
 vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).unreadTrackingSelectors(),
 );
-vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () =>
-  (await import('./mocks/chat-panel-render-scaffold')).agentQueueSelectors(),
-);
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', async () => {
+  const { writable } = await import('svelte/store');
+  const { scaffold } = await import('./mocks/chat-panel-render-scaffold');
+  return {
+    selectAgentQueueMessages: Object.assign(
+      () => {
+        queueSnapshot.store = writable(scaffold.queuedMessages as QueuedMessage[]);
+        return queueSnapshot.store;
+      },
+      { select: () => scaffold.queuedMessages },
+    ),
+  };
+});
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).transientUiSelectors(),
 );
@@ -91,6 +106,7 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', async () =>
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', async () =>
   (await import('./mocks/chat-panel-render-scaffold')).stub({
     selectChatAuroraEnabled: false,
+    selectLabsMultiplayerEnabled: false,
     selectIsAgentMonospace: false,
   }),
 );
@@ -325,15 +341,172 @@ describe('chat content column contracts', () => {
     expect(classTokens(host).has('chat-content-measure')).toBe(false);
   });
 
-  it('renders queued-message surfaces inside the composer lane', async () => {
+  it.each([
+    ['owner', true, true, true],
+    ['member', true, true, false],
+    ['guest', false, false, false],
+    [null, false, false, false],
+  ] as const)(
+    'uses admitted %s identity while Multiplayer presence is disabled',
+    async (role, workspaceOwner, foreignDelete, foreignSend) => {
+      if (role) {
+        const state = withHostPrincipal({}, role);
+        state.userPreferences.labsMultiplayerEnabled = false;
+        scaffold.authorityState = state;
+      }
+      scaffold.queuedMessages = [
+        {
+          ...queuedMessage,
+          content: 'Own queue input',
+          messageMetadata: { fromPrincipalId: 'principal' },
+        },
+        {
+          ...queuedMessage,
+          id: 'foreign',
+          content: 'Other queue input',
+          messageMetadata: { fromPrincipalId: 'other' },
+        },
+      ];
+      vi.mocked(appClient.agents.editQueued).mockClear().mockResolvedValue({ success: true });
+      const container = await renderPanel({
+        id: 'ws-1',
+        title: 'Workspace',
+        ownerPrincipalId: workspaceOwner ? 'principal' : 'other',
+      });
+      const rows = container.querySelectorAll('[data-testid="queued-message-row"]');
+      const own = within(rows[0] as HTMLElement);
+      const foreign = within(rows[1] as HTMLElement);
+      expect(
+        own.queryByRole('button', { name: m.chat_queuedMessages_edit_tooltip() }) !== null,
+      ).toBe(role !== null);
+      expect(
+        own.queryByRole('button', { name: m.chat_queuedMessages_remove_tooltip() }) !== null,
+      ).toBe(role !== null);
+      expect(
+        own.queryByRole('button', { name: m.chat_queuedMessages_sendImmediately_label() }) !== null,
+      ).toBe(role !== null);
+      expect(
+        foreign.queryByRole('button', { name: m.chat_queuedMessages_edit_tooltip() }),
+      ).toBeNull();
+      expect(
+        foreign.queryByRole('button', { name: m.chat_queuedMessages_remove_tooltip() }) !== null,
+      ).toBe(foreignDelete);
+      expect(
+        foreign.queryByRole('button', { name: m.chat_queuedMessages_sendImmediately_label() }) !==
+          null,
+      ).toBe(foreignSend);
+      if (role) {
+        await fireEvent.dblClick(own.getByTestId('queued-message-content'));
+        await waitFor(() =>
+          expect(appClient.agents.editQueued).toHaveBeenCalledWith(
+            'agent-1',
+            queuedMessage.id,
+            'Own queue input',
+            true,
+            'ws-1',
+          ),
+        );
+        await fireEvent.keyDown(own.getByRole('textbox'), { key: 'Escape' });
+        await waitFor(() => expect(own.queryByRole('textbox')).toBeNull());
+        await fireEvent.click(
+          own.getByRole('button', { name: m.chat_queuedMessages_remove_tooltip() }),
+        );
+        expect(scaffold.dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'agentQueue/removeRequested',
+            payload: ['agent-1', queuedMessage.id],
+          }),
+        );
+        await fireEvent.click(
+          own.getByRole('button', { name: m.chat_queuedMessages_sendImmediately_label() }),
+        );
+        expect(scaffold.dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'chatState/sendQueuedMessageNowRequested',
+            payload: ['agent-1', 'ws-1', queuedMessage.id],
+          }),
+        );
+      }
+    },
+  );
+
+  it.each(['editing', 'failed save', 'successful save'] as const)(
+    'retains the final queued draft through an empty snapshot during %s',
+    async (phase) => {
+      scaffold.authorityState = withHostPrincipal({}, 'owner');
+      scaffold.queuedMessages = [
+        {
+          ...queuedMessage,
+          messageMetadata: { fromPrincipalId: 'principal' },
+        },
+      ];
+      let settle!: (reply: { success: boolean; error?: string }) => void;
+      const pending = new Promise<{ success: boolean; error?: string }>((resolve) => {
+        settle = resolve;
+      });
+      vi.mocked(appClient.agents.editQueued)
+        .mockReset()
+        .mockResolvedValueOnce({ success: true })
+        .mockImplementationOnce(() => pending);
+      const view = render(ChatPanel, { props: { workspace, agentId: 'agent-1', isActive: true } });
+      await tick();
+      const container = view.container;
+      const ui = within(container);
+      await fireEvent.dblClick(ui.getByTestId('queued-message-content'));
+      await waitFor(() => expect(appClient.agents.editQueued).toHaveBeenCalledTimes(1));
+      await fireEvent.input(ui.getByRole('textbox'), {
+        target: { value: 'Keep my private draft' },
+      });
+      if (phase !== 'editing') {
+        await fireEvent.keyDown(ui.getByRole('textbox'), { key: 'Enter' });
+        await waitFor(() => expect(appClient.agents.editQueued).toHaveBeenCalledTimes(2));
+      }
+      queueSnapshot.store!.set([]);
+      await tick();
+      expect(ui.queryByTestId('queued-messages-container')).toBeNull();
+      if (phase !== 'editing') {
+        expect(ui.queryByTestId('queued-draft-conflict')).toBeNull();
+        settle(
+          phase === 'successful save'
+            ? { success: true }
+            : { success: false, error: 'release failed' },
+        );
+        await tick();
+        await tick();
+      }
+      if (phase === 'successful save') {
+        expect(ui.queryByTestId('queued-draft-conflict')).toBeNull();
+      } else {
+        const recovery = await ui.findByTestId('queued-draft-conflict');
+        expect(recovery.textContent).toContain('Keep my private draft');
+        expect(within(recovery).getByRole('button', { name: 'Copy' })).toBeTruthy();
+        if (phase === 'failed save') {
+          scaffold.queuedMessages = [];
+          await view.rerender({
+            workspace: { id: 'ws-2', title: 'Other workspace' } as never,
+            agentId: 'agent-2',
+            isActive: true,
+          });
+        } else {
+          await fireEvent.click(within(recovery).getByRole('button', { name: 'Discard draft' }));
+        }
+        expect(ui.queryByTestId('queued-draft-conflict')).toBeNull();
+      }
+    },
+  );
+
+  it('renders queued messages before subscriptions and outside the composer', async () => {
     scaffold.queuedMessages = [queuedMessage];
     const container = await renderPanel();
 
     const queue = byTestId(container, 'queued-messages-container')!;
-    expect(byTestId(container, 'mock-queue-region')!.contains(queue)).toBe(true);
-    expect(byTestId(container, 'chat-composer-lane')!.contains(queue)).toBe(true);
-    expect(byTestId(container, 'queued-message-utility-area')).toBeNull();
-    expect(container.querySelector('.queued-message-utility-wide')).toBeNull();
+    const utilities = byTestId(container, 'transcript-utility-stack')!;
+    const subscriptions = byTestId(container, 'mock-transcript-utility')!;
+    expect(utilities.contains(queue)).toBe(true);
+    expect(
+      queue.compareDocumentPosition(subscriptions) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(byTestId(container, 'chat-composer-shell')!.contains(queue)).toBe(false);
   });
 
   it('opens a blank Chief thread on the starter prompts instead of an empty state', async () => {

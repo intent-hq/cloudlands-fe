@@ -652,7 +652,8 @@ export function createLinkTooltipHandler(
 
       const workspaceId =
         options.workspaceId ??
-        anchor.closest<HTMLElement>('[data-workspace-id]')?.dataset.workspaceId;
+        anchor.closest<HTMLElement>('[data-workspace-id]')?.dataset.workspaceId ??
+        anchor.closest<HTMLElement>('[data-workspace-surface]')?.dataset.workspaceSurface;
       ensureImported().then(() => {
         // Double-check we're still on the same anchor after async import
         if (currentAnchor === anchor && showFn) {

@@ -110,6 +110,26 @@ describe('showInviteProgress — renderer round-trip', () => {
     expect(dismissesSent(send)).toEqual([]);
   });
 
+  it('replays readiness without dismissing or replacing the cancellable request', async () => {
+    const { window, send } = makeWindow();
+    const handle = showInviteProgress(
+      { ...PAYLOAD, phase: 'admission' },
+      { getParentWindow: () => window },
+    );
+    const handlers = await getHandlers();
+    await handlers.ack({ sender: { id: 41 } }, { requestId: PAYLOAD.requestId });
+    expect(handle.replay()).toBe(true);
+    expect(sentOn(send, 'invite-progress:show')).toHaveLength(2);
+    expect(dismissesSent(send)).toEqual([]);
+    await handlers.response(
+      { sender: { id: 41 } },
+      { requestId: PAYLOAD.requestId, action: 'cancel' },
+    );
+    await expect(handle.cancelled).resolves.toBeUndefined();
+    handle.dismiss();
+    expect(handle.replay()).toBe(false);
+  });
+
   it('resolves cancelled on a cancel response for the active request', async () => {
     const { window, send } = makeWindow();
     const handle = showInviteProgress(PAYLOAD, { getParentWindow: () => window });

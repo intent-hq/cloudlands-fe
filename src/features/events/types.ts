@@ -1,3 +1,4 @@
+import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentNodeFields } from '$shared/types/agent-node';
 /**
  * Type definitions for the Workspace Event System
@@ -67,6 +68,14 @@ export interface CanonicalAgentStatusFields extends AgentNodeFields {
    * one. Rendered verbatim.
    */
   waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
+  /** Active script-run watches (§5.8a), omitted by the daemon when empty. */
+  waitingOnScriptMonitors?: Array<{
+    monitorId: string;
+    scriptId: string;
+    runId: string;
+    scriptName: string;
+    expiresAt: string;
+  }>;
   /**
    * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
    * companion for centralized PR monitoring (§5.42): light metadata for the
@@ -279,7 +288,7 @@ export interface AgentToolCallEvent extends WorkspaceEventBase {
  */
 export interface AgentMessageEvent extends WorkspaceEventBase {
   type: 'agent:message';
-  data: {
+  data: SubmissionCorrelation & {
     messageId: string;
     turnNumber: number;
     content: string;

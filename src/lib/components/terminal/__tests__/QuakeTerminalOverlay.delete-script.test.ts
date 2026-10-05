@@ -206,6 +206,22 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
     (appStore as any).__reset();
   });
 
+  it('routes stop through the shared operation and retains the selected script', async () => {
+    (appStore as any).__setCurrentTab(WS_A);
+    seedWorkspace(WS_A, ['script-1'], 'script-1');
+    const { component } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    await (component as any).handleScriptAction('stop', 'script-1');
+    expect((appStore as any).__dispatched).toContainEqual(
+      expect.objectContaining({
+        type: 'scripts/stopScriptRequested',
+        payload: [WS_A, 'script-1', expect.any(String)],
+      }),
+    );
+    expect(scriptsClient.stop).not.toHaveBeenCalled();
+    expect(rawSelectedScriptId(WS_A)).toBe('script-1');
+    expect(dispatchedTypes()).not.toContain('scripts/refreshScripts');
+  });
+
   it('clears the raw store selection when the selected script is deleted', async () => {
     (appStore as any).__setCurrentTab(WS_A);
     seedWorkspace(WS_A, ['script-1'], 'script-1');

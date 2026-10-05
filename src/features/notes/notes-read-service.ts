@@ -50,11 +50,11 @@ const inFlight = new Map<
   { dirty: boolean; settled: Promise<void>; run: () => Promise<void> }
 >();
 
-function coalesce(key: string, fn: () => Promise<void>): Promise<void> {
+function coalesce(key: string, fn: () => Promise<void>, invalidate = true): Promise<void> {
   const pending = inFlight.get(key);
   if (pending) {
-    pending.dirty = true;
-    pending.run = fn;
+    pending.dirty ||= invalidate;
+    if (invalidate) pending.run = fn;
     return pending.settled;
   }
   const entry = { dirty: false, settled: Promise.resolve(), run: fn };
@@ -159,19 +159,23 @@ export function ensureNoteContentLoaded(workspaceId: string, noteId: string): Pr
   if (!isNoteContentStale(cached)) return Promise.resolve(true);
   const key = JSON.stringify([workspaceId, noteId]);
   const generation = generations.get(key) ?? 0;
-  return coalesce(`note:${workspaceId}:${noteId}`, async () => {
-    if (isPagedNoteSession(workspaceId, noteId) || generation !== (generations.get(key) ?? 0))
-      return;
-    const note = await appClient.notes.get(noteId, workspaceId);
-    if (
-      !note ||
-      String(note.workspaceId) !== workspaceId ||
-      isPagedNoteSession(workspaceId, noteId) ||
-      generation !== (generations.get(key) ?? 0)
-    )
-      return;
-    dispatchNoteApply(workspaceId, note, 'note:updated');
-  }).then(() => {
+  return coalesce(
+    `note:${workspaceId}:${noteId}`,
+    async () => {
+      if (isPagedNoteSession(workspaceId, noteId) || generation !== (generations.get(key) ?? 0))
+        return;
+      const note = await appClient.notes.get(noteId, workspaceId);
+      if (
+        !note ||
+        String(note.workspaceId) !== workspaceId ||
+        isPagedNoteSession(workspaceId, noteId) ||
+        generation !== (generations.get(key) ?? 0)
+      )
+        return;
+      dispatchNoteApply(workspaceId, note, 'note:updated');
+    },
+    false,
+  ).then(() => {
     const after = appStore.state.workspaceNotes.byWorkspaceId[workspaceId];
     const row = after?.notes ? getItem(after.notes, NoteId(String(noteId))) : undefined;
     return row !== undefined && !isNoteContentStale(row);

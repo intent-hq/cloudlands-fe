@@ -1,3 +1,6 @@
+import type { QueuedMessage } from '$shared/types';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+
 // ============================================================================
 // Per-Agent Chat State
 // ============================================================================
@@ -22,6 +25,11 @@ export interface StreamStatusContext {
 }
 
 export interface LastAttemptedMessage {
+  /** Prior local delivery provenance only; a retry must capture fresh admission. */
+  submission?: {
+    reference: import('../pending-submissions/pending-submissions-types').SubmissionReference;
+    outcome: 'accepted' | 'rejected' | 'uncertain';
+  };
   text: string;
   options?: SendMessageOptions;
 }
@@ -147,6 +155,8 @@ export interface PendingProposalRecovery {
  * older-history fetch without a second conversation transfer.
  */
 export interface TranscriptSnapshotMeta {
+  /** Exclusive older-page continuation from the authoritative snapshot. */
+  nextToken?: string | null;
   /** Daemon `truncated` flag: older history exists beyond the snapshot page. */
   truncated: boolean;
   /** Daemon `totalMessages` count at snapshot time. */
@@ -155,6 +165,8 @@ export interface TranscriptSnapshotMeta {
   oldestMessageId?: string;
   /** §7.1 resume disposition when the registration requested one. */
   resumed?: boolean;
+  /** Local hydration replay; its original discard must not reset the current viewport. */
+  replayed?: true;
   /** Monotonic per-agent counter so waiters can detect a NEW snapshot. */
   seq: number;
 }
@@ -211,6 +223,17 @@ export interface ChatAgentState {
    * instead of promoting.
    */
   queuedRetryRecords: Record<string, QueuedRetryRecord>;
+  /** Local identity changes for each distinct attempted send, even with identical payloads. */
+  attemptGeneration?: number;
+  /** Payload from the exact consumed entry, never inferred from queue receive order. */
+  processedQueuedTurn?: {
+    turnId: string;
+    messages?: Collection<QueuedMessage, 'id'>;
+    /** Exact entry/turn pairs observed across recovery admissions of this operation. */
+    entryTurns?: Record<string, string>;
+    attemptGeneration: number;
+    record?: LastAttemptedMessage;
+  };
   modelUnavailable: ModelUnavailableInfo | null;
   /**
    * Set when the last turn failed with the daemon's `quota-exceeded` code
@@ -258,6 +281,9 @@ export interface ChatAgentState {
   transcriptSnapshot?: TranscriptSnapshotMeta;
   /** True while an on-demand older-history scrollback page fetch is in flight. */
   fetchingOlderHistory: boolean;
+  /** Automatic paging stops after a failed or non-advancing page. */
+  scrollbackOlderBlocked: boolean;
+  scrollbackGapBlocked: boolean;
   /** True while an on-demand gap-refill scrollback page fetch is in flight. */
   fetchingGapFill: boolean;
   /**
@@ -269,6 +295,8 @@ export interface ChatAgentState {
    * oldest side, and continuing backward would skip the pruned rows).
    */
   scrollbackOlderToken: string | null;
+  /** Once paging/seek owns the window, snapshots must not reseed its cursors. */
+  scrollbackWalkStarted: boolean;
   /**
    * Opaque §5.5 forward cursor continuing the gap-refill walk toward the live
    * tail, or null when the next request must re-seek at the history segment's
@@ -280,9 +308,8 @@ export interface ChatAgentState {
   /** True while an `aroundIndex` far-flick seek fetch is in flight. */
   fetchingHistorySeek: boolean;
   /**
-   * Monotonic §7.1 discard counter: bumped atomically by the
-   * `resumed: false` snapshot reducer (the same write that resets the walk
-   * cursors + fetching flags). Scrollback workers capture it before their
+   * Monotonic window ownership counter: bumped atomically by a seek start
+   * or a §7.1 `resumed: false` snapshot (along with the fetching flags). Scrollback workers capture it before their
    * wire call and drop the result when it changed mid-flight — a page that
    * resolves after the discard was fetched against the discarded transcript
    * and must not recreate a segment or persist a cursor.
@@ -330,6 +357,9 @@ export interface ChatAgentState {
  * DOM-derived context may be raw; the saga owns serialization before IPC.
  */
 export interface SendMessagePayload {
+  /** Explicit retry model override, distinct from the displayed agent model. */
+  model?: string;
+  submission?: import('../pending-submissions/pending-submissions-types').SubmissionReference;
   text: string;
   /** Stable identity shared by the optimistic row and its composer transition. */
   userAppMessageId?: string;

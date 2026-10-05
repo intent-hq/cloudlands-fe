@@ -17,6 +17,7 @@ import { isCtContractPath } from './ct-contract-paths.mjs';
 import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
 import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
+import { requiresTransferSelectionFixtures } from './unit-test-prerequisites.mjs';
 import {
   acquireVerificationLock,
   ctLockKey,
@@ -897,8 +898,35 @@ export function createVerificationPlan(files, options = {}) {
       ]),
     );
   }
+  // These are planner-owned selections using the standard unit config. Pass only
+  // their file filters to the shared launcher policy; related selection remains
+  // conservative because it can reach any consumer through the import graph.
+  const unitSelections = new Map([
+    ['vitest-direct', directUnit],
+    ['vitest-declared', declaredUnit],
+    ['vitest-full', []],
+    ['vitest-related', ['related', ...relatedSources]],
+  ]);
+  const prerequisiteId = 'transfer-selection-fixtures';
+  const prerequisites = [];
+  for (const check of checks) {
+    const selection = unitSelections.get(check.id);
+    if (selection && requiresTransferSelectionFixtures(selection, { root })) {
+      check.dependsOn = [prerequisiteId];
+    }
+  }
+  if (checks.some((check) => check.dependsOn?.includes(prerequisiteId))) {
+    prerequisites.push({
+      id: prerequisiteId,
+      label: 'Validate canonical transfer-selection fixtures',
+      executable: process.execPath,
+      args: [resolve(REPO_ROOT, 'scripts/transfer-selection-fixtures.mjs')],
+      lockKind: null,
+    });
+  }
   return {
     files,
+    prerequisites,
     checks,
     fallbackReasons: [...new Set(fallbackReasons)].sort(),
     triggerViolations: declared.violations.map((entry) => entry.path),
@@ -926,16 +954,32 @@ export function printPlan(plan, dryRun, log = console.log) {
       `verify:changed: warning: ${plan.triggerViolations.length} vitest suite(s) read the tree from disk without a ${TRIGGER_MARKER} header and are never selected here; see pnpm run lint:verify-changed-triggers`,
     );
   }
+  if (plan.prerequisites?.length) {
+    log('verify:changed: prerequisites (before all selected checks)');
+    for (const prerequisite of plan.prerequisites) {
+      log(
+        `  - ${prerequisite.id}: ${[prerequisite.executable, ...prerequisite.args].map(shellQuote).join(' ')}`,
+      );
+    }
+  }
   log(`verify:changed: ${plan.checks.length} check(s)`);
   for (const check of plan.checks) {
-    log(`  - ${check.label}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`);
+    const dependencies = check.dependsOn?.length
+      ? ` [requires: ${check.dependsOn.join(', ')}]`
+      : '';
+    log(
+      `  - ${check.label}${dependencies}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`,
+    );
   }
   if (dryRun) log('verify:changed: dry-run; no commands were run');
 }
 
 async function runCheck(check, root, { heldLock = null } = {}) {
   console.log(`\n[verify:changed] ${check.label}`);
-  const launcher = pnpmInvocation(check.args);
+  const launcher =
+    check.executable === 'pnpm'
+      ? pnpmInvocation(check.args)
+      : { executable: check.executable, args: check.args, shell: false };
   // A locked check spawns the CT launcher, which takes the same `ct-<port>`
   // lock for direct runs; tell it the lock is already held so it does not
   // wait on its own parent.
@@ -967,6 +1011,17 @@ export async function runVerificationPlan(plan, root, options = {}) {
   const acquireLock = options.acquireLock ?? acquireVerificationLock;
   const lockPath = options.lockPath ?? defaultLockPath;
   const log = options.log ?? console.log;
+
+  // Keep prerequisites separate from checks so {...plan, checks: selectedChecks}
+  // retains them. Resolve every reference before spawning anything, then validate
+  // once before ALL selected checks, including an earlier unrelated test lane.
+  const required = new Set(plan.checks.flatMap((check) => check.dependsOn ?? []));
+  const prerequisites = [...required].map((id) => {
+    const prerequisite = plan.prerequisites?.find((entry) => entry.id === id);
+    if (!prerequisite) throw new Error(`Missing prerequisite ${id} in verification plan`);
+    return prerequisite;
+  });
+  for (const prerequisite of prerequisites) await run(prerequisite, root);
 
   for (const check of plan.checks) {
     const lockKey = verificationLockKey(check, env);

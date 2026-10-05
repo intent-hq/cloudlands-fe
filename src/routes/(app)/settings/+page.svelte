@@ -17,6 +17,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
+  import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
@@ -42,7 +43,10 @@
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectHostAdministrationDenied } from '$store/renderer/slices/principal/principal-selectors';
+  import {
+    selectPrincipalActionContext,
+    selectHostAdministrationDenied,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -98,6 +102,7 @@
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const collaborationContext$ = selectPrincipalActionContext();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
 
@@ -118,7 +123,8 @@
     'providers',
     'connections',
     'devices',
-    'guest-sessions',
+    'mobile',
+    'collaboration',
     'setup',
     'advanced',
     'input',
@@ -143,10 +149,12 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
-    'websocket-api': 'devices',
-    'remote-access': 'devices',
-    'guest-sessions': 'guest-sessions',
-    sharing: 'guest-sessions',
+    mobile: 'mobile',
+    'websocket-api': 'mobile',
+    'remote-access': 'mobile',
+    collaboration: 'collaboration',
+    'guest-sessions': 'collaboration',
+    sharing: 'collaboration',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -188,6 +196,7 @@
   }
 
   function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
+    if (tabParam === 'guest-sessions' || tabParam === 'sharing') return 'collaboration';
     if (tabParam === 'accounts') return 'providers';
     if (
       tabParam === 'general' ||
@@ -207,7 +216,7 @@
     const targetTab = resolveHashTab(targetId);
     if (targetTab) return targetTab;
     if (tabParam && isSettingsTab(tabParam)) return tabParam;
-    return (tabParam && resolveLegacyTab(tabParam)) || 'display';
+    return (tabParam && resolveLegacyTab(tabParam)) || 'agent-behavior';
   }
 
   function getInitialTab(): SettingsTab {
@@ -215,7 +224,6 @@
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
-  let localSettingsRequested = $state(0);
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -248,13 +256,13 @@
   // administrator (intent-hq/intent#5514).
   const hiddenTabs = $derived.by(() => {
     const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
-    if (!$labsMultiplayerEnabled$) tabs.push('guest-sessions');
+    if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
     return tabs;
   });
   $effect(() => {
     if (
       hiddenTabs.includes(activeTab) &&
-      (activeTab === 'guest-sessions' || $hostAdministrationDenied$)
+      (activeTab === 'collaboration' || $hostAdministrationDenied$)
     ) {
       setActiveTab('display');
     }
@@ -415,7 +423,6 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
-    if (resolveHashToTarget(targetId)?.id === 'websocket-api') localSettingsRequested += 1;
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -577,12 +584,10 @@
           <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
-        <!-- Devices -->
+        <!-- Machines -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
-            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
-              <DevicesSettings bind:localSettingsRequested />
-            </div>
+            <DevicesSettings />
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
@@ -598,10 +603,18 @@
           </div>
         {/if}
 
+        {#if activeTab === 'mobile'}
+          <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
+            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+              <MobileSettings />
+            </div>
+          </div>
+        {/if}
+
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
-        {#if activeTab === 'guest-sessions' && $labsMultiplayerEnabled$}
-          <div id="guest-sessions" class="scroll-mt-20">
-            <GuestSessionsSettings />
+        {#if activeTab === 'collaboration' && $labsMultiplayerEnabled$}
+          <div id="collaboration" class="scroll-mt-20">
+            {#key $collaborationContext$}<GuestSessionsSettings />{/key}
           </div>
         {/if}
 

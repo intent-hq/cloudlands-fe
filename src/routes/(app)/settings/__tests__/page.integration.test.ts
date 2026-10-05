@@ -10,7 +10,10 @@ import { SPECIALISTS } from '$lib/constants/specialists';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import {
+  hydrateDefaultProvider,
+  loadProviderModelsFromStorage,
+} from '$store/renderer/slices/model/model-slice';
 import { selectGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-selectors';
 import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { setGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-slice';
@@ -20,7 +23,6 @@ import {
   setFileSpecialists,
 } from '$store/renderer/slices/specialists/specialists-slice';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
-import { setSelectedModel } from '$store/renderer/slices/model/model-slice';
 import { selectMcpError } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
 import { setError as setMcpError } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { selectThemeError } from '$store/renderer/slices/theme/theme-selectors';
@@ -92,6 +94,9 @@ vi.mock('$lib/components/settings/VoiceSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/DevicesSettings.svelte', async () => ({
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
+}));
+vi.mock('$features/settings/MobileSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
@@ -225,8 +230,7 @@ function createFixtureContext(
       };
       break;
     case 'Redux model':
-      writeOwner = (value) =>
-        appStore.dispatch(setSelectedModel({ providerId: 'codex', model: value }));
+      writeOwner = (value) => appStore.dispatch(loadProviderModelsFromStorage({ codex: value }));
       readOwner = () =>
         snapshot(selectSelectedModel.select(appStore.state, 'codex').replace(/^codex:/, ''));
       break;
@@ -520,11 +524,12 @@ describe('settings tab route and focus behavior', () => {
     ['notifications', 'General', 'page'],
     ['general', 'Appearance', 'page'],
     ['connections', 'Connections', 'page'],
-    ['devices', 'Devices', 'page'],
-    ['machines', 'Devices', 'page'],
+    ['devices', 'Machines', 'page'],
+    ['machines', 'Machines', 'page'],
+    ['mobile', 'Mobile', 'page'],
     ['interface-system', 'Appearance', 'page'],
     ['input', 'Input and shortcuts', 'page'],
-    ['unknown', 'Appearance', 'page'],
+    ['unknown', 'Agent defaults', 'page'],
   ])('maps ?tab=%s to %s', async (tab, label, current) => {
     renderSettings(`/settings?tab=${tab}`);
     await waitFor(() =>
@@ -534,28 +539,40 @@ describe('settings tab route and focus behavior', () => {
     );
   });
 
-  it.each(['devices', 'machines'])(
-    'maps the compatible #%s hash to the Devices tab',
-    async (hash) => {
-      const { container } = renderSettings(`/settings#${hash}`);
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Devices' }).getAttribute('aria-current')).toBe(
-          'page',
-        ),
-      );
-      expect(container.querySelector('#devices')).not.toBeNull();
-    },
-  );
+  it.each(['devices', 'machines'])('maps the compatible #%s hash to Machines', async (hash) => {
+    const { container } = renderSettings(`/settings#${hash}`);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Machines' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    expect(container.querySelector('#devices')).not.toBeNull();
+  });
 
-  it('renders Remote Access on Devices only, not on Advanced', async () => {
-    const devices = renderSettings('/settings?tab=devices');
-    await waitFor(() => expect(devices.container.querySelector('#websocket-api')).not.toBeNull());
+  it('opens Agent defaults when settings has no destination', async () => {
+    renderSettings('/settings');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Agent defaults' }).getAttribute('aria-current'),
+      ).toBe('page'),
+    );
+    expect(document.querySelector('#global-instructions')).not.toBeNull();
+  });
 
-    cleanup();
+  it('switches between Mobile remote access and Machines backend sync', async () => {
+    const { container } = renderSettings('/settings?tab=mobile');
+    await waitFor(() => expect(container.querySelector('#websocket-api')).not.toBeNull());
+    expect(container.querySelector('#backend-sync')).toBeNull();
 
-    const advanced = renderSettings('/settings?tab=advanced');
-    await waitFor(() => expect(advanced.container.querySelector('#agent-backend')).not.toBeNull());
-    expect(advanced.container.querySelector('#websocket-api')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Machines' }));
+    await waitFor(() => expect(container.querySelector('#backend-sync')).not.toBeNull());
+    expect(container.querySelector('#websocket-api')).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('tab')).toBe('devices');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Mobile', exact: true }));
+    await waitFor(() => expect(container.querySelector('#websocket-api')).not.toBeNull());
+    expect(container.querySelector('#backend-sync')).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('tab')).toBe('mobile');
   });
 
   it('renders Agent Backend only on Advanced while the legacy Tools tab resolves to Setup', async () => {
@@ -593,10 +610,14 @@ describe('settings tab route and focus behavior', () => {
     ['/settings?tab=connections#voice', 'Input and shortcuts', 'voice'],
     ['/settings?tab=advanced#workspace-api', 'Advanced', 'workspace-api'],
     ['/settings?tab=system#workspace-api', 'Advanced', 'workspace-api'],
-    ['/settings#websocket-api', 'Devices', 'websocket-api'],
-    ['/settings#remote-access', 'Devices', 'websocket-api'],
+    ['/settings#mobile', 'Mobile', 'mobile'],
+    ['/settings#websocket-api', 'Mobile', 'websocket-api'],
+    ['/settings#remote-access', 'Mobile', 'websocket-api'],
+    ['/settings?tab=devices#websocket-api', 'Mobile', 'websocket-api'],
+    ['/settings?tab=machines#remote-access', 'Mobile', 'websocket-api'],
+    ['/settings?tab=mobile#backend-sync', 'Machines', 'backend-sync'],
     // Legacy deep link from when the section lived on Advanced.
-    ['/settings?tab=advanced#websocket-api', 'Devices', 'websocket-api'],
+    ['/settings?tab=advanced#websocket-api', 'Mobile', 'websocket-api'],
     ['/settings?tab=agent-behavior#agent-features', 'Agent defaults', 'agent-features'],
     ['/settings?tab=behavior#agent-features', 'Agent defaults', 'agent-features'],
   ])('routes canonical and legacy URL %s to %s', async (url, category, sectionId) => {
@@ -664,7 +685,7 @@ describe('settings tab route and focus behavior', () => {
 
   it('renders the default model row under Providers only, not Agent Behavior', async () => {
     appStore.dispatch(hydrateDefaultProvider('codex'));
-    appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'shared-fixture' }));
+    appStore.dispatch(loadProviderModelsFromStorage({ codex: 'shared-fixture' }));
     renderSettings('/settings?tab=providers');
 
     expect(document.getElementById('utility-default-model')).not.toBeNull();
@@ -821,8 +842,9 @@ describe('settings hash target integration', () => {
     ['mcp-servers', 'mcp-servers', 'Connections', 'page'],
     ['cli-optimization', 'cli-optimization', 'Workspace setup', 'page'],
     ['workspace-api', 'workspace-api', 'Advanced', 'page'],
-    ['websocket-api', 'websocket-api', 'Devices', 'page'],
-    ['remote-access', 'websocket-api', 'Devices', 'page'],
+    ['mobile', 'mobile', 'Mobile', 'page'],
+    ['websocket-api', 'websocket-api', 'Mobile', 'page'],
+    ['remote-access', 'websocket-api', 'Mobile', 'page'],
     ['keyboard-shortcuts', 'keyboard-shortcuts', 'Input and shortcuts', 'page'],
     ['voice', 'voice', 'Input and shortcuts', 'page'],
     ['language', 'language', 'Appearance', 'page'],

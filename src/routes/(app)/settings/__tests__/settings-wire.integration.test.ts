@@ -27,7 +27,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 
 import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
-import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
+import MobileSettings from '$features/settings/MobileSettings.svelte';
 
 type BackendStep = { request: unknown; response: unknown };
 
@@ -150,15 +150,13 @@ describe('Settings deterministic mock-BE contracts', () => {
     );
   });
 
-  it('hydrates all five Agent Backend settings from exact settings.get requests', async () => {
+  it('hydrates the remaining Agent Backend settings without requesting the retired queue setting', async () => {
     const maxConcurrent = SETTINGS_PROTOCOL_FIXTURES.maxConcurrent;
-    const flushQueuedMessages = SETTINGS_PROTOCOL_FIXTURES.flushQueuedMessages;
     const memoryBudgetMb = SETTINGS_PROTOCOL_FIXTURES.memoryBudgetMb;
     const idleReapMinutes = SETTINGS_PROTOCOL_FIXTURES.idleReapMinutes;
     const acpNodeMaxOldSpaceMb = SETTINGS_PROTOCOL_FIXTURES.acpNodeMaxOldSpaceMb;
     const assertComplete = mockBackendSequence([
       { request: maxConcurrent.request, response: maxConcurrent.response },
-      { request: flushQueuedMessages.request, response: flushQueuedMessages.response },
       { request: memoryBudgetMb.request, response: memoryBudgetMb.response },
       { request: idleReapMinutes.request, response: idleReapMinutes.response },
       { request: acpNodeMaxOldSpaceMb.request, response: acpNodeMaxOldSpaceMb.response },
@@ -168,14 +166,12 @@ describe('Settings deterministic mock-BE contracts', () => {
 
     const input = (await screen.findByPlaceholderText('Auto')) as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe('12'));
-    expect(await screen.findByText('System Messages Only')).toBeTruthy();
     assertComplete();
     for (const [nth, fixture] of [
       [1, maxConcurrent],
-      [2, flushQueuedMessages],
-      [3, memoryBudgetMb],
-      [4, idleReapMinutes],
-      [5, acpNodeMaxOldSpaceMb],
+      [2, memoryBudgetMb],
+      [3, idleReapMinutes],
+      [4, acpNodeMaxOldSpaceMb],
     ] as const) {
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
         nth,
@@ -198,7 +194,6 @@ describe('Settings deterministic mock-BE contracts', () => {
     'persists the Agent Backend field on %s through settings.get/update',
     async (activation, value) => {
       const get = SETTINGS_PROTOCOL_FIXTURES.maxConcurrent;
-      const getFlush = SETTINGS_PROTOCOL_FIXTURES.flushQueuedMessages;
       const getBudget = SETTINGS_PROTOCOL_FIXTURES.memoryBudgetMb;
       const getIdleReap = SETTINGS_PROTOCOL_FIXTURES.idleReapMinutes;
       const getAcpHeap = SETTINGS_PROTOCOL_FIXTURES.acpNodeMaxOldSpaceMb;
@@ -211,7 +206,6 @@ describe('Settings deterministic mock-BE contracts', () => {
       };
       const assertComplete = mockBackendSequence([
         { request: get.request, response: get.response },
-        { request: getFlush.request, response: getFlush.response },
         { request: getBudget.request, response: getBudget.response },
         { request: getIdleReap.request, response: getIdleReap.response },
         { request: getAcpHeap.request, response: getAcpHeap.response },
@@ -235,17 +229,17 @@ describe('Settings deterministic mock-BE contracts', () => {
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
         2,
         IPC_CHANNELS.BACKEND.REQUEST,
-        getFlush.request,
+        getBudget.request,
       );
       expect(window.electronAPI!.invoke).toHaveBeenNthCalledWith(
-        6,
+        5,
         IPC_CHANNELS.BACKEND.REQUEST,
         update.request,
       );
     },
   );
 
-  it('persists the explicit WebSocket port Save through documented settings methods', async () => {
+  it('persists Mobile advanced port changes through documented settings methods', async () => {
     const list = SHIPPED_WEBSOCKET_SETTING_FIXTURES.list;
     const update = {
       request: {
@@ -259,7 +253,7 @@ describe('Settings deterministic mock-BE contracts', () => {
       update,
     ]);
 
-    render(WebSocketApiSettings);
+    render(MobileSettings);
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
     );
@@ -292,7 +286,7 @@ describe('Settings deterministic mock-BE contracts', () => {
     });
   });
 
-  it('persists multiselect networks through settings.update and renders the refreshed daemon selection', async () => {
+  it('persists Mobile advanced networks through settings.update and renders the refreshed daemon selection', async () => {
     let bound = ['192.0.2.10', '127.0.0.1'];
     const expectedChanges = [
       { path: 'server.bindAddress', value: ['192.0.2.10', '127.0.0.1', '198.51.100.7'] },
@@ -330,7 +324,7 @@ describe('Settings deterministic mock-BE contracts', () => {
       bound = ['192.0.2.10', '127.0.0.1', '198.51.100.7'];
       return { ok: true, result: { applied: expectedChanges } };
     });
-    render(WebSocketApiSettings);
+    render(MobileSettings);
     await fireEvent.click(
       screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
     );

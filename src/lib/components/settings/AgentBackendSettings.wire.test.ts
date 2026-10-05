@@ -32,7 +32,6 @@ vi.mock('svelte-fa', async () => ({
 const BUDGET = 'agents.memoryBudgetMb';
 const IDLE = 'agents.idleReapMinutes';
 const HEAP = 'agents.acpNodeMaxOldSpaceMb';
-const FLUSH = 'agents.flushQueuedMessages';
 const CAP = 'agents.maxConcurrent';
 const catalog: SettingDefinitionWithValue[] = [
   {
@@ -45,16 +44,6 @@ const catalog: SettingDefinitionWithValue[] = [
     min: 0,
     max: 200,
     defaultValue: 0,
-  },
-  {
-    path: FLUSH,
-    label: 'Flush mode',
-    description: 'Queued message delivery',
-    category: 'agents',
-    type: 'enum',
-    enumValues: ['all', 'systemOnly', 'off'],
-    value: 'all',
-    defaultValue: 'all',
   },
   {
     path: BUDGET,
@@ -178,7 +167,6 @@ describe('AgentBackendSettings through configured Store and hydration owner', ()
     expect(selectSettingsForm.select(store.state, identity)?.loaded).toBe(true);
     expect(mocks.request.mock.calls.filter(([method]) => method === 'settings.get')).toEqual([
       ['settings.get', { path: CAP }],
-      ['settings.get', { path: FLUSH }],
       ['settings.get', { path: BUDGET }],
       ['settings.get', { path: IDLE }],
       ['settings.get', { path: HEAP }],
@@ -203,7 +191,6 @@ describe('AgentBackendSettings through configured Store and hydration owner', ()
     expect(mocks.request).toHaveBeenCalledWith('settings.list');
     expect(mocks.request.mock.calls.filter(([method]) => method === 'settings.get')).toEqual([
       ['settings.get', { path: CAP }],
-      ['settings.get', { path: FLUSH }],
       ['settings.get', { path: BUDGET }],
       ['settings.get', { path: IDLE }],
       ['settings.get', { path: HEAP }],
@@ -362,25 +349,6 @@ describe('AgentBackendSettings through configured Store and hydration owner', ()
     await enter('Agent memory budget', '300');
     await waitFor(() => expect(input.value).toBe('300'));
     expect(mocks.update).toHaveBeenLastCalledWith({ changes: [{ path: BUDGET, value: 300 }] });
-  });
-
-  it('writes the flush enum on the wire and displays only the acknowledged mode', async () => {
-    mocks.update.mockResolvedValueOnce({ applied: [{ path: FLUSH, value: 'off' }], revision: 2 });
-    const { identity } = await mounted();
-    const trigger = screen.getByRole('combobox', { name: 'Flush queued messages' });
-    trigger.focus();
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    await fireEvent.keyDown(trigger, { key: 'Enter' });
-    await waitFor(() =>
-      expect(selectSettingsFormOperation.select(store.state, identity, FLUSH)?.status).toBe(
-        'succeeded',
-      ),
-    );
-    expect(mocks.request).toHaveBeenLastCalledWith('settings.update', {
-      changes: [{ path: FLUSH, value: 'systemOnly' }],
-    });
-    await waitFor(() => expect(trigger.textContent).toContain('Off (FIFO)'));
   });
 
   it('restores the last acknowledged idle interval instead of the newer catalog default', async () => {

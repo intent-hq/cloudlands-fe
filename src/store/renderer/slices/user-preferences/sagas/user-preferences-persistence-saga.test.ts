@@ -1,4 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resetOnboarding,
@@ -44,6 +45,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  providerSetupHydrated,
   setLabsMultiplayerEnabled,
   setLabsGitLabEnabled,
   setLabsRemoteAgentsEnabled,
@@ -98,6 +100,20 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+// The preferences root forks admission-aware rules; these tests keep one owner admission.
+function preferenceContext(readState: () => object) {
+  const getState = () => withLegacyPrincipal(readState());
+  return {
+    getState,
+    context: {
+      reduxStore: { getState, subscribe: () => () => {} },
+      reportRuntimeError: (error: unknown) => {
+        throw error;
+      },
+    },
+  };
+}
+
 function startPreferenceStore() {
   const channel = stdChannel();
   let userPreferences = initialState;
@@ -107,7 +123,7 @@ function startPreferenceStore() {
     return action;
   };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ userPreferences }) },
+    { channel, dispatch, ...preferenceContext(() => ({ userPreferences })) },
     userPreferencesPersistenceSaga,
   );
   return {
@@ -138,7 +154,7 @@ describe('userPreferencesPersistenceSaga', () => {
     vi.mocked(window.electronAPI.invoke).mockResolvedValue({ success: true, data: fonts });
     const dispatch = vi.fn();
     const task = runSaga(
-      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      { dispatch, ...preferenceContext(() => ({ userPreferences: initialState })) },
       userPreferencesPersistenceSaga,
     );
     await settle();
@@ -146,7 +162,8 @@ describe('userPreferencesPersistenceSaga', () => {
     expect(vi.mocked(window.electronAPI.invoke).mock.calls).toEqual([
       [SYSTEM_CHANNELS.LIST_FONTS, undefined],
     ]);
-    expect(dispatch.mock.calls).toEqual([[setSystemFonts(fonts)]]);
+    expect(dispatch.mock.calls).toContainEqual([setSystemFonts(fonts)]);
+    expect(dispatch.mock.calls).toContainEqual([providerSetupHydrated('local', false)]);
     task.cancel();
     await task.toPromise();
   });
@@ -216,6 +233,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setShowArchived(true)],
       [setGroupByRepo(false)],
       [setHasCompletedProviderSetup(true)],
+      [providerSetupHydrated('local', true)],
       [setShowReasoningBlocks(true)],
       [setChatAuroraEnabled(false)],
       [setShellTransparencyEnabled(false)],
@@ -243,7 +261,10 @@ describe('userPreferencesPersistenceSaga', () => {
       const dispatch = vi.fn();
       await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-      expect(dispatch.mock.calls).toEqual([[setReduceMotionOnBattery(stored)]]);
+      expect(dispatch.mock.calls).toEqual([
+        [providerSetupHydrated('local', false)],
+        [setReduceMotionOnBattery(stored)],
+      ]);
       const hydrated = dispatch.mock.calls.reduce(
         (state, [action]) => userPreferencesReducer(state, action),
         initialState,
@@ -261,7 +282,10 @@ describe('userPreferencesPersistenceSaga', () => {
       const dispatch = vi.fn();
       await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-      expect(dispatch.mock.calls).toEqual([[setLabsMultiplayerEnabled(stored)]]);
+      expect(dispatch.mock.calls).toEqual([
+        [providerSetupHydrated('local', false)],
+        [setLabsMultiplayerEnabled(stored)],
+      ]);
       const hydrated = dispatch.mock.calls.reduce(
         (state, [action]) => userPreferencesReducer(state, action),
         initialState,
@@ -533,7 +557,7 @@ describe('userPreferencesPersistenceSaga', () => {
     const dispatch = vi.fn();
     await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
 
-    expect(dispatch.mock.calls).toEqual([]);
+    expect(dispatch.mock.calls).toEqual([[providerSetupHydrated('local', false)]]);
   });
 
   it('hydrates and persists shortcut overrides through the preference storage', async () => {
@@ -553,7 +577,7 @@ describe('userPreferencesPersistenceSaga', () => {
       userPreferences: { shortcutOverrides: { 'global.settings': 'mod+shift+,' } },
     };
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state },
+      { channel, dispatch: vi.fn(), ...preferenceContext(() => state) },
       userPreferencesPersistenceSaga,
     );
     await settle();
@@ -589,7 +613,7 @@ describe('userPreferencesPersistenceSaga', () => {
     };
     const channel = stdChannel();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state },
+      { channel, dispatch: vi.fn(), ...preferenceContext(() => state) },
       userPreferencesPersistenceSaga,
     );
     await settle();
@@ -765,7 +789,7 @@ describe('userPreferencesPersistenceSaga', () => {
       },
     };
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state },
+      { channel, dispatch: vi.fn(), ...preferenceContext(() => state) },
       userPreferencesPersistenceSaga,
     );
     await settle();
@@ -788,7 +812,7 @@ describe('userPreferencesPersistenceSaga', () => {
     mocks.getJSON.mockReturnValue(new Promise((done) => (resolve = done)));
     const dispatch = vi.fn();
     const task = runSaga(
-      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      { dispatch, ...preferenceContext(() => ({ userPreferences: initialState })) },
       userPreferencesPersistenceSaga,
     );
     task.cancel();
@@ -818,7 +842,7 @@ describe('userPreferencesPersistenceSaga', () => {
 
       const channel = stdChannel();
       const task = runSaga(
-        { channel, dispatch: vi.fn(), getState: () => stateFor('local') },
+        { channel, dispatch: vi.fn(), ...preferenceContext(() => stateFor('local')) },
         userPreferencesPersistenceSaga,
       );
       await settle();
@@ -846,7 +870,7 @@ describe('userPreferencesPersistenceSaga', () => {
 
       const channel = stdChannel();
       const task = runSaga(
-        { channel, dispatch: vi.fn(), getState: () => stateFor('remote-1') },
+        { channel, dispatch: vi.fn(), ...preferenceContext(() => stateFor('remote-1')) },
         userPreferencesPersistenceSaga,
       );
       await settle();
@@ -871,6 +895,28 @@ describe('userPreferencesPersistenceSaga', () => {
       expect(dispatch.mock.calls).not.toContainEqual([setHasCompletedProviderSetup(true)]);
     });
 
+    it('does not apply an old host completion read after switching hosts', async () => {
+      let finishRead!: (value: boolean) => void;
+      const pending = new Promise<boolean>((resolve) => {
+        finishRead = resolve;
+      });
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'workspace-list:completedProviderSetup' ? pending : undefined,
+      );
+      let activeId = 'local';
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { dispatch, getState: () => stateFor(activeId) },
+        hydrateUserPreferencesWorker,
+      );
+      await settle();
+      activeId = 'remote-1';
+      finishRead(true);
+      await task.toPromise();
+      expect(dispatch.mock.calls).not.toContainEqual([setHasCompletedProviderSetup(true)]);
+      expect(dispatch.mock.calls).not.toContainEqual([providerSetupHydrated('local', true)]);
+    });
+
     it('re-hydrates the flag from the scoped key when the active backend changes', async () => {
       const stored: Record<string, unknown> = {
         'workspace-list:completedProviderSetup': true,
@@ -880,7 +926,7 @@ describe('userPreferencesPersistenceSaga', () => {
       const channel = stdChannel();
       const dispatch = vi.fn();
       const task = runSaga(
-        { channel, dispatch, getState: () => stateFor(activeId) },
+        { channel, dispatch, ...preferenceContext(() => stateFor(activeId)) },
         userPreferencesPersistenceSaga,
       );
       await settle();
@@ -897,6 +943,7 @@ describe('userPreferencesPersistenceSaga', () => {
       await settle();
       // Fresh remote: no scoped value stored, so the flag resets to false.
       expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(false)]);
+      expect(dispatch.mock.calls).toContainEqual([providerSetupHydrated('remote-1', false)]);
 
       dispatch.mockClear();
       stored['backend:remote-2:workspace-list:completedProviderSetup'] = true;
@@ -910,6 +957,7 @@ describe('userPreferencesPersistenceSaga', () => {
       );
       await settle();
       expect(dispatch.mock.calls).toContainEqual([setHasCompletedProviderSetup(true)]);
+      expect(dispatch.mock.calls).toContainEqual([providerSetupHydrated('remote-2', true)]);
 
       // Same backend id again: no re-hydration dispatch.
       dispatch.mockClear();

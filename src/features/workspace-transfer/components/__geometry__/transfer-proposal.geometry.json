@@ -1,0 +1,53 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "confirm": {
+    "420": {
+      "probes": {
+        "data-proposal-kind=workspace-transfer": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 443,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 493,
+        "width": 420
+      }
+    }
+  },
+  "finalize-error": {
+    "420": {
+      "probes": {
+        "data-proposal-kind=workspace-transfer": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 543,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 370,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 593,
+        "width": 420
+      }
+    }
+  }
+}

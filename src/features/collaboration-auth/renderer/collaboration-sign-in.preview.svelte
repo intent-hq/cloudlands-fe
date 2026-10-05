@@ -7,10 +7,10 @@
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import type { CollaborationView } from '../types';
 
-  function setup() {
+  function setup(gitlabEnabled = true) {
     const before = appStore.state.userPreferences;
     appStore.dispatch(setLabsMultiplayerEnabled(true));
-    appStore.dispatch(setLabsGitLabEnabled(true));
+    appStore.dispatch(setLabsGitLabEnabled(gitlabEnabled));
     return () => {
       appStore.dispatch(setLabsMultiplayerEnabled(before.labsMultiplayerEnabled));
       appStore.dispatch(setLabsGitLabEnabled(before.labsGitLabEnabled));
@@ -38,6 +38,88 @@
     defaultState: 'github-consent',
     states: {
       'github-consent': { setup, props: { view: base, static: true } },
+      'github-only': {
+        setup: () => setup(false),
+        props: { static: true, view: { ...base, request: { scope: 'settings' }, user: null } },
+      },
+      'github-choice': {
+        setup,
+        props: { static: true, view: { ...base, request: { scope: 'settings' }, user: null } },
+      },
+      'gitlab-device-ready': {
+        setup,
+        props: {
+          static: true,
+          view: {
+            ...base,
+            request: { scope: 'settings' },
+            target: { provider: 'gitlab', host: 'gitlab.com' },
+            user: null,
+            requestedScopes: ['api'],
+            grantedScopes: null,
+          },
+        },
+      },
+      'gitlab-device-ready-live': {
+        setup,
+        props: {
+          view: {
+            ...base,
+            request: { scope: 'settings' },
+            target: { provider: 'gitlab', host: 'gitlab.com' },
+            user: null,
+            requestedScopes: ['api'],
+            grantedScopes: null,
+          },
+        },
+      },
+      'github-device': {
+        setup,
+        props: {
+          static: true,
+          view: {
+            ...base,
+            phase: 'device',
+            user: null,
+            device: { userCode: 'ABCD-EFGH', verificationUri: 'https://github.com/login/device' },
+          },
+        },
+      },
+      'gitlab-device': {
+        setup,
+        props: {
+          static: true,
+          view: {
+            ...base,
+            request: { scope: 'settings' },
+            target: { provider: 'gitlab', host: 'gitlab.com' },
+            phase: 'device',
+            user: null,
+            requestedScopes: ['api'],
+            grantedScopes: null,
+            device: { userCode: 'WXYZ-1234', verificationUri: 'https://gitlab.com/oauth/device' },
+          },
+        },
+      },
+      'gitlab-account': {
+        setup,
+        props: {
+          static: true,
+          view: {
+            ...base,
+            request: { scope: 'settings' },
+            target: { provider: 'gitlab', host: 'gitlab.com' },
+            user: { id: '4711', login: 'mara.dev' },
+            requestedScopes: ['api'],
+            grantedScopes: ['api'],
+          },
+        },
+      },
+      loading: { setup, props: { static: true, view: { ...base, phase: 'loading', user: null } } },
+      'account-error': {
+        setup,
+        props: { static: true, view: { ...base, phase: 'error', error: 'identity-mismatch' } },
+      },
       'gitlab-pat': {
         setup,
         props: {

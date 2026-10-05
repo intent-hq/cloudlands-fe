@@ -1,3 +1,4 @@
+import { emptySpecialistCreation } from './specialist-creation-types';
 import type { SpecialistImportDiagnostic } from '$lib/client/app-client';
 import {
   selectEffectiveDefaultProviderId,
@@ -536,4 +537,14 @@ export const selectSpecialistImportDiagnostics = store.createSelector(
     const diagnostics = state.specialists.importDiagnostics;
     return diagnostics ? getItems(diagnostics) : [];
   },
+);
+
+export const selectSpecialistCreation = store.createSelector(
+  (state, context: string) =>
+    state.specialists.creationByContext?.[context] ?? emptySpecialistCreation,
+);
+export const selectSpecialistCreationIds = store.createSelector((state) =>
+  Object.values(state.specialists.creationByContext ?? {}).flatMap((creation) =>
+    creation.specialistId ? [creation.specialistId] : [],
+  ),
 );

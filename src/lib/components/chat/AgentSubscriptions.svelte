@@ -26,7 +26,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import { uniqueAgentIds } from './delegation-ordering';
@@ -48,7 +48,10 @@
     selectWorkspaceTasksInitialized,
     selectWorkspaceTasksState,
   } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import {
+    acquireWorkspaceTasksDemand,
+    releaseWorkspaceTasksDemand,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import type { TaskProgressItem } from './workspace-task-fallback';
   import {
     createAgentTaskProgressDeriver,
@@ -96,6 +99,8 @@
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
     getFinishedAgentsExpanded,
@@ -123,6 +128,8 @@
     compact?: boolean;
     embedded?: boolean;
     visible?: boolean;
+    /** Whether the owning chat and surrounding disclosure are displayed. */
+    isActive?: boolean;
     count?: number;
     participantAgentIds?: string[];
     participantAvatarItems?: AgentAvatarStackItem[];
@@ -144,6 +151,7 @@
     workspaceId,
     agentId,
     compact = false,
+    isActive = true,
     embedded = false,
     visible = $bindable(false),
     count = $bindable(0),
@@ -192,14 +200,7 @@
     const nextKey = `${workspaceId}::${agentId}`;
     if (nextKey === lastFetchKey) return;
     lastFetchKey = nextKey;
-    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId)));
-  });
-
-  let lastTaskWorkspaceId: string | null = null;
-  $effect(() => {
-    if (isolatedPreview || !workspaceId || workspaceId === lastTaskWorkspaceId) return;
-    lastTaskWorkspaceId = workspaceId;
-    untrack(() => appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId)));
+    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId, true)));
   });
 
   const workspaceById = selectWorkspaceById(workspaceIdStore);
@@ -520,6 +521,14 @@
     }
     return ungroupedAgentRows;
   });
+  const hasDisplayedTaskConsumers = $derived(retainedTranscriptRows.length > 0);
+  $effect(() => {
+    if (isolatedPreview || !isActive || !workspaceId || !hasDisplayedTaskConsumers) return;
+    const currentWorkspaceId = workspaceId;
+    const demandId = crypto.randomUUID();
+    untrack(() => appStore.dispatch(acquireWorkspaceTasksDemand(currentWorkspaceId, demandId)));
+    return () => appStore.dispatch(releaseWorkspaceTasksDemand(currentWorkspaceId, demandId));
+  });
   let retainedTranscriptWorkspaceId: string | null = null;
   let retainedTranscriptKey = '';
   $effect(() => {
@@ -631,6 +640,17 @@
     watchedAgentFocusOwner = null;
   }
 
+  onMount(() => {
+    // A later user action supersedes the focus requested when opening a watch.
+    // Capture runs before a new watch's handler schedules its own requests.
+    window.addEventListener('pointerdown', clearWatchedAgentFocusTimers, true);
+    window.addEventListener('keydown', clearWatchedAgentFocusTimers, true);
+    return () => {
+      window.removeEventListener('pointerdown', clearWatchedAgentFocusTimers, true);
+      window.removeEventListener('keydown', clearWatchedAgentFocusTimers, true);
+    };
+  });
+
   function focusWatchedAgentPanel(watchedAgentId: string) {
     clearWatchedAgentFocusTimers();
     const owner = { workspaceId, parentAgentId: agentId, watchedAgentId };
@@ -644,6 +664,17 @@
           agentId !== owner.parentAgentId ||
           selectCurrentWorkspaceTabId.select(appStore.state) !== owner.workspaceId
         ) {
+          return;
+        }
+        // These are automatic reveal retries, not a new user focus request.
+        // Preserve a Find field, composer, or other editable control the user
+        // has focused since opening the watched agent (intent-hq/intent#6395).
+        const activeElement = document.activeElement;
+        if (
+          activeElement instanceof HTMLElement &&
+          activeElement.closest('input, textarea, select, [contenteditable="true"]')
+        ) {
+          clearWatchedAgentFocusTimers();
           return;
         }
         dispatchWindowEvent('panel:focus-content', {
@@ -675,7 +706,7 @@
     clearWatchedAgentFocusTimers();
   });
 
-  function openWatchedAgent(_event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
+  function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
     if (isolatedPreview) return;
     if (!workspaceId) return;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
@@ -684,7 +715,13 @@
         logger.warn('Failed to switch workspace for watched agent', { watchedAgentId, error });
       });
     }
-    appStore.dispatch(openAgentTabRequested(workspaceId, { agentId: watchedAgentId }));
+    appStore.dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: watchedAgentId,
+        sourcePanelId: findSourcePanelId(event.currentTarget),
+        openInAdjacentPanel: isCmdClickModifier({ event }),
+      }),
+    );
     focusWatchedAgentPanel(watchedAgentId);
   }
 </script>

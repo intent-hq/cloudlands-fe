@@ -3,8 +3,7 @@
  *
  * `status` (and `changes`, which mirrors it) resolve via `git.status`, returning
  * the daemon's working-tree summary directly in the renderer `GitStatus` shape.
- * `prStatus` resolves via `pr.status` (the daemon errors when no PR is active, so
- * that is folded to `null`). `diffs` resolves via the additive `git.diffs` read
+ * `diffs` resolves via the additive `git.diffs` read
  * (PROTOCOL §5.6); `trackedChanges` / `commits` resolve via the daemon
  * file-tracking reads `file-tracking.getChanges` / `file-tracking.loadCommits`
  * (PROTOCOL §5.19 — the per-file audit trail with agent attribution, replacing
@@ -49,7 +48,6 @@ import type {
   GitDiffsOptions,
   MutationResult,
   PrRefreshResult,
-  PrStatusSummary,
   SubscriptionHandler,
   Unsubscribe,
 } from '../app-client';
@@ -679,33 +677,23 @@ export class LiveGitClient implements GitClient {
     }
   }
 
-  // `pr.status` returns the active PR summary; it errors when the workspace has
-  // no active PR, which is folded to `null` (the seam's "no PR" signal).
-  async prStatus(workspaceId: string): Promise<PrStatusSummary | null> {
-    try {
-      const result = await backendRequest<Record<string, unknown>>('pr.status', { workspaceId });
-      if (!result || typeof result !== 'object') return null;
-      return {
-        prNumber: typeof result.prNumber === 'number' ? result.prNumber : undefined,
-        url: typeof result.url === 'string' ? result.url : undefined,
-        state: typeof result.state === 'string' ? result.state : undefined,
-      };
-    } catch {
-      return null;
-    }
-  }
-
   // `pr.refresh` (§5.7 extension) forces the daemon's PR discovery/refresh for
-  // one workspace and returns the post-refresh linkage state. Unlike
-  // `pr.status` it does not require an active PR; transport/daemon errors fold
+  // one workspace and returns the post-refresh linkage state. It does not
+  // require an active PR; transport/daemon errors fold
   // to `null` so a failed refresh leaves store state intact. `outcome` is
   // narrowed against the documented closed set (an unknown value is a contract
   // divergence, folded to null like any malformed response); the BE-owned
   // `prStatus`/`pullRequests` payloads pass through unhealed per the
   // thin-presenter rules.
-  async prRefresh(workspaceId: string): Promise<PrRefreshResult | null> {
+  async prRefresh(
+    workspaceId: string,
+    options?: { automatic: boolean },
+  ): Promise<PrRefreshResult | null> {
     try {
-      const result = await backendRequest<Record<string, unknown>>('pr.refresh', { workspaceId });
+      const result = await backendRequest<Record<string, unknown>>('pr.refresh', {
+        workspaceId,
+        ...options,
+      });
       if (!result || typeof result !== 'object' || typeof result.outcome !== 'string') return null;
       const outcomes: readonly string[] = ['skipped', 'unchanged', 'linked', 'updated', 'unlinked'];
       if (!outcomes.includes(result.outcome)) return null;

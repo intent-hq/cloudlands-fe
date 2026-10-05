@@ -1,3 +1,4 @@
+import { learnedModelName } from './model-name-cache';
 /**
  * Provider Models Cache Selectors
  *
@@ -67,4 +68,14 @@ export const selectObservedModelProviders = store.createSelector(
 
 export const selectObservedModelProviderKeys = store.createSelector((state): string[] =>
   Object.keys(selectObservedModelProviders.select(state)).sort(),
+);
+
+/** Local, display-only lookup by normalized provider and bare model ID. */
+export const selectLearnedModelDisplayName = store.createSelector(
+  (state, providerId: string, modelId: string): string | undefined =>
+    learnedModelName(state.providerModels?.learnedNames ?? {}, providerId, modelId),
+);
+
+export const selectLearnedModelNames = store.createSelector(
+  (state) => state.providerModels.learnedNames,
 );

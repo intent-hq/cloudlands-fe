@@ -315,6 +315,7 @@ export const openTab = createAction(
     timestamp?: number,
     allowDuplicate?: boolean,
     preserveFocus?: boolean,
+    insertAfterActiveTab?: boolean,
   ) => ({
     wsId,
     tab,
@@ -324,6 +325,7 @@ export const openTab = createAction(
     timestamp: timestamp ?? Date.now(),
     ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
     ...(preserveFocus === true ? { preserveFocus: true } : {}),
+    ...(insertAfterActiveTab === true ? { insertAfterActiveTab: true } : {}),
   }),
 );
 
@@ -386,6 +388,8 @@ export const openTabInAdjacentOrSplit = createAction(
     tab: Omit<PanelTab, 'id'>,
     sourcePanelId?: string,
     options?: {
+      /** Automatic restore reconciliation, never a manual selection. */
+      origin?: 'layout-restore';
       animated?: boolean;
       force?: boolean;
       allowDuplicate?: boolean;
@@ -397,6 +401,7 @@ export const openTabInAdjacentOrSplit = createAction(
     wsId,
     tab,
     sourcePanelId,
+    ...(options?.origin === undefined ? {} : { origin: options.origin }),
     animated: options?.animated ?? false,
     force: options?.force ?? false,
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
@@ -2340,16 +2345,24 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
 
   const panel = ws.panels[targetPanelId];
 
-  // Create new tab
+  // Source-context navigation keeps the opener immediately before the new pane.
+  const openerIndex = payload.insertAfterActiveTab
+    ? panel.tabs.findIndex((candidate) => candidate.id === panel.activeTabId)
+    : -1;
+  const insertIndex = openerIndex >= 0 ? openerIndex + 1 : panel.tabs.length;
   ws = saveToHistory(ws, timestamp);
-  const newTab: PanelTab = { ...tab, id: newTabId };
+  const newTab: PanelTab = {
+    ...tab,
+    id: newTabId,
+    ...(openerIndex >= 0 ? { openerTabId: panel.tabs[openerIndex].id } : {}),
+  };
   ws = {
     ...ws,
     panels: {
       ...ws.panels,
       [targetPanelId]: {
         ...panel,
-        tabs: [...panel.tabs, newTab],
+        tabs: [...panel.tabs.slice(0, insertIndex), newTab, ...panel.tabs.slice(insertIndex)],
         activeTabId: newTabId,
         pristine: false,
       },
@@ -2560,7 +2573,10 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
   if (panel.activeTabId === tabId) {
     if (newTabs.length > 0) {
       const newIndex = Math.min(tabIndex, newTabs.length - 1);
-      newActiveTabId = newTabs[newIndex].id;
+      // Only source-context opens opt into returning to their opener. If it
+      // was closed or moved to another panel, retain the ordinary close fallback.
+      const opener = newTabs.find((candidate) => candidate.id === closedTab.openerTabId);
+      newActiveTabId = opener?.id ?? newTabs[newIndex].id;
     } else {
       newActiveTabId = null;
     }

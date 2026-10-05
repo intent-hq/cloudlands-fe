@@ -42,6 +42,7 @@
     totalMessages = 1000,
     conversationPages = [],
     deferPages = false,
+    discardSnapshot = false,
     retired = false,
   }: {
     theme?: 'light' | 'dark';
@@ -54,6 +55,7 @@
       Awaited<ReturnType<typeof appClient.agents.getConversation>> | { error: string }
     )[];
     deferPages?: boolean;
+    discardSnapshot?: boolean;
     retired?: boolean;
   } = $props();
 
@@ -161,6 +163,11 @@
     } as never),
   );
   store.dispatch(bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }));
+  if (discardSnapshot) {
+    store.dispatch(
+      chatTranscriptSnapshotApplied(agentId, { truncated: true, totalMessages, resumed: false }),
+    );
+  }
   if (historyMessages.length > 0) {
     store.dispatch(
       historyGap
@@ -172,7 +179,7 @@
     // real panel otherwise drops a detached segment on return to the live tail.
     if (historyGap) store.dispatch(scrollbackFetchStarted(agentId, 'gap'));
   }
-  if (!historyStartLoaded) {
+  if (!historyStartLoaded && !discardSnapshot) {
     store.dispatch(chatTranscriptSnapshotApplied(agentId, { truncated: true, totalMessages }));
   }
   store.dispatch(setAgents(workspaceId, [session]));
@@ -237,7 +244,7 @@
       if (
         requestedAgentId !== agentId ||
         requestedWorkspaceId !== workspaceId ||
-        limit !== 200 ||
+        limit !== 5 ||
         ordinal !== undefined
       )
         throw new Error('Unexpected conversation request');
@@ -251,13 +258,13 @@
       return structuredClone(page);
     };
   }
-  function discardTranscript() {
+  function discardTranscript(replayed?: true) {
     store.dispatch(
-      chatTranscriptSnapshotApplied(agentId, {
-        truncated: true,
-        totalMessages: 1000,
-        resumed: false,
-      }),
+      chatTranscriptSnapshotApplied(
+        agentId,
+        { truncated: true, totalMessages, resumed: false },
+        replayed,
+      ),
     );
   }
   onDestroy(() => {
@@ -279,8 +286,11 @@
   <button class="sr-only" data-testid="release-page" onclick={() => pendingPages.shift()?.()}
     >Release page</button
   >
-  <button class="sr-only" data-testid="discard-transcript" onclick={discardTranscript}
+  <button class="sr-only" data-testid="discard-transcript" onclick={() => discardTranscript()}
     >Discard transcript</button
+  >
+  <button class="sr-only" data-testid="replay-discard" onclick={() => discardTranscript(true)}
+    >Replay discard snapshot</button
   >
   <button
     class="sr-only"

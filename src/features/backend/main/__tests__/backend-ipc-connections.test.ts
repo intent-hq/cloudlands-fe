@@ -22,6 +22,13 @@ import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Backend state is reloaded per case, but the generated translation catalog is
+// immutable for this suite. Keep its real exports shared: recompiling every
+// locale on each reset retains enough VM code to exhaust the worker heap.
+vi.mock('../../../../shared/paraglide/messages.js', async (importOriginal) =>
+  importOriginal<typeof import('../../../../shared/paraglide/messages.js')>(),
+);
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -1285,6 +1292,53 @@ describe('WSS auth-rejection propagation', () => {
 // ---------------------------------------------------------------------------
 
 describe('connections:* IPC handlers', () => {
+  it('rejects shared sync, publication and remote pairing in an isolated test package before effects', async () => {
+    const { mod } = await loadModule();
+    mod.registerBackendHandlers();
+    const { BUILD_CONFIG } = await import('../../../../main/build-config.generated');
+    const original = Object.getOwnPropertyDescriptor(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID')!;
+    Object.defineProperty(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID', { value: 'manual-123-1' });
+    try {
+      const before = { rpc: [...rpc.calls], prefs: localPrefs.setLocalPref.mock.calls.length };
+      for (const [channel, params] of [
+        ['connections:sync-set-enabled', { enabled: true }],
+        ['connections:publish-self', undefined],
+        [
+          'connections:capture-fingerprint',
+          { host: 'normal.local', port: 8443, token: 'test-only' },
+        ],
+        [
+          'connections:add',
+          {
+            label: 'Normal',
+            host: 'normal.local',
+            port: 8443,
+            token: 'test-only',
+            fingerprint: 'ab'.repeat(32),
+          },
+        ],
+      ] as const) {
+        const handler = findHandler(channel);
+        expect(handler).toBeDefined();
+        await expect(handler!({}, params)).rejects.toThrow('disabled in the isolated test app');
+      }
+      await expect(
+        findHandler('connections:update-backend')!({}, { id: 'local' }),
+      ).resolves.toMatchObject({
+        ok: false,
+        reason: 'unsupported',
+      });
+      expect(rpc.calls).toEqual(before.rpc);
+      expect(localPrefs.setLocalPref).toHaveBeenCalledTimes(before.prefs);
+      expect(importedPrincipal.inspect).not.toHaveBeenCalled();
+      expect(mockCaptureFingerprint).not.toHaveBeenCalled();
+      expect(store.add).not.toHaveBeenCalled();
+      expect(keychainSync.requestReconcile).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(BUILD_CONFIG, 'ISOLATED_TEST_BUILD_ID', original);
+    }
+  });
+
   it('connections:list returns the list + active selection', async () => {
     const { mod } = await loadModule();
     mod.registerBackendHandlers();
@@ -4503,7 +4557,11 @@ describe('per-window backend IPC routing', () => {
   });
 
   it.each([
+    ['pairing.getSelfInfo', undefined],
+    ['client.list', undefined],
     ['host.executionContext', {}],
+    ['host.toolAvailability', { tools: ['git'] }],
+    ['host.checkGit', undefined],
     ['providers.catalog', {}],
     ['models.list', { providerId: 'claude-code' }],
     ['agent.getModels', { agentId: 'agent-reviewer', workspaceId: 'host-workspace' }],
@@ -4534,7 +4592,7 @@ describe('per-window backend IPC routing', () => {
     ],
     ['git.pull', { repoPath: '/host/github-project', branchName: 'main' }],
     ['git.status', { workspaceId: 'gitlab-origin-workspace' }],
-    ['pr.status', { workspaceId: 'github-workspace' }],
+    ['pr.refresh', { workspaceId: 'github-workspace' }],
   ])(
     'routes shared execution %s through the member window instead of the local default',
     async (method, params) => {
@@ -4662,6 +4720,43 @@ describe('guest-sessions:* IPC handlers', () => {
     guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
     guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
   }
+
+  it.each(['member', 'guest'] as const)(
+    'keeps personal Devices reads on the admitted %s connection, including refusal',
+    async (role) => {
+      installGuest();
+      rpc.principal = async () => ({
+        id: GUEST.principalId,
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        isAdministrator: false,
+        hostRole: role,
+        hostMembershipRevision: 1,
+      });
+      installWindow(GUEST.id);
+      const { mod } = await loadModule();
+      const local = mod.getBackendClient();
+      const remote = await mod.connectBackendClient(GUEST.id);
+      mod.registerBackendHandlers();
+      const sender = BrowserWindow.getAllWindows()[0].webContents;
+      const request = findHandler('backend:request')!;
+      vi.mocked(local.request).mockClear();
+      vi.mocked(remote.request).mockClear();
+      for (const method of ['pairing.getSelfInfo', 'client.list']) {
+        await request({ sender }, { method });
+        expect(remote.request).toHaveBeenCalledWith(method, undefined, { timeoutMs: undefined });
+      }
+      vi.mocked(remote.request).mockRejectedValueOnce(new Error('access-revoked'));
+      await expect(request({ sender }, { method: 'pairing.getSelfInfo' })).resolves.toMatchObject({
+        ok: false,
+      });
+      expect(local.request).not.toHaveBeenCalled();
+      expect(vi.mocked(remote.request).mock.calls.map(([method]) => method)).not.toContain(
+        'server.pairingInfo',
+      );
+    },
+  );
 
   it('guest-sessions:list distinguishes no pooled client, open-disconnected and open-connected', async () => {
     installGuest();
@@ -5801,6 +5896,35 @@ describe('guest-sessions:* IPC handlers', () => {
     expect(closeForBackend).not.toHaveBeenCalled();
   });
 
+  it('retains the saved workspace on inherited-membership refusal (#6390)', async () => {
+    installGuest();
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'workspace.members.leave')
+        throw new JsonRpcError({
+          code: -32602,
+          message: 'private-marker',
+          data: { code: 'host-membership-required' },
+        });
+      return {};
+    };
+    const { mod } = await loadModule();
+    const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as { status: string };
+    guest.status = 'connected';
+    mod.registerBackendHandlers();
+    const result = await findHandler('guest-sessions:leave-workspace')!(
+      {},
+      { id: GUEST.id, workspaceId: 'ws-guest' },
+    );
+    expect(guestStore.leaveWorkspace).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: GUEST.id,
+      workspaceId: 'ws-guest',
+      left: false,
+      refused: 'host-membership-required',
+    });
+  });
+
   it('guest-sessions:leave-workspace asks the host over the pooled client (10 s bound) and drops the workspace locally', async () => {
     installGuest();
     rpc.handler = async (method) => (method === 'workspace.members.leave' ? { left: true } : {});
@@ -6021,4 +6145,47 @@ describe('personal credential import classification', () => {
     ).rejects.toThrow();
     expect(store.replaceSecret).not.toHaveBeenCalled();
   });
+});
+
+it('reopens a saved instance through IPC after navigation policy is republished and its window pool was released', async () => {
+  const { EventEmitter } = await import('node:events');
+  const { COLLABORATION_AUTH } = await import('../../../collaboration-auth/types');
+  const member = { ...GUEST, hostRole: 'member' as const };
+  guestStore.findById.mockImplementation(async (id: string) => (id === member.id ? member : null));
+  guestStore.list.mockResolvedValue([member]);
+  guestStore.getDecryptedToken.mockResolvedValue('controlled-invited-secret');
+  const { mod, openOrFocus } = await loadModule();
+  mod.registerBackendHandlers();
+  const { registerCollaborationAuthHandlers } =
+    await import('../../../collaboration-auth/main/collaboration-auth.ipc');
+  registerCollaborationAuthHandlers();
+  const sender = Object.assign(new EventEmitter(), { id: 418, isDestroyed: () => false });
+  const event = { sender };
+  const publish = findHandler(COLLABORATION_AUTH.POLICY)!;
+  const open = findHandler('connections:open')!;
+  try {
+    await publish(event, { multiplayer: true, gitlab: false });
+    await expect(open(event, { id: member.id })).resolves.toEqual({
+      status: 'opened',
+      id: member.id,
+    });
+    const first = mod.getBackendClientForConnection(member.id);
+    sender.emit('did-navigate-in-page');
+    await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
+    mod.disconnectBackendClient(member.id);
+    await publish(event, { multiplayer: true, gitlab: false });
+    await expect(open(event, { id: member.id })).resolves.toEqual({
+      status: 'opened',
+      id: member.id,
+    });
+    expect(mod.getBackendClientForConnection(member.id)).not.toBe(first);
+    expect(openOrFocus).toHaveBeenNthCalledWith(1, member.id);
+    expect(openOrFocus).toHaveBeenNthCalledWith(2, member.id);
+    expect(store.setActiveId).not.toHaveBeenCalled();
+    await publish(event, { multiplayer: false, gitlab: false });
+    await expect(open(event, { id: member.id })).rejects.toThrow(/Multiplayer is unavailable/);
+    expect(openOrFocus).toHaveBeenCalledTimes(2);
+  } finally {
+    sender.emit('destroyed');
+  }
 });

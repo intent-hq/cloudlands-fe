@@ -8,7 +8,7 @@
   import { logoutGitLab } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import {
     selectGitLabAuthError,
-    selectGitLabAuthHost,
+    selectGitLabAuthInstanceBaseUrl,
     selectGitLabAuthIsAuthenticating,
     selectGitLabAuthIsConfigured,
     selectGitLabAuthUser,
@@ -21,7 +21,7 @@
   let showConnectForm = $state(false);
 
   const gitlabEnabled$ = selectLabsGitLabEnabled();
-  const host$ = selectGitLabAuthHost();
+  const instance$ = selectGitLabAuthInstanceBaseUrl();
   const isConfigured$ = selectGitLabAuthIsConfigured();
   const isAuthenticating$ = selectGitLabAuthIsAuthenticating();
   const user$ = selectGitLabAuthUser();
@@ -55,7 +55,7 @@
   function handleDisconnect() {
     isDisconnecting = true;
     showConnectForm = false;
-    // Revokes the credential stored for the connection's host (state.host).
+    // The saga revokes the credential for the original complete instance.
     appStore.dispatch(logoutGitLab());
     // The saga handles the async revoke; reset local UI state shortly after.
     setTimeout(() => {
@@ -66,64 +66,66 @@
 
 {#if $gitlabEnabled$ || $isConfigured$}
   <div class="py-3">
-    <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
+    <div class="grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1">
       <div class="flex size-4 items-center justify-center text-ghost">
         <Fa icon={faGitlab} class="size-4" />
       </div>
-      <div class="flex min-w-0 items-center gap-3">
-        <!-- i18n-ignore (brand name) -->
-        <span class="type-body font-medium text-foreground">GitLab</span>
-        {#if $isConfigured$}
-          <span class="type-body flex min-w-0 items-center gap-1 text-muted-foreground">
-            <Fa icon={faCheck} class="size-3 text-success" />
-            {#if $user$}
-              @{$user$.login}
-            {:else}
-              {m.settings_connections_connected()}
-            {/if}
-          </span>
-          <span
-            class="type-body truncate text-muted-foreground"
-            data-testid="gitlab-connection-host">{$host$}</span
-          >
-        {/if}
-      </div>
+      <div class="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <!-- i18n-ignore (brand name) -->
+          <span class="type-body font-medium text-foreground">GitLab</span>
+          {#if $isConfigured$}
+            <span class="type-body flex min-w-0 items-center gap-1 text-muted-foreground">
+              <Fa icon={faCheck} class="size-3 text-success" />
+              {#if $user$}
+                @{$user$.login}
+              {:else}
+                {m.settings_connections_connected()}
+              {/if}
+            </span>
+            <span
+              class="type-body break-all text-muted-foreground"
+              data-testid="gitlab-connection-host">{$instance$}</span
+            >
+          {/if}
+        </div>
 
-      <div class="flex h-[22px] items-center gap-3 self-start">
-        {#if !$daemonSupported$}
-          <span
-            class="type-body text-muted-foreground"
-            data-testid="gitlab-connection-daemon-too-old"
-            >{m.settings_connections_gitlab_daemonTooOld_label()}</span
-          >
-        {:else if $gitlabEnabled$ && $isAuthenticating$}
-          <span class="type-body text-muted-foreground"
-            >{m.settings_connections_gitlab_waitingForAuthorization()}</span
-          >
-        {:else if $isConfigured$}
-          <Button
-            variant="link"
-            size="sm"
-            type="button"
-            class="h-[22px] px-0"
-            onclick={handleDisconnect}
-            disabled={isDisconnecting}
-          >
-            {isDisconnecting
-              ? m.settings_connections_disconnecting()
-              : m.settings_connections_disconnect()}
-          </Button>
-        {:else if !showConnectForm}
-          <Button
-            variant="link"
-            size="sm"
-            type="button"
-            class="h-[22px] px-0"
-            onclick={handleShowConnectForm}
-          >
-            {m.settings_connections_connect()}
-          </Button>
-        {/if}
+        <div class="flex min-h-[22px] max-w-full items-center gap-3">
+          {#if !$daemonSupported$}
+            <span
+              class="type-body text-muted-foreground"
+              data-testid="gitlab-connection-daemon-too-old"
+              >{m.settings_connections_gitlab_daemonTooOld_label()}</span
+            >
+          {:else if $gitlabEnabled$ && $isAuthenticating$}
+            <span class="type-body text-muted-foreground"
+              >{m.settings_connections_gitlab_waitingForAuthorization()}</span
+            >
+          {:else if $isConfigured$}
+            <Button
+              variant="link"
+              size="sm"
+              type="button"
+              class="h-[22px] px-0"
+              onclick={handleDisconnect}
+              disabled={isDisconnecting}
+            >
+              {isDisconnecting
+                ? m.settings_connections_disconnecting()
+                : m.settings_connections_disconnect()}
+            </Button>
+          {:else if !showConnectForm}
+            <Button
+              variant="link"
+              size="sm"
+              type="button"
+              class="h-[22px] px-0"
+              onclick={handleShowConnectForm}
+            >
+              {m.settings_connections_connect()}
+            </Button>
+          {/if}
+        </div>
       </div>
       <p class="type-body col-start-2 text-muted-foreground">
         {#if $daemonSupported$}

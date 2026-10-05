@@ -51,7 +51,10 @@ import {
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
-import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+import {
+  daemonEventsSubscribed,
+  workspaceEventsReducer,
+} from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import {
   loadWorkspaceTabsState,
   openWorkspaceTab,
@@ -78,6 +81,7 @@ const scopedFileParams = (workspaceId: string) => ({
 function startSaga(currentTabId: string | null = null, dispatch = vi.fn()) {
   const input = stdChannel();
   let state = {
+    workspaceEvents: workspaceEventsReducer(undefined, { type: '@@INIT' }),
     tabState:
       currentTabId === null
         ? tabStateReducer(undefined, { type: '@@INIT' })
@@ -85,7 +89,10 @@ function startSaga(currentTabId: string | null = null, dispatch = vi.fn()) {
   };
   const listeners = new Set<() => void>();
   const dispatchAction = (action: Parameters<typeof tabStateReducer>[1]) => {
-    state = { tabState: tabStateReducer(state.tabState, action) };
+    state = {
+      tabState: tabStateReducer(state.tabState, action),
+      workspaceEvents: workspaceEventsReducer(state.workspaceEvents, action),
+    };
     input.put(action);
     listeners.forEach((listener) => listener());
     return dispatch(action);
@@ -139,6 +146,77 @@ describe('daemonEventsSaga', () => {
     mocks.reconnectHandler = undefined;
     mocks.reconnectHandlers.clear();
   });
+
+  it.each([
+    ['array action', { inviteId: 'invite', action: ['created'] }],
+    ['object action', { inviteId: 'invite', action: { toString: null } }],
+    ['missing action', { inviteId: 'invite' }],
+    ['unknown action', { inviteId: 'invite', action: 'changed' }],
+    ['empty id', { inviteId: '', action: 'created' }],
+    ['blank id', { inviteId: '  ', action: 'created' }],
+    ['non-string id', { inviteId: 1, action: 'created' }],
+    ['null data', null],
+    ['array data', []],
+  ])(
+    'ignores malformed invitation %s and processes a later valid notification',
+    async (_name, data) => {
+      const actual = await vi.importActual<
+        typeof import('$features/events/daemon-events-bridge.client')
+      >('$features/events/daemon-events-bridge.client');
+      const { store } = await import('$store/renderer/store');
+      const {
+        hostMembershipListsChanged,
+        hostMembershipReducer,
+        hostMembershipOpened,
+        initialState,
+      } = await import('$store/renderer/slices/host-membership/host-membership-slice');
+      let membership = hostMembershipReducer(
+        initialState,
+        hostMembershipOpened({ session: 'active', context: 'owner' }),
+      );
+      const dispatch = vi.fn((action: Parameters<typeof hostMembershipReducer>[1]) => {
+        membership = hostMembershipReducer(membership, action);
+        return action;
+      });
+      const dispatchGetter = vi.spyOn(store, 'dispatch', 'get').mockReturnValue(dispatch);
+      mocks.route.mockImplementation(actual.routeDaemonEventsNotification);
+      const { task } = startSaga();
+      const completion = task.toPromise().catch(() => undefined);
+      const notify = (payload: unknown, subscriptionId = 'sub-1') =>
+        mocks.notificationHandler!({
+          method: 'events.event',
+          params: { subscriptionId, event: { type: 'host:invites-changed', data: payload } },
+        });
+      try {
+        await settle();
+        dispatch.mockClear();
+        notify(data);
+        await settle();
+        expect(task.isRunning()).toBe(true);
+        expect(dispatch).not.toHaveBeenCalledWith(hostMembershipListsChanged());
+        expect(membership.reloadPending).toBe(false);
+        notify({ inviteId: 'valid', action: 'created' }, 'foreign-host');
+        await settle();
+        expect(dispatch).not.toHaveBeenCalledWith(hostMembershipListsChanged());
+        for (const action of ['created', 'revoked', 'redeemed'])
+          notify({ inviteId: 'valid', action, url: 'must-not-dispatch' });
+        await settle();
+        expect(task.isRunning()).toBe(true);
+        expect(dispatch.mock.calls).toEqual([
+          [hostMembershipListsChanged()],
+          [hostMembershipListsChanged()],
+          [hostMembershipListsChanged()],
+        ]);
+        expect(membership.reloadPending).toBe(true);
+        expect(JSON.stringify(dispatch.mock.calls)).not.toContain('must-not-dispatch');
+      } finally {
+        task.cancel();
+        await completion;
+        dispatchGetter.mockRestore();
+        mocks.route.mockReset();
+      }
+    },
+  );
 
   it('listens before subscribing and forwards buffered events in arrival order with its id', async () => {
     let resolveSubscribe!: (value: { subscriptionId: string }) => void;
@@ -288,6 +366,7 @@ describe('daemonEventsSaga', () => {
       'github:auth-changed',
       'sourceControl:auth-changed',
       'principal:identity-changed',
+      'client:updated',
       'client:connected',
       'client:disconnected',
       'browser:tab-opened',
@@ -298,8 +377,8 @@ describe('daemonEventsSaga', () => {
       'app:workspace-open',
       'presence:changed',
       'host:members-changed',
+      'host:invites-changed',
       'host:execution-context-changed',
-      'principal:identity-changed',
     ]);
   });
 
@@ -414,7 +493,10 @@ describe('daemonEventsSaga', () => {
     const subscribed = () =>
       dispatch.mock.calls.filter(([action]) => action.type === daemonEventsSubscribed.type);
     expect(subscribed()).toHaveLength(1);
-    expect(dispatch.mock.invocationCallOrder[0]).toBeGreaterThan(
+    const readyIndex = dispatch.mock.calls.findIndex(
+      ([action]) => action.type === daemonEventsSubscribed.type,
+    );
+    expect(dispatch.mock.invocationCallOrder[readyIndex]).toBeGreaterThan(
       mocks.subscribe.mock.invocationCallOrder[0],
     );
 

@@ -86,6 +86,7 @@ for (const { name, hostWidth, editable } of [
       { timeout: 30_000 },
     );
     const surface = component.locator('[data-diagram-presentation]');
+    await expect(surface).toHaveAttribute('data-diagram-presentation-settled', 'true');
     await surface.scrollIntoViewIfNeeded();
     await page.mouse.move(0, 0);
     const initial = await measure(component);
@@ -116,6 +117,8 @@ for (const { name, hostWidth, editable } of [
       await expect(primary).toHaveAttribute('aria-pressed', 'false');
       await expect(component.getByRole('region', { name: 'View source' })).toHaveCount(0);
     }
+    // Source toggles queue presentation layout even when its dimensions are unchanged.
+    await expect(surface).toHaveAttribute('data-diagram-presentation-settled', 'true');
     await expect.poll(() => measure(component)).toEqual(initial);
 
     const fullscreen = component.getByRole('button', { name: 'Fullscreen', exact: true });
@@ -136,6 +139,72 @@ for (const { name, hostWidth, editable } of [
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(more).toBeFocused();
+    expect(await measure(component)).toEqual(initial);
+  });
+}
+
+for (const activation of ['keyboard', 'mouse'] as const) {
+  test(`retains ${activation} fullscreen activation while note presentation settles`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 484, height: 2000 });
+    const component = await mount(MermaidBlockLaneHarness, {
+      props: { code: SOURCE, hostWidth: 420, editable: false },
+    });
+    const surface = component.locator('[data-diagram-presentation]');
+    await expect(surface).toHaveAttribute('data-diagram-presentation-settled', 'true');
+    const initial = await measure(component);
+    await surface.hover();
+    const source = component.getByRole('button', { name: 'View source' });
+    await source.click();
+    await expect(source).toHaveAttribute('aria-pressed', 'true');
+    await expect(surface).toHaveAttribute('data-diagram-presentation-settled', 'true');
+    const fullscreen = component.getByRole('button', { name: 'Fullscreen', exact: true });
+    await fullscreen.focus();
+    const button = (await fullscreen.boundingBox())!;
+
+    // Hold the actual shared layout queue, not its readiness marker. Closing source
+    // still runs the real presentation MutationObserver and marks its geometry pending.
+    await page.evaluate(() => {
+      const request = window.requestAnimationFrame;
+      const cancel = window.cancelAnimationFrame;
+      const callbacks = new Map<number, FrameRequestCallback>();
+      let id = -1;
+      window.requestAnimationFrame = (callback) => {
+        callbacks.set(id, callback);
+        return id--;
+      };
+      window.cancelAnimationFrame = (frame) => {
+        if (!callbacks.delete(frame)) cancel(frame);
+      };
+      (window as unknown as { resumePresentationFrames: () => void }).resumePresentationFrames =
+        () => {
+          window.requestAnimationFrame = request;
+          window.cancelAnimationFrame = cancel;
+          for (const callback of callbacks.values()) request(callback);
+          callbacks.clear();
+        };
+      document.querySelector<HTMLButtonElement>('button[aria-label="View source"]')!.click();
+    });
+    try {
+      await expect(source).toHaveAttribute('aria-pressed', 'false');
+      await expect(surface).toHaveAttribute('data-diagram-presentation-settled', 'false');
+      if (activation === 'keyboard') await page.keyboard.press('Enter');
+      else await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2);
+      await expect(page.getByRole('dialog', { name: 'Fullscreen diagram view' })).toHaveCount(0);
+    } finally {
+      await page.evaluate(() =>
+        (window as unknown as { resumePresentationFrames: () => void }).resumePresentationFrames(),
+      );
+    }
+    const dialog = page.getByRole('dialog', { name: 'Fullscreen diagram view' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('One Intent window');
+    await expect(dialog).toContainText('Home files and agents');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(fullscreen).toBeFocused();
     expect(await measure(component)).toEqual(initial);
   });
 }

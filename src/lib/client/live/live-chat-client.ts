@@ -63,10 +63,9 @@ interface ChatSnapshotPayload {
   isResponding?: boolean;
   turnInFlight?: boolean;
   /**
-   * Resume disposition (§7.1): present ONLY when the registration carried
-   * `sinceMessageId` — `true` when `messages` is the post-anchor delta,
-   * `false` when the daemon fell back to the standard newest page (unknown/
-   * pruned anchor). Absent on non-resume snapshots.
+   * Resume/reset disposition (§7.1): `true` for a post-anchor delta;
+   * `false` for a missing anchor or a mid-stream transcript invalidation.
+   * A false flag invalidates cached history even without a resume anchor.
    */
   resumed?: boolean;
   /**
@@ -81,6 +80,7 @@ interface ChatSnapshotPayload {
 
 /** Decoded seq-0 snapshot page (mirrors `agent.getConversation` shape). */
 interface ChatSnapshotResult {
+  nextToken?: string | null;
   messages: AgentMessage[];
   truncated: boolean;
   totalMessages: number;
@@ -220,15 +220,17 @@ function extractSnapshot(raw: unknown, expectedAgentId?: string): ChatSnapshotRe
     : [];
   return {
     messages,
+    ...(raw.nextToken === null || typeof raw.nextToken === 'string'
+      ? { nextToken: raw.nextToken }
+      : {}),
     truncated: Boolean(raw.truncated),
     totalMessages: typeof raw.totalMessages === 'number' ? raw.totalMessages : 0,
   };
 }
 
 /**
- * The §7.1 resume disposition carried on a resume-requesting registration's
- * seq-0 snapshot, or `undefined` when the snapshot does not carry one (the
- * registration sent no `sinceMessageId`).
+ * The §7.1 resume/reset disposition on an initial or mid-stream snapshot,
+ * or `undefined` when the wire payload does not carry one.
  */
 function extractResumedFlag(raw: unknown): boolean | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -369,7 +371,7 @@ function parseDeltaEntity(raw: unknown, incremental: boolean): ChatDeltaEntity |
     ...(typeof e.appMessageId === 'string' && e.appMessageId.length > 0
       ? { appMessageId: e.appMessageId }
       : {}),
-    ...(e.author && typeof e.author === 'object' && !Array.isArray(e.author)
+    ...(e.author === null || (e.author && typeof e.author === 'object' && !Array.isArray(e.author))
       ? { author: e.author as AgentMessage['author'] }
       : {}),
   };
@@ -459,6 +461,7 @@ function fingerprintSnapshot(raw: unknown): number {
 export class ChatTranscriptReconciler {
   private messages: AgentMessage[] = [];
   private truncated = false;
+  private nextToken: string | null | undefined;
   private totalMessages = 0;
   private streaming = false;
   private expectedSeq = 0;
@@ -472,6 +475,7 @@ export class ChatTranscriptReconciler {
   reset(): void {
     this.messages = [];
     this.truncated = false;
+    this.nextToken = undefined;
     this.totalMessages = 0;
     this.streaming = false;
     this.expectedSeq = 0;
@@ -503,6 +507,7 @@ export class ChatTranscriptReconciler {
     const snap = extractSnapshot(raw, this.expectedAgentId);
     this.messages = snap.messages;
     this.truncated = snap.truncated;
+    this.nextToken = snap.nextToken;
     this.totalMessages = snap.totalMessages;
     // Mid-turn hydration: streaming is on when the snapshot carries a
     // synthetic in-flight assistant message or the §7.1 activity-flag overlay
@@ -567,6 +572,7 @@ export class ChatTranscriptReconciler {
     return {
       messages: this.messages,
       truncated: this.truncated,
+      ...(this.nextToken !== undefined ? { nextToken: this.nextToken } : {}),
       totalMessages: this.totalMessages,
       isStreaming: this.streaming,
     };
@@ -641,7 +647,7 @@ export class ChatTranscriptReconciler {
     if (entity.messageSeq !== undefined) next.seq = entity.messageSeq;
     if (entity.metadata) next.metadata = entity.metadata;
     if (entity.appMessageId) next.appMessageId = entity.appMessageId;
-    if (entity.author) next.author = entity.author;
+    if ('author' in entity) next.author = entity.author;
     this.messages = [...this.messages.slice(0, index), next, ...this.messages.slice(index + 1)];
   }
 }
@@ -762,9 +768,9 @@ export class LiveChatClient implements ChatClient {
       }
     };
 
-    // Snapshot-apply emits carry `fromSnapshot: true` (plus the §7.1 resume
-    // disposition when the registration requested one) so consumers can seed
-    // hydration from the authoritative newest page.
+    // Snapshot-apply emits carry `fromSnapshot: true` plus any §7.1 resume/reset
+    // disposition, including mid-stream invalidation without a resume request.
+    // Consumers hydrate or discard cached history from this authoritative page.
     const emitSnapshot = (
       resumed: boolean | undefined,
       diagnostic: StreamLifecycleDiagnostic,
@@ -817,7 +823,7 @@ export class LiveChatClient implements ChatClient {
         // §7.1 resume: the anchor rides only until the first snapshot lands
         // — after that the reconciler holds daemon-served state, and every
         // internal re-registration must take the full newest page.
-        const resumed = resumeAnchor === undefined ? undefined : extractResumedFlag(push.snapshot);
+        const resumed = extractResumedFlag(push.snapshot);
         resumeAnchor = undefined;
         if (reconciler.applySnapshot(push.seq, push.snapshot)) {
           const reconcilerResult = sawSnapshot ? 'reset' : 'applied';

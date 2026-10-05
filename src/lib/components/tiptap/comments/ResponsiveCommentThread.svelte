@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { commentAuthorLabel } from '$features/comments/comment-attribution';
+  import type { CommentAttribution } from '$shared/types/comment.types';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import Fa from 'svelte-fa';
   import { differenceInDays } from 'date-fns';
@@ -22,7 +24,8 @@
   import { m } from '$shared/paraglide/messages.js';
 
   // Type definitions
-  interface CommentLike {
+  interface CommentLike extends CommentAttribution {
+    authorType?: 'user' | 'agent';
     id: string;
     author?: string;
     content?: string;
@@ -205,6 +208,7 @@
       }, 200);
     }
   }
+  const authorLabel = $derived(commentAuthorLabel(comment));
 </script>
 
 <div
@@ -232,7 +236,8 @@
         ? 'has-replies'
         : ''}"
       onclick={() => onShow?.()}
-      aria-label="{comment.author}: {truncateContent(comment.content || '')}"
+      data-comment-author
+      aria-label="{authorLabel}: {truncateContent(comment.content || '')}"
     >
       <div class="icon-wrapper">
         <Fa icon={getCommentIcon(comment.type)} size="sm" />
@@ -253,7 +258,7 @@
       >
         <div class="hover-card-header">
           <InitialsAvatar name={comment.author || '?'} size={20} />
-          <span class="author">{comment.author}</span>
+          <span class="author">{authorLabel}</span>
           <span class="timestamp">{formatTimestamp(comment.createdAt)}</span>
         </div>
         <div class="hover-card-content">
@@ -286,7 +291,12 @@
     >
       <div class="compact-header">
         <InitialsAvatar name={comment.author || '?'} size={20} />
-        <span class="compact-author">{comment.author}</span>
+        <span
+          data-comment-author
+          aria-label={authorLabel}
+          title={authorLabel}
+          class="compact-author">{authorLabel}</span
+        >
         {#if !focused}
           <Button
             variant="ghost-light"

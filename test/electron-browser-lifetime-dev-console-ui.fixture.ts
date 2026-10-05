@@ -109,6 +109,16 @@ test('Dev Console native renderer inspects traffic through authorized preload an
     await opener.evaluate(() => window.electronAPI.invoke('dev-console:open', {}));
     const page = await opened;
     await expect(page.locator('[data-dev-console-ready="true"]')).toBeVisible({ timeout: 90000 });
+    const payloadViewer = (label: string) =>
+      page
+        .locator('[data-payload-viewer]')
+        .and(page.getByRole('region', { name: label, exact: true }));
+    async function expectPayload(label: string, text: string) {
+      const viewer = payloadViewer(label);
+      await expect(viewer.getByRole('button', { name: 'Search', exact: true })).toBeEnabled();
+      await expect(viewer.locator('.monaco-editor')).toBeVisible();
+      await expect(viewer.locator('.view-lines')).toContainText(text);
+    }
     await app.evaluate(() =>
       (globalThis as any).fixture.emit({
         type: 'request',
@@ -121,7 +131,15 @@ test('Dev Console native renderer inspects traffic through authorized preload an
       }),
     );
     await page.getByRole('cell', { name: 'workspace.list', exact: true }).click();
-    await expect(page.locator('pre').first()).toContainText('"nativeFixture": true');
+    // Only the first viewer loads the editor's cold module graph; later payloads
+    // retain the default assertion budget, as do all rendered-content checks.
+    await test.step('Wait for native payload editor startup', () =>
+      expect(
+        payloadViewer('Request').getByRole('button', { name: 'Search', exact: true }),
+      ).toBeEnabled({
+        timeout: 90000,
+      }));
+    await expectPayload('Request', '"nativeFixture": true');
     await page.getByRole('checkbox').click();
     await expect(page.getByRole('checkbox')).toBeChecked();
     await expect
@@ -140,7 +158,7 @@ test('Dev Console native renderer inspects traffic through authorized preload an
         connectionGeneration: 1,
       }),
     );
-    await expect(page.locator('pre').nth(1)).toContainText('native response');
+    await expectPayload('Response / error', 'native response');
     await app.evaluate(() =>
       (globalThis as any).fixture.emit({
         type: 'notification',
@@ -163,14 +181,14 @@ test('Dev Console native renderer inspects traffic through authorized preload an
       }),
     );
     await page.getByRole('cell', { name: 'fs.readFile', exact: true }).click();
-    await expect(page.locator('pre')).toContainText('native-fixture.txt');
+    await expectPayload('Request', 'native-fixture.txt');
     await expect(page.getByRole('cell', { name: 'agent:message', exact: true })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Events' }).click();
     await page.getByRole('cell', { name: 'agent:message', exact: true }).click();
-    await expect(page.locator('pre')).toContainText('native event');
+    await expectPayload('Event', 'native event');
     await page.getByRole('button', { name: 'Clear', exact: true }).click();
     await expect(page.locator('[data-index]')).toHaveCount(0);
-    await expect(page.locator('pre')).toHaveCount(0);
+    await expect(page.locator('[data-payload-viewer]')).toHaveCount(0);
     await page.close();
     await expect.poll(() => app.evaluate(() => (globalThis as any).fixture.observers.size)).toBe(0);
     const reopened = app.waitForEvent('window');

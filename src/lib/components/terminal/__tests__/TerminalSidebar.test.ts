@@ -251,6 +251,42 @@ describe('TerminalSidebar detection flow', () => {
     activeWorkspaceState.value = { id: 'ws-1', path: '/repo' } as any;
   });
 
+  it('routes mixed finished/live Stop all through shared operations without changing selection', async () => {
+    scriptEntries.value = ['exited', 'running'].map((status) => ({
+      id: status,
+      name: status,
+      command: 'true',
+      mode: 'command',
+      purpose: 'saved',
+      runtime: { status, restartCount: 0 },
+    }));
+    const onSelectScript = vi.fn();
+    const { container } = render(TerminalSidebar, {
+      props: {
+        workspaceId: 'ws-1',
+        selectedScriptId: 'exited',
+        onSelectScript,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /^exited(?:\s|$)/ }), {
+      ctrlKey: true,
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /^running(?:\s|$)/ }), {
+      ctrlKey: true,
+    });
+    await fireEvent.contextMenu(screen.getByRole('button', { name: /^exited(?:\s|$)/ }));
+    await fireEvent.click(screen.getByText('Stop All', { exact: true }));
+    const stops = mockDispatch.mock.calls
+      .map(([a]) => a)
+      .filter((a) => a.type === 'scripts/stopScriptRequested');
+    expect(stops.map((a) => a.payload.slice(0, 2))).toEqual([
+      ['ws-1', 'exited'],
+      ['ws-1', 'running'],
+    ]);
+    expect(onSelectScript).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-script-id="exited"]')).not.toBeNull();
+  });
+
   it('saves commands added through the user form', async () => {
     mockScriptCreate.mockResolvedValueOnce({ success: true, data: { id: 'new-command' } });
     render(TerminalSidebar, { props: { workspaceId: 'ws-1' } });

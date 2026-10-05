@@ -19,10 +19,10 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { devNull, tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BROWSER_ARTIFACTS } from './browser-test-artifacts.mjs';
 
 const WORKFLOW_PATH = '.github/workflows/intent-pr.yml';
@@ -113,6 +113,8 @@ function commitFile(root: string, file: string, content: string) {
 function checkoutWith(headFile: string, moduleSource?: string, headFiles: string[] = []) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
+  // Detached maintenance can remove a lock during rmSync and leave the fixture behind.
+  git(root, 'config', 'maintenance.auto', 'false');
   git(root, 'config', 'user.name', 'ct-contract-paths-ci test');
   git(root, 'config', 'user.email', 'ct-contract-paths-ci@example.invalid');
   git(root, 'config', 'commit.gpgsign', 'false');
@@ -146,6 +148,8 @@ const LARGE_DIFF_FILLER = Array.from(
 function checkoutDeleting(file: string) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
+  // Detached maintenance can remove a lock during rmSync and leave the fixture behind.
+  git(root, 'config', 'maintenance.auto', 'false');
   git(root, 'config', 'user.name', 'ct-contract-paths-ci test');
   git(root, 'config', 'user.email', 'ct-contract-paths-ci@example.invalid');
   git(root, 'config', 'commit.gpgsign', 'false');
@@ -155,6 +159,37 @@ function checkoutDeleting(file: string) {
   git(root, 'commit', '-q', '-m', `delete ${file}`);
   return { root, base };
 }
+
+describe('disposable Git fixture ownership', () => {
+  it.each(['addition', 'deletion'] as const)(
+    'does not launch automatic maintenance for a %s checkout',
+    (change) => {
+      const trace = join(temporaryDirectory('ct-fixture-trace-'), 'events.json');
+      // Exercise the real Git process tree without the developer's Git config.
+      vi.stubEnv('GIT_CONFIG_GLOBAL', devNull);
+      vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+      vi.stubEnv('GIT_TRACE2_EVENT', trace);
+      try {
+        if (change === 'addition') checkoutWith('test/example.spec.ts');
+        else checkoutDeleting('test/example.spec.ts');
+
+        const children = readFileSync(trace, 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line) as { event: string; argv?: string[] })
+          .filter((event) => event.event === 'child_start')
+          .map((event) => event.argv ?? []);
+        // A synchronous commit waits for its direct child, but detached Git
+        // housekeeping can still remove locks/objects during fixture cleanup.
+        expect(
+          children.filter((argv) => argv.includes('maintenance') || argv.includes('gc')),
+        ).toEqual([]);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+});
 
 // The `outputs:` block of a job, one line per output.
 function jobOutputs(lines: string[]): string[] {
@@ -582,6 +617,13 @@ describe('authored browser tests require their complete PR suites', () => {
     ['playwright/app-stubs/navigation.ts', true],
     ['test/vite-harness-cache.mjs', true],
     ['test/fixtures/browser-lifetime/main.cjs', true],
+    ['test/fixtures/repository-checkout/playwright.config.ts', true],
+    ['test/fixtures/repository-checkout/main.ts', true],
+    ['src/features/backend/main/repository-checkout-feed.ts', true],
+    ['src/lib/client/live/repository-checkout-transport.ts', true],
+    ['src/shared/types/repository-checkout.ts', true],
+    ['.github/workflows/browser-tests.yml', true],
+    ['.github/workflows/intent-pr.yml', true],
     ['package.json', true],
     ['pnpm-lock.yaml', true],
     ['svelte.config.js', true],
@@ -589,6 +631,7 @@ describe('authored browser tests require their complete PR suites', () => {
     ['src/features/browser/view.svelte', false],
     ['playwright-ct.config.ts', false],
     ['test/fixtures/browser-lifetime-other/main.cjs', false],
+    ['test/fixtures/repository-checkout-other/main.ts', false],
   ])('classifies Electron setup path %s as required=%s', (file, required) => {
     const { root, base } = checkoutWith(file);
     const output = join(root, 'github-output');

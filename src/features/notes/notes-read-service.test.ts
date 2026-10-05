@@ -278,14 +278,14 @@ describe('notesReadService (fake seam, real store)', () => {
     ensureNoteContentLoaded(ws, 'note-co');
     ensureNoteContentLoaded(ws, 'note-co');
     // Single-flight: the second call coalesces onto the in-flight fetch
-    // (marking it dirty for one trailing refetch) instead of firing its own.
+    // without invalidating it or scheduling a trailing fetch.
     expect(notesGetMock).toHaveBeenCalledTimes(1);
 
     first.resolve(makeNote('note-co', ws, { content: 'body' }));
     await flush();
     await flush();
 
-    expect(notesGetMock).toHaveBeenCalledTimes(2);
+    expect(notesGetMock).toHaveBeenCalledTimes(1);
     const wsState = appStore.state.workspaceNotes.byWorkspaceId[ws];
     expect(wsState?.notes.map['note-co']?.content).toBe('body');
   });
@@ -341,4 +341,23 @@ it('rechecks paged ownership before a trailing complete-content RPC', async () =
   await Promise.all([first, second]);
   expect(notesGetMock).toHaveBeenCalledTimes(1);
   appStore.dispatch(pageSessionDiscarded(ws, id));
+});
+
+it('keeps the recreated owner when an ensure joins a pending event refresh', async () => {
+  notesGetMock.mockReset();
+  __resetNotesReadServiceForTests();
+  const ws = 'recreated-event-owner';
+  const id = 'note';
+  const stale = makeNote(id, ws, { content: '', contentLength: 10 });
+  appStore.dispatch(loadWorkspaceNotesSucceeded([ws], { [ws]: [stale] }));
+  const pending = deferred<Note | null>();
+  const recreated = makeNote(id, ws, { content: 'recreated' });
+  notesGetMock.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(recreated);
+  const first = ensureNoteContentLoaded(ws, id);
+  applyNoteFromEvent(ws, id, 'note:deleted');
+  applyNoteFromEvent(ws, id, 'note:created');
+  pending.resolve(makeNote(id, ws, { content: 'deleted' }));
+  await first;
+  expect(notesGetMock).toHaveBeenCalledTimes(2);
+  expect(appStore.state.workspaceNotes.byWorkspaceId[ws].notes.map[id]?.content).toBe('recreated');
 });

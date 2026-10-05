@@ -13,12 +13,14 @@
       {
         id: 'member-queue',
         content: savedContent ?? initialContent,
+        messageMetadata: { fromPrincipalId: 'preview-author' },
         queuedAt: '2026-09-01T00:00:00Z',
         position: 0,
       },
       {
         id: 'other-queue',
         content: `Another queued message ${refresh}`,
+        messageMetadata: { fromPrincipalId: 'preview-author' },
         queuedAt: '2026-09-01T00:00:00Z',
         position: 1,
       },
@@ -31,6 +33,7 @@
 <!-- i18n-ignore (isolated functional test controls) -->
 <div class="w-full" data-testid="queued-member-host">
   <QueuedMessageList
+    ownPrincipalId="preview-author"
     {messages}
     onedit={async (id, content, editing) => {
       edits = [...edits, { id, content, editing }];

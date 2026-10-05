@@ -45,6 +45,7 @@ import {
   checkSingleProviderRequested,
   checkSingleProviderSuccess,
   ensureProvidersChecked,
+  prepareOnboardingAdaptersRequested,
   setAllProvidersLoading,
   setNpxStatus,
   providerAvailabilityPanelOpened,
@@ -144,6 +145,7 @@ function* discoverProviders(silent: boolean) {
 }
 
 export function* checkAllProvidersWorker(silent = false) {
+  yield* put(prepareOnboardingAdaptersRequested());
   const refreshModels = yield* selectProviderModelsRefreshPending.effect();
   const refreshRevision = yield* selectProviderModelsRefreshRevision.effect();
   const connection = yield* selectPrincipalConnectionContext.effect();
@@ -214,6 +216,7 @@ function* watchPanelRefresh(
 }
 
 function* handleSingleProviderRequest(action: ReturnType<typeof checkSingleProviderRequested>) {
+  yield* put(prepareOnboardingAdaptersRequested());
   yield* call(checkSingleProviderWorker, action.payload[0]);
 }
 

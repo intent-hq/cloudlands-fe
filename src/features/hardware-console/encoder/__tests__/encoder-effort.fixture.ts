@@ -24,6 +24,15 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: mocks.dispatch,
   });
   mocks.emit = module.store.emitState;
+  const { select } = await import('redux-saga/effects');
+  const createSelector = module.store.createSelector;
+  module.store.createSelector = (fn) => {
+    const selector = createSelector(fn);
+    selector.effect = function* (...args) {
+      return yield select(fn, ...args);
+    };
+    return selector;
+  };
   return module;
 });
 vi.mock('$lib/utils/navigation.client', () => ({
@@ -60,11 +69,14 @@ import {
   panelLayoutReducer,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { encoderEffortSaga } from '$store/renderer/slices/hardware-console/sagas/encoder-effort-saga';
+import { agentModelSaga } from '$store/renderer/slices/agent-model/sagas/agent-model-saga';
+import { agentModelReducer } from '$store/renderer/slices/agent-model/agent-model-slice';
 import { watchHardwareConsoleEncoderHud } from '$store/renderer/slices/hardware-console/sagas/hardware-console-device-saga';
 import { installHardwareConsoleEncoder } from '../encoder-service';
 
 export const request = vi.mocked(backendRequest);
 export const tasks: Task[] = [];
+let mutationOwner: Task;
 const disposers: (() => void)[] = [];
 const heldReplies = new Set<() => void>();
 export const listeners = new Set<() => void>();
@@ -89,6 +101,7 @@ function session(id: string, workspaceId = 'ws-1'): StoredAgentSession {
 }
 function makeState() {
   return withLegacyPrincipal({
+    agentModel: agentModelReducer(undefined, { type: 'init' }),
     hardwareConsole: { ...hardwareInitial },
     tabState: { currentTabId: 'ws-1' as string | null },
     agentSessions: {
@@ -318,6 +331,7 @@ export function useEncoderEffortHarness() {
       state = {
         ...state,
         hardwareConsole: hardwareConsoleReducer(state.hardwareConsole, action),
+        agentModel: agentModelReducer(state.agentModel, action),
         agentSessions: agentSessionReducer(state.agentSessions, action),
         sidebarNav: sidebarNavReducer(state.sidebarNav, action),
         panelLayout: panelLayoutReducer(state.panelLayout, action),
@@ -365,6 +379,11 @@ export function useEncoderEffortHarness() {
     });
     start(encoderEffortSaga);
     start(watchHardwareConsoleEncoderHud);
+    // The application mutation owner outlives a device-input cancellation.
+    mutationOwner = runSaga(
+      { channel, dispatch: mocks.dispatch, getState: () => state },
+      agentModelSaga,
+    );
   });
   afterEach(async () => {
     disposers.splice(0).forEach((dispose) => dispose());
@@ -378,6 +397,8 @@ export function useEncoderEffortHarness() {
     for (const release of heldReplies) release();
     heldReplies.clear();
     await flush();
+    mutationOwner.cancel();
+    await mutationOwner.toPromise();
     cleanup();
     unregisterMockIpcHandler(AGENT_CHANNELS.SET_MODEL);
     listeners.clear();

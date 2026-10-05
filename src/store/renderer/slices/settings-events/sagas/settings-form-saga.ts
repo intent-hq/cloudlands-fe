@@ -29,7 +29,6 @@ import type {
 const paths = {
   'agent-backend': [
     'agents.maxConcurrent',
-    'agents.flushQueuedMessages',
     'agents.memoryBudgetMb',
     'agents.idleReapMinutes',
     'agents.acpNodeMaxOldSpaceMb',
@@ -140,13 +139,13 @@ function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
     let settings: SettingDefinitionWithValue[];
     if (form.kind === 'agent-backend' && typeof appClient.settings.get === 'function') {
       const entries = yield* all(
-        wanted.map((path, index) =>
-          index < 2
+        wanted.map((path) =>
+          path === 'agents.maxConcurrent'
             ? call([appClient.settings, appClient.settings.get], path)
             : call(optionalSetting, path),
         ),
       );
-      if (!entries[0] || !entries[1]) throw new Error('Settings unavailable');
+      if (!entries[0]) throw new Error('Settings unavailable');
       settings = entries.filter((entry): entry is SettingDefinitionWithValue => entry !== null);
     } else {
       settings = yield* call([appClient.settings, appClient.settings.list]);
@@ -222,10 +221,7 @@ function* saveForm(action: SaveAction): SagaGenerator<void> {
       if (form.kind === 'agent-backend') {
         const value =
           change.path === 'agents.maxConcurrent' && !entry ? change.value : entry?.value;
-        const valid =
-          change.path === 'agents.flushQueuedMessages'
-            ? value === 'all' || value === 'systemOnly' || value === 'off'
-            : typeof value === 'number' && Number.isFinite(value);
+        const valid = typeof value === 'number' && Number.isFinite(value);
         if (!valid) rollback = true;
         else {
           entries.push({ ...previous, path: change.path, value: value as SettingsFormValue });

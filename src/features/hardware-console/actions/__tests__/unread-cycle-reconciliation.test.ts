@@ -1,17 +1,11 @@
 import { store } from '$store/renderer/store';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
- * End-to-end regression coverage for multi-window unread-cycle divergence:
- * per-window Redux stores can miss `workspace:attention-changed` deltas
- * (raise or clear) while unfocused, and the console-owner window's stale
- * store answers hardware key presses. Symptoms: a skipped blue-dot
- * workspace ("No unread agents" toast despite a visible dot elsewhere) and
- * phantom stops with a pinned HUD count ("N more to go" forever).
- *
- * These tests drive the REAL reconciliation path — `lifecycleReadSaga`'s
- * focus / console-owner triggers refetching `workspace.list`, applied by
- * the real `workspaceReducer` — and then execute the real
- * `cycle-unread-agents` action on the converged state.
+ * Regression coverage for unread-cycle divergence after a connection loss.
+ * Missed attention raises/clears recover through lifecycleReadSaga's backend
+ * reconnect watcher and the real workspaceReducer before cycle actions run.
+ * Healthy focus/console ownership changes do not request a workspace snapshot;
+ * the live event subscription remains active while the window is unfocused.
  */
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -79,6 +73,8 @@ import {
   replaceWorkspaceList,
   workspaceReducer,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import { initialState as workspaceShareInitialState } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sagas/lifecycle-read-saga';
 import { collectUnreadWorkspaceStops } from '../agent-cycle';
 import {
@@ -104,7 +100,7 @@ function wire(id: string, attention: 'none' | 'unread'): Workspace {
 /**
  * Run the real lifecycleReadSaga with a loopback dispatch: dispatched
  * actions are applied by the real workspaceReducer AND re-fed into the
- * channel, so the focus/owner triggers drive `loadWorkspacesRequested` and
+ * channel, so backend reconnect drives `loadWorkspacesRequested` and
  * the store observably converges — one per-window store in miniature.
  */
 function startHarness() {
@@ -112,6 +108,7 @@ function startHarness() {
   let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
   const baseState = {
     tabState: { currentTabId: null },
+    workspaceShare: workspaceShareInitialState,
     workspaceTasks: { byWorkspaceId: {} },
     changes: { agentStats: {}, agentLineStatsRequests: {} },
     agentSessions: { byAgentId: {} },
@@ -218,10 +215,10 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
     vi.clearAllMocks();
   });
 
-  it('skip symptom: a missed unread raise converges on console-owner acquisition and the cycle key steps into the workspace', async () => {
+  it('skip symptom: a missed unread raise converges on reconnect and the cycle key steps into the workspace', async () => {
     const run = startHarness();
     // Stale per-window snapshot: the daemon raised unread on ws-2 while this
-    // window was unfocused and missed the delta.
+    // window was disconnected and missed the delta.
     run.dispatch(replaceWorkspaceList([wire('ws-1', 'none'), wire('ws-2', 'none')]));
     const agents: AgentsSpec = {
       'ws-1': { ids: ['a-1'], activeAgentId: 'a-1' },
@@ -239,13 +236,16 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
       m.hardwareConsole_actionKey_noUnreadAgents_message(),
     );
 
-    // This window becomes the console owner: the real saga refetches
-    // workspace.list and the real reducer applies the daemon's truth.
+    // Ownership alone cannot repair an actual connection gap. Reconnect
+    // requests the snapshot and the real reducer applies the daemon's truth.
     mocks.workspaceServiceList.mockResolvedValue({
       ok: true,
       data: [wire('ws-1', 'none'), wire('ws-2', 'unread')],
     });
     run.channel.put(consoleOwnerChanged(true));
+    await settle();
+    expect(mocks.workspaceServiceList).not.toHaveBeenCalled();
+    run.channel.put(backendReconnected());
     await settle();
     await settle();
     expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
@@ -268,7 +268,7 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
     await stop(run.task);
   });
 
-  it('phantom symptom: stale unread flags drop out on window refocus and the HUD count reflects reality', async () => {
+  it('phantom symptom: stale unread flags drop out on reconnect and the HUD count reflects reality', async () => {
     const run = startHarness();
     // Stale snapshot: ws-2/ws-3/ws-4 unread locally, but the daemon has
     // since cleared ws-2 and ws-3 (read in another window).
@@ -297,8 +297,8 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
       actionHudShown(m.hardwareConsole_actionKey_cycleUnreadAgents_hudRemaining_many({ count: 2 })),
     );
 
-    // The window regains focus: the real saga refetches and the store
-    // converges on the daemon's truth (only ws-4 still unread).
+    // Focus alone is quiet. Reconnect repairs missed events so only ws-4
+    // remains unread when the hardware action next inspects the store.
     mocks.workspaceServiceList.mockResolvedValue({
       ok: true,
       data: [
@@ -309,6 +309,9 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
       ],
     });
     window.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(mocks.workspaceServiceList).not.toHaveBeenCalled();
+    run.channel.put(backendReconnected());
     await settle();
     await settle();
     expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
@@ -351,6 +354,9 @@ describe('unread-cycle reconciliation (multi-window divergence)', () => {
       data: [wire('ws-1', 'none'), wire('ws-2', 'none')],
     });
     window.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(mocks.workspaceServiceList).not.toHaveBeenCalled();
+    run.channel.put(backendReconnected());
     await settle();
     await settle();
 

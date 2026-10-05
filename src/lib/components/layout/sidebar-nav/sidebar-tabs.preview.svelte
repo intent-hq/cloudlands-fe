@@ -35,6 +35,7 @@
       workspaces: { props: { initialTab: 'all-workspaces', width: 288 } },
       intent: { props: { initialTab: 'chief', width: 288 } },
       narrow: { props: { initialTab: 'all-workspaces', width: 100 } },
+      restricted: { props: { initialTab: 'chief', width: 288, admittedOwner: false } },
     },
   });
 </script>

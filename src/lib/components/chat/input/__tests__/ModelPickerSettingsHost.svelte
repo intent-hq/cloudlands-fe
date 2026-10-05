@@ -14,14 +14,20 @@
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
   import {
-    setDefaultReasoningEffort,
-    setSelectedModel,
+    loadDefaultReasoningEffortFromStorage,
+    loadProviderModelsFromStorage,
     setAvailableModels,
   } from '$store/renderer/slices/model/model-slice';
   import { selectDefaultReasoningEffort } from '$store/renderer/slices/model/model-selectors';
   import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
   import { wireModelsToProviderModels } from '$shared/models/wire-model-info';
   import type { SpecialistModelOption } from '$shared/specialist-file-types';
+  import { appClient } from '$lib/client';
+  import { applySettingsChanges } from '$features/settings/settings-hydration-service';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT-only root harness starts the real default selection owner
+  import { modelSelectionSaga } from '$store/renderer/slices/model/sagas/model-selection-saga';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT-only root harness starts the real default provider owner
+  import { providerSettingsSaga } from '$store/renderer/slices/provider-settings/sagas/provider-settings-saga';
 
   let { consumer }: { consumer: 'specialist' | 'default' } = $props();
   let committed = $state<SpecialistModelOption[]>([]);
@@ -54,10 +60,49 @@
   }
   store.dispatch(checkAllProvidersComplete());
   store.dispatch(setAvailableModels(models, 'codex'));
-  store.dispatch(setSelectedModel({ providerId: 'codex', model: 'first' }));
-  store.dispatch(setDefaultReasoningEffort('high'));
+  store.dispatch(loadProviderModelsFromStorage({ codex: 'first' }));
+  store.dispatch(loadDefaultReasoningEffortFromStorage('high'));
+  const originalUpdate = appClient.settings.update;
+  const originalUpdateSnapshot = appClient.settings.updateSnapshot;
+  const originalListSnapshot = appClient.settings.listSnapshot;
+  const saved = new Map<string, unknown>([
+    ['model.defaultProvider', 'codex'],
+    ['model.providerDefaults', { codex: 'first' }],
+    ['model.defaultReasoningEffort', 'high'],
+    ['quickActions.defaultModel', null],
+    ['quickActions.typeOverrides', {}],
+    ['quickActions.defaultReasoningEffort', null],
+    ['quickActions.typeReasoningEffortOverrides', {}],
+    ['quickActions.providerSettings', {}],
+  ]);
+  appClient.settings.listSnapshot = async () => ({
+    settings: [...saved].map(([path, value]) => ({
+      path,
+      value,
+      label: '',
+      description: '',
+      category: 'model',
+      type: typeof value === 'string' ? ('string' as const) : ('object' as const),
+    })),
+    revision: 1,
+  });
+  appClient.settings.update = async (changes) => {
+    for (const { path, value } of changes) saved.set(path, value);
+    // Independent mock daemon delivery; the production writer ignores the response.
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only mock daemon receipt, not a component transport call
+    queueMicrotask(() => applySettingsChanges(changes));
+    return changes;
+  };
+  appClient.settings.updateSnapshot = async (changes) => ({ applied: changes, revision: 1 });
+  const stopDefaultOwner = store.runSaga(modelSelectionSaga);
+  const stopProviderOwner = store.runSaga(providerSettingsSaga);
   const defaultEffort$ = selectDefaultReasoningEffort();
   onDestroy(() => {
+    stopDefaultOwner();
+    stopProviderOwner();
+    appClient.settings.update = originalUpdate;
+    appClient.settings.updateSnapshot = originalUpdateSnapshot;
+    appClient.settings.listSnapshot = originalListSnapshot;
     for (const providerId of ['codex', 'claude-code']) {
       // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only handler cleanup
       unregisterMockIpcHandler(`${providerId}:get-models`);

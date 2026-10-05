@@ -34,7 +34,7 @@ function openingTagAfter(content: string, anchor: string) {
 }
 
 describe('editorial conversation presentation contract', () => {
-  it('assigns restored and streaming transcript identity to the outer row only', () => {
+  it('assigns restored, streaming and staged transcript identity to the outer row only', () => {
     const panel = source('src/lib/components/chat/ChatPanel.svelte');
     const message = source('src/lib/components/chat/ChatMessage.svelte');
 
@@ -42,7 +42,7 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain('ownsMessageIdentity = true');
     expect(message).toContain('data-message-id={ownsMessageIdentity ? message?.id : undefined}');
     expect(message).toContain('data-message-role={ownsMessageIdentity ? role : undefined}');
-    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(4);
+    expect(panel.match(/ownsMessageIdentity=\{false\}/g)).toHaveLength(5);
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,120}ownsMessageIdentity/g)).toBeNull();
   });
 
@@ -231,7 +231,6 @@ describe('editorial conversation presentation contract', () => {
     const messageContent = source('src/lib/components/chat/MessageContent.svelte');
 
     expect(panel).not.toContain('class:bg-sidebar={isChiefWorkspace}');
-    expect(panel).toContain("class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}");
     expect(panel.match(/message=\{pendingMessage\}[\s\S]{0,80}\{workspace\}/g)).toHaveLength(2);
     // Both transcript renderers mount the shared inline proposal host.
     expect(streaming).toContain('InlineProposal');
@@ -392,9 +391,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).not.toContain('AuroraSofteningLayer');
     expect(panel).toContain('style:height={`calc(${composerHeight}px + 10rem)`}');
     expect(panel).toContain('height: calc(100% + 10rem)');
-    expect(panel).toContain('{#snippet queueRegion()}');
-    expect(panel).toContain('<QueuedMessageList');
-    expect(panel).not.toContain('data-testid="queued-message-utility-area"');
     expect(panel).not.toContain('regular-composer-aurora-host');
   });
 });

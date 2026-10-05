@@ -19,6 +19,12 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
+import { syncCollaborationPolicy } from '$features/collaboration-auth/renderer/collaboration-auth.client';
+import { selectGuestSessionLifetime } from '../../guest-sessions/guest-sessions-selectors';
+import {
+  selectCollaborationReady,
+  selectPrincipalActionContext,
+} from '../../principal/principal-selectors';
 import { canRequestDeviceUpdate } from '$lib/utils/device-update-eligibility';
 import { formatConnectionLabel, formatGuestSessionLabel } from '$lib/utils/connection-label';
 import { resolveBackendTransport } from '$lib/client/live/backend-transport-factory';
@@ -585,6 +591,23 @@ function* openConnection(action: ReturnType<typeof openConnectionRequested>): Sa
   let settled = false;
   yield* put(openOperationStarted(id));
   try {
+    const lifetime = yield* selectGuestSessionLifetime.effect(id);
+    if (lifetime !== null) {
+      const context = yield* selectPrincipalActionContext.effect();
+      if (!context || !(yield* selectCollaborationReady.effect()))
+        throw new Error('Multiplayer is unavailable');
+      // Same-document navigation invalidates main's renderer policy. Publish
+      // the current flags before capturing a new Open, without reviving any
+      // operation from the previous principal/session/presentation lifetime.
+      const published = yield* call(syncCollaborationPolicy);
+      if (
+        !published ||
+        !(yield* selectCollaborationReady.effect()) ||
+        (yield* selectPrincipalActionContext.effect()) !== context ||
+        (yield* selectGuestSessionLifetime.effect(id)) !== lifetime
+      )
+        throw new Error('Invitation is no longer current');
+    }
     const result = yield* call(invokeOpenConnection, { id });
     yield* put(openOperationSettled(id));
     yield* put(action.success(result));
@@ -777,7 +800,7 @@ function* recoverOpenInSettings(action: WorkflowAction, id: string): SagaGenerat
         }),
   );
   if (yield* workflowIsCurrent(action))
-    yield* call(navigateToSettings, { tab: guest ? 'guest-sessions' : 'devices' });
+    yield* call(navigateToSettings, { tab: guest ? 'collaboration' : 'devices' });
 }
 
 function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {

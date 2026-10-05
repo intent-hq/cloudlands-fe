@@ -293,7 +293,27 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 const mockHostRole = vi.hoisted(() => ({ guest: false }));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  // This presentation harness models an owner; real admission is covered by the native fixture.
+  selectCanAdministerHost: Object.assign(() => createReadable(!mockHostRole.guest), {
+    select: () => !mockHostRole.guest,
+  }),
+}));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(workspaceId, (id) => {
+        const row = mockWorkspaceStore.findById(id);
+        return mockHostRole.guest || row?.myRole === 'collaborator' || row?.canManage === false
+          ? null
+          : 'current-update-context';
+      }),
+    { select: () => null },
+  ),
+  selectWorkspaceListLoadedForBackend: Object.assign(() => createReadable(true), {
+    select: () => true,
+  }),
   selectWorkspaceUpdateContext: Object.assign(
     (workspaceId: string) =>
       createSelectorReadable(workspaceId, (id) => {
@@ -667,11 +687,15 @@ async function resetMocks() {
     acceptWorkflow: acceptWorkflowReducer(undefined, { type: 'init' }),
   };
   mockDispatch.mockImplementation((action) => {
-    mockStoreState.value.prWorkflow = prWorkflowReducer(mockStoreState.value.prWorkflow, action);
-    mockStoreState.value.acceptWorkflow = acceptWorkflowReducer(
-      mockStoreState.value.acceptWorkflow,
-      action,
-    );
+    const prWorkflow = prWorkflowReducer(mockStoreState.value.prWorkflow, action);
+    const acceptWorkflow = acceptWorkflowReducer(mockStoreState.value.acceptWorkflow, action);
+    if (
+      prWorkflow === mockStoreState.value.prWorkflow &&
+      acceptWorkflow === mockStoreState.value.acceptWorkflow
+    )
+      return action;
+    mockStoreState.value.prWorkflow = prWorkflow;
+    mockStoreState.value.acceptWorkflow = acceptWorkflow;
     (appStore as unknown as { emitState(): void }).emitState();
     return action;
   });
@@ -2518,6 +2542,65 @@ describe('SidebarChangesPanel', () => {
       expect(
         mockDispatch.mock.calls.some(([action]) => action.type === 'git/loadSecondaryRoot'),
       ).toBe(false);
+    });
+
+    it('opens repository details explicitly and keeps one demand while browsing exact roots', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      await seedGitRoots([makeGitRoot({ id: 'tools' })]);
+      const { selectRepositoryContextForDemand } =
+        await import('$store/renderer/slices/repository-context/repository-context-selectors');
+      const { summaryContext } =
+        await import('$features/accept-changes/components/repository-context-summary.preview-fixtures');
+      // This existing mocked sidebar harness verifies root prop wiring only.
+      // The feature suite exercises the real selector, Store, saga and client lifecycle.
+      const context = summaryContext('self-managed', 'ws-1');
+      const selected = vi.spyOn(selectRepositoryContextForDemand, 'select').mockReturnValue({
+        ...context,
+        status: 'ready',
+        unavailableReason: null,
+      });
+      const { container, getByRole, findByText, queryByText, unmount } = await renderPanel();
+      try {
+        const demands = () =>
+          mockDispatch.mock.calls
+            .map(([action]) => action)
+            .filter((action) => action.type === 'repositoryContext/demanded');
+        expect(demands()).toHaveLength(0);
+        await fireEvent.click(getByRole('button', { name: 'Repository details' }));
+        await findByText('feature/details');
+        expect(demands()).toHaveLength(1);
+        const original = demands()[0].payload;
+        expect(original[0]).toBe('ws-1');
+        expect(original[2]).toBeNull();
+        const trigger = container.querySelector<HTMLButtonElement>(
+          '[data-testid="git-root-selector"] button',
+        )!;
+        trigger.focus();
+        await fireEvent.keyDown(trigger, { key: 'Enter' });
+        await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+        await fireEvent.keyDown(trigger, { key: 'Enter' });
+        await waitFor(() =>
+          expect(
+            container.querySelector('[data-testid="secondary-root-changes-view"]'),
+          ).toBeTruthy(),
+        );
+        // The shared sidebar mock needs an explicit notification for readable args.
+        // Real Store argument reactivity is covered in the feature lifecycle suite.
+        const { store } = await import('$store/renderer/store');
+        (store as unknown as { emitState(): void }).emitState();
+        await findByText('tools/maintenance');
+        expect(queryByText('feature/details')).toBeNull();
+        expect(demands()).toHaveLength(1);
+        await fireEvent.click(getByRole('button', { name: 'Repository details' }));
+        expect(queryByText('tools/maintenance')).toBeNull();
+        expect(mockDispatch.mock.calls.map(([action]) => action)).toContainEqual({
+          type: 'repositoryContext/demandEnded',
+          payload: original,
+        });
+      } finally {
+        unmount();
+        selected.mockRestore();
+      }
     });
 
     it('renders no dropdown when the workspace has no secondary roots', async () => {

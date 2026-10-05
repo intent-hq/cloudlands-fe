@@ -76,6 +76,7 @@
     formatRelativeTime,
     parseQueryFilter,
     buildNoteBreadcrumbs,
+    buildMessageTitleSegments,
     buildRecentItems,
   } from '$store/renderer/slices/command-palette/command-palette-utils';
   import {
@@ -350,11 +351,10 @@
   let groupFiles: any[] = $state([]);
 
   // Daemon helper to query files (search.fileNames, PROTOCOL §5.15) and map to palette items (with fuzzy/MRU)
-  async function queryFiles(pattern: string): Promise<any[]> {
-    if (!workspaceId) return [];
+  async function queryFiles(pattern: string, wsId: string): Promise<any[]> {
     try {
       const resp = await backendRequest<{ files?: string[] }>('search.fileNames', {
-        workspaceId,
+        workspaceId: wsId,
         pattern: (pattern || '').trim(),
         limit: 50,
       });
@@ -397,7 +397,7 @@
 
   // Keep file group in sync with current query/workspace (debounced)
   $effect(() => {
-    const q = (searchQuery || '').trim();
+    const q = parsedQuery.searchTerm;
     const wsId = workspaceId;
 
     // Clear any pending debounce timer and invalidate in-flight requests first,
@@ -408,17 +408,7 @@
     }
     const requestId = ++currentFileRequestId;
 
-    // Skip file queries in Go to Line mode
-    if (q.startsWith(':')) {
-      untrack(() => {
-        groupFiles = [];
-        isLoadingFiles = false;
-      });
-      return;
-    }
-
-    // If no workspace, clear files immediately (untracked write)
-    if (!wsId) {
+    if (!isOpen || isGoToLineMode || !wsId || (activeFilter && activeFilter !== 'file')) {
       untrack(() => {
         groupFiles = [];
         isLoadingFiles = false;
@@ -434,7 +424,7 @@
     // Debounce the actual IPC call
     fileQueryTimeout = setTimeout(async () => {
       try {
-        const files = await queryFiles(q);
+        const files = await queryFiles(q, wsId);
         // Only update if this is still the current request (untracked to avoid effect loop)
         if (requestId === currentFileRequestId) {
           untrack(() => {
@@ -452,6 +442,7 @@
     }, FILE_QUERY_DEBOUNCE_MS);
 
     return () => {
+      ++currentFileRequestId;
       if (fileQueryTimeout) {
         clearTimeout(fileQueryTimeout);
         fileQueryTimeout = null;
@@ -470,19 +461,18 @@
     });
   });
 
-  // Keep transcript group in sync with current query.
+  // Keep transcript group in sync only while the palette is visible.
   $effect(() => {
+    if (!isOpen) return transcriptQuery.clear();
     const term = parsedQuery.searchTerm;
-    const wsId = workspaceId;
-    const wsItems = $workspaceItems || [];
 
     // Skip in Go to Line mode and when there is no search term to match
-    if ((searchQuery || '').trimStart().startsWith(':') || !term) {
+    if (isGoToLineMode || !term || (activeFilter && activeFilter !== 'message')) {
       transcriptQuery.clear();
       return;
     }
 
-    transcriptQuery.query(term, wsId, wsItems);
+    transcriptQuery.query(term, workspaceId, []);
 
     return () => transcriptQuery.cancel();
   });
@@ -504,7 +494,11 @@
       .filter((item) => !item.isArchived)
       .map((item) => ({
         ...item,
-        workspaceName: item.workspaceName || item.workspaceId,
+        workspaceName: item.workspaceId,
+        ...buildMessageTitleSegments(
+          ($workspaceItems || []).find((w) => w.id === item.workspaceId),
+        ),
+        isArchivedWorkspace: item.isArchivedWorkspace,
         icon: faFileAlt,
         _time: formatRelativeTime(item.updatedAt),
       })),
@@ -519,7 +513,7 @@
       noteQuery.clear();
       return;
     }
-    noteQuery.query(term, workspaceId, $workspaceItems || []);
+    noteQuery.query(term, workspaceId, []);
     // Cleanup also invalidates in-flight responses on unmount.
     return () => noteQuery.cancel();
   });
@@ -583,8 +577,12 @@
     }
     // Read before the deferred callback so live Labs changes refresh command results.
     commands;
+    $workspaceItems; // Metadata updates presentation without restarting remote queries.
     const files = groupFiles;
-    const messages = groupMessages;
+    const messages = groupMessages.map((item) => ({
+      ...item,
+      ...buildMessageTitleSegments(($workspaceItems || []).find((w) => w.id === item.workspaceId)),
+    }));
     const remoteNotes = indexedNotes;
     // Local-note updates and workspace switches must refresh local fallback/browsing too.
     notes;

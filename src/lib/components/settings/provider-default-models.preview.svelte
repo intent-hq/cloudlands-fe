@@ -50,7 +50,7 @@
     selectProviderModels,
   } from '$store/renderer/slices/model/model-selectors';
   import {
-    setSelectedModel,
+    loadProviderModelsFromStorage,
     loadDefaultReasoningEffortFromStorage,
   } from '$store/renderer/slices/model/model-slice';
   import { selectFileSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -127,11 +127,18 @@
       ),
     );
     appStore.dispatch(setAvailableModels(rows, 'auggie'));
-    appStore.dispatch(setSelectedModel({ providerId: 'auggie', model: 'auggie-preview-balanced' }));
+    appStore.dispatch(
+      loadProviderModelsFromStorage({ ...previous.models, auggie: 'auggie-preview-balanced' }),
+    );
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Preview-only synchronous IPC fixture registration; no domain data is fetched.
     restoreAuggie = setupModelPickerPreviewHandler('auggie', rows);
   }
-  appStore.dispatch(setSelectedModel({ providerId: 'codex', model: 'codex-preview-balanced' }));
+  appStore.dispatch(
+    loadProviderModelsFromStorage({
+      ...selectProviderModels.select(appStore.state),
+      codex: 'codex-preview-balanced',
+    }),
+  );
   appStore.dispatch(loadDefaultReasoningEffortFromStorage('medium'));
   appStore.dispatch(
     hydrateSettings({
@@ -169,9 +176,7 @@
     appStore.dispatch(hydrateSettings(previous));
     appStore.dispatch(setFileSpecialists(previous.specialists));
     appStore.dispatch(loadDefaultReasoningEffortFromStorage(previous.effort));
-    appStore.dispatch(
-      setSelectedModel({ providerId: 'codex', model: previous.models.codex ?? '' }),
-    );
+    appStore.dispatch(loadProviderModelsFromStorage(previous.models));
     restoreAuggie?.();
     if (quickActionProvider === 'auggie')
       appStore.dispatch(

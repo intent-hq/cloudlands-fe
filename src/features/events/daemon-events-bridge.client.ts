@@ -1,3 +1,9 @@
+import {
+  observeSubmissionEvidence,
+  observeSubmissionLifecycle,
+  announceSubmissionDelivery,
+} from '$features/agent/submission-evidence';
+import { scriptChangeSnapshot, scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { captureDeletionExpiry } from '$store/renderer/slices/workspace/utils/workspace-deletion';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { hostExecutionInvalidated } from '$store/renderer/slices/host-execution/host-execution-slice';
@@ -7,6 +13,7 @@ import {
   isAgentReadWorkspaceCurrent,
 } from '$features/agent/agent-read-ownership';
 import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 /**
  * Daemon events → renderer Redux bridge.
  *
@@ -58,8 +65,8 @@ import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-setting
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
  *      agent-side note writes (add_to_note etc.) appear live in the notes
  *      panel while the workspace is open. The same events also trigger a
- *      debounced `loadWorkspaceTasksRequested` refetch (initialized
- *      workspaces only) — task notes are plain notes, so a created/deleted
+ *      immediate invalidation and debounced refresh (visible
+ *      consumers only) — task notes are plain notes, so a created/deleted
  *      task note changes the BE-owned `task.list` stats rollup without a
  *      `task:status-changed` edge.
  *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on BOTH the
@@ -145,6 +152,8 @@ import { selectWorkspaceMcpServerName } from '$store/renderer/slices/mcp-setting
  * firehose plus the active-workspace-scoped `file:*` lease (monorepo#1853).
  */
 import { isHostMembershipChange } from '$shared/types/principal';
+import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
+import { hostMembershipListsChanged } from '$store/renderer/slices/host-membership/host-membership-slice';
 import {
   hostMembershipChanged,
   principalIdentityChanged,
@@ -207,7 +216,8 @@ import { selectHiddenTabs } from '$store/renderer/slices/panel-layout/panel-layo
 import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
 import {
   applyTaskStatusChanged,
-  loadWorkspaceTasksRequested,
+  invalidateWorkspaceTasks,
+  ensureWorkspaceTasksLoaded,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
@@ -282,9 +292,9 @@ import {
   appendScriptOutput,
   removeScript,
   refreshScripts,
+  scriptSnapshotReceived,
   updateRuntimeState,
 } from '$store/renderer/slices/scripts/scripts-slice';
-import type { ScriptRuntimeState } from '$store/renderer/slices/scripts/scripts-types';
 import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
 import {
   clearServerErrorMessage,
@@ -1661,6 +1671,7 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
   if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
   if (!isAgentReadWorkspaceCurrent(agentId, event.workspaceId)) return;
+  observeSubmissionEvidence(agentId, event.workspaceId, 'queue', queue as QueuedMessage[]);
   appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[], event.workspaceId));
   // Mark the snapshot so an in-flight hydrate fetch that started before this
   // event discards its (now stale) response instead of overwriting it.
@@ -1668,16 +1679,11 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
 }
 
 /**
- * `agent:queue:processing` (§6.5) carries `{ agentId, messageId, content,
- * turnId? }` — the drain-start signal emitted right after `agent:queue:updated`
- * when the daemon dequeues an entry to run its turn. It covers
- * `persisted: true` redrives that skip the user-row `agent:message` echo, so
- * it is the exact promotion signal for retry records (monorepo#1057). The
- * reducer matches on `turnId` alone, but `messageId` stays part of the
- * malformed-payload gate so a contract regression is rejected rather than
- * silently no-oping. `turnId` should always be present on the pinned daemon
- * (legacy pre-#1022 rows are backfilled on rehydration); the reducer no-ops
- * defensively when it is not.
+ * Processing identifies the admitted provider turn, including persisted redrives
+ * that skip a user-message echo. Optional queuedMessages contains every consumed
+ * entry in order, with each entry's own identity and complete retry payload.
+ * Queue snapshots and enqueue acknowledgements cannot override that authority.
+ * Legacy events without the array retain turn-based best-effort promotion.
  */
 function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -1685,7 +1691,30 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || typeof data.messageId !== 'string') return;
   const turnId = typeof data.turnId === 'string' ? data.turnId : undefined;
-  appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
+  const rows = data.queuedMessages;
+  if (rows !== undefined) {
+    // Reject malformed authority instead of upgrading a partial payload to truth.
+    if (
+      !Array.isArray(rows) ||
+      !rows.length ||
+      typeof turnId !== 'string' ||
+      rows.some(
+        (row) =>
+          !row ||
+          typeof row !== 'object' ||
+          typeof row.id !== 'string' ||
+          typeof row.turnId !== 'string' ||
+          typeof row.content !== 'string' ||
+          typeof row.queuedAt !== 'string' ||
+          typeof row.position !== 'number',
+      ) ||
+      rows[0].id !== data.messageId ||
+      new Set(rows.map((row) => row.id)).size !== rows.length
+    )
+      return;
+    observeSubmissionEvidence(agentId, event.workspaceId, 'processing', rows as QueuedMessage[]);
+    appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
+  } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
 }
 
 /**
@@ -2069,7 +2098,7 @@ function handleNoteEvent(
 /**
  * `task:created` (§6.5) carries `{ noteId, noteTitle, status, createdAt,
  * agentId? }` — a new task changes the BE-owned `task.list` rollup, so refetch
- * through the same debounced, initialized-workspaces-only path `note:*` uses.
+ * aggregates and invalidate detailed task lists through the same path `note:*` uses.
  * The new task itself arrives with that refetch; the HUD feed row is rendered
  * off the HUD's own feed subscription.
  */
@@ -2097,8 +2126,9 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   if (typeof noteId !== 'string' || typeof newStatus !== 'string') return;
   appStore.dispatch(applyNoteTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
-  // STAB-8: Force refetch task list (including BE-owned stats) so sidebar updates live
-  appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+  // Share the note-event debounce: one mutation can emit both events.
+  // The task row updates above remain immediate; the BE owns the rollup.
+  debouncedWorkspaceTasksRefresh(workspaceId);
 }
 
 /**
@@ -2482,7 +2512,7 @@ async function reconcileWorkspaceActivity(
 
 /**
  * Single-flight + trailing-coalesce state for
- * {@link reconcileWorkspaceAgentSummary}, keyed per workspaceId (AGENTS.md
+ * {@link reconcileWorkspaceAggregates}, keyed per workspaceId (AGENTS.md
  * "Event-driven refetches — single-flight and coalesced"). A burst of
  * `agent:deleted` events for the same workspace (e.g. a multi-agent cleanup)
  * must produce at most one immediate `workspace.get` plus at most one
@@ -2490,10 +2520,10 @@ async function reconcileWorkspaceActivity(
  * unordered resolution could let a stale response that resolves last
  * restore an already-deleted agent into `agentSummary`.
  */
-const agentSummaryFetchInFlightByWorkspace = new Set<string>();
-const agentSummaryFetchFollowUpWantedByWorkspace = new Set<string>();
+const aggregateFetchInFlightByWorkspace = new Set<string>();
+const aggregateFetchFollowUpWantedByWorkspace = new Set<string>();
 
-async function runReconcileWorkspaceAgentSummaryFetch(workspaceId: string): Promise<void> {
+async function runReconcileWorkspaceAggregatesFetch(workspaceId: string): Promise<void> {
   const { backendRequest } = await import('$lib/client/live/backend-transport');
   try {
     const response = (await backendRequest('workspace.get', { workspaceId })) as
@@ -2507,36 +2537,32 @@ async function runReconcileWorkspaceAgentSummaryFetch(workspaceId: string): Prom
   } catch (_error) {
     // Workspace might have been deleted or transport error; no-op is safe.
   } finally {
-    agentSummaryFetchInFlightByWorkspace.delete(workspaceId);
     // Trailing coalesce: one or more triggers arrived while this fetch was in
     // flight — run exactly one follow-up fetch to pick up the latest state,
-    // regardless of how many triggers piled up.
-    if (agentSummaryFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
-      void runReconcileWorkspaceAgentSummaryFetch(workspaceId);
+    // regardless of how many triggers piled up. Keep the in-flight marker
+    // through trailing reads so another burst cannot start a parallel fetch.
+    if (aggregateFetchFollowUpWantedByWorkspace.delete(workspaceId)) {
+      void runReconcileWorkspaceAggregatesFetch(workspaceId);
+    } else {
+      aggregateFetchInFlightByWorkspace.delete(workspaceId);
     }
   }
 }
 
 /**
- * Refresh the workspace entity's BE-owned `agentSummary` aggregate (PROTOCOL
- * §5.1) after an `agent:deleted` event. The HUD card agent rows are built
- * from `workspace.agentSummary.agents` (`agentInfosOf` in hud-selectors.ts),
- * which the `agent.list` hydration path does NOT touch — without this
- * refetch a deleted agent lingers on its card until an unrelated workspace
- * refetch. Fetch `workspace.get` and merge the fresh entity via
- * `setWorkspaceEntity` (the `mergeWorkspaceEnrichment` path takes the
- * incoming `agentSummary` when present). Single-flighted with trailing
- * coalesce per workspaceId (see {@link agentSummaryFetchInFlightByWorkspace}):
- * the leading edge fetches immediately, and any triggers that arrive while
- * that fetch is in flight collapse into at most one trailing follow-up.
+ * Refresh daemon-owned workspace aggregates via the existing `workspace.get`
+ * projection (§5.1). Agent deletion and task/note changes carry no replacement
+ * rollups. `setWorkspaceEntity` updates HUD/card entities and seeds task stats
+ * for unloaded or stale lists without hydrating their detailed rows.
+ * Single-flight with one trailing read per burst, scoped to the affected workspace.
  */
-async function reconcileWorkspaceAgentSummary(workspaceId: string): Promise<void> {
-  if (agentSummaryFetchInFlightByWorkspace.has(workspaceId)) {
-    agentSummaryFetchFollowUpWantedByWorkspace.add(workspaceId);
+async function reconcileWorkspaceAggregates(workspaceId: string): Promise<void> {
+  if (aggregateFetchInFlightByWorkspace.has(workspaceId)) {
+    aggregateFetchFollowUpWantedByWorkspace.add(workspaceId);
     return;
   }
-  agentSummaryFetchInFlightByWorkspace.add(workspaceId);
-  await runReconcileWorkspaceAgentSummaryFetch(workspaceId);
+  aggregateFetchInFlightByWorkspace.add(workspaceId);
+  await runReconcileWorkspaceAggregatesFetch(workspaceId);
 }
 
 /**
@@ -2985,7 +3011,7 @@ function handleWorkspaceDeleteCancelledEvent(workspaceId: string): void {
     workspaceDeleteTombstoneTimers.delete(workspaceId);
   }
   appStore.dispatch(clearWorkspacePendingDeletion(workspaceId));
-  void reconcileWorkspaceAgentSummary(workspaceId);
+  void reconcileWorkspaceAggregates(workspaceId);
 }
 
 /**
@@ -3180,11 +3206,10 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
   if (typeof scriptId !== 'string') return;
   // PTY stream ended — drop the streaming decoder so a later run starts fresh.
   if (rest.status !== 'running') scriptOutputDecoders.delete(`${workspaceId}:${scriptId}`);
-  // The event is a full ScriptRuntimeState snapshot, but the reducer shallow-merges:
-  // make the presence-detected marker explicit so an absent key clears a stale
-  // `previouslyRunning` from an earlier `script.list` hydration.
-  rest.previouslyRunning = rest.previouslyRunning === true;
-  appStore.dispatch(updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>));
+  // Runtime events are complete snapshots too: omitted optionals clear the
+  // prior run, including future additive fields the renderer passes through.
+  const runtime = scriptRuntimeSnapshot(rest);
+  if (runtime) appStore.dispatch(updateRuntimeState(workspaceId, scriptId, runtime, true));
 }
 
 /** Remove an exited PTY from the transient terminal strip and release any live adapter. */
@@ -3330,21 +3355,30 @@ function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
  */
 function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
+  if (typeof data?.principalId !== 'string' || !data.principalId.trim()) return;
   const identity = data?.identity;
-  if (identity === null) {
-    appStore.dispatch(identityChanged(null));
-    return;
+  let triple: PrincipalIdentity | null = null;
+  if (identity !== null) {
+    if (!identity || typeof identity !== 'object' || Array.isArray(identity)) return;
+    const { provider, host, externalUserId } = identity as Record<string, unknown>;
+    if (
+      (provider !== 'github' && provider !== 'gitlab') ||
+      typeof host !== 'string' ||
+      !host.trim() ||
+      typeof externalUserId !== 'string' ||
+      !externalUserId.trim()
+    )
+      return;
+    triple = { provider, host, externalUserId };
   }
-  if (!identity || typeof identity !== 'object') return;
-  const { provider, host, externalUserId } = identity as Record<string, unknown>;
+  const principal = appStore.state.principal;
   if (
-    (provider !== 'github' && provider !== 'gitlab') ||
-    typeof host !== 'string' ||
-    typeof externalUserId !== 'string'
-  ) {
-    return;
-  }
-  const triple: PrincipalIdentity = { provider, host, externalUserId };
+    principal?.context &&
+    principal.context === selectPrincipalConnectionContext.select(appStore.state) &&
+    principal.boundPrincipalId === data.principalId
+  )
+    appStore.dispatch(principalIdentityChanged(data.principalId));
+  // Keep the legacy primary-identity mirror and its profile refresh, including unlink.
   appStore.dispatch(identityChanged(triple));
 }
 
@@ -3443,18 +3477,16 @@ function debouncedChangesRefresh(workspaceId: string): void {
   changesRefreshTimersByWorkspace.set(workspaceId, timer);
 }
 
-/**
- * Debounced workspace-tasks refetch for `note:*` events. A created/updated/
- * deleted note can change the BE-owned `task.list` stats rollup (task state
- * lives in note metadata), so refetch via `loadWorkspaceTasksRequested` —
- * but only for workspaces whose workspace-tasks slice is already initialized.
- * Uninitialized workspaces have never been viewed; eagerly loading their
- * tasks would fan out one `task.list` per note event across all workspaces.
- */
+/** Refresh aggregates independently; detailed task-list reads still require demand. */
 function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
-  const initialized =
-    appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
-  if (!initialized) return;
+  appStore.dispatch(invalidateWorkspaceTasks(workspaceId));
+  // Listed workspaces can show progress even when no chat task list is open.
+  // Reuse the aggregate read, targeting only the event's workspace, never a fan-out.
+  if (selectWorkspaceById.select(appStore.state, workspaceId)) {
+    void reconcileWorkspaceAggregates(workspaceId);
+  }
+  const entry = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
+  if (!entry?.demandIds.length) return;
   const existing = tasksRefreshTimersByWorkspace.get(workspaceId);
   if (existing) {
     clearTimeout(existing);
@@ -3463,10 +3495,9 @@ function debouncedWorkspaceTasksRefresh(workspaceId: string): void {
     tasksRefreshTimersByWorkspace.delete(workspaceId);
     // Re-check at fire time: the slice may have been cleared (workspace
     // unmounted/deleted) during the debounce window.
-    const stillInitialized =
-      appStore.state.workspaceTasks?.byWorkspaceId[workspaceId]?.initialized === true;
-    if (!stillInitialized) return;
-    appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+    const current = appStore.state.workspaceTasks?.byWorkspaceId[workspaceId];
+    if (!current?.demandIds.length) return;
+    appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
   }, TASKS_REFRESH_DEBOUNCE_MS);
   tasksRefreshTimersByWorkspace.set(workspaceId, timer);
 }
@@ -3701,7 +3732,7 @@ export function routeDaemonEventsNotification(
 
   // `client:connected` / `client:disconnected` (REV-2, §5.17) are global — no
   // `workspaceId` envelope — so they must also run before the gate below.
-  if (type === 'client:connected' || type === 'client:disconnected') {
+  if (type === 'client:connected' || type === 'client:disconnected' || type === 'client:updated') {
     handleClientTransitionEvent(event);
     return;
   }
@@ -3710,15 +3741,25 @@ export function routeDaemonEventsNotification(
     appStore.dispatch(hostExecutionInvalidated());
     return;
   }
-  if (type === 'host:members-changed') {
+  if (type === 'host:invites-changed') {
     const data = (event as { data?: unknown }).data;
-    if (isHostMembershipChange(data)) appStore.dispatch(hostMembershipChanged(data));
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    const { inviteId, action } = data as { inviteId?: unknown; action?: unknown };
+    if (
+      typeof inviteId === 'string' &&
+      inviteId.trim().length > 0 &&
+      typeof action === 'string' &&
+      ['created', 'revoked', 'redeemed'].includes(action)
+    )
+      appStore.dispatch(hostMembershipListsChanged());
     return;
   }
-  if (type === 'principal:identity-changed') {
-    const data = (event as { data?: { principalId?: unknown } }).data;
-    if (typeof data?.principalId === 'string')
-      appStore.dispatch(principalIdentityChanged(data.principalId));
+  if (type === 'host:members-changed') {
+    const data = (event as { data?: unknown }).data;
+    if (isHostMembershipChange(data)) {
+      appStore.dispatch(hostMembershipChanged(data));
+      appStore.dispatch(hostMembershipListsChanged());
+    }
     return;
   }
 
@@ -3838,7 +3879,14 @@ export function routeDaemonEventsNotification(
   // agent-subscription-ui entry via `agent.getSubscriptions` — completion
   // counts tick live while a coordinator waits on `waitMode: after_all`.
   if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
-    appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    const agentId = (event as { data?: { agentId?: unknown } }).data?.agentId;
+    if (type === 'agent:subscriptions-changed' && typeof agentId === 'string' && agentId) {
+      // This event names the parent whose watch set changed. Other lifecycle
+      // events can affect arbitrary watched children and retain workspace scope.
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId, agentId));
+    } else {
+      appStore.dispatch(refreshWorkspaceSubscriptionEntriesRequested(workspaceId));
+    }
   }
 
   // STAB-9: Agent lifecycle events (status-changed, idle) refresh ONLY the
@@ -3947,7 +3995,7 @@ export function routeDaemonEventsNotification(
     // HUD card rows drop the deleted agent immediately — the `agent.list`
     // hydration above does not touch it. Fire-and-forget side effect, falls
     // through to the timeline dispatch below.
-    void reconcileWorkspaceAgentSummary(workspaceId);
+    void reconcileWorkspaceAggregates(workspaceId);
   }
 
   // monorepo#1106/#1989: a redrive that bypasses chat-send-service —
@@ -4091,6 +4139,17 @@ export function routeDaemonEventsNotification(
   // message. `agent:failed` flows through both paths: it finalizes any
   // in-flight stream AND forwards the lifecycle to `eventReceived` so the
   // session status transitions to "failed".
+  const submissionAgentId = event.data?.agentId;
+  if (typeof submissionAgentId === 'string') {
+    if (type === 'agent:message' && event.data?.role === 'user')
+      announceSubmissionDelivery(submissionAgentId, workspaceId, [
+        event.data as import('$store/renderer/slices/pending-submissions/pending-submissions-types').SubmissionEvidence,
+      ]);
+    if (type === 'agent:idle' || type === 'agent:failed' || type === 'agent:stream:end')
+      observeSubmissionLifecycle(submissionAgentId, workspaceId, false);
+    if (type === 'agent:stream:start')
+      observeSubmissionLifecycle(submissionAgentId, workspaceId, true);
+  }
   if (type === 'agent:stream:start') {
     handleStreamStartEvent(event, workspaceId);
     return;
@@ -4138,15 +4197,25 @@ export function routeDaemonEventsNotification(
     // fall through to the storage dispatch below so the activity timeline
     // records the attention request alongside the sticky toast.
   }
-  // Script definition/output/state (§6.5) — definition mutations trigger a
-  // canonical list refetch, output feeds the live buffer, and state mirrors
-  // the recomputed runtime into the scripts slice.
+  if ((type === 'script:changed' || type === 'script:state') && typeof event.id === 'string') {
+    if (seenScriptEventIds.has(event.id)) return;
+    seenScriptEventIds.add(event.id);
+  }
+
+  // Complete changes apply directly; legacy invalidations still reconcile.
+  // Output feeds the live buffer and state replaces only the runtime.
   if (type === 'script:changed') {
     const data = (event as { data?: Record<string, unknown> }).data;
     if (data?.action === 'removed' && typeof data.scriptId === 'string') {
       appStore.dispatch(removeScript(workspaceId, data.scriptId));
+    } else {
+      const script =
+        data?.action === 'created' || data?.action === 'updated'
+          ? scriptChangeSnapshot(data.script, workspaceId, data.scriptId)
+          : undefined;
+      if (script) appStore.dispatch(scriptSnapshotReceived(workspaceId, script));
+      else appStore.dispatch(refreshScripts(workspaceId));
     }
-    appStore.dispatch(refreshScripts(workspaceId));
     // fall through so the activity timeline records the mutation
   }
   if (type === 'script:output') {
@@ -4358,6 +4427,7 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // change events (`{ tab, changes? }`, patched into the browser-clients
   // mirror). The `workspace:updated` subscription above already carries the
   // `browserClientId` pin delta.
+  'client:updated',
   'client:connected',
   'client:disconnected',
   'browser:tab-opened',
@@ -4376,8 +4446,8 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // gate narrows it like any other row.
   'presence:changed',
   'host:members-changed',
+  'host:invites-changed',
   'host:execution-context-changed',
-  'principal:identity-changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(
@@ -4497,7 +4567,10 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
   );
 }
 
+const seenScriptEventIds = new Set<string>();
+
 export function disposeDaemonEventsRoutingState(): void {
+  seenScriptEventIds.clear();
   agentRefreshGeneration += 1;
   streamsByAgent.clear();
   previewTurnMessageIdByAgent.clear();
@@ -4524,8 +4597,8 @@ export function disposeDaemonEventsRoutingState(): void {
   }
   agentDeleteTombstoneTimers.clear();
   scriptOutputDecoders.clear();
-  agentSummaryFetchInFlightByWorkspace.clear();
-  agentSummaryFetchFollowUpWantedByWorkspace.clear();
+  aggregateFetchInFlightByWorkspace.clear();
+  aggregateFetchFollowUpWantedByWorkspace.clear();
   activityFetchInFlightByWorkspace.clear();
   activityFetchFollowUpWantedByWorkspace.clear();
   missingEntityFetchInFlightByWorkspace.clear();

@@ -8,7 +8,7 @@
   import Fa from 'svelte-fa';
   import { faPencil, faExpand, faCode } from '@fortawesome/free-solid-svg-icons';
   import { slide } from '$lib/motion';
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
   import { serializeDiagramSvg } from '$lib/components/diagrams/diagram-export';
@@ -70,29 +70,80 @@
   let diagramContainerEl: HTMLDivElement | undefined = $state();
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
 
+  let cancelFullscreenRequest: (() => void) | undefined;
+
+  function cancelPendingFullscreen() {
+    cancelFullscreenRequest?.();
+    cancelFullscreenRequest = undefined;
+  }
+
+  onDestroy(cancelPendingFullscreen);
+
   function openFullscreen(e: MouseEvent) {
-    // Prevent the click from propagating to ProseMirror selection handling
+    // Prevent the click from propagating to ProseMirror selection handling.
     e.stopPropagation();
     e.preventDefault();
-    try {
-      if (!diagramContainerEl) throw new Error('Diagram container is unavailable');
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous DOM snapshot; this export helper does not fetch domain data
-      fullscreenSvg = serializeDiagramSvg(diagramContainerEl);
-    } catch {
-      fullscreenSvg = '';
-      toast.error(m.markdown_mermaid_renderFailed_error());
+    cancelPendingFullscreen();
+    const opener = e.currentTarget as HTMLElement;
+    const container = diagramContainerEl;
+    const source = displayCode;
+    const requestedNode = node;
+    const presentation = container?.closest<HTMLElement>('[data-diagram-presentation]');
+
+    const open = () => {
+      cancelPendingFullscreen();
+      if (requestedNode !== node || source !== displayCode || container !== diagramContainerEl)
+        return;
+      try {
+        if (!container) throw new Error('Diagram container is unavailable');
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous DOM snapshot; this export helper does not fetch domain data
+        fullscreenSvg = serializeDiagramSvg(container);
+      } catch {
+        fullscreenSvg = '';
+        toast.error(m.markdown_mermaid_renderFailed_error());
+        return;
+      }
+      fullscreenOpenerElement = opener;
+      // Blur only when ready to open, so settling does not discard keyboard focus.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      isFullscreen = true;
+    };
+
+    if (
+      renderState !== 'rendered' ||
+      presentation?.dataset.diagramPresentationSettled !== 'false'
+    ) {
+      open();
       return;
     }
-    fullscreenOpenerElement = e.currentTarget as HTMLElement;
-    // Blur any focused element (including TipTap editor) to avoid RangeError
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
 
-    isFullscreen = true;
+    // Source disclosure can queue presentation geometry without changing the graph.
+    // Retain this activation until the atomic width/readiness publication, keeping
+    // the serializer's guard authoritative instead of guessing a number of frames.
+    const observer = new MutationObserver(() => {
+      if (presentation.dataset.diagramPresentationSettled === 'true') open();
+    });
+    observer.observe(presentation, {
+      attributes: true,
+      attributeFilter: ['data-diagram-presentation-settled'],
+    });
+    const onKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') cancelPendingFullscreen();
+    };
+    const onFocus = (event: FocusEvent) => {
+      if (event.target !== opener) cancelPendingFullscreen();
+    };
+    window.addEventListener('keydown', onKeydown);
+    document.addEventListener('focusin', onFocus);
+    cancelFullscreenRequest = () => {
+      observer.disconnect();
+      window.removeEventListener('keydown', onKeydown);
+      document.removeEventListener('focusin', onFocus);
+    };
   }
 
   function closeFullscreen() {
+    cancelPendingFullscreen();
     isFullscreen = false;
     fullscreenSvg = '';
   }
@@ -108,6 +159,7 @@
   let showSource = $state(false);
 
   function toggleSource(e: MouseEvent) {
+    cancelPendingFullscreen();
     e.stopPropagation();
     e.preventDefault();
     showSource = !showSource;
@@ -127,6 +179,13 @@
     showCode ? (isBase64(savedCode) ? encodeBase64(editCode) : editCode) : savedCode,
   );
 
+  // A request belongs to the exact source activated by the user, never its replacement.
+  $effect.pre(() => {
+    node;
+    displayCode;
+    cancelPendingFullscreen();
+  });
+
   // Syntax highlighted HTML
   let highlightedCode = $derived.by(() => {
     try {
@@ -142,6 +201,7 @@
   let textareaEl = $state<HTMLTextAreaElement>();
 
   async function openCodeView(e: MouseEvent) {
+    cancelPendingFullscreen();
     // Prevent the click from selecting text or triggering bubble menu
     e.stopPropagation();
     e.preventDefault();

@@ -1,3 +1,4 @@
+import { normalizeGitLabInstanceUrl } from '$lib/utils/gitlab-host';
 /**
  * Integrations IPC bridge — routes the legacy renderer→main GitHub / Linear /
  * Sentry auth+issue probes to the daemon's `github.*` / `linear.*` /
@@ -263,22 +264,41 @@ function asProvider(value: unknown): ForgeProvider | null {
  * `sourceControl.*` methods. `host` is forwarded verbatim when present so an
  * operation on instance B is never resolved against the persisted instance A.
  */
-function forgeHostParams(arg: unknown): { provider: ForgeProvider; host?: string } | null {
-  const { provider, host } = asRecord(arg);
+function forgeHostParams(
+  arg: unknown,
+): { provider: ForgeProvider; host?: string; instanceBaseUrl?: string } | null {
+  const { provider, host, instanceBaseUrl } = asRecord(arg);
   const forge = asProvider(provider);
-  if (!forge) return null;
-  return { provider: forge, ...(typeof host === 'string' && host ? { host } : {}) };
+  if (!forge || (host !== undefined && typeof host !== 'string')) return null;
+  if (
+    instanceBaseUrl !== undefined &&
+    (forge !== 'gitlab' ||
+      typeof instanceBaseUrl !== 'string' ||
+      normalizeGitLabInstanceUrl(instanceBaseUrl) !== instanceBaseUrl)
+  )
+    return null;
+  if (
+    typeof instanceBaseUrl === 'string' &&
+    typeof host === 'string' &&
+    host &&
+    new URL(instanceBaseUrl).host !== host.toLowerCase()
+  )
+    return null;
+  return {
+    provider: forge,
+    ...(typeof host === 'string' && host ? { host } : {}),
+    ...(typeof instanceBaseUrl === 'string' ? { instanceBaseUrl } : {}),
+  };
 }
 
 /** Narrow the renderer's connect argument to the daemon's `sourceControl.connect` params. */
 function forgeConnectParams(arg: unknown): ForgeConnectParams | null {
-  const { provider, host, method, token } = asRecord(arg);
-  const forge = asProvider(provider);
-  if (!forge) return null;
+  const { method, token } = asRecord(arg);
+  const target = forgeHostParams(arg);
+  if (!target) return null;
   if (method !== undefined && method !== 'device' && method !== 'pat') return null;
   return {
-    provider: forge,
-    ...(typeof host === 'string' && host ? { host } : {}),
+    ...target,
     ...(method ? { method } : {}),
     ...(method === 'pat' && typeof token === 'string' && token ? { token } : {}),
   };
@@ -287,7 +307,9 @@ function forgeConnectParams(arg: unknown): ForgeConnectParams | null {
 /** Stable `error.data.code` of a typed `sourceControl.*` error, if present. */
 function forgeErrorCode(error: unknown): ForgeConnectErrorCode | undefined {
   const code = (error as { code?: unknown } | null)?.code;
-  return code === 'device-grant-unsupported' || code === 'source-control-unauthorized'
+  return code === 'device-grant-unsupported' ||
+    code === 'source-control-unauthorized' ||
+    code === 'gitlab-instance-unsupported'
     ? code
     : undefined;
 }
@@ -376,12 +398,21 @@ registerMockIpcHandler(FORGE_AUTH_CHANNELS.CANCEL_AUTH, async (arg): Promise<For
   const params = forgeHostParams(arg);
   if (!params) return { success: false, error: 'provider is required' };
   try {
-    const result = await backendRequest<{ ok?: boolean }>('sourceControl.cancelAuth', params);
+    const result = await backendRequest<{ ok?: boolean; cancelled?: boolean }>(
+      'sourceControl.cancelAuth',
+      params,
+    );
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the cancel.' };
     }
+    if (params.provider === 'gitlab' && typeof result.cancelled !== 'boolean') {
+      return { success: false, error: 'The daemon did not report a cancellation outcome.' };
+    }
     invalidateForgeCaches(params.provider);
-    return { success: true };
+    return {
+      success: true,
+      ...(params.provider === 'gitlab' ? { cancelled: result.cancelled } : {}),
+    };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

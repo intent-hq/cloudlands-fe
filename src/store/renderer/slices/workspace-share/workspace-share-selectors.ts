@@ -65,7 +65,11 @@ export const selectShareInvites = store.createSelector((state) =>
  */
 export const selectShareInvitablePrincipals = store.createSelector((state) => {
   const { principals, members } = state.workspaceShare;
-  return getItems(principals).filter((principal) => !getItem(members, principal.principalId));
+  return getItems(principals).filter(
+    (principal) =>
+      !getItem(members, principal.principalId) &&
+      (principal.hostRole === undefined || principal.hostRole === 'guest'),
+  );
 });
 
 /** Guests spent (collaborators + open invites); `null` until read or when unreported. */

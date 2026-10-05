@@ -4,11 +4,12 @@
   import { tick, untrack } from 'svelte';
   import type { DevConsoleRow } from '$shared/types/dev-console';
   import type { TrafficColumn } from './traffic-view';
-  import { trafficBytes } from './traffic-view';
-  import { statusLabel } from './traffic-labels';
+  import { trafficBytes, trafficStream } from './traffic-view';
+  import { statusLabel, trafficTabLabel } from './traffic-labels';
   import * as m from '$shared/paraglide/messages.js';
   let {
     rows,
+    combined = false,
     selected,
     onselect,
     column,
@@ -16,6 +17,7 @@
     onsort,
   }: {
     rows: DevConsoleRow[];
+    combined?: boolean;
     selected: string | null;
     onselect: (id: string) => void;
     column: TrafficColumn;
@@ -86,6 +88,19 @@
     viewport.scrollTop = viewport.scrollHeight;
     top = viewport.scrollTop;
   }
+  export async function focusRecord(id: string) {
+    const index = rows.findIndex((row) => row.id === id);
+    if (index < 0) return;
+    following = false;
+    const y = 27 + index * rowHeight;
+    if (y < viewport.scrollTop + 27 || y + rowHeight > viewport.scrollTop + viewport.clientHeight) {
+      viewport.scrollTop = Math.max(0, y - viewport.clientHeight / 2);
+    }
+    // Showing a hidden viewport can restore native scrollTop without a scroll event.
+    top = viewport.scrollTop;
+    await tick();
+    viewport.querySelector<HTMLElement>(`[data-index="${index}"]`)?.focus({ preventScroll: true });
+  }
   async function key(event: KeyboardEvent, index: number) {
     let target = index;
     if (event.key === 'ArrowDown') target++;
@@ -111,7 +126,7 @@
   }
 </script>
 
-<div class="traffic-table">
+<div class="traffic-table" class:combined>
   <div class="follow">
     <span>{following ? m.devConsole_following_label() : m.devConsole_paused_label()}</span><Button
       size="compact"
@@ -136,7 +151,11 @@
               onclick={() => onsort(id, column === id ? !descending : false)}
               >{label}{column === id ? (descending ? ' ↓' : ' ↑') : ''}</Button
             >
-          </div>{/each}
+          </div>
+          {#if combined && id === 'timestamp'}<div role="columnheader" class="stream-heading">
+              {m.devConsole_stream_label()}
+            </div>{/if}
+        {/each}
       </div>
       <div style:height={`${start * rowHeight}px`} aria-hidden="true"></div>
       {#each rows.slice(start, end) as row, i (row.id)}
@@ -144,6 +163,7 @@
           role="row"
           class="columns record"
           class:selected={selected === row.id}
+          data-stream={combined ? trafficStream(row) : undefined}
           data-index={start + i}
           aria-rowindex={start + i + 2}
           aria-selected={selected === row.id}
@@ -152,6 +172,12 @@
           onkeydown={(event) => key(event, start + i)}
         >
           <span role="cell">{formatDatePattern(row.timestamp, 'HH:mm:ss.SSS')}</span>
+          {#if combined}
+            {@const stream = trafficStream(row)}
+            <span role="cell" title={stream ? trafficTabLabel(stream) : ''}
+              >{stream ? trafficTabLabel(stream) : '—'}</span
+            >
+          {/if}
           <span role="cell" class="method" title={row.method}>{row.method}</span>
           <span role="cell"
             >{row.kind === 'request'
@@ -231,6 +257,13 @@
     min-width: 940px;
     align-items: center;
   }
+  .combined .columns {
+    grid-template-columns: 116px 150px minmax(240px, 1fr) 78px 94px 104px 86px 80px 120px;
+    min-width: 1090px;
+  }
+  .stream-heading {
+    padding: 0 7px;
+  }
   .header {
     position: sticky;
     top: 0;
@@ -255,6 +288,15 @@
   }
   .record:nth-child(even) {
     background: hsl(var(--muted) / 0.35);
+  }
+  .record[data-stream='outbound'] {
+    background: hsl(var(--info) / 0.07);
+  }
+  .record[data-stream='inbound'] {
+    background: hsl(var(--success) / 0.07);
+  }
+  .record[data-stream='events'] {
+    background: hsl(var(--warning) / 0.07);
   }
   .record:hover {
     background: hsl(var(--accent));

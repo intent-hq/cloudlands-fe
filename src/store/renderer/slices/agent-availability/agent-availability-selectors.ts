@@ -3,6 +3,7 @@
  */
 
 import { store } from '../../store';
+import { selectHostRole, selectPrincipalConnectionContext } from '../principal/principal-selectors';
 
 export const selectProviderStatusMap = store.createSelector(
   (state) => state.agentAvailability.providerStatusMap,
@@ -40,4 +41,14 @@ export const selectProviderModelsRefreshPending = store.createSelector(
 );
 export const selectProviderModelsRefreshRevision = store.createSelector(
   (state) => state.agentAvailability.refreshModelsRevision,
+);
+
+/** Hydrated per-host completion, rather than the current number of workspaces, owns first run. */
+export const selectOnboardingAdapterPreparationContext = store.createSelector((state) =>
+  state.sidebarNav?.onboardingActive &&
+  state.userPreferences.providerSetupHydratedBackendId === state.connections.windowBackendId &&
+  !state.userPreferences.hasCompletedProviderSetup &&
+  selectHostRole.select(state) === 'owner'
+    ? selectPrincipalConnectionContext.select(state)
+    : null,
 );

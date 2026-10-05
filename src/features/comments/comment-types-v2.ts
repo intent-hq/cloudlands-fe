@@ -1,3 +1,6 @@
+import type { CommentAttribution } from '$shared/types/comment.types';
+import { projectCommentAttribution } from './comment-attribution';
+
 /**
  * Type-safe comment types using discriminated unions
  *
@@ -19,7 +22,7 @@ export interface CommentAnchor {
 /**
  * Base fields shared by all comment types
  */
-interface BaseComment {
+interface BaseComment extends CommentAttribution {
   id: string;
   threadId: string;
   content: string;
@@ -148,6 +151,7 @@ export function convertBackendCommentToV2(
     : undefined;
 
   const base = {
+    ...projectCommentAttribution(backendComment),
     id: backendComment.id,
     threadId: backendComment.threadId || `thread-${backendComment.id}`,
     content: backendComment.content,

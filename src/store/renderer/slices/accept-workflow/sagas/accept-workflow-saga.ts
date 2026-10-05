@@ -380,7 +380,7 @@ function* mergePRWorkflow(
   if (!result.success)
     throw new Error(result.error || m.workspace_mergePanel_prMergeFailed_error());
   yield* call(merged, workspaceId, options.mergeHeadSha);
-  yield* put(refreshPRStatusRequested(workspaceId, true, false));
+  yield* put(refreshPRStatusRequested(workspaceId, true, true));
   yield* call(
     notify.success,
     m.workspace_mergePanel_prMergedOnGithub_label({ number: options.prNumber }),

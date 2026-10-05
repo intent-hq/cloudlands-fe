@@ -20,6 +20,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // `byHost` lets a test give each backend its own (possibly deferred) answer,
 // keyed by the client config's `host` — for exercising a SLOW backend whose
 // probe resolves only after later operations (serialization regression below).
+const systemStatus = vi.hoisted(() => ({ value: {} as unknown }));
+
 const hostStatus = vi.hoisted(() => ({
   value: {} as unknown,
   byHost: new Map<string, () => Promise<unknown>>(),
@@ -32,6 +34,7 @@ const fakeClients = vi.hoisted(
   () =>
     [] as Array<{
       getConfig(): unknown;
+      request: ReturnType<typeof vi.fn>;
       opts: { onHelloResult?: (result: unknown) => void };
     }>,
 );
@@ -69,6 +72,7 @@ vi.mock('../json-rpc-client', () => {
           avatarUrl: null,
           isAdministrator: false,
         };
+      if (method === 'system.status') return systemStatus.value;
       if (method !== 'host.status') return {};
       const host = (this.config as { host?: string } | null)?.host;
       const deferred = host !== undefined ? hostStatus.byHost.get(host) : undefined;
@@ -221,6 +225,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   hostStatus.value = {};
+  systemStatus.value = {};
   hostStatus.byHost.clear();
   fakeClients.length = 0;
   store.getActiveId.mockResolvedValue('local');
@@ -337,12 +342,11 @@ describe('openBackendWindow hostname labeling', () => {
     await expect(mod.openBackendWindow('remote-1')).resolves.toEqual({ id: 'remote-1' });
   });
 
-  it('captures a guest host’s pretty hostname into the guest session and re-broadcasts guest sessions', async () => {
-    hostStatus.value = {
+  it('captures a guest host’s pretty hostname through guest-safe system.status and broadcasts it', async () => {
+    systemStatus.value = {
       hostname: 'studio.local',
       prettyHostname: 'Clement’s Mac Studio',
-      os: 'macos',
-      arch: 'aarch64',
+      host: { os: 'macos', arch: 'aarch64', locality: 'remote' },
     };
     guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
     guestStore.getDecryptedToken.mockResolvedValue('guest-token');
@@ -359,12 +363,100 @@ describe('openBackendWindow hostname labeling', () => {
         expect.any(Function),
       ),
     );
+    expect(
+      fakeClients
+        .at(-1)
+        ?.request.mock.calls.some(
+          ([method, params]) => method === 'system.status' && params === undefined,
+        ),
+    ).toBe(true);
+    expect(
+      fakeClients.at(-1)?.request.mock.calls.some(([method]) => method === 'host.status'),
+    ).toBe(false);
+    expect(
+      vi.mocked(app.emit).mock.calls.some(([event]) => event === 'guest-sessions-changed'),
+    ).toBe(true);
     // The guest record — not the paired-connection registry — is the write target.
     expect(store.setHostname).not.toHaveBeenCalled();
     expect(store.setDetectedDeviceKind).not.toHaveBeenCalled();
     await vi.waitFor(() =>
       expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
     );
+  });
+});
+
+describe('guest hostname connection lifetime', () => {
+  async function openGuest() {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const mod = await loadModule();
+    await mod.openBackendWindow(GUEST.id);
+    const client = fakeClients.at(-1)!;
+    client.opts.onHelloResult?.({ server: {} });
+    return { mod, client };
+  }
+
+  it('uses hostname when pretty name is blank and refreshes on reopen', async () => {
+    systemStatus.value = { hostname: 'studio.local', prettyHostname: '  ' };
+    const { mod } = await openGuest();
+    await vi.waitFor(() =>
+      expect(guestStore.setHostname).toHaveBeenCalledWith(
+        GUEST.id,
+        'studio.local',
+        expect.any(Function),
+      ),
+    );
+    mod.disconnectBackendClient(GUEST.id);
+    systemStatus.value = { hostname: 'studio.local', prettyHostname: 'Renamed Studio' };
+    await mod.openBackendWindow(GUEST.id);
+    fakeClients.at(-1)!.opts.onHelloResult?.({ server: {} });
+    await vi.waitFor(() =>
+      expect(guestStore.setHostname).toHaveBeenLastCalledWith(
+        GUEST.id,
+        'Renamed Studio',
+        expect.any(Function),
+      ),
+    );
+  });
+
+  for (const replacement of ['reconnect', 'reopen'] as const) {
+    it(`ignores a delayed guest name from before ${replacement}`, async () => {
+      let resolveOld!: (value: unknown) => void;
+      systemStatus.value = new Promise((resolve) => {
+        resolveOld = resolve;
+      });
+      const { mod, client } = await openGuest();
+      await vi.waitFor(() =>
+        expect(
+          client.request.mock.calls.filter(([method]) => method === 'system.status').length,
+        ).toBeGreaterThanOrEqual(2),
+      );
+      systemStatus.value = { hostname: 'current.local', prettyHostname: 'Current Studio' };
+      if (replacement === 'reopen') {
+        mod.disconnectBackendClient(GUEST.id);
+        await mod.openBackendWindow(GUEST.id);
+      }
+      fakeClients.at(-1)!.opts.onHelloResult?.({ server: {} });
+      await vi.waitFor(() =>
+        expect(guestStore.setHostname).toHaveBeenCalledWith(
+          GUEST.id,
+          'Current Studio',
+          expect.any(Function),
+        ),
+      );
+      resolveOld({ hostname: 'stale.local', prettyHostname: 'Stale Studio' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setHostname.mock.calls.map(([, name]) => name)).toEqual(['Current Studio']);
+    });
+  }
+
+  it('keeps the saved fallback when status has no name', async () => {
+    const { client } = await openGuest();
+    await vi.waitFor(() =>
+      expect(client.request.mock.calls.some(([method]) => method === 'system.status')).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(guestStore.setHostname).not.toHaveBeenCalled();
   });
 });
 

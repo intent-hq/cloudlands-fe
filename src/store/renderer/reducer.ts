@@ -1,10 +1,16 @@
 import { notePagesReducer } from './slices/note-pages/note-pages-slice';
+import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
+import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
+import { repositoryCheckoutReducer } from './slices/repository-checkout/repository-checkout-slice';
+import { invitationAccountSearchReducer } from './slices/invitation-account-search/invitation-account-search-slice';
+import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
+import { agentModelReducer } from './slices/agent-model/agent-model-slice';
 import { backgroundAgentSettingsReducer } from './slices/background-agent-settings/background-agent-settings-slice';
 import { externalEditorsReducer } from './slices/external-editors/external-editors-slice';
 import { uiLayoutReducer } from './slices/ui-layout/ui-layout-slice';
@@ -64,6 +70,7 @@ import { sidebarNavReducer } from './slices/sidebar-nav/sidebar-nav-slice';
 import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
+import { scriptMonitorReducer } from './slices/script-monitor/script-monitor-slice';
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
@@ -104,6 +111,7 @@ import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice'
 import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
 import { principalReducer } from './slices/principal/principal-slice';
+import { presenceFollowReducer } from './slices/presence-follow/presence-follow-slice';
 import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
@@ -113,6 +121,8 @@ import { workspaceImportReducer } from './slices/workspace-import/workspace-impo
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
+  repositoryContext: repositoryContextReducer,
+  repositoryCheckout: repositoryCheckoutReducer,
   providerSettings: providerSettingsReducer,
   settingsEvents: settingsEventsReducer,
   antigravitySetup: antigravitySetupReducer,
@@ -132,6 +142,7 @@ export const reducers = {
   knownRepos: knownReposReducer,
   deepLinks: deepLinksReducer,
   model: modelReducer,
+  agentModel: agentModelReducer,
   pip: pipReducer,
   power: powerReducer,
   specialists: specialistsReducer,
@@ -179,6 +190,7 @@ export const reducers = {
   stats: statsReducer,
   backgroundHooks: backgroundHooksReducer,
   prMonitor: prMonitorReducer,
+  scriptMonitor: scriptMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
   gitWrite: gitWriteReducer,
@@ -200,6 +212,7 @@ export const reducers = {
   pdfPreview: pdfPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
+  pendingSubmissions: pendingSubmissionsReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,
   onboarding: onboardingReducer,
   workspaceInitializer: workspaceInitializerReducer,
@@ -218,6 +231,7 @@ export const reducers = {
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
   presence: presenceReducer,
+  presenceFollow: presenceFollowReducer,
   principal: principalReducer,
   hostExecution: hostExecutionReducer,
   hostRequirements: hostRequirementsReducer,
@@ -226,4 +240,6 @@ export const reducers = {
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
+  invitationAccountSearch: invitationAccountSearchReducer,
+  hostMembership: hostMembershipReducer,
 } as const;

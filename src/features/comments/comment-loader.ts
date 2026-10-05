@@ -1,4 +1,5 @@
 import { isPagedNoteSession } from '$features/notes/notes-read-service';
+import { projectCommentAttribution } from './comment-attribution';
 import { commentsClient } from './comments.client';
 import { Logger } from '../../shared/logger';
 import type { NoteComment } from '../../shared/types';
@@ -43,6 +44,7 @@ export async function loadComments(options: CommentLoaderOptions): Promise<NoteC
       const data = result.data || [];
       logger.info('[CommentLoader] Successfully loaded comments:', data.length);
       const converted: NoteComment[] = (data as any[]).map((c: any) => ({
+        ...projectCommentAttribution(c),
         id: c.id,
         noteId: c.noteId ?? noteId,
         threadId: c.threadId ?? c.id,

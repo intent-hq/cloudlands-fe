@@ -30,6 +30,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
+import { initialState as modelInitialState } from '../../model/model-slice';
 import type { Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 
@@ -64,13 +65,12 @@ import {
 } from './settings-hydration-saga';
 
 const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
 };
 
 /** Boot-time store: window identity unsettled, workspace list unloaded. */
 const BOOT_STATE = {
+  model: modelInitialState,
   workspace: workspaceInitialState,
   connections: connectionsInitialState,
   guestSessions: guestSessionsInitialState,
@@ -95,6 +95,7 @@ function settledState(roles: Array<Workspace['myRole']>): StoreState {
   );
   return withLegacyPrincipal(
     {
+      model: modelInitialState,
       workspace: workspaceReducer(
         workspaceReducer(workspaceInitialState, replaceWorkspaceList(workspaces)),
         setWorkspaceHasLoaded(true),
@@ -124,6 +125,7 @@ const sagaIO = {
     },
   },
 };
+
 function changeState(next: StoreState) {
   storeState = next;
   listeners.forEach((listener) => listener());
@@ -416,6 +418,7 @@ describe('settingsHydrationSaga', () => {
     );
     const input = stdChannel();
     const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
+    expect(mocks.apply).not.toHaveBeenCalled();
     input.put(settingsChangesReceived([{ path: 'first', value: 1 }]));
     input.put(
       settingsChangesReceived([

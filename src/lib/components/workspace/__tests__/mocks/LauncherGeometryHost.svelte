@@ -47,6 +47,8 @@
     isStreaming: index === 0,
     isProcessing: index === 0,
     isResponding: index === 0,
+    lastUserMessage: 'Review the latest work',
+    lastAgentResponse: 'The summary is ready',
     messages: [],
     createdAt: timestamp,
     updatedAt: timestamp,

@@ -1,16 +1,18 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
 /**
  * @vitest-environment jsdom
  *
  * The workspace sidebar's presence row: the production people selectors run
  * over real presence + workspace state, and each avatar takes the viewer to
- * where that person looks (agent chat, else note) or falls back to Share.
+ * where that person looks (agent chat, else note), with no Share fallback.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import type { PresenceMember } from '$shared/types/presence';
+import type { PresenceFocusItem, PresenceMember } from '$shared/types/presence';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 import {
@@ -22,7 +24,13 @@ import {
 } from '$store/renderer/slices/presence/presence-slice';
 import type { PresenceState } from '$store/renderer/slices/presence/presence-types';
 import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
-import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
+import { selectPresenceFollowScope } from '$store/renderer/slices/presence-follow/presence-follow-selectors';
+import {
+  presenceFollowReducer,
+  presenceFollowScopeChanged,
+  presenceFollowFrameReceived,
+  followPresencePersonRequested,
+} from '$store/renderer/slices/presence-follow/presence-follow-slice';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -47,6 +55,8 @@ const mocks = vi.hoisted(() => {
     panelLayout: { byWorkspaceId: { 'ws-1': { columnCount: 1, panels: {} } } },
     workspace: { workspaces: null as unknown, pendingTitleMutations: {} },
     presence: null as unknown,
+    presenceFollow: null as unknown,
+    tabState: { currentTabId: 'ws-1' },
     userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
   const readable = <T>(value: T) => ({
@@ -80,6 +90,11 @@ vi.mock('$lib/utils/workspace-navigation', async (importOriginal) => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectCanShareWorkspace: mocks.selector(
+    () =>
+      mocks.state.userPreferences?.labsMultiplayerEnabled === true &&
+      mocks.workspaceEntity.myRole === 'owner',
+  ),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
@@ -171,7 +186,11 @@ const accepted = (principalId: string, role: WorkspaceMember['role']): Workspace
   addedAt: '2026-09-14T12:00:00Z',
 });
 const presenceState = (...actions: Parameters<typeof presenceReducer>[1][]): PresenceState =>
-  actions.reduce((state, action) => presenceReducer(state, action), presenceInitialState);
+  actions.reduce((state, action) => presenceReducer(state, action), {
+    ...presenceInitialState,
+    context: 'fixture',
+    workspaceIds: ['ws-1'],
+  });
 const membership = presenceMembersReceived('ws-1', [
   accepted('me', 'owner'),
   accepted('ada', 'collaborator'),
@@ -193,11 +212,34 @@ async function renderProgressCard({
   presence = presenceState(membership, roster, presenceOwnPrincipalReceived('me')),
   myRole = 'owner' as Workspace['myRole'],
   memberCount = 4,
+  focusTargets = {
+    ada: { workspaceId: 'ws-1', agentId: 'agent-1' },
+    bob: { workspaceId: 'ws-1', noteId: 'note-1' },
+    cy: { workspaceId: 'ws-1' },
+  } as Record<string, PresenceFocusItem>,
+  otherWorkspaces = [] as Workspace[],
 } = {}) {
-  mocks.state.presence = presence;
+  const admitted = withLegacyPrincipal(mocks.state);
+  Object.assign(mocks.state, admitted);
+  mocks.state.presence = { ...presence, context: selectPrincipalActionContext.select(admitted) };
   mocks.state.workspace.workspaces = createCollection('id', [
     { id: WorkspaceId('ws-1'), title: 'Shared Workspace', ownerPrincipalId: 'me', memberCount },
+    ...otherWorkspaces,
   ] as Workspace[]);
+  mocks.state.presenceFollow = presenceFollowReducer(undefined, { type: 'init' });
+  const scope = selectPresenceFollowScope.select(mocks.state as never);
+  if (scope) {
+    let follow = presenceFollowReducer(
+      undefined,
+      presenceFollowScopeChanged(scope, selectPrincipalActionContext.select(admitted), 'ws-1'),
+    );
+    for (const [principalId, target] of Object.entries(focusTargets))
+      follow = presenceFollowReducer(
+        follow,
+        presenceFollowFrameReceived(scope, principalId, { generation: 1, seq: 0, target }),
+      );
+    mocks.state.presenceFollow = follow;
+  }
   mocks.workspaceEntity = { ...mocks.workspaceEntity, myRole } as Workspace;
   const WorkspaceProgressCard = (await import('../WorkspaceProgressCard.svelte')).default;
   const view = render(WorkspaceProgressCard, { props: { workspaceId: 'ws-1' } });
@@ -227,7 +269,7 @@ describe('WorkspaceProgressCard presence row', () => {
     mocks.navigateToNote.mockClear();
     mocks.notes.length = 0;
     mocks.agents.length = 0;
-    mocks.state.userPreferences = undefined;
+    mocks.state.userPreferences = { labsMultiplayerEnabled: true };
   });
 
   it('renders nothing for an unshared workspace, keeping the rest of the metadata block', async () => {
@@ -314,7 +356,7 @@ describe('WorkspaceProgressCard presence row', () => {
       expect(avatar.getAttribute('data-presence-ring')).toBe('offline');
       expectGreyscaleBelowRing(avatar);
     }
-    expect(personButton('cy').getAttribute('aria-label')).toMatch(/offline/i);
+    expect(personButton('cy').getAttribute('aria-disabled')).toBe('true');
     // The group name must not announce the offline members as present.
     const group = row.querySelector('[data-presence-avatar-stack]')!;
     expect(group.getAttribute('aria-label')).not.toMatch(/here$/);
@@ -426,7 +468,7 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(screen.getByRole('button', { name: /^ada/ })).toBe(personButton('ada'));
   });
 
-  it('takes the viewer to the agent chat or note a person is on', async () => {
+  it('requests following the agent chat or note a person is on', async () => {
     mocks.agents.push({ id: 'agent-1', name: 'Coordinator', isStreaming: false });
     mocks.notes.push({ id: 'note-1', title: 'Design' } as Note);
     await renderProgressCard();
@@ -434,34 +476,101 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(personButton('ada').getAttribute('aria-label')).toContain('Coordinator');
     await fireEvent.click(personButton('ada'));
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      openAgentTabRequested('ws-1', {
-        agentId: 'agent-1',
-        sourcePanelId: undefined,
-        openInAdjacentPanel: false,
+      expect.objectContaining({
+        type: followPresencePersonRequested.type,
+        payload: [expect.any(String), 'ada', 1, 0, expect.any(String), undefined, false],
       }),
     );
 
     expect(personButton('bob').getAttribute('aria-label')).toContain('Design');
     await fireEvent.click(personButton('bob'));
-    expect(mocks.navigateToNote).toHaveBeenCalledWith('note-1', { workspaceId: 'ws-1' });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: followPresencePersonRequested.type,
+        payload: [expect.any(String), 'bob', 1, 0, expect.any(String), undefined, false],
+      }),
+    );
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: openShareDialog.type }),
     );
   });
 
-  it('opens the Share screen for the owner when a person has no agent or note focus (Multiplayer lab on)', async () => {
+  it.each([
+    { label: 'offline', members: [] },
+    { label: 'online without a known destination', members: [rosterMember('cy', [])] },
+  ])('does not open Share for an $label person', async ({ members }) => {
     mocks.state.userPreferences = { labsMultiplayerEnabled: true };
-    await renderProgressCard({ myRole: 'owner' });
+    await renderProgressCard({
+      myRole: 'owner',
+      focusTargets: {},
+      presence: presenceState(
+        membership,
+        presenceRosterReceived({ workspaceId: 'ws-1', members }),
+        presenceOwnPrincipalReceived('me'),
+      ),
+    });
     const cy = personButton('cy');
-    expect(cy.hasAttribute('aria-disabled')).toBe(false);
     await fireEvent.click(cy);
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Shared Workspace' }),
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: openShareDialog.type }),
     );
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: openAgentTabRequested.type }),
+      expect.objectContaining({ type: followPresencePersonRequested.type }),
     );
     expect(mocks.navigateToNote).not.toHaveBeenCalled();
+    expect(cy.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('names a reachable closed workspace and requests its reported view', async () => {
+    await renderProgressCard({
+      otherWorkspaces: [{ id: WorkspaceId('closed'), title: 'Shared destination' } as Workspace],
+      focusTargets: { ada: { workspaceId: 'closed', noteId: 'spec' } },
+    });
+    expect(personButton('ada').getAttribute('aria-label')).toContain('Shared destination');
+    await fireEvent.click(personButton('ada'));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: followPresencePersonRequested.type,
+        payload: [expect.any(String), 'ada', 1, 0, expect.any(String), undefined, false],
+      }),
+    );
+  });
+
+  it('does not expose an unreachable destination in text or attributes and stays inert', async () => {
+    await renderProgressCard({
+      focusTargets: { ada: { workspaceId: 'hidden-workspace', noteId: 'secret-note' } },
+    });
+    expect(presenceRow()!.outerHTML).not.toMatch(/hidden-workspace|secret-note/);
+    expect(personButton('ada').getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(personButton('ada'));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: followPresencePersonRequested.type }),
+    );
+  });
+
+  it('follows a bare workspace without inventing an agent or note', async () => {
+    await renderProgressCard();
+    await fireEvent.click(personButton('cy'));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: followPresencePersonRequested.type,
+        payload: [expect.any(String), 'cy', 1, 0, expect.any(String), undefined, false],
+      }),
+    );
+  });
+
+  it('refuses a captured click after focus changed without a render', async () => {
+    await renderProgressCard();
+    const button = personButton('ada');
+    const follow = mocks.state.presenceFollow as ReturnType<typeof presenceFollowReducer>;
+    mocks.state.presenceFollow = presenceFollowReducer(
+      follow,
+      presenceFollowFrameReceived(follow.scope!, 'ada', { generation: 1, seq: 1, target: null }),
+    );
+    await fireEvent.click(button);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: followPresencePersonRequested.type }),
+    );
   });
 
   it('opens the agent chat in an adjacent panel on a modifier click from within a panel', async () => {
@@ -474,16 +583,18 @@ describe('WorkspaceProgressCard presence row', () => {
 
     await fireEvent.click(personButton('ada'), { ctrlKey: true });
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      openAgentTabRequested('ws-1', {
-        agentId: 'agent-1',
-        sourcePanelId: 'panel-7',
-        openInAdjacentPanel: true,
+      expect.objectContaining({
+        type: followPresencePersonRequested.type,
+        payload: [expect.any(String), 'ada', 1, 0, expect.any(String), 'panel-7', true],
       }),
     );
   });
 
   it('leaves such a person inert for a non-owner, without dimming the avatar', async () => {
-    await renderProgressCard({ myRole: 'collaborator' });
+    await renderProgressCard({
+      myRole: 'collaborator',
+      focusTargets: { ada: { workspaceId: 'ws-1', agentId: 'agent-1' } },
+    });
     const cy = personButton('cy');
     expect(cy.getAttribute('aria-disabled')).toBe('true');
     // The button base variant dims aria-disabled buttons; the avatar stays solid.
@@ -494,16 +605,36 @@ describe('WorkspaceProgressCard presence row', () => {
       expect.objectContaining({ type: openShareDialog.type }),
     );
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: openAgentTabRequested.type }),
+      expect.objectContaining({ type: followPresencePersonRequested.type }),
     );
     expect(mocks.navigateToNote).not.toHaveBeenCalled();
     // ada's agent focus still opens the chat regardless of role.
     await fireEvent.click(personButton('ada'));
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: openAgentTabRequested.type,
-        payload: ['ws-1', expect.objectContaining({ agentId: 'agent-1' })],
+        type: followPresencePersonRequested.type,
+        payload: [expect.any(String), 'ada', 1, 0, expect.any(String), undefined, false],
       }),
+    );
+  });
+});
+
+describe('presence rollout mounted boundary', () => {
+  it('hides the complete row when Multiplayer is disabled, including focused avatars', async () => {
+    mocks.state.userPreferences = { labsMultiplayerEnabled: false };
+    await renderProgressCard();
+    expect(presenceRow()).toBeNull();
+    expect(document.querySelector('[data-presence-person-button]')).toBeNull();
+  });
+  it('refuses a captured avatar click after admission invalidation', async () => {
+    mocks.state.userPreferences = { labsMultiplayerEnabled: true };
+    mocks.dispatch.mockClear();
+    await renderProgressCard();
+    const button = personButton('ada');
+    mocks.state.userPreferences = { labsMultiplayerEnabled: false };
+    await fireEvent.click(button);
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: followPresencePersonRequested.type }),
     );
   });
 });
