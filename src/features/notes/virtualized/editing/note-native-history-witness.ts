@@ -1,9 +1,13 @@
 import { sameNoteScope } from '$lib/client/note-pages';
-import type { NoteDocumentSession } from './note-document-edit-session';
+import {
+  isNoteTextDocumentSession,
+  type NoteDocumentSession,
+  type NoteTextDocumentSession,
+} from './note-document-edit-session';
 import { composeNoteEdits } from './note-edit-plan';
 
 type ReadonlyTree<T> = T extends object ? { readonly [K in keyof T]: ReadonlyTree<T[K]> } : T;
-type Entry = NoteDocumentSession['history'][number];
+type Entry = NoteTextDocumentSession['history'][number];
 type SourceGroup = Pick<
   Entry,
   'id' | 'beforeLength' | 'forward' | 'inverse' | 'forwardReplay' | 'inverseReplay'
@@ -67,7 +71,7 @@ function dataFields(value: unknown, keys: readonly string[]) {
   }
 }
 
-function sourceFields(doc: NoteDocumentSession) {
+function sourceFields(doc: NoteTextDocumentSession) {
   const splice = (s: unknown) => dataFields(s, ['start', 'end', 'text']);
   const replay = (edits: Entry['forwardReplay']) => {
     if (!Array.isArray(edits)) fail();
@@ -226,6 +230,7 @@ export function captureNoteNativeHistoryWitness(
   // Admit the ENTIRE retained history, including old saved groups and redo, before
   // composition/snapshot allocations. Selection is charged but never witnessed.
   scanner(doc.limits.retainedBytes)([doc.scope, doc.history, doc.dirty, doc.replay, doc.limits]);
+  if (!isNoteTextDocumentSession(doc)) fail();
   sourceFields(doc);
   if (
     doc.history.reduce((n, g) => n + g.forward.length + g.inverse.length, 0) +
@@ -288,7 +293,7 @@ export function currentNoteNativeHistoryWitness(
   witness: NoteNativeHistoryWitness,
 ): boolean {
   const original = held.get(witness);
-  if (!original) return false;
+  if (!original || !isNoteTextDocumentSession(doc)) return false;
   try {
     dataFields(doc, documentFields);
     dataFields(doc.scope, ['backendId', 'workspaceId', 'noteId', 'noteInstanceId']);

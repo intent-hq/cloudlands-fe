@@ -13,6 +13,7 @@ import {
 import { readNoteStagedReceiptResult } from '$features/notes/virtualized/editing/note-staged-receipt-result';
 import { readNoteLocalReceiptResult } from '$features/notes/virtualized/editing/note-receipt-local-result';
 import { currentNoteDocumentSave } from '../note-document-publication';
+import { isNoteTextDocumentSession } from '$features/notes/virtualized/editing/note-document-edit-session';
 import type { NotePagesState } from '../note-pages-types';
 import type { NotePageSession } from '../note-pages-types';
 import { eventChannel, buffers } from 'redux-saga';
@@ -220,7 +221,14 @@ function* save(action: ReturnType<typeof actions.pageSaveRequested>) {
   const n = yield* session(ws, id);
   const client = appClient.notes.pages;
   if ('headerDigest' in operation) return;
-  if (!client || n?.pending || n?.status !== 'ready' || n.needsReconcile) return;
+  if (
+    !client ||
+    n?.pending ||
+    n?.status !== 'ready' ||
+    n.needsReconcile ||
+    (n.document && !isNoteTextDocumentSession(n.document))
+  )
+    return;
   yield* put(actions.pageSaveStarted(ws, id, operation, through));
   const pending = (yield* session(ws, id))?.pending;
   if (pending?.operation.operationId !== operation.operationId) return;
@@ -240,6 +248,8 @@ function* save(action: ReturnType<typeof actions.pageSaveRequested>) {
 }
 function* saveDrafts(action: ReturnType<typeof actions.pageSaveDraftsRequested>) {
   const [ws, id, staged] = action.payload;
+  const initial = yield* session(ws, id);
+  if (initial?.document && !isNoteTextDocumentSession(initial.document)) return;
   if (staged) {
     const redux = yield* getContext<
       | {
@@ -274,6 +284,7 @@ function* saveDrafts(action: ReturnType<typeof actions.pageSaveDraftsRequested>)
   let before: NotePageSession | undefined = yield* session(ws, id);
   if (
     !before?.state ||
+    (before.document && !isNoteTextDocumentSession(before.document)) ||
     before.status !== 'ready' ||
     before.pending ||
     before.needsReconcile ||
@@ -322,6 +333,7 @@ function* saveDrafts(action: ReturnType<typeof actions.pageSaveDraftsRequested>)
     // document, rebase or recovered save must never adopt this captured plan.
     if (
       !current?.state ||
+      (current.document && !isNoteTextDocumentSession(current.document)) ||
       current.generation !== generation ||
       current.state.sourceRevision !== state.sourceRevision ||
       !sameNoteScope(current.state.scope, state.scope) ||

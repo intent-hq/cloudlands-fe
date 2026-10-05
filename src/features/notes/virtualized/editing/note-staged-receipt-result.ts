@@ -13,7 +13,10 @@ import {
 } from '$lib/client/note-pages';
 import { stageTextDigest, validStageText } from '$lib/client/note-source-operation';
 import { beforeSourceDeadline, parseSourceDeadline } from '$shared/source-session-expiry';
-import type { NoteDocumentSession } from './note-document-edit-session';
+import {
+  assertNoteTextDocumentSession,
+  type NoteDocumentSession,
+} from './note-document-edit-session';
 import { composeNoteEdits } from './note-edit-plan';
 import { reserveNoteReceiptTranscript } from './note-receipt-transcript';
 
@@ -55,6 +58,7 @@ export async function readNoteStagedReceiptResult(
   ownerCurrent: () => boolean,
   signal?: AbortSignal,
 ) {
+  assertNoteTextDocumentSession(document);
   const receipt = Object.freeze({
     ...originalReceipt,
     scope: Object.freeze({ ...originalReceipt.scope }),

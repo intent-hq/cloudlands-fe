@@ -7,6 +7,7 @@ import type { readNoteLocalReceiptResult } from '$features/notes/virtualized/edi
 import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
 import {
   createNoteDocumentSession,
+  isNoteTextDocumentSession,
   reconcileNoteDocumentSave,
   type NoteDocumentSession,
 } from '$features/notes/virtualized/editing/note-document-edit-session';
@@ -802,7 +803,8 @@ notePagesReducer.with(pageSaveStarted, (s, { payload: [ws, id, operation, throug
       n.needsReconcile ||
       !n.state ||
       !sameNoteScope(operation.scope, n.state.scope) ||
-      operation.baseRevision !== n.state.sourceRevision
+      operation.baseRevision !== n.state.sourceRevision ||
+      (n.document && !isNoteTextDocumentSession(n.document))
     )
       return n;
     const capture = captureNoteDocumentSave(n, operation, throughSequence);
@@ -829,7 +831,8 @@ notePagesReducer.with(
         n.generation !== generation ||
         n.state?.sourceRevision !== revision ||
         n.pending ||
-        n.needsReconcile
+        n.needsReconcile ||
+        (n.document && !isNoteTextDocumentSession(n.document))
       )
         return n;
       // The captured edit prefix only inserted and removed its own text. No

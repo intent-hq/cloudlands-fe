@@ -1,6 +1,6 @@
 import { sameNoteScope, type NoteStagedSaveOperation } from '$lib/client/note-pages';
 import type { NotePageSession } from '$store/renderer/slices/note-pages/note-pages-types';
-import type { NoteDocumentSession } from './note-document-edit-session';
+import { isNoteTextDocumentSession, type NoteDocumentSession } from './note-document-edit-session';
 import {
   captureNoteNativeHistoryWitness,
   currentNoteNativeHistoryWitness,
@@ -131,6 +131,10 @@ export function retainNoteStagedSaveContinuity(
       (committed && !nowCommitted) ||
       !currentNoteNativeHistoryWitness(captured, operation.nativeWitness);
     if (lost || !doc) return false;
+    if (!isNoteTextDocumentSession(doc) || !isNoteTextDocumentSession(previous)) {
+      lost = true;
+      return false;
+    }
     const sourceRevision = note.state!.sourceRevision;
     lost ||= nowCommitted
       ? sourceRevision !== revision &&

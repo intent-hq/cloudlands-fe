@@ -132,7 +132,11 @@ describe('accepted native transaction ownership', () => {
     const first = f.state.applyTransaction(f.state.tr.insertText('X', 2));
     f.relay.adopt(first.transactions, first.state);
     const accepted = f.commit.mock.calls[0][0].after;
-    expect(finalize).toHaveBeenCalledWith(expect.anything(), first.state.selection);
+    expect(finalize).toHaveBeenCalledWith(
+      expect.anything(),
+      first.state.selection,
+      first.transactions,
+    );
     expect(accepted).toBe(finalize.mock.results[0].value);
     const next = first.state.applyTransaction(first.state.tr.insertText('Y', 3));
     expect(f.prepare.mock.calls[1][1]).toBe(accepted);
@@ -662,4 +666,17 @@ it('refuses callback mutation of retained relay projection despite unchanged nat
   expect(commit).not.toHaveBeenCalled();
   expect(initial.doc.textContent).toBe('abc');
   expect(initial.projection.content.content![0].content![0].text).toBe('abc');
+});
+
+it('refuses an exact candidate when its explicit native adapter refuses', () => {
+  const f = fixture();
+  const validate = vi.fn<NonNullable<NoteTransactionOwner['nativeOutput']>>(() => undefined);
+  f.owner.nativeOutput = validate;
+  const tr = f.state.tr.insertText('X', 2);
+  const result = f.state.applyTransaction(tr);
+  expect(validate).toHaveBeenCalledExactlyOnceWith(f.prepare.mock.results[0].value, tr);
+  expect(result.transactions).toEqual([]);
+  expect(result.state).toBe(f.state);
+  expect(f.relay.adopt(result.transactions, result.state)).toBeUndefined();
+  expect(f.commit).not.toHaveBeenCalled();
 });

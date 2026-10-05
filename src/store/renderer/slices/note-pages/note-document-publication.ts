@@ -1,5 +1,8 @@
 import { currentNoteNativeHistoryWitness } from '$features/notes/virtualized/editing/note-native-history-witness';
-import type { NoteDocumentSession } from '$features/notes/virtualized/editing/note-document-edit-session';
+import {
+  isNoteTextDocumentSession,
+  type NoteDocumentSession,
+} from '$features/notes/virtualized/editing/note-document-edit-session';
 import {
   sameNoteScope,
   type NoteSpliceOperation,
@@ -95,6 +98,7 @@ export function captureNoteDocumentSave(
   | { operation: NoteSpliceOperation | NoteStagedSaveOperation; document: NoteDocumentSaveCapture }
   | undefined {
   const doc = note.document;
+  if (!doc || !isNoteTextDocumentSession(doc)) return undefined;
   const staged = 'headerDigest' in operation;
   if (staged && (!doc || !currentNoteNativeHistoryWitness(doc, operation.nativeWitness)))
     return undefined;
@@ -169,6 +173,7 @@ export function currentNoteDocumentSave(
   return !!(
     note &&
     doc &&
+    isNoteTextDocumentSession(doc) &&
     note.committedDocumentSave === capture &&
     note.status === 'ready' &&
     note.needsReconcile &&

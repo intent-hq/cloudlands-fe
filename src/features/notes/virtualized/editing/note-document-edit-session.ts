@@ -4,8 +4,10 @@ import { sameNoteScope, type NoteScope, type NoteSplice } from '$lib/client/note
 import type { NoteSourceSelection } from '../note-source-selection';
 import type { NoteEditAuthority, NoteReplayEdit } from './note-edit-authority';
 import { composeNoteEdits } from './note-edit-plan';
+import type { NoteLocalPointRecipe } from './note-local-point-history';
 
 type Entry = {
+  kind?: 'text';
   id: number;
   beforeLength: number;
   forward: NoteSplice[];
@@ -15,7 +17,23 @@ type Entry = {
   before: NoteSourceSelection;
   after: NoteSourceSelection;
 };
-type Replay = { id: number; direction: 'undo' | 'redo'; edits: NoteReplayEdit[] };
+type Replay = { kind?: 'text'; id: number; direction: 'undo' | 'redo'; edits: NoteReplayEdit[] };
+export type NoteLocalPointEntry = {
+  kind: 'local-point';
+  id: number;
+  beforeLength: number;
+  forward: NoteSplice[];
+  inverse: NoteSplice[];
+  before: NoteSourceSelection;
+  after: NoteSourceSelection;
+  recipe: NoteLocalPointRecipe;
+};
+export type NoteLocalPointReplay = {
+  kind: 'local-point';
+  id: number;
+  direction: 'undo' | 'redo';
+  recipe: NoteLocalPointRecipe;
+};
 function appendReplay(replay: Replay[], next: Replay) {
   const last = replay.at(-1);
   return last?.id === next.id && last.direction !== next.direction
@@ -56,18 +74,52 @@ export interface NoteDocumentSession {
   length: number;
   generation: number;
   selection: NoteSourceSelection;
-  history: Entry[];
+  history: Array<Entry | NoteLocalPointEntry>;
   cursor: number;
   dirty: NoteSplice[];
-  replay: Replay[];
+  replay: Array<Replay | NoteLocalPointReplay>;
   limits: Limits;
+}
+
+export type NoteTextDocumentSession = Omit<NoteDocumentSession, 'history' | 'replay'> & {
+  history: Entry[];
+  replay: Replay[];
+};
+
+/** Local typed groups require their retained native proof and dedicated owner.
+ * Their source splices alone never grant text replay or save authority. */
+export function isNoteTextDocumentSession(
+  state: NoteDocumentSession,
+): state is NoteTextDocumentSession {
+  for (const key of ['history', 'replay'] as const) {
+    const field = Object.getOwnPropertyDescriptor(state, key);
+    if (!field || !('value' in field) || !Array.isArray(field.value)) return false;
+    const entries = field.value;
+    if (entries.length > 512) return false;
+    for (let i = 0; i < entries.length; i++) {
+      const slot = Object.getOwnPropertyDescriptor(entries, String(i));
+      if (!slot || !('value' in slot)) return false;
+      const entry: unknown = slot.value;
+      if (!entry || typeof entry !== 'object' || Object.getPrototypeOf(entry) !== Object.prototype)
+        return false;
+      const kind = Object.getOwnPropertyDescriptor(entry, 'kind');
+      if (kind && (!('value' in kind) || kind.value !== 'text')) return false;
+    }
+  }
+  return true;
+}
+
+export function assertNoteTextDocumentSession(
+  state: NoteDocumentSession,
+): asserts state is NoteTextDocumentSession {
+  if (!isNoteTextDocumentSession(state)) throw new Error('Unsupported local point history');
 }
 
 export function createNoteDocumentSession(
   scope: NoteScope,
   baseRevision: string,
   length: number,
-): NoteDocumentSession {
+): NoteTextDocumentSession {
   if (!baseRevision || !Number.isSafeInteger(length) || length < 0)
     throw new Error('Invalid document session identity');
   return {
@@ -96,6 +148,7 @@ export function prepareNoteDocumentEdit(
   authority: NoteEditAuthority,
   options: { appendTo?: number } = {},
 ) {
+  assertNoteTextDocumentSession(state);
   if (
     state.generation !== authority.generation ||
     state.baseRevision !== authority.sourceRevision ||
@@ -240,6 +293,7 @@ export function prepareNoteDocumentEdit(
  * source splices through the same draft pipeline and remounts/rebuilds authority.
  * This is not a call to native per-window history. */
 export function moveNoteDocumentHistory(state: NoteDocumentSession, direction: 'undo' | 'redo') {
+  assertNoteTextDocumentSession(state);
   const undo = direction === 'undo';
   const entry = state.history[undo ? state.cursor - 1 : state.cursor];
   if (!entry) return undefined;
@@ -270,6 +324,7 @@ export function materializeNoteDocumentAuthority(
   state: NoteDocumentSession,
   base: NoteEditAuthority,
 ) {
+  assertNoteTextDocumentSession(state);
   if (
     base.generation !== 0 ||
     base.sourceRevision !== state.baseRevision ||
@@ -338,6 +393,7 @@ export function reconcileNoteDocumentSave(
     exactLocalResult: boolean;
   },
 ) {
+  assertNoteTextDocumentSession(state);
   if (
     !receipt.exactLocalResult ||
     receipt.generation !== state.generation ||

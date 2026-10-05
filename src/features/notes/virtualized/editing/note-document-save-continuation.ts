@@ -1,5 +1,9 @@
 import { sameNoteScope, type NoteSplice } from '$lib/client/note-pages';
-import type { NoteDocumentSession } from './note-document-edit-session';
+import {
+  assertNoteTextDocumentSession,
+  type NoteDocumentSession,
+  type NoteTextDocumentSession,
+} from './note-document-edit-session';
 import { composeNoteEdits } from './note-edit-plan';
 import {
   currentNoteNativeHistoryWitness,
@@ -133,6 +137,8 @@ export function prepareNoteDocumentSaveContinuation(
   input: NoteDocumentSaveContinuationInput,
 ): NoteDocumentSession {
   const { captured: a, capturedWitness: aw, current: b, currentWitness: bw, receipt: r } = input;
+  assertNoteTextDocumentSession(a);
+  assertNoteTextDocumentSession(b);
   if (!currentNoteNativeHistoryWitness(a, aw) || !currentNoteNativeHistoryWitness(b, bw)) fail();
   const s = a.cursor,
     c = b.cursor;
@@ -179,7 +185,7 @@ export function prepareNoteDocumentSaveContinuation(
   withinBudget(b.limits.retainedBytes, [b.history, b.dirty, b.replay]);
   withinBudget(512, [b.selection]);
   const batches: Array<{ splices: readonly NoteSplice[] }> = [];
-  const replay: NoteDocumentSession['replay'] = [];
+  const replay: NoteTextDocumentSession['replay'] = [];
   let length = a.length;
   for (let i = s; i < c; i++) {
     const g = b.history[i];

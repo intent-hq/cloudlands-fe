@@ -12,6 +12,11 @@ import type { Editor } from '@tiptap/core';
 import type { SourceProjection } from './projection/source-projection';
 import { measureNoteProjection } from './note-view-cost';
 import { validateNoteNativeOutput } from './note-native-output-validation';
+import {
+  validateLocalPointOutput,
+  type replayLocalPoint,
+} from './editing/note-local-point-history';
+type LocalOutput = ReturnType<typeof replayLocalPoint>;
 
 interface Candidate {
   readonly doc: PMNode;
@@ -35,9 +40,19 @@ export interface NoteTransactionOwner {
       }
     | undefined;
   prepare(transaction: Transaction, before: Candidate): Candidate | undefined;
+  /** Optional typed local adapter: validate this exact candidate against its
+   * admitted native transaction/proof. Ordinary owners use schema JSON validation. */
+  nativeOutput?(after: Candidate, transaction: Transaction): LocalOutput | undefined;
   /** Pure final selection/history preparation. Must preserve the exact accepted
    * document and projection; refusal still precedes external owner adoption. */
-  finalize?(after: Candidate, selection: Selection): Candidate | undefined;
+  finalize?(
+    after: Candidate,
+    selection: Selection,
+    transactions: readonly Transaction[],
+  ): Candidate | undefined;
+  /** Dispatch has settled, including rejection by a later native filter. Drop
+   * provisional resources only; an accepted group retains its session ownership. */
+  settled?(): void;
   /** Called only after native application, once for the complete accepted chain.
    * The owner must coalesce its history and must not reject during adoption. */
   commit(chain: {
@@ -53,6 +68,8 @@ interface Prepared {
   before: Candidate;
   after: Candidate;
   cost: ReturnType<typeof measureNoteProjection>;
+  output?: LocalOutput;
+  transaction: Transaction;
 }
 interface Provisional {
   owner: NoteTransactionOwner;
@@ -65,6 +82,7 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
   const key = new PluginKey<Provisional | undefined>('noteDocumentTransaction');
   const prepared = new WeakMap<Transaction, Prepared>();
   const finalized = new WeakMap<Candidate, Candidate>();
+  const provisionalTransactions = new Set<Transaction>();
   let busy = false;
   let unowned = false;
   let commitStarted = false;
@@ -113,18 +131,29 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
         if (!before.doc.eq(state.doc)) return false;
         const after = owner.prepare(transaction, before);
         if (!after || !after.doc.eq(transaction.doc) || !current(owner)) return false;
+        const output = owner.nativeOutput?.(after, transaction);
         if (
           after.doc.type.schema !== state.schema ||
-          !after.doc.eq(
-            validateNoteNativeOutput(state.schema, after.projection.content, {
-              current: () => current(owner),
-            }),
-          ) ||
+          !(owner.nativeOutput
+            ? output && validateLocalPointOutput(output, after, transaction)
+            : after.doc.eq(
+                validateNoteNativeOutput(state.schema, after.projection.content, {
+                  current: () => current(owner),
+                }),
+              )) ||
           !current(owner)
         )
           return false;
         const cost = measureNoteProjection(after.projection);
-        prepared.set(transaction, { owner, before, after, cost });
+        if (!current(owner) || (output && !validateLocalPointOutput(output, after, transaction)))
+          return false;
+        if (busy && owner.nativeOutput) {
+          // The explicit local lane admits one command transaction. Ordinary
+          // owners retain their existing accepted-chain policy.
+          if (provisionalTransactions.size >= 1) return false;
+          provisionalTransactions.add(transaction);
+        }
+        prepared.set(transaction, { owner, before, after, cost, output, transaction });
       } catch {
         return false;
       }
@@ -210,6 +239,14 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
                 recordFailure(retirementError);
               }
             } finally {
+              prepared.delete(work.transaction);
+              for (const transaction of provisionalTransactions) prepared.delete(transaction);
+              provisionalTransactions.clear();
+              try {
+                work.owner?.settled?.();
+              } catch (error) {
+                recordFailure(error);
+              }
               busy = false;
               if (unowned || failed) pending.length = 0;
             }
@@ -267,7 +304,7 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
       let after = last.after;
       try {
         if (first.owner.finalize) {
-          const candidate = first.owner.finalize(after, state.selection);
+          const candidate = first.owner.finalize(after, state.selection, transactions);
           if (
             !candidate ||
             candidate.doc !== after.doc ||
@@ -277,7 +314,11 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
             return refuseAdoption();
           after = candidate;
         }
-        if (!current(first.owner)) return refuseAdoption();
+        if (
+          !current(first.owner) ||
+          (last.output && !validateLocalPointOutput(last.output, after, last.transaction))
+        )
+          return refuseAdoption();
       } catch {
         return refuseAdoption();
       }

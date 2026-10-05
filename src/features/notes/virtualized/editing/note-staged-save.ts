@@ -21,6 +21,7 @@ import type {
 } from '$store/renderer/slices/note-pages/note-pages-types';
 import * as a from '$store/renderer/slices/note-pages/note-pages-slice';
 import { composeNoteEdits } from './note-edit-plan';
+import { isNoteTextDocumentSession } from './note-document-edit-session';
 
 const records = 512,
   units = 262144;
@@ -38,6 +39,7 @@ function capture(note: NotePageSession) {
   const doc = note.document;
   if (
     !doc ||
+    !isNoteTextDocumentSession(doc) ||
     ![doc.baseLength, doc.length, doc.generation, doc.cursor].every(uint) ||
     doc.cursor > doc.history.length ||
     doc.history.length > 256 ||
@@ -146,6 +148,7 @@ export async function stageNoteDocumentSave(
   if (
     !initial ||
     !doc ||
+    !isNoteTextDocumentSession(doc) ||
     !initial.state ||
     initial.status !== 'ready' ||
     initial.state.deleted ||
