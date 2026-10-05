@@ -75,20 +75,77 @@ describe('onboarding adapter preparation wire operation', () => {
     pending.resolve({ accepted: true });
   });
 
-  it('single-flights overlapping discovery calls and permits an explicit refresh afterwards', async () => {
+  it('coalesces overlapping refreshes and prepares a provider installed during discovery', async () => {
     const prepare = createProviderAdapterPreparer();
-    const { client, request } = backend();
+    const { client, request } = backend([row('codex')]);
     const discovery = deferred<{ providers: ReturnType<typeof row>[] }>();
     request.mockImplementationOnce(() => discovery.promise);
     const first = prepare(client, 'a');
-    const second = prepare(client, 'a');
+    const refreshes = Array.from({ length: 20 }, () => prepare(client, 'a'));
     expect(request).toHaveBeenCalledTimes(1);
+    discovery.resolve({ providers: [row('codex', false)] });
+    await Promise.all([first, ...refreshes]);
+    expect(request.mock.calls).toEqual([
+      ['host.providerDiscovery', {}],
+      ['host.providerDiscovery', {}],
+      ['host.prepareProviderAdapters', { providerIds: ['codex'] }],
+    ]);
+  });
+
+  it('services one queued refresh after discovery fails without retrying indefinitely', async () => {
+    const prepare = createProviderAdapterPreparer();
+    const { client, request } = backend();
+    const discovery = deferred<{ providers: ReturnType<typeof row>[] }>();
+    request.mockRejectedValue(new Error('still offline'));
+    request.mockImplementationOnce(() => discovery.promise);
+    const first = prepare(client, 'a');
+    const refreshes = Array.from({ length: 20 }, () => prepare(client, 'a'));
+    discovery.reject(new Error('offline'));
+    await Promise.all([first, ...refreshes]);
+    expect(request.mock.calls).toEqual([
+      ['host.providerDiscovery', {}],
+      ['host.providerDiscovery', {}],
+    ]);
+  });
+
+  it('drops a queued refresh for a replaced connection generation', async () => {
+    const prepare = createProviderAdapterPreparer();
+    const { client, request } = backend([row('codex')]);
+    const discovery = deferred<{ providers: ReturnType<typeof row>[] }>();
+    request.mockImplementationOnce(() => discovery.promise);
+    const old = prepare(client, 'a:1');
+    const queued = prepare(client, 'a:1');
+    await prepare(client, 'a:2');
     discovery.resolve({ providers: [row('pi')] });
-    await Promise.all([first, second]);
+    await Promise.all([old, queued]);
+    expect(request.mock.calls).toEqual([
+      ['host.providerDiscovery', {}],
+      ['host.providerDiscovery', {}],
+      ['host.prepareProviderAdapters', { providerIds: ['codex'] }],
+    ]);
+  });
+
+  it('drops a queued refresh after an unsupported-method response', async () => {
+    const prepare = createProviderAdapterPreparer();
+    const { client, request } = backend([row('pi')]);
+    const discovery = deferred<{ providers: ReturnType<typeof row>[] }>();
+    const reply = deferred<{ accepted: true }>();
+    request.mockImplementation(async (method) =>
+      method === 'host.providerDiscovery' ? { providers: [row('pi')] } : reply.promise,
+    );
     await prepare(client, 'a');
-    expect(
-      request.mock.calls.filter(([method]) => method === 'host.providerDiscovery'),
-    ).toHaveLength(2);
+    request.mockImplementationOnce(() => discovery.promise);
+    const refresh = prepare(client, 'a');
+    const queued = prepare(client, 'a');
+    reply.reject({ code: -32601 });
+    await Promise.resolve();
+    discovery.resolve({ providers: [row('codex')] });
+    await Promise.all([refresh, queued]);
+    expect(request.mock.calls).toEqual([
+      ['host.providerDiscovery', {}],
+      ['host.prepareProviderAdapters', { providerIds: ['pi'] }],
+      ['host.providerDiscovery', {}],
+    ]);
   });
 
   it.each([{ code: -32601 }, { rpcCode: -32601 }])(

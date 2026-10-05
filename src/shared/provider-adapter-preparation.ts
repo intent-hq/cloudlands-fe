@@ -12,6 +12,7 @@ interface PreparationState {
   attempted: Set<string>;
   unsupported: boolean;
   discovery?: Promise<void>;
+  refreshRequested?: boolean;
 }
 
 const eligibleIds = new Set(['claude-code', 'codex', 'pi']);
@@ -26,12 +27,15 @@ export function createProviderAdapterPreparer() {
       states.set(client, state);
     }
     if (state.unsupported) return Promise.resolve();
-    if (state.discovery) return state.discovery;
+    if (state.discovery) {
+      state.refreshRequested = true;
+      return state.discovery;
+    }
     const current = state;
     const run = async () => {
       try {
         const discovery = await client.request<Discovery>('host.providerDiscovery', {});
-        if (states.get(client) !== current) return;
+        if (states.get(client) !== current || current.unsupported) return;
         const providerIds = [
           ...new Set(
             discovery.providers
@@ -53,7 +57,15 @@ export function createProviderAdapterPreparer() {
         // may discover new providers. Ordinary launches retain their fallback.
       }
     };
-    current.discovery = run().finally(() => {
+    const drainRefreshes = async () => {
+      do {
+        // Coalesce refreshes received during a probe into one trailing probe.
+        // Its snapshot can include CLIs installed after the current probe began.
+        current.refreshRequested = false;
+        await run();
+      } while (current.refreshRequested && states.get(client) === current && !current.unsupported);
+    };
+    current.discovery = drainRefreshes().finally(() => {
       current.discovery = undefined;
     });
     return current.discovery;
