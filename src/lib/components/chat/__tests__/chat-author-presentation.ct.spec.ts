@@ -12,7 +12,14 @@ for (const width of [360, 840]) {
     const labels = ['The Octocat · @octocat', 'Same Person · @same', 'Same Person · @same'];
     const names = component.getByTestId('user-message-author-name');
     for (const [i, label] of labels.entries()) await expect(names.nth(i)).toHaveText(label);
-    await expect(component.getByTestId('user-message-author-role')).toHaveText('Host member');
+    await expect(component.getByTestId('user-message-author-role')).toHaveText('Owner');
+    await expect(
+      component.getByTestId('user-message-author').nth(2).getByTestId('user-message-author-role'),
+    ).toHaveCount(0);
+    await expect(component.getByTestId('user-message-author-name').nth(4)).toHaveText(
+      'Owner Person · @owner',
+    );
+    await expect(component).not.toContainText('Host member');
     await expect(component).not.toContainText('526899');
     await expect(component).not.toContainText('gitlab@');
     const details = [
@@ -65,7 +72,7 @@ for (const width of [360, 840]) {
     await expect(page.getByRole('tooltip')).toHaveText(
       'Same Person · @same · GitLab (other.example)',
     );
-    await expect(component.getByTestId('user-message-author-role')).toHaveText('Host member');
+    await expect(component.getByTestId('user-message-author-role')).toHaveText('Owner');
     await page.keyboard.press('Escape');
     const queueTrigger = component.getByTestId('queued-message-author').nth(2).locator('..');
     await queueTrigger.hover();

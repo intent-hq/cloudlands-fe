@@ -440,9 +440,8 @@
   //
   // A row whose content starts with the daemon's collaborator sender preamble
   // (exact match against the text rebuilt from the same projection) always
-  // shows the sender chip with its matched historical member or guest role — the preamble itself is
-  // display-stripped by the presentation boundary, so the chip is the only
-  // place the sender and their role remain visible, for owner and guest alike.
+  // shows the sender chip with its matched historical provenance. The preamble is
+  // display-stripped; guest roles remain visible while member chips show identity only.
   // The workspace owner's own rows never qualify (the daemon prepends the
   // preamble for collaborators only), so an owner-typed lookalike line stays.
   let collaboratorSender = $derived(
@@ -462,6 +461,15 @@
         : null,
   );
   let humanAuthorLabel = $derived(humanAuthor ? getMessageAuthorLabel(humanAuthor) : null);
+  const humanAuthorRoleLabel = $derived(
+    humanAuthor?.principalId &&
+      workspace?.ownerPrincipalId &&
+      humanAuthor.principalId === workspace.ownerPrincipalId
+      ? m.workspace_share_role_owner_label()
+      : collaboratorSender?.role === 'guest'
+        ? m.chat_chatMessage_collaboratorRole_label()
+        : null,
+  );
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -1562,14 +1570,14 @@
                 : collaboratorSender
                   ? 'collaborator'
                   : undefined}
-              aria-label={collaboratorSender?.role === 'member'
-                ? m.workspace_share_member_identityRole_label({
-                    handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
-                    role: m.collaboration_host_member_label(),
+              aria-label={collaboratorSender?.role === 'guest'
+                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
                   })
-                : collaboratorSender
-                  ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
-                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                : humanAuthorRoleLabel
+                  ? m.workspace_share_member_identityRole_label({
+                      handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                      role: humanAuthorRoleLabel,
                     })
                   : m.chat_chatMessage_author_ariaLabel({
                       name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
@@ -1593,12 +1601,10 @@
               <span class="truncate" data-testid="user-message-author-name"
                 >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
               >
-              {#if collaboratorSender}
+              {#if humanAuthorRoleLabel}
                 <span aria-hidden="true" class="shrink-0">·</span>
                 <span class="shrink-0" data-testid="user-message-author-role"
-                  >{collaboratorSender.role === 'member'
-                    ? m.collaboration_host_member_label()
-                    : m.chat_chatMessage_collaboratorRole_label()}</span
+                  >{humanAuthorRoleLabel}</span
                 >
               {/if}
             </div>

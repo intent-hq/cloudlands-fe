@@ -278,29 +278,27 @@
             animateTabContent = false;
           }}
         >
-          <div class="shrink-0 px-2 pt-2 pb-1">
-            <Tabs.List
-              aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
-              class="sidebar-view-tabs grid w-full rounded-lg bg-muted/60 p-1 {$isCollaboratorOnlyClient$
-                ? 'grid-cols-1'
-                : 'grid-cols-2'}"
-            >
-              <Tabs.Trigger
-                value="all-workspaces"
-                class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+          {#if !$isCollaboratorOnlyClient$}
+            <div class="shrink-0 px-2 pt-2 pb-1">
+              <Tabs.List
+                aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
+                class="sidebar-view-tabs grid w-full grid-cols-2 rounded-lg bg-muted/60 p-1"
               >
-                <span class="truncate">{m.layout_sidebarPanel_workspacesTab_label()}</span>
-              </Tabs.Trigger>
-              {#if !$isCollaboratorOnlyClient$}
+                <Tabs.Trigger
+                  value="all-workspaces"
+                  class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+                >
+                  <span class="truncate">{m.layout_sidebarPanel_workspacesTab_label()}</span>
+                </Tabs.Trigger>
                 <Tabs.Trigger
                   value="chief"
                   class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
                 >
                   <span class="truncate">{m.layout_chiefCard_title()}</span>
                 </Tabs.Trigger>
-              {/if}
-            </Tabs.List>
-          </div>
+              </Tabs.List>
+            </div>
+          {/if}
           <!-- Tabs.Content hides rather than unmounts: keep search, scroll and drafts. -->
           <Tabs.Content
             value="all-workspaces"
