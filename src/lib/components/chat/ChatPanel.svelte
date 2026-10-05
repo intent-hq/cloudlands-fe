@@ -5885,11 +5885,8 @@
     });
     if (!request || !action) return;
     if (action === 'expand-question' || action === 'collapse-question') {
-      const messageId = pendingQuestions?.messageId;
-      if (!messageId) return;
       const collapsed = action === 'collapse-question';
-      questionWizardCollapsedOverride = { messageId, collapsed };
-      saveWizardCollapsed(wizardDraftKey(agentId, messageId), collapsed);
+      handleQuestionWizardCollapsed(collapsed);
       return;
     }
     let cancelled = false;
