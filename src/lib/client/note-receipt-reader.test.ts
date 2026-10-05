@@ -6,7 +6,7 @@ const receipt: NoteCommitReceipt = {
   outcome: 'committed',
   scope: { backendId: 'b', workspaceId: 'w', noteId: 'n', noteInstanceId: 'i' },
   operationId: 'operation',
-  payloadDigest: 'digest',
+  payloadDigest: 'a'.repeat(64),
   beforeRevision: 'r1',
   afterRevision: 'r2',
   sourceLength: 12,
@@ -42,13 +42,13 @@ it('uses only the receipt-owned inline root and preserves original expiry and cu
   expect(send).toHaveBeenCalledExactlyOnceWith({
     ...receipt.scope,
     operationId: 'operation',
-    payloadDigest: 'digest',
+    payloadDigest: 'a'.repeat(64),
     kind: 'mapping',
     ref: 'map',
     maxItems: 1,
     maxWireBytes: 4096,
   });
-  const effects = { ...page(), outputKind: 'effects', items: [] };
+  const effects = { ...page(), outputKind: 'effects', convertedCount: 7, items: [] };
   send.mockResolvedValueOnce(effects);
   expect(
     await readNoteReceiptPage(send, receipt, {
@@ -60,7 +60,7 @@ it('uses only the receipt-owned inline root and preserves original expiry and cu
   expect(send).toHaveBeenLastCalledWith({
     ...receipt.scope,
     operationId: 'operation',
-    payloadDigest: 'digest',
+    payloadDigest: 'a'.repeat(64),
     kind: 'effects',
     ref: 'effect',
     cursor: 'continuation',
@@ -138,4 +138,45 @@ it('captures identity and bounds before awaiting transport without automatic con
   });
   expect(await readNoteReceiptPage(send, r, q)).toBe(response);
   expect(send).toHaveBeenCalledOnce();
+});
+
+it.each(['digest', 'a'.repeat(63), 'a'.repeat(65), 'A'.repeat(64), 'g'.repeat(64)])(
+  'refuses malformed payload digest before dispatch: %s',
+  async (payloadDigest) => {
+    const send = vi.fn();
+    await expect(readNoteReceiptPage(send, { ...receipt, payloadDigest }, request)).rejects.toThrow(
+      'Invalid inline receipt read',
+    );
+    expect(send).not.toHaveBeenCalled();
+  },
+);
+it.each([undefined, null, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, '2'])(
+  'refuses absent or invalid aggregate convertedCount: %s',
+  async (convertedCount) => {
+    const send = vi
+      .fn()
+      .mockResolvedValue({ ...page(), outputKind: 'effects', items: [], convertedCount });
+    await expect(
+      readNoteReceiptPage(send, receipt, { ...request, kind: 'effects' }),
+    ).rejects.toThrow();
+  },
+);
+it('retains aggregate conversion count independently of this page item count', async () => {
+  const response = { ...page(), outputKind: 'effects', items: [], convertedCount: 19 };
+  const result = await readNoteReceiptPage(vi.fn().mockResolvedValue(response), receipt, {
+    ...request,
+    kind: 'effects',
+  });
+  expect(result.outputKind).toBe('effects');
+  if (result.outputKind !== 'effects') throw new Error('Wrong kind');
+  expect(result.convertedCount).toBe(19);
+  expect(result.items).toEqual([]);
+});
+it('refuses a page that expires during validation before returning it', async () => {
+  const r = { ...receipt, receiptExpiresAt: '1970-01-01T00:00:01.000000001Z' };
+  const now = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(1000).mockReturnValueOnce(1001);
+  const send = vi.fn().mockResolvedValue({ ...page(), expiresAt: r.receiptExpiresAt });
+  await expect(readNoteReceiptPage(send, r, request, now)).rejects.toThrow('Receipt expired');
+  expect(send).toHaveBeenCalledOnce();
+  expect(now).toHaveBeenCalledTimes(3);
 });

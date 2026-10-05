@@ -3,19 +3,20 @@ import { beforeSourceDeadline, parseSourceDeadline } from '$shared/source-sessio
 
 /** One receipt page. Item semantics and complete-transcript proof belong to the
  * reconciliation owner; a validated envelope is never save-rebase authority. */
-export interface NoteReceiptPage {
+interface NoteReceiptEnvelope {
   kind: 'noteOperationPage';
   scope: NoteCommitReceipt['scope'];
   operationId: string;
   payloadDigest: string;
   beforeRevision: string;
   afterRevision: string;
-  outputKind: 'mapping' | 'effects';
   sourceLength: number;
   items: unknown[];
   nextCursor: string | null;
   expiresAt: string;
 }
+export type NoteReceiptPage = NoteReceiptEnvelope &
+  ({ outputKind: 'mapping' } | { outputKind: 'effects'; convertedCount: number });
 export interface NoteReceiptReadRequest {
   kind: 'mapping' | 'effects';
   /** Captured input extent, not the receipt's final source length. */
@@ -62,7 +63,8 @@ export async function readNoteReceiptPage(
     'viewId' in receipt ||
     !Object.values(scope).every(token) ||
     !token(identity.operationId) ||
-    !token(identity.payloadDigest) ||
+    typeof identity.payloadDigest !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(identity.payloadDigest) ||
     !token(identity.beforeRevision) ||
     !token(identity.afterRevision) ||
     !['mapping', 'effects'].includes(kind) ||
@@ -109,9 +111,11 @@ export async function readNoteReceiptPage(
     'content' in page ||
     !Array.isArray(page.items) ||
     page.items.length > maxItems ||
+    (kind === 'effects' && !uint(page.convertedCount)) ||
     (page.nextCursor !== null && !token(page.nextCursor)) ||
     new TextEncoder().encode(JSON.stringify(result)).length > maxWireBytes
   )
     throw new Error('Mismatched or oversized inline receipt page');
+  if (!beforeSourceDeadline(now(), deadline)) throw new Error('Receipt expired');
   return result as NoteReceiptPage;
 }
