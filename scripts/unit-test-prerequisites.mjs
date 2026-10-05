@@ -6,6 +6,7 @@ const fixtureConsumers = [
   'src/lib/components/chat/input/ModelPicker.transfer-selection-contract.test.ts',
   'scripts/transfer-selection-fixtures.test.ts',
   'scripts/run-unit-tests.test.ts',
+  'scripts/verify-changed.test.ts',
 ];
 
 // Only options whose arity and effect on file selection we understand may bypass
