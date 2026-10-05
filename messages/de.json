@@ -7270,5 +7270,18 @@
   "gitlabCheckout_emptyRepository_description": "Dieses Repository hat noch keinen Branch zum Auschecken.",
   "gitlabCheckout_branchChanged_description": "Der Branch hat sich geändert. Aktualisiere und bestätige den aktuellen Commit.",
   "gitlabCheckout_createRecovery_description": "Der Checkout ist nicht verfügbar. Aktualisiere die Auswahl, um Projekt, Branch und Commit zu prüfen, bevor du erneut „Erstellen“ wählst.",
-  "gitlabCheckout_useLink_label": "Link verwenden"
+  "gitlabCheckout_useLink_label": "Link verwenden",
+  "agent_hub_checkpointRequired": "Vor dem Zusammenführen ist ein erfolgreicher Prüfpunkt erforderlich.",
+  "agent_placement_backendChanged": "Das Backend hat sich während der Vorbereitung der Anfrage geändert. Versuche es erneut.",
+  "agent_hub_discardDescription": "Diesen Agenten stoppen und seine isolierte Arbeitskopie und Wiederherstellungsreferenzen verwerfen?",
+  "agent_placement_specialistUnavailable": "Der ausgewählte Spezialist ist nicht verfügbar. Wähle erneut einen Spezialisten aus.",
+  "agent_hub_merge": "Prüfpunkt zusammenführen",
+  "agent_placement_retiredIsolation": "CoW-Isolation für einzelne Agenten wird nicht mehr unterstützt.",
+  "agent_placement_unavailable": "Knotenausführung ist auf diesem Daemon nicht verfügbar.",
+  "agent_hub_discard": "Isolierte Arbeit verwerfen",
+  "agent_hub_merged": "Prüfpunkt zusammengeführt.",
+  "agent_hub_discarded": "Isolierte Arbeit verworfen.",
+  "agent_placement_incompatibleIsolation": "Die Platzierung kann nicht mit der bisherigen Isolation kombiniert werden.",
+  "agent_hub_blocked": "Zusammenführung erfordert Aufmerksamkeit: {detail}",
+  "agent_placement_labsRequired": "Aktivieren Sie entfernte Agenten in Labs, bevor Sie entfernte Arbeit starten."
 }

@@ -26,7 +26,10 @@ vi.mock('$features/agent/services/agent-factory', async (importOriginal) => {
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: mocks.toastError, success: mocks.toastSuccess },
 }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+  observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
+}));
 
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';
@@ -238,7 +241,7 @@ describe('agentCreationSaga', () => {
     };
   }
 
-  it('coalesces duplicate creation but settles every original seq and each consumer outcome', async () => {
+  it('settles coalesced creation outcomes without a placement interruption', async () => {
     let resolve!: (value: unknown) => void;
     mocks.createAgent.mockImplementation(
       () =>
@@ -259,6 +262,9 @@ describe('agentCreationSaga', () => {
     await settle();
     expect(mocks.createAgent).toHaveBeenCalledTimes(1);
     expect(owner.outcome()).toMatchObject({ status: 'pending', seq: first.seq });
+    expect(
+      owner.dispatched.some((action) => action.type === 'workspaceAgents/placementChoiceShown'),
+    ).toBe(false);
     resolve({ success: true, agent: session() });
     await expect(Promise.all([first.promise, second.promise])).resolves.toEqual([
       session(),

@@ -7270,5 +7270,18 @@
   "gitlabCheckout_emptyRepository_description": "このリポジトリにはまだチェックアウトできるブランチがありません。",
   "gitlabCheckout_branchChanged_description": "ブランチが変更されました。更新して現在のコミットを確認してください。",
   "gitlabCheckout_createRecovery_description": "チェックアウトを利用できません。更新してプロジェクト、ブランチ、コミットを確認してから、もう一度「作成」を選んでください。",
-  "gitlabCheckout_useLink_label": "リンクを使用"
+  "gitlabCheckout_useLink_label": "リンクを使用",
+  "agent_hub_checkpointRequired": "マージするには正常なチェックポイントが必要です。",
+  "agent_placement_backendChanged": "リクエストの準備中にバックエンドが変更されました。もう一度お試しください。",
+  "agent_hub_discardDescription": "このエージェントを停止し、分離チェックアウトと復旧参照を破棄しますか？",
+  "agent_placement_specialistUnavailable": "選択したスペシャリストは利用できません。スペシャリストを選択し直してください。",
+  "agent_hub_merge": "チェックポイントをマージ",
+  "agent_placement_retiredIsolation": "エージェントごとのCoW分離は廃止されました。",
+  "agent_placement_unavailable": "このデーモンではノード実行を利用できません。",
+  "agent_hub_discard": "分離された作業を破棄",
+  "agent_hub_merged": "チェックポイントをマージしました。",
+  "agent_hub_discarded": "分離された作業を破棄しました。",
+  "agent_placement_incompatibleIsolation": "配置と従来の分離設定を併用することはできません。",
+  "agent_hub_blocked": "マージの確認が必要です：{detail}",
+  "agent_placement_labsRequired": "リモート作業を開始する前に Labs でリモートエージェントを有効にしてください。"
 }

@@ -7270,5 +7270,18 @@
   "gitlabCheckout_emptyRepository_description": "Este repositorio aún no tiene una rama para copiar.",
   "gitlabCheckout_branchChanged_description": "La rama cambió. Actualiza y confirma su commit actual.",
   "gitlabCheckout_createRecovery_description": "El checkout no está disponible. Actualiza para revisar el proyecto, la rama y el commit antes de volver a elegir Crear.",
-  "gitlabCheckout_useLink_label": "Usar enlace"
+  "gitlabCheckout_useLink_label": "Usar enlace",
+  "agent_hub_checkpointRequired": "Se necesita un punto de control correcto antes de fusionar.",
+  "agent_placement_backendChanged": "El backend cambió mientras se preparaba la solicitud. Inténtalo de nuevo.",
+  "agent_hub_discardDescription": "¿Detener este agente y descartar su copia aislada y referencias de recuperación?",
+  "agent_placement_specialistUnavailable": "El especialista seleccionado no está disponible. Vuelve a seleccionar un especialista.",
+  "agent_hub_merge": "Fusionar punto de control",
+  "agent_placement_retiredIsolation": "El aislamiento CoW por agente ya no está disponible.",
+  "agent_placement_unavailable": "La ejecución en nodos no está disponible en este daemon.",
+  "agent_hub_discard": "Descartar trabajo aislado",
+  "agent_hub_merged": "Punto de control fusionado.",
+  "agent_hub_discarded": "Trabajo aislado descartado.",
+  "agent_placement_incompatibleIsolation": "La ubicación no se puede combinar con el aislamiento anterior.",
+  "agent_hub_blocked": "La fusión requiere atención: {detail}",
+  "agent_placement_labsRequired": "Activa los agentes remotos en Labs antes de iniciar trabajo remoto."
 }

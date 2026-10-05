@@ -962,6 +962,7 @@ export const IPC_CHANNELS = {
     SUBSCRIBE: 'backend:subscribe',
     UNSUBSCRIBE: 'backend:unsubscribe',
     GET_STATUS: 'backend:get-status',
+    NODE_CAPABILITIES: 'backend:node-capabilities',
     NOTIFICATION: 'backend:notification',
     STATUS: 'backend:status',
     SPAWN_SIDECAR: 'backend:spawn-sidecar',

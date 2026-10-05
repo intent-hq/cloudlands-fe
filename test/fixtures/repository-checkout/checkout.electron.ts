@@ -22,6 +22,11 @@ let bundle: string;
 const renderer = `
 import { LiveIntegrationsClient } from '${join(repo, 'src/lib/client/live/live-integrations-client.ts')}';
 import { LiveWorkspacesClient } from '${join(repo, 'src/lib/client/live/live-workspaces-client.ts')}';
+import { store } from '${join(repo, 'src/store/renderer/store.ts')}';
+// Same outside-component bootstrap as playwright/index.ts: real default state, no app sagas.
+window.__PLAYWRIGHT_CT_STORE_BOOTSTRAP__=true;
+const disposeStore=store.init();
+window.addEventListener('pagehide', disposeStore, {once:true});
 const integrations=new LiveIntegrationsClient(), workspaces=new LiveWorkspacesClient();
 let session, retired=0;
 window.checkoutConsumer={
@@ -29,7 +34,7 @@ window.checkoutConsumer={
  async projects(q){return session.projects(q);},
  async project(q){return session.project(q);},
  async branches(q){return session.branches(q);},
- async create(selection,contextLinks){return workspaces.create({title:'Qualified checkout',repositoryCheckout:selection,contextLinks});},
+ async create(selection,contextLinks,initialAgent){return workspaces.create({title:'Qualified checkout',repositoryCheckout:selection,contextLinks,...(initialAgent ? {initialAgent} : {})});},
  async warm(selection){return session.warm(selection);},
  async release(){await session.release();},
  get retired(){return retired;},
@@ -227,13 +232,53 @@ test('checkout consumer retains original document, socket and selected branch ac
           status: 'ready',
           value: { branch: 'release/next', commitSha: selected.commitSha, cached: true },
         });
-      expect(
-        await original.evaluate(
-          ({ s, links }) => (window as any).checkoutConsumer.create(s, links),
-          { s: selection, links },
-        ),
-      ).toMatchObject({ success: true, workspace: { id: 'created-' + mode, contextLinks: links } });
+      const created = await original.evaluate(
+        ({ s, links }) => (window as any).checkoutConsumer.create(s, links),
+        { s: selection, links },
+      );
+      expect(created, JSON.stringify(created)).toMatchObject({
+        success: true,
+        workspace: { id: 'created-' + mode, contextLinks: links },
+      });
     }
+    const helloCount = await app.evaluate(
+      () =>
+        (globalThis as any).checkoutElectronFixture.wire.filter(
+          (r: any) => r.method === 'client.hello',
+        ).length,
+    );
+    const retiredBeforeAgent = await original.evaluate(
+      () => (window as any).checkoutConsumer.retired,
+    );
+    const initialAgent = { prompt: 'Inspect the selected checkout' };
+    const createdWithAgent = await original.evaluate(
+      ({ selection, links, initialAgent }) =>
+        (window as any).checkoutConsumer.create(selection, links, initialAgent),
+      { selection: selected, links, initialAgent },
+    );
+    expect(createdWithAgent, JSON.stringify(createdWithAgent)).toMatchObject({
+      success: true,
+      workspace: { id: 'created-direct', contextLinks: links },
+    });
+    expect(
+      await app.evaluate(
+        () =>
+          (globalThis as any).checkoutElectronFixture.wire.filter(
+            (r: any) => r.method === 'client.hello',
+          ).length,
+      ),
+    ).toBe(helloCount);
+    expect(await original.evaluate(() => (window as any).checkoutConsumer.retired)).toBe(
+      retiredBeforeAgent,
+    );
+    expect(
+      await app.evaluate(
+        () =>
+          (globalThis as any).checkoutElectronFixture.wire.findLast(
+            (r: any) => r.method === 'workspace.create',
+          ).params,
+      ),
+    ).toMatchObject({ repositoryCheckout: selected, initialAgent });
     const before = await app.evaluate(
       () =>
         (globalThis as any).checkoutElectronFixture.wire.filter(
