@@ -13,6 +13,13 @@ import {
 import { measureNotePageCost } from '$features/notes/virtualized/note-page-cost';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import {
+  addItem,
+  createCollection,
+  getItem,
+  getItems,
+  removeItem,
+} from '@themislib/themis/utils/collections/collection-utils';
 import type {
   NotePageState,
   NotePageRequest,
@@ -44,7 +51,7 @@ export const initialNotePagesState: NotePagesState = {
     assemblies: 0,
   }),
   byWorkspaceId: {},
-  cleanPages: [],
+  cleanPages: createCollection('owner'),
   nextGeneration: 0,
   physicalReads: {},
 };
@@ -271,7 +278,7 @@ function update(
     owner = {
       ...owner,
       resourceLedger: releaseNoteResources(owner.resourceLedger, allocation.owner),
-      cleanPages: owner.cleanPages.filter((entry) => entry.owner !== allocation.owner),
+      cleanPages: removeItem(owner.cleanPages, allocation.owner),
     };
   }
   for (const [panel, window] of Object.entries(n.windows)) {
@@ -288,7 +295,7 @@ function update(
  * index avoids scanning all workspace notes for an ordinary read admission. */
 function reclaimCleanPages(initial: NotePagesState): NotePagesState {
   let state = initial;
-  while (state.resourceLedger.pending.length && state.cleanPages.length) {
+  while (state.resourceLedger.pending.length && state.cleanPages.ids.length) {
     const next = state.resourceLedger.pending[0];
     const physical = next.resources.reduce(
       (sum, resource) =>
@@ -301,14 +308,15 @@ function reclaimCleanPages(initial: NotePagesState): NotePagesState {
       state.resourceLedger.limit.physicalReads
     )
       break;
-    const [oldest, ...remaining] = state.cleanPages;
+    const oldest = getItem(state.cleanPages, state.cleanPages.ids[0]);
+    if (!oldest) throw new Error('Invalid clean note cache index');
     state = update(state, oldest.workspaceId, oldest.noteId, (note) => {
       if (note.pageAllocations[oldest.key]?.owner !== oldest.owner) return note;
       const pages = { ...note.pages };
       delete pages[oldest.key];
       return { ...note, pages, pageOrder: note.pageOrder.filter((key) => key !== oldest.key) };
     });
-    state = { ...state, cleanPages: remaining };
+    state = { ...state, cleanPages: removeItem(state.cleanPages, oldest.owner) };
   }
   return state;
 }
@@ -614,10 +622,12 @@ notePagesReducer.with(sourcePageReceived, (s, { payload: [ws, id, generation, ke
   return update(
     {
       ...updated,
-      cleanPages: [
-        ...updated.cleanPages.filter((entry) => entry.owner !== owner),
-        { workspaceId: ws, noteId: id, key, owner },
-      ],
+      cleanPages: addItem(removeItem(updated.cleanPages, owner), {
+        workspaceId: ws,
+        noteId: id,
+        key,
+        owner,
+      }),
     },
     ws,
     id,
@@ -737,7 +747,10 @@ notePagesReducer.with(pageSessionDiscarded, (s, { payload: [ws, id] }) => {
     {
       ...s,
       resourceLedger,
-      cleanPages: s.cleanPages.filter((entry) => entry.workspaceId !== ws || entry.noteId !== id),
+      cleanPages: createCollection(
+        'owner',
+        getItems(s.cleanPages).filter((entry) => entry.workspaceId !== ws || entry.noteId !== id),
+      ),
     },
     ws,
     { ...w, notes },
@@ -767,7 +780,10 @@ notePagesReducer.with(workspaceUnmounted, (s, { payload: [ws] }) => {
       ...s,
       nextGeneration,
       resourceLedger,
-      cleanPages: s.cleanPages.filter((entry) => entry.workspaceId !== ws),
+      cleanPages: createCollection(
+        'owner',
+        getItems(s.cleanPages).filter((entry) => entry.workspaceId !== ws),
+      ),
     },
     ws,
     { ...w, notes },

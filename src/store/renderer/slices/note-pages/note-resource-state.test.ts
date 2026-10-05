@@ -211,5 +211,5 @@ it('reclaims cache credit when a physical settlement unblocks the oldest queued 
   expect(s.byWorkspaceId.w.notes.n.pages.first).toBe(page);
   s = a.notePagesReducer(s, a.pageReadSettled('w', 'n', 0, 'first'));
   expect(s.resourceLedger.owners['read:next']).toEqual(['frame:next', 'slot:next']);
-  expect(s.cleanPages).toEqual([]);
+  expect(s.cleanPages.ids).toEqual([]);
 });

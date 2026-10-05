@@ -1,4 +1,5 @@
 import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
 import type { NoteResourceLedger } from '$features/notes/virtualized/note-resource-ledger';
 import type {
@@ -62,11 +63,17 @@ export interface NotePageSession {
 export interface NotePagesWorkspaceState {
   notes: Record<string, NotePageSession>;
 }
+interface CleanNotePage {
+  workspaceId: string;
+  noteId: string;
+  key: string;
+  owner: string;
+}
 export interface NotePagesState {
   /** Shared across workspaces; runtime leases outlive session invalidation. */
   resourceLedger: NoteResourceLedger;
   /** Only admitted clean allocations; bounded by ledger owner metadata capacity. */
-  cleanPages: Array<{ workspaceId: string; noteId: string; key: string; owner: string }>;
+  cleanPages: Collection<CleanNotePage, 'owner'>;
   nextGeneration: number;
   physicalReads: Record<
     string,
