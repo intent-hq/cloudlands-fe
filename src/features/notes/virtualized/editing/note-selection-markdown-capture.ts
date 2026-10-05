@@ -33,6 +33,7 @@ export interface NoteSelectionMarkdownInput {
 }
 const uint = (n: number) => Number.isSafeInteger(n) && n >= 0;
 const unsupported = () =>
+  // i18n-ignore (internal refusal diagnostic; the copy handler logs this error)
   new UnsupportedNoteSelectionMarkdown('Unsupported native selection context');
 const encoder = new TextEncoder();
 const limits = Object.freeze({ windowUnits: 32768, paragraphUnits: 4096, outputBytes: 16384 });

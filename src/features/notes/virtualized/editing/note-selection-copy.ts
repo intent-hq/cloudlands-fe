@@ -84,6 +84,7 @@ export function createNoteSelectionCopyOwner(
         window.sourceRevision !== document.baseRevision
       )
         throw new UnsupportedNoteSelectionMarkdown(
+          // i18n-ignore (internal refusal diagnostic; the copy handler logs this error)
           'Selection copy requires a clean current document',
         );
       const capturedScope = Object.freeze({ ...document.scope });
