@@ -61,39 +61,66 @@ function* read(action: ReturnType<typeof desktopReadRequested>): SagaGenerator<v
 function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGenerator<void> {
   const [ws, agent, requestId, decision] = action.payload;
   const entry = yield* selectDesktopEntry.effect(ws, agent);
-  if (!entry?.pending || entry.pending.requestId !== requestId || entry.submitting) return;
+  if (
+    !entry?.pending ||
+    entry.pending.requestId !== requestId ||
+    (entry.submitting && !(decision === 'deny' && entry.settingUp))
+  )
+    return;
   if (Date.parse(entry.pending.expiresAt) <= Date.now()) {
     yield* put(desktopRequestExpired(ws, agent, requestId));
     return;
   }
   const { generation } = yield* selectDesktopControl.effect();
-  yield* put(desktopEntryPatched(ws, agent, generation, { submitting: true, error: undefined }));
+  yield* put(
+    desktopEntryPatched(ws, agent, generation, {
+      submitting: true,
+      settingUp: decision !== 'deny',
+      error: undefined,
+    }),
+  );
+  let observing = decision !== 'deny';
   try {
     if (decision !== 'deny') {
-      const guidance = yield* call(
-        desktopClient.requestPermissions,
-        ws,
-        agent,
-        requestId,
-        decision,
-      );
-      const current = yield* selectDesktopEntry.effect(ws, agent);
-      if (
-        generation !== (yield* selectDesktopControl.effect()).generation ||
-        current?.pending?.requestId !== requestId
-      )
-        return;
-      if (Date.parse(current.pending.expiresAt) <= Date.now()) {
-        yield* put(desktopRequestExpired(ws, agent, requestId));
-        if (guidance) yield* put(desktopEntryPatched(ws, agent, generation, { error: guidance }));
-        return;
-      }
-      if (guidance) {
-        yield* put(
-          desktopEntryPatched(ws, agent, generation, { submitting: false, error: guidance }),
+      while (true) {
+        const before = yield* selectDesktopEntry.effect(ws, agent);
+        if (
+          generation !== (yield* selectDesktopControl.effect()).generation ||
+          before?.pending?.requestId !== requestId ||
+          !before.settingUp
+        )
+          return;
+        if (Date.parse(before.pending.expiresAt) <= Date.now()) {
+          yield* put(desktopRequestExpired(ws, agent, requestId));
+          return;
+        }
+        const guidance = yield* call(
+          desktopClient.requestPermissions,
+          ws,
+          agent,
+          requestId,
+          decision,
         );
-        return;
+        const current = yield* selectDesktopEntry.effect(ws, agent);
+        if (
+          generation !== (yield* selectDesktopControl.effect()).generation ||
+          current?.pending?.requestId !== requestId ||
+          !current.settingUp
+        )
+          return;
+        if (Date.parse(current.pending.expiresAt) <= Date.now()) {
+          yield* put(desktopRequestExpired(ws, agent, requestId));
+          if (guidance) yield* put(desktopEntryPatched(ws, agent, generation, { error: guidance }));
+          return;
+        }
+        yield* put(desktopEntryPatched(ws, agent, generation, { error: guidance }));
+        if (!guidance) break;
+        // Read observed OS state only. The original gesture, request and expiry
+        // remain binding; this never retries a daemon decision or opens a session.
+        yield* delay(1000);
       }
+      observing = false;
+      yield* put(desktopEntryPatched(ws, agent, generation, { settingUp: false }));
     }
     yield* call(desktopClient.respond, ws, requestId, decision);
     // A candidate denial is local; other candidates keep their shared request open.
@@ -107,7 +134,7 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
   } catch (error) {
     if (generation !== (yield* selectDesktopControl.effect()).generation) return;
     const current = yield* selectDesktopEntry.effect(ws, agent);
-    if (current?.pending?.requestId !== requestId) return;
+    if (current?.pending?.requestId !== requestId || (observing && !current.settingUp)) return;
     yield* put(desktopRequestExpired(ws, agent, requestId));
     yield* put(desktopEntryPatched(ws, agent, generation, { error: errorDetail(error) }));
     yield* call(showDesktopError, errorDetail(error));

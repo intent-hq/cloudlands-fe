@@ -104,6 +104,8 @@ desktopControlReducer.with(
             ...entry,
             ...snapshot,
             pending: snapshot.pending,
+            settingUp:
+              snapshot.pending?.requestId === entry.pending?.requestId ? entry.settingUp : false,
             loading: false,
             error:
               snapshot.state.status === 'active' ||
@@ -122,6 +124,7 @@ desktopControlReducer.with(desktopRequestExpired, (state, { payload: [ws, agent,
           ...entry,
           pending: undefined,
           submitting: false,
+          settingUp: false,
           state: entry.state.status === 'pending_permission' ? { status: 'inactive' } : entry.state,
           revision: entry.revision + 1,
           resolvedRequests: [...entry.resolvedRequests, requestId],
@@ -144,6 +147,7 @@ desktopControlReducer.with(desktopEventReceived, (state, { payload: [event] }) =
           ...base,
           pending: event.data,
           submitting: false,
+          settingUp: false,
           error: undefined,
           state: {
             status: 'pending_permission',
@@ -159,6 +163,7 @@ desktopControlReducer.with(desktopEventReceived, (state, { payload: [event] }) =
           resolvedRequests,
           pending: undefined,
           submitting: false,
+          settingUp: false,
           state:
             event.data.state.status === 'active' &&
             entry.endedSessions.includes(event.data.state.sessionId)

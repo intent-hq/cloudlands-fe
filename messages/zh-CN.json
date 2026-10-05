@@ -7120,5 +7120,5 @@
   "chat_queuedMessages_sendAllUnsupported_error": "一起发送排队消息需要更新的后端。请使用每条消息的“立即发送”按钮。",
   "desktop_os_accessibility_description": "缺少 macOS 辅助功能权限。",
   "desktop_os_screenRecording_description": "缺少 macOS 屏幕录制权限。",
-  "desktop_os_setup_description": "控制尚未开始。在“系统设置”→“隐私与安全性”中，为每项缺失的权限启用 macOS 显示的 Intent 条目。请先设置辅助功能，再设置屏幕录制。如果没有出现对话框或访问被拒绝，请使用系统设置。如果 macOS 要求退出并重新打开 Intent，请遵循该提示。然后在此请求仍有效时再次点击“允许”，或在请求过期后请求新会话。"
+  "desktop_os_setup_description": "控制尚未开始。正在等待 macOS 权限检查；您可以拒绝此请求以取消。在系统设置 → 隐私与安全性中，先为 macOS 显示的 Intent 项目启用辅助功能，再启用屏幕录制。如果没有对话框或访问被拒绝，请使用系统设置。如果 macOS 要求退出并重新打开 Intent，请按提示操作。仅在此请求仍有效时继续授权；过期或重新打开后，请请求新会话并再次允许。"
 }

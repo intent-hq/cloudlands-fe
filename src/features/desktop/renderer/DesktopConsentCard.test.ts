@@ -4,6 +4,14 @@ import DesktopConsentCard from './DesktopConsentCard.svelte';
 import { request } from './desktop-test-fixtures';
 afterEach(cleanup);
 describe('desktop consent card', () => {
+  it('keeps Deny available while OS setup waits and prevents repeated Allow', async () => {
+    const onDecision = vi.fn();
+    render(DesktopConsentCard, { request, pending: true, settingUp: true, onDecision });
+    expect(screen.getByRole('button', { name: 'Allow once' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Deny' }).hasAttribute('disabled')).toBe(false);
+    await fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    expect(onDecision).toHaveBeenCalledExactlyOnceWith('deny');
+  });
   it.each([
     ['Allow once', 'allow_once'],
     ['Allow future sessions for this agent', 'allow_future'],

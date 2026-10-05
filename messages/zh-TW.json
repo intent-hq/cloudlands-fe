@@ -7120,5 +7120,5 @@
   "chat_queuedMessages_sendAllUnsupported_error": "一起傳送佇列訊息需要較新的後端。請使用每則訊息的「立即傳送」按鈕。",
   "desktop_os_accessibility_description": "缺少 macOS 輔助使用權限。",
   "desktop_os_screenRecording_description": "缺少 macOS 螢幕錄製權限。",
-  "desktop_os_setup_description": "控制尚未開始。在「系統設定」→「隱私權與安全性」中，為每項缺少的權限啟用 macOS 顯示的 Intent 項目。請先設定輔助使用，再設定螢幕錄製。如果未出現對話框或存取遭拒，請使用系統設定。如果 macOS 要求結束並重新開啟 Intent，請依照該提示操作。然後在此要求仍有效時再次點擊「允許」，或在要求過期後要求新的工作階段。"
+  "desktop_os_setup_description": "控制尚未開始。正在等待 macOS 權限檢查；您可以拒絕此要求以取消。在系統設定 → 隱私權與安全性中，先為 macOS 顯示的 Intent 項目啟用輔助使用，再啟用螢幕錄製。如果沒有對話框或存取遭拒，請使用系統設定。如果 macOS 要求結束並重新開啟 Intent，請依指示操作。僅在此要求仍有效時繼續授權；過期或重新開啟後，請要求新工作階段並再次允許。"
 }

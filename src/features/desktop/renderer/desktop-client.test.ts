@@ -103,7 +103,7 @@ describe('native permission check responses', () => {
     async (accessibility, screenRecording, missing) => {
       localPermissions.mockResolvedValue({
         ok: true,
-        result: { platform: 'macos', accessibility, screenRecording },
+        result: { platform: 'macos', accessibility, screenRecording, screenCapture: 'ready' },
       });
       const text = await desktopClient.requestPermissions(
         'workspace',

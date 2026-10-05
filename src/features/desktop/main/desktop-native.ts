@@ -151,11 +151,15 @@ class DesktopHelperTransport {
 }
 
 export class DesktopNativeAdapter implements DesktopNative {
-  async requestPermissions(computerId: string) {
+  async requestPermissions(computerId: string, requestId: string) {
     return z
-      .object({ accessibility: z.boolean(), screenRecording: z.boolean() })
+      .object({
+        accessibility: z.boolean(),
+        screenRecording: z.boolean(),
+        screenCapture: z.enum(['pending', 'ready', 'unavailable']),
+      })
       .strict()
-      .parse(await this.request('requestPermissions', { computerId }));
+      .parse(await this.request('requestPermissions', { computerId, requestId }));
   }
   constructor(private readonly request: NativeRequest) {}
   async identity() {

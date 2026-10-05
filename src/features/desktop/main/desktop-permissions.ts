@@ -72,7 +72,10 @@ export async function requestDesktopPermissions(
     if (!current() || pending.computerId !== identity.computerId) throw stale();
     // Windows still uses its normal native interactive-desktop/UIPI preflight.
     if (identity.platform === 'windows') return { platform: 'windows' as const };
-    const result = await native.requestPermissions(identity.computerId);
+    const result = await native.requestPermissions(
+      identity.computerId,
+      JSON.stringify([p.workspaceId, p.agentId, p.requestId]),
+    );
     if (!current()) throw stale();
     return { platform: 'macos' as const, ...result };
   } catch (error) {

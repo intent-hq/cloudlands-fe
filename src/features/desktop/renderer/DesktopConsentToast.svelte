@@ -19,6 +19,7 @@
   <DesktopConsentCard
     request={$entry.pending}
     pending={$entry.submitting}
+    settingUp={$entry.settingUp}
     guidance={$entry.error}
     onDecision={(decision) =>
       store.dispatch(desktopDecisionRequested(workspaceId, agentId, requestId, decision))}

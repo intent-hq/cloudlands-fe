@@ -11,3 +11,25 @@ precondition(screenOnly.next(accessibility: true, screenRecording: false) == .sc
 var trusted = PermissionPrompts()
 precondition(trusted.next(accessibility: true, screenRecording: true) == nil)
 print("PASS: sequential, explicit-gesture permission prompt policy; denial never loops")
+var readiness = PermissionReadiness()
+precondition(readiness.observe(requestId: "first", granted: false, now: 0) == nil)
+let first = readiness.observe(requestId: "first", granted: true, now: 0)!
+for tick in 1...20 {
+    precondition(readiness.observe(requestId: "first", granted: true, now: UInt64(tick * 1000)) == nil)
+    precondition(!readiness.expire(now: UInt64(tick * 1000)))
+    precondition(readiness.state == "pending")
+}
+readiness.complete(first, ready: true)
+precondition(readiness.state == "ready")
+let second = readiness.observe(requestId: "second", granted: true, now: 21000)!
+readiness.complete(first, ready: true)
+precondition(readiness.state == "pending")
+precondition(readiness.expire(now: 24000))
+readiness.complete(second, ready: true)
+precondition(readiness.state == "unavailable")
+precondition(readiness.observe(requestId: "second", granted: true, now: 25000) == nil)
+let third = readiness.observe(requestId: "third", granted: true, now: 26000)!
+precondition(readiness.observe(requestId: "third", granted: false, now: 27000) == nil)
+readiness.complete(third, ready: true)
+precondition(readiness.state == "unavailable")
+print("PASS: delayed SCK readiness, polling cancellation, late completion and successor fencing")

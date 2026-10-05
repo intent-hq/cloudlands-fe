@@ -114,10 +114,15 @@ export const desktopClient = {
           platform: z.literal('macos'),
           accessibility: z.boolean(),
           screenRecording: z.boolean(),
+          screenCapture: z.enum(['pending', 'ready', 'unavailable']),
         }),
       ])
       .parse(response.result);
-    if (result.platform === 'windows' || (result.accessibility && result.screenRecording)) return;
+    if (
+      result.platform === 'windows' ||
+      (result.accessibility && result.screenRecording && result.screenCapture === 'ready')
+    )
+      return;
     return [
       !result.accessibility ? m.desktop_os_accessibility_description() : undefined,
       !result.screenRecording ? m.desktop_os_screenRecording_description() : undefined,

@@ -7120,5 +7120,5 @@
   "chat_queuedMessages_sendAllUnsupported_error": "Sending queued messages together requires a newer backend. Use the individual Send now buttons.",
   "desktop_os_accessibility_description": "macOS Accessibility access is missing.",
   "desktop_os_screenRecording_description": "macOS Screen Recording access is missing.",
-  "desktop_os_setup_description": "Control has not started. In System Settings → Privacy & Security, enable the Intent entry shown by macOS for each missing permission. Accessibility setup comes first, then Screen Recording. If no dialog appears or access was denied, use System Settings. If macOS asks you to quit and reopen Intent, follow that instruction. Then click Allow again while this request is open, or request a new session if it expired."
+  "desktop_os_setup_description": "Control has not started. Waiting for macOS permission checks; you can deny this request to cancel. In System Settings → Privacy & Security, enable the Intent entry shown by macOS for Accessibility, then Screen Recording. If no dialog appears or access was denied, use System Settings. Follow any macOS request to quit and reopen Intent. Approval continues only while this request remains valid; after expiry or reopening, request a new session and Allow again."
 }

@@ -31,6 +31,7 @@ export interface DesktopEntry {
   revision: number;
   loading: boolean;
   submitting: boolean;
+  settingUp?: boolean;
   saving: boolean;
   error?: string;
   resolvedRequests: string[];

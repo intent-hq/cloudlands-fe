@@ -74,59 +74,239 @@ afterEach(() => {
   tasks.splice(0).forEach((t) => t.cancel());
 });
 describe('desktop consent wire lifecycle', () => {
-  it('keeps missing OS permissions visible without sending Allow or silently retrying it', async () => {
-    mocks.permissions.mockResolvedValue({
-      ok: true,
-      result: {
-        platform: 'macos',
-        accessibility: false,
-        screenRecording: false,
-      },
-    });
+  it('waits past native startup deadlines for OS readiness before sending the original Allow', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.permissions.mockResolvedValue({
+        ok: true,
+        result: {
+          platform: 'macos',
+          accessibility: true,
+          screenRecording: true,
+          screenCapture: 'pending',
+        },
+      });
+      mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+      const h = start();
+      h.dispatch(requested());
+      await settle();
+      h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+      await settle();
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(h.entry()?.pending?.requestId).toBe(request.requestId);
+      expect(h.entry()?.submitting).toBe(true);
+      expect(mocks.request).not.toHaveBeenCalledWith(
+        'desktop.respondPermission',
+        expect.anything(),
+      );
+      h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_future'));
+      mocks.permissions.mockResolvedValue({
+        ok: true,
+        result: {
+          platform: 'macos',
+          accessibility: true,
+          screenRecording: true,
+          screenCapture: 'ready',
+        },
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('desktop.respondPermission', {
+        workspaceId: 'workspace',
+        requestId: request.requestId,
+        decision: 'allow_once',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it.each(['deny', 'expire', 'disconnect', 'replacement'] as const)(
+    'never resumes OS setup after %s',
+    async (ending) => {
+      vi.useFakeTimers();
+      try {
+        mocks.permissions.mockResolvedValue({
+          ok: true,
+          result: {
+            platform: 'macos',
+            accessibility: true,
+            screenRecording: true,
+            screenCapture: 'pending',
+          },
+        });
+        mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+        const h = start();
+        h.dispatch(requested());
+        await settle();
+        h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+        await settle();
+        if (ending === 'deny')
+          h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'deny'));
+        if (ending === 'expire')
+          h.dispatch(desktopRequestExpired('workspace', 'agent', request.requestId));
+        if (ending === 'disconnect') h.dispatch(daemonEventsSubscribing());
+        if (ending === 'replacement')
+          h.dispatch(
+            desktopEventReceived({
+              id: 'successor',
+              type: 'desktop:permission-requested',
+              data: { ...request, requestId: 'successor' },
+            }),
+          );
+        await settle();
+        const calls = mocks.permissions.mock.calls.length;
+        mocks.permissions.mockResolvedValue({
+          ok: true,
+          result: {
+            platform: 'macos',
+            accessibility: true,
+            screenRecording: true,
+            screenCapture: 'ready',
+          },
+        });
+        await vi.advanceTimersByTimeAsync(12_000);
+        expect(mocks.permissions).toHaveBeenCalledTimes(calls);
+        expect(mocks.request).not.toHaveBeenCalledWith(
+          'desktop.respondPermission',
+          expect.objectContaining({ decision: 'allow_once' }),
+        );
+        if (ending === 'deny')
+          expect(mocks.request).toHaveBeenCalledWith(
+            'desktop.respondPermission',
+            expect.objectContaining({ decision: 'deny' }),
+          );
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it('lets real consent expiry end delayed setup without losing guidance or renewing the request', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+      const h = start();
+      h.dispatch(
+        desktopEventReceived({
+          id: 'short',
+          type: 'desktop:permission-requested',
+          data: { ...request, expiresAt: new Date(Date.now() + 11_000).toISOString() },
+        }),
+      );
+      mocks.permissions.mockResolvedValue({
+        ok: true,
+        result: {
+          platform: 'macos',
+          accessibility: true,
+          screenRecording: true,
+          screenCapture: 'pending',
+        },
+      });
+      await settle();
+      h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+      await settle();
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(h.entry()?.pending).toBeUndefined();
+      expect(h.entry()?.submitting).toBe(false);
+      expect(h.entry()?.error).toContain('Control has not started');
+      const calls = mocks.permissions.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(mocks.permissions).toHaveBeenCalledTimes(calls);
+      expect(mocks.request).not.toHaveBeenCalledWith(
+        'desktop.respondPermission',
+        expect.anything(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('ignores a late setup error after explicit Deny', async () => {
+    let reject!: (error: Error) => void;
+    mocks.permissions.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
     const h = start();
     h.dispatch(requested());
     await settle();
-    mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
     h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
     await settle();
-    expect(mocks.permissions).toHaveBeenCalledTimes(1);
-    expect(mocks.request).not.toHaveBeenCalled();
-    expect(h.entry()?.pending?.requestId).toBe(request.requestId);
-    expect(h.entry()?.submitting).toBe(false);
-    expect(h.entry()?.error).toContain('Accessibility');
-    expect(h.entry()?.error).toContain('Screen Recording');
-    mocks.request.mockResolvedValue({
-      state: { status: 'pending_permission', requestId: request.requestId },
-      permission,
-      pending: request,
-    });
-    h.dispatch(desktopReadRequested('workspace', 'agent'));
+    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'deny'));
     await settle();
-    expect(h.entry()?.error).toContain('Accessibility');
-    expect(mocks.permissions).toHaveBeenCalledTimes(1);
-    expect(mocks.request).not.toHaveBeenCalledWith('desktop.respondPermission', expect.anything());
-    mocks.permissions.mockResolvedValue({
-      ok: true,
-      result: { platform: 'macos', accessibility: true, screenRecording: true },
-    });
-    mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
-    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+    reject(new Error('late setup error'));
     await settle();
-    expect(mocks.request).toHaveBeenCalledWith('desktop.respondPermission', {
-      workspaceId: 'workspace',
-      requestId: request.requestId,
-      decision: 'allow_once',
-    });
-    expect(mocks.permissions).toHaveBeenCalledTimes(2);
-    expect(h.entry()?.error).toBeUndefined();
-    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(mocks.request).toHaveBeenCalledExactlyOnceWith(
+      'desktop.respondPermission',
+      expect.objectContaining({ decision: 'deny' }),
+    );
+  });
+  it('keeps sequential OS setup pending and observes grants without another Allow click', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.permissions.mockResolvedValue({
+        ok: true,
+        result: {
+          platform: 'macos',
+          accessibility: false,
+          screenRecording: false,
+          screenCapture: 'unavailable',
+        },
+      });
+      mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+      const h = start();
+      h.dispatch(requested());
+      await settle();
+      h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+      await settle();
+      expect(h.entry()?.error).toContain('Accessibility');
+      expect(h.entry()?.submitting).toBe(true);
+      mocks.permissions.mockResolvedValue({
+        ok: true,
+        result: {
+          platform: 'macos',
+          accessibility: true,
+          screenRecording: false,
+          screenCapture: 'unavailable',
+        },
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(h.entry()?.error).not.toContain('Accessibility access is missing');
+      expect(h.entry()?.error).toContain('Screen Recording access is missing');
+      expect(mocks.request).not.toHaveBeenCalled();
+      mocks.permissions.mockResolvedValue({
+        ok: true,
+        result: {
+          platform: 'macos',
+          accessibility: true,
+          screenRecording: true,
+          screenCapture: 'ready',
+        },
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.request).toHaveBeenCalledExactlyOnceWith('desktop.respondPermission', {
+        workspaceId: 'workspace',
+        requestId: request.requestId,
+        decision: 'allow_once',
+      });
+      expect(h.entry()?.error).toBeUndefined();
+      expect(mocks.start).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it.each(['daemon-first', 'timer-first'] as const)(
     'retains setup guidance after %s expiry without retaining consent authority',
     async (order) => {
       mocks.permissions.mockResolvedValue({
         ok: true,
-        result: { platform: 'macos', accessibility: false, screenRecording: false },
+        result: {
+          platform: 'macos',
+          accessibility: false,
+          screenRecording: false,
+          screenCapture: 'ready',
+        },
       });
       const h = start();
       h.dispatch(requested());
@@ -210,7 +390,15 @@ describe('desktop consent wire lifecycle', () => {
     await settle();
     expect(mocks.permissions).toHaveBeenCalledTimes(1);
     h.dispatch(daemonEventsSubscribing());
-    finish({ ok: true, result: { platform: 'macos', accessibility: true, screenRecording: true } });
+    finish({
+      ok: true,
+      result: {
+        platform: 'macos',
+        accessibility: true,
+        screenRecording: true,
+        screenCapture: 'ready',
+      },
+    });
     await settle();
     expect(mocks.request).not.toHaveBeenCalledWith('desktop.respondPermission', expect.anything());
   });

@@ -5,11 +5,13 @@
   let {
     request,
     pending = false,
+    settingUp = false,
     guidance,
     onDecision,
   }: {
     request: DesktopPermissionRequest;
     pending?: boolean;
+    settingUp?: boolean;
     guidance?: string;
     onDecision: (decision: DesktopPermissionDecision) => void;
   } = $props();
@@ -44,8 +46,11 @@
       disabled={pending}
       onclick={() => onDecision('allow_future')}>{m.desktop_consent_future()}</Button
     >
-    <Button size="compact" variant="ghost" disabled={pending} onclick={() => onDecision('deny')}
-      >{m.desktop_consent_deny()}</Button
+    <Button
+      size="compact"
+      variant="ghost"
+      disabled={pending && !settingUp}
+      onclick={() => onDecision('deny')}>{m.desktop_consent_deny()}</Button
     >
   </div>
 </div>

@@ -26,6 +26,8 @@ actor Desktop {
     var lastStep: UInt64 = 0
     var flags: CGEventFlags = []
     var permissionPrompts = PermissionPrompts()
+    var permissionReadiness = PermissionReadiness()
+    var permissionProbe: Task<Void, Never>?
     func milliseconds() -> UInt64 {
         var info = mach_timebase_info_data_t()
         mach_timebase_info(&info)
@@ -52,6 +54,9 @@ actor Desktop {
         lastStep = milliseconds()
     }
     func watchdog() {
+        if permissionReadiness.expire(now: milliseconds()) {
+            permissionProbe?.cancel(); permissionProbe = nil
+        }
         if lockFD >= 0 && milliseconds() - lastStep >= 15000 { release() }
     }
     func displays() throws -> [CGDirectDisplayID] {
@@ -124,6 +129,7 @@ actor Desktop {
             guard let computerId = p["computerId"] as? String, try identity()["computerId"] as? String == computerId else { throw refused("Permission request targets another computer") }
             guard let session = CGSessionCopyCurrentDictionary() as? [String: Any], session["CGSSessionScreenIsLocked"] as? Bool != true,
                   session[kCGSessionOnConsoleKey as String] as? Bool == true else { throw refused("The Mac session is locked or not on console") }
+            guard let requestId = p["requestId"] as? String, !requestId.isEmpty else { throw refused("Missing permission request identity") }
             let accessibility = AXIsProcessTrusted(), screenRecording = CGPreflightScreenCaptureAccess()
             if let prompt = permissionPrompts.next(accessibility: accessibility, screenRecording: screenRecording) {
                 // Keep the command pipe/watchdog responsive while macOS shows a
@@ -138,7 +144,23 @@ actor Desktop {
                     }
                 }
             }
-            return ["accessibility": accessibility, "screenRecording": screenRecording]
+            let previous = permissionReadiness.generation
+            let token = permissionReadiness.observe(requestId: requestId, granted: accessibility && screenRecording, now: milliseconds())
+            if previous != permissionReadiness.generation { permissionProbe?.cancel(); permissionProbe = nil }
+            if let token = token {
+                // First SCK enumeration can require an asynchronous OS decision.
+                // Do it before Allow/start, without holding up the command pipe,
+                // taking a screenshot, acquiring a lease or keeping window data.
+                permissionProbe = Task {
+                    do {
+                        _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                        if !Task.isCancelled { self.permissionReadiness.complete(token, ready: true) }
+                    } catch {
+                        if !Task.isCancelled { self.permissionReadiness.complete(token, ready: false) }
+                    }
+                }
+            }
+            return ["accessibility": accessibility, "screenRecording": screenRecording, "screenCapture": permissionReadiness.state]
         }
         if op == "release" { release(); return ["ok": true] }
         if op == "releaseInput" { releaseInput(); return ["ok": true] }

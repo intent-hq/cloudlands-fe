@@ -24,7 +24,11 @@ function setup() {
   });
   const native = {
     identity: vi.fn(async () => ({ computerId: 'local', computerName: 'Mac', platform: 'macos' })),
-    requestPermissions: vi.fn(async () => ({ accessibility: false, screenRecording: false })),
+    requestPermissions: vi.fn(async () => ({
+      accessibility: false,
+      screenRecording: false,
+      screenCapture: 'ready',
+    })),
   };
   return {
     client,
@@ -64,12 +68,16 @@ describe('local OS onboarding authorization', () => {
         platform: 'macos',
         accessibility: false,
         screenRecording: false,
+        screenCapture: 'ready',
       });
       expect(h.client.request).toHaveBeenCalledExactlyOnceWith('desktop.getState', {
         workspaceId: 'w',
         agentId: 'a',
       });
-      expect(h.native.requestPermissions).toHaveBeenCalledExactlyOnceWith('local');
+      expect(h.native.requestPermissions).toHaveBeenCalledExactlyOnceWith(
+        'local',
+        JSON.stringify(['w', 'a', 'r']),
+      );
       expect(h.client.listenerCount('status')).toBe(0);
     },
   );
@@ -141,13 +149,21 @@ describe('helper permission response boundary', () => {
     const request = vi
       .fn()
       .mockResolvedValueOnce({ ok: true })
-      .mockResolvedValueOnce({ accessibility: false, screenRecording: true });
+      .mockResolvedValueOnce({
+        accessibility: false,
+        screenRecording: true,
+        screenCapture: 'ready',
+      });
     const adapter = new DesktopNativeAdapter(request);
-    await expect(adapter.requestPermissions('local')).rejects.toThrow();
-    await expect(adapter.requestPermissions('local')).resolves.toEqual({
+    await expect(adapter.requestPermissions('local', 'request')).rejects.toThrow();
+    await expect(adapter.requestPermissions('local', 'request')).resolves.toEqual({
       accessibility: false,
       screenRecording: true,
+      screenCapture: 'ready',
     });
-    expect(request).toHaveBeenLastCalledWith('requestPermissions', { computerId: 'local' });
+    expect(request).toHaveBeenLastCalledWith('requestPermissions', {
+      computerId: 'local',
+      requestId: 'request',
+    });
   });
 });
