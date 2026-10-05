@@ -28,6 +28,14 @@ import {
   type NoteRenderedSearchInput,
 } from './editing/note-rendered-search-capture';
 import type { NoteRenderedSearchPage } from './editing/note-rendered-search-results';
+import {
+  captureNoteMarker,
+  isNoteMarkerCapture,
+  noteMarkerCaptureLimits,
+  UnsupportedNoteMarkerCapture,
+  type NoteMarkerCapture,
+  type NoteMarkerCaptureInput,
+} from './editing/note-marker-capture';
 import type { NoteSourceSelection } from './note-source-selection';
 export type { NoteSourceSelection } from './note-source-selection';
 
@@ -148,6 +156,225 @@ export class NoteWindowView {
         }),
       true,
     );
+  }
+  /** Read-only correspondence for one mounted atom. This is not canonical marker
+   * provenance or edit authority. Caller admits capture/proof DATA before entry;
+   * the existing window lease remains held until explicit physical settlement. */
+  borrowMarkerOccurrence(
+    identity: NoteMarkerCaptureInput['identity'],
+    position: number,
+    operationCurrent: () => boolean,
+  ) {
+    const editor = this.editor,
+      window = this.window,
+      projection = this.committedProjection,
+      lease = this.currentLease;
+    const boundary = window?.context[0];
+    if (
+      !editor ||
+      !window ||
+      window.text.length > noteMarkerCaptureLimits.windowUnits ||
+      !projection ||
+      !lease ||
+      !this.options.retainWindow ||
+      this.historyOwner ||
+      this.mountedEditing ||
+      this.options.editing ||
+      projection instanceof NoteEditAuthority ||
+      window.native ||
+      window.canonicalOwners?.length ||
+      window.context.length !== 1 ||
+      boundary?.kind !== 'boundary' ||
+      boundary.construct !== 'paragraph' ||
+      boundary.entryPath !== 'markdown' ||
+      boundary.parentRef ||
+      boundary.sourceRange.start !== window.range.start ||
+      boundary.sourceRange.end !== window.range.end ||
+      boundary.continuationBefore ||
+      boundary.continuationAfter ||
+      editor.state.doc.childCount !== 1 ||
+      projection.source !== window.text ||
+      projection.start !== window.range.start ||
+      !Number.isSafeInteger(position) ||
+      position < 1 ||
+      !Number.isSafeInteger(identity.documentGeneration) ||
+      identity.documentGeneration !== 0
+    )
+      throw new UnsupportedNoteMarkerCapture('Unsupported read-only native marker borrow');
+    const original = Object.freeze({ ...identity, scope: Object.freeze({ ...identity.scope }) });
+    let snapshot:
+      | {
+          editor: Editor;
+          window: NoteWindow;
+          projection: SourceProjection;
+          lease: WindowLease;
+          state: EditorState;
+          epoch: number;
+          text: string;
+          start: number;
+          end: number;
+          length: number;
+          context: NoteWindow['context'];
+          boundary: Extract<NoteWindow['context'][number], { kind: 'boundary' }>;
+          boundaryId: string;
+          entryPath: typeof boundary.entryPath;
+          expiry: string | undefined;
+        }
+      | undefined = {
+      editor,
+      window,
+      projection,
+      lease,
+      state: editor.state,
+      epoch: this.selectionCaptureGeneration,
+      text: window.text,
+      start: window.range.start,
+      end: window.range.end,
+      length: window.sourceLength,
+      context: window.context,
+      boundary,
+      boundaryId: boundary.id,
+      entryPath: boundary.entryPath,
+      expiry: window.expiresAt,
+    };
+    let checkOperation: (() => boolean) | undefined = operationCurrent;
+    let captured: NoteMarkerCapture | undefined;
+    let retained: (() => void) | undefined;
+    let lost = false,
+      released = false;
+    const listeners = new Set<() => void>();
+    const notify = (f: () => void) => {
+      try {
+        f();
+      } catch (error) {
+        logger.error('Failed to notify native marker loss', error);
+      }
+    };
+    const lose = () => {
+      if (lost) return;
+      lost = true;
+      snapshot = undefined;
+      captured = undefined;
+      checkOperation = undefined;
+      for (const f of [...listeners]) notify(f);
+    };
+    const same = (s: NonNullable<typeof snapshot>, time: number) =>
+      !this.disposed &&
+      !this.selectionBorrowExhausted &&
+      !s.editor.isDestroyed &&
+      !this.historyBusy &&
+      !this.transactionRelay?.busy &&
+      !s.editor.view.composing &&
+      !this.pins.has(this.compositionPin) &&
+      !this.historyOwner &&
+      !this.mountedEditing &&
+      !this.options.editing &&
+      this.editor === s.editor &&
+      s.editor.state === s.state &&
+      this.window === s.window &&
+      this.committedProjection === s.projection &&
+      this.projection === s.projection &&
+      this.currentLease === s.lease &&
+      this.selectionCaptureGeneration === s.epoch &&
+      original.liveGeneration === s.epoch &&
+      s.window.text === s.text &&
+      s.window.range.start === s.start &&
+      s.window.range.end === s.end &&
+      s.window.sourceLength === s.length &&
+      s.projection.source === s.text &&
+      s.projection.start === s.start &&
+      !s.window.native &&
+      !s.window.canonicalOwners?.length &&
+      s.window.context === s.context &&
+      s.context.length === 1 &&
+      s.context[0] === s.boundary &&
+      s.boundary.kind === 'boundary' &&
+      s.boundary.id === s.boundaryId &&
+      s.boundary.construct === 'paragraph' &&
+      s.boundary.entryPath === s.entryPath &&
+      !s.boundary.parentRef &&
+      s.boundary.sourceRange.start === s.start &&
+      s.boundary.sourceRange.end === s.end &&
+      !s.boundary.continuationBefore &&
+      !s.boundary.continuationAfter &&
+      s.window.sourceRevision === original.sourceRevision &&
+      s.window.snapshotId === original.snapshotId &&
+      sameNoteScope(s.window.scope, original.scope) &&
+      s.window.expiresAt === s.expiry &&
+      Date.parse(s.expiry ?? '') >= Date.parse(original.expiresAt) &&
+      Date.parse(original.expiresAt) > time &&
+      identity.sourceRevision === original.sourceRevision &&
+      identity.snapshotId === original.snapshotId &&
+      identity.documentGeneration === original.documentGeneration &&
+      identity.liveGeneration === original.liveGeneration &&
+      identity.selectionGeneration === original.selectionGeneration &&
+      identity.expiresAt === original.expiresAt &&
+      sameNoteScope(identity.scope, original.scope);
+    const current = () => {
+      if (lost || released || !snapshot) return false;
+      try {
+        const s = snapshot;
+        const time = Date.now();
+        if (!same(s, time) || !checkOperation?.() || !same(s, Date.now())) lose();
+        if (!lost && captured) {
+          const proof = captureNoteMarker(s.editor.view, {
+            projection: s.projection,
+            identity: original,
+            position,
+            current: () => true,
+          });
+          if (JSON.stringify(proof) !== JSON.stringify(captured) || !same(s, time)) lose();
+        }
+      } catch {
+        lose();
+      }
+      return !lost && !released;
+    };
+    if (!current()) throw new Error('Stale native marker borrow');
+    const invalidated = () => lose();
+    this.selectionBorrowListeners.add(invalidated);
+    const release = () => {
+      if (released) return;
+      released = true;
+      this.selectionBorrowListeners.delete(invalidated);
+      lose();
+      listeners.clear();
+      const drop = retained;
+      retained = undefined;
+      drop?.();
+    };
+    try {
+      retained = lease.retain();
+      const s = snapshot;
+      if (!s) throw new Error('Native marker borrow lost before capture');
+      const capture = captureNoteMarker(s.editor.view, {
+        projection: s.projection,
+        identity: original,
+        position,
+        current,
+      });
+      if (!isNoteMarkerCapture(capture)) throw new Error('Invalid native marker capture');
+      captured = capture;
+      if (!current()) throw new Error('Native marker changed during capture');
+      return Object.freeze({
+        capture,
+        current,
+        release,
+        subscribe: (f: () => void) => {
+          if (!current()) {
+            notify(f);
+            return () => {};
+          }
+          listeners.add(f);
+          return () => {
+            listeners.delete(f);
+          };
+        },
+      });
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
   private borrowNativeCapture<T>(
     identity: NoteSelectionMarkdownIdentity,
