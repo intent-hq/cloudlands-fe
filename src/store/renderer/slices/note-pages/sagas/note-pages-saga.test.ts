@@ -892,17 +892,44 @@ it('does not adopt a prepared save when the document changes while hashing', asy
   const r = await draftSaveHarness();
   const { webcrypto } = await import('node:crypto');
   const hashed = deferred<ArrayBuffer>();
-  vi.spyOn(webcrypto.subtle, 'digest').mockReturnValue(hashed.promise);
+  const digest = vi.spyOn(webcrypto.subtle, 'digest').mockReturnValue(hashed.promise);
   r.draft(1, 0, 1, 'local');
   r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
-  await flush();
+  await vi.waitFor(() => expect(digest).toHaveBeenCalledTimes(1));
+  expect(r.save).not.toHaveBeenCalled();
   r.client.push({ ...tuple, stateGeneration: '11', sourceRevision: 'r:8' });
+  await vi.waitFor(() =>
+    expect(r.state().byWorkspaceId['ws-a'].notes.spec.state?.sourceRevision).toBe('r:8'),
+  );
   hashed.resolve(new ArrayBuffer(32));
   await flush();
   expect(r.task.isRunning()).toBe(true);
   expect(r.save).not.toHaveBeenCalled();
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.drafts[0].splices[0].text).toBe('local');
   vi.unstubAllGlobals();
+});
+
+it('saves only the captured prefix when typing continues during hashing', async () => {
+  const r = await draftSaveHarness();
+  const { webcrypto } = await import('node:crypto');
+  const actualDigest = webcrypto.subtle.digest.bind(webcrypto.subtle);
+  const hashed = deferred<ArrayBuffer>();
+  const digest = vi.spyOn(webcrypto.subtle, 'digest').mockReturnValue(hashed.promise);
+  r.draft(1, 0, 1, 'first');
+  r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
+  await vi.waitFor(() => expect(digest).toHaveBeenCalledTimes(1));
+  expect(r.save).not.toHaveBeenCalled();
+  r.draft(2, 5, 5, '!');
+  const call = digest.mock.calls[0];
+  hashed.resolve(await actualDigest(call[0], call[1]));
+  await vi.waitFor(() => expect(r.save).toHaveBeenCalledTimes(1));
+  const n = r.state().byWorkspaceId['ws-a'].notes.spec;
+  expect(n.pending?.throughSequence).toBe(1);
+  expect(n.pending?.operation.splices).toEqual([{ start: 0, end: 1, text: 'first' }]);
+  expect(n.drafts.map((d) => d.sequence)).toEqual([1, 2]);
+  expect(n.drafts[1].splices).toEqual([{ start: 5, end: 5, text: '!' }]);
+  expect(digest).toHaveBeenCalledTimes(1);
+  expect(r.task.isRunning()).toBe(true);
 });
 
 it('keeps oversized edits dirty and only clears a proven local insertion/inverse prefix', async () => {
