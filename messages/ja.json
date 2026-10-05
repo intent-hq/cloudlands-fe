@@ -2338,6 +2338,8 @@
   "chat_modelPicker_providerDefault_label": "プロバイダーのデフォルト",
   "chat_modelPicker_providerDisabled_description": "{provider} は設定 > エージェントで無効になっています。",
   "chat_modelPicker_refreshGroup_title": "{group} のモデルを更新",
+  "chat_modelPicker_errorDetails_label": "詳細",
+  "chat_modelPicker_errorDetails_title": "{provider} のモデル読み込みの詳細",
   "chat_modelPicker_retry_label": "再試行",
   "chat_modelPicker_runLoginHint_label": "ターミナルで「{command}」を実行してください。",
   "chat_modelPicker_searchModels_placeholder": "モデルを検索...",

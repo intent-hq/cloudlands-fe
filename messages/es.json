@@ -2338,6 +2338,8 @@
   "chat_modelPicker_providerDefault_label": "Predeterminado del proveedor",
   "chat_modelPicker_providerDisabled_description": "{provider} está deshabilitado en Configuración > Agentes.",
   "chat_modelPicker_refreshGroup_title": "Actualizar modelos de {group}",
+  "chat_modelPicker_errorDetails_label": "Detalles",
+  "chat_modelPicker_errorDetails_title": "Detalles de la carga de modelos de {provider}",
   "chat_modelPicker_retry_label": "Reintentar",
   "chat_modelPicker_runLoginHint_label": "Ejecute \"{command}\" en una terminal.",
   "chat_modelPicker_searchModels_placeholder": "Buscar modelos...",

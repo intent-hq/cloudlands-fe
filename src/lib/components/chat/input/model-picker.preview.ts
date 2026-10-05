@@ -45,7 +45,7 @@ const models = [
 const selectLoadingStates = appStore.createSelector((state) => state.model.loadingState);
 let activeCleanup: (() => void) | undefined;
 
-function setupModels(populated: boolean, degraded = false) {
+function setupModels(populated: boolean, degraded = false, diagnostic?: string) {
   return () => {
     activeCleanup?.();
     const previousLoading = selectLoadingStates.select(appStore.state);
@@ -77,10 +77,10 @@ function setupModels(populated: boolean, degraded = false) {
       appStore.dispatch(
         providerModelsLoaded(
           providerId,
-          degraded
+          degraded || (diagnostic && providerId === 'codex')
             ? {
                 models: [],
-                warning: 'Temporary model catalog failure',
+                warning: diagnostic ?? 'Temporary model catalog failure',
               }
             : { models: rows },
           epoch,
@@ -178,6 +178,34 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
         updateGlobalDefault: false,
       },
       setup: setupModels(true, true),
+    },
+    'adapter-error': {
+      props: {
+        initialOpen: true,
+        captureMenu: true,
+        portal: false,
+        collisionBoundary: 'body',
+        providerId: 'codex',
+        selectedModel: null,
+        showDefaultOption: false,
+        silentFallback: false,
+        updateGlobalStore: false,
+        updateGlobalDefault: false,
+        showManageLink: false,
+      },
+      setup: setupModels(
+        true,
+        false,
+        [
+          'codex adapter exited before reporting models: exit status: 254',
+          'npm error code ENOENT',
+          'npm error syscall open',
+          'npm error path /Users/clement/.npm/_npx/39d488c67d3fe4d0/package.json',
+          `npm error enoent Could not read package.json: ${'/Users/clement/workspaces/very-long-project-path/'.repeat(12)}package.json`,
+          'npm error enoent This is related to npm not being able to find a file.',
+          'npm error A complete log of this run can be found in: /Users/clement/.npm/_logs/2026-10-04T23_21_43_314Z-debug-0.log',
+        ].join('\n'),
+      ),
     },
     // Open the “Default model” trigger to reveal the empty state and Retry button.
     // No search is needed: both available providers return an empty model catalog.
