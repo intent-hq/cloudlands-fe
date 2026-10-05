@@ -128,3 +128,85 @@ test('keeps the four-column limit while an input is focused', async ({ mount, pa
   await expect(state).toHaveAttribute('data-column-count', '4');
   await expect(input).toHaveValue('Keep this draft');
 });
+
+test('keeps handled column shortcuts out of real xterm and preserves input at the column limit', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.evaluate(() => {
+    Object.defineProperty(window.navigator, 'platform', {
+      configurable: true,
+      value: 'Linux x86_64',
+    });
+  });
+  const component = await mount(PanelModWShortcutHarness, {
+    props: { panelCount: 1, includeTerminal: true },
+  });
+  const state = component.getByTestId('mod-w-state');
+  const terminal = component.getByTestId('real-terminal').locator('.xterm-helper-textarea');
+  await terminal.focus();
+  await page.keyboard.type('safe');
+  await page.keyboard.press('Backslash');
+  const input = 'safe\\';
+  await expect(state).toHaveAttribute('data-terminal-input', JSON.stringify(input));
+
+  const handledInput: string[] = [];
+  for (const count of [2, 3, 4]) {
+    await terminal.focus();
+    await page.keyboard.press('Control+Backslash');
+    await expect(state).toHaveAttribute('data-column-count', String(count));
+    await expect(state).toHaveAttribute('data-terminal-input', JSON.stringify(input));
+    handledInput.push(JSON.parse((await state.getAttribute('data-terminal-input'))!));
+  }
+
+  await terminal.focus();
+  await page.keyboard.press('Control+Backslash');
+  await expect(state).toHaveAttribute('data-column-count', '4');
+  await expect(state).toHaveAttribute('data-terminal-input', JSON.stringify(`${input}\u001c`));
+  await testInfo.attach('real-xterm-column-limit.json', {
+    body: JSON.stringify(
+      {
+        handledInput,
+        inputAtLimit: JSON.parse((await state.getAttribute('data-terminal-input'))!),
+        columns: await state.getAttribute('data-column-count'),
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+});
+
+test('keeps a remapped column shortcut out of real xterm', async ({ mount, page }, testInfo) => {
+  await page.evaluate(() => {
+    Object.defineProperty(window.navigator, 'platform', {
+      configurable: true,
+      value: 'Linux x86_64',
+    });
+  });
+  const component = await mount(PanelModWShortcutHarness, {
+    props: { panelCount: 1, includeTerminal: true, createColumnShortcut: 'mod+g' },
+  });
+  const state = component.getByTestId('mod-w-state');
+  const terminal = component.getByTestId('real-terminal').locator('.xterm-helper-textarea');
+  await terminal.focus();
+  await page.keyboard.type('safe');
+  await page.keyboard.press('Control+Backslash');
+  await expect(state).toHaveAttribute('data-column-count', '1');
+  await expect(state).toHaveAttribute('data-terminal-input', JSON.stringify('safe\u001c'));
+
+  await page.keyboard.press('Control+g');
+  await expect(state).toHaveAttribute('data-column-count', '2');
+  await expect(state).toHaveAttribute('data-terminal-input', JSON.stringify('safe\u001c'));
+  await testInfo.attach('real-xterm-remapped-shortcut.json', {
+    body: JSON.stringify(
+      {
+        input: JSON.parse((await state.getAttribute('data-terminal-input'))!),
+        columns: await state.getAttribute('data-column-count'),
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+});

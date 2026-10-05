@@ -398,7 +398,10 @@ export function createPanelKeyboardShortcuts(
 
     if (matches('panel.create-column-right')) {
       const handled = createColumnToRight(getLayoutManager());
-      if (handled) e.preventDefault();
+      if (handled) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       return handled;
     }
 
