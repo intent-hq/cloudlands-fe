@@ -1,5 +1,4 @@
 import { expect, test } from '../../../../test/ct-test';
-import type { Locator } from '@playwright/test';
 import type { QueuedMessage } from '$shared/types';
 import QueuedMessageImagesHost from './QueuedMessageImagesHost.svelte';
 
@@ -16,6 +15,9 @@ const queued = (
   messageMetadata: { fromPrincipalId: 'image-author' },
   imageBlocks,
 });
+
+type CtPage = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
+type Locator = ReturnType<CtPage['getByTestId']>;
 
 async function queueScreenshot(component: Locator) {
   const queue = component.getByTestId('queued-messages-container');
