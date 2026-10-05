@@ -22,7 +22,6 @@ const pendingState = z.object({
     expiresAt: z.string().datetime(),
   }),
 });
-const busy = new WeakSet<JsonRpcClient>();
 /** A local Allow click is not OS authorization. Revalidate the daemon's candidate
  * on the sender's existing connection, then ask the same signed execution helper.
  * No lease, input, capture, remembered grant or daemon decision is created here. */
@@ -41,11 +40,9 @@ export async function requestDesktopPermissions(
       ),
     );
   if (client.getStatus() !== 'connected') throw stale();
-  if (busy.has(client))
-    throw new JsonRpcError(
-      desktopFailure('desktop-busy', 'Desktop permission setup is already pending', 'not_started'),
-    );
-  busy.add(client);
+  // Each observation validates its own live candidate. The helper serializes
+  // permission probes; a second agent's explicit setup must not fail merely
+  // because another read-only observation is awaiting its daemon response.
   let changed = false;
   const changedConnection = () => {
     changed = true;
@@ -85,6 +82,5 @@ export async function requestDesktopPermissions(
     throw error;
   } finally {
     client.removeListener('status', changedConnection);
-    busy.delete(client);
   }
 }

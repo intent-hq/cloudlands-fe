@@ -117,20 +117,36 @@ describe('local OS onboarding authorization', () => {
     await expect(h.run()).rejects.toThrow();
     expect(h.native.requestPermissions).not.toHaveBeenCalled();
   });
-  it('serializes concurrent local gestures and releases the guard after an error', async () => {
+  it('revalidates overlapping setup requests independently instead of failing a second user gesture', async () => {
     const h = setup();
     let reject!: (e: Error) => void;
     h.client.request.mockImplementationOnce(
       () =>
-        new Promise((_, r) => {
-          reject = r;
+        new Promise((_, fail) => {
+          reject = fail;
         }),
     );
-    const pending = h.run();
-    await expect(h.run()).rejects.toThrow('already pending');
+    h.client.request.mockResolvedValueOnce({
+      state: { status: 'pending_permission', requestId: 'second' },
+      pending: { ...h.snapshot.pending, agentId: 'other', requestId: 'second' },
+    });
+    const pending = h.run().catch((error: unknown) => error);
+    const second = await h
+      .run({ ...selection, agentId: 'other', requestId: 'second' })
+      .catch((error: unknown) => error);
     reject(new Error('offline'));
-    await expect(pending).rejects.toThrow('offline');
-    await expect(h.run()).resolves.toMatchObject({ platform: 'macos' });
+    expect(await pending).toBeInstanceOf(Error);
+    expect(second).toMatchObject({ platform: 'macos', accessibility: false });
+    expect(h.client.request).toHaveBeenCalledTimes(2);
+    expect(h.client.request).toHaveBeenLastCalledWith('desktop.getState', {
+      workspaceId: 'w',
+      agentId: 'other',
+    });
+    expect(h.native.requestPermissions).toHaveBeenCalledExactlyOnceWith(
+      'local',
+      JSON.stringify(['w', 'other', 'second']),
+    );
+    expect(h.client.listenerCount('status')).toBe(0);
   });
   it('does not request macOS permissions on Windows or claim Windows readiness', async () => {
     const h = setup();

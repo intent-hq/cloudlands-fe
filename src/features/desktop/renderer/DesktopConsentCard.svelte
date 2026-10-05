@@ -30,7 +30,7 @@
   {#if guidance}
     <p role="status" class="text-sm">{guidance}</p>
   {/if}
-  {#if pending}
+  {#if pending && !settingUp}
     <p role="status" class="text-sm">{m.desktop_consent_pending()}</p>
   {/if}
   <div class="flex flex-wrap gap-2">

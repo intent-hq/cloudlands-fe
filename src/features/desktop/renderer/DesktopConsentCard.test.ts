@@ -9,6 +9,9 @@ describe('desktop consent card', () => {
     render(DesktopConsentCard, { request, pending: true, settingUp: true, onDecision });
     expect(screen.getByRole('button', { name: 'Allow once' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('button', { name: 'Deny' }).hasAttribute('disabled')).toBe(false);
+    expect(
+      screen.queryByText('Sending your decision. Waiting for the desktop to confirm.'),
+    ).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
     expect(onDecision).toHaveBeenCalledExactlyOnceWith('deny');
   });
