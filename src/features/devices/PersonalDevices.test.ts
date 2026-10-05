@@ -26,6 +26,7 @@ import { selectPersonalDevices } from './personal-devices-selectors';
 import { principalSaga } from '$store/renderer/slices/principal/sagas/principal-saga';
 import { identitySaga } from '$store/renderer/slices/identity/sagas/identity-saga';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
+import MobileSettings from '$features/settings/MobileSettings.svelte';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
 import { browserClientsSaga } from '$store/renderer/slices/browser-clients/sagas/browser-clients-saga';
@@ -203,7 +204,25 @@ afterEach(() => {
 });
 describe('Devices current-person UI through the actual store and IPC transport', () => {
   it.each(['member', 'guest'] as const)(
-    'ordinary Devices omits personal and local administrator RPCs for a remote %s',
+    'Mobile never mounts local administrator RPCs for a remote %s',
+    async (role) => {
+      admit(role);
+      const stopApi = store.runSaga(websocketApiSaga);
+      try {
+        render(MobileSettings);
+        await screen.findByRole('button', { name: m.settings_personalDevices_pair_label() });
+        await waitFor(() =>
+          expect(rpc.mock.calls.some(([method]) => method === 'client.list')).toBe(true),
+        );
+        expect(invoke.mock.calls.filter(([, payload]) => payload?.localMachine)).toEqual([]);
+        expect(rpc.mock.calls.map(([method]) => method)).not.toContain('settings.list');
+      } finally {
+        stopApi();
+      }
+    },
+  );
+  it.each(['member', 'guest'] as const)(
+    'Machines omits personal and local administrator RPCs for a remote %s',
     async (role) => {
       admit(role);
       const stopApi = store.runSaga(websocketApiSaga);
