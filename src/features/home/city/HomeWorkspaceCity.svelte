@@ -146,6 +146,7 @@
       const { CityScene } = await import('./city-scene');
       if (disposed || current !== generation) return;
       scene = new CityScene(viewport, {
+        interactionRoot: root,
         onframe: (value) => {
           frame = value;
           ready = true;
@@ -332,6 +333,12 @@
     { key: '⇧ ↑ ↓ ← →', label: m.home_city_orbit() },
     { key: 'R', label: m.home_city_reset_angle() },
     { key: m.home_city_orbit_gesture(), label: m.home_city_orbit() },
+    { key: m.home_city_pan_gesture(), label: m.home_city_pan() },
+    { key: m.home_city_scroll_gesture(), label: m.home_city_pan() },
+    {
+      key: m.home_city_zoom_gesture(),
+      label: m.home_city_zoom_in() + ' / ' + m.home_city_zoom_out(),
+    },
     { key: '+ / −', label: m.home_city_zoom_in() + ' / ' + m.home_city_zoom_out() },
     { key: '?', label: m.home_city_shortcuts() },
   ]);
@@ -367,7 +374,7 @@
     class="city-viewport"
     role="group"
     tabindex="0"
-    aria-label={m.home_city_pan()}
+    aria-label={m.home_city_orbit()}
     aria-describedby="city-keyboard-hint"
   ></div>
   <div
@@ -420,6 +427,7 @@
               variant="ghost"
               size="sm"
               class="city-repo-label"
+              data-city-repository={label.repositoryId}
               aria-label={m.home_city_repository_label({
                 name: repoById.get(label.repositoryId)?.name ?? '',
                 count: formatInteger(label.count),

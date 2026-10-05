@@ -7083,7 +7083,7 @@
   "home_city_index": "Arbeitsbereichsverzeichnis",
   "home_city_close": "Schließen",
   "home_city_shortcuts": "Stadt-Tastenkürzel",
-  "home_city_drag_hint": "Ziehen zum Verschieben · Umschalt + Ziehen zum Drehen · Scrollen zum Zoomen",
+  "home_city_drag_hint": "Ziehen zum Drehen · Scrollen zum Verschieben · Finger spreizen zum Zoomen",
   "home_city_size_legend": "Höhe · geänderte Dateien",
   "home_city_size_description": "2–8 Etagen. Ein vereinfachter Hinweis, kein Maß für Fortschritt.",
   "home_city_unknown": "Änderungsumfang nicht verfügbar",
@@ -7118,6 +7118,9 @@
   "home_city_rotate_right": "Nach rechts drehen",
   "home_city_orbit": "Stadt drehen und neigen",
   "home_city_reset_angle": "Blickwinkel zurücksetzen",
-  "home_city_orbit_gesture": "Umschalt + Ziehen / Ziehen mit rechter Maustaste",
-  "home_city_touch_hint": "Mit zwei Fingern: verschieben, zum Zoomen zusammen- oder auseinanderziehen, zum Rotieren drehen."
+  "home_city_orbit_gesture": "Ziehen / ein Finger",
+  "home_city_pan_gesture": "Umschalt + Ziehen / rechte oder mittlere Maustaste",
+  "home_city_scroll_gesture": "Mit zwei Fingern scrollen",
+  "home_city_zoom_gesture": "Finger spreizen / Strg + Scrollen / ⌘ + Scrollen",
+  "home_city_touch_hint": "Mit einem Finger: drehen. Mit zwei Fingern: verschieben, zum Zoomen zusammen- oder auseinanderziehen, zum Rotieren drehen."
 }

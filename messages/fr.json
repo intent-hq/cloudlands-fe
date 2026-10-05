@@ -7083,7 +7083,7 @@
   "home_city_index": "Index des espaces de travail",
   "home_city_close": "Fermer",
   "home_city_shortcuts": "Raccourcis de la ville",
-  "home_city_drag_hint": "Glisser pour déplacer · Maj + glisser pour tourner · défiler pour zoomer",
+  "home_city_drag_hint": "Glisser pour tourner · défiler pour déplacer · pincer pour zoomer",
   "home_city_size_legend": "Hauteur · fichiers modifiés",
   "home_city_size_description": "2 à 8 étages. Un repère simplifié, pas une mesure de progression.",
   "home_city_unknown": "Volume des changements indisponible",
@@ -7118,6 +7118,9 @@
   "home_city_rotate_right": "Tourner à droite",
   "home_city_orbit": "Tourner et incliner la ville",
   "home_city_reset_angle": "Réinitialiser l’angle de vue",
-  "home_city_orbit_gesture": "Maj + glisser / glisser avec le bouton droit",
-  "home_city_touch_hint": "Avec deux doigts : déplacer, pincer ou écarter pour zoomer, tourner pour pivoter."
+  "home_city_orbit_gesture": "Glisser / un doigt",
+  "home_city_pan_gesture": "Maj + glisser / bouton droit ou central",
+  "home_city_scroll_gesture": "Défilement à deux doigts",
+  "home_city_zoom_gesture": "Pincer / Ctrl + défilement / ⌘ + défilement",
+  "home_city_touch_hint": "Avec un doigt : tourner. Avec deux doigts : déplacer, pincer ou écarter pour zoomer, tourner pour pivoter."
 }

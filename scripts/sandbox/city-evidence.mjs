@@ -574,17 +574,30 @@ try {
       await dragCamera(page, { release: false });
       await expect.poll(() => cameraAngles(page)).not.toEqual(angles);
       await expect.poll(() => clouds(page)).not.toEqual(initialClouds);
-      assert.notDeepEqual(await projection(page), initialProjection, 'Plain drag pans the camera');
-      const leaning = await cameraAngles(page);
+      assert.notDeepEqual(await projection(page), initialProjection, 'Plain drag rotates the city');
+      const rotated = await cameraAngles(page);
       assert.ok(
-        Math.abs(leaning.yaw - angles.yaw) < 0.4 &&
-          Math.abs(leaning.elevation - angles.elevation) < 0.4,
-        'Drag lean stays subtle',
+        Math.abs(rotated.yaw - angles.yaw) > 0.3 &&
+          Math.abs(rotated.elevation - angles.elevation) > 0.05,
+        'Plain drag deliberately changes both rotation and tilt',
       );
+      const depths = await page
+        .locator('.city-atmosphere, .city-near-clouds')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const matrix = new window.DOMMatrix(getComputedStyle(node).transform);
+            return { x: matrix.m41, y: matrix.m42 };
+          }),
+        );
+      assert.ok(
+        Math.abs(depths[1].x) > Math.abs(depths[0].x),
+        'Near clouds move more than distant clouds',
+      );
+      assert.ok(depths[1].x * depths[0].x > 0, 'Cloud layers follow the same camera movement');
       await shot('-during', false);
       await page.mouse.up();
       await settled(page);
-      await expectAngles(page, angles);
+      await expectAngles(page, rotated);
       await expect(page.locator('[data-city-selected]')).toHaveCount(0);
       await expect(page.locator('[data-city-opened]')).toHaveText('');
       await shot('-after');
@@ -602,13 +615,19 @@ try {
       await open();
       await settled(page);
       const original = await cameraAngles(page);
-      await dragCamera(page, { shift: true });
+      await dragCamera(page);
       await settled(page);
-      const shifted = await cameraAngles(page);
-      assert.notDeepEqual(shifted, original, 'Shift drag persists orbit');
-      await dragCamera(page, { button: 'right' });
-      await settled(page);
-      assert.notDeepEqual(await cameraAngles(page), shifted, 'Right drag persists orbit');
+      const rotated = await cameraAngles(page);
+      assert.notDeepEqual(rotated, original, 'Plain drag keeps the chosen angle');
+      for (const control of [{ shift: true }, { button: 'right' }, { button: 'middle' }]) {
+        const beforePan = await projection(page);
+        const beforeClouds = await clouds(page);
+        await dragCamera(page, control);
+        await expect.poll(() => projection(page)).not.toEqual(beforePan);
+        await expect.poll(() => clouds(page)).not.toEqual(beforeClouds);
+        await expectAngles(page, rotated);
+        await expect(page.locator('[data-city-selected]')).toHaveCount(0);
+      }
       await blur(page);
       for (const key of ['q', 'e', 'Shift+ArrowLeft', 'Shift+ArrowUp']) {
         const before = await cameraAngles(page);
@@ -646,9 +665,210 @@ try {
       await expectAngles(page, original);
       await expect(page.locator('[data-city]')).toHaveAttribute('data-city-zoom', '1');
       result.idleDraws = await idleDraws(page);
+      await open('one');
+      await settled(page);
+      const roof = await page.locator('[data-city-plot]').evaluate((node) => {
+        const viewport = node.closest('[data-city]').getBoundingClientRect();
+        return {
+          x: viewport.left + parseFloat(node.style.left),
+          y: viewport.top + parseFloat(node.style.top) + 45,
+        };
+      });
+      assert.ok(
+        await page.evaluate(
+          ({ x, y }) => document.elementFromPoint(x, y)?.matches('canvas[data-city-canvas]'),
+          roof,
+        ),
+        'Select the building through its canvas, not its label',
+      );
+      await page.mouse.click(roof.x, roof.y, { button: 'right' });
+      await page.mouse.click(roof.x, roof.y, { button: 'middle' });
+      await page.keyboard.down('Shift');
+      await page.mouse.click(roof.x, roof.y);
+      await page.keyboard.up('Shift');
+      await expect(page.locator('[data-city-selected]')).toHaveCount(0);
+      const beforeClick = await cameraAngles(page);
+      await page.mouse.move(roof.x, roof.y);
+      await page.mouse.down();
+      await page.mouse.move(roof.x + 2, roof.y + 1);
+      await page.mouse.up();
+      await expect(page.locator('[data-city-selected]')).toHaveAttribute(
+        'data-city-selected',
+        'city-workspace-001',
+      );
+      await settled(page);
+      await expectAngles(page, beforeClick);
+      await shot('-canvas-selection');
       await open('city', 'home');
       await expect(page.locator('[data-city-ready="true"]')).toBeAttached();
       await shot('-home');
+    },
+    { motion: 'full' },
+  );
+  await scenario(
+    'motion-trackpad',
+    async ({ page, open, shot, result }) => {
+      await open();
+      await settled(page);
+      const point = await canvasPoint(page);
+      await page.mouse.move(point.x, point.y);
+      const original = await cameraAngles(page);
+      const zoom = await page.locator('[data-city]').getAttribute('data-city-zoom');
+      const sky = await clouds(page);
+      await shot('-before');
+      const panBy = async (dx, dy, action) => {
+        const before = (await projection(page)).map(parseFloat);
+        await action();
+        await expect
+          .poll(async () => {
+            const after = (await projection(page)).map(parseFloat);
+            return Math.max(
+              Math.abs(after[0] - before[0] + dx),
+              Math.abs(after[1] - before[1] + dy),
+            );
+          })
+          .toBeLessThan(0.5);
+        await expect(page.locator('[data-city]')).toHaveAttribute('data-city-zoom', zoom);
+        await expectAngles(page, original);
+        await settled(page);
+      };
+      for (const [dx, dy] of [
+        [48.5, 32.25],
+        [0, 64],
+        [-72, 0],
+      ]) {
+        await panBy(dx, dy, () => page.mouse.wheel(dx, dy));
+      }
+      for (const selector of [
+        '[data-city-building][aria-hidden="false"]',
+        '[data-city-repository]',
+      ]) {
+        await page.locator(selector).first().hover();
+        await panBy(12, -18, () => page.mouse.wheel(12, -18));
+      }
+      await page.mouse.move(point.x, point.y);
+      await expect.poll(() => clouds(page)).not.toEqual(sky);
+      const wheel = (values) =>
+        page.locator('canvas[data-city-canvas]').dispatchEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          clientX: point.x,
+          clientY: point.y,
+          ...values,
+        });
+      await panBy(32, 48, () => wheel({ deltaX: 2, deltaY: 3, deltaMode: 1 }));
+      const height = await page
+        .locator('canvas[data-city-canvas]')
+        .evaluate((node) => node.clientHeight);
+      await panBy(height * 0.03, -height * 0.04, () =>
+        wheel({ deltaX: 0.03, deltaY: -0.04, deltaMode: 2 }),
+      );
+      await page.keyboard.down('Shift');
+      await panBy(40, 0, () => page.mouse.wheel(0, 40));
+      await page.keyboard.up('Shift');
+      await shot('-panned');
+      await page.keyboard.down('Control');
+      await page.mouse.wheel(0, -24);
+      await page.keyboard.up('Control');
+      await expect
+        .poll(async () => Number(await page.locator('[data-city]').getAttribute('data-city-zoom')))
+        .toBeGreaterThan(Number(zoom));
+      await expectAngles(page, original);
+      await settled(page);
+      await shot('-pinched');
+      const stopped = await projection(page);
+      await wheel({ deltaY: 0 });
+      assert.deepEqual(
+        await projection(page),
+        stopped,
+        'Zero wheel input leaves the camera unchanged',
+      );
+      result.idleDraws = await idleDraws(page);
+    },
+    { motion: 'full' },
+  );
+  await scenario(
+    'motion-label-gestures',
+    async ({ page, open, shot, result }) => {
+      await open();
+      await settled(page);
+      const reset = async () => {
+        await page.locator('.city-viewport').focus();
+        await page.keyboard.press('0');
+        await settled(page);
+      };
+      const viewportScroll = () =>
+        page
+          .locator('[data-city], .city-labels')
+          .evaluateAll((nodes) => nodes.map((node) => [node.scrollLeft, node.scrollTop]));
+      for (const selector of [
+        '[data-city-building][aria-hidden="false"]',
+        '[data-city-repository]',
+      ]) {
+        for (const button of ['left', 'right']) {
+          await reset();
+          const label = page.locator(selector).first();
+          const box = await label.boundingBox();
+          assert.ok(box);
+          const before = await cameraAngles(page);
+          const beforePan = await projection(page);
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+          await page.mouse.down({ button });
+          await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 25, {
+            steps: 8,
+          });
+          await page.mouse.up({ button });
+          if (button === 'left') {
+            await expect.poll(() => cameraAngles(page)).not.toEqual(before);
+          } else {
+            await expect.poll(() => projection(page)).not.toEqual(beforePan);
+            await expectAngles(page, before);
+          }
+          await expect(page.locator('[data-city-selected]')).toHaveCount(0);
+          await expect(page.locator('[data-city]')).toHaveAttribute('data-city-zoom', '1');
+        }
+      }
+      await reset();
+      const label = page.locator('[data-city-building][aria-hidden="false"]').first();
+      const id = await label.getAttribute('data-city-building');
+      await label.tap();
+      await expect(page.locator('[data-city-selected]')).toHaveAttribute('data-city-selected', id);
+      await settled(page);
+      await reset();
+      await label.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('[data-city-selected]')).toHaveAttribute('data-city-selected', id);
+      await settled(page);
+      await reset();
+      const repository = page.locator('[data-city-repository]').first();
+      await repository.click();
+      await expect(page.locator('[data-city]')).not.toHaveAttribute('data-city-zoom', '1');
+      await settled(page);
+      await shot('-repository');
+      await reset();
+      const beforePanel = await projection(page);
+      await page.getByRole('button', { name: 'Workspace index', exact: true }).click();
+      await page.locator('[data-city-index-building]').first().hover();
+      const indexScroll = () =>
+        page.locator('.city-index-items').evaluate((node) => node.scrollTop);
+      const beforeScroll = await indexScroll();
+      await page.mouse.wheel(0, 64);
+      await expect.poll(indexScroll).toBeGreaterThan(beforeScroll);
+      await settled(page);
+      assert.deepEqual(
+        await projection(page),
+        beforePanel,
+        'Index scrolling leaves the camera still',
+      );
+      assert.deepEqual(
+        await viewportScroll(),
+        [
+          [0, 0],
+          [0, 0],
+        ],
+        'Focusing labels and scrolling the index never scroll the scene or its labels',
+      );
+      result.idleDraws = await idleDraws(page);
     },
     { motion: 'full' },
   );
@@ -668,14 +888,15 @@ try {
       await touch('touchStart', [[1, point.x - 60, point.y]]);
       await touch('touchMove', [[1, point.x, point.y + 20]]);
       await expect.poll(() => cameraAngles(page)).not.toEqual(before);
+      const singleFinger = await cameraAngles(page);
       await touch('touchStart', [
         [1, point.x, point.y + 20],
         [2, point.x + 80, point.y + 20],
       ]);
       await touch('touchEnd', []);
       await settled(page);
-      await expectAngles(page, before);
-      await shot('-lean-handoff');
+      await expectAngles(page, singleFinger);
+      await shot('-orbit-handoff');
       const zoom = await page.locator('[data-city]').getAttribute('data-city-zoom');
       await touch('touchStart', [
         [1, point.x - 60, point.y],
@@ -685,13 +906,15 @@ try {
         [1, point.x - 85, point.y - 35],
         [2, point.x + 105, point.y + 45],
       ]);
-      await expect.poll(() => cameraAngles(page)).not.toEqual(before);
+      await expect.poll(() => cameraAngles(page)).not.toEqual(singleFinger);
       await expect(page.locator('[data-city]')).not.toHaveAttribute('data-city-zoom', zoom);
       await shot('-two-fingers', false);
       await touch('touchMove', [[1, point.x - 85, point.y - 35]]);
       const handoff = await projection(page);
+      const handoffAngle = await cameraAngles(page);
       await touch('touchMove', [[1, point.x - 45, point.y - 15]]);
       await expect.poll(() => projection(page)).not.toEqual(handoff);
+      await expect.poll(() => cameraAngles(page)).not.toEqual(handoffAngle);
       await touch('touchCancel', []);
       await settled(page);
       const released = await projection(page);
@@ -737,11 +960,12 @@ try {
       await settled(page);
       await dragCamera(page, { release: false });
       await expect.poll(() => cameraAngles(page)).not.toEqual(original);
+      const chosen = await cameraAngles(page);
       await page.evaluate(() => {
         document.documentElement.classList.remove('catalog-full-motion');
         document.documentElement.classList.add('catalog-reduced-motion');
       });
-      await expectAngles(page, original);
+      await expectAngles(page, chosen);
       await page.mouse.up();
       await settled(page);
       const identities = await page
@@ -757,6 +981,13 @@ try {
         'Reduced motion freezes cloud transforms',
       );
       await blur(page);
+      await dragCamera(page);
+      await settled(page);
+      assert.notDeepEqual(
+        await cameraAngles(page),
+        chosen,
+        'Reduced motion retains direct drag rotation',
+      );
       await page.keyboard.press('e');
       await settled(page);
       assert.notDeepEqual(
@@ -800,6 +1031,15 @@ try {
       });
       assert.ok(repositoryFits, 'Repository focus fits its projected buildings after narrow orbit');
       await shot('-narrow');
+      await blur(page);
+      await page.keyboard.press('?');
+      const help = page.getByRole('dialog');
+      await expect(help).toBeVisible();
+      assert.ok(
+        await help.evaluate((node) => node.scrollWidth <= node.clientWidth),
+        'Control help fits a narrow viewport',
+      );
+      await shot('-narrow-help');
     },
     { motion: 'full' },
   );

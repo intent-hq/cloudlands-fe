@@ -13,7 +13,7 @@
   flex: 1;
   min-height: 280px;
   min-width: 0;
-  overflow: hidden;
+  overflow: clip;
   color: var(--city-ink);
   background: #d0e5f5;
   container: city / inline-size;
@@ -114,7 +114,8 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  overflow: hidden;
+  touch-action: none;
+  overflow: clip;
 }
 .city-building-anchor {
   position: absolute;
@@ -572,11 +573,20 @@
   font-size: 12px;
 }
 .city-shortcuts kbd {
+  display: inline-block;
   font: 11px var(--font-code);
   padding: 3px 6px;
   border: 1px solid hsl(var(--border));
   border-radius: 4px;
-  white-space: nowrap;
+  white-space: normal;
+}
+.city-shortcuts dt,
+.city-shortcuts dd {
+  flex: 1;
+  min-width: 0;
+}
+.city-shortcuts dd {
+  text-align: right;
 }
 @container city (max-width: 850px) {
   .city-drag-hint {

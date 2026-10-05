@@ -7083,7 +7083,7 @@
   "home_city_index": "Workspace index",
   "home_city_close": "Close",
   "home_city_shortcuts": "City shortcuts",
-  "home_city_drag_hint": "Drag to pan · Shift-drag to rotate · scroll to zoom",
+  "home_city_drag_hint": "Drag to rotate · scroll to pan · pinch to zoom",
   "home_city_size_legend": "Height · changed files",
   "home_city_size_description": "2–8 floors. A compressed cue, not a measure of progress.",
   "home_city_unknown": "Change size unavailable",
@@ -7118,6 +7118,9 @@
   "home_city_rotate_right": "Rotate right",
   "home_city_orbit": "Rotate and tilt the city",
   "home_city_reset_angle": "Reset viewing angle",
-  "home_city_orbit_gesture": "Shift-drag / right-drag",
-  "home_city_touch_hint": "Two fingers: pan, pinch to zoom, twist to rotate."
+  "home_city_orbit_gesture": "Drag / one finger",
+  "home_city_pan_gesture": "Shift-drag / right-drag / middle-drag",
+  "home_city_scroll_gesture": "Two-finger scroll",
+  "home_city_zoom_gesture": "Pinch / Ctrl-scroll / ⌘-scroll",
+  "home_city_touch_hint": "One finger: rotate. Two fingers: pan, pinch to zoom, twist to rotate."
 }

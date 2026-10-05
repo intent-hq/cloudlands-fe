@@ -38,6 +38,8 @@ interface CityPointer {
   startY: number;
   moved: boolean;
   orbit: boolean;
+  selectable: boolean;
+  label: HTMLElement | null;
 }
 const DEFAULT_YAW = Math.atan2(24, 30);
 const DEFAULT_ELEVATION = Math.atan2(31, Math.hypot(24, 30));
@@ -46,6 +48,7 @@ const MIN_ELEVATION = (28 * Math.PI) / 180;
 const MAX_ELEVATION = (66 * Math.PI) / 180;
 const angleDelta = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
 interface SceneOptions {
+  interactionRoot: HTMLElement;
   onframe: (frame: CityFrame) => void;
   onselect: (id: string) => void;
   onlost: () => void;
@@ -86,8 +89,6 @@ export class CityScene {
   private structure = '';
   private bounds = new THREE.Box3();
   private readonly pointers = new Map<number, CityPointer>();
-  private lean = { yaw: 0, elevation: 0 };
-  private settling: { from: { yaw: number; elevation: number }; start: number } | null = null;
 
   constructor(
     private readonly host: HTMLElement,
@@ -146,8 +147,6 @@ export class CityScene {
       if (reduced) {
         if (this.motion) this.view = { ...this.motion.to };
         this.motion = null;
-        this.lean = { yaw: 0, elevation: 0 };
-        this.settling = null;
       }
       this.invalidate();
     });
@@ -164,13 +163,19 @@ export class CityScene {
       },
       { signal },
     );
-    this.canvas.addEventListener('pointerdown', this.pointerDown, { signal });
+    options.interactionRoot.addEventListener('pointerdown', this.pointerDown, { signal });
     this.canvas.addEventListener('pointermove', this.pointerMove, { signal });
     this.canvas.addEventListener('pointerup', this.pointerUp, { signal });
     this.canvas.addEventListener('pointercancel', this.pointerCancel, { signal });
     this.canvas.addEventListener('lostpointercapture', this.pointerCancel, { signal });
-    this.canvas.addEventListener('wheel', this.wheel, { passive: false, signal });
-    this.canvas.addEventListener('contextmenu', (event) => event.preventDefault(), { signal });
+    options.interactionRoot.addEventListener('wheel', this.wheel, { passive: false, signal });
+    options.interactionRoot.addEventListener(
+      'contextmenu',
+      (event) => {
+        if (this.inputTarget(event)) event.preventDefault();
+      },
+      { signal },
+    );
     window.addEventListener('blur', this.cancelGesture, { signal });
     document.addEventListener(
       'visibilitychange',
@@ -269,7 +274,7 @@ export class CityScene {
         }
       }
     }
-    this.setCamera(this.renderedView());
+    this.setCamera(this.view);
     this.move({ ...target, span: Math.max(12, 20 * extent) });
   }
 
@@ -347,10 +352,8 @@ export class CityScene {
       this.history.push({ ...this.view });
       if (this.history.length > 30) this.history.shift();
     }
-    const from = this.renderedView();
+    const from = { ...this.view };
     const destination = { ...to, yaw: from.yaw + angleDelta(to.yaw - from.yaw) };
-    this.lean = { yaw: 0, elevation: 0 };
-    this.settling = null;
     if (prefersReducedMotion()) {
       this.view = destination;
       this.motion = null;
@@ -469,36 +472,15 @@ export class CityScene {
       };
       if (progress === 1) this.motion = null;
     }
-    if (this.settling) {
-      const progress = Math.min(1, (now - this.settling.start) / (spring.moderate.settleMs * 2));
-      const remaining = 1 - spring.moderate.easing(progress);
-      this.lean = {
-        yaw: this.settling.from.yaw * remaining,
-        elevation: this.settling.from.elevation * remaining,
-      };
-      if (progress === 1) this.settling = null;
-    }
-    this.setCamera(this.renderedView());
+    this.setCamera(this.view);
     this.renderer.render(this.scene, this.camera);
     this.projectLabels();
-    if (this.motion || this.settling) this.invalidate();
+    if (this.motion) this.invalidate();
   };
-
-  private renderedView(): CameraView {
-    return {
-      ...this.view,
-      yaw: this.view.yaw + this.lean.yaw,
-      elevation: THREE.MathUtils.clamp(
-        this.view.elevation + this.lean.elevation,
-        MIN_ELEVATION,
-        MAX_ELEVATION,
-      ),
-    };
-  }
 
   private skyParallax() {
     if (prefersReducedMotion()) return { x: 0, y: 0, scale: 1 };
-    const view = this.renderedView();
+    const view = this.view;
     const dx = view.x - this.home.x,
       dz = view.z - this.home.z;
     const right = dx * Math.cos(view.yaw) - dz * Math.sin(view.yaw);
@@ -507,11 +489,11 @@ export class CityScene {
       x:
         Math.tanh(-right / this.home.span + Math.sin(view.yaw - DEFAULT_YAW) * 0.6) *
         this.width *
-        0.025,
+        0.045,
       y:
         Math.tanh(-forward / this.home.span + (view.elevation - DEFAULT_ELEVATION) * 1.5) *
         this.height *
-        0.025,
+        0.045,
       scale: 1 + Math.tanh(Math.log(this.home.span / view.span)) * 0.025,
     };
   }
@@ -572,9 +554,9 @@ export class CityScene {
       zoom: this.home.span / this.view.span,
       draws: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
-      moving: !!this.motion || !!this.settling,
-      yaw: this.renderedView().yaw,
-      elevation: this.renderedView().elevation,
+      moving: !!this.motion,
+      yaw: this.view.yaw,
+      elevation: this.view.elevation,
       sky: this.skyParallax(),
     });
   }
@@ -603,8 +585,17 @@ export class CityScene {
     return nearest;
   }
 
+  private inputTarget(event: Event): HTMLElement | null {
+    return event.target instanceof Element
+      ? event.target.closest<HTMLElement>(
+          '[data-city-canvas], [data-city-building], [data-city-repository]',
+        )
+      : null;
+  }
+
   private pointerDown = (event: PointerEvent) => {
-    if (event.button !== 0 && event.button !== 2) return;
+    const target = this.inputTarget(event);
+    if (!target || (event.button !== 0 && event.button !== 1 && event.button !== 2)) return;
     event.preventDefault();
     this.host.focus({ preventScroll: true });
     this.canvas.setPointerCapture(event.pointerId);
@@ -615,12 +606,13 @@ export class CityScene {
       startX: event.clientX,
       startY: event.clientY,
       moved: false,
-      orbit: event.shiftKey || event.button === 2,
+      orbit: !event.shiftKey && event.button === 0,
+      selectable: !event.shiftKey && event.button === 0,
+      label: target === this.canvas ? null : target,
     });
     if (this.pointers.size > 1) {
       for (const pointer of this.pointers.values()) pointer.moved = true;
-      this.settleLean();
-    } else if (event.shiftKey || event.button === 2) this.settleLean();
+    }
     this.invalidate();
   };
   private pointerMove = (event: PointerEvent) => {
@@ -654,17 +646,7 @@ export class CityScene {
       }
     } else if (previous.moved) {
       if (previous.orbit) this.orbit(-dx * 0.004, dy * 0.003, false);
-      else {
-        this.pan(dx, dy);
-        this.settling = null;
-        this.lean = prefersReducedMotion()
-          ? { yaw: 0, elevation: 0 }
-          : {
-              yaw: -Math.tanh((event.clientX - previous.startX) / 160) * 0.065,
-              elevation: Math.tanh((event.clientY - previous.startY) / 180) * 0.032,
-            };
-        this.invalidate();
-      }
+      else this.pan(dx, dy);
     }
     previous.x = event.clientX;
     previous.y = event.clientY;
@@ -672,12 +654,12 @@ export class CityScene {
   };
   private pointerUp = (event: PointerEvent) => {
     const pointer = this.pointers.get(event.pointerId);
-    const id =
-      pointer && !pointer.moved && !pointer.orbit && this.pointers.size === 1
-        ? this.pick(event)
-        : null;
+    const select = pointer && !pointer.moved && pointer.selectable && this.pointers.size === 1;
+    const id = select && !pointer.label ? this.pick(event) : null;
     this.pointerCancel(event);
-    if (id) this.options.onselect(id);
+    // Capture keeps drags alive as labels move. Only an unmodified tap activates a label.
+    if (select && pointer.label) pointer.label.click();
+    else if (id) this.options.onselect(id);
   };
   private pointerCancel = (event: PointerEvent) => {
     if (!this.pointers.delete(event.pointerId)) return;
@@ -688,31 +670,45 @@ export class CityScene {
       pointer.startY = pointer.y;
       pointer.moved = true;
     }
-    if (!this.pointers.size) this.settleLean();
     this.canvas.style.cursor = 'grab';
   };
-  private settleLean() {
-    if (prefersReducedMotion()) {
-      this.lean = { yaw: 0, elevation: 0 };
-      this.settling = null;
-    } else if (this.lean.yaw || this.lean.elevation) {
-      this.settling = { from: { ...this.lean }, start: performance.now() };
-    }
-    this.invalidate();
-  }
   private cancelGesture = () => {
     const ids = [...this.pointers.keys()];
     this.pointers.clear();
     for (const id of ids) {
       if (this.canvas.hasPointerCapture(id)) this.canvas.releasePointerCapture(id);
     }
-    this.settleLean();
     this.canvas.style.cursor = 'grab';
   };
   private wheel = (event: WheelEvent) => {
+    if (!this.inputTarget(event)) return;
     event.preventDefault();
-    if (event.shiftKey) this.pan(-event.deltaX - event.deltaY, 0);
-    else this.zoom(Math.exp(THREE.MathUtils.clamp(event.deltaY, -100, 100) * 0.002));
+    const unit =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? this.height
+          : 1;
+    const dx = event.deltaX * unit,
+      dy = event.deltaY * unit;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    this.motion = null;
+    if (event.ctrlKey || event.metaKey) {
+      const previousSpan = this.view.span;
+      this.view.span = THREE.MathUtils.clamp(
+        previousSpan * Math.exp(THREE.MathUtils.clamp(dy, -100, 100) * 0.006),
+        6,
+        this.home.span * 2,
+      );
+      const rect = this.canvas.getBoundingClientRect();
+      const anchorScale = 1 - previousSpan / this.view.span;
+      this.pan(
+        (event.clientX - rect.left - rect.width / 2) * anchorScale,
+        (event.clientY - rect.top - rect.height / 2) * anchorScale,
+      );
+      this.invalidate();
+    } else if (event.shiftKey) this.pan(-(dx || dy), 0);
+    else this.pan(-dx, -dy);
   };
 
   dispose() {

@@ -7083,7 +7083,7 @@
   "home_city_index": "工作區索引",
   "home_city_close": "關閉",
   "home_city_shortcuts": "城市快捷鍵",
-  "home_city_drag_hint": "拖曳平移 · 按住 Shift 拖曳旋轉 · 捲動縮放",
+  "home_city_drag_hint": "拖曳旋轉 · 捲動平移 · 捏合縮放",
   "home_city_size_legend": "高度 · 已變更的檔案數",
   "home_city_size_description": "2–8 層。僅簡要表示規模，不代表進度。",
   "home_city_unknown": "無法取得變更規模",
@@ -7118,6 +7118,9 @@
   "home_city_rotate_right": "向右旋轉",
   "home_city_orbit": "旋轉和傾斜城市",
   "home_city_reset_angle": "重設視角",
-  "home_city_orbit_gesture": "按住 Shift 拖曳 / 按住右鍵拖曳",
-  "home_city_touch_hint": "雙指操作：拖曳平移，捏合或張開縮放，扭轉旋轉。"
+  "home_city_orbit_gesture": "拖曳 / 單指",
+  "home_city_pan_gesture": "按住 Shift、右鍵或中鍵拖曳",
+  "home_city_scroll_gesture": "雙指捲動",
+  "home_city_zoom_gesture": "捏合 / Ctrl + 捲動 / ⌘ + 捲動",
+  "home_city_touch_hint": "單指操作：旋轉。雙指操作：拖曳平移，捏合或張開縮放，扭轉旋轉。"
 }
