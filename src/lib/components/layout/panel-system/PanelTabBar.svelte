@@ -1465,9 +1465,12 @@
     <Menu.Root bind:open={paneStackMenuOpen}>
       <Menu.Trigger>
         {#snippet child({ props })}
-          {@const selectorLabel = m.layout_panelTabBar_paneSelector_ariaLabel({
-            count: tabs.length,
-          })}
+          {@const selectorLabel = activeTab
+            ? m.layout_panelTabBar_paneSelectorNamed_ariaLabel({
+                title: getTabTitle(activeTab),
+                count: tabs.length,
+              })
+            : m.layout_panelTabBar_paneSelector_ariaLabel({ count: tabs.length })}
           {@const activePath = activeTab ? getTabPath(activeTab) : null}
           {@const commitHash =
             activeTab?.type === 'diff'

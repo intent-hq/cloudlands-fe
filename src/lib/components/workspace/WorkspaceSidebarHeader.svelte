@@ -76,6 +76,7 @@
   let branchInputRef: HTMLInputElement | null = $state(null);
   let isSavingBranch = $state(false);
 
+  const statusDescriptionId = $props.id();
   const currentStatusMessage = $derived(workspace?.statusMessage?.trim() ?? '');
   const repositoryLabel = $derived(
     workspace?.repositoryOwner && workspace?.repositoryName
@@ -545,9 +546,14 @@
         aria-label={currentStatusMessage
           ? m.workspace_sidebarHeader_editStatus_ariaLabel()
           : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+        aria-describedby={currentStatusMessage ? statusDescriptionId : undefined}
         disabled={!workspace}
       >
-        <span class="min-w-0 line-clamp-3" use:truncatedTitle={currentStatusMessage}>
+        <span
+          id={statusDescriptionId}
+          class="min-w-0 line-clamp-3"
+          use:truncatedTitle={currentStatusMessage}
+        >
           {currentStatusMessage || m.workspace_sidebarHeader_addStatus_label()}
         </span>
       </Button>

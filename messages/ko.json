@@ -3203,6 +3203,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "파일 관리자",
   "layout_panelTabBar_paneStack_ariaLabel": "창 스택 크기: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "창 목록 표시. 총 창 수: {count}.",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}. 창 목록 표시. 총 창 수: {count}.",
   "layout_panelTabBar_paneMenu_ariaLabel": "이 스택의 창",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}. 확인이 필요합니다.",
   "layout_panelTabBar_openPaneAbove_label": "위 패널 열기",

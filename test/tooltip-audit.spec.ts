@@ -47,6 +47,7 @@ test('the pictured agent selector suppresses repeated names and opens by pointer
   page,
 }, testInfo) => {
   const selector = page.getByTestId('pane-stack-selector-trigger');
+  await expect(selector).toHaveAccessibleName('dev bro. Show pane list. Total panes: 2.');
   await selector.hover();
   await expect(selector).toBeEnabled();
   await expectNoDelayedTooltip(page);
@@ -69,6 +70,7 @@ test('the pictured agent selector suppresses repeated names and opens by pointer
 test('clipped names keep keyboard help and react to renaming', async ({ page }, testInfo) => {
   await page.getByRole('textbox', { name: 'Example name' }).fill(longName);
   const selector = page.getByTestId('pane-stack-selector-trigger');
+  await expect(selector).toHaveAccessibleName(`${longName}. Show pane list. Total panes: 2.`);
   await selector.focus();
   await expect(page.getByRole('tooltip')).toBeVisible();
   await expect(selector).toHaveAccessibleDescription(longName);
@@ -83,6 +85,7 @@ test('clipped names keep keyboard help and react to renaming', async ({ page }, 
   await selector.hover();
   await expect(page.getByRole('tooltip')).toBeVisible();
   await page.getByRole('textbox', { name: 'Example name' }).fill('dev bro');
+  await expect(selector).toHaveAccessibleName('dev bro. Show pane list. Total panes: 2.');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
   await selector.hover();
   await expect(selector).toBeEnabled();
@@ -93,6 +96,7 @@ test('file selectors retain hidden paths even when the visible filename fits', a
   const selector = page.getByTestId('pane-stack-selector-trigger');
   await selector.click();
   await page.getByRole('menuitem', { name: 'app.ts', exact: true }).click();
+  await expect(selector).toHaveAccessibleName('app.ts. Show pane list. Total panes: 2.');
   await leaveHover(page);
   await selector.hover();
   await expect(page.getByRole('tooltip')).toContainText('/workspace/src/app.ts');
@@ -155,4 +159,68 @@ test('text actions stay quiet while shortcuts, disabled reasons, and icon labels
     path: testInfo.outputPath('useful-icon-help.png'),
     contentType: 'image/png',
   });
+});
+
+test('workspace status remains available to screen readers without duplicate hover help', async ({
+  page,
+}, testInfo) => {
+  await page.goto(
+    `${baseUrl.replace(/\/$/, '')}/sandbox/tooltip-audit?state=status&width=900&motion=reduced`,
+  );
+  await expect(page.locator('[data-preview-ready=true]')).toBeVisible({ timeout: 120_000 });
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  const input = page.getByRole('textbox', { name: 'Example status' });
+  const surfaces = [page.getByTestId('sidebar-status'), page.getByTestId('progress-status')];
+  const shortStatus = 'Ready for review';
+  const longStatus = 'Checking a long workspace status that wraps across several lines.\n'.repeat(
+    8,
+  );
+
+  for (const status of [shortStatus, longStatus]) {
+    await input.fill(status);
+    const descriptionIds = [];
+    for (const surface of surfaces) {
+      const button = surface.getByRole('button', { name: 'Edit workspace status', exact: true });
+      await expect(button).toHaveAccessibleDescription(status.replace(/\s+/g, ' ').trim());
+      const id = await button.getAttribute('aria-describedby');
+      expect(id).toBeTruthy();
+      descriptionIds.push(id);
+      const description = page.locator(`[id="${id}"]`);
+      if (status === shortStatus) await expect(description).not.toHaveAttribute('title');
+      else await expect(description).toHaveAttribute('title', status.trim());
+      await button.focus();
+      await expect(button).toHaveAccessibleDescription(status.replace(/\s+/g, ' ').trim());
+    }
+    expect(new Set(descriptionIds).size).toBe(surfaces.length);
+  }
+
+  await page.screenshot({
+    path: testInfo.outputPath('workspace-status-descriptions.png'),
+    fullPage: true,
+  });
+  await testInfo.attach('Workspace statuses retain accessible descriptions', {
+    path: testInfo.outputPath('workspace-status-descriptions.png'),
+    contentType: 'image/png',
+  });
+  await input.fill(shortStatus);
+  for (const surface of surfaces) {
+    const button = surface.getByRole('button', { name: 'Edit workspace status', exact: true });
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const editor = surface.getByRole('textbox');
+    await expect(editor).toHaveValue(shortStatus);
+    await editor.fill('Discarded edit');
+    await editor.press('Escape');
+    await expect(button).toHaveAccessibleDescription(shortStatus);
+  }
+
+  for (const emptyStatus of ['', '   ']) {
+    await input.fill(emptyStatus);
+    await expect(
+      surfaces[0].getByRole('button', { name: 'Add workspace status', exact: true }),
+    ).toHaveAccessibleDescription('Click to add workspace status');
+    await expect(
+      surfaces[1].getByRole('button', { name: 'Edit workspace status', exact: true }),
+    ).toHaveCount(0);
+  }
 });

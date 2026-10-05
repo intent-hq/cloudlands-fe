@@ -189,6 +189,7 @@
       ? `${$workspace.repositoryOwner}/${$workspace.repositoryName}`
       : ($workspace?.repositoryPath?.split('/').pop() ?? 'Repository'),
   );
+  const statusDescriptionId = $props.id();
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
 
   // Agent-authored status screenshot (intent-hq/monorepo#997). Content-addressed
@@ -1300,9 +1301,14 @@
               aria-label={currentStatusMessage
                 ? m.workspace_sidebarHeader_editStatus_ariaLabel()
                 : m.workspace_sidebarHeader_addStatus_ariaLabel()}
+              aria-describedby={statusDescriptionId}
               disabled={!$workspace}
             >
-              <span class="min-w-0 line-clamp-3" use:truncatedTitle={currentStatusMessage}>
+              <span
+                id={statusDescriptionId}
+                class="min-w-0 line-clamp-3"
+                use:truncatedTitle={currentStatusMessage}
+              >
                 {currentStatusMessage}
               </span>
             </Button>
