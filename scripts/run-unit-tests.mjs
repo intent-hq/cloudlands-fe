@@ -5,7 +5,10 @@ import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
-import { requiresTransferSelectionFixtures } from './unit-test-prerequisites.mjs';
+import {
+  generatedBuildConfigPrerequisite,
+  requiresTransferSelectionFixtures,
+} from './unit-test-prerequisites.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -21,6 +24,7 @@ if (args[0] === '--') {
   // Keep the existing Node/dependency checks and stale-aware i18n preparation.
   for (const childArgs of [
     ['scripts/check-deps-fresh.mjs'],
+    generatedBuildConfigPrerequisite({ root }).args,
     ['node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.config.ts', ...args],
   ]) {
     if (
