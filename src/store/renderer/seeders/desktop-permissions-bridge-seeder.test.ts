@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { BackendError, type BackendErrorPayload } from '$lib/client/live/backend-transport-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const originalBridge = window.electronAPI;
@@ -25,9 +26,16 @@ describe('desktop permission native bridge', () => {
       version ? { versions: { electron: version }, invoke } : undefined
     ) as typeof window.electronAPI;
     const call = await register();
-    await expect(call(channel, payload)).resolves.toMatchObject({
+    const response = await call<{ ok: false; error: BackendErrorPayload }>(channel, payload);
+    const error = new BackendError(response.error);
+    expect(error.code).toBe('desktop-unsupported');
+    expect(error.data).toMatchObject({ code: 'desktop-unsupported', execution: 'not_started' });
+    expect(response).toMatchObject({
       ok: false,
-      error: { data: { code: 'desktop-unsupported', execution: 'not_started' } },
+      error: {
+        code: 'desktop-unsupported',
+        data: { code: 'desktop-unsupported', execution: 'not_started' },
+      },
     });
     expect(invoke).not.toHaveBeenCalled();
   });

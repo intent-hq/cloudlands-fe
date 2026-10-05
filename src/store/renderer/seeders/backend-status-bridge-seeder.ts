@@ -14,6 +14,7 @@
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { BackendErrorPayload } from '$lib/client/live/backend-transport-types';
 import { detectPlatform } from '$lib/utils/platform-capabilities';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -109,7 +110,7 @@ registerMockIpcHandler(BACKEND.DESKTOP_PERMISSIONS, async (payload?: unknown) =>
   return {
     ok: false,
     error: {
-      code: -32000,
+      code: 'desktop-unsupported',
       // i18n-ignore (wire error detail, not UI copy)
       message: 'Desktop permission setup requires the native Intent application.',
       data: {
@@ -118,6 +119,6 @@ registerMockIpcHandler(BACKEND.DESKTOP_PERMISSIONS, async (payload?: unknown) =>
         detail: 'Desktop permission setup requires the native Intent application.',
         execution: 'not_started',
       },
-    },
+    } satisfies BackendErrorPayload,
   };
 });
