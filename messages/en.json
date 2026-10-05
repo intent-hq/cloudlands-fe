@@ -6333,7 +6333,7 @@
   "layout_daemonStatus_details_action": "Details",
   "layout_daemonStatus_statusSummary_label": "Status - {status}",
   "layout_daemonStatus_manageDevices_action": "Manage devices",
-  "layout_daemonStatus_guestSessions_header": "Guest sessions",
+  "layout_daemonStatus_guestSessions_header": "Guest Sessions",
   "layout_daemonStatus_guestSession_connected_label": "connected",
   "layout_daemonStatus_guestSession_notConnected_label": "not connected",
   "layout_daemonStatus_manageGuestSessions_action": "Manage guest sessions",

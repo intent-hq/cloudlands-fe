@@ -442,7 +442,7 @@
 
   // Hosts joined as a GUEST (multiplayer w4) — a separate block from the
   // paired devices above: the only status a guest sees is whether its pooled
-  // client is live, so the row carries "connected" / "not connected" and
+  // client is live, so the row carries a connected dot / "not connected" and
   // nothing else (no health, no version, no owner-only controls).
   const guestSessions$ = selectGuestSessions();
   const guestOpenIds$ = selectGuestSessionsOpenIds();
@@ -1045,27 +1045,26 @@
                   >
                 {/if}
               </span>
-              <span class="flex items-center gap-1.5 shrink-0">
+              <span class="flex h-lh items-center gap-1.5 shrink-0">
                 <!-- Status only for a host with a window (pooled client); a
                      joined host that was never opened has no status. -->
-                {#if open}
-                  <span
-                    class={connected ? 'text-green-600 dark:text-green-500' : 'text-subtle'}
-                    data-guest-connected={connected}
-                  >
-                    {connected
-                      ? m.layout_daemonStatus_guestSession_connected_label()
-                      : m.layout_daemonStatus_guestSession_notConnected_label()}
+                {#if connected}
+                  <span class="size-2 shrink-0 rounded-full bg-success" data-guest-connected="true">
+                    <span class="sr-only">
+                      {m.layout_daemonStatus_guestSession_connected_label()}
+                    </span>
+                  </span>
+                {:else if open}
+                  <span class="text-subtle" data-guest-connected="false">
+                    {m.layout_daemonStatus_guestSession_notConnected_label()}
                   </span>
                 {/if}
                 {#if isCurrent}
                   <span
-                    class="text-green-500"
+                    class="sr-only"
                     role="img"
                     aria-label={m.layout_daemonStatus_connectionActive_label()}
-                  >
-                    <Fa icon={faCheck} />
-                  </span>
+                  ></span>
                 {/if}
               </span>
             </Menu.Item>
