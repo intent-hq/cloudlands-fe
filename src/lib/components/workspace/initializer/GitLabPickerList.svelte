@@ -9,6 +9,7 @@
 
   let {
     scopeKey,
+    prefix,
     instanceBaseUrl,
     query,
     page,
@@ -44,13 +45,14 @@
 </script>
 
 <div bind:this={panel} class="min-w-0 space-y-3" data-testid="gitlab-picker-list">
-  {#if instanceBaseUrl}
+  {#if instanceBaseUrl && !prefix}
     <p class="break-all type-caption text-muted-foreground" data-testid="gitlab-picker-instance">
       {instanceBaseUrl}
     </p>
   {/if}
 
   {#if page.status === 'unavailable'}
+    {#if prefix}<div class="flex items-center rounded-lg bg-sidebar">{@render prefix()}</div>{/if}
     <ErrorState
       density="compact"
       retryLabel={onRecover ? page.actionLabel : undefined}
@@ -64,15 +66,25 @@
   {:else}
     <FormField label={copy.searchLabel}>
       {#snippet control(controlProps)}
-        <Input
-          {...controlProps}
-          type="search"
-          value={query}
-          disabled={!scopeKey}
-          placeholder={copy.searchPlaceholder}
-          oninput={(event) => onSearch(event.currentTarget.value, scopeKey)}
-          onkeydown={focusResults}
-        />
+        <div
+          class={prefix
+            ? 'flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring'
+            : undefined}
+        >
+          {#if prefix}{@render prefix()}{/if}
+          <Input
+            {...controlProps}
+            type="search"
+            value={query}
+            disabled={!scopeKey}
+            placeholder={copy.searchPlaceholder}
+            oninput={(event) => onSearch(event.currentTarget.value, scopeKey)}
+            onkeydown={focusResults}
+            class={prefix
+              ? 'min-w-0 bg-sidebar border-none px-1 py-2.5! h-auto text-sm'
+              : undefined}
+          />
+        </div>
       {/snippet}
     </FormField>
 

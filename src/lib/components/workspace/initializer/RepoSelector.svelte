@@ -10,11 +10,13 @@
   const canAdministerHost$ = selectCanAdministerHost();
   const admission$ = selectPrincipalActionContext();
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
+  import { appClient } from '$lib/client';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import * as Popover from '$lib/components/ui/popover';
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
@@ -28,6 +30,7 @@
   import { invoke } from '$lib/electron-bridge';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { ActionRow, menuItem } from '$lib/components/ui/menu';
+  import * as Menu from '$lib/components/ui/menu';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
@@ -53,7 +56,7 @@
     WorkspaceInitializerRecentRepo,
     WorkspaceInitializerRemoteSetup,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
-  import { faGithub } from '@fortawesome/free-brands-svg-icons';
+  import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -92,6 +95,7 @@
   import {
     getGitHubPickOwner,
     getRecentRepoLabel,
+    getRecentRepoIdentity,
     getRecentRepoTooltip,
     getWorkspaceOwnedCheckoutPaths,
     isDaemonManagedRepoPath,
@@ -101,6 +105,7 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
+  const forgeLabels = { github: 'GitHub', gitlab: 'GitLab' }; // i18n-ignore (brand names)
   const dialogPortalTarget = useDialogPortalTarget();
 
   // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
@@ -172,7 +177,7 @@
     triggerIcon?: any;
     triggerAriaLabel?: string;
     onClear?: () => void;
-    /** Qualified GitLab state supplied by the checkout owner; absent hides the tab. */
+    /** Qualified GitLab state supplied by the checkout owner. */
     gitlab?: GitLabProjectPickerProps;
     gitlabSelected?: boolean;
   }
@@ -297,7 +302,34 @@
   // ═══════════════════════════════════════════════════════════════════════════
   type TabId = 'local' | 'github' | 'gitlab' | 'new' | 'remote';
   let activeTab = $state<TabId>('github');
-  const gitlabTabLabel = 'GitLab'; // i18n-ignore (brand name)
+  let preferredForge = $state<'github' | 'gitlab'>('github');
+  const authenticatedForges = $derived([
+    ...($isGithubAuthenticated$
+      ? [{ id: 'github' as const, label: 'github.com/', icon: faGithub }]
+      : []),
+    ...(gitlab?.authenticated && gitlab.instanceBaseUrl
+      ? [
+          {
+            id: 'gitlab' as const,
+            label: `${gitlab.instanceBaseUrl.replace(/^https:\/\//, '').replace(/\/$/, '')}/`,
+            icon: faGitlab,
+          },
+        ]
+      : []),
+  ]);
+  const selectedForge = $derived(
+    authenticatedForges.find((forge) => forge.id === preferredForge) ?? authenticatedForges[0],
+  );
+  const repositoryTab = $derived(selectedForge?.id ?? 'github');
+  const repositoryTabActive = $derived(activeTab === 'github' || activeTab === 'gitlab');
+  const repositoryTabLabel = $derived(
+    selectedForge?.label ?? m.workspace_repoSelector_pickARepo_tab(),
+  );
+  function selectForge(forge: 'github' | 'gitlab') {
+    if (!authenticatedForges.some((choice) => choice.id === forge)) return;
+    preferredForge = forge;
+    activeTab = forge;
+  }
 
   // Report visibility changes, not page/query revisions. The consumer owns the
   // draft's lease; loading a scoped result must not reopen and recapture it.
@@ -317,6 +349,12 @@
 
   $effect(() => {
     if (isOpen && activeTab === 'gitlab' && !gitlab) isOpen = false;
+  });
+
+  // Authentication may withdraw a choice while the picker is open. Reconcile
+  // presentation only; the existing checkout owner still retires its lease.
+  $effect(() => {
+    if (repositoryTabActive) activeTab = repositoryTab;
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -457,14 +495,21 @@
   // Filter repos based on search term and active tab type
   const filteredRepos = $derived(() => {
     // First filter by tab type
-    const typeFilter = activeTab === 'local' ? 'local' : activeTab === 'github' ? 'github' : null;
-    const typeFiltered = typeFilter ? recentRepos.filter((repo) => repo.type === typeFilter) : [];
+    const typeFiltered = recentRepos.filter((repo) => {
+      if (activeTab === 'local') return repo.type === 'local';
+      if (!repositoryTabActive || repo.type !== 'github') return false;
+      const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl);
+      if (identity?.provider === 'gitlab')
+        return activeTab === 'gitlab' && identity.instanceBaseUrl === gitlab?.instanceBaseUrl;
+      return identity?.provider === activeTab || (!identity && activeTab === 'github');
+    });
 
-    // Then filter by search term
-    if (searchTerm === '') {
+    // Each forge keeps its own query; local/GitHub retain the existing search behavior.
+    const query = activeTab === 'gitlab' ? (gitlab?.query ?? '') : searchTerm;
+    if (query === '') {
       return typeFiltered;
     }
-    return typeFiltered.filter((repo) => matchesRecentRepoSearch(repo, searchTerm));
+    return typeFiltered.filter((repo) => matchesRecentRepoSearch(repo, query));
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -640,11 +685,12 @@
       selectedRepoType,
     });
 
-    if (gitlabSelected && gitlab) {
+    if (gitlabSelected && authenticatedForges.some((forge) => forge.id === 'gitlab')) {
+      preferredForge = 'gitlab';
       activeTab = 'gitlab';
     } else if (currentValue) {
       // Use the stored repo type to determine the tab
-      activeTab = selectedRepoType;
+      activeTab = selectedRepoType === 'github' ? repositoryTab : selectedRepoType;
 
       // If GitHub, also populate the input from inputValue (which stores the GitHub URL)
       if (selectedRepoType === 'github' && inputValue) {
@@ -658,7 +704,7 @@
       }
     } else {
       // No value selected, default to the "Pick a repo" tab
-      activeTab = 'github';
+      activeTab = repositoryTab;
     }
 
     // Focus input - always autofocus for better UX
@@ -741,7 +787,12 @@
   // That logic lives in the parent flow to avoid side effects when this component
   // mounts/unmounts (e.g., during reset). This component should
   // be "controlled" - it receives `value` as a prop and only fires `onchange` on user actions.
-  async function loadRecentRepos(isCurrent: () => boolean, admission: string, publish: boolean) {
+  async function loadRecentRepos(
+    isCurrent: () => boolean,
+    admission: string,
+    publish: boolean,
+    gitlabInstance?: string,
+  ) {
     performanceMonitor.start('loadRecentRepos');
 
     // Refresh the GitHub auth snapshot so the "Pick a repo" tab knows whether
@@ -791,20 +842,51 @@
 
       // GitHub-pick standalone checkouts are workspace-owned, not repos to copy from
       const workspaceOwnedCheckouts = getWorkspaceOwnedCheckoutPaths(workspaces ?? []);
+      const workspaceRecents = getRecentRepos(workspaces, 10);
+      const remotePaths = new Set(
+        workspaces
+          .filter((workspace) => workspace.isRemote)
+          .flatMap((workspace) => [workspace.repositoryPath, workspace.worktreePath]),
+      );
+      // Only the bounded recent list, on its original admitted connection. This
+      // reads local Git config, never contacts a forge or confers checkout authority.
+      const originPaths = [
+        ...new Set([
+          ...workspaceRecents.map((repo) => repo.path),
+          ...registryRepos.filter((repo) => !repo.githubUrl).map((repo) => repo.path),
+        ]),
+      ]
+        .filter((path) => path && !remotePaths.has(path) && !isDaemonManagedRepoPath(path))
+        .slice(0, 10);
+      const origins = new Map(
+        await Promise.all(
+          originPaths.map(async (path) => {
+            if (!isCurrent()) return [path, null] as const;
+            const url = await appClient.git.originUrl(path);
+            const identity = url
+              ? getRecentRepoIdentity(
+                  { path, type: 'local', name: '', githubUrl: url },
+                  gitlabInstance,
+                )
+              : null;
+            return [path, identity] as const;
+          }),
+        ),
+      );
+      if (!isCurrent()) return;
 
-      type RecentEntry = {
-        path: string;
-        type: 'local' | 'github';
-        githubUrl?: string;
-        name: string;
-        owner?: string;
-      };
+      type RecentEntry = WorkspaceInitializerRecentRepo;
 
       // Dedup key: GitHub entries by case-insensitive owner/repo shorthand so a
       // workspace-derived pick merges with its repos.known registration; local
       // entries stay keyed by checkout path.
-      const entryKey = (repo: Pick<RecentEntry, 'path' | 'type'>) =>
-        repo.type === 'github' ? `github:${repo.path.toLowerCase()}` : `local:${repo.path}`;
+      const entryKey = (repo: RecentEntry) => {
+        if (repo.type === 'local') return `local:${repo.path}`;
+        const identity = getRecentRepoIdentity(repo, gitlabInstance);
+        return identity?.provider === 'gitlab'
+          ? `gitlab:${identity.instanceBaseUrl}/${identity.projectPath}`
+          : `github:${repo.path.toLowerCase()}`;
+      };
 
       // Build a map of repos (persisted recents, then registry, then workspace-derived)
       const repoMap = new Map<string, RecentEntry>();
@@ -847,6 +929,7 @@
               type: 'local' as const,
               name: repo.name,
               owner: repo.owner,
+              repositoryIdentity: origins.get(repo.path) ?? null,
             };
             const key = entryKey(entry);
             repoMap.set(key, entry);
@@ -857,22 +940,31 @@
 
       // Merge workspace-derived repos (overrides registry entries with fresher data)
       if (workspaces && workspaces.length > 0) {
-        const allRecentRepos = getRecentRepos(workspaces, 10);
-        for (const repo of allRecentRepos) {
+        for (const repo of workspaceRecents) {
           if (isDaemonManagedRepoPath(repo.path)) continue;
 
           if (workspaceOwnedCheckouts.has(repo.path)) {
-            // A workspace-owned standalone checkout is a GitHub pick: surface it
-            // as a path-less GitHub entry (never a local copy source), matching
-            // the sidebar card's classification (recent-repos.ts).
+            // Preserve the legacy path-less selection behavior, but owner/name
+            // alone cannot establish its forge for presentation.
             if (!repo.owner || !repo.name) continue;
             const shorthand = `${repo.owner}/${repo.name}`;
+            const observed = origins.get(repo.path);
+            const registered = repoMap.get(`github:${shorthand.toLowerCase()}`);
             const entry: RecentEntry = {
-              path: shorthand,
+              path:
+                observed?.provider === 'gitlab'
+                  ? `${observed.instanceBaseUrl}/${observed.projectPath}`
+                  : shorthand,
               type: 'github' as const,
-              githubUrl: `https://github.com/${shorthand}`,
+              githubUrl: observed
+                ? `${observed.instanceBaseUrl}/${observed.projectPath}`
+                : (registered?.githubUrl ?? `https://github.com/${shorthand}`),
               name: repo.name,
               owner: repo.owner,
+              // Workspace owner/name is not a forge observation. Preserve an
+              // independently registered URL, otherwise leave the icon unknown.
+              repositoryIdentity:
+                observed ?? (registered ? getRecentRepoIdentity(registered, gitlabInstance) : null),
             };
             const key = entryKey(entry);
             repoMap.set(key, entry);
@@ -891,6 +983,7 @@
               type: 'local' as const,
               name: repo.name,
               owner: repo.owner,
+              repositoryIdentity: origins.get(repo.path) ?? null,
             };
             const key = entryKey(entry);
             repoMap.set(key, entry);
@@ -929,6 +1022,7 @@
   });
   $effect(() => {
     const admission = $admission$;
+    const gitlabInstance = gitlab?.instanceBaseUrl;
     const awaitingHydration = $canAdministerHost$ && !$initializerHydrated$;
     isLoading = true;
     // Settings readiness gates publication, not reading current source suggestions.
@@ -939,7 +1033,7 @@
       active &&
       appStore.dispatch === mountedDispatch &&
       admission === selectPrincipalActionContext.select(appStore.state);
-    void untrack(() => loadRecentRepos(isCurrent, admission, !awaitingHydration));
+    void untrack(() => loadRecentRepos(isCurrent, admission, !awaitingHydration, gitlabInstance));
     return () => {
       active = false;
     };
@@ -1243,6 +1337,18 @@
 
   // Handle selecting a recent repo
   function handleSelectRepo(repo: any) {
+    const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl);
+    if (repo.type !== 'local' && identity?.provider === 'gitlab') {
+      if (
+        !gitlab?.authenticated ||
+        identity.instanceBaseUrl !== gitlab.instanceBaseUrl ||
+        !gitlab.scopeKey
+      )
+        return;
+      gitlab.onSelect(identity.projectPath, gitlab.scopeKey);
+      isOpen = false;
+      return;
+    }
     // GitHub picks are path-less: identify the repo by its owner/repo shorthand
     const githubInfo =
       repo.type === 'github' && repo.githubUrl ? parseGitHubUrl(repo.githubUrl) : null;
@@ -1557,6 +1663,48 @@
 </script>
 
 <div class="relative">
+  {#snippet forgePrefix()}
+    {#if authenticatedForges.length > 1}
+      <Menu.Root>
+        <Menu.Trigger>
+          {#snippet child({ props })}
+            <Button
+              {...props}
+              variant="plain"
+              class="group/forge relative h-auto shrink-0 rounded-none py-2.5 pl-3 pr-4 text-sm font-normal hover:underline focus:underline"
+            >
+              {repositoryTabLabel}
+              <Fa
+                icon={faChevronDown}
+                size={10}
+                class="absolute right-0 opacity-0 group-hover/forge:opacity-100 group-focus/forge:opacity-100"
+              />
+            </Button>
+          {/snippet}
+        </Menu.Trigger>
+        <Menu.Content
+          portalProps={{ to: dialogPortalTarget() }}
+          aria-label={m.workspace_repoSelector_whichRepo_label()}
+        >
+          <Menu.RadioGroup
+            value={selectedForge?.id}
+            onValueChange={(value) => selectForge(value as 'github' | 'gitlab')}
+          >
+            {#each authenticatedForges as forge (forge.id)}
+              <Menu.RadioItem value={forge.id} closeOnSelect>
+                {#snippet leading()}<Fa icon={forge.icon} size={12} />{/snippet}
+                {forge.label}
+              </Menu.RadioItem>
+            {/each}
+          </Menu.RadioGroup>
+        </Menu.Content>
+      </Menu.Root>
+    {:else}
+      <!-- i18n-ignore (configured forge URL, or existing GitHub connect field) -->
+      <span class="text-sm pl-3 shrink-0 select-none">{selectedForge?.label ?? 'github.com/'}</span>
+    {/if}
+  {/snippet}
+
   <Popover.Root bind:open={isOpen}>
     <Popover.Trigger>
       {#snippet child({ props })}
@@ -1629,15 +1777,24 @@
 
       <!-- Tab bar -->
       <Tabs.Root
-        value={activeTab}
-        onValueChange={(value) => (activeTab = value as TabId)}
+        value={repositoryTabActive ? 'repository' : activeTab}
+        onValueChange={(value) =>
+          (activeTab = value === 'repository' ? repositoryTab : (value as TabId))}
         class="flex min-h-0 flex-col"
       >
         <Tabs.List
           aria-label={m.workspace_repoSelector_whichRepo_label()}
           class="flex shrink-0 gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1"
         >
-          {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, ...(gitlab ? [{ id: 'gitlab' as TabId, label: gitlabTabLabel }] : []), { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+          <Tabs.Trigger
+            value="repository"
+            class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {repositoryTabActive
+              ? 'bg-background font-medium text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'}"
+          >
+            {m.workspace_repoSelector_pickARepo_tab()}
+          </Tabs.Trigger>
+          {#each [{ id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
             <Tabs.Trigger
               value={tab.id}
               class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
@@ -1649,12 +1806,16 @@
             </Tabs.Trigger>
           {/each}
         </Tabs.List>
-        <Tabs.Content value={activeTab} class="mt-0 min-h-0 flex flex-col">
+        <Tabs.Content
+          value={repositoryTabActive ? 'repository' : activeTab}
+          class="mt-0 min-h-0 flex flex-col"
+        >
           <!-- Input section - changes based on tab -->
           <div class="shrink-0 px-3 mb-3">
             {#if activeTab === 'gitlab' && gitlab}
               <GitLabProjectPicker
                 {...gitlab}
+                prefix={forgePrefix}
                 onSelect={(projectPath, scopeKey) => {
                   gitlab?.onSelect(projectPath, scopeKey);
                   isOpen = false;
@@ -1683,9 +1844,7 @@
               <div
                 class="flex items-center rounded-lg bg-sidebar focus-within:ring-1 focus-within:ring-ring"
               >
-                <Fa icon={faGithub} class="ml-3" />
-                <!-- i18n-ignore (domain prefix) -->
-                <span class="text-sm pl-1.5 shrink-0 select-none">github.com/</span>
+                {@render forgePrefix()}
                 <Input
                   placeholder={/* i18n-ignore (GitHub path format example placeholder) */ 'owner/repo'}
                   bind:this={inputElement}
@@ -1970,8 +2129,8 @@
             </div>
           {/if}
 
-          <!-- Recent repos section - only show for local and github tabs when there are repos -->
-          {#if (activeTab === 'local' || activeTab === 'github') && (isLoading || filteredRepos().length > 0)}
+          <!-- Recent repositories for the selected source. -->
+          {#if (activeTab === 'local' || repositoryTabActive) && (isLoading || filteredRepos().length > 0)}
             <div class="min-h-16 overflow-y-auto flex-1 px-4 pb-3 pt-2">
               <Header size={5} class="mb-2">{m.workspace_repoSelector_recent_label()}</Header>
               {#if isLoading && recentRepos.length === 0}
@@ -1987,6 +2146,10 @@
                 <div class="-mx-2" data-testid="recent-repositories">
                   {#each filteredRepos() as repo, index (repo.path || repo.name)}
                     {@const label = getRecentRepoLabel(repo)}
+                    {@const identity = getRecentRepoIdentity(repo, gitlab?.instanceBaseUrl)}
+                    {@const owner = identity
+                      ? identity.projectPath.split('/').slice(0, -1).join('/')
+                      : label.ownerPrefix}
                     {@const tooltip = getRecentRepoTooltip(repo)}
                     <div class="group/recent-repo flex min-w-0 items-center" data-recent-repo-row>
                       {#snippet repoRow()}
@@ -1994,33 +2157,47 @@
                           selected={index === highlightedIndex}
                           class="cursor-pointer flex-1"
                           onclick={() => handleSelectRepo(repo)}
+                          disabled={repo.type !== 'local' &&
+                            identity?.provider === 'gitlab' &&
+                            !gitlab?.scopeKey}
                         >
                           {#snippet leading()}
-                            {#if label.ownerPrefix}
-                              <GitHubAvatar
-                                identity={label.ownerPrefix}
-                                class="size-4 rounded-full"
-                              >
+                            {#if owner && identity?.provider === 'github'}
+                              <GitHubAvatar identity={owner} class="size-4 rounded-full">
                                 {#snippet fallback()}
-                                  <Fa icon={faGithub} class="text-subtle opacity-50" size={12} />
+                                  <PrincipalAvatar label={owner} size={16} />
                                 {/snippet}
                               </GitHubAvatar>
+                            {:else if owner}
+                              <PrincipalAvatar label={owner} size={16} />
                             {:else}
-                              <Fa
-                                icon={repo.type === 'github' ? faGithub : faFolder}
-                                class="text-subtle opacity-50"
-                                size={12}
-                              />
+                              <Fa icon={faFolder} class="text-subtle opacity-50" size={12} />
                             {/if}
                           {/snippet}
                           {#snippet title()}
-                            <span class="block truncate">
-                              {#if label.ownerPrefix}
-                                <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
-                              {/if}
-                              {label.primary}
-                              {#if label.suffix}
-                                <span class="text-subtle ml-1">({label.suffix})</span>
+                            <span class="flex min-w-0 items-center gap-2">
+                              <span class="truncate" data-recent-repo-label>
+                                {#if owner && repo.type !== 'local'}
+                                  <span class="text-subtle mr-1">{owner} /</span>
+                                {/if}
+                                {identity && repo.type !== 'local'
+                                  ? identity.projectPath.split('/').at(-1)
+                                  : label.primary}
+                                {#if label.suffix}
+                                  <span class="text-subtle ml-1">({label.suffix})</span>
+                                {/if}
+                              </span>
+                              {#if identity}
+                                <span
+                                  role="img"
+                                  aria-label={forgeLabels[identity.provider]}
+                                  class="text-subtle shrink-0"
+                                >
+                                  <Fa
+                                    icon={identity.provider === 'github' ? faGithub : faGitlab}
+                                    size={12}
+                                  />
+                                </span>
                               {/if}
                             </span>
                           {/snippet}
