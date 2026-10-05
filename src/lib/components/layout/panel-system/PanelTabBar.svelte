@@ -1813,7 +1813,7 @@
   {:else}
     <div
       class={cn(
-        'panel-header group/header relative flex items-center bg-background pr-2.5',
+        'panel-header group/header relative flex items-center pr-2.5',
         isFocused && 'focused',
       )}
       style:height="var(--panel-header-height)"
