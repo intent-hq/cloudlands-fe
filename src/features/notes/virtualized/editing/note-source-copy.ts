@@ -11,12 +11,15 @@ import * as a from '$store/renderer/slices/note-pages/note-pages-slice';
 import type { NoteReadingSurface } from '../note-window-view';
 import { composeNoteEdits } from './note-edit-plan';
 
-/** Output is externally staged, with one bounded write in flight. commit must
- * synchronously publish the staged result; abort removes it without publication.
+/** Output is externally staged, with one bounded write in flight. Invoking commit
+ * transfers the complete output to the sink for publication; its completion must
+ * acknowledge actual publication. After that invocation cancellation cannot retract
+ * output or restore an earlier clipboard. abort only discards private staging,
+ * including after an uncertain commit failure; it must never undo public output.
  * A renderer string accumulator is not an implementation of this interface. */
 export interface NoteSourceSink {
   write(text: string): Promise<void>;
-  commit(): void;
+  commit(): void | Promise<void>;
   abort(): Promise<void>;
 }
 interface Options {
@@ -318,7 +321,12 @@ export function createNoteSourceCopyOwner(
         // and the subscription remain live across cleanup, preventing revival.
         await operation.cancel();
         check();
-        sink.commit();
+        // This invocation is the one-way publication handoff. Ownership was
+        // checked above without an intervening await. Hold DATA and observe the
+        // real acknowledgement, even if the panel closes while it is pending.
+        // A post-handoff ownership check cannot turn published output into an
+        // unperformed operation or justify restoring an older clipboard.
+        await sink.commit();
         committed = true;
       } catch (error) {
         failure = error;

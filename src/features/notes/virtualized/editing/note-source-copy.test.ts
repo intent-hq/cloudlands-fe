@@ -256,7 +256,7 @@ function fixture(text = 'X', pages = 1) {
     write: vi.fn(async (s: string) => {
       output += s;
     }),
-    commit: vi.fn(() => {
+    commit: vi.fn(async () => {
       visible = output;
     }),
     abort: vi.fn(async () => {
@@ -322,6 +322,86 @@ it('drains more than 96 pages without a retained output collection in the owner'
   await f.owner.copyDocument();
   expect(rpc.mock.calls.filter(([m]) => m === 'note.operation.read').length).toBeGreaterThan(96);
   expect(f.visible()).toBe(f.complete);
+});
+it('holds DATA and the exclusive copy owner until asynchronous publication acknowledges', async () => {
+  const f = fixture(),
+    entered = deferred(),
+    held = deferred();
+  const publish = f.sink.commit.getMockImplementation();
+  if (!publish) throw new Error('Missing fixture publisher');
+  f.sink.commit.mockImplementation(async () => {
+    entered.resolve();
+    await held.promise;
+    await publish();
+  });
+  let settled = false;
+  const pending = f.owner.copyDocument().then(() => {
+    settled = true;
+  });
+  await entered.promise;
+  expect(settled).toBe(false);
+  expect(f.visible()).toBeUndefined();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(1);
+  expect(f.listeners.size).toBe(1);
+  await expect(f.owner.copyDocument()).rejects.toThrow('already in progress');
+  f.owner.cancelCopy();
+  f.transition(false);
+  f.transition(true);
+  expect(f.sink.abort).not.toHaveBeenCalled();
+  held.resolve();
+  await pending;
+  expect(f.visible()).toBe(f.complete);
+  expect(f.sink.commit).toHaveBeenCalledOnce();
+  expect(f.sink.abort).not.toHaveBeenCalled();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(0);
+  expect(f.listeners.size).toBe(0);
+});
+it('observes asynchronous publication failure and holds DATA through private staging cleanup', async () => {
+  const f = fixture(),
+    entered = deferred(),
+    held = deferred(),
+    cleanupEntered = deferred(),
+    cleanupHeld = deferred();
+  f.sink.commit.mockImplementation(async () => {
+    entered.resolve();
+    await held.promise;
+    throw new Error('Publication acknowledgement lost');
+  });
+  f.sink.abort.mockImplementation(async () => {
+    cleanupEntered.resolve();
+    await cleanupHeld.promise;
+    throw new Error('Private staging cleanup failed');
+  });
+  const pending = f.owner.copyDocument();
+  const refused = expect(pending).rejects.toThrow('Publication acknowledgement lost');
+  await entered.promise;
+  expect(f.sink.abort).not.toHaveBeenCalled();
+  held.resolve();
+  await cleanupEntered.promise;
+  expect(f.read().resourceLedger.used.physicalReads).toBe(1);
+  expect(f.listeners.size).toBe(1);
+  cleanupHeld.resolve();
+  await refused;
+  expect(f.visible()).toBeUndefined();
+  expect(f.sink.commit).toHaveBeenCalledOnce();
+  expect(f.sink.abort).toHaveBeenCalledOnce();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(0);
+  expect(f.listeners.size).toBe(0);
+});
+it('does not retract published output after a lost acknowledgement', async () => {
+  const f = fixture();
+  const publish = f.sink.commit.getMockImplementation();
+  if (!publish) throw new Error('Missing fixture publisher');
+  f.sink.commit.mockImplementation(async () => {
+    await publish();
+    throw new Error('Publication acknowledgement lost');
+  });
+  await expect(f.owner.copyDocument()).rejects.toThrow('Publication acknowledgement lost');
+  expect(f.visible()).toBe(f.complete);
+  expect(f.sink.commit).toHaveBeenCalledOnce();
+  expect(f.sink.abort).toHaveBeenCalledOnce();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(0);
+  expect(f.listeners.size).toBe(0);
 });
 it('retains DATA through a held sink and refuses ownership revival without publishing', async () => {
   const f = fixture(),
@@ -749,7 +829,7 @@ it.each(['edit', 'undo'])(
     expect(f.read().resourceLedger.used.physicalReads).toBe(0);
   },
 );
-it('checks the original deadline after cancellation settlement before synchronous publication', async () => {
+it('checks the original deadline after cancellation settlement before publication handoff', async () => {
   let time = Date.now();
   const clock = vi.spyOn(Date, 'now').mockImplementation(() => time);
   try {
