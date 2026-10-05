@@ -7117,5 +7117,8 @@
   "chat_scriptMonitor_matched_description": "Línea coincidente; supervisión terminada",
   "chat_scriptMonitor_counted_description": "Umbral de líneas alcanzado; supervisión terminada",
   "chat_scriptMonitor_untrusted_description": "Línea coincidente (salida de script no confiable)",
-  "chat_queuedMessages_sendAllUnsupported_error": "Enviar juntos los mensajes en cola requiere un backend más reciente. Usa los botones individuales Enviar ahora."
+  "chat_queuedMessages_sendAllUnsupported_error": "Enviar juntos los mensajes en cola requiere un backend más reciente. Usa los botones individuales Enviar ahora.",
+  "desktop_os_accessibility_description": "Falta el acceso de Accesibilidad de macOS.",
+  "desktop_os_screenRecording_description": "Falta el acceso de Grabación de pantalla de macOS.",
+  "desktop_os_setup_description": "El control no ha comenzado. En Ajustes del Sistema → Privacidad y seguridad, activa la entrada de Intent que muestra macOS para cada permiso que falte. Configura primero Accesibilidad y después Grabación de pantalla. Si no aparece ningún diálogo o se denegó el acceso, usa Ajustes del Sistema. Si macOS te pide cerrar y volver a abrir Intent, sigue esa instrucción. Después pulsa Permitir de nuevo mientras esta solicitud siga abierta, o solicita una nueva sesión si ha caducado."
 }

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { m } from '$shared/paraglide/messages.js';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { BackendError } from '$lib/client/live/backend-transport-types';
+import { backendRequest, electronAPI } from '$lib/client/live/backend-transport';
 import type {
   DesktopDecision,
   DesktopEvent,
@@ -87,6 +89,43 @@ export function parseDesktopEvent(value: unknown): DesktopEvent | undefined {
   return result.success ? result.data : undefined;
 }
 export const desktopClient = {
+  async requestPermissions(
+    workspaceId: string,
+    agentId: string,
+    requestId: string,
+    decision: 'allow_once' | 'allow_future',
+  ): Promise<string | undefined> {
+    const api = electronAPI();
+    if (!api) throw new Error(m.desktop_consent_failed());
+    const response = await api.invoke(IPC_CHANNELS.BACKEND.DESKTOP_PERMISSIONS, {
+      workspaceId,
+      agentId,
+      requestId,
+      decision,
+    });
+    if (!response?.ok)
+      throw new BackendError(
+        response?.error ?? { code: 'TRANSPORT_ERROR', message: m.desktop_consent_failed() },
+      );
+    const result = z
+      .discriminatedUnion('platform', [
+        z.object({ platform: z.literal('windows') }),
+        z.object({
+          platform: z.literal('macos'),
+          accessibility: z.boolean(),
+          screenRecording: z.boolean(),
+        }),
+      ])
+      .parse(response.result);
+    if (result.platform === 'windows' || (result.accessibility && result.screenRecording)) return;
+    return [
+      !result.accessibility ? m.desktop_os_accessibility_description() : undefined,
+      !result.screenRecording ? m.desktop_os_screenRecording_description() : undefined,
+      m.desktop_os_setup_description(),
+    ]
+      .filter(Boolean)
+      .join(' ');
+  },
   async getState(workspaceId: string, agentId: string): Promise<DesktopSnapshot> {
     const hello = await backendRequest<{
       server?: { capabilities?: { desktopControl?: unknown } };

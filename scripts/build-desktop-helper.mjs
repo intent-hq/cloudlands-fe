@@ -19,6 +19,7 @@ export function buildDesktopHelper(platform = process.platform, arch = process.a
         '-target',
         `${arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macosx14.0`,
         resolve(root, 'native/desktop/macos/main.swift'),
+        resolve(root, 'native/desktop/macos/PermissionPrompts.swift'),
         '-o',
         resolve(output, 'intent-desktop-helper'),
         '-framework',

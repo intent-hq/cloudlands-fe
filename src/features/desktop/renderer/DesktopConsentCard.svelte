@@ -5,10 +5,12 @@
   let {
     request,
     pending = false,
+    guidance,
     onDecision,
   }: {
     request: DesktopPermissionRequest;
     pending?: boolean;
+    guidance?: string;
     onDecision: (decision: DesktopPermissionDecision) => void;
   } = $props();
 </script>
@@ -22,6 +24,9 @@
     <p class="text-sm text-muted-foreground">
       {m.desktop_consent_claimPrimary({ computer: request.computerName })}
     </p>
+  {/if}
+  {#if guidance}
+    <p role="status" class="text-sm">{guidance}</p>
   {/if}
   {#if pending}
     <p role="status" class="text-sm">{m.desktop_consent_pending()}</p>

@@ -7117,5 +7117,8 @@
   "chat_scriptMonitor_matched_description": "Line matched; monitoring ended",
   "chat_scriptMonitor_counted_description": "Line threshold reached; monitoring ended",
   "chat_scriptMonitor_untrusted_description": "Matched line (untrusted script output)",
-  "chat_queuedMessages_sendAllUnsupported_error": "Sending queued messages together requires a newer backend. Use the individual Send now buttons."
+  "chat_queuedMessages_sendAllUnsupported_error": "Sending queued messages together requires a newer backend. Use the individual Send now buttons.",
+  "desktop_os_accessibility_description": "macOS Accessibility access is missing.",
+  "desktop_os_screenRecording_description": "macOS Screen Recording access is missing.",
+  "desktop_os_setup_description": "Control has not started. In System Settings → Privacy & Security, enable the Intent entry shown by macOS for each missing permission. Accessibility setup comes first, then Screen Recording. If no dialog appears or access was denied, use System Settings. If macOS asks you to quit and reopen Intent, follow that instruction. Then click Allow again while this request is open, or request a new session if it expired."
 }

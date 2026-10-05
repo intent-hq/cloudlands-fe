@@ -7117,5 +7117,8 @@
   "chat_scriptMonitor_matched_description": "Ligne correspondante ; surveillance terminée",
   "chat_scriptMonitor_counted_description": "Seuil de lignes atteint ; surveillance terminée",
   "chat_scriptMonitor_untrusted_description": "Ligne correspondante (sortie de script non fiable)",
-  "chat_queuedMessages_sendAllUnsupported_error": "L’envoi groupé des messages en attente nécessite un backend plus récent. Utilisez les boutons Envoyer maintenant de chaque message."
+  "chat_queuedMessages_sendAllUnsupported_error": "L’envoi groupé des messages en attente nécessite un backend plus récent. Utilisez les boutons Envoyer maintenant de chaque message.",
+  "desktop_os_accessibility_description": "L’accès Accessibilité de macOS est manquant.",
+  "desktop_os_screenRecording_description": "L’accès Enregistrement de l’écran de macOS est manquant.",
+  "desktop_os_setup_description": "Le contrôle n’a pas démarré. Dans Réglages Système → Confidentialité et sécurité, activez l’entrée Intent affichée par macOS pour chaque autorisation manquante. Configurez d’abord Accessibilité, puis Enregistrement de l’écran. Si aucune boîte de dialogue ne s’affiche ou si l’accès a été refusé, utilisez Réglages Système. Si macOS demande de quitter et de rouvrir Intent, suivez cette instruction. Cliquez ensuite à nouveau sur Autoriser tant que cette demande est ouverte, ou demandez une nouvelle session si elle a expiré."
 }

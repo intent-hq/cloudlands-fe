@@ -1,0 +1,13 @@
+// Policy tests, not evidence of TCC dialog display or permission attribution.
+var prompts = PermissionPrompts()
+precondition(prompts.next(accessibility: false, screenRecording: false) == .accessibility)
+precondition(prompts.next(accessibility: false, screenRecording: false) == nil)
+precondition(prompts.next(accessibility: true, screenRecording: false) == .screenRecording)
+precondition(prompts.next(accessibility: true, screenRecording: false) == nil)
+precondition(prompts.next(accessibility: true, screenRecording: true) == nil)
+precondition(prompts.next(accessibility: false, screenRecording: true) == nil)
+var screenOnly = PermissionPrompts()
+precondition(screenOnly.next(accessibility: true, screenRecording: false) == .screenRecording)
+var trusted = PermissionPrompts()
+precondition(trusted.next(accessibility: true, screenRecording: true) == nil)
+print("PASS: sequential, explicit-gesture permission prompt policy; denial never loops")

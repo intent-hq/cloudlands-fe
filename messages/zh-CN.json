@@ -7117,5 +7117,8 @@
   "chat_scriptMonitor_matched_description": "行已匹配；监控结束",
   "chat_scriptMonitor_counted_description": "已达到行数阈值；监控结束",
   "chat_scriptMonitor_untrusted_description": "匹配行（不可信的脚本输出）",
-  "chat_queuedMessages_sendAllUnsupported_error": "一起发送排队消息需要更新的后端。请使用每条消息的“立即发送”按钮。"
+  "chat_queuedMessages_sendAllUnsupported_error": "一起发送排队消息需要更新的后端。请使用每条消息的“立即发送”按钮。",
+  "desktop_os_accessibility_description": "缺少 macOS 辅助功能权限。",
+  "desktop_os_screenRecording_description": "缺少 macOS 屏幕录制权限。",
+  "desktop_os_setup_description": "控制尚未开始。在“系统设置”→“隐私与安全性”中，为每项缺失的权限启用 macOS 显示的 Intent 条目。请先设置辅助功能，再设置屏幕录制。如果没有出现对话框或访问被拒绝，请使用系统设置。如果 macOS 要求退出并重新打开 Intent，请遵循该提示。然后在此请求仍有效时再次点击“允许”，或在请求过期后请求新会话。"
 }

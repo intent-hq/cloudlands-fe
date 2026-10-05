@@ -43,6 +43,34 @@ const ended = (id = 'session') =>
   });
 const entry = (state: DesktopControlState) => state.byKey[key];
 describe('desktop permission mirror', () => {
+  it('retains the failure after its prompt ends and read-only reconciliation runs', () => {
+    let state = reduce(undefined, requested);
+    state = reduce(
+      state,
+      event({
+        id: 'failed',
+        type: 'desktop:permission-resolved',
+        data: {
+          workspaceId: 'workspace',
+          agentId: 'agent',
+          requestId: 'request',
+          outcome: 'failed',
+          state: { status: 'inactive' },
+          error: {
+            code: 'desktop-os-permission-required',
+            detail: 'Screen Recording access is missing.',
+          },
+        },
+      }),
+    );
+    const revision = entry(state).revision;
+    state = reduce(
+      state,
+      snapshot('workspace', 'agent', 0, revision, { state: { status: 'inactive' }, permission }),
+    );
+    expect(entry(state).pending).toBeUndefined();
+    expect(entry(state).error).toContain('Screen Recording');
+  });
   it('deduplicates requests and preserves a submitted decision', () => {
     let state = reduce(undefined, requested);
     state = reduce(state, patch('workspace', 'agent', 0, { submitting: true }));

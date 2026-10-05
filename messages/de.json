@@ -7117,5 +7117,8 @@
   "chat_scriptMonitor_matched_description": "Zeile stimmt überein; Überwachung beendet",
   "chat_scriptMonitor_counted_description": "Zeilenschwelle erreicht; Überwachung beendet",
   "chat_scriptMonitor_untrusted_description": "Passende Zeile (nicht vertrauenswürdige Skriptausgabe)",
-  "chat_queuedMessages_sendAllUnsupported_error": "Zum gemeinsamen Senden vorgemerkter Nachrichten ist ein neueres Backend erforderlich. Verwenden Sie die einzelnen Schaltflächen „Jetzt senden“."
+  "chat_queuedMessages_sendAllUnsupported_error": "Zum gemeinsamen Senden vorgemerkter Nachrichten ist ein neueres Backend erforderlich. Verwenden Sie die einzelnen Schaltflächen „Jetzt senden“.",
+  "desktop_os_accessibility_description": "Der macOS-Zugriff auf Bedienungshilfen fehlt.",
+  "desktop_os_screenRecording_description": "Der macOS-Zugriff auf Bildschirmaufnahme fehlt.",
+  "desktop_os_setup_description": "Die Steuerung wurde nicht gestartet. Aktivieren Sie unter Systemeinstellungen → Datenschutz & Sicherheit den von macOS angezeigten Intent-Eintrag für jede fehlende Berechtigung. Richten Sie zuerst Bedienungshilfen und dann Bildschirmaufnahme ein. Falls kein Dialog erscheint oder der Zugriff verweigert wurde, verwenden Sie die Systemeinstellungen. Falls macOS Sie auffordert, Intent zu beenden und erneut zu öffnen, folgen Sie dieser Anweisung. Klicken Sie danach erneut auf Zulassen, solange die Anfrage offen ist, oder fordern Sie nach deren Ablauf eine neue Sitzung an."
 }

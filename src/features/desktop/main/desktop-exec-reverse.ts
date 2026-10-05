@@ -2,11 +2,7 @@ import { app, powerMonitor, Notification } from 'electron';
 import { m } from '../../../shared/paraglide/messages.js';
 import type { ConnectionStatus, JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { DesktopExecutor, type DesktopConnection } from './desktop-executor';
-import {
-  DesktopHelperTransport,
-  DesktopNativeAdapter,
-  desktopNativeAvailable,
-} from './desktop-native';
+import { getDesktopNativeAdapter, desktopNativeAvailable } from './desktop-native';
 import { desktopFailure } from './desktop-validation';
 import { getDesktopOverlay } from './desktop-overlay';
 import { DesktopReportStore } from './desktop-stop-reports';
@@ -14,7 +10,6 @@ import { DesktopReportStore } from './desktop-stop-reports';
 let runtime: { executor: DesktopExecutor; reports: DesktopReportStore } | undefined;
 function getRuntime() {
   if (!runtime) {
-    const transport = new DesktopHelperTransport();
     const reports = new DesktopReportStore(undefined, () => {
       if (Notification.isSupported())
         new Notification({
@@ -22,11 +17,7 @@ function getRuntime() {
           body: m.desktop_stopReportFailed_description(),
         }).show();
     });
-    const executor = new DesktopExecutor(
-      new DesktopNativeAdapter(transport.request),
-      getDesktopOverlay(),
-      reports,
-    );
+    const executor = new DesktopExecutor(getDesktopNativeAdapter(), getDesktopOverlay(), reports);
     runtime = { executor, reports };
     const suspended = () => {
       void executor.invalidate('unsupported_environment').catch(() => {});

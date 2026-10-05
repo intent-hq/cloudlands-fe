@@ -109,6 +109,7 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
+import { requestDesktopPermissions } from '../../desktop/main/desktop-permissions';
 import { registerDesktopExecReverseHandler } from '../../desktop/main/desktop-exec-reverse';
 import {
   LOCAL_CONNECTION_ID,
@@ -3220,6 +3221,16 @@ async function forgetConnectionLocked(id: string, latchSuppression: boolean): Pr
 export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
+
+  // Local-only user gesture. Never forward this channel or native operations to a daemon.
+  ipcMain.handle(BACKEND.DESKTOP_PERMISSIONS, async (event, params: unknown) => {
+    try {
+      const { client } = getBackendClientForIpcEvent(event);
+      return { ok: true, result: await requestDesktopPermissions(client, params) };
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
 
   ipcMain.handle(
     BACKEND.REQUEST,

@@ -7117,5 +7117,8 @@
   "chat_scriptMonitor_matched_description": "줄 일치, 모니터링 종료",
   "chat_scriptMonitor_counted_description": "줄 수 기준 도달, 모니터링 종료",
   "chat_scriptMonitor_untrusted_description": "일치하는 줄 (신뢰할 수 없는 스크립트 출력)",
-  "chat_queuedMessages_sendAllUnsupported_error": "대기 중인 메시지를 함께 보내려면 더 최신 백엔드가 필요합니다. 각 메시지의 지금 보내기 버튼을 사용하세요."
+  "chat_queuedMessages_sendAllUnsupported_error": "대기 중인 메시지를 함께 보내려면 더 최신 백엔드가 필요합니다. 각 메시지의 지금 보내기 버튼을 사용하세요.",
+  "desktop_os_accessibility_description": "macOS 손쉬운 사용 권한이 없습니다.",
+  "desktop_os_screenRecording_description": "macOS 화면 기록 권한이 없습니다.",
+  "desktop_os_setup_description": "제어가 시작되지 않았습니다. 시스템 설정 → 개인정보 보호 및 보안에서 macOS가 표시하는 Intent 항목의 누락된 권한을 각각 활성화하세요. 손쉬운 사용을 먼저 설정한 다음 화면 기록을 설정하세요. 대화상자가 나타나지 않거나 접근이 거부된 경우 시스템 설정을 사용하세요. macOS가 Intent를 종료하고 다시 열도록 요청하면 그 지침을 따르세요. 그런 다음 요청이 열려 있는 동안 허용을 다시 클릭하거나, 만료되었다면 새 세션을 요청하세요."
 }

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 const backendRequest = vi.hoisted(() => vi.fn());
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest }));
+const localPermissions = vi.hoisted(() => vi.fn());
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest,
+  electronAPI: () => ({ invoke: localPermissions }),
+}));
 import { desktopClient, parseDesktopEvent } from './desktop-client';
 import { permission, request } from './desktop-test-fixtures';
 describe('desktop wire validation', () => {
@@ -88,4 +92,40 @@ describe('desktop wire validation', () => {
       expect(backendRequest).toHaveBeenCalledExactlyOnceWith('client.hello', {});
     },
   );
+});
+
+describe('native permission check responses', () => {
+  it.each([
+    [true, false, 'Screen Recording'],
+    [false, true, 'Accessibility'],
+  ] as const)(
+    'names only the missing permission (%s, %s)',
+    async (accessibility, screenRecording, missing) => {
+      localPermissions.mockResolvedValue({
+        ok: true,
+        result: { platform: 'macos', accessibility, screenRecording },
+      });
+      const text = await desktopClient.requestPermissions(
+        'workspace',
+        'agent',
+        'request',
+        'allow_once',
+      );
+      expect(text).toContain(`macOS ${missing} access is missing.`);
+      expect(text).not.toContain(
+        `macOS ${missing === 'Accessibility' ? 'Screen Recording' : 'Accessibility'} access is missing.`,
+      );
+    },
+  );
+  it.each([
+    null,
+    {},
+    { platform: 'macos', accessibility: true },
+    { platform: 'macos', accessibility: true, screenRecording: 'granted' },
+  ])('rejects malformed permission checks %j', async (result) => {
+    localPermissions.mockResolvedValue({ ok: true, result });
+    await expect(
+      desktopClient.requestPermissions('workspace', 'agent', 'request', 'allow_once'),
+    ).rejects.toThrow();
+  });
 });

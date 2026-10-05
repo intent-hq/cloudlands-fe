@@ -25,6 +25,7 @@ actor Desktop {
     var position = CGPoint.zero
     var lastStep: UInt64 = 0
     var flags: CGEventFlags = []
+    var permissionPrompts = PermissionPrompts()
     func milliseconds() -> UInt64 {
         var info = mach_timebase_info_data_t()
         mach_timebase_info(&info)
@@ -43,8 +44,10 @@ actor Desktop {
         if milliseconds() - lastStep >= 15000 { release(); throw Refusal(code: "desktop-not-active", detail: "Native desktop lease expired") }
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any], session["CGSSessionScreenIsLocked"] as? Bool != true,
               session[kCGSessionOnConsoleKey as String] as? Bool == true else { release(); throw refused("The Mac session is locked or not on console") }
-        guard AXIsProcessTrusted() && CGPreflightScreenCaptureAccess() else {
-            release(); throw Refusal(code: "desktop-os-permission-required", detail: "Enable Screen Recording and Accessibility for Intent in macOS System Settings")
+        let accessibility = AXIsProcessTrusted(), screenRecording = CGPreflightScreenCaptureAccess()
+        guard accessibility && screenRecording else {
+            let missing = [accessibility ? nil : "Accessibility", screenRecording ? nil : "Screen Recording"].compactMap { $0 }.joined(separator: " and ")
+            release(); throw Refusal(code: "desktop-os-permission-required", detail: "macOS has not granted \(missing) to the desktop helper. Use Intent's Allow button to set up permissions. Enable the Intent entry shown by macOS in System Settings > Privacy & Security; if macOS asks to quit and reopen Intent, do so before requesting a new desktop session.")
         }
         lastStep = milliseconds()
     }
@@ -116,6 +119,27 @@ actor Desktop {
     func run(_ p: [String: Any]) async throws -> Any {
         guard let op = p["operation"] as? String else { throw refused("Missing operation") }
         if op == "identity" { return try identity() }
+        if op == "requestPermissions" {
+            guard lockFD < 0 else { throw Refusal(code: "desktop-busy", detail: "Desktop control is already active") }
+            guard let computerId = p["computerId"] as? String, try identity()["computerId"] as? String == computerId else { throw refused("Permission request targets another computer") }
+            guard let session = CGSessionCopyCurrentDictionary() as? [String: Any], session["CGSSessionScreenIsLocked"] as? Bool != true,
+                  session[kCGSessionOnConsoleKey as String] as? Bool == true else { throw refused("The Mac session is locked or not on console") }
+            let accessibility = AXIsProcessTrusted(), screenRecording = CGPreflightScreenCaptureAccess()
+            if let prompt = permissionPrompts.next(accessibility: accessibility, screenRecording: screenRecording) {
+                // Keep the command pipe/watchdog responsive while macOS shows a
+                // dialog. Return observed permissions, never the act of prompting.
+                // This signed child remains attached to its responsible Intent app.
+                DispatchQueue.main.async {
+                    switch prompt {
+                    case .accessibility:
+                        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+                    case .screenRecording:
+                        _ = CGRequestScreenCaptureAccess()
+                    }
+                }
+            }
+            return ["accessibility": accessibility, "screenRecording": screenRecording]
+        }
         if op == "release" { release(); return ["ok": true] }
         if op == "releaseInput" { releaseInput(); return ["ok": true] }
         if op == "acquire" {

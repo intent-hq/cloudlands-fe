@@ -28,6 +28,22 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('connected consent prompt', () => {
+  it('renders retained permission guidance alongside the still-unconsumed consent', () => {
+    mock.state.desktopControl = desktopControlReducer(
+      mock.state.desktopControl,
+      desktopEntryPatched('workspace', 'agent', 0, {
+        error: 'macOS Accessibility access is missing.',
+      }),
+    );
+    render(DesktopConsentToast, {
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      requestId: 'request',
+    });
+    expect(screen.getByRole('status').textContent).toContain('Accessibility');
+    expect(screen.getByRole('button', { name: 'Allow once' }).hasAttribute('disabled')).toBe(false);
+    expect(mock.dispatch).not.toHaveBeenCalled();
+  });
   it('dispatches the exact request identity and disables all copies while submitting', async () => {
     render(DesktopConsentToast, {
       workspaceId: 'workspace',

@@ -100,7 +100,13 @@ desktopControlReducer.with(
     return update(state, ws, agent, (entry) =>
       entry.revision !== revision || entry.saving
         ? entry
-        : { ...entry, ...snapshot, pending: snapshot.pending, loading: false, error: undefined },
+        : {
+            ...entry,
+            ...snapshot,
+            pending: snapshot.pending,
+            loading: false,
+            error: snapshot.state.status === 'active' ? undefined : entry.error,
+          },
     );
   },
 );

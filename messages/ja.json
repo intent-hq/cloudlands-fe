@@ -7117,5 +7117,8 @@
   "chat_scriptMonitor_matched_description": "行が一致・監視終了",
   "chat_scriptMonitor_counted_description": "行数のしきい値に到達・監視終了",
   "chat_scriptMonitor_untrusted_description": "一致した行（信頼できないスクリプト出力）",
-  "chat_queuedMessages_sendAllUnsupported_error": "待機中のメッセージをまとめて送信するには、新しいバックエンドが必要です。各メッセージの「今すぐ送信」ボタンを使ってください。"
+  "chat_queuedMessages_sendAllUnsupported_error": "待機中のメッセージをまとめて送信するには、新しいバックエンドが必要です。各メッセージの「今すぐ送信」ボタンを使ってください。",
+  "desktop_os_accessibility_description": "macOSのアクセシビリティ権限がありません。",
+  "desktop_os_screenRecording_description": "macOSの画面収録権限がありません。",
+  "desktop_os_setup_description": "操作は開始されていません。「システム設定」→「プライバシーとセキュリティ」で、macOSに表示されるIntentの項目について、不足している各権限を有効にしてください。最初にアクセシビリティ、次に画面収録を設定します。ダイアログが表示されない場合やアクセスを拒否した場合は、システム設定を使用してください。macOSからIntentの終了と再起動を求められた場合は、その指示に従ってください。その後、このリクエストが有効な間にもう一度「許可」をクリックするか、期限切れの場合は新しいセッションをリクエストしてください。"
 }

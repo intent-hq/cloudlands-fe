@@ -30,6 +30,11 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - run: node scripts/build-desktop-helper.mjs
+      - name: Verify macOS permission prompt policy
+        if: runner.os == 'macOS'
+        run: |
+          xcrun swiftc native/desktop/macos/PermissionPrompts.swift native/desktop/tests/macos/main.swift -o /tmp/desktop-permission-tests
+          /tmp/desktop-permission-tests
       - name: Observe native Windows capture and input
         if: runner.os == 'Windows'
         timeout-minutes: 5

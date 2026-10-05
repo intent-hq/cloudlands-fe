@@ -69,6 +69,32 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
   const { generation } = yield* selectDesktopControl.effect();
   yield* put(desktopEntryPatched(ws, agent, generation, { submitting: true, error: undefined }));
   try {
+    if (decision !== 'deny') {
+      const guidance = yield* call(
+        desktopClient.requestPermissions,
+        ws,
+        agent,
+        requestId,
+        decision,
+      );
+      const current = yield* selectDesktopEntry.effect(ws, agent);
+      if (
+        generation !== (yield* selectDesktopControl.effect()).generation ||
+        current?.pending?.requestId !== requestId
+      )
+        return;
+      if (Date.parse(current.pending.expiresAt) <= Date.now()) {
+        yield* put(desktopRequestExpired(ws, agent, requestId));
+        if (guidance) yield* put(desktopEntryPatched(ws, agent, generation, { error: guidance }));
+        return;
+      }
+      if (guidance) {
+        yield* put(
+          desktopEntryPatched(ws, agent, generation, { submitting: false, error: guidance }),
+        );
+        return;
+      }
+    }
     yield* call(desktopClient.respond, ws, requestId, decision);
     // A candidate denial is local; other candidates keep their shared request open.
     if (
@@ -83,6 +109,7 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
     const current = yield* selectDesktopEntry.effect(ws, agent);
     if (current?.pending?.requestId !== requestId) return;
     yield* put(desktopRequestExpired(ws, agent, requestId));
+    yield* put(desktopEntryPatched(ws, agent, generation, { error: errorDetail(error) }));
     yield* call(showDesktopError, errorDetail(error));
     // Read-only reconciliation, never retry the decision.
     yield* put(desktopReadRequested(ws, agent));

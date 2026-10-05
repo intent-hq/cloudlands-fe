@@ -22,6 +22,11 @@ import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const desktopPermissions = vi.hoisted(() => vi.fn());
+vi.mock('../../../desktop/main/desktop-permissions', () => ({
+  requestDesktopPermissions: desktopPermissions,
+}));
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -4445,6 +4450,33 @@ describe('per-window backend IPC routing', () => {
       expect.objectContaining({ activeId: 'local', windowBackendId: 'remote-1' }),
     );
     expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('binds OS onboarding to the sender backend and returns failures without forwarding native operations', async () => {
+    const { mod } = await loadModule();
+    const localClient = mod.getBackendClient();
+    const remoteClient = await mod.connectBackendClient('remote-1');
+    const { localSender, remoteSender } = installBackendWindows();
+    mod.registerBackendHandlers();
+    const request = findHandler('backend:desktop-permissions')!;
+    const params = { workspaceId: 'w', agentId: 'a', requestId: 'r', decision: 'allow_once' };
+    desktopPermissions.mockResolvedValue({
+      platform: 'macos',
+      accessibility: false,
+      screenRecording: false,
+    });
+    await expect(request({ sender: localSender }, params)).resolves.toMatchObject({
+      ok: true,
+      result: { accessibility: false },
+    });
+    expect(desktopPermissions).toHaveBeenLastCalledWith(localClient, params);
+    await request({ sender: remoteSender }, params);
+    expect(desktopPermissions).toHaveBeenLastCalledWith(remoteClient, params);
+    desktopPermissions.mockRejectedValueOnce(new Error('stale permission'));
+    await expect(request({ sender: remoteSender }, params)).resolves.toMatchObject({
+      ok: false,
+      error: { message: 'stale permission' },
+    });
   });
 
   it('reads hello metadata from the sender backend without renegotiating either connection', async () => {

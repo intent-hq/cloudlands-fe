@@ -8,8 +8,10 @@ const mocks = vi.hoisted(() => ({
   dismiss: vi.fn(),
   start: vi.fn(),
   error: vi.fn(),
+  permissions: vi.fn(),
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
+  electronAPI: () => ({ invoke: mocks.permissions }),
   backendRequest: (method: string, params: unknown) =>
     method === 'client.hello'
       ? Promise.resolve({ server: { capabilities: { desktopControl: 1 } } })
@@ -64,12 +66,92 @@ const requested = () =>
   desktopEventReceived({ id: 'requested', type: 'desktop:permission-requested', data: request });
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.permissions.mockResolvedValue({ ok: true, result: { platform: 'windows' } });
   mocks.request.mockResolvedValue({ state: { status: 'inactive' }, permission });
 });
 afterEach(() => {
   tasks.splice(0).forEach((t) => t.cancel());
 });
 describe('desktop consent wire lifecycle', () => {
+  it('keeps missing OS permissions visible without sending Allow or silently retrying it', async () => {
+    mocks.permissions.mockResolvedValue({
+      ok: true,
+      result: {
+        platform: 'macos',
+        accessibility: false,
+        screenRecording: false,
+      },
+    });
+    const h = start();
+    h.dispatch(requested());
+    await settle();
+    mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+    await settle();
+    expect(mocks.permissions).toHaveBeenCalledTimes(1);
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(h.entry()?.pending?.requestId).toBe(request.requestId);
+    expect(h.entry()?.submitting).toBe(false);
+    expect(h.entry()?.error).toContain('Accessibility');
+    expect(h.entry()?.error).toContain('Screen Recording');
+    mocks.request.mockResolvedValue({
+      state: { status: 'pending_permission', requestId: request.requestId },
+      permission,
+      pending: request,
+    });
+    h.dispatch(desktopReadRequested('workspace', 'agent'));
+    await settle();
+    expect(h.entry()?.error).toContain('Accessibility');
+    expect(mocks.permissions).toHaveBeenCalledTimes(1);
+    expect(mocks.request).not.toHaveBeenCalledWith('desktop.respondPermission', expect.anything());
+    mocks.permissions.mockResolvedValue({
+      ok: true,
+      result: { platform: 'macos', accessibility: true, screenRecording: true },
+    });
+    mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+    await settle();
+    expect(mocks.request).toHaveBeenCalledWith('desktop.respondPermission', {
+      workspaceId: 'workspace',
+      requestId: request.requestId,
+      decision: 'allow_once',
+    });
+    expect(mocks.permissions).toHaveBeenCalledTimes(2);
+    expect(h.entry()?.error).toBeUndefined();
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+  it('does not request OS permissions on Deny', async () => {
+    const h = start();
+    h.dispatch(requested());
+    await settle();
+    mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
+    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'deny'));
+    await settle();
+    expect(mocks.permissions).not.toHaveBeenCalled();
+    expect(mocks.request).toHaveBeenCalledWith(
+      'desktop.respondPermission',
+      expect.objectContaining({ decision: 'deny' }),
+    );
+  });
+  it('does not send an Allow after the connection changes during OS onboarding', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.permissions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const h = start();
+    h.dispatch(requested());
+    await settle();
+    h.dispatch(desktopDecisionRequested('workspace', 'agent', request.requestId, 'allow_once'));
+    await settle();
+    expect(mocks.permissions).toHaveBeenCalledTimes(1);
+    h.dispatch(daemonEventsSubscribing());
+    finish({ ok: true, result: { platform: 'macos', accessibility: true, screenRecording: true } });
+    await settle();
+    expect(mocks.request).not.toHaveBeenCalledWith('desktop.respondPermission', expect.anything());
+  });
   it.each(['allow_once', 'allow_future', 'deny'] as const)(
     'sends %s once without reporting readiness on ACK',
     async (decision) => {

@@ -43,6 +43,12 @@ export function desktopNativeAvailable(): boolean {
   );
 }
 
+// Permission requests and execution share the same signed child and its lifetime.
+let nativeAdapter: DesktopNativeAdapter | undefined;
+export function getDesktopNativeAdapter(): DesktopNativeAdapter {
+  return (nativeAdapter ??= new DesktopNativeAdapter(new DesktopHelperTransport().request));
+}
+
 /** Private stdin/stdout protocol: never accept native operations directly from RPC.
  * One bounded OS step per request lets main invalidate between every down/up. */
 export class DesktopHelperTransport {
@@ -145,6 +151,12 @@ export class DesktopHelperTransport {
 }
 
 export class DesktopNativeAdapter implements DesktopNative {
+  async requestPermissions(computerId: string) {
+    return z
+      .object({ accessibility: z.boolean(), screenRecording: z.boolean() })
+      .strict()
+      .parse(await this.request('requestPermissions', { computerId }));
+  }
   constructor(private readonly request: NativeRequest) {}
   async identity() {
     return z

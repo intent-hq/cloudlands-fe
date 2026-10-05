@@ -450,6 +450,11 @@
   {#if $workspace}
     {#key tab.agentId}
       <div class="flex h-full min-h-0 w-full flex-1 flex-col">
+        {#if $desktop?.error && !$desktop.pending}
+          <Card class="m-3 shrink-0 p-3">
+            <p role="status" class="text-sm">{$desktop.error}</p>
+          </Card>
+        {/if}
         {#if $desktop?.pending}
           <Card class="m-3 shrink-0 p-3">
             <DesktopConsentToast
