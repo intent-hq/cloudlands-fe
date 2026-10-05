@@ -51,19 +51,19 @@ function applyOne(change: AppliedSettingChange, revision?: number): void {
   switch (path) {
     case 'notifications.soundPath':
       if (typeof value === 'string')
-        appStore.dispatch(hydrateNotificationSettings({ soundPath: value }));
+        appStore.dispatch(hydrateNotificationSettings({ soundPath: value }, revision));
       return;
     case 'notifications.enabled':
       if (typeof value === 'boolean')
-        appStore.dispatch(hydrateNotificationSettings({ enabled: value }));
+        appStore.dispatch(hydrateNotificationSettings({ enabled: value }, revision));
       return;
     case 'notifications.soundEnabled':
       if (typeof value === 'boolean')
-        appStore.dispatch(hydrateNotificationSettings({ soundEnabled: value }));
+        appStore.dispatch(hydrateNotificationSettings({ soundEnabled: value }, revision));
       return;
     case 'notifications.soundOnlyWhenUnfocused':
       if (typeof value === 'boolean')
-        appStore.dispatch(hydrateNotificationSettings({ soundOnlyWhenUnfocused: value }));
+        appStore.dispatch(hydrateNotificationSettings({ soundOnlyWhenUnfocused: value }, revision));
       return;
     case 'model.defaultProvider': {
       if (typeof value === 'string') appStore.dispatch(hydrateDefaultProvider(value));

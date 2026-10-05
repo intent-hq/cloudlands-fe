@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   playSound: vi.fn(),
+  setPath: vi.fn(),
   listeners: new Set<(notification: { method: string; params?: unknown }) => void>(),
 }));
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -21,7 +22,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 vi.mock('$lib/utils/notification-sound', () => ({
   playNotificationSound: mocks.playSound,
-  setNotificationSoundPath: vi.fn(),
+  setNotificationSoundPath: mocks.setPath,
 }));
 
 import { store as appStore } from '$store/renderer/store';
@@ -37,6 +38,7 @@ import {
   setNotificationEnabled,
   setSoundEnabled,
   setSoundPath,
+  setSoundOnlyWhenUnfocused,
   setVolume,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { selectNotificationVolume } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
@@ -63,9 +65,9 @@ function setting(path: string, value: unknown) {
   };
 }
 
-function snapshot(volume = 0.25, revision = 10) {
+function snapshot(volume = 0.25, revision = 10, overrides: Record<string, unknown> = {}) {
   return {
-    settings: Object.entries(values).map(([path, value]) =>
+    settings: Object.entries({ ...values, ...overrides }).map(([path, value]) =>
       setting(path, path === 'notifications.volume' ? volume : value),
     ),
     revision,
@@ -110,6 +112,7 @@ const savedVolumes = () =>
       changes.find(({ path }: { path: string }) => path === 'notifications.volume').value,
   );
 let stops: Array<() => void>;
+let stopNotificationSettings: () => void;
 
 async function settle() {
   await vi.advanceTimersByTimeAsync(0);
@@ -119,13 +122,14 @@ async function settle() {
 async function start() {
   stops.push(appStore.runSaga(daemonEventsSaga));
   stops.push(appStore.runSaga(settingsHydrationSaga));
-  stops.push(appStore.runSaga(notificationSettingsSaga));
+  stopNotificationSettings = appStore.runSaga(notificationSettingsSaga);
+  stops.push(stopNotificationSettings);
   await settle();
   admitLegacyPrincipal();
   await settle();
 }
 
-describe('notification volume through daemon events and settings hydration', () => {
+describe('notification preferences through daemon events and settings hydration', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
@@ -420,6 +424,428 @@ describe('notification volume through daemon events and settings hydration', () 
     expect(volume()).toBe(0.75);
     expect(savedVolumes()).toEqual([0.9]);
   });
+
+  it.each([
+    ['', 'success'],
+    ['/replacement.mp3', 'success'],
+    ['', 'failure'],
+    ['/replacement.mp3', 'failure'],
+  ])('preserves sound path %j after a cancelled older save reports %s', async (path, outcome) => {
+    await start();
+    let finishFirstWrite!: () => void;
+    mocks.request.mockImplementation(async () => {
+      if (writes().length === 1)
+        return new Promise((resolve, reject) => {
+          finishFirstWrite = () =>
+            outcome === 'success'
+              ? resolve({
+                  applied: [{ path: 'notifications.soundPath', value: '/old.mp3' }],
+                  revision: 11,
+                })
+              : reject(new Error('offline'));
+        });
+      return { applied: [{ path: 'notifications.soundPath', value: path }], revision: 12 };
+    });
+    appStore.dispatch(setSoundPath('/old.mp3'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(writes()[0][1].changes).toContainEqual({
+      path: 'notifications.soundPath',
+      value: '/old.mp3',
+    });
+    appStore.dispatch(setSoundPath(path));
+    expect(mocks.setPath).toHaveBeenLastCalledWith(path);
+    await vi.advanceTimersByTimeAsync(20);
+    emitChanges(
+      [
+        { path: 'notifications.soundPath', value: '/old.mp3' },
+        { path: 'notifications.soundEnabled', value: false },
+      ],
+      11,
+    );
+    finishFirstWrite();
+    await settle();
+    expect.soft(appStore.state.userPreferences.soundPath).toBe(path);
+    expect.soft(mocks.setPath).toHaveBeenLastCalledWith(path);
+    expect(appStore.state.userPreferences.soundEnabled).toBe(false);
+    await vi.advanceTimersByTimeAsync(80);
+    expect(writes()[1][1].changes).toEqual([
+      { path: 'notifications.enabled', value: true },
+      { path: 'notifications.soundEnabled', value: false },
+      { path: 'notifications.soundOnlyWhenUnfocused', value: false },
+      { path: 'notifications.volume', value: 0.25 },
+      { path: 'notifications.soundPath', value: path },
+    ]);
+    emitChanges([{ path: 'notifications.soundPath', value: '/old.mp3' }], 11);
+    await settle();
+    expect(appStore.state.userPreferences.soundPath).toBe(path);
+    emitChanges([{ path: 'notifications.soundPath', value: '/external.mp3' }], 13);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(appStore.state.userPreferences.soundPath).toBe('/external.mp3');
+    expect(mocks.setPath).toHaveBeenLastCalledWith('/external.mp3');
+    expect(writes()).toHaveLength(2);
+  });
+
+  it.each([
+    ['enabled', setNotificationEnabled, false, true],
+    ['soundEnabled', setSoundEnabled, false, true],
+    ['soundOnlyWhenUnfocused', setSoundOnlyWhenUnfocused, true, false],
+  ] as const)(
+    'preserves a newer %s edit through an older write echo',
+    async (field, edit, oldValue, newValue) => {
+      await start();
+      let finishFirstWrite!: (result: unknown) => void;
+      mocks.request.mockImplementation(async () => {
+        if (writes().length === 1)
+          return new Promise((resolve) => {
+            finishFirstWrite = resolve;
+          });
+        return { applied: [], revision: 12 };
+      });
+      appStore.dispatch(edit(oldValue));
+      await vi.advanceTimersByTimeAsync(100);
+      appStore.dispatch(edit(newValue));
+      await vi.advanceTimersByTimeAsync(20);
+      emitChanges(
+        [
+          { path: `notifications.${field}`, value: oldValue },
+          { path: 'notifications.soundPath', value: '/external.mp3' },
+        ],
+        11,
+      );
+      finishFirstWrite({ applied: [], revision: 11 });
+      await settle();
+      expect.soft(appStore.state.userPreferences[field]).toBe(newValue);
+      expect(appStore.state.userPreferences.soundPath).toBe('/external.mp3');
+      await vi.advanceTimersByTimeAsync(80);
+      expect(writes()[1][1].changes).toEqual(
+        expect.arrayContaining([
+          { path: `notifications.${field}`, value: newValue },
+          { path: 'notifications.soundPath', value: '/external.mp3' },
+        ]),
+      );
+      emitChanges([{ path: `notifications.${field}`, value: oldValue }], 13);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(appStore.state.userPreferences[field]).toBe(oldValue);
+      expect(writes()).toHaveLength(2);
+    },
+  );
+
+  it.each(['success', 'failure'])(
+    'reconciles deferred sound and toggle changes when a save reports %s',
+    async (outcome) => {
+      await start();
+      let finishWrite!: () => void;
+      mocks.request.mockImplementation(
+        () =>
+          new Promise((resolve, reject) => {
+            finishWrite = () =>
+              outcome === 'success'
+                ? resolve({ applied: [], revision: 11 })
+                : reject(new Error('offline'));
+          }),
+      );
+      appStore.dispatch(setSoundPath('/local.mp3'));
+      appStore.dispatch(setNotificationEnabled(false));
+      appStore.dispatch(setSoundEnabled(false));
+      appStore.dispatch(setSoundOnlyWhenUnfocused(true));
+      await vi.advanceTimersByTimeAsync(100);
+      const external = {
+        soundPath: '/external.mp3',
+        enabled: true,
+        soundEnabled: true,
+        soundOnlyWhenUnfocused: false,
+      };
+      emitChanges(
+        Object.entries(external).map(([field, value]) => ({
+          path: `notifications.${field}`,
+          value,
+        })),
+        12,
+      );
+      await settle();
+      expect(appStore.state.userPreferences).toMatchObject({
+        soundPath: '/local.mp3',
+        enabled: false,
+        soundEnabled: false,
+        soundOnlyWhenUnfocused: true,
+      });
+      expect(mocks.setPath).toHaveBeenLastCalledWith('/local.mp3');
+      finishWrite();
+      await settle();
+      expect(appStore.state.userPreferences).toMatchObject(external);
+      expect(mocks.setPath).toHaveBeenLastCalledWith('/external.mp3');
+      await vi.advanceTimersByTimeAsync(150);
+      expect(writes()).toHaveLength(1);
+      mocks.request.mockResolvedValue({ applied: [], revision: 13 });
+      appStore.dispatch(setVolume(0.8));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(writes()[1][1].changes).toEqual([
+        { path: 'notifications.enabled', value: true },
+        { path: 'notifications.soundEnabled', value: true },
+        { path: 'notifications.soundOnlyWhenUnfocused', value: false },
+        { path: 'notifications.volume', value: 0.8 },
+        { path: 'notifications.soundPath', value: '/external.mp3' },
+      ]);
+    },
+  );
+
+  it('keeps the path protected when a toggle cancels its older save', async () => {
+    await start();
+    let finishFirstWrite!: (result: unknown) => void;
+    mocks.request.mockImplementation(async () => {
+      if (writes().length === 1)
+        return new Promise((resolve) => {
+          finishFirstWrite = resolve;
+        });
+      return { applied: [], revision: 12 };
+    });
+    appStore.dispatch(setSoundPath('/local.mp3'));
+    await vi.advanceTimersByTimeAsync(100);
+    appStore.dispatch(setSoundEnabled(false));
+    finishFirstWrite({ applied: [], revision: 11 });
+    emitChanges([{ path: 'notifications.soundPath', value: '/stale.mp3' }], 11);
+    await settle();
+    expect(appStore.state.userPreferences.soundPath).toBe('/local.mp3');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(writes()[1][1].changes).toContainEqual({
+      path: 'notifications.soundPath',
+      value: '/local.mp3',
+    });
+    emitChanges([{ path: 'notifications.soundPath', value: '/external.mp3' }], 13);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(appStore.state.userPreferences.soundPath).toBe('/external.mp3');
+    expect(writes()).toHaveLength(2);
+  });
+
+  it('protects every reset field until a failed save yields to the daemon', async () => {
+    await start();
+    let rejectWrite!: (error: Error) => void;
+    mocks.request.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectWrite = reject;
+        }),
+    );
+    appStore.dispatch(resetNotificationSettings());
+    expect(mocks.setPath).toHaveBeenLastCalledWith('');
+    await vi.advanceTimersByTimeAsync(20);
+    const previous = {
+      enabled: false,
+      soundEnabled: false,
+      soundOnlyWhenUnfocused: false,
+      soundPath: '/previous.mp3',
+    };
+    emitChanges(
+      Object.entries(previous).map(([field, value]) => ({ path: `notifications.${field}`, value })),
+      11,
+    );
+    await settle();
+    expect(appStore.state.userPreferences).toMatchObject({
+      enabled: true,
+      soundEnabled: true,
+      soundOnlyWhenUnfocused: true,
+      soundPath: '',
+    });
+    await vi.advanceTimersByTimeAsync(80);
+    expect(writes()[0][1].changes).toEqual([
+      { path: 'notifications.enabled', value: true },
+      { path: 'notifications.soundEnabled', value: true },
+      { path: 'notifications.soundOnlyWhenUnfocused', value: true },
+      { path: 'notifications.volume', value: 0.5 },
+      { path: 'notifications.soundPath', value: '' },
+    ]);
+    rejectWrite(new Error('offline'));
+    await settle();
+    expect(appStore.state.userPreferences).toMatchObject(previous);
+    expect(mocks.setPath).toHaveBeenLastCalledWith('/previous.mp3');
+    emitChanges([{ path: 'notifications.soundPath', value: '/external.mp3' }], 12);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(appStore.state.userPreferences.soundPath).toBe('/external.mp3');
+    expect(writes()).toHaveLength(1);
+  });
+
+  it.each(['before', 'after'])(
+    'accepts sound and toggle revisions when a save settles %s reconnect',
+    async (timing) => {
+      await start();
+      let finishWrite!: (result: unknown) => void;
+      mocks.request.mockImplementation(async (method: string) => {
+        if (method === 'settings.update')
+          return new Promise((resolve) => {
+            finishWrite = resolve;
+          });
+        if (method === 'settings.list')
+          return snapshot(0.6, 0, { 'notifications.soundPath': '/restarted.mp3' });
+        throw new Error(`Unexpected request: ${method}`);
+      });
+      appStore.dispatch(setSoundPath('/local.mp3'));
+      appStore.dispatch(setNotificationEnabled(false));
+      appStore.dispatch(setSoundEnabled(false));
+      appStore.dispatch(setSoundOnlyWhenUnfocused(true));
+      await vi.advanceTimersByTimeAsync(100);
+      if (timing === 'before') {
+        finishWrite({ applied: [], revision: 20 });
+        await settle();
+      }
+      appStore.dispatch(backendReconnected());
+      await settle();
+      admitLegacyPrincipal();
+      await settle();
+      if (timing === 'after') {
+        finishWrite({ applied: [], revision: 20 });
+        await settle();
+      }
+      expect(appStore.state.userPreferences).toMatchObject({
+        soundPath: '/restarted.mp3',
+        enabled: true,
+        soundEnabled: true,
+        soundOnlyWhenUnfocused: false,
+      });
+      expect(mocks.setPath).toHaveBeenLastCalledWith('/restarted.mp3');
+      emitChanges(
+        [
+          { path: 'notifications.soundPath', value: '/external.mp3' },
+          { path: 'notifications.enabled', value: false },
+        ],
+        1,
+      );
+      await vi.advanceTimersByTimeAsync(150);
+      expect(appStore.state.userPreferences).toMatchObject({
+        soundPath: '/external.mp3',
+        enabled: false,
+      });
+      expect(writes()).toHaveLength(1);
+    },
+  );
+
+  it.each(['debounce', 'request'])(
+    'releases sound and toggle edits when owner services stop during the %s',
+    async (phase) => {
+      await start();
+      let finishWrite: ((result: unknown) => void) | undefined;
+      mocks.request.mockImplementation(async (method: string) => {
+        if (method === 'settings.update')
+          return new Promise((resolve) => {
+            finishWrite = resolve;
+          });
+        if (method === 'settings.list')
+          return snapshot(0.6, 0, { 'notifications.soundPath': '/restarted.mp3' });
+        throw new Error(`Unexpected request: ${method}`);
+      });
+      appStore.dispatch(setSoundPath('/cancelled.mp3'));
+      appStore.dispatch(setVolume(0.9));
+      appStore.dispatch(setNotificationEnabled(false));
+      appStore.dispatch(setSoundEnabled(false));
+      appStore.dispatch(setSoundOnlyWhenUnfocused(true));
+      await vi.advanceTimersByTimeAsync(phase === 'request' ? 100 : 20);
+      // The production hostOwnerServicesSaga cancels this child on connection loss.
+      stopNotificationSettings();
+      appStore.dispatch(backendReconnected());
+      await settle();
+      admitLegacyPrincipal();
+      stops.push(appStore.runSaga(notificationSettingsSaga));
+      await settle();
+      finishWrite?.({ applied: [], revision: 20 });
+      await settle();
+      expect(appStore.state.userPreferences).toMatchObject({
+        soundPath: '/restarted.mp3',
+        enabled: true,
+        soundEnabled: true,
+        soundOnlyWhenUnfocused: false,
+        volume: 0.6,
+      });
+      emitChanges(
+        [
+          { path: 'notifications.soundPath', value: '/external.mp3' },
+          { path: 'notifications.soundEnabled', value: false },
+        ],
+        1,
+      );
+      await vi.advanceTimersByTimeAsync(150);
+      expect(appStore.state.userPreferences).toMatchObject({
+        soundPath: '/external.mp3',
+        soundEnabled: false,
+      });
+      expect(mocks.setPath).toHaveBeenLastCalledWith('/external.mp3');
+      expect(writes()).toHaveLength(phase === 'request' ? 1 : 0);
+      mocks.request.mockResolvedValue({ applied: [], revision: 2 });
+      appStore.dispatch(setSoundPath('/next.mp3'));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(writes().at(-1)?.[1].changes).toContainEqual({
+        path: 'notifications.soundPath',
+        value: '/next.mp3',
+      });
+      expect(writes().at(-1)?.[1].changes).toContainEqual({
+        path: 'notifications.volume',
+        value: 0.6,
+      });
+    },
+  );
+
+  it.each([
+    ['startup', 20],
+    ['startup', 120],
+    ['reconnect', 20],
+    ['reconnect', 120],
+  ] as const)(
+    'preserves sound and toggle edits through a delayed %s snapshot at %sms',
+    async (phase, readDelay) => {
+      if (phase === 'reconnect') await start();
+      let finishSnapshot!: (result: ReturnType<typeof snapshot>) => void;
+      mocks.request.mockImplementation(async (method: string, params?: { path: string }) => {
+        if (method === 'settings.list')
+          return new Promise((resolve) => {
+            finishSnapshot = resolve;
+          });
+        if (method === 'settings.get') return getResponse(params!.path);
+        if (method === 'settings.update') return { applied: [], revision: 11 };
+        throw new Error(`Unexpected request: ${method}`);
+      });
+      if (phase === 'startup') await start();
+      else {
+        appStore.dispatch(backendReconnected());
+        await settle();
+        admitLegacyPrincipal();
+        await settle();
+      }
+      appStore.dispatch(setSoundPath('/local.mp3'));
+      appStore.dispatch(setNotificationEnabled(false));
+      appStore.dispatch(setSoundEnabled(false));
+      appStore.dispatch(setSoundOnlyWhenUnfocused(true));
+      await vi.advanceTimersByTimeAsync(readDelay);
+      finishSnapshot(snapshot());
+      await settle();
+      expect(appStore.state.userPreferences).toMatchObject({
+        soundPath: '/local.mp3',
+        enabled: false,
+        soundEnabled: false,
+        soundOnlyWhenUnfocused: true,
+      });
+      await vi.advanceTimersByTimeAsync(Math.max(0, 100 - readDelay));
+      expect(writes()).toHaveLength(1);
+      expect(writes()[0][1].changes).toEqual(
+        expect.arrayContaining([
+          { path: 'notifications.enabled', value: false },
+          { path: 'notifications.soundEnabled', value: false },
+          { path: 'notifications.soundOnlyWhenUnfocused', value: true },
+          { path: 'notifications.soundPath', value: '/local.mp3' },
+        ]),
+      );
+      emitChanges(
+        [
+          { path: 'notifications.soundPath', value: '/external.mp3' },
+          { path: 'notifications.soundEnabled', value: true },
+        ],
+        12,
+      );
+      await vi.advanceTimersByTimeAsync(150);
+      expect(appStore.state.userPreferences).toMatchObject({
+        soundPath: '/external.mp3',
+        soundEnabled: true,
+      });
+      expect(writes()).toHaveLength(1);
+    },
+  );
 
   it.each(['success', 'failure'])(
     'retains a newer external change received before save %s',

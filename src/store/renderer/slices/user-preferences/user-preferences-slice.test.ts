@@ -18,6 +18,7 @@ import {
   initialState,
   notificationVolumeHydrationStarted,
   notificationVolumeWriteSettled,
+  notificationSettingsWriteSettled,
   resetNotificationSettings,
   resetAllShortcutOverrides,
   resetShortcutOverride,
@@ -460,13 +461,39 @@ describe('userPreferencesReducer', () => {
       });
       state = userPreferencesReducer(
         state,
-        hydrateNotificationSettings({ soundPath: '/tmp/external.mp3' }),
+        notificationSettingsWriteSettled(state.pendingNotificationSettingsEdits, 0, 10),
+      );
+      state = userPreferencesReducer(
+        state,
+        hydrateNotificationSettings({ soundPath: '/tmp/external.mp3' }, 11),
       );
       expect(state).toMatchObject({ soundPath: '/tmp/external.mp3', soundEnabled: false });
       expect(userPreferencesReducer(state, setSoundPath(''))).toMatchObject({
         soundPath: '',
         soundEnabled: false,
       });
+    });
+
+    it('settles only matching field edits even when a path returns to its earlier value', () => {
+      const first = userPreferencesReducer(initialState, setSoundPath('/same.mp3'));
+      const write = userPreferencesReducer(first, setSoundEnabled(false));
+      const cleared = userPreferencesReducer(write, setSoundPath(''));
+      const latest = userPreferencesReducer(cleared, setSoundPath('/same.mp3'));
+      const settled = userPreferencesReducer(
+        latest,
+        notificationSettingsWriteSettled(write.pendingNotificationSettingsEdits, 0, 11),
+      );
+      const hydrated = userPreferencesReducer(
+        settled,
+        hydrateNotificationSettings({ soundPath: '/external.mp3', soundEnabled: true }, 12),
+      );
+      expect(hydrated).toMatchObject({ soundPath: '/same.mp3', soundEnabled: true });
+      const complete = userPreferencesReducer(
+        hydrated,
+        notificationSettingsWriteSettled(latest.pendingNotificationSettingsEdits, 0, 13),
+      );
+      expect(complete.pendingNotificationSettingsEdits).toEqual({});
+      expect(complete.soundPath).toBe('/same.mp3');
     });
 
     it('clamps notification volume', () => {

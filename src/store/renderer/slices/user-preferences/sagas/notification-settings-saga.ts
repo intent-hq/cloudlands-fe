@@ -6,6 +6,7 @@ import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectNotificationVolumeWrite,
+  selectNotificationSettingsWrite,
   selectSoundEnabled,
   selectSoundPath,
   selectSoundOnlyWhenUnfocused,
@@ -13,6 +14,7 @@ import {
 import {
   pickNotificationSoundRequested,
   notificationVolumeWriteSettled,
+  notificationSettingsWriteSettled,
   resetNotificationSettings,
   setNotificationEnabled,
   setSoundEnabled,
@@ -42,7 +44,8 @@ function* persistNotificationSettingsWorker() {
   const soundOnlyWhenUnfocused = yield* selectSoundOnlyWhenUnfocused.effect();
   const volume = yield* selectNotificationVolume.effect();
   const soundPath = yield* selectSoundPath.effect();
-  const { editId, hydrationEpoch } = yield* selectNotificationVolumeWrite.effect();
+  const { editId } = yield* selectNotificationVolumeWrite.effect();
+  const { edits, hydrationEpoch } = yield* selectNotificationSettingsWrite.effect();
   let revision: number | undefined;
   try {
     const result = yield* call(updateSettings, [
@@ -60,8 +63,9 @@ function* persistNotificationSettingsWorker() {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }
   // A cancelled older save must not release a newer edit's hydration guard.
-  // Success and failure both settle the matching write; cancellation skips this put.
+  // Success and failure both settle the matching write; cancellation skips settlement.
   if (editId != null) yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch, revision));
+  yield* put(notificationSettingsWriteSettled(edits, hydrationEpoch, revision));
 }
 
 export function* pickNotificationSoundWorker(
@@ -83,10 +87,9 @@ function* syncSoundPath() {
   yield* call(setNotificationSoundPath, path);
 }
 
-/** Root-owned persistence and local playback invalidation. */
-export function* notificationSettingsSaga() {
+function* watchNotificationSettings() {
   yield* takeEvery(pickNotificationSoundRequested, pickNotificationSoundWorker);
-  yield* takeEvery(hydrateNotificationSettings, syncSoundPath);
+  yield* takeEvery([hydrateNotificationSettings, notificationSettingsWriteSettled], syncSoundPath);
   yield* takeLatest(
     [
       setNotificationEnabled,
@@ -100,4 +103,19 @@ export function* notificationSettingsSaga() {
   );
   // The root settingsHydrationSaga owns ordered boot snapshots and external deltas.
   // Do not race it with a separate settings.get snapshot here.
+}
+
+/** Host-owner lifetime: reconnect/revocation cancels writes and releases their edits. */
+export function* notificationSettingsSaga() {
+  try {
+    yield* call(watchNotificationSettings);
+  } finally {
+    if (yield* cancelled()) {
+      const { edits, hydrationEpoch } = yield* selectNotificationSettingsWrite.effect();
+      const { editId } = yield* selectNotificationVolumeWrite.effect();
+      if (editId != null) yield* put(notificationVolumeWriteSettled(editId, hydrationEpoch));
+      yield* put(notificationSettingsWriteSettled(edits, hydrationEpoch));
+      yield* call(syncSoundPath);
+    }
+  }
 }

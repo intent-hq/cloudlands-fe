@@ -186,6 +186,11 @@ export const selectNotificationVolumeWrite = store.createSelector((state) => {
   };
 });
 
+export const selectNotificationSettingsWrite = store.createSelector((state) => ({
+  edits: state.userPreferences.pendingNotificationSettingsEdits,
+  hydrationEpoch: state.userPreferences.notificationVolumeHydrationEpoch,
+}));
+
 export const selectActivityLogPresets = store.createSelector((state) => {
   return state.userPreferences.activityLogPresets;
 });

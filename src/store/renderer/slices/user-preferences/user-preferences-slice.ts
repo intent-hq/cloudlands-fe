@@ -45,6 +45,15 @@ export interface ActivityLogPresetPreference {
   filters: ActivityLogFiltersPreference;
 }
 
+type NotificationSettingField = 'enabled' | 'soundEnabled' | 'soundPath' | 'soundOnlyWhenUnfocused';
+type NotificationSettingEdits = Partial<Record<NotificationSettingField, number>>;
+const notificationSettingFields: NotificationSettingField[] = [
+  'enabled',
+  'soundEnabled',
+  'soundPath',
+  'soundOnlyWhenUnfocused',
+];
+
 export type UserPreferencesState = {
   updateChannel: UpdateChannel;
   spellcheckEnabled: boolean;
@@ -81,6 +90,12 @@ export type UserPreferencesState = {
   notificationVolumeHydrationEpoch: number;
   notificationVolumeConfirmedRevision: number;
   deferredNotificationVolume: { value: number; revision?: number } | null;
+  notificationSettingsEditId: number;
+  pendingNotificationSettingsEdits: NotificationSettingEdits;
+  notificationSettingsConfirmedRevisions: Partial<Record<NotificationSettingField, number>>;
+  deferredNotificationSettings: Partial<
+    Record<NotificationSettingField, { value: string | boolean; revision?: number }>
+  >;
   activityLogPresets: ActivityLogPresetPreference[];
   /** BCP-47 locale tag of an available catalog, or "system" to follow the OS. */
   languagePreference: string;
@@ -148,6 +163,10 @@ export const initialState: UserPreferencesStoreState = {
   notificationVolumeHydrationEpoch: 0,
   notificationVolumeConfirmedRevision: -1,
   deferredNotificationVolume: null,
+  notificationSettingsEditId: 0,
+  pendingNotificationSettingsEdits: {},
+  notificationSettingsConfirmedRevisions: {},
+  deferredNotificationSettings: {},
   activityLogPresets: [],
   languagePreference: SYSTEM_LANGUAGE_PREFERENCE,
   githubLinkDefaultAction: 'show-choices',
@@ -230,8 +249,12 @@ export const setSoundPath = createAction<[path: string]>('notificationSettings/s
 
 // Daemon snapshots/deltas must never echo back into persistence.
 export const hydrateNotificationSettings = createAction<
-  [settings: Partial<Omit<NotificationSettingsState, 'volume'>>]
+  [settings: Partial<Omit<NotificationSettingsState, 'volume'>>, revision?: number]
 >('notificationSettings/hydrate');
+
+export const notificationSettingsWriteSettled = createAction<
+  [edits: NotificationSettingEdits, hydrationEpoch: number, revision?: number]
+>('notificationSettings/writeSettled');
 
 export const setSoundOnlyWhenUnfocused = createAction<[value: boolean]>(
   'notificationSettings/setSoundOnlyWhenUnfocused',
@@ -558,26 +581,103 @@ userPreferencesReducer.with(setSystemFonts, (state, { payload: [fonts] }) => ({
   ...state,
   systemFonts: fonts,
 }));
-userPreferencesReducer.with(setNotificationEnabled, (state, { payload: [value] }) => ({
-  ...state,
-  enabled: value,
-}));
-userPreferencesReducer.with(setSoundEnabled, (state, { payload: [value] }) => ({
-  ...state,
-  soundEnabled: value,
-}));
-userPreferencesReducer.with(setSoundPath, (state, { payload: [soundPath] }) => ({
-  ...state,
-  soundPath,
-}));
-userPreferencesReducer.with(hydrateNotificationSettings, (state, { payload: [settings] }) => ({
-  ...state,
-  ...settings,
-}));
-userPreferencesReducer.with(setSoundOnlyWhenUnfocused, (state, { payload: [value] }) => ({
-  ...state,
-  soundOnlyWhenUnfocused: value,
-}));
+function editNotificationSettings(
+  state: UserPreferencesStoreState,
+  settings: Partial<Omit<NotificationSettingsState, 'volume'>>,
+): UserPreferencesStoreState {
+  const editId = state.notificationSettingsEditId + 1;
+  const pending = { ...state.pendingNotificationSettingsEdits };
+  const deferred = { ...state.deferredNotificationSettings };
+  for (const field of notificationSettingFields) {
+    if (settings[field] === undefined) continue;
+    pending[field] = editId;
+    delete deferred[field];
+  }
+  return {
+    ...state,
+    ...settings,
+    notificationSettingsEditId: editId,
+    pendingNotificationSettingsEdits: pending,
+    deferredNotificationSettings: deferred,
+  };
+}
+
+userPreferencesReducer.with(setNotificationEnabled, (state, { payload: [enabled] }) =>
+  editNotificationSettings(state, { enabled }),
+);
+userPreferencesReducer.with(setSoundEnabled, (state, { payload: [soundEnabled] }) =>
+  editNotificationSettings(state, { soundEnabled }),
+);
+userPreferencesReducer.with(setSoundPath, (state, { payload: [soundPath] }) =>
+  editNotificationSettings(state, { soundPath }),
+);
+userPreferencesReducer.with(
+  setSoundOnlyWhenUnfocused,
+  (state, { payload: [soundOnlyWhenUnfocused] }) =>
+    editNotificationSettings(state, { soundOnlyWhenUnfocused }),
+);
+userPreferencesReducer.with(
+  hydrateNotificationSettings,
+  (state, { payload: [settings, revision] }) => {
+    let next = state;
+    for (const field of notificationSettingFields) {
+      const value = settings[field];
+      if (value === undefined) continue;
+      if (
+        revision !== undefined &&
+        revision < (state.notificationSettingsConfirmedRevisions[field] ?? -1)
+      )
+        continue;
+      next =
+        state.pendingNotificationSettingsEdits[field] !== undefined
+          ? {
+              ...next,
+              deferredNotificationSettings: {
+                ...next.deferredNotificationSettings,
+                [field]: { value, revision },
+              },
+            }
+          : { ...next, [field]: value };
+    }
+    return next;
+  },
+);
+userPreferencesReducer.with(
+  notificationSettingsWriteSettled,
+  (state, { payload: [edits, hydrationEpoch, revision] }) => {
+    let next = state;
+    const pending = { ...state.pendingNotificationSettingsEdits };
+    const deferred = { ...state.deferredNotificationSettings };
+    const confirmed = { ...state.notificationSettingsConfirmedRevisions };
+    // All notification fields share the ordered snapshot loop's connection epoch.
+    const sameEpoch = hydrationEpoch === state.notificationVolumeHydrationEpoch;
+    for (const field of notificationSettingFields) {
+      if (edits[field] === undefined || pending[field] !== edits[field]) continue;
+      const change = deferred[field];
+      // Match volume settlement: a failed write or an old connection yields to the
+      // daemon, while a successful write only yields to a strictly newer revision.
+      if (
+        change &&
+        (!sameEpoch ||
+          revision === undefined ||
+          revision === 0 ||
+          (change.revision !== undefined && change.revision > revision))
+      ) {
+        next = { ...next, [field]: change.value };
+      }
+      delete pending[field];
+      delete deferred[field];
+      if (sameEpoch && revision !== undefined)
+        confirmed[field] = Math.max(confirmed[field] ?? -1, revision);
+    }
+    return {
+      ...next,
+      pendingNotificationSettingsEdits: pending,
+      deferredNotificationSettings: deferred,
+      notificationSettingsConfirmedRevisions: confirmed,
+    };
+  },
+);
 userPreferencesReducer.with(setVolume, (state, { payload: [value] }) => ({
   ...state,
   volume: Math.max(0, Math.min(1, value)),
@@ -592,6 +692,8 @@ userPreferencesReducer.with(notificationVolumeHydrationStarted, (state) => ({
   notificationVolumeHydrationEpoch: state.notificationVolumeHydrationEpoch + 1,
   notificationVolumeConfirmedRevision: -1,
   deferredNotificationVolume: null,
+  notificationSettingsConfirmedRevisions: {},
+  deferredNotificationSettings: {},
 }));
 userPreferencesReducer.with(hydrateNotificationVolume, (state, { payload: [value, revision] }) => {
   if (revision !== undefined && revision < state.notificationVolumeConfirmedRevision) return state;
@@ -628,8 +730,8 @@ userPreferencesReducer.with(
   },
 );
 userPreferencesReducer.with(resetNotificationSettings, (state) => ({
-  ...state,
-  ...notificationSettingsInitialState,
+  ...editNotificationSettings(state, notificationSettingsInitialState),
+  volume: notificationSettingsInitialState.volume,
   notificationVolumeEditId: state.notificationVolumeEditId + 1,
   pendingNotificationVolumeEditId: state.notificationVolumeEditId + 1,
   deferredNotificationVolume: null,

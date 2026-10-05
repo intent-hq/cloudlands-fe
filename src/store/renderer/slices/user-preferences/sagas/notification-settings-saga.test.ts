@@ -164,6 +164,9 @@ describe('notificationSettingsSaga', () => {
       await vi.advanceTimersByTimeAsync(100);
       expect(mocks.warn).toHaveBeenCalledOnce();
       expect(run.state().soundPath).toBe('/retry.mp3');
+      run.dispatch(hydrateNotificationSettings({ soundPath: '/external.mp3' }, 11));
+      expect(run.state().soundPath).toBe('/external.mp3');
+      expect(mocks.setPath).toHaveBeenLastCalledWith('/external.mp3');
     } finally {
       run.task.cancel();
       await run.task.toPromise();
