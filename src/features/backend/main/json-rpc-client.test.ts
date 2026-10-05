@@ -891,6 +891,41 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
     return { client, sockets, onHelloResult };
   }
 
+  it('ignores an older concurrent rehello response after a newer hello confirms identity', async () => {
+    const { client, sockets, onHelloResult } = makeHelloClient();
+    try {
+      client.start();
+      sockets[0].open();
+      await flush();
+      sockets[0].receive(`${JSON.stringify({ id: 1, result: helloResult('cli-7f3a') })}\n`);
+      await flush();
+      const older = client.request('client.hello', { name: 'Older' });
+      const newer = client.request('client.hello', { name: 'Newer' });
+      await flush();
+      const olderFrame = JSON.parse(sockets[0].writes[1]);
+      const newerFrame = JSON.parse(sockets[0].writes[2]);
+      expect(olderFrame.params.clientId).toBe('cli-7f3a');
+      expect(newerFrame.params.clientId).toBe('cli-7f3a');
+      sockets[0].receive(
+        `${JSON.stringify({ id: newerFrame.id, result: helloResult('current:cli-7f3a') })}\n`,
+      );
+      await newer;
+      const current = client.getRepositoryConnection();
+      expect(current).not.toBeNull();
+      sockets[0].receive(
+        `${JSON.stringify({ id: olderFrame.id, result: helloResult('stale:cli-7f3a') })}\n`,
+      );
+      await older;
+      expect(onHelloResult.mock.calls.map(([result]) => result.clientId)).toEqual([
+        'cli-7f3a',
+        'current:cli-7f3a',
+      ]);
+      expect(client.getRepositoryConnection()).toBe(current);
+    } finally {
+      client.dispose();
+    }
+  });
+
   // protocol-version-ok: retained registered-root contract across known generations.
   describe.each(['file.read', 'file.readChunk'])('scoped %s support', (method) => {
     it.each([
