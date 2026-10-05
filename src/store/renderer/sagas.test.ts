@@ -16,6 +16,8 @@ describe('renderer app saga registry', () => {
     return [
       'modelNameCacheSaga',
       'pendingRetentionSaga',
+      'homeIntegrationsSaga',
+      'homeWorkspacesSaga',
       'daemonEventsSaga',
       'daemonHealthSaga',
       'connectionsSaga',

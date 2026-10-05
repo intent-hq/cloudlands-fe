@@ -622,6 +622,8 @@ export async function processMarkdownToHTML(
     allowEmpty?: boolean;
     /** Whether to skip processing if content already looks like HTML */
     skipIfHTML?: boolean;
+    /** Parse embedded HTML through marked, then apply the canonical sanitizer. */
+    allowSanitizedHtml?: boolean;
     /** Whether to preserve comment anchors */
     preserveAnchors?: boolean;
     /** Whether to process ws-block primitives */
@@ -648,6 +650,7 @@ export async function processMarkdownToHTML(
   const {
     allowEmpty = true,
     skipIfHTML = true,
+    allowSanitizedHtml = false,
     preserveAnchors = true,
     processPrimitives = true,
     taskBlockRenderMode = 'placeholder',
@@ -686,7 +689,7 @@ export async function processMarkdownToHTML(
   // Check cache first — use a fast hash + length instead of the full content string as key.
   // Including content.length virtually eliminates hash collision risk (different-length
   // strings that produce the same 53-bit hash would be needed).
-  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}|${renderMath}`;
+  const cacheKey = `${fastHash(content)}:${content.length}|${allowEmpty}|${skipIfHTML}|${preserveAnchors}|${processPrimitives}|${taskBlockRenderMode}|${workspaceId ?? ''}|${renderRichFencesAsCode}|${renderMath}|${allowSanitizedHtml}`;
   const cached = getCachedMarkdown(cacheKey);
   if (cached !== null) {
     return stampVersions(cached);
@@ -716,7 +719,9 @@ export async function processMarkdownToHTML(
 
     // Escape HTML-like tags FIRST, before any processing that generates HTML
     // This prevents user content like <COMPANY>Adobe</COMPANY> from being interpreted as HTML
-    const contentWithEscapedTags = escapeHtmlTags(contentWithTaskBlocksRendered);
+    const contentWithEscapedTags = allowSanitizedHtml
+      ? contentWithTaskBlocksRendered
+      : escapeHtmlTags(contentWithTaskBlocksRendered);
     const t1 = isLargeContent ? performance.now() : 0;
 
     // Process ws-block primitives (needs NotesPrimitivesSerializer, must run on main thread)

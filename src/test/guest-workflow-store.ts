@@ -1,3 +1,6 @@
+import type { SettingsForm } from '$store/renderer/slices/settings-events/settings-events-types';
+import { settingsEventsReducer } from '$store/renderer/slices/settings-events/settings-events-slice';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { principalReducer } from '$store/renderer/slices/principal/principal-slice';
 import { createAdmittedLegacyPrincipal } from './fixtures/admitted-legacy-principal';
 import {
@@ -19,6 +22,7 @@ import {
 export function createGuestWorkflowTestStore() {
   const freshState = () => ({
     guestSessions,
+    settingsEvents: { forms: createCollection<SettingsForm, 'formId'>('formId') },
     ...createAdmittedLegacyPrincipal(),
     workspace,
     userPreferences: { ...userPreferences, labsMultiplayerEnabled: true },
@@ -37,6 +41,7 @@ export function createGuestWorkflowTestStore() {
     dispatch(action: { type: string }) {
       state = {
         ...state,
+        settingsEvents: settingsEventsReducer(state.settingsEvents, action as never),
         principal: principalReducer(state.principal, action as never),
         userPreferences: userPreferencesReducer(state.userPreferences, action as never),
         guestSessions: guestSessionsReducer(state.guestSessions, action as never),

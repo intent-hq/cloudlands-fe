@@ -17,6 +17,7 @@ import { isCtContractPath } from './ct-contract-paths.mjs';
 import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
 import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
+import { resolveUnitSelections } from './verify-unit-selection.mjs';
 import {
   generatedBuildConfigPrerequisite,
   requiresTransferSelectionFixtures,
@@ -138,7 +139,14 @@ export function parseArgs(argv) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
-    else if (arg === '--help' || arg === '-h') result.help = true;
+    else if (arg === '--resolved-plan') result.resolvedPlan = true;
+    else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
+      const value =
+        arg === '--max-unit-files' ? argv[(index += 1)] : arg.slice('--max-unit-files='.length);
+      if (!/^\d+$/.test(value ?? '') || !Number.isSafeInteger(Number(value)))
+        throw new Error('--max-unit-files requires a nonnegative safe integer');
+      result.maxUnitFiles = Number(value);
+    } else if (arg === '--help' || arg === '-h') result.help = true;
     else if (arg === '--base' || arg.startsWith('--base=')) {
       const value = arg === '--base' ? argv[(index += 1)] : arg.slice('--base='.length);
       if (!value || value.startsWith('-')) throw new Error('missing value for option: --base');
@@ -146,6 +154,8 @@ export function parseArgs(argv) {
     } else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else result.paths.push(arg);
   }
+  if (result.dryRun && (result.resolvedPlan || result.maxUnitFiles !== undefined))
+    throw new Error('Use --resolved-plan instead of --dry-run to resolve or bound unit files');
   return result;
 }
 
@@ -1033,6 +1043,39 @@ export async function runVerificationPlan(plan, root, options = {}) {
   });
   for (const prerequisite of prerequisites) await run(prerequisite, root);
 
+  let selections;
+  const printSelections = (resolved, complete) => {
+    const files = [...new Set(resolved.flatMap((selection) => selection.files))].sort();
+    log(
+      `verify:changed: ${complete ? 'resolved' : 'partially resolved'} unit files: ${files.length} unique`,
+    );
+    for (const file of files) log(`  - ${file}`);
+    for (const selection of resolved) {
+      log(`  ${selection.id}: ${selection.files.length} file(s)`);
+      for (const file of selection.files) log(`    - ${file}`);
+    }
+    return files;
+  };
+  try {
+    selections = await (options.resolveUnitSelections ?? resolveUnitSelections)(plan, root);
+  } catch (error) {
+    printSelections(error.selections ?? [], false);
+    throw new Error(
+      `${error.message}\nNo selected checks ran. Repair discovery and retry --resolved-plan; for an explicit full unit run: pnpm run test:unit --maxWorkers=1`,
+      { cause: error },
+    );
+  }
+  const unitFiles = printSelections(selections, true);
+  if (options.maxUnitFiles !== undefined && unitFiles.length > options.maxUnitFiles) {
+    throw new Error(
+      `${unitFiles.length} unit files exceed --max-unit-files ${options.maxUnitFiles}. No selected checks ran; no coverage was truncated.\nReview --resolved-plan, then rerun the same command with --max-unit-files ${unitFiles.length} (or omit the limit). Explicit full unit run: pnpm run test:unit --maxWorkers=1`,
+    );
+  }
+  if (options.resolvedPlan) {
+    log('verify:changed: resolved-plan; prerequisites and discovery only, no selected checks ran');
+    return;
+  }
+
   for (const check of plan.checks) {
     const lockKey = verificationLockKey(check, env);
     if (!lockKey) {
@@ -1063,7 +1106,9 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
-    log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    log(
+      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--max-unit-files N] [--base <ref>] [paths...]',
+    );
     log(
       `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
     );
@@ -1095,7 +1140,11 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   if (!deps.ok) throw new Error(deps.reason);
   const i18n = await ensureI18n(root);
   if (!i18n.ok) throw new Error(i18n.reason);
-  await runPlan(plan, root);
+  await runPlan(plan, root, {
+    resolvedPlan: args.resolvedPlan,
+    maxUnitFiles: args.maxUnitFiles,
+    log,
+  });
   return 0;
 }
 

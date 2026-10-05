@@ -5,7 +5,7 @@
   interface Props {
     open?: boolean;
     static?: boolean;
-    currentHost: string;
+    currentHost?: string;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
@@ -32,6 +32,8 @@
   {onCancel}
 >
   <p class="type-body">
-    {m.workspace_drivingClient_setPrimaryDialog_description({ host: currentHost })}
+    {currentHost
+      ? m.workspace_drivingClient_setPrimaryDialog_description({ host: currentHost })
+      : m.workspace_drivingClient_setPrimaryDialog_unresolved_description()}
   </p>
 </FormDialog>

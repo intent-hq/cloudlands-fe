@@ -1424,6 +1424,8 @@ export interface GitDiffsOptions {
 }
 
 export interface GitClient {
+  /** Read the local origin only; no fetch or provider request. Null means no usable observation. */
+  originUrl(repoPath: string): Promise<string | null>;
   /** `forceRefresh` bypasses client and daemon status caches for post-mutation reconciliation. */
   status(workspaceId: string, options?: { forceRefresh?: boolean }): Promise<GitStatus | null>;
   changes(workspaceId: string): Promise<GitStatus | null>;

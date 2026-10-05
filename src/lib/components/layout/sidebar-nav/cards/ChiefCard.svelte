@@ -84,6 +84,8 @@
     /** Rendered inside the combined Home panel: the panel owns the close
         button and height, so hide the close X and don't force a min height. */
     embedded?: boolean;
+    /** Full-page Assistant uses one thread-switching header and roomier chat insets. */
+    pageLayout?: boolean;
     /** Mount chat on first activation, then retain drafts without claiming focus or read state. */
     isActive?: boolean;
     collapsed?: boolean;
@@ -93,6 +95,7 @@
   let {
     expanded = false,
     embedded = false,
+    pageLayout = false,
     isActive = true,
     collapsed = false,
     ontoggle,
@@ -321,9 +324,9 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="flex shrink-0 items-center justify-between gap-1 px-2 pb-1.5 pt-2 {collapsed
-        ? 'cursor-pointer'
-        : ''}"
+      class="flex shrink-0 items-center justify-between gap-1 {pageLayout
+        ? 'border-b border-border px-6 py-3'
+        : 'px-2 pb-1.5 pt-2'} {collapsed ? 'cursor-pointer' : ''}"
       data-chief-header-row
       onclick={handleHeaderRowClick}
     >
@@ -351,6 +354,10 @@
               <span class="text-ui min-w-0 flex-1 truncate text-left font-medium">
                 {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
               </span>
+              {#if pageLayout}<Fa
+                  icon={faChevronDown}
+                  class="shrink-0 text-muted-foreground"
+                />{/if}
             </Select.Trigger>
             <Select.Content portal class="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80">
               {#each $chiefThreads$ as thread (thread.agentId)}
@@ -443,7 +450,9 @@
          up to 8px above — accepted as cosmetic. -->
     <div
       id={ontoggle ? 'combined-panel-chief-content' : undefined}
-      class="min-h-0 flex-1 overflow-clip px-2 pt-0 [overflow-clip-margin:0.5rem]"
+      class="min-h-0 flex-1 overflow-clip {pageLayout
+        ? 'px-6 py-5'
+        : 'px-2 pt-0'} [overflow-clip-margin:0.5rem]"
       hidden={Boolean(ontoggle && collapsed)}
     >
       <section class="flex h-full min-h-0 flex-col">

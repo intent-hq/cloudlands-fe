@@ -1,3 +1,5 @@
+import type { Snippet } from 'svelte';
+
 /**
  * Presentation-only props. Shared checkout state owns admitted responses,
  * cursors, branch restoration and request retirement. A scopeKey identifies
@@ -20,6 +22,8 @@ interface GitLabPickerCopy {
 }
 
 export interface GitLabPickerProps<T> {
+  /** Optional shared forge chooser inside the search field. */
+  prefix?: Snippet;
   scopeKey: string;
   instanceBaseUrl?: string;
   query: string;
@@ -41,6 +45,8 @@ interface GitLabProjectRow {
 }
 
 export interface GitLabProjectPickerProps extends GitLabPickerProps<GitLabProjectRow> {
+  /** Current configured-root authentication, independent of a pending checkout capture. */
+  authenticated?: boolean;
   selectedProjectPath?: string;
   onSelect: (projectPath: string, scopeKey: string) => void;
   onOpenChange?: (open: boolean, scopeKey: string) => void;

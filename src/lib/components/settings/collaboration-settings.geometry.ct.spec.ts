@@ -102,3 +102,31 @@ for (const width of [390, 1100]) {
     ).toBeLessThanOrEqual(1);
   });
 }
+
+test('machine name can be saved and reset with the keyboard on a narrow settings page', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await mount(Preview, {
+    hooksConfig: { geometrySnapshot: { scene: 'collaboration-settings', state: 'owner-empty' } },
+  });
+  const input = page.getByRole('textbox', { name: 'Machine name', exact: true });
+  await expect(input).toBeEnabled();
+  await input.fill('  Design studio  ');
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  await expect(save).toBeEnabled();
+  await page.keyboard.press('Tab');
+  await expect(save).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(input).toHaveValue('Design studio');
+  const reset = page.getByRole('button', { name: 'Use default name', exact: true });
+  await expect(reset).toBeEnabled();
+  await reset.focus();
+  await page.keyboard.press('Enter');
+  await expect(input).toHaveValue('');
+  await expect(input).toHaveAttribute('placeholder', 'Studio');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+  ).toBeLessThanOrEqual(1);
+});

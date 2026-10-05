@@ -148,6 +148,7 @@ describe('browserClientsReducer', () => {
       eligibleClients: [],
       ownClientId: '',
       driving: null,
+      pinnedClientId: null,
     });
 
     const viewer: LiveClient = {
@@ -174,6 +175,7 @@ describe('browserClientsReducer', () => {
         { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
       ],
       ownClientId: 'cli-desk',
+      pinnedClientId: null,
       driving: { clientId: 'cli-laptop', name: 'Intent Desktop', connected: true },
     });
 

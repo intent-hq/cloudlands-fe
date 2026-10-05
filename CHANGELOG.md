@@ -4,6 +4,49 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.208.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.207.0...v2.208.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* add Home workspace hub and pull request review views ([#3124](https://github.com/intent-hq/cloudlands-fe/issues/3124)) ([1052e69](https://github.com/intent-hq/cloudlands-fe/commit/1052e69a0e017fd169c8089f7642b5cd2c8fba88))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.19 ([#3222](https://github.com/intent-hq/cloudlands-fe/issues/3222)) ([f044681](https://github.com/intent-hq/cloudlands-fe/commit/f0446811b3e5e0e702d31900c4097c57c89cab27))
+* keep primary client recovery available for unresolved routes ([#3218](https://github.com/intent-hq/cloudlands-fe/issues/3218)) ([768950b](https://github.com/intent-hq/cloudlands-fe/commit/768950bb3bc7734da11a148ef2db51ab2dbf35ca))
+
+## [2.207.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.206.0...v2.207.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* configure collaborator-facing machine names ([#3196](https://github.com/intent-hq/cloudlands-fe/issues/3196)) ([32b3726](https://github.com/intent-hq/cloudlands-fe/commit/32b37263177887f7675d148933a6b09d9c603ef3))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.18 ([#3217](https://github.com/intent-hq/cloudlands-fe/issues/3217)) ([3098268](https://github.com/intent-hq/cloudlands-fe/commit/30982688e1192895eb313fc9e5a4df1da25dd6bb))
+* simplify mobile pairing for collaborators ([#6811](https://github.com/intent-hq/cloudlands-fe/issues/6811)) ([#3215](https://github.com/intent-hq/cloudlands-fe/issues/3215)) ([ad3bed1](https://github.com/intent-hq/cloudlands-fe/commit/ad3bed1dbd38ce6429d555eee730da9ea8005330))
+
+## [2.206.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.205.0...v2.206.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* expose and bound resolved unit test selections ([#3203](https://github.com/intent-hq/cloudlands-fe/issues/3203)) ([92adafe](https://github.com/intent-hq/cloudlands-fe/commit/92adafef9a6ddf9738355a14e930f2cb86333fd8))
+* unify authenticated repository picker ([#3204](https://github.com/intent-hq/cloudlands-fe/issues/3204)) ([222c1df](https://github.com/intent-hq/cloudlands-fe/commit/222c1dfa106490630994e79c4817c3c370e24fb5))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.17 ([#3214](https://github.com/intent-hq/cloudlands-fe/issues/3214)) ([c08fc5f](https://github.com/intent-hq/cloudlands-fe/commit/c08fc5f1118dd04097da44c0eaa2de1644a55ca5))
+* isolate desktop identity persistence by authenticated connection ([#3201](https://github.com/intent-hq/cloudlands-fe/issues/3201)) ([ba3b5b1](https://github.com/intent-hq/cloudlands-fe/commit/ba3b5b1f8fe3455e7c512e80865ea3da833fc8a3))
+* make semantic tooltips opaque over workspace content ([#3199](https://github.com/intent-hq/cloudlands-fe/issues/3199)) ([dbe08cf](https://github.com/intent-hq/cloudlands-fe/commit/dbe08cf66954d8ac26315a3dcf249b2f26e870e7))
+* refresh generated build inputs before unit tests ([#3202](https://github.com/intent-hq/cloudlands-fe/issues/3202)) ([f27bd52](https://github.com/intent-hq/cloudlands-fe/commit/f27bd52d315a5a81b8846ca01325a340b76b0963))
+* restore default agent and spec panels for existing workspaces ([#3206](https://github.com/intent-hq/cloudlands-fe/issues/3206)) ([9e9d2bc](https://github.com/intent-hq/cloudlands-fe/commit/9e9d2bc1b04859e23d0fe97a80ee075824e6357c))
+
 ## [2.205.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.204.0...v2.205.0) (2026-10-05)
 
 

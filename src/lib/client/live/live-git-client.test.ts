@@ -1577,3 +1577,30 @@ describe('LiveGitClient.subscribe event-family routing (fake transport)', () => 
     });
   });
 });
+
+describe('LiveGitClient local origin observation', () => {
+  afterEach(() => vi.clearAllMocks());
+  it('returns the untouched origin from the existing local read, without fetching', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      url: 'https://git.example.test:8443/Forge/Team/App.git',
+    });
+    expect(await new LiveGitClient().originUrl('/owned/checkout')).toBe(
+      'https://git.example.test:8443/Forge/Team/App.git',
+    );
+    expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('git.getRemoteUrl', {
+      repoPath: '/owned/checkout',
+      remoteName: 'origin',
+    });
+  });
+  it.each([{ url: null }, {}, { url: 4 }])(
+    'does not infer an origin from an empty/malformed reply: %j',
+    async (reply) => {
+      mockedRequest.mockResolvedValueOnce(reply);
+      expect(await new LiveGitClient().originUrl('/owned/checkout')).toBeNull();
+    },
+  );
+  it('does not turn a denied local read into a forge identity', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('Forbidden'));
+    expect(await new LiveGitClient().originUrl('/owned/checkout')).toBeNull();
+  });
+});

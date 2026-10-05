@@ -1,6 +1,7 @@
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { OnboardingStep } from '../onboarding/onboarding-types';
 import type { RepositoryCheckoutDraft } from '../repository-checkout/repository-checkout-types';
+import type { RepositoryTarget } from '$shared/types/repository-context';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
@@ -37,6 +38,8 @@ export interface WorkspaceInitializerRecentRepo {
   githubUrl?: string;
   name: string;
   owner?: string;
+  /** Display identity only; null explicitly marks unqualified legacy metadata. */
+  repositoryIdentity?: RepositoryTarget | null;
 }
 
 export interface WorkspaceInitializerAgentSettings {
@@ -96,6 +99,10 @@ export interface WorkspaceInitializerPendingGitHubPrefill {
   number: number;
   kind: 'issue' | 'pr';
   url: string;
+  /** Already-read PR branches; available on both browser and Electron Home. */
+  sourceBranch?: string;
+  targetBranch?: string;
+  title?: string;
 }
 
 export interface WorkspaceInitializerHydrationState {
