@@ -80,7 +80,7 @@ async function construct(context: NativeConstructionContext, lifetime: AbortSign
           showExpandButton: false,
           showSourceButton: false,
           showExportButton: false,
-          onRenderStateChange: (state) => {
+          onRenderStateChange: (state: 'pending' | 'empty' | 'rendered' | 'error') => {
             if (state === 'error' || state === 'empty')
               reject(new Error('Native test Mermaid failed'));
             else inspect();

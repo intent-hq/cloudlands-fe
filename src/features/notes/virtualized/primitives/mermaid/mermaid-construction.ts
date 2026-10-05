@@ -55,7 +55,7 @@ export function createMermaidConstructionAdapter(): NativeConstructionAdapter {
               showExpandButton: false,
               showSourceButton: false,
               showExportButton: false,
-              onRenderStateChange: (state) => {
+              onRenderStateChange: (state: 'pending' | 'empty' | 'rendered' | 'error') => {
                 if (state === 'error') reject(new Error('Native Mermaid rendering failed'));
                 else if (state === 'empty') resolve(null);
                 else inspect();
