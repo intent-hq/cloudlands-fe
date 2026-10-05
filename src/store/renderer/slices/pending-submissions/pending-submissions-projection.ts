@@ -31,6 +31,13 @@ function confirmedRow(message: QueuedMessage, blocked: boolean): PendingQueueDis
   };
 }
 
+function attachmentFree(message: {
+  imageBlocks?: QueuedMessage['imageBlocks'];
+  fileBlocks?: QueuedMessage['fileBlocks'];
+}): boolean {
+  return !message.imageBlocks?.length && !message.fileBlocks?.length;
+}
+
 /** Pure view: confirmed inputs remain untouched, including history-overlapping retries. */
 export function projectPendingSubmissions(
   entry: PendingSubmissionEntry | undefined,
@@ -80,10 +87,14 @@ export function projectPendingSubmissions(
     !eligible[0].recoverySources
       ? eligible[0].id
       : undefined;
-  let localTarget: PendingQueueDisplayRow | undefined;
+  let localTarget = target ? queue.find((row) => row.confirmedId === target) : undefined;
   for (const submission of pending.filter((s) => s.destination === 'queue')) {
+    // Match daemon adjacency: either side's attachments end a text-only merge.
+    // Never fall back to an older confirmed target after creating a separate row.
     const row =
-      localTarget ?? (target ? queue.find((row) => row.confirmedId === target) : undefined);
+      localTarget && attachmentFree(localTarget) && attachmentFree(submission)
+        ? localTarget
+        : undefined;
     if (row) {
       row.content = [row.content, submission.content].filter(Boolean).join('\n\n');
       row.imageBlocks.push(...(submission.imageBlocks ?? []));
@@ -107,6 +118,17 @@ export function projectPendingSubmissions(
       if (!checking) localTarget = created;
     }
   }
+  // ACK seeds arrive in callback order. Only unconfirmed rows use admission
+  // order; authoritative queue snapshots retain their own ordering.
+  const admissionOrder = new Map(
+    getItems(entry.submissions).map((submission, index) => [submission.id, index]),
+  );
+  const order = (row: PendingQueueDisplayRow) =>
+    Math.min(...row.contributions.map((s) => admissionOrder.get(s.id) ?? Infinity));
+  const provisional = queue.filter((row) => !row.confirmedId).sort((a, b) => order(a) - order(b));
+  let index = 0;
+  for (let i = 0; i < queue.length; i += 1)
+    if (!queue[i].confirmedId) queue[i] = provisional[index++];
   return { conversation, processing, queue };
 }
 

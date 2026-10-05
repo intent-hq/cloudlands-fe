@@ -52,76 +52,158 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('later merged image attachments load and keep their lightbox identity through edit and send', async ({
+test('pending image groups survive out-of-order ACKs, confirmation, editing, removal and sending', async ({
   mount,
   page,
 }, info) => {
-  const first = queued('merged', [reference('first')], 'First queued message');
-  const component = await mount(QueuedMessageImagesHost, { props: { messages: [first] } });
-  const row = component.getByTestId('queued-message-row');
-  const images = row.getByTestId('queued-image-thumbnail').locator('img');
+  const component = await mount(QueuedMessageImagesHost, {
+    props: { messages: [], projectSubmissions: true },
+  });
+  const rows = component.getByTestId('queued-message-row');
+  const capture = async (name: string) =>
+    info.attach(name + '.png', {
+      body: await component.screenshot(),
+      contentType: 'image/png',
+    });
+  const texts = async () =>
+    (await rows.getByTestId('queued-message-text').allTextContents()).map((text) => text.trim());
+  const widths = () =>
+    rows
+      .getByTestId('queued-image-thumbnail')
+      .locator('img')
+      .evaluateAll((nodes: HTMLImageElement[]) => nodes.map((image) => image.naturalWidth));
+  await component.getByRole('button', { name: 'Queue text', exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  await capture('initial-text-only');
+  await component.getByRole('button', { name: 'Confirm queue', exact: true }).click();
+  await component.getByRole('button', { name: 'Queue second image', exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  await expect.poll(widths).toEqual([48]);
+  await expect(rows.first().getByTestId('queued-image-thumbnail')).toHaveCount(0);
+  await capture('second-image-optimistic');
+  await component.getByRole('button', { name: 'Queue multiple images', exact: true }).click();
+  await expect(rows).toHaveCount(3);
+  await expect.poll(widths).toEqual([48, 64, 64]);
+  await expect(rows.nth(1).getByTestId('queued-image-thumbnail')).toHaveCount(1);
+  await expect(rows.nth(2).getByTestId('queued-image-thumbnail')).toHaveCount(2);
+  await capture('third-multiple-images-optimistic');
+  await component.getByRole('button', { name: 'Acknowledge last', exact: true }).click();
   await expect
-    .poll(() => images.first().evaluate((image: HTMLImageElement) => image.naturalWidth))
-    .toBe(32);
-  const second = {
-    ...first,
-    content: `${first.content}\n\nSecond queued message`,
-    imageBlocks: [...first.imageBlocks, reference('second'), reference('third')],
-  };
-  await component.update({ props: { messages: [second] } });
-  await expect(row).toHaveCount(1);
-  await expect(images).toHaveCount(3);
+    .poll(texts)
+    .toEqual(['First text message', 'Second image message', 'Third multiple-image message']);
+  await expect.poll(widths).toEqual([48, 64, 64]);
+  await expect(rows.nth(2).getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+  await expect(rows.first().getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
+  await capture('out-of-order-ack');
+  await component.getByRole('button', { name: 'Acknowledge second', exact: true }).click();
   await expect
-    .poll(() =>
-      images.evaluateAll((nodes: HTMLImageElement[]) => nodes.map((image) => image.naturalWidth)),
-    )
-    .toEqual([32, 48, 64]);
-  const third = {
-    ...second,
-    content: `${second.content}\n\nThird queued message`,
-    imageBlocks: [...second.imageBlocks, reference('fourth')],
-  };
-  await component.update({ props: { messages: [third] } });
-  await expect(images).toHaveCount(4);
-  await expect
-    .poll(() => images.last().evaluate((image: HTMLImageElement) => image.naturalWidth))
-    .toBe(64);
-  const thumbnail = row.getByTestId('queued-image-thumbnail').nth(1);
+    .poll(texts)
+    .toEqual(['First text message', 'Second image message', 'Third multiple-image message']);
+  await expect.poll(widths).toEqual([48, 64, 64]);
+  await capture('both-image-acks');
+  await component.getByRole('button', { name: 'Confirm queue', exact: true }).click();
+  await expect(rows).toHaveCount(3);
+  await expect.poll(widths).toEqual([48, 64, 64]);
+  await capture('confirmed-image-groups');
+  const disclosure = component.getByTestId('queued-messages-disclosure');
+  await disclosure.click();
+  await expect(rows).toHaveCount(0);
+  await capture('collapsed-image-groups');
+  await disclosure.click();
+  await expect.poll(widths).toEqual([48, 64, 64]);
+  await capture('expanded-image-groups');
+  const thumbnail = rows.nth(2).getByTestId('queued-image-thumbnail').first();
   await thumbnail.focus();
   await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog', { name: 'Image preview' });
   await expect(dialog).toBeVisible();
   await expect
     .poll(() => dialog.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
-    .toBe(48);
-  await info.attach('later-image-lightbox.png', {
+    .toBe(64);
+  await info.attach('third-message-lightbox.png', {
     body: await page.screenshot(),
     contentType: 'image/png',
   });
   await page.keyboard.press('Escape');
   await expect(thumbnail).toBeFocused();
-  await row.getByTestId('queued-message-content').press('F2');
-  await row.getByRole('textbox').fill('Edited queued messages');
-  await row.getByRole('textbox').press('Enter');
+  await rows.nth(1).getByTestId('queued-message-content').press('F2');
+  await rows.nth(1).getByRole('textbox').fill('Edited second message');
+  await rows.nth(1).getByRole('textbox').press('Enter');
   await expect
-    .poll(() =>
-      images.evaluateAll((nodes: HTMLImageElement[]) => nodes.map((image) => image.naturalWidth)),
-    )
-    .toEqual([32, 48, 64, 64]);
-  await info.attach('merged-queue-images.png', {
-    body: await row.screenshot(),
-    contentType: 'image/png',
-  });
-  await row.getByTestId('queued-message-content').press('Control+Enter');
-  await expect(row).toHaveCount(0);
+    .poll(texts)
+    .toEqual(['First text message', 'Edited second message', 'Third multiple-image message']);
+  await expect.poll(widths).toEqual([48, 64, 64]);
+  await capture('edited-second-image-group');
+  await rows.first().getByTestId('queued-message-content').press('Delete');
+  await expect(rows).toHaveCount(2);
+  await expect.poll(widths).toEqual([48, 64, 64]);
+  await capture('removed-text-group');
+  await rows.first().getByTestId('queued-message-content').press('Control+Enter');
+  await expect(rows).toHaveCount(1);
+  await expect.poll(widths).toEqual([64, 64]);
   const sent = JSON.parse((await component.getByTestId('sent-images').textContent())!);
+  expect(sent.content).toBe('Edited second message');
   expect(sent.imageBlocks.map((block: { attachmentId: string }) => block.attachmentId)).toEqual([
-    'first',
     'second',
-    'third',
-    'fourth',
   ]);
+  await capture('sent-second-image-group');
+  await info.attach('queue-projection.json', {
+    body: (await component.getByTestId('queue-projection').textContent())!,
+    contentType: 'application/json',
+  });
 });
+
+for (const first of ['image only', 'file'] as const) {
+  for (const confirmed of [false, true]) {
+    test(
+      (confirmed ? 'confirmed ' : 'optimistic ') +
+        first +
+        ' stays separate from following text and image submissions',
+      async ({ mount }, info) => {
+        const component = await mount(QueuedMessageImagesHost, {
+          props: { messages: [], projectSubmissions: true },
+        });
+        const rows = component.getByTestId('queued-message-row');
+        await component
+          .getByRole('button', {
+            name: first === 'file' ? 'Queue file' : 'Queue image only',
+            exact: true,
+          })
+          .click();
+        await expect(rows).toHaveCount(1);
+        if (confirmed)
+          await component.getByRole('button', { name: 'Confirm queue', exact: true }).click();
+        await component.getByRole('button', { name: 'Queue text', exact: true }).click();
+        await component.getByRole('button', { name: 'Queue text', exact: true }).click();
+        await expect(rows).toHaveCount(2);
+        await expect(rows.last().getByTestId('queued-message-text')).toHaveText(
+          'First text message\n\nFirst text message',
+        );
+        await component.getByRole('button', { name: 'Queue second image', exact: true }).click();
+        await expect(rows).toHaveCount(3);
+        await expect(rows.nth(1).getByTestId('queued-image-thumbnail')).toHaveCount(0);
+        if (first === 'file')
+          await expect(rows.first().getByTestId('queued-file-chip')).toHaveText('notes.txt');
+        else
+          await expect
+            .poll(() =>
+              rows
+                .first()
+                .getByTestId('queued-image-thumbnail')
+                .locator('img')
+                .evaluate((image: HTMLImageElement) => image.naturalWidth),
+            )
+            .toBe(32);
+        await info.attach(
+          (confirmed ? 'confirmed-' : 'optimistic-') +
+            first.replace(' ', '-') +
+            '-with-text-and-images.png',
+          { body: await component.screenshot(), contentType: 'image/png' },
+        );
+      },
+    );
+  }
+}
 
 test('separate later image-only messages survive disclosure and removal of an earlier row', async ({
   mount,
@@ -144,6 +226,10 @@ test('separate later image-only messages survive disclosure and removal of an ea
   const disclosure = component.getByTestId('queued-messages-disclosure');
   await disclosure.click();
   await expect(images).toHaveCount(0);
+  await info.attach('collapsed-image-only.png', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
   await disclosure.click();
   await expect
     .poll(() =>
