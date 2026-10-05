@@ -6,6 +6,8 @@
     icon?: IconDefinition;
     dividerBefore?: boolean;
     onClick: () => void;
+    disabled?: boolean;
+    checked?: boolean;
   }
 
   let {
@@ -32,6 +34,8 @@
   {/if}
   <button
     type="button"
+    disabled={action.disabled}
+    data-checked={action.checked}
     data-icon-name={action.icon?.iconName ?? ''}
     onclick={() => {
       action.onClick();
