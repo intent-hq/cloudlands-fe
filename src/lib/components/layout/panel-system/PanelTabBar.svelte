@@ -204,6 +204,10 @@
 
   let paneStackMenuOpen = $state(false);
   let panelActionsMenuOpen = $state({ tabBar: false, compact: false });
+  const pendingPaneMoves: Record<'tabBar' | 'compact', (() => void) | null> = {
+    tabBar: null,
+    compact: null,
+  };
 
   $effect(() => {
     void activeTabId;
@@ -1251,6 +1255,15 @@
 {#snippet panelActionsDropdown(location: 'tabBar' | 'compact')}
   <DropdownMenu
     bind:open={panelActionsMenuOpen[location]}
+    onOpenChangeComplete={async (open) => {
+      if (open) return;
+      const move = pendingPaneMoves[location];
+      pendingPaneMoves[location] = null;
+      if (!move) return;
+      // Remove the portalled menu before a move can unmount its owner.
+      await tick();
+      move();
+    }}
     align="end"
     side="bottom"
     contentClass="panel-header-menu panel-actions-menu-content bg-background"
@@ -1307,8 +1320,8 @@
               class="panel-move-direction panel-move-{direction.direction}"
               aria-label={direction.label}
               disabled={!direction.enabled}
-              onclick={() => {
-                direction.move();
+              onSelect={() => {
+                pendingPaneMoves[location] = direction.move;
                 close();
               }}
             >
