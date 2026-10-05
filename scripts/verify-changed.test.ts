@@ -27,7 +27,7 @@ import {
   parseArgs,
   printPlan,
   runCli,
-  runVerificationPlan,
+  runVerificationPlan as runPlanWithDiscovery,
   testRunner,
   verificationLockKey,
   vitestExcludePatterns,
@@ -37,6 +37,14 @@ import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
 
 const requireFromTest = createRequire(import.meta.url);
+
+// These fixtures isolate orchestration with stubbed child commands. Real runner
+// discovery and no-body budget rejection live in verify-unit-selection.test.ts.
+function runVerificationPlan(
+  ...[plan, root, options = {}]: Parameters<typeof runPlanWithDiscovery>
+) {
+  return runPlanWithDiscovery(plan, root, { resolveUnitSelections: async () => [], ...options });
+}
 
 function vitestList(root: string, filter: string, config = 'vitest.config.ts') {
   const bin = join(requireFromTest.resolve('vitest/package.json'), '..', 'vitest.mjs');
