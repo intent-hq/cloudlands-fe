@@ -82,6 +82,8 @@ interface Word {
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
+  'src/features/notes/virtualized/primitives/mermaid/__tests__/persisted-mermaid.config.ts':
+    '2026-10-05: manual persisted-paint Electron proof requiring MERMAID_PERSISTED_EVIDENCE, a matching frozen-host-sources.json/MERMAID_FROZEN_HOST_SHA and prebuilt manager/renderer artifacts plus a private display; hosted CI provisioning and execution remain absent',
   'test/fixtures/native-review-native/playwright.config.ts':
     '2026-09-29: manual Electron native-client proof requiring explicit evidence, digest-pinned 5bed0a98 composed driver and private lifetime pipe/display/profiles/two hosts; provider API is loopback HTTP and Git is verified HTTPS; normal provider TLS and hosted CI remain unproven',
   'test/fixtures/repository-route/playwright.config.ts':
