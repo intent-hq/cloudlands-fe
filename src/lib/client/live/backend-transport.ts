@@ -98,7 +98,20 @@ export async function backendRequest<T = unknown>(
         checkConnection();
         return result;
       };
-      params = await prepareNodeRequest(method, params, request, remoteEnabled);
+      const observeCapabilities = async () => {
+        checkConnection();
+        if (!transport.observeNodeCapabilities) throw new Error(m.agent_placement_unavailable());
+        const result = await transport.observeNodeCapabilities();
+        checkConnection();
+        return result;
+      };
+      params = await prepareNodeRequest(
+        method,
+        params,
+        request,
+        remoteEnabled,
+        observeCapabilities,
+      );
       checkConnection();
       assertRemoteRequestEnabled(method, params, remoteEnabled());
     }
@@ -118,6 +131,21 @@ export async function backendRequest<T = unknown>(
     }
     throw error;
   }
+}
+
+/** Observe node capabilities on one current transport without issuing client.hello. */
+export async function observeBackendNodeCapabilities(): Promise<unknown> {
+  const transport = resolveBackendTransport();
+  const { store } = await import('$store/renderer/store');
+  const generation = store.state.daemonHealth.connectionGeneration;
+  if (!transport.observeNodeCapabilities) throw new Error(m.agent_placement_unavailable());
+  const result = await transport.observeNodeCapabilities();
+  if (
+    transport !== resolveBackendTransport() ||
+    generation !== store.state.daemonHealth.connectionGeneration
+  )
+    throw new Error(m.agent_placement_backendChanged());
+  return result;
 }
 
 /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */

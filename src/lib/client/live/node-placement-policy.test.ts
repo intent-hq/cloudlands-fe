@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { prepareNodeRequest } from './node-placement-policy';
+import { prepareNodeRequest as prepareWithCapabilities } from './node-placement-policy';
+function prepareNodeRequest(
+  ...args: [string, unknown, (method: string, params?: unknown) => Promise<unknown>, () => boolean]
+) {
+  return prepareWithCapabilities(...args, () => args[2]('client.hello', {}));
+}
 import { setLocale } from '$shared/paraglide/runtime.js';
 afterEach(() => setLocale('en', { reload: false }));
 const capabilities = { agentNodes: 1, localNodeIsolation: 1 };

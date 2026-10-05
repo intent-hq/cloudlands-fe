@@ -124,6 +124,8 @@ export interface BoundRepositoryRoute {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  /** Read the current acknowledged hello; never initiate a replacement handshake. */
+  observeNodeCapabilities?(): Promise<unknown>;
   captureRepositoryCheckout?(
     query: import('$shared/types/repository-checkout').CheckoutCaptureQuery,
   ): Promise<

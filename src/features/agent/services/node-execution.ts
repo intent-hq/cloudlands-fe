@@ -50,10 +50,11 @@ export class NodeExecutionClient {
   constructor(
     private readonly request: (method: string, params?: unknown) => Promise<unknown>,
     private readonly remoteEnabled: () => boolean,
+    private readonly observeCapabilities: () => Promise<unknown>,
   ) {}
 
   async capabilities(): Promise<NodeCapabilities> {
-    const hello = (await this.request('client.hello', {})) as {
+    const hello = (await this.observeCapabilities()) as {
       server?: {
         capabilities?: {
           agentNodes?: unknown;

@@ -11,7 +11,11 @@ function fixture(capabilities: unknown = caps) {
       return { ok: true, status: 'merged', canonicalHead: 'a'.repeat(40) };
     return { ok: true };
   });
-  const client = new NodeExecutionClient(request, () => enabled);
+  const client = new NodeExecutionClient(
+    request,
+    () => enabled,
+    () => request('client.hello', {}),
+  );
   return {
     client,
     request,

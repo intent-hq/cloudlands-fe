@@ -12,7 +12,12 @@ vi.mock('./backend-transport', () => ({
 
 import { backendRequest } from './backend-transport';
 import { LiveWorkspacesClient } from './live-workspaces-client';
-import { prepareNodeRequest } from './node-placement-policy';
+import { prepareNodeRequest as prepareWithCapabilities } from './node-placement-policy';
+function prepareNodeRequest(
+  ...args: [string, unknown, (method: string, params?: unknown) => Promise<unknown>, () => boolean]
+) {
+  return prepareWithCapabilities(...args, () => args[2]('client.hello', {}));
+}
 
 const request = vi.mocked(backendRequest);
 afterEach(() => vi.resetAllMocks());

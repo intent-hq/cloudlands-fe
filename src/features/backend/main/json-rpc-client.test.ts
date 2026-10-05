@@ -1282,6 +1282,34 @@ describe('captured repository socket dispatch', () => {
     await vi.waitFor(() => expect(client.getStatus()).toBe('connected'));
     return { client, sockets, factory };
   }
+  it('observes acknowledged node capabilities without retiring the connection or sending hello', async () => {
+    const { client, sockets } = await connected({
+      clientId: 'confirmed-client',
+      server: { capabilities: { agentNodes: 1, localNodeIsolation: 1, agentPlatformRouting: 1 } },
+    });
+    const connection = client.getRepositoryConnection();
+    expect(client.getNodeCapabilities()).toEqual({
+      agentNodes: 1,
+      localNodeIsolation: 1,
+      agentPlatformRouting: 1,
+    });
+    expect(client.getRepositoryConnection()).toBe(connection);
+    expect(sockets[0].writes).toHaveLength(1);
+    const hello = client.request('client.hello');
+    expect(client.getNodeCapabilities()).toBeNull();
+    await vi.waitFor(() => expect(sockets[0].writes).toHaveLength(2));
+    sockets[0].receive(
+      '{"id":2,"result":{"clientId":"confirmed-client","server":{"capabilities":{"agentNodes":"1","localNodeIsolation":true}}}}\n',
+    );
+    await hello;
+    expect(client.getNodeCapabilities()).toEqual({
+      agentNodes: 0,
+      localNodeIsolation: 0,
+      agentPlatformRouting: 0,
+    });
+    client.dispose();
+    expect(client.getNodeCapabilities()).toBeNull();
+  });
   it('requires a positive current hello and sends synchronously on the first connection', async () => {
     const { client, sockets } = await connected();
     const connection = client.getRepositoryConnection();
@@ -1301,6 +1329,7 @@ describe('captured repository socket dispatch', () => {
     async (hello) => {
       const { client, sockets } = await connected(hello);
       expect(client.getRepositoryConnection()).toBeNull();
+      expect(client.getNodeCapabilities()).toBeNull();
       await expect(client.requestOnCapturedConnection({}, 'git.status')).rejects.toThrow();
       expect(sockets[0].writes).toHaveLength(1);
     },
@@ -1310,6 +1339,7 @@ describe('captured repository socket dispatch', () => {
     const original = client.getRepositoryConnection()!;
     sockets[0].emit('close');
     expect(client.getRepositoryConnection()).toBeNull();
+    expect(client.getNodeCapabilities()).toBeNull();
     await vi.waitFor(() => expect(sockets).toHaveLength(2));
     sockets[1].open();
     await vi.waitFor(() => expect(sockets[1].writes).toHaveLength(1));

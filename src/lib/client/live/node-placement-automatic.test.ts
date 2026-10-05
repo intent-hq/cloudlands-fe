@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { prepareNodeRequest } from './node-placement-policy';
+import { prepareNodeRequest as prepareWithCapabilities } from './node-placement-policy';
+function prepareNodeRequest(
+  ...args: [string, unknown, (method: string, params?: unknown) => Promise<unknown>, () => boolean]
+) {
+  return prepareWithCapabilities(...args, () => args[2]('client.hello', {}));
+}
 
 const capabilities = { agentNodes: 1, localNodeIsolation: 1 };
 function request(defaultAgentPlacement?: unknown) {

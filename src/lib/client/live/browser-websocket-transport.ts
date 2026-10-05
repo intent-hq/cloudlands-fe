@@ -250,6 +250,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }> = [];
   private clientId: string | undefined;
   private helloConfirmed = false;
+  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
+  private capabilityHelloGeneration = 0;
   private protocolVersion: unknown;
   private helloError: Error = new BackendError({
     code: 'UNAVAILABLE',
@@ -278,6 +280,15 @@ export class BrowserWebSocketTransport implements BackendTransport {
 
   isAvailable(): boolean {
     return !this.disposed;
+  }
+
+  async observeNodeCapabilities(): Promise<unknown> {
+    if (this.disposed)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend transport disposed' });
+    const socket = await this.ensureConnected();
+    if (this.disposed || !this.connected || this.socket !== socket)
+      throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend connection changed' });
+    return { server: { capabilities: this.nodeCapabilities } };
   }
 
   request<T = unknown>(
@@ -357,6 +368,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
             ? { clientId: this.clientId, ...(params as Record<string, unknown>) }
             : params;
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params: wireParams });
+        const capabilityGeneration =
+          method === 'client.hello' ? ++this.capabilityHelloGeneration : 0;
+        if (method === 'client.hello') this.nodeCapabilities = null;
         this.pending.set(id, {
           method,
           timeout,
@@ -364,6 +378,20 @@ export class BrowserWebSocketTransport implements BackendTransport {
             if (method === 'client.hello' && this.socket === socket) {
               const clientId = (result as { clientId?: unknown } | null)?.clientId;
               if (typeof clientId === 'string') this.clientId = clientId;
+              if (
+                typeof clientId === 'string' &&
+                clientId &&
+                capabilityGeneration === this.capabilityHelloGeneration
+              ) {
+                const capabilities = (
+                  result as { server?: { capabilities?: Record<string, unknown> } }
+                ).server?.capabilities;
+                this.nodeCapabilities = Object.freeze({
+                  agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
+                  localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
+                  agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
+                });
+              }
               this.helloConfirmed = true;
               this.protocolVersion = (result as { protocolVersion?: unknown } | null)
                 ?.protocolVersion;
@@ -655,6 +683,8 @@ export class BrowserWebSocketTransport implements BackendTransport {
   }
 
   private teardownSocket(): void {
+    this.nodeCapabilities = null;
+    this.capabilityHelloGeneration += 1;
     this.protocolVersion = undefined;
     if (!this.socket) return;
     const socket = this.socket;

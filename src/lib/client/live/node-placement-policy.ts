@@ -30,6 +30,7 @@ export async function prepareNodeRequest(
   input: unknown,
   request: Request,
   remoteEnabled: () => boolean,
+  observeCapabilities: () => Promise<unknown>,
 ): Promise<unknown> {
   const params = object(input);
   if (method === 'agent.delegate' && Array.isArray(params.tasks)) {
@@ -42,6 +43,7 @@ export async function prepareNodeRequest(
           { ...params, tasks: undefined, ...entry },
           request,
           remoteEnabled,
+          observeCapabilities,
         ),
       );
       tasks.push({ ...entry, ...(resolved.placement ? { placement: resolved.placement } : {}) });
@@ -50,7 +52,7 @@ export async function prepareNodeRequest(
     const { placement: _placement, ...rest } = params;
     return { ...rest, tasks };
   }
-  const client = new NodeExecutionClient(request, remoteEnabled);
+  const client = new NodeExecutionClient(request, remoteEnabled, observeCapabilities);
   if (method === 'workspace.update') {
     if (params.defaultAgentPlacement != null)
       await client.preparePlacement(

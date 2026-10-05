@@ -1,6 +1,6 @@
 import { all, call, put, takeLeading, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { NodeExecutionClient } from '$features/agent/services/node-execution';
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live/backend-transport';
 import { store } from '$store/renderer/store';
 import { notify } from '$lib/components/patterns/notify';
 import { confirm } from '$lib/components/patterns/confirm';
@@ -14,8 +14,10 @@ import {
   nodeOperationBusyChanged,
 } from '../workspace-agents-slice';
 
-const client = new NodeExecutionClient(backendRequest, () =>
-  selectLabsRemoteAgentsEnabled.select(store.state),
+const client = new NodeExecutionClient(
+  backendRequest,
+  () => selectLabsRemoteAgentsEnabled.select(store.state),
+  observeBackendNodeCapabilities,
 );
 function* loadCapabilities(): SagaGenerator<void> {
   const generation = store.state.daemonHealth.connectionGeneration;

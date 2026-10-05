@@ -7,6 +7,21 @@ import { stampWindowWithBackend } from '../../../main/window-backend';
 import { JsonRpcClient } from './json-rpc-client';
 import { createRepositoryCheckoutFeed } from './repository-checkout-feed';
 import { registerRepositoryCheckoutHandlers } from './repository-checkout-lifecycle';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { createElectronIpcBackendTransport } from '$lib/client/live/electron-ipc-transport';
+import type { BackendTransport } from '$lib/client/live/backend-transport-types';
+const placement = vi.hoisted(() => ({ transport: null as BackendTransport | null }));
+vi.mock('$lib/client/live/backend-transport-factory', () => ({
+  resolveBackendTransport: () => placement.transport,
+}));
+vi.mock('$store/renderer/store', () => ({
+  store: {
+    state: {
+      daemonHealth: { connectionGeneration: 0 },
+      userPreferences: { labsRemoteAgentsEnabled: false },
+    },
+  },
+}));
 const windows = vi.hoisted(() => new Map<object, object>());
 vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: (sender: object) => windows.get(sender) ?? null },
@@ -49,6 +64,8 @@ const cleanup: Array<() => void> = [];
 afterEach(() => {
   cleanup.splice(0).forEach((fn) => fn());
   windows.clear();
+  vi.unstubAllGlobals();
+  placement.transport = null;
 });
 async function harness(capability: unknown = 1) {
   const socket = new Socket();
@@ -65,7 +82,10 @@ async function harness(capability: unknown = 1) {
   client.start();
   socket.emit('connect');
   await vi.waitFor(() => expect(socket.frames).toHaveLength(1));
-  socket.reply({ clientId: 'original', server: { capabilities: { gitlabCheckout: capability } } });
+  socket.reply({
+    clientId: 'original',
+    server: { capabilities: { gitlabCheckout: capability, agentNodes: 1, localNodeIsolation: 1 } },
+  });
   await vi.waitFor(() => expect(client.getRepositoryConnection()).not.toBeNull());
   const sender = Object.assign(new EventEmitter(), {
     mainFrame: { send: vi.fn() },
@@ -109,6 +129,61 @@ async function harness(capability: unknown = 1) {
   return { socket, client, sender, window, event, registry, call, acquire };
 }
 describe('pre-workspace checkout on the original Electron document and target socket', () => {
+  it('preserves a selected GitLab checkout while observing initial-agent placement capabilities', async () => {
+    const h = await harness();
+    await h.acquire();
+    const original = h.client.getRepositoryConnection();
+    const originalWrite = h.socket.write.bind(h.socket);
+    vi.spyOn(h.socket, 'write').mockImplementation((line: string) => {
+      const sent = originalWrite(line);
+      const frame = JSON.parse(line);
+      if (frame.method === 'client.hello')
+        queueMicrotask(() =>
+          h.socket.reply(
+            {
+              clientId: 'original',
+              server: { capabilities: { gitlabCheckout: 1, agentNodes: 1, localNodeIsolation: 1 } },
+            },
+            frame.id,
+          ),
+        );
+      if (frame.method === 'workspace.create')
+        queueMicrotask(() => h.socket.reply({ workspace: { id: 'created' } }, frame.id));
+      return sent;
+    });
+    const invoke = vi.fn(
+      async (channel: string, payload?: { method: string; params?: unknown }) => {
+        if (channel === 'backend:node-capabilities') {
+          const client = h.client as unknown as { getNodeCapabilities(): unknown };
+          return { ok: true, result: { server: { capabilities: client.getNodeCapabilities() } } };
+        }
+        if (channel !== IPC_CHANNELS.BACKEND.REQUEST || !payload) throw new Error('Unexpected IPC');
+        if (payload.method === 'workspace.create')
+          return h.registry.create(h.event, payload.params);
+        return { ok: true, result: await h.client.request(payload.method, payload.params) };
+      },
+    );
+    const prior = window.electronAPI;
+    Object.defineProperty(window, 'electronAPI', { configurable: true, value: { invoke } });
+    cleanup.push(() =>
+      Object.defineProperty(window, 'electronAPI', { configurable: true, value: prior }),
+    );
+    placement.transport = createElectronIpcBackendTransport();
+    const params = {
+      repositoryCheckout: selection,
+      initialAgent: { provider: 'claude', model: 'test' },
+    };
+    await expect(backendRequest('workspace.create', params)).resolves.toEqual({
+      workspace: { id: 'created' },
+    });
+    expect(h.client.getRepositoryConnection()).toBe(original);
+    expect(h.socket.frames.filter((frame) => frame.method === 'client.hello')).toHaveLength(1);
+    expect(h.socket.frames.find((frame) => frame.method === 'workspace.create')?.params).toEqual({
+      ...params,
+      repositoryCheckout: selection,
+    });
+  });
+
   it.each([
     { workspaceId: 'fabricated' },
     { backendId: 'local' },

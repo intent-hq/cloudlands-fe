@@ -6,7 +6,10 @@ const fixture = vi.hoisted(() => ({
   },
   choose: vi.fn(),
   request: vi.fn(),
-  transport: {} as { request: ReturnType<typeof vi.fn> },
+  transport: {} as {
+    request: ReturnType<typeof vi.fn>;
+    observeNodeCapabilities?: () => Promise<unknown>;
+  },
 }));
 vi.mock('./backend-transport-factory', () => ({
   resolveBackendTransport: () => fixture.transport,
@@ -24,7 +27,10 @@ beforeEach(() => {
   fixture.state.daemonHealth.connectionGeneration = 0;
   fixture.request.mockReset();
   fixture.choose.mockReset().mockRejectedValue(new Error('cancelled'));
-  fixture.transport = { request: fixture.request };
+  fixture.transport = {
+    request: fixture.request,
+    observeNodeCapabilities: () => fixture.request('client.hello', {}),
+  };
   fixture.request.mockImplementation(async (method: string) => {
     if (method === 'client.hello')
       return { server: { capabilities: { agentNodes: 1, localNodeIsolation: 1 } } };
@@ -32,6 +38,13 @@ beforeEach(() => {
   });
 });
 describe('renderer final wire boundary', () => {
+  it('fails closed when capability observation is unavailable, without sending hello', async () => {
+    fixture.transport = { request: fixture.request };
+    await expect(
+      backendRequest('workspace.create', { initialAgent: { prompt: 'Build' } }),
+    ).rejects.toThrow();
+    expect(fixture.request).not.toHaveBeenCalled();
+  });
   it.each([
     'Claude agent Builder uses settings Intent cannot apply: hooks',
     'Claude agent Builder requires skills that are unavailable: review',
