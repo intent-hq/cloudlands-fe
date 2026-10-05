@@ -1,6 +1,6 @@
 import type { Workspace } from '$shared/types';
 import { Editor, Extension } from '@tiptap/core';
-import { AllSelection, TextSelection } from '@tiptap/pm/state';
+import { AllSelection, TextSelection, EditorState } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { createEditorConfig } from '$lib/utils/editor-config';
@@ -346,7 +346,7 @@ export class NoteWindowView {
       const anchor = this.navigationAnchor ?? this.captureAnchor();
       // Build/admit first; unsupported context must leave the existing view intact.
       const projection = projectNoteWindow(window);
-      const admitted = measureNoteProjection(projection);
+      let admitted = measureNoteProjection(projection);
       this.cost.projectionPeakBytes = Math.max(
         this.cost.projectionPeakBytes,
         this.cost.derivedBytes + admitted.derivedBytes,
@@ -522,12 +522,33 @@ export class NoteWindowView {
         },
       });
       editOwner = boundEditing?.bind(window, projection, candidate.state.doc);
+      if (editOwner) {
+        const initial = editOwner.initial;
+        if (
+          !editOwner.current() ||
+          initial.doc.type.schema !== candidate.schema ||
+          !initial.doc.eq(candidate.schema.nodeFromJSON(initial.projection.content))
+        )
+          // i18n-ignore (internal validation; the view displays a localized error)
+          throw new Error('Invalid initial note edit authority');
+        admitted = measureNoteProjection(initial.projection);
+        this.cost.projectionPeakBytes = Math.max(
+          this.cost.projectionPeakBytes,
+          this.cost.derivedBytes + admitted.derivedBytes,
+        );
+        // The editor is still unmounted. Install the materialized dirty document
+        // and its exact map together, without a synthetic edit or history entry.
+        candidate.view.updateState(
+          EditorState.create({ schema: candidate.schema, doc: initial.doc }),
+        );
+        currentProjection = initial.projection;
+      }
       candidate.setEditable(!!editOwner, false);
       candidate.mount(candidateHost);
       this.destroyEditor();
       this.host.replaceChildren(candidateHost);
       candidateHost.removeAttribute('style');
-      this.committedProjection = projection;
+      this.committedProjection = currentProjection;
       this.window = window;
       this.editor = candidate;
       this.transactionRelay = transactions;

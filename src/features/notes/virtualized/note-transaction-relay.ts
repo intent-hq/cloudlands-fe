@@ -21,6 +21,9 @@ export interface NoteTransactionOwner {
   readonly initial: Candidate;
   current(): boolean;
   prepare(transaction: Transaction, before: Candidate): Candidate | undefined;
+  /** Pure final selection/history preparation. Must preserve the exact accepted
+   * document and projection; refusal still precedes external owner adoption. */
+  finalize?(after: Candidate, selection: Selection): Candidate | undefined;
   /** Called only after native application, once for the complete accepted chain.
    * The owner must coalesce its history and must not reject during adoption. */
   commit(chain: {
@@ -47,6 +50,7 @@ interface Provisional {
 export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner | undefined) {
   const key = new PluginKey<Provisional | undefined>('noteDocumentTransaction');
   const prepared = new WeakMap<Transaction, Prepared>();
+  const finalized = new WeakMap<Candidate, Candidate>();
   let busy = false;
   let unowned = false;
   let commitStarted = false;
@@ -70,7 +74,8 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
   };
   const candidateAt = (state: EditorState, owner: NoteTransactionOwner) => {
     const local = key.getState(state);
-    return local?.owner === owner ? local.candidate : owner.initial;
+    const candidate = local?.owner === owner ? local.candidate : owner.initial;
+    return finalized.get(candidate) ?? candidate;
   };
   const plugin = new Plugin<Provisional | undefined>({
     key,
@@ -229,14 +234,31 @@ export function createNoteTransactionRelay(getOwner: () => NoteTransactionOwner 
         return refuseAdoption();
       // Delete before the callback so a reentrant/repeated notification cannot adopt twice.
       for (const transaction of transactions) prepared.delete(transaction);
+      let after = last.after;
+      try {
+        if (first.owner.finalize) {
+          const candidate = first.owner.finalize(after, state.selection);
+          if (
+            !candidate ||
+            candidate.doc !== after.doc ||
+            candidate.projection !== after.projection
+          )
+            return refuseAdoption();
+          after = candidate;
+        }
+        if (!current(first.owner)) return refuseAdoption();
+      } catch {
+        return refuseAdoption();
+      }
       commitStarted = true;
       first.owner.commit({
         before: first.before,
-        after: last.after,
+        after,
         transactions,
         selection: state.selection,
       });
       adopted = true;
+      finalized.set(last.after, after);
       return { projection: last.after.projection, cost: last.cost };
     },
   };

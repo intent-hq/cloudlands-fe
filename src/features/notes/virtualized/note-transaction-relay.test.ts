@@ -43,6 +43,7 @@ function nativeFixture(
   hooks: {
     update?(editor: Editor): void;
     commit?(editor: Editor): void;
+    finalize?: NoteTransactionOwner['finalize'];
   } = {},
 ) {
   let active: NoteTransactionOwner | undefined;
@@ -99,6 +100,7 @@ function nativeFixture(
     current: () => valid,
     prepare: (tr) => ({ doc: tr.doc, projection: new SourceProjection(tr.doc.textContent, 100) }),
     commit: commits,
+    finalize: hooks.finalize,
   };
   return {
     editor,
@@ -121,6 +123,45 @@ function nativeFixture(
 }
 
 describe('accepted native transaction ownership', () => {
+  it('prepares final selection metadata once and carries it into the next edit', () => {
+    const f = fixture();
+    const finalize = vi.fn<NonNullable<NoteTransactionOwner['finalize']>>((after) => ({
+      ...after,
+    }));
+    f.owner.finalize = finalize;
+    const first = f.state.applyTransaction(f.state.tr.insertText('X', 2));
+    f.relay.adopt(first.transactions, first.state);
+    const accepted = f.commit.mock.calls[0][0].after;
+    expect(finalize).toHaveBeenCalledWith(expect.anything(), first.state.selection);
+    expect(accepted).toBe(finalize.mock.results[0].value);
+    const next = first.state.applyTransaction(first.state.tr.insertText('Y', 3));
+    expect(f.prepare.mock.calls[1][1]).toBe(accepted);
+    f.relay.adopt(next.transactions, next.state);
+    expect(f.commit).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['throw', 'projection'] as const)(
+    'restores native state when finalization rejects by %s',
+    (kind) => {
+      const f = nativeFixture({
+        finalize(after) {
+          if (kind === 'throw') throw new Error('Unsupported final selection');
+          return { ...after, projection: new SourceProjection('unowned', 100) };
+        },
+      });
+      try {
+        f.editor.view.dispatch(f.editor.state.tr.insertText('X', 2));
+        expect(f.editor.state.doc.textContent).toBe('abc');
+        expect(f.editor.view.dom.textContent).toBe('abc');
+        expect(f.committed).toBe('abc');
+        expect(f.commits).not.toHaveBeenCalled();
+        expect(f.relay.busy).toBe(false);
+      } finally {
+        f.editor.destroy();
+      }
+    },
+  );
+
   it('does not publish a prepared edit rejected by a later plugin', () => {
     const f = fixture([new Plugin({ filterTransaction: () => false })]);
     const result = f.state.applyTransaction(f.state.tr.insertText('X', 2));

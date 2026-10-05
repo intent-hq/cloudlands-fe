@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
-import { AllSelection, EditorState, TextSelection } from '@tiptap/pm/state';
+import { AllSelection, EditorState, TextSelection, Plugin } from '@tiptap/pm/state';
+import { createNoteDocumentTransactionOwner } from './note-document-transaction-owner';
+import { createNoteTransactionRelay } from '../note-transaction-relay';
 import { createNoteEditAuthority } from './note-edit-authority';
 import { NoteCanonicalProjection } from '../note-canonical-projection';
 import type { NoteWindow } from '../note-window-reader';
@@ -638,4 +640,93 @@ describe('document-owned edits', () => {
       ),
     ).toThrow(/selection/i);
   });
+});
+
+it('bridges an accepted native chain into one prepared document history and draft batch', () => {
+  const f = fixture();
+  let current = f.session;
+  const batches: unknown[] = [];
+  const owner = createNoteDocumentTransactionOwner(
+    f.authority,
+    () => current,
+    (before, after, splices) => {
+      expect(before).toBe(current);
+      batches.push(splices);
+      current = after;
+    },
+  );
+  const relay = createNoteTransactionRelay(() => owner);
+  const prepare = vi.spyOn(owner, 'prepare');
+  const finalize = vi.spyOn(owner, 'finalize');
+  const append = new Plugin({
+    appendTransaction(transactions, _before, state) {
+      if (!transactions.some((tr) => tr.getMeta('root'))) return null;
+      const tr = state.tr.insertText('Y', 3);
+      return tr.setSelection(TextSelection.create(tr.doc, 1));
+    },
+  });
+  const state = EditorState.create({ doc: owner.initial.doc, plugins: [relay.plugin, append] });
+  const first = state.applyTransaction(state.tr.insertText('X', 2).setMeta('root', true));
+  expect(first.transactions).toHaveLength(2);
+  expect(prepare).toHaveBeenCalledTimes(2);
+  expect(current).toBe(f.session);
+  relay.adopt(first.transactions, first.state);
+  expect(finalize).toHaveBeenCalledOnce();
+  expect(finalize.mock.results[0].type).toBe('return');
+  expect(finalize.mock.results[0].value).toBeDefined();
+  // Pure preparation and native application produce distinct equivalent docs;
+  // the bridge must rebuild the native selection against its exact candidate.
+  expect(finalize.mock.calls[0][0].doc).not.toBe(first.state.selection.$from.doc);
+  expect(finalize.mock.calls[0][0].doc.eq(first.state.selection.$from.doc)).toBe(true);
+  expect(batches).toEqual([[{ start: 101, end: 101, text: 'XY' }]]);
+  expect(current.history).toHaveLength(1);
+  expect(current.selection.head).toBe(100);
+  const undo = moveNoteDocumentHistory(current, 'undo')!;
+  expect(materializeNoteDocumentAuthority(undo.state, f.authority).doc.textContent).toBe('abc');
+  const redo = moveNoteDocumentHistory(undo.state, 'redo')!;
+  expect(materializeNoteDocumentAuthority(redo.state, f.authority).doc.textContent).toBe('aXYbc');
+  expect(redo.state.selection.head).toBe(100);
+  const next = first.state.applyTransaction(first.state.tr.insertText('Z', 4));
+  relay.adopt(next.transactions, next.state);
+  expect(current.history).toHaveLength(2);
+  expect(batches).toHaveLength(2);
+  expect(current.length).toBe(1003);
+});
+
+it('materializes retained source edits before creating a fresh native owner', () => {
+  const f = fixture();
+  const edited = prepareNoteDocumentEdit(
+    f.session,
+    EditorState.create({ doc: f.authority.doc }).tr.insertText('X', 2),
+    f.authority,
+  );
+  const owner = createNoteDocumentTransactionOwner(
+    f.authority,
+    () => edited.state,
+    () => {
+      throw new Error('No adoption during binding');
+    },
+  );
+  expect(owner.initial.doc.textContent).toBe('aXbc');
+  expect(owner.initial.projection.sourceAt(3)).toBe(102);
+});
+
+it('does not publish a prepared document candidate after session replacement', () => {
+  const f = fixture();
+  let current = f.session;
+  let publications = 0;
+  const owner = createNoteDocumentTransactionOwner(
+    f.authority,
+    () => current,
+    () => {
+      publications++;
+    },
+  );
+  const relay = createNoteTransactionRelay(() => owner);
+  const state = EditorState.create({ doc: owner.initial.doc, plugins: [relay.plugin] });
+  const result = state.applyTransaction(state.tr.insertText('X', 2));
+  current = { ...current, generation: current.generation + 1 };
+  expect(relay.adopt(result.transactions, result.state)).toBeUndefined();
+  expect(publications).toBe(0);
+  expect(current.dirty).toEqual([]);
 });
