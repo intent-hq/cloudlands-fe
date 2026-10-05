@@ -24,6 +24,10 @@ vi.mock('./note-window-view', () => ({
     updateEditing(editing: any) {
       this.options.editing = editing;
     }
+    showPrepared(window: any, editing: any) {
+      this.updateEditing(editing);
+      return this.show(window);
+    }
     show(window: any) {
       this.pending = window;
       return false;
@@ -125,4 +129,124 @@ it('exposes a retired native transaction failure without clearing the document s
   state.view.options.failed();
   expect(await component.findByRole('alert')).toBeTruthy();
   expect(state.dispatch).not.toHaveBeenCalled();
+});
+
+it('waits for prepared edit context before showing a window and ignores superseded preparation', async () => {
+  const first = { range: { start: 10, end: 20 } },
+    second = { range: { start: 30, end: 40 } };
+  state.session = writable({ status: 'ready', windows: { panel: { value: first } } });
+  const offers = [first, second].map(() => {
+    let resolve!: (editing: {
+      bind: ReturnType<typeof vi.fn>;
+      undo: ReturnType<typeof vi.fn>;
+      redo: ReturnType<typeof vi.fn>;
+    }) => void;
+    const ready = new Promise<Parameters<typeof resolve>[0]>((done) => {
+      resolve = done;
+    });
+    return { ready, resolve, cancel: vi.fn(), release: vi.fn(async () => {}) };
+  });
+  const prepareEditing = vi.fn().mockReturnValueOnce(offers[0]).mockReturnValueOnce(offers[1]);
+  const component = render(NoteReadingView, {
+    workspaceId: 'w',
+    noteId: 'n',
+    panelId: 'panel',
+    onFullOperation: vi.fn(),
+    prepareEditing,
+  });
+  await waitFor(() => expect(prepareEditing).toHaveBeenCalledExactlyOnceWith(first));
+  expect(state.view.pending).toBeUndefined();
+  state.session.set({ status: 'ready', windows: { panel: { value: second } } });
+  await waitFor(() => expect(prepareEditing).toHaveBeenCalledTimes(2));
+  expect(offers[0].cancel).toHaveBeenCalledOnce();
+  expect(offers[0].release).toHaveBeenCalledOnce();
+  const old = { bind: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+  offers[0].resolve(old);
+  await Promise.resolve();
+  expect(state.view.pending).toBeUndefined();
+  const next = { bind: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+  offers[1].resolve(next);
+  await waitFor(() => expect(state.view.pending).toBe(second));
+  expect(state.view.options.editing).toBe(next);
+  expect(offers[1].release).not.toHaveBeenCalled();
+  await component.unmount();
+  expect(offers[1].cancel).toHaveBeenCalledOnce();
+  expect(offers[1].release).toHaveBeenCalledOnce();
+});
+
+it('shows a current unsupported-edit outcome read-only', async () => {
+  const window = { range: { start: 17, end: 20 } };
+  state.session = writable({ status: 'ready', windows: { panel: { value: window } } });
+  render(NoteReadingView, {
+    workspaceId: 'w',
+    noteId: 'n',
+    panelId: 'panel',
+    onFullOperation: vi.fn(),
+    prepareEditing: () => ({
+      ready: Promise.resolve(undefined),
+      cancel: vi.fn(),
+      release: async () => {},
+    }),
+  });
+  await waitFor(() => expect(state.view.pending).toBe(window));
+  expect(state.view.options.editing).toBeUndefined();
+});
+it.each(['synchronous', 'asynchronous'])(
+  'contains %s preparation failure without treating it as read-only eligibility',
+  async (kind) => {
+    const window = { range: { start: 17, end: 20 } };
+    state.session = writable({ status: 'ready', windows: { panel: { value: window } } });
+    const component = render(NoteReadingView, {
+      workspaceId: 'w',
+      noteId: 'n',
+      panelId: 'panel',
+      onFullOperation: vi.fn(),
+      prepareEditing: () => {
+        if (kind === 'synchronous') throw new Error('Budget exhausted');
+        return {
+          ready: Promise.reject(new Error('Stale source')),
+          cancel: vi.fn(),
+          release: async () => {},
+        };
+      },
+    });
+    expect(await component.findByRole('alert')).toBeTruthy();
+    expect(state.view.pending).toBeUndefined();
+  },
+);
+
+it('retires delivered preparation on navigation and cancels an undelivered successor on unmount', async () => {
+  const first = { range: { start: 100, end: 103 } };
+  const next = { range: { start: 200, end: 203 } };
+  state.session = writable({ status: 'ready', windows: { panel: { value: first } } });
+  const delivered = {
+    ready: Promise.resolve({ bind: vi.fn(), undo: vi.fn(), redo: vi.fn() }),
+    cancel: vi.fn(),
+    release: vi.fn(async () => {}),
+    retire: vi.fn(async () => {}),
+  };
+  const pending = {
+    ready: new Promise<undefined>(() => {}),
+    cancel: vi.fn(),
+    release: vi.fn(async () => {}),
+    retire: vi.fn(async () => {}),
+  };
+  const prepare = vi.fn().mockReturnValueOnce(delivered).mockReturnValueOnce(pending);
+  const component = render(NoteReadingView, {
+    workspaceId: 'w',
+    noteId: 'n',
+    panelId: 'panel',
+    onFullOperation: vi.fn(),
+    prepareEditing: prepare,
+  });
+  await waitFor(() => expect(state.view.pending).toBe(first));
+  state.session.set({ status: 'ready', windows: { panel: { value: next } } });
+  await waitFor(() => expect(prepare).toHaveBeenCalledTimes(2));
+  expect(delivered.retire).toHaveBeenCalledOnce();
+  expect(delivered.cancel).not.toHaveBeenCalled();
+  expect(delivered.release).not.toHaveBeenCalled();
+  component.unmount();
+  expect(pending.cancel).toHaveBeenCalledOnce();
+  expect(pending.release).toHaveBeenCalledOnce();
+  expect(pending.retire).not.toHaveBeenCalled();
 });

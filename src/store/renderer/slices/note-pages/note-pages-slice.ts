@@ -970,7 +970,7 @@ notePagesReducer.with(
       };
     return update(s, ws, id, (note) => ({
       ...note,
-      ...(value?.native &&
+      ...(value &&
       note.status === 'ready' &&
       !note.needsReconcile &&
       !note.document &&

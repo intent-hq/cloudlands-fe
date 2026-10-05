@@ -20,7 +20,9 @@
     NoteWindowView,
     type NoteSourceSelection,
     type NoteViewEditing,
+    type NoteReadingSurface,
   } from './note-window-view';
+  import { prepareNoteWindowDisplay } from './note-window-preparation';
   import { m } from '$shared/paraglide/messages.js';
   let {
     workspaceId,
@@ -31,6 +33,7 @@
     onFullOperation,
     onReady,
     editing,
+    prepareEditing,
     ownsPanel = true,
   }: {
     workspaceId: string;
@@ -44,6 +47,7 @@
     ) => void;
     onReady?: (view: NoteWindowView) => void;
     editing?: NoteViewEditing;
+    prepareEditing?: NoteReadingSurface['prepareEditing'];
     ownsPanel?: boolean;
   } = $props();
   // Selector targets follow props; no note's pages can leak into a reused panel.
@@ -118,16 +122,32 @@
         appStore.dispatch(pagePanelClosed(owner.workspaceId, owner.noteId, owner.panelId));
     };
   });
-  $effect(() => view?.updateEditing(ready ? editing : undefined));
   $effect(() => {
+    const native = view;
     const window = current?.value;
-    if (!ready || !window || !view) return;
-    try {
-      view.show(window);
-      renderError = false;
-    } catch {
-      renderError = true;
+    const available = ready;
+    const supplied = editing;
+    const prepare = prepareEditing;
+    if (!native) return;
+    if (!available || !prepare) native.updateEditing(available ? supplied : undefined);
+    if (!available || !window) return;
+    const show = (prepared?: NoteViewEditing) => {
+      try {
+        native.showPrepared(window, prepared);
+        renderError = false;
+      } catch {
+        renderError = true;
+      }
+    };
+    if (!prepare) {
+      show(supplied);
+      return;
     }
+    return untrack(() =>
+      prepareNoteWindowDisplay(window, prepare, show, () => {
+        renderError = true;
+      }),
+    );
   });
 </script>
 

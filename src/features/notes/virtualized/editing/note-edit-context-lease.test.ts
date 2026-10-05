@@ -309,3 +309,72 @@ describe('Redux-backed edit context admission', () => {
     await lease.release();
   });
 });
+
+it.each(['cancel', 'expiry', 'panel-close', 'revision'] as const)(
+  'preserves sealed navigation ownership but rejects %s',
+  async (reason) => {
+    const f = setup();
+    let now = Date.parse(identity.expiresAt) - 1000;
+    const lease = reserveNoteEditContext(f.port, f.window, 'p', undefined, () => now);
+    const ready = await lease.ready;
+    expect(ready.grant.claim()).toBe(true);
+    ready.seal();
+    f.dispatch(a.pageWindowRequested('w', 'n', 'p', 2));
+    expect(ready.current()).toBe(true);
+    await expect(ready.read(q)).rejects.toThrow(/Invalid/);
+    if (reason === 'cancel') lease.cancel();
+    if (reason === 'expiry') now += 1000;
+    if (reason === 'panel-close') f.dispatch(a.pagePanelClosed('w', 'n', 'p'));
+    if (reason === 'revision')
+      f.dispatch(
+        a.pageStateReceived('w', 'n', 0, {
+          scope,
+          kind: 'notePageState',
+          sourceRevision: 'r2',
+          stateGeneration: '2',
+          attributionGeneration: 'a',
+          attributionState: 'ready',
+          commentRevision: 'c',
+          deleted: false,
+          invalidation: 'all',
+        }),
+      );
+    expect(ready.current()).toBe(false);
+    expect(f.state.resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+    await lease.release();
+    f.dispatch(workspaceUnmounted('w'));
+    expect(f.state.resourceLedger.used.payloadBytes).toBe(0);
+    expect(f.listeners).toBe(0);
+  },
+);
+it('does not extend unsealed read eligibility across navigation', async () => {
+  const f = setup(),
+    lease = reserveNoteEditContext(f.port, f.window, 'p');
+  const ready = await lease.ready;
+  expect(ready.grant.claim()).toBe(true);
+  f.dispatch(a.pageWindowRequested('w', 'n', 'p', 2));
+  expect(ready.current()).toBe(false);
+  await expect(ready.read(q)).rejects.toThrow(/superseded/);
+  expect(f.requests).toBe(0);
+  await lease.release();
+});
+
+it('never revives a sealed context after panel close/reopen with another panel keeping the generation alive', async () => {
+  const f = setup();
+  f.dispatch(a.pagePanelOpened('w', 'n', 'other'));
+  const lease = reserveNoteEditContext(f.port, f.window, 'p');
+  const ready = await lease.ready;
+  expect(ready.grant.claim()).toBe(true);
+  ready.seal();
+  const generation = f.state.byWorkspaceId.w.notes.n.generation;
+  f.dispatch(a.pagePanelClosed('w', 'n', 'p'));
+  // Deliberately do not observe current() while the original panel is absent.
+  f.dispatch(a.pagePanelOpened('w', 'n', 'p'));
+  expect(f.state.byWorkspaceId.w.notes.n.generation).toBe(generation);
+  expect(ready.current()).toBe(false);
+  expect(f.state.resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+  await lease.release();
+  f.dispatch(workspaceUnmounted('w'));
+  expect(f.state.resourceLedger.used.payloadBytes).toBe(0);
+  expect(f.listeners).toBe(0);
+});

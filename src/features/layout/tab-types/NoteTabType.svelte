@@ -378,6 +378,7 @@
         noteId={tab.noteId}
         panelId={tab.id}
         editing={pagedSurface.editing}
+        prepareEditing={pagedSurface.prepareEditing}
         onSelection={pagedSurface.selectionChanged}
         onFullOperation={pagedSurface.fullOperation}
         onReady={pagedSurface.ready}

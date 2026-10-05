@@ -71,7 +71,7 @@ export function reserveNoteEditContext(
     Object.values(port.read().physicalReads).some((r) => r.assembly?.owner === assembly.owner);
   const eligible = () => {
     const n = port.read().byWorkspaceId[ws]?.notes[id];
-    return (
+    const allowed =
       !revoked &&
       !released &&
       !signal?.aborted &&
@@ -81,12 +81,13 @@ export function reserveNoteEditContext(
       n?.generation === generation &&
       n.status === 'ready' &&
       !n.needsReconcile &&
-      n.windows[panel]?.request === request &&
-      n.windows[panel]?.value === window &&
+      panel in n.panels &&
+      (sealed || (n.windows[panel]?.request === request && n.windows[panel]?.value === window)) &&
       n.state?.sourceRevision === identity.sourceRevision &&
       sameNoteScope(n.state.scope, identity.scope) &&
-      window.expiresAt === identity.expiresAt
-    );
+      window.expiresAt === identity.expiresAt;
+    revoked ||= !allowed;
+    return allowed;
   };
   const current = () =>
     eligible() && held(windowOwner) && held(sealed ? dataOwner : assembly.owner);
@@ -94,7 +95,12 @@ export function reserveNoteEditContext(
     if (!current()) throw new Error('Note edit context superseded or expired');
   };
   // Subscribe before dispatch/wait, so synchronous Redux publication cannot lose a wake.
-  const unsubscribe = port.subscribe(notify);
+  const unsubscribe = port.subscribe(() => {
+    // Observe every identity transition, even while no consumer is polling.
+    // Reopening a panel cannot revive a context retired by its earlier closure.
+    eligible();
+    notify();
+  });
   signal?.addEventListener('abort', cancel, { once: true });
   const wait = (predicate: () => boolean, check = true) =>
     new Promise<void>((resolve, reject) => {

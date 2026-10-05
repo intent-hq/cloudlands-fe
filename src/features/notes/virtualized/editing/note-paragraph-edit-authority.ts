@@ -9,6 +9,9 @@ import { NOTE_WINDOW_LIMITS, type NoteWindow } from '../note-window-reader';
 import type { SourceProjection } from '../projection/source-projection';
 import { NoteEditAuthority } from './note-edit-authority';
 
+/** A valid readable construct outside this editor's deliberately narrow serializer. */
+export class UnsupportedParagraphEdit extends Error {}
+
 type Identity = Pick<NoteSourcePage, 'scope' | 'sourceRevision' | 'snapshotId' | 'expiresAt'>;
 type Owner = Extract<NoteWindow['context'][number], { kind: 'boundary' }>;
 type Page = Extract<NoteReadPage, { kind: 'noteContextPage' }>;
@@ -126,7 +129,7 @@ export function* noteParagraphEditContextSteps(
   };
   check();
   if (window.native || window.canonicalOwners?.length)
-    throw new Error('Unsupported canonical paragraph edit context');
+    throw new UnsupportedParagraphEdit('Unsupported canonical paragraph edit context');
   const owners = window.context
     .filter((item): item is Owner => item.kind === 'boundary')
     .map((owner) => ({ ...owner, sourceRange: { ...owner.sourceRange } }));
@@ -143,7 +146,7 @@ export function* noteParagraphEditContextSteps(
         owner.sourceRange.start >= owner.sourceRange.end,
     )
   )
-    throw new Error('Unsupported ordinary paragraph edit context');
+    throw new UnsupportedParagraphEdit('Unsupported ordinary paragraph edit context');
   let requests = 0,
     wireBytes = 0,
     retainedBytes = 0,
@@ -294,7 +297,7 @@ export function createNoteParagraphEditAuthority(
     (a, b) => a.owner.sourceRange.start - b.owner.sourceRange.start,
   );
   if (doc.childCount !== ordered.length)
-    throw new Error('Unsupported paragraph projection structure');
+    throw new UnsupportedParagraphEdit('Unsupported paragraph projection structure');
   let pm = 1;
   for (let index = 0; index < ordered.length; index++) {
     const { owner, opening, closing } = ordered[index];
@@ -315,7 +318,7 @@ export function createNoteParagraphEditAuthority(
       opening !== '' ||
       !/^(?:\r?\n)?$/.test(closing)
     )
-      throw new Error('Unsupported paragraph lexical delimiters');
+      throw new UnsupportedParagraphEdit('Unsupported paragraph lexical delimiters');
     const start = owner.sourceRange.start + opening.length;
     const body = raw.slice(opening.length, raw.length - closing.length);
     const paragraph = doc.child(index);
@@ -329,9 +332,10 @@ export function createNoteParagraphEditAuthority(
       paragraph.textContent !== body ||
       paragraph.content.size !== body.length
     )
-      throw new Error('Unsupported nontransparent paragraph body');
+      throw new UnsupportedParagraphEdit('Unsupported nontransparent paragraph body');
     paragraph.forEach((node) => {
-      if (!node.isText || node.marks.length) throw new Error('Unsupported paragraph marks');
+      if (!node.isText || node.marks.length)
+        throw new UnsupportedParagraphEdit('Unsupported paragraph marks');
     });
     let offset = 0;
     for (const text of body) {
