@@ -26,7 +26,10 @@ vi.mock('$features/agent/services/agent-factory', async (importOriginal) => {
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { error: mocks.toastError, success: mocks.toastSuccess },
 }));
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+  observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
+}));
 
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { appClient } from '$lib/client';

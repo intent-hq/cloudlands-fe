@@ -39,6 +39,7 @@ import {
 // production registry, Store middleware, reducers and workflow sagas still run.
 vi.mock('$lib/client/live/backend-transport', () => ({
   electronAPI: () => window.electronAPI,
+  observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
   backendRequest: vi.fn(() => new Promise(() => {})),
   backendSubscribe: vi.fn(() => new Promise(() => {})),
   backendUnsubscribe: vi.fn(async () => {}),

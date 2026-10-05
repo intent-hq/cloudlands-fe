@@ -2250,7 +2250,10 @@ describe('M actual fixture original Member fence', () => {
     const observed = await loadDirect();
     const { pool, lifecycle } = observed;
     const client = await pool.connectBackendClient('remote-A');
-    await connection(client);
+    // Connection-list refresh can lazily create the local fingerprint-probe client.
+    // Include that startup member before measuring role-transition admissions.
+    const local = pool.getLocalBackendClient();
+    await Promise.all([connection(client), connection(local)]);
     await settledTurn();
     const initialSockets = [...edge.sockets];
     const memberSocket = edge.sockets.find((socket) => socket.owner === 'remote-A.test')!;
