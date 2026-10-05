@@ -4,6 +4,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { ActionRow } from '$lib/components/ui/menu';
+  import { EmptyState } from '$lib/components/patterns/screen';
   import { ShortcutChip } from '$lib/components/ui/kbd';
   /** App-wide palette for commands, files, workspace search, notes and headings. */
   import { onMount, tick, untrack } from 'svelte';
@@ -20,7 +21,6 @@
     faCommentDots,
     faFileAlt,
     faCodeBranch,
-    faPlus,
     faGlobe,
   } from '@fortawesome/free-solid-svg-icons';
   import { backendRequest } from '$lib/client/live/backend-transport';
@@ -69,7 +69,6 @@
     setStatsOverlayOpen,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
-    type PaletteFilter,
     type WorkspaceObject,
     FILTER_PREFIXES,
     fuzzyScore,
@@ -90,6 +89,7 @@
   import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
+  import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -166,19 +166,23 @@
   let inputRef: HTMLInputElement | undefined = $state(undefined);
   let resultsRef: HTMLDivElement | undefined = $state(undefined);
   let isLoadingFiles = $state(false);
-  let activeFilter: PaletteFilter | null = $state(null); // Filter by type
-
   let parsedQuery = $derived(parseQueryFilter(searchQuery));
+  let activeFilter = $derived(parsedQuery.filter);
+  let filtersRef: { cycle: (direction: 1 | -1) => void } | undefined = $state();
+  const resultCount = $derived(searchResults.filter(isSelectableResult).length);
+
+  function applyFilter(prefix: string) {
+    searchQuery = prefix + parsedQuery.searchTerm;
+    selectedIndex = 0;
+    resultsRef?.scrollTo?.({ top: 0 });
+    void tick().then(() => inputRef?.focus());
+  }
 
   let isGoToLineMode = $derived(searchQuery.trimStart().startsWith(':'));
   let goToLineNumber = $derived.by(() => {
     if (!isGoToLineMode) return null;
     const num = parseInt(searchQuery.trimStart().slice(1).trim(), 10);
     return Number.isNaN(num) ? null : num;
-  });
-
-  $effect(() => {
-    activeFilter = parsedQuery.filter;
   });
 
   // Debounce timer for file queries
@@ -725,6 +729,9 @@
   function handleContainerKeyDown(e: KeyboardEvent) {
     if (e.key === 'Tab') {
       e.preventDefault();
+      if (!isGoToLineMode) {
+        filtersRef?.cycle(e.shiftKey ? -1 : 1);
+      }
       queueMicrotask(() => inputRef?.focus());
     }
   }
@@ -969,7 +976,7 @@
 
 {#if isOpen}
   <div
-    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-[560px] z-50"
+    class="fixed top-[12%] left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-[640px] z-50"
     role="dialog"
     aria-modal="true"
     aria-label={m.lib_commandPalette_quickActions_ariaLabel()}
@@ -978,38 +985,44 @@
     transition:fly={{ axis: 'y', distance: 6, tier: 'moderate' }}
   >
     <div
-      class="flex max-h-[80dvh] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)"
+      class="flex max-h-[80dvh] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-(--elevation-overlay)"
       role="document"
       tabindex="-1"
     >
-      <div class="flex shrink-0 items-center gap-2 px-3 py-2">
-        <Fa icon={faSearch} class="size-4 shrink-0 text-muted-foreground" />
+      <div class="flex shrink-0 items-center gap-3 px-5 py-3">
+        <Fa icon={faSearch} class="size-5 shrink-0 text-muted-foreground" />
 
         <Input
           bind:ref={inputRef}
           bind:value={searchQuery}
           onkeydown={handleKeyDown}
           type="text"
+          aria-label={m.lib_commandPalette_filter_placeholder()}
           placeholder={isGoToLineMode
             ? m.lib_commandPalette_goToLine_placeholder()
             : m.lib_commandPalette_filter_placeholder()}
           noFocusStyle
-          class="min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none"
+          class="min-w-0 flex-1 border-0 bg-transparent px-0 type-body shadow-none"
           autocorrect="off"
           autocapitalize="off"
           spellcheck="false"
         />
-        <div
-          aria-live="polite"
-          style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;"
-        >
-          {m.lib_commandPalette_resultsCount_status({ count: searchResults.length })}
+        <div aria-live="polite" class="sr-only">
+          {m.lib_commandPalette_resultsCount_status({ count: resultCount })}
         </div>
-
-        <ShortcutChip>{m.lib_commandPalette_esc_label()}</ShortcutChip>
       </div>
 
       <div class="h-px shrink-0 bg-border"></div>
+
+      {#if !isGoToLineMode}
+        <CommandPaletteFilters
+          bind:this={filtersRef}
+          {workspaceId}
+          {activeFilter}
+          isCollaborator={$isCollaborator$}
+          onFilter={applyFilter}
+        />
+      {/if}
 
       {#if isGoToLineMode}
         <div class="min-h-0 max-h-[480px] overflow-y-auto p-1">
@@ -1039,48 +1052,18 @@
       {:else if searchResults.length > 0 || isLoadingFiles || isLoadingMessages || noteResults.loading}
         <div
           bind:this={resultsRef}
-          class="min-h-0 max-h-[480px] overflow-y-auto p-1"
+          class="min-h-0 max-h-[440px] overflow-y-auto overscroll-contain p-2"
           data-palette-results
         >
           {#each searchResults as item, index (item._idx !== undefined ? item._idx : `fallback-${index}`)}
             {#if item._borderAbove}
               <div class="my-1.5 h-px bg-border"></div>
             {:else if item._newActionsRow}
-              <div class="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5">
-                <div class="flex flex-wrap gap-2">
-                  {#each searchResults.filter((r) => r._newAction && !r._newWorkspace) as action}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      active={selectedIndex === action._idx}
-                      aria-current={selectedIndex === action._idx ? 'true' : undefined}
-                      data-palette-index={action._idx}
-                      onclick={() => selectItem(action)}
-                      onpointermove={() => (selectedIndex = action._idx)}
-                    >
-                      {#snippet leadingIcon()}<Fa icon={faPlus} class="size-3.5" />{/snippet}
-                      {action.pillLabel ?? action.label}
-                    </Button>
-                  {/each}
-                </div>
-
-                {#each searchResults.filter((r) => r._newWorkspace) as wsAction}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    active={selectedIndex === wsAction._idx}
-                    aria-current={selectedIndex === wsAction._idx ? 'true' : undefined}
-                    data-palette-index={wsAction._idx}
-                    onclick={() => selectItem(wsAction)}
-                    onpointermove={() => (selectedIndex = wsAction._idx)}
-                  >
-                    {#snippet leadingIcon()}<Fa icon={faPlus} class="size-3.5" />{/snippet}
-                    {wsAction.pillLabel ?? wsAction.label}
-                  </Button>
-                {/each}
+              <div class="px-3 pb-2 pt-3 type-caption text-muted-foreground">
+                {m.layout_commandPalette_commands_group()}
               </div>
             {:else if item._groupLabel}
-              <div class="px-2 pt-2 pb-1 {index > 0 ? 'mt-0.5' : ''}">
+              <div class="px-3 pb-2 pt-3 {index > 0 ? 'mt-2' : ''}">
                 <div class="flex items-center justify-between type-caption text-muted-foreground">
                   <span>{item._groupLabel}</span>
                   {#if item._shortcutKey}
@@ -1092,6 +1075,8 @@
               <ActionRow
                 data-palette-index={index}
                 selected={selectedIndex === index}
+                class="px-3 py-2"
+                onpointerdown={(event) => event.preventDefault()}
                 onclick={() => selectItem(item)}
               >
                 {#snippet title()}
@@ -1100,26 +1085,13 @@
                   >
                 {/snippet}
               </ActionRow>
-            {:else if !item._newAction}
-              {#snippet rowDescription()}
-                <span class="block truncate">
-                  {#if item.type === 'note' && item.breadcrumbs}
-                    {item.breadcrumbs}
-                  {:else if item.type === 'change' || item.type === 'file'}
-                    {item.path || item.description}
-                  {:else}
-                    {item.description}
-                  {/if}
-                </span>
-              {/snippet}
+            {:else}
               <ActionRow
                 data-palette-index={index}
                 data-palette-result
+                class="items-center gap-3 rounded-md px-3 py-2.5 type-body"
                 selected={selectedIndex === index}
                 aria-current={selectedIndex === index ? 'true' : undefined}
-                description={item.description || item.breadcrumbs || item.path
-                  ? rowDescription
-                  : undefined}
                 onclick={() => selectItem(item)}
                 onpointermove={() => (selectedIndex = index)}
                 onpointerdown={(event) => event.preventDefault()}
@@ -1143,13 +1115,14 @@
                 {/snippet}
 
                 {#snippet trailing()}
-                  {#if item.shortcut}
-                    <ShortcutChip>{item.shortcut}</ShortcutChip>
-                  {/if}
-
-                  {#if selectedIndex === index && !item._groupLabel}
-                    <ShortcutChip>↵</ShortcutChip>
-                  {/if}
+                  <span aria-hidden="true" class="flex min-w-6 items-center justify-end gap-2">
+                    {#if item.shortcut}
+                      <ShortcutChip>{item.shortcut}</ShortcutChip>
+                    {/if}
+                    {#if selectedIndex === index}
+                      <ShortcutChip class="rounded bg-muted px-1.5 py-1">↵</ShortcutChip>
+                    {/if}
+                  </span>
                 {/snippet}
               </ActionRow>
             {/if}
@@ -1157,7 +1130,7 @@
 
           {#if (isLoadingFiles && workspaceId) || isLoadingMessages || noteResults.loading}
             {#each [0, 1, 2] as i}
-              <div class="w-full px-3 h-[32px] flex items-center gap-3">
+              <div class="w-full px-3 h-11 flex items-center gap-3">
                 <Skeleton class="w-4 h-4 rounded flex-none" />
                 <Skeleton class="h-4 rounded" style="width: {100 + i * 40}px;" />
               </div>
@@ -1165,11 +1138,14 @@
           {/if}
         </div>
       {:else if searchQuery && !isLoadingFiles && !isLoadingMessages && !noteResults.loading}
-        <div class="px-3 py-6 text-center">
-          <p class="text-[13px] text-subtle">
-            {m.lib_commandPalette_noResults_message({ query: searchQuery })}
-          </p>
-        </div>
+        <EmptyState class="min-h-0 flex-1 overflow-y-auto py-10" contentClass="break-words">
+          {#snippet icon()}<Fa icon={faSearch} class="size-5" />{/snippet}
+          {#snippet title()}
+            {parsedQuery.searchTerm
+              ? m.lib_commandPalette_noResults_message({ query: parsedQuery.searchTerm })
+              : m.lib_commandPalette_emptyFilter_message()}
+          {/snippet}
+        </EmptyState>
       {:else if !searchQuery}
         <div class="px-3 py-6 text-center">
           <p class="text-[13px] text-subtle">{m.lib_commandPalette_startTyping_message()}</p>
@@ -1178,19 +1154,33 @@
 
       <div class="h-px shrink-0 bg-border"></div>
       <div
-        class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 px-3 py-2 type-caption text-muted-foreground"
+        data-palette-hints
+        class="flex shrink-0 items-center gap-4 whitespace-nowrap bg-muted/30 px-4 py-3 type-caption text-muted-foreground"
       >
         <span class="flex items-center gap-1.5">
-          <ShortcutChip>↑↓</ShortcutChip>
-          <span>{m.lib_commandPalette_navigate_label()}</span>
+          <span class="sr-only min-[480px]:not-sr-only"
+            >{m.lib_commandPalette_navigate_label()}</span
+          >
+          <ShortcutChip class="rounded bg-muted px-1.5 py-1">↑</ShortcutChip>
+          <ShortcutChip class="rounded bg-muted px-1.5 py-1">↓</ShortcutChip>
         </span>
         <span class="flex items-center gap-1.5">
-          <ShortcutChip>↵</ShortcutChip>
-          <span>{m.lib_commandPalette_select_label()}</span>
+          <span class="sr-only min-[480px]:not-sr-only">{m.lib_commandPalette_select_label()}</span>
+          <ShortcutChip class="rounded bg-muted px-1.5 py-1">↵</ShortcutChip>
         </span>
-        <span class="flex items-center gap-1.5">
-          <ShortcutChip>{m.lib_commandPalette_esc_label()}</ShortcutChip>
+        {#if !isGoToLineMode}
+          <span class="flex items-center gap-1.5">
+            <span class="sr-only min-[480px]:not-sr-only"
+              >{m.lib_commandPalette_filter_label()}</span
+            >
+            <ShortcutChip class="rounded bg-muted px-1.5 py-1">⇥</ShortcutChip>
+          </span>
+        {/if}
+        <span class="ml-auto flex items-center gap-1.5">
           <span>{m.lib_commandPalette_footerClose_label()}</span>
+          <ShortcutChip class="rounded bg-muted px-1.5 py-1"
+            >{m.lib_commandPalette_esc_label()}</ShortcutChip
+          >
         </span>
       </div>
     </div>

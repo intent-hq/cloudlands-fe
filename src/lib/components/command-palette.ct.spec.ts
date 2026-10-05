@@ -57,10 +57,10 @@ test('GitLab command supports keyboard activation and reopening at compact width
 });
 
 for (const width of [1280, 360]) {
-  test(`palette keeps multiline rows, action pills, and footer contained at ${width}px`, async ({
+  test(`palette keeps results, filters, and footer on one line at ${width}px`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 800 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(CommandPalettePreview, {
@@ -70,7 +70,7 @@ for (const width of [1280, 360]) {
     const input = dialog.getByRole('textbox');
     await expect(input).toBeFocused();
     const rows = dialog.locator('[data-palette-result]');
-    await expect(rows).toHaveCount(5);
+    await expect(rows).toHaveCount(7);
     const geometry = await rows.evaluateAll((elements) =>
       elements.map((row) => {
         const box = row.getBoundingClientRect();
@@ -82,6 +82,8 @@ for (const width of [1280, 360]) {
           bottom: box.bottom,
           contentTop: content.top,
           contentBottom: content.bottom,
+          contentHeight: content.height,
+          lineHeight: parseFloat(getComputedStyle(row).lineHeight),
           overflow: row.scrollHeight - row.clientHeight,
         };
       }),
@@ -89,6 +91,7 @@ for (const width of [1280, 360]) {
     for (const row of geometry) {
       expect(row.contentTop).toBeGreaterThanOrEqual(row.top);
       expect(row.contentBottom).toBeLessThanOrEqual(row.bottom);
+      expect(row.contentHeight).toBeLessThanOrEqual(row.lineHeight + 1);
       expect(row.overflow).toBeLessThanOrEqual(1);
     }
     for (let index = 1; index < geometry.length; index++) {
@@ -101,11 +104,32 @@ for (const width of [1280, 360]) {
     expect(
       await dialog.evaluate((node) => node.scrollWidth - node.clientWidth),
     ).toBeLessThanOrEqual(1);
-    for (const pill of await dialog.locator('[data-slot="button"]').all()) {
-      const pillBox = (await pill.boundingBox())!;
-      expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(box.x + box.width);
-    }
+    const filters = dialog.getByRole('group', { name: 'Filter results' });
+    const filterTops = await filters
+      .getByRole('button')
+      .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top));
+    expect(Math.max(...filterTops) - Math.min(...filterTops)).toBeLessThanOrEqual(1);
+    const footerCenters = await dialog.locator('[data-palette-hints] > span').evaluateAll((hints) =>
+      hints.map((hint) => {
+        const rect = hint.getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      }),
+    );
+    expect(Math.max(...footerCenters) - Math.min(...footerCenters)).toBeLessThanOrEqual(1);
+    await testInfo.attach(`single-line-palette-${width}px`, {
+      body: await dialog.screenshot(),
+      contentType: 'image/png',
+    });
+    await input.press('Shift+Tab');
+    await expect(input).toHaveValue('~');
+    const lastFilter = filters.getByRole('button', { name: 'Changes', exact: true });
+    await expect(lastFilter).toHaveAttribute('aria-pressed', 'true');
+    await expect(lastFilter).toBeInViewport({ ratio: 1 });
     await input.press('Tab');
+    await expect(input).toHaveValue('');
+    await expect(filters.getByRole('button', { name: 'All', exact: true })).toBeInViewport({
+      ratio: 1,
+    });
     await expect(input).toBeFocused();
   });
 }
@@ -137,6 +161,55 @@ test('palette show-more filtering preserves keyboard focus and scrolls the curre
   await input.press('Escape');
   await expect(input).toHaveValue('');
   await expect(dialog).toBeVisible();
+  await input.press('Escape');
+  await expect(dialog).toHaveCount(0);
+});
+
+test('category controls preserve the query, support keyboard cycling, and recover from empty results', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 720, height: 740 });
+  await mount(CommandPalettePreview, {
+    hooksConfig: { geometrySnapshot: { scene: 'command-palette', state: 'grouped' } },
+  });
+  const dialog = page.getByRole('dialog');
+  const input = dialog.getByRole('textbox');
+  const filters = dialog.getByRole('group', { name: 'Filter results' });
+  await input.fill('context');
+  await filters.getByRole('button', { name: 'Context', exact: true }).click();
+  await expect(input).toHaveValue('#context');
+  await expect(input).toBeFocused();
+  await expect(dialog.locator('[data-palette-result]')).toHaveCount(16);
+  await input.press('Tab');
+  await expect(input).toHaveValue('/context');
+  await input.press('Shift+Tab');
+  await expect(input).toHaveValue('#context');
+  await filters.getByRole('button', { name: 'All', exact: true }).click();
+  await expect(input).toHaveValue('context');
+
+  await filters.getByRole('button', { name: 'Changes', exact: true }).click();
+  await expect(input).toHaveValue('~context');
+  await expect(input).toBeFocused();
+  await input.fill('~');
+  await expect(dialog.locator('[data-palette-result]')).toHaveCount(2);
+
+  await input.fill('#no-matching-context-xyz');
+  await expect(dialog.getByText('No results found for "no-matching-context-xyz"')).toBeVisible();
+  await testInfo.attach('empty-results', {
+    body: await dialog.screenshot(),
+    contentType: 'image/png',
+  });
+  await input.press('Escape');
+  await expect(input).toHaveValue('');
+  await expect(filters.getByRole('button', { name: 'All', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await testInfo.attach('command-palette-redesigned', {
+    body: await dialog.screenshot(),
+    contentType: 'image/png',
+  });
   await input.press('Escape');
   await expect(dialog).toHaveCount(0);
 });
