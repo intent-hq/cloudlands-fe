@@ -4,7 +4,11 @@
  * compatibility, not an amendment to the protocol's RFC3339 UTC description.
  * Keep the original string for identity/digests; only comparisons use this instant. */
 export function deadlineNanoseconds(value: string): bigint | undefined {
-  if (new TextEncoder().encode(value).byteLength > 64 || value.charCodeAt(10) === 0 || value.charCodeAt(10) > 127)
+  if (
+    new TextEncoder().encode(value).byteLength > 64 ||
+    value.charCodeAt(10) === 0 ||
+    value.charCodeAt(10) > 127
+  )
     return undefined;
   const parts =
     /^(\d{4})-(\d{2})-(\d{2})[\s\S](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:[Zz]|[+-]00:00)$/.exec(

@@ -433,5 +433,11 @@ export function validateCanonicalSourcePage(
   if (request.kind !== 'context' && request.kind !== 'metadata')
     throw new Error('Invalid canonical source page request');
   validateRequest(request);
-  return readPage(value, workspaceId, noteId, request, (raw) => deadlineNanoseconds(raw) !== undefined);
+  return readPage(
+    value,
+    workspaceId,
+    noteId,
+    request,
+    (raw) => deadlineNanoseconds(raw) !== undefined,
+  );
 }

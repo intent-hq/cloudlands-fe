@@ -183,7 +183,9 @@ for (const operation of [
       await bounded.evaluate(async (el) => {
         await (el as Host).proof.loadAnnotations();
       });
-      await expect(bounded.locator('[data-proof-comment="browser-alias"]')).toHaveText('segment450');
+      await expect(bounded.locator('[data-proof-comment="browser-alias"]')).toHaveText(
+        'segment450',
+      );
     }
     await focus(page, 'native');
     await page
