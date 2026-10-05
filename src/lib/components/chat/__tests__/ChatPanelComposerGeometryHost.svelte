@@ -356,7 +356,7 @@
       store.dispatch(
         chatLastAttemptedMessageSet(
           agentId,
-          buildRecordedAttempt(pending.content, { submission: { scope, id: pending.id } }),
+          buildRecordedAttempt(pending.content, { messageMetadata: pending.messageMetadata, submission: { scope, id: pending.id } }),
         ),
       );
     } else {
@@ -384,7 +384,7 @@
       store.dispatch(
         chatLastAttemptedMessageSet(
           agentId,
-          buildRecordedAttempt(pending.content, { submission: { scope, id: pending.id } }),
+          buildRecordedAttempt(pending.content, { messageMetadata: pending.messageMetadata, submission: { scope, id: pending.id } }),
         ),
       );
       store.dispatch(pendingSubmissionSettled(scope, pending.id, 'rejected', Date.now()));
@@ -401,7 +401,7 @@
         timestamp,
         contentBlocks: [{ type: 'text' as const, text: pending.content }],
         author,
-        metadata: { submissionIds: [pending.id] },
+        metadata: { ...pending.messageMetadata, submissionIds: [pending.id] },
       };
       store.dispatch(
         pendingEvidenceObserved(

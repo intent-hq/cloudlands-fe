@@ -6,6 +6,10 @@ import { reducers } from '$store/renderer/reducer';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { selectPendingSubmissionDisplay } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
 import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { buildAnswerMessageMetadata } from '$lib/components/chat/questions/answer-message';
+import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
+import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { submitChatMessage } from './chat-submission';
 
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
@@ -160,5 +164,51 @@ describe('conversation admission before serialized preparation', () => {
     } finally {
       stop();
     }
+  });
+});
+
+
+describe('Q&A local admission', () => {
+  const question = {
+    id: 'question-one', role: 'assistant' as const, timestamp: '2026-10-05T00:00:00Z',
+    contentBlocks: [{ type: 'resource' as const, resource: {
+      uri: 'intent-question://one', name: 'Approach', mimeType: QUESTION_RESOURCE_MIME_TYPE,
+      text: JSON.stringify({ attachmentId: 'one', header: 'Approach', question: 'Which approach?',
+        multiSelect: false, options: [{ label: 'Small change' }, { label: 'Discuss first' }] }),
+    } }],
+  };
+  const metadata = buildAnswerMessageMetadata(question.id);
+  const payload = { wsId: 'workspace', text: 'Q: Which approach?\nA: Small change', messageMetadata: metadata };
+  const wizard = () => deriveWizardPendingQuestions(store.state, 'agent', store.state.agentSessions.byAgentId.agent.messages);
+  beforeEach(() => store.dispatch(bulkUpsertSessions([{
+    id: 'agent', workspaceId: 'workspace', status: 'runtime_idle', messages: [question],
+    metadata: { pendingQuestionsMessageId: question.id },
+  } as AgentSession])));
+
+  it('hides only the admitted answer set synchronously before preparation or ACK', () => {
+    expect(wizard()?.messageId).toBe(question.id);
+    expect(submitChatMessage(store, 'agent', payload)).toBe(true);
+    expect(wizard()).toBeNull();
+    expect(display().conversation[0]).toMatchObject({ content: payload.text, messageMetadata: metadata, status: 'preparing' });
+    expect(store.state.agentSessions.byAgentId.agent.metadata?.pendingQuestionsMessageId).toBe(question.id);
+    expect(store.state.agentQueue.byAgentId.agent).toBeUndefined();
+    expect(pipeline.send).not.toHaveBeenCalled();
+  });
+
+  it('keeps unrelated and newer question sets available during an old answer flight', () => {
+    submitChatMessage(store, 'agent', { ...payload, messageMetadata: undefined });
+    expect(wizard()?.messageId).toBe(question.id);
+    submitChatMessage(store, 'agent', payload);
+    const next = { ...question, id: 'question-two' };
+    store.dispatch(updateSession('agent', { messages: [question, next], metadata: { pendingQuestionsMessageId: next.id } }));
+    expect(wizard()?.messageId).toBe(next.id);
+  });
+
+  it.each(['rejected', 'uncertain', 'accepted'] as const)('uses existing %s recovery without resolving the marker', (outcome) => {
+    submitChatMessage(store, 'agent', payload);
+    const entry = store.state.pendingSubmissions.byAgentId.agent;
+    store.dispatch(pendingSubmissionSettled(entry.scope, display().conversation[0].id, outcome, Date.now()));
+    expect(wizard()?.messageId ?? null).toBe(outcome === 'rejected' ? question.id : null);
+    expect(store.state.agentSessions.byAgentId.agent.metadata?.pendingQuestionsMessageId).toBe(question.id);
   });
 });
