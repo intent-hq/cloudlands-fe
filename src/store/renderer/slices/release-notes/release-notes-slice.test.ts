@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   closeReleaseNotesModal,
+  dismissReleaseNotes,
   initialState,
   releaseNotesReducer,
   showReleaseNotes,
@@ -67,5 +68,14 @@ describe('releaseNotesReducer', () => {
 
     expect(state.showModal).toBe(false);
     expect(state.releaseNotes).toEqual(NOTES);
+  });
+
+  it('closes the modal on dismissReleaseNotes exactly like closeReleaseNotesModal', () => {
+    const opened = releaseNotesReducer(initialState, showReleaseNotesSuccess(NOTES));
+
+    expect(releaseNotesReducer(opened, dismissReleaseNotes())).toEqual(
+      releaseNotesReducer(opened, closeReleaseNotesModal()),
+    );
+    expect(releaseNotesReducer(opened, dismissReleaseNotes()).showModal).toBe(false);
   });
 });

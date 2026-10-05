@@ -4,10 +4,6 @@ import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { Workspace, WorkspaceId } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
 
-vi.mock('../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: any) => action),
-}));
-
 vi.mock('../../terminal/main/terminal.ipc', () => ({
   createTerminalFromBackend: vi.fn(),
 }));

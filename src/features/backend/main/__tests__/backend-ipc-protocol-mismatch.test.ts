@@ -13,7 +13,7 @@
  * handshake + open run without a live socket or the Electron window graph.
  */
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -48,9 +48,19 @@ vi.mock('../json-rpc-client', () => {
     getReconnectAttempts(): number {
       return 0;
     }
+    isConnectionLimited(): boolean {
+      return false;
+    }
+    getConnectionLimitRetryAfterMs(): number | null {
+      return null;
+    }
   }
   return { JsonRpcClient: FakeJsonRpcClient };
 });
+
+vi.mock('../keychain-sync-lifecycle', () => ({
+  initKeychainSyncLifecycle: vi.fn(() => ({ dispose: vi.fn() })),
+}));
 
 vi.mock('../client-identity', () => ({
   getOrCreateClientId: vi.fn(async () => 'cli-test'),
@@ -184,6 +194,39 @@ describe('protocol-compat check on remote connect', () => {
       // legacy wire value for that origin).
       origin: 'switch',
     });
+  });
+
+  it.each([
+    ['1', '2'],
+    ['2', '1'],
+  ])('allows retained RPCs after a major mismatch (%s local, %s remote)', async (local, remote) => {
+    const mod = await loadModule();
+    mod.getBackendClient();
+    fireHello(0, { protocolVersion: local });
+    await mod.openBackendWindow('remote-1');
+    fireHello(1, { protocolVersion: remote });
+    expect(protocolMismatchCalls()).toHaveLength(1);
+
+    const client = await mod.connectBackendClient('remote-1');
+    const result = { outcome: 'unchanged', pullRequests: [] };
+    vi.mocked(client.request).mockResolvedValueOnce(result);
+    mod.registerBackendHandlers();
+    const handler = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.find(([channel]) => channel === 'backend:request')?.[1];
+    expect(handler).toBeDefined();
+    const sender = BrowserWindow.getAllWindows()[0].webContents;
+    expect(
+      await handler!({ sender } as never, {
+        method: 'pr.refresh',
+        params: { workspaceId: 'ws-1' },
+      }),
+    ).toEqual({ ok: true, result });
+    expect(client.request).toHaveBeenCalledWith(
+      'pr.refresh',
+      { workspaceId: 'ws-1' },
+      { timeoutMs: undefined },
+    );
   });
 
   it('broadcasts nothing when the remote major matches local (minor differences are fine)', async () => {

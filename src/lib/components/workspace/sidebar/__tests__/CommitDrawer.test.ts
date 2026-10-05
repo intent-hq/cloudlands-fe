@@ -69,8 +69,8 @@ vi.mock(
   }),
 );
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), custom: vi.fn(), info: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), custom: vi.fn(), info: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -155,7 +155,7 @@ describe('CommitDrawer', () => {
     mocks.executorState.agentId = 'agent-42';
     const { container } = await renderDrawer();
     const toggleBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Auto-commit when done'),
+      b.textContent?.includes('Auto-commit'),
     );
     expect(toggleBtn).toBeDefined();
     await fireEvent.click(toggleBtn!);

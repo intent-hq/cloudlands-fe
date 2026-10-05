@@ -1,3 +1,6 @@
+// @verify-changed-triggers: messages/*.json, project.inlang/settings.json,
+// scripts/i18n-equal-allowlist.json, scripts/check-i18n-completeness.mjs
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

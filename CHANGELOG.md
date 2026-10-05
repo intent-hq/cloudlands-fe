@@ -4,6 +4,1667 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.203.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.6...v2.203.7) (2026-10-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.13 ([#3181](https://github.com/intent-hq/cloudlands-fe/issues/3181)) ([7c063c0](https://github.com/intent-hq/cloudlands-fe/commit/7c063c0244a1a9e57ac13e0d23ecc0e4106f2304))
+* preserve optimistic conversation spacing and working order ([#3172](https://github.com/intent-hq/cloudlands-fe/issues/3172)) ([c521172](https://github.com/intent-hq/cloudlands-fe/commit/c521172cf7b5a3b764ba70b696ce8b8f33d22dc7))
+
+## [2.203.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.5...v2.203.6) (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.12 ([#3175](https://github.com/intent-hq/cloudlands-fe/issues/3175)) ([7a71a4e](https://github.com/intent-hq/cloudlands-fe/commit/7a71a4e12fe73ae3a500b50c9ceb5d924ac27936))
+* keep non-owner agent settings read-only ([#3171](https://github.com/intent-hq/cloudlands-fe/issues/3171)) ([6b14350](https://github.com/intent-hq/cloudlands-fe/commit/6b14350ecd78b305dfc50107a52f1eb12156003e))
+
+## [2.203.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.4...v2.203.5) (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+* preserve host names in guest windows ([#3169](https://github.com/intent-hq/cloudlands-fe/issues/3169)) ([df98d8a](https://github.com/intent-hq/cloudlands-fe/commit/df98d8a537dc5bfaeb60ed3a72a3a5d1cdc49581))
+
+## [2.203.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.3...v2.203.4) (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+* preserve handshake ownership during remote connection recovery ([#3168](https://github.com/intent-hq/cloudlands-fe/issues/3168)) ([35ca566](https://github.com/intent-hq/cloudlands-fe/commit/35ca566d74c1f66b2b919e3ce759f3c9107330c5))
+
+## [2.203.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.2...v2.203.3) (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+* anchor chat history while initial pages load ([#3162](https://github.com/intent-hq/cloudlands-fe/issues/3162)) ([a1f8270](https://github.com/intent-hq/cloudlands-fe/commit/a1f8270895fa44bc635fd50cde6986caee1ee53f))
+* bump intentd sidecar to v0.10.11 ([#3166](https://github.com/intent-hq/cloudlands-fe/issues/3166)) ([a3bfec8](https://github.com/intent-hq/cloudlands-fe/commit/a3bfec825085896ae379289d1bd8fd9b1d33fb9a))
+
+## [2.203.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.1...v2.203.2) (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+* match Devices heading to settings section style ([#6708](https://github.com/intent-hq/cloudlands-fe/issues/6708)) ([#3163](https://github.com/intent-hq/cloudlands-fe/issues/3163)) ([5fe3cb8](https://github.com/intent-hq/cloudlands-fe/commit/5fe3cb8ee5c39c59af0f34ad0f30afff58b7c8a3))
+
+## [2.203.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.0...v2.203.1) (2026-10-04)
+
+
+### 🐛 Bug Fixes
+
+* size onboarding project picker rows to their content ([#3158](https://github.com/intent-hq/cloudlands-fe/issues/3158)) ([a97bc49](https://github.com/intent-hq/cloudlands-fe/commit/a97bc494e1aec3583dd1016d0c7f5f27b8f71f00))
+
+## [2.203.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.202.0...v2.203.0) (2026-10-04)
+
+
+### 🚀 Features
+
+* display chat submissions immediately with authoritative queue reconciliation ([#3155](https://github.com/intent-hq/cloudlands-fe/issues/3155)) ([a6c106c](https://github.com/intent-hq/cloudlands-fe/commit/a6c106ce1b2f0f762735b28bce05f334b830980e))
+* **gitlab:** add native review and qualified resource previews ([#3142](https://github.com/intent-hq/cloudlands-fe/issues/3142)) ([b5ef649](https://github.com/intent-hq/cloudlands-fe/commit/b5ef649c73edf00cffa215969ce87e33c04a51a8))
+* show and copy commands in script subscriptions ([#3153](https://github.com/intent-hq/cloudlands-fe/issues/3153)) ([2689f33](https://github.com/intent-hq/cloudlands-fe/commit/2689f33811affbfd52dff2b306d23085d392835e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.10 ([#3160](https://github.com/intent-hq/cloudlands-fe/issues/3160)) ([b611698](https://github.com/intent-hq/cloudlands-fe/commit/b611698f3555df66fc2fce05ed5af4367d46fcd6))
+* bump intentd sidecar to v0.10.9 ([#3159](https://github.com/intent-hq/cloudlands-fe/issues/3159)) ([0c22415](https://github.com/intent-hq/cloudlands-fe/commit/0c22415c175f8fe75894e9b058dba02f76a66b2b))
+
+## [2.202.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.201.2...v2.202.0) (2026-10-03)
+
+
+### 🚀 Features
+
+* autocomplete instance invitation accounts ([#3138](https://github.com/intent-hq/cloudlands-fe/issues/3138)) ([333db71](https://github.com/intent-hq/cloudlands-fe/commit/333db712a03cf6ffa8cd8ba008a481b4735ca142))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.8 ([#3156](https://github.com/intent-hq/cloudlands-fe/issues/3156)) ([ea65591](https://github.com/intent-hq/cloudlands-fe/commit/ea65591d7e5b145946fe5653612953f89b127c96))
+* exclude instance members from archive guest warnings ([#3148](https://github.com/intent-hq/cloudlands-fe/issues/3148)) ([5e06f55](https://github.com/intent-hq/cloudlands-fe/commit/5e06f5593db189c6a0a61efe502ed196a68e3da2))
+* follow presence avatars to reachable workspace views ([#3150](https://github.com/intent-hq/cloudlands-fe/issues/3150)) ([3580d7b](https://github.com/intent-hq/cloudlands-fe/commit/3580d7bef5d84627a69bfea6b2591a88787619c5))
+* match script monitor row title size to sibling subscription rows ([#3154](https://github.com/intent-hq/cloudlands-fe/issues/3154)) ([44577cb](https://github.com/intent-hq/cloudlands-fe/commit/44577cbff447a120f168f94b1ee3cfa71137debf))
+* separate joined instances and restore invited instance reopening ([#3152](https://github.com/intent-hq/cloudlands-fe/issues/3152)) ([948e9a2](https://github.com/intent-hq/cloudlands-fe/commit/948e9a2f17d2aad30cd326057b3331e2519e12e8))
+* show readable chat authors and preserve input focus ([#3139](https://github.com/intent-hq/cloudlands-fe/issues/3139)) ([3eacc19](https://github.com/intent-hq/cloudlands-fe/commit/3eacc193127a01ce520ef7e52681aad8cb7584ba))
+* unify instance users and live connection status ([#6642](https://github.com/intent-hq/cloudlands-fe/issues/6642)) ([#3143](https://github.com/intent-hq/cloudlands-fe/issues/3143)) ([22fff99](https://github.com/intent-hq/cloudlands-fe/commit/22fff9943b83036c9c5ceed6754cf9fa57ae40da))
+* verify Git for admitted shared-instance members ([#6662](https://github.com/intent-hq/cloudlands-fe/issues/6662)) ([#3149](https://github.com/intent-hq/cloudlands-fe/issues/3149)) ([266451f](https://github.com/intent-hq/cloudlands-fe/commit/266451f18afa8954d1f7fdee3fc14052230b2ca8))
+
+## [2.201.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.201.1...v2.201.2) (2026-10-03)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.7 ([#3147](https://github.com/intent-hq/cloudlands-fe/issues/3147)) ([755779f](https://github.com/intent-hq/cloudlands-fe/commit/755779f7e305fdf29c1ce7ed7206f31649e1943d))
+* preserve conversation paging across snapshot replay ([#3141](https://github.com/intent-hq/cloudlands-fe/issues/3141)) ([2c559b9](https://github.com/intent-hq/cloudlands-fe/commit/2c559b90acf3eccbe6d20849263859516adb6644))
+
+## [2.201.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.201.0...v2.201.1) (2026-10-03)
+
+
+### 🐛 Bug Fixes
+
+* accept nullable GitHub invitation proofs ([#3137](https://github.com/intent-hq/cloudlands-fe/issues/3137)) ([1be2942](https://github.com/intent-hq/cloudlands-fe/commit/1be2942783a53553ef9c7ee709c72895d0c9289d))
+* bump intentd sidecar to v0.10.6 ([#3145](https://github.com/intent-hq/cloudlands-fe/issues/3145)) ([f84b0a0](https://github.com/intent-hq/cloudlands-fe/commit/f84b0a08e397d3da6b3fac19b8de0714890d502e))
+* enable multiplayer directly from invitation recovery ([#3140](https://github.com/intent-hq/cloudlands-fe/issues/3140)) ([19758ed](https://github.com/intent-hq/cloudlands-fe/commit/19758ed29efc8ea4503fb5e569bb4ad4a06d5bee))
+
+## [2.201.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.200.1...v2.201.0) (2026-10-03)
+
+
+### 🚀 Features
+
+* approve assistant project transfers inline ([#2934](https://github.com/intent-hq/cloudlands-fe/issues/2934)) ([6852913](https://github.com/intent-hq/cloudlands-fe/commit/685291309b07412485c7cd783a3e617c9dc13809))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.5 ([#3136](https://github.com/intent-hq/cloudlands-fe/issues/3136)) ([de61138](https://github.com/intent-hq/cloudlands-fe/commit/de61138fa5bf8acd14d2bb01a8bf2d163ec88ca1))
+
+## [2.200.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.200.0...v2.200.1) (2026-10-03)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.4 ([#3133](https://github.com/intent-hq/cloudlands-fe/issues/3133)) ([e4506cd](https://github.com/intent-hq/cloudlands-fe/commit/e4506cd89bd405e1990fd35474370244c89b2d4c))
+
+## [2.200.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.199.1...v2.200.0) (2026-10-03)
+
+
+### 🚀 Features
+
+* improve queued message batching and controls ([#3128](https://github.com/intent-hq/cloudlands-fe/issues/3128)) ([b8f73ca](https://github.com/intent-hq/cloudlands-fe/commit/b8f73cae2f81c278faf6f9357ef5f82039e3eb8b))
+
+
+### 🐛 Bug Fixes
+
+* align chat messages with the prompt box ([#3120](https://github.com/intent-hq/cloudlands-fe/issues/3120)) ([b85f5e3](https://github.com/intent-hq/cloudlands-fe/commit/b85f5e3cb107b8c207f465d4700d2729cdbc06f9))
+* bump intentd sidecar to v0.10.2 ([#3130](https://github.com/intent-hq/cloudlands-fe/issues/3130)) ([bd98624](https://github.com/intent-hq/cloudlands-fe/commit/bd9862419409b662e6a8806304e219c914a73c95))
+* bump intentd sidecar to v0.10.3 ([#3132](https://github.com/intent-hq/cloudlands-fe/issues/3132)) ([e00e283](https://github.com/intent-hq/cloudlands-fe/commit/e00e283abcb654fd29c948202327aac5dadf5032))
+* cap modal height at 80vh ([#3125](https://github.com/intent-hq/cloudlands-fe/issues/3125)) ([5e85ce3](https://github.com/intent-hq/cloudlands-fe/commit/5e85ce3822746fffc167aab066bc99c919328644))
+* preserve specialist creation drafts and progress ([#3108](https://github.com/intent-hq/cloudlands-fe/issues/3108)) ([dc6adab](https://github.com/intent-hq/cloudlands-fe/commit/dc6adabb31c1aedba810ff6df6e6a7441392b6b0))
+* simplify collaboration settings and instance invitations ([#3099](https://github.com/intent-hq/cloudlands-fe/issues/3099)) ([79408e4](https://github.com/intent-hq/cloudlands-fe/commit/79408e4ac3f179a882787c2b75dcde0bb7b0b12b))
+* stabilize diagrams when notes load ([#3129](https://github.com/intent-hq/cloudlands-fe/issues/3129)) ([33adb06](https://github.com/intent-hq/cloudlands-fe/commit/33adb0669884290f1c62c075541ccdd14e6b1ba5))
+* stop warning about browser tabs when quitting ([#3126](https://github.com/intent-hq/cloudlands-fe/issues/3126)) ([85f25df](https://github.com/intent-hq/cloudlands-fe/commit/85f25dfb1b26e5fa203fb94b03467a09df5b1482))
+
+## [2.199.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.199.0...v2.199.1) (2026-10-02)
+
+
+### 🐛 Bug Fixes
+
+* bound chat history pages and fill visible viewports on demand ([#3113](https://github.com/intent-hq/cloudlands-fe/issues/3113)) ([1ca449d](https://github.com/intent-hq/cloudlands-fe/commit/1ca449da941c2a0059088d54d3a78b93262f718b))
+* bump intentd sidecar to v0.10.1 ([#3123](https://github.com/intent-hq/cloudlands-fe/issues/3123)) ([6dcd61d](https://github.com/intent-hq/cloudlands-fe/commit/6dcd61dc98e1dd2ced4b5061d2a138878f004d3d))
+
+## [2.199.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.198.1...v2.199.0) (2026-10-02)
+
+
+### 🚀 Features
+
+* add script monitor controls and wake attribution ([#3104](https://github.com/intent-hq/cloudlands-fe/issues/3104)) ([e77f58a](https://github.com/intent-hq/cloudlands-fe/commit/e77f58af8cdb2281195bfe9abb020655a7b4eccc))
+* inspect generic RPC request and response streams ([#3111](https://github.com/intent-hq/cloudlands-fe/issues/3111)) ([e71aa86](https://github.com/intent-hq/cloudlands-fe/commit/e71aa868330d3672b64524dea9d55c0af4888d9e))
+* recall workspace specialists when creating agents ([#3110](https://github.com/intent-hq/cloudlands-fe/issues/3110)) ([e49f4ff](https://github.com/intent-hq/cloudlands-fe/commit/e49f4ff264868820e30be6f9512f3748d1bba64a))
+* select architectures for manual Mac builds ([#3117](https://github.com/intent-hq/cloudlands-fe/issues/3117)) ([2f1d946](https://github.com/intent-hq/cloudlands-fe/commit/2f1d94630ebd357690446e91f3fbafaf9fa9b5b7))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.0 ([#3121](https://github.com/intent-hq/cloudlands-fe/issues/3121)) ([2d434bf](https://github.com/intent-hq/cloudlands-fe/commit/2d434bf5b3ff72cdc0900612871fe68c30f53a5c))
+* bump intentd sidecar to v0.9.138 ([#3119](https://github.com/intent-hq/cloudlands-fe/issues/3119)) ([8beab86](https://github.com/intent-hq/cloudlands-fe/commit/8beab8618ff526a19e8d9a930c58d438c1283446))
+* load task lists only for visible consumers ([#3107](https://github.com/intent-hq/cloudlands-fe/issues/3107)) ([6cbc12d](https://github.com/intent-hq/cloudlands-fe/commit/6cbc12d8ea52985b57c18296d1d97bc9bfe81cd7))
+* warn early about incompatible backend connections ([#3116](https://github.com/intent-hq/cloudlands-fe/issues/3116)) ([0072af4](https://github.com/intent-hq/cloudlands-fe/commit/0072af4fd55689481c12060e87cc935b12e42920))
+
+
+### ⚡ Performance
+
+* avoid publishing unchanged computed diagram layouts ([#3109](https://github.com/intent-hq/cloudlands-fe/issues/3109)) ([c2402c2](https://github.com/intent-hq/cloudlands-fe/commit/c2402c212fc9535be6775e1985aeccc7b6ff486f))
+
+## [2.198.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.198.0...v2.198.1) (2026-10-02)
+
+
+### 🐛 Bug Fixes
+
+* insert sub-agent panes after their opener ([#3106](https://github.com/intent-hq/cloudlands-fe/issues/3106)) ([bebabfa](https://github.com/intent-hq/cloudlands-fe/commit/bebabfad867d52d60058dddd45fc68dfeeee29c5))
+
+## [2.198.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.197.0...v2.198.0) (2026-10-02)
+
+
+### 🚀 Features
+
+* reconcile shared queues and protect message drafts ([#3088](https://github.com/intent-hq/cloudlands-fe/issues/3088)) ([0ca6779](https://github.com/intent-hq/cloudlands-fe/commit/0ca677906b5e63959756361003a7dbc7222995c5))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.136 ([#3101](https://github.com/intent-hq/cloudlands-fe/issues/3101)) ([a7e3b16](https://github.com/intent-hq/cloudlands-fe/commit/a7e3b1653864b0f739a273584abe50805c6eb0d7))
+* bump intentd sidecar to v0.9.137 ([#3105](https://github.com/intent-hq/cloudlands-fe/issues/3105)) ([467d656](https://github.com/intent-hq/cloudlands-fe/commit/467d656898367d9cde765f95558d9778823cb3fa))
+* prefetch workspace subscriptions and reuse bundled participant summaries ([#3094](https://github.com/intent-hq/cloudlands-fe/issues/3094)) ([992de6e](https://github.com/intent-hq/cloudlands-fe/commit/992de6ece757832dc7ce95d47a578c5551b5ece3))
+* preserve Dev Console native window title ([#3103](https://github.com/intent-hq/cloudlands-fe/issues/3103)) ([3ada57d](https://github.com/intent-hq/cloudlands-fe/commit/3ada57dc7c39522c939a716f8684446c057316a4))
+* prevent detached maintenance in temporary Git fixtures ([#6144](https://github.com/intent-hq/cloudlands-fe/issues/6144)) ([#3093](https://github.com/intent-hq/cloudlands-fe/issues/3093)) ([392a149](https://github.com/intent-hq/cloudlands-fe/commit/392a1497775aee50c4d06aa4b1e4989adb2518db))
+* reject flaky local component test results ([#3090](https://github.com/intent-hq/cloudlands-fe/issues/3090)) ([eff5abf](https://github.com/intent-hq/cloudlands-fe/commit/eff5abfbf4037abcd01b9d23d02390ce3248ad84))
+* reject leading separators in unit test arguments ([#3096](https://github.com/intent-hq/cloudlands-fe/issues/3096)) ([34da6b4](https://github.com/intent-hq/cloudlands-fe/commit/34da6b40a300104dbb41a528f4791f1a9f28f11f))
+* release promptly after an intentd pin advance ([#3092](https://github.com/intent-hq/cloudlands-fe/issues/3092)) ([54039c3](https://github.com/intent-hq/cloudlands-fe/commit/54039c37debf3ce5b471b72e6445cee39b1cd553))
+* remove obsolete Claude availability probes ([#3095](https://github.com/intent-hq/cloudlands-fe/issues/3095)) ([1c7c590](https://github.com/intent-hq/cloudlands-fe/commit/1c7c590b828799ceb36e39fd4a281e8a5289283e))
+* retain Mermaid fullscreen requests until presentation settles ([#3097](https://github.com/intent-hq/cloudlands-fe/issues/3097)) ([16d7c62](https://github.com/intent-hq/cloudlands-fe/commit/16d7c626f93f96eab5da401e5004aa2ecac7947b))
+* update script lifecycle state from events ([#3100](https://github.com/intent-hq/cloudlands-fe/issues/3100)) ([bf1d7a2](https://github.com/intent-hq/cloudlands-fe/commit/bf1d7a2bdc49a2b1421950a663fc0af9d8802dac))
+
+## [2.197.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.196.1...v2.197.0) (2026-10-02)
+
+
+### 🚀 Features
+
+* add Collaboration settings and workspace participant roles ([#3042](https://github.com/intent-hq/cloudlands-fe/issues/3042)) ([b984d11](https://github.com/intent-hq/cloudlands-fe/commit/b984d1163b1cd560600e70ebcb8f70109110f7c4))
+* add combined dev console timeline ([#3087](https://github.com/intent-hq/cloudlands-fe/issues/3087)) ([d674400](https://github.com/intent-hq/cloudlands-fe/commit/d67440019eaf61bed183b597790562efa2294601))
+* add searchable JSON viewers to dev console payloads ([#3077](https://github.com/intent-hq/cloudlands-fe/issues/3077)) ([67abd29](https://github.com/intent-hq/cloudlands-fe/commit/67abd290c50d5b2fbd8318bf94e77c894bd9d8c3))
+
+
+### 🐛 Bug Fixes
+
+* batch diagram measurements and track presentation readiness ([#3080](https://github.com/intent-hq/cloudlands-fe/issues/3080)) ([e5075df](https://github.com/intent-hq/cloudlands-fe/commit/e5075df01b7cb80e03998203b7633aa8e65cef38))
+* bump intentd sidecar to v0.9.135 ([#3091](https://github.com/intent-hq/cloudlands-fe/issues/3091)) ([f8ffd87](https://github.com/intent-hq/cloudlands-fe/commit/f8ffd876e9c2380c40592ae4c0cd2b0c4f45795b))
+* coalesce repeated note task and subscription reads ([#3078](https://github.com/intent-hq/cloudlands-fe/issues/3078)) ([6ef7115](https://github.com/intent-hq/cloudlands-fe/commit/6ef71159ed5772d22d46c3f8cc6539ba48d6bfed))
+* restore assistant message sending for host owners ([#3083](https://github.com/intent-hq/cloudlands-fe/issues/3083)) ([a956380](https://github.com/intent-hq/cloudlands-fe/commit/a95638094e1f82c3fee9204f1834d56bcbd186a1))
+* show newest tabs first in the header dropdown ([#3084](https://github.com/intent-hq/cloudlands-fe/issues/3084)) ([6886651](https://github.com/intent-hq/cloudlands-fe/commit/6886651b2f08ef9ac0d40d43ae2a78428bebda8d))
+* use Collaboration in saved-session recovery guidance ([#3085](https://github.com/intent-hq/cloudlands-fe/issues/3085)) ([3da5cfd](https://github.com/intent-hq/cloudlands-fe/commit/3da5cfddef0ef448154502d66bdb187e0ecb5e50))
+
+## [2.196.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.196.0...v2.196.1) (2026-10-01)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.134 ([#3079](https://github.com/intent-hq/cloudlands-fe/issues/3079)) ([b16cb68](https://github.com/intent-hq/cloudlands-fe/commit/b16cb682bc18b350cb8e02c45d9c736a26ee685a))
+* contain bulk-delete dialog content within its body ([#3074](https://github.com/intent-hq/cloudlands-fe/issues/3074)) ([4f7d59f](https://github.com/intent-hq/cloudlands-fe/commit/4f7d59f5939895a4ca663550354c472bf66d3831))
+* stop redundant palette, focus and permission requests ([#3073](https://github.com/intent-hq/cloudlands-fe/issues/3073)) ([6b40669](https://github.com/intent-hq/cloudlands-fe/commit/6b40669ecb2efa151ffac3b4070b8ae3c427ada9))
+
+## [2.196.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.195.0...v2.196.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* show personal pairing and signed-in devices ([#3038](https://github.com/intent-hq/cloudlands-fe/issues/3038)) ([ee4c1b6](https://github.com/intent-hq/cloudlands-fe/commit/ee4c1b689d12c3b8f07808be5ecfb897af5b8395))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.133 ([#3075](https://github.com/intent-hq/cloudlands-fe/issues/3075)) ([e251120](https://github.com/intent-hq/cloudlands-fe/commit/e251120c5c3b9338fa98ef67cd2eba4ceefb4eb2))
+* honor mid-stream chat transcript resets ([#2604](https://github.com/intent-hq/cloudlands-fe/issues/2604)) ([60bb0b3](https://github.com/intent-hq/cloudlands-fe/commit/60bb0b3444a4e1a0e5f8404d3e54f64d70269eb6))
+
+## [2.195.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.194.0...v2.195.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* add session-scoped RPC Dev Console ([#3064](https://github.com/intent-hq/cloudlands-fe/issues/3064)) ([d5bf188](https://github.com/intent-hq/cloudlands-fe/commit/d5bf188f8d94416d65ce6a76fca31e4f63e0f14f))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.131 ([#3069](https://github.com/intent-hq/cloudlands-fe/issues/3069)) ([84bccf2](https://github.com/intent-hq/cloudlands-fe/commit/84bccf2ce46cc0c7a08890b5670b863c2e1214fd))
+* bump intentd sidecar to v0.9.132 ([#3071](https://github.com/intent-hq/cloudlands-fe/issues/3071)) ([0dcf4eb](https://github.com/intent-hq/cloudlands-fe/commit/0dcf4ebfb283c2bb44eaf5b887f046edc77d6f9d))
+* open untracked files from secondary Git roots ([#3066](https://github.com/intent-hq/cloudlands-fe/issues/3066)) ([2ca43eb](https://github.com/intent-hq/cloudlands-fe/commit/2ca43ebbc7792f938412cef5d5b4624b3fada1c9))
+
+## [2.194.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.193.0...v2.194.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* search note bodies across workspaces in command palette ([#3055](https://github.com/intent-hq/cloudlands-fe/issues/3055)) ([6a9acaf](https://github.com/intent-hq/cloudlands-fe/commit/6a9acaff8c99616a3338b2052824f1b8d578b549))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.129 ([#3061](https://github.com/intent-hq/cloudlands-fe/issues/3061)) ([a0f0822](https://github.com/intent-hq/cloudlands-fe/commit/a0f0822a349b1fbe31b8187ec187b37efab1c1ed))
+* bump intentd sidecar to v0.9.130 ([#3063](https://github.com/intent-hq/cloudlands-fe/issues/3063)) ([b751605](https://github.com/intent-hq/cloudlands-fe/commit/b7516052ad07864ecd9fc10ef5e4cc35eefe8484))
+* recognize finite inline actionChannel consumers ([#3060](https://github.com/intent-hq/cloudlands-fe/issues/3060)) ([2fcc4c3](https://github.com/intent-hq/cloudlands-fe/commit/2fcc4c364e506d336fa473f4aba8074b4dfccf57))
+
+## [2.193.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.192.1...v2.193.0) (2026-10-01)
+
+
+### 🚀 Features
+
+* add script history and reversible bulk archive controls ([#3041](https://github.com/intent-hq/cloudlands-fe/issues/3041)) ([09540a2](https://github.com/intent-hq/cloudlands-fe/commit/09540a286c3bd2c2932de8c21b273dc2ae6bcf84))
+* publish signed Intel Mac desktop builds ([#3040](https://github.com/intent-hq/cloudlands-fe/issues/3040)) ([bb5c7c6](https://github.com/intent-hq/cloudlands-fe/commit/bb5c7c6d7e8040bbf317fc6d4fa596123fae34ce))
+* show imported Claude agents and discovery diagnostics ([#3048](https://github.com/intent-hq/cloudlands-fe/issues/3048)) ([4d3c4bc](https://github.com/intent-hq/cloudlands-fe/commit/4d3c4bc01730396b06000806cc34ca511500134d))
+
+
+### 🐛 Bug Fixes
+
+* add manual Windows signing readiness checks ([#3052](https://github.com/intent-hq/cloudlands-fe/issues/3052)) ([5d7661b](https://github.com/intent-hq/cloudlands-fe/commit/5d7661bf06b782ffbf345cf87346a1076dbd595d))
+* bump intentd sidecar to v0.9.128 ([#3056](https://github.com/intent-hq/cloudlands-fe/issues/3056)) ([fa5318e](https://github.com/intent-hq/cloudlands-fe/commit/fa5318e0a26b21cb862b8b55563bc8698d662a9d))
+
+## [2.192.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.192.0...v2.192.1) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.126 ([#3049](https://github.com/intent-hq/cloudlands-fe/issues/3049)) ([11394c8](https://github.com/intent-hq/cloudlands-fe/commit/11394c8dc045c5672243d7bc0cfd48484643e142))
+* hide spec drafting hints once content exists ([#3047](https://github.com/intent-hq/cloudlands-fe/issues/3047)) ([ebe5723](https://github.com/intent-hq/cloudlands-fe/commit/ebe57238a9afb247ba7985a00fefe9fedbdf986c))
+* restore packaged smoke journeys ([#5608](https://github.com/intent-hq/cloudlands-fe/issues/5608)) ([#2977](https://github.com/intent-hq/cloudlands-fe/issues/2977)) ([4b7b730](https://github.com/intent-hq/cloudlands-fe/commit/4b7b730ed22a9194c1005ab8688b3fe706e6d26d))
+
+## [2.192.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.191.0...v2.192.0) (2026-09-30)
+
+
+### 🚀 Features
+
+* add experimental remote agents opt-in ([#2965](https://github.com/intent-hq/cloudlands-fe/issues/2965)) ([7076b48](https://github.com/intent-hq/cloudlands-fe/commit/7076b4899b76839aa7646c3fd0718fcb21f3d71f))
+* **browser:** capture early failures and read owned diagnostics ([#3037](https://github.com/intent-hq/cloudlands-fe/issues/3037)) ([363cd05](https://github.com/intent-hq/cloudlands-fe/commit/363cd05151fc329636e4c20e935d423f606bc560))
+* redesign workspace token stats ([#2154](https://github.com/intent-hq/cloudlands-fe/issues/2154)) ([5914542](https://github.com/intent-hq/cloudlands-fe/commit/59145423904abfd563a6a40e7d6911f9c3f27eae))
+* support role-aware shared host workspaces ([#2911](https://github.com/intent-hq/cloudlands-fe/issues/2911)) ([9cd6428](https://github.com/intent-hq/cloudlands-fe/commit/9cd6428b0ce4c9e1b18cfd6d4bcc9f5c83411f79))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.124 ([#3034](https://github.com/intent-hq/cloudlands-fe/issues/3034)) ([21fbee7](https://github.com/intent-hq/cloudlands-fe/commit/21fbee7d7b5c6a4770fa477ce4472d0fb56326db))
+* bump intentd sidecar to v0.9.125 ([#3039](https://github.com/intent-hq/cloudlands-fe/issues/3039)) ([5bb1132](https://github.com/intent-hq/cloudlands-fe/commit/5bb1132a601c8f0cf5fc7e82d20db64bf08b8e07))
+* focus app windows when switching backends ([#3030](https://github.com/intent-hq/cloudlands-fe/issues/3030)) ([a45c6f7](https://github.com/intent-hq/cloudlands-fe/commit/a45c6f705e28897d0860db8d7cd341d5a18c20c7))
+* resolve workspace file links consistently ([#3031](https://github.com/intent-hq/cloudlands-fe/issues/3031)) ([05dd7a7](https://github.com/intent-hq/cloudlands-fe/commit/05dd7a7c4b0f45749d2125e89a349bc00be015d8))
+
+## [2.191.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.4...v2.191.0) (2026-09-30)
+
+
+### 🚀 Features
+
+* add Codex service tier submenu ([#3028](https://github.com/intent-hq/cloudlands-fe/issues/3028)) ([60cc1af](https://github.com/intent-hq/cloudlands-fe/commit/60cc1afc510f784a7276f2b1f37b961804abe3e9))
+* switch agents between background and foreground ([#3027](https://github.com/intent-hq/cloudlands-fe/issues/3027)) ([bc9264e](https://github.com/intent-hq/cloudlands-fe/commit/bc9264ec3d67656a9b76a45907755555ac57f454))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.123 ([#3033](https://github.com/intent-hq/cloudlands-fe/issues/3033)) ([ad0836d](https://github.com/intent-hq/cloudlands-fe/commit/ad0836d5746fa24ba59794cb5a5ef5b4383fc08d))
+
+## [2.190.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.3...v2.190.4) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.122 ([#3029](https://github.com/intent-hq/cloudlands-fe/issues/3029)) ([6d46621](https://github.com/intent-hq/cloudlands-fe/commit/6d466218fd40a5b1026e5bf5998d87e110c012f1))
+* isolate comments by workspace and note (intent-hq/intent[#6347](https://github.com/intent-hq/cloudlands-fe/issues/6347)) ([#3022](https://github.com/intent-hq/cloudlands-fe/issues/3022)) ([a42ca28](https://github.com/intent-hq/cloudlands-fe/commit/a42ca2872248b2174f0c29589532f69178d235a3))
+* preserve model selection through transient catalog failures ([#3025](https://github.com/intent-hq/cloudlands-fe/issues/3025)) ([0b63da7](https://github.com/intent-hq/cloudlands-fe/commit/0b63da750fd331bd0f99eb027960a7b95ce67311))
+* preserve sidebar fixture errors across document recovery ([#2976](https://github.com/intent-hq/cloudlands-fe/issues/2976)) ([1220971](https://github.com/intent-hq/cloudlands-fe/commit/1220971b0f7707ee4ffa2d8bbfa3b911d83cca92))
+* settle walkthrough geometry independently of ancestor motion ([#2979](https://github.com/intent-hq/cloudlands-fe/issues/2979)) ([8c48a28](https://github.com/intent-hq/cloudlands-fe/commit/8c48a288ae4e91217c0d9d59b800df4f5f4db716))
+
+## [2.190.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.2...v2.190.3) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.121 ([#3020](https://github.com/intent-hq/cloudlands-fe/issues/3020)) ([5163dae](https://github.com/intent-hq/cloudlands-fe/commit/5163dae35ccd0c42489242929fd201ab86537e55))
+
+## [2.190.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.1...v2.190.2) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.120 ([#3017](https://github.com/intent-hq/cloudlands-fe/issues/3017)) ([23a0bca](https://github.com/intent-hq/cloudlands-fe/commit/23a0bcaa077e1bb02063ebea53c06e65f333a35e))
+* load dependency CSS in harnesses and serialize native builds ([#3014](https://github.com/intent-hq/cloudlands-fe/issues/3014)) ([9bcd7bd](https://github.com/intent-hq/cloudlands-fe/commit/9bcd7bd88f9d195b518bec57fecb41e96c7a99d1))
+* remove wrapping quotes from file tool titles ([#3016](https://github.com/intent-hq/cloudlands-fe/issues/3016)) ([1fb4409](https://github.com/intent-hq/cloudlands-fe/commit/1fb44094e81a5500a47123d4cbc9256527b0c505))
+
+## [2.190.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.190.0...v2.190.1) (2026-09-30)
+
+
+### 🐛 Bug Fixes
+
+* load previous user messages from unloaded history ([#3001](https://github.com/intent-hq/cloudlands-fe/issues/3001)) ([9b0fc87](https://github.com/intent-hq/cloudlands-fe/commit/9b0fc8750afe538b3be8b5c8f4b5adbb228a4058))
+* verify locale completeness for affected changes ([#6293](https://github.com/intent-hq/cloudlands-fe/issues/6293)) ([#2999](https://github.com/intent-hq/cloudlands-fe/issues/2999)) ([eac3ef4](https://github.com/intent-hq/cloudlands-fe/commit/eac3ef42ab8ef9df40ef2571f277f1cde9d54a0e))
+
+## [2.190.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.2...v2.190.0) (2026-09-29)
+
+
+### 🚀 Features
+
+* add floating animated chat scroll button ([#3004](https://github.com/intent-hq/cloudlands-fe/issues/3004)) ([eaa5948](https://github.com/intent-hq/cloudlands-fe/commit/eaa5948022de10f237702a9c96ca7cdd722cdff0))
+
+## [2.189.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.1...v2.189.2) (2026-09-29)
+
+
+### 🐛 Bug Fixes
+
+* raise panel header and dropdown font weight ([#3007](https://github.com/intent-hq/cloudlands-fe/issues/3007)) ([f6ea294](https://github.com/intent-hq/cloudlands-fe/commit/f6ea29434a48ec2f8829c839d1c9fd94b76475d8))
+* simplify browser tab menu actions ([#3005](https://github.com/intent-hq/cloudlands-fe/issues/3005)) ([7507cca](https://github.com/intent-hq/cloudlands-fe/commit/7507ccaf695696129e472dd4b819a8edfb53ad77))
+
+## [2.189.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.189.0...v2.189.1) (2026-09-29)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.119 ([#3006](https://github.com/intent-hq/cloudlands-fe/issues/3006)) ([3d9b5d6](https://github.com/intent-hq/cloudlands-fe/commit/3d9b5d61142e778165fadb579351d75864a15aa4))
+* change usage card label to Build with Intent ([#2998](https://github.com/intent-hq/cloudlands-fe/issues/2998)) ([4a455e7](https://github.com/intent-hq/cloudlands-fe/commit/4a455e72ff0c46504c13145fa52e29ce166d7655))
+* discover failed startup recovery without reconnecting ([#2994](https://github.com/intent-hq/cloudlands-fe/issues/2994)) ([a841080](https://github.com/intent-hq/cloudlands-fe/commit/a841080163dcd70f2a3d98b10f3a37c16e0a9359))
+* explain all specialist provider pins ([#2968](https://github.com/intent-hq/cloudlands-fe/issues/2968)) ([abadf5d](https://github.com/intent-hq/cloudlands-fe/commit/abadf5db902d39771814d9559f20d12a8c0bfe96))
+* **files:** Consolidate filesystem effects in existing saga owners ([#2983](https://github.com/intent-hq/cloudlands-fe/issues/2983)) ([ba8ac2e](https://github.com/intent-hq/cloudlands-fe/commit/ba8ac2eb0437c2d9011a3afdbf193477a2699d10))
+* preserve sequence notes and mirrored actors ([#3000](https://github.com/intent-hq/cloudlands-fe/issues/3000)) ([b68def4](https://github.com/intent-hq/cloudlands-fe/commit/b68def4eb67bef2bbcbb7ec89d7b39fa619eac82))
+
+## [2.189.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.188.1...v2.189.0) (2026-09-29)
+
+
+### 🚀 Features
+
+* allow dismissing recent repository suggestions ([#2992](https://github.com/intent-hq/cloudlands-fe/issues/2992)) ([751db82](https://github.com/intent-hq/cloudlands-fe/commit/751db8241c71c133ce6f9e7ed363466aab7e9bcc))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.118 ([#3002](https://github.com/intent-hq/cloudlands-fe/issues/3002)) ([0f29172](https://github.com/intent-hq/cloudlands-fe/commit/0f291729749a49500d91a2b174465e6d8e7b511f))
+
+## [2.188.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.188.0...v2.188.1) (2026-09-29)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.117 ([#2995](https://github.com/intent-hq/cloudlands-fe/issues/2995)) ([4d138fd](https://github.com/intent-hq/cloudlands-fe/commit/4d138fd5c8e3d6360579cbc4d5d908366789cfcc))
+
+## [2.188.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.187.0...v2.188.0) (2026-09-29)
+
+
+### 🚀 Features
+
+* download workspace files from viewer and browser menus ([#2988](https://github.com/intent-hq/cloudlands-fe/issues/2988)) ([c9621bf](https://github.com/intent-hq/cloudlands-fe/commit/c9621bfa6a4100f214c1ff522fcf43d2e0131177))
+* navigate to previous user message from assistant actions ([#2987](https://github.com/intent-hq/cloudlands-fe/issues/2987)) ([94e3da0](https://github.com/intent-hq/cloudlands-fe/commit/94e3da0c5db62103218426e3dc646e44465e04d9))
+
+
+### 🐛 Bug Fixes
+
+* bound chat history action control construction ([#2990](https://github.com/intent-hq/cloudlands-fe/issues/2990)) ([2b71fdc](https://github.com/intent-hq/cloudlands-fe/commit/2b71fdc4ed73f1caedc68f7f84c363408d6deca3))
+* bump intentd sidecar to v0.9.116 ([#2993](https://github.com/intent-hq/cloudlands-fe/issues/2993)) ([1572b2d](https://github.com/intent-hq/cloudlands-fe/commit/1572b2d49e613ba9809fb3b1ea79a88cd9270b9d))
+* preserve quick-action model ownership and sandbox themes ([#2986](https://github.com/intent-hq/cloudlands-fe/issues/2986)) ([48ab294](https://github.com/intent-hq/cloudlands-fe/commit/48ab2941598e13fbb2412ae7e220e67355f393f7))
+
+## [2.187.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.186.0...v2.187.0) (2026-09-29)
+
+
+### 🚀 Features
+
+* preserve workspace context across frontend RPC lifetimes ([#2966](https://github.com/intent-hq/cloudlands-fe/issues/2966)) ([b1b8154](https://github.com/intent-hq/cloudlands-fe/commit/b1b8154e21ca6aed2bfe0aca450c5992f971f4cf))
+* retire agents directly from card and panel menus ([#2954](https://github.com/intent-hq/cloudlands-fe/issues/2954)) ([8767c88](https://github.com/intent-hq/cloudlands-fe/commit/8767c881e30a4784024a995a4c5c1e971d428acf))
+* show matching note status tooltips in sidebar and linked tasks ([#2975](https://github.com/intent-hq/cloudlands-fe/issues/2975)) ([ff7ae85](https://github.com/intent-hq/cloudlands-fe/commit/ff7ae8586a1a1f7f335bd69d68a98ca8f6afe91d))
+* simplify panel headers and support directional pane movement ([#2973](https://github.com/intent-hq/cloudlands-fe/issues/2973)) ([8980fdc](https://github.com/intent-hq/cloudlands-fe/commit/8980fdc6339ef99b943917e321562faa4fa1d36c))
+* support remote agent state and guard node paths ([#2956](https://github.com/intent-hq/cloudlands-fe/issues/2956)) ([73f2ecd](https://github.com/intent-hq/cloudlands-fe/commit/73f2ecd94a1712ba7170264e0bedae154637ae66))
+
+
+### 🐛 Bug Fixes
+
+* align per-action model override rows ([#6213](https://github.com/intent-hq/cloudlands-fe/issues/6213)) ([#2982](https://github.com/intent-hq/cloudlands-fe/issues/2982)) ([1473180](https://github.com/intent-hq/cloudlands-fe/commit/14731806ed82f91ca29d283f7cdb770fa7f42cef))
+* bound operational chat rows and batch scope updates ([#2960](https://github.com/intent-hq/cloudlands-fe/issues/2960)) ([03af3f7](https://github.com/intent-hq/cloudlands-fe/commit/03af3f74a992453db0292452e2b09952cef7bdfb))
+* bump intentd sidecar to v0.9.115 ([#2989](https://github.com/intent-hq/cloudlands-fe/issues/2989)) ([44c8b85](https://github.com/intent-hq/cloudlands-fe/commit/44c8b85b25fe180dfc3c18d46a2f10050232e3ea))
+* give local Svelte checks caller-aware heap headroom ([#2961](https://github.com/intent-hq/cloudlands-fe/issues/2961)) ([8f084ba](https://github.com/intent-hq/cloudlands-fe/commit/8f084ba76857c8fa6bc5fae2379d5142a789b5d8))
+* isolate inherited Python instrumentation in tests ([#2935](https://github.com/intent-hq/cloudlands-fe/issues/2935)) ([2e80ac6](https://github.com/intent-hq/cloudlands-fe/commit/2e80ac6f05fb553f7cf103394aa7f17e754f8669))
+* preserve MCP server identity in Connections ([#2974](https://github.com/intent-hq/cloudlands-fe/issues/2974)) ([1ba9761](https://github.com/intent-hq/cloudlands-fe/commit/1ba976130605fda36aa5824435f6e41d4399773f))
+* preserve Svelte imports in Knip extraction ([#2939](https://github.com/intent-hq/cloudlands-fe/issues/2939)) ([45c7ab2](https://github.com/intent-hq/cloudlands-fe/commit/45c7ab23a8df09bb88831ae2210a58858c180f87))
+* preserve titlebar dragging beside overflowing tabs ([#2959](https://github.com/intent-hq/cloudlands-fe/issues/2959)) ([2d7b2f7](https://github.com/intent-hq/cloudlands-fe/commit/2d7b2f7ff03789a7731a4c92aecf27ba37b51dc1))
+* recover tunnel credit after late reconnect hello ([#5972](https://github.com/intent-hq/cloudlands-fe/issues/5972)) ([#2969](https://github.com/intent-hq/cloudlands-fe/issues/2969)) ([b5b2ba1](https://github.com/intent-hq/cloudlands-fe/commit/b5b2ba126f48279b654c6101a7a2cb0f4b577e88))
+* report unknown counts for incomplete CT summaries ([#2962](https://github.com/intent-hq/cloudlands-fe/issues/2962)) ([ca23f61](https://github.com/intent-hq/cloudlands-fe/commit/ca23f618f79c5c93e59496c35b78665cb35233d0))
+* retain saved-loopback forwarding diagnostics ([#2971](https://github.com/intent-hq/cloudlands-fe/issues/2971)) ([8bf1877](https://github.com/intent-hq/cloudlands-fe/commit/8bf1877056246113136ba963cc6d609fb449a63b))
+* show local image previews in expanded tool details ([#2967](https://github.com/intent-hq/cloudlands-fe/issues/2967)) ([302ef0f](https://github.com/intent-hq/cloudlands-fe/commit/302ef0f682ac8d01735b152669d7c3ad141edb6d))
+* use a single chat input border matching sidebar cards ([#2978](https://github.com/intent-hq/cloudlands-fe/issues/2978)) ([8ad99de](https://github.com/intent-hq/cloudlands-fe/commit/8ad99de85bb0a4d854dc015d504756cf9191d550))
+* validate existing repositories before workspace creation ([#2964](https://github.com/intent-hq/cloudlands-fe/issues/2964)) ([78f2b4a](https://github.com/intent-hq/cloudlands-fe/commit/78f2b4a5a5b157b95ed8bba55653357ffe3a938e))
+
+## [2.186.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.4...v2.186.0) (2026-09-28)
+
+
+### 🚀 Features
+
+* add daemon-backed provider fast mode menus ([#2948](https://github.com/intent-hq/cloudlands-fe/issues/2948)) ([825f296](https://github.com/intent-hq/cloudlands-fe/commit/825f296a763dfdf93f24f1fb9da27e5bc791a807))
+* configure reasoning effort for quick actions ([#2947](https://github.com/intent-hq/cloudlands-fe/issues/2947)) ([da3f0d1](https://github.com/intent-hq/cloudlands-fe/commit/da3f0d15fcbfbc5effc8cf189ab08d15c58ce469))
+* render workspace PDFs inline ([#2945](https://github.com/intent-hq/cloudlands-fe/issues/2945)) ([a0dc9ab](https://github.com/intent-hq/cloudlands-fe/commit/a0dc9ab7cd2b32bd204af3477813e4ab68108006))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.114 ([#2957](https://github.com/intent-hq/cloudlands-fe/issues/2957)) ([2de2d44](https://github.com/intent-hq/cloudlands-fe/commit/2de2d4475a8e1b29176b314a165a2a522826471d))
+* **hud:** remove instance selector resting shade ([#2953](https://github.com/intent-hq/cloudlands-fe/issues/2953)) ([94b59ef](https://github.com/intent-hq/cloudlands-fe/commit/94b59ef3d514e1169007f9ec2fa078873798c65b))
+* keep previous-message navigation at its destination ([#2952](https://github.com/intent-hq/cloudlands-fe/issues/2952)) ([710afdc](https://github.com/intent-hq/cloudlands-fe/commit/710afdc0311a43fd3bb32886d908f8182fbaea3a))
+* keep workspace tab menus above the titlebar ([#2946](https://github.com/intent-hq/cloudlands-fe/issues/2946)) ([2dd8af2](https://github.com/intent-hq/cloudlands-fe/commit/2dd8af209a3bca42be241209e8f0edd52fbb25e6))
+* repair hourly token controls and theme stats cards ([#2951](https://github.com/intent-hq/cloudlands-fe/issues/2951)) ([171af0c](https://github.com/intent-hq/cloudlands-fe/commit/171af0c4787db5b71867c1925112119ed4f1dee0))
+
+## [2.185.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.3...v2.185.4) (2026-09-28)
+
+
+### 🐛 Bug Fixes
+
+* show safe workspace import error details ([#2908](https://github.com/intent-hq/cloudlands-fe/issues/2908)) ([c4936ea](https://github.com/intent-hq/cloudlands-fe/commit/c4936ea8853f40af87d808d5663f3b070e42b3a1))
+
+## [2.185.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.2...v2.185.3) (2026-09-27)
+
+
+### 🐛 Bug Fixes
+
+* keep live chat drum content in view ([#2940](https://github.com/intent-hq/cloudlands-fe/issues/2940)) ([1a722d2](https://github.com/intent-hq/cloudlands-fe/commit/1a722d28479df3725e6fea192c13a33cd3fa92d2))
+
+## [2.185.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.1...v2.185.2) (2026-09-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.113 ([#2943](https://github.com/intent-hq/cloudlands-fe/issues/2943)) ([7409eb9](https://github.com/intent-hq/cloudlands-fe/commit/7409eb9f722c6386266d68d6c21c461432c19d8b))
+* target focused conversation for encoder effort ([#6098](https://github.com/intent-hq/cloudlands-fe/issues/6098)) ([#2941](https://github.com/intent-hq/cloudlands-fe/issues/2941)) ([9e5e7c3](https://github.com/intent-hq/cloudlands-fe/commit/9e5e7c3b9dbe2c82607ea6c9743239ce3b5e0beb))
+
+## [2.185.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.185.0...v2.185.1) (2026-09-27)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.112 ([#2938](https://github.com/intent-hq/cloudlands-fe/issues/2938)) ([887f10b](https://github.com/intent-hq/cloudlands-fe/commit/887f10b84b6be7bcacfb9fef4bf67e65d5290bf7))
+* preserve model provider identity and single mutation ownership ([#2929](https://github.com/intent-hq/cloudlands-fe/issues/2929)) ([f23422b](https://github.com/intent-hq/cloudlands-fe/commit/f23422bdaff488cb7d425b6940ba9ab5c038988b))
+* test saved device fallback routes ([#6088](https://github.com/intent-hq/cloudlands-fe/issues/6088)) ([#2937](https://github.com/intent-hq/cloudlands-fe/issues/2937)) ([baa9c95](https://github.com/intent-hq/cloudlands-fe/commit/baa9c95161986fd352ccb42bae3b5ad68a633cdf))
+* **ui:** keep provider-scoped reasoning controls usable ([#2925](https://github.com/intent-hq/cloudlands-fe/issues/2925)) ([6a4f3a5](https://github.com/intent-hq/cloudlands-fe/commit/6a4f3a5763a3bf9302c5fe4e5d2f201bc169ffa5))
+
+## [2.185.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.6...v2.185.0) (2026-09-26)
+
+
+### 🚀 Features
+
+* add opt-in experimental GitLab connections ([#2699](https://github.com/intent-hq/cloudlands-fe/issues/2699)) ([903d5d0](https://github.com/intent-hq/cloudlands-fe/commit/903d5d09cb4dc9d9e5434612dbf479e04512f400))
+* mention workspace members by GitHub or GitLab handle ([#2928](https://github.com/intent-hq/cloudlands-fe/issues/2928)) ([14dbaf1](https://github.com/intent-hq/cloudlands-fe/commit/14dbaf1adbc2a0a9a697ae949c0f8e0eee9903d7))
+* **multiplayer:** add experimental GitLab guest joins ([#2716](https://github.com/intent-hq/cloudlands-fe/issues/2716)) ([14ce301](https://github.com/intent-hq/cloudlands-fe/commit/14ce30107aeec456779f5d8ff783c9a04c33e63e))
+* render effort changes as inline chat notices ([#2932](https://github.com/intent-hq/cloudlands-fe/issues/2932)) ([7e81023](https://github.com/intent-hq/cloudlands-fe/commit/7e8102376466e6c68fad2b27552c8aeb4af7cb68))
+
+
+### 🐛 Bug Fixes
+
+* bind nightly reports to owning workflow jobs ([#2930](https://github.com/intent-hq/cloudlands-fe/issues/2930)) ([80218ab](https://github.com/intent-hq/cloudlands-fe/commit/80218ab282b4f329103c4f703c8295acd650e5e4))
+* **browser:** recover hidden tabs without duplicate navigation ([#2923](https://github.com/intent-hq/cloudlands-fe/issues/2923)) ([7eb46b4](https://github.com/intent-hq/cloudlands-fe/commit/7eb46b4a692779c18a4a4285548f307d1c2fbf71))
+* bump intentd sidecar to v0.9.111 ([#2933](https://github.com/intent-hq/cloudlands-fe/issues/2933)) ([79e03fe](https://github.com/intent-hq/cloudlands-fe/commit/79e03fe7d47d11febdb12ff0ce27532d0d3ab76c))
+* center device menu accent dots ([#2924](https://github.com/intent-hq/cloudlands-fe/issues/2924)) ([f1c94ef](https://github.com/intent-hq/cloudlands-fe/commit/f1c94ef641b209e5c78677fec66198206159ace5))
+* complete browser hello before publishing presence ([#2900](https://github.com/intent-hq/cloudlands-fe/issues/2900)) ([285d913](https://github.com/intent-hq/cloudlands-fe/commit/285d91348df708afdb436150f95dae7ed4fe3cf9))
+* hydrate live notification volume without writeback ([#2899](https://github.com/intent-hq/cloudlands-fe/issues/2899)) ([fef2ccc](https://github.com/intent-hq/cloudlands-fe/commit/fef2ccced8f61c593b6a72bf656a2f4c4642d455))
+* mitigate component-test promise collection failures ([#2906](https://github.com/intent-hq/cloudlands-fe/issues/2906)) ([58c3437](https://github.com/intent-hq/cloudlands-fe/commit/58c3437d71125fac00dfd9ca142444daf87770c8))
+* **release:** allow confirmed intentd no-op alpha cuts ([#2931](https://github.com/intent-hq/cloudlands-fe/issues/2931)) ([9a41f84](https://github.com/intent-hq/cloudlands-fe/commit/9a41f84408bb4579e202c98f07ca5584a3968932))
+
+## [2.184.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.5...v2.184.6) (2026-09-26)
+
+
+### 🐛 Bug Fixes
+
+* hide guest sessions when experimental multiplayer is disabled ([#2919](https://github.com/intent-hq/cloudlands-fe/issues/2919)) ([1e082ab](https://github.com/intent-hq/cloudlands-fe/commit/1e082abee10f4c45b4078976732c0a7a2a448099))
+
+## [2.184.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.4...v2.184.5) (2026-09-26)
+
+
+### 🐛 Bug Fixes
+
+* keep new workspace branch picker above its dialog ([#5980](https://github.com/intent-hq/cloudlands-fe/issues/5980)) ([#2917](https://github.com/intent-hq/cloudlands-fe/issues/2917)) ([c144971](https://github.com/intent-hq/cloudlands-fe/commit/c144971e05d609cb2b51b5e7d7335756140ba327))
+
+## [2.184.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.3...v2.184.4) (2026-09-26)
+
+
+### 🐛 Bug Fixes
+
+* preserve new workspace reasoning effort ([#2904](https://github.com/intent-hq/cloudlands-fe/issues/2904)) ([ceed15d](https://github.com/intent-hq/cloudlands-fe/commit/ceed15d426defbde8e91282b1702711bcee8bdfc))
+
+## [2.184.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.2...v2.184.3) (2026-09-25)
+
+
+### 🐛 Bug Fixes
+
+* **github-auth:** preserve adopted flows during scoped cancellation ([#2802](https://github.com/intent-hq/cloudlands-fe/issues/2802)) ([506b40a](https://github.com/intent-hq/cloudlands-fe/commit/506b40a2a1bcbc5d303f8c0828810dfcbcfbdefc))
+* preserve raw Markdown note edits ([#5967](https://github.com/intent-hq/cloudlands-fe/issues/5967)) ([#2912](https://github.com/intent-hq/cloudlands-fe/issues/2912)) ([b795ffb](https://github.com/intent-hq/cloudlands-fe/commit/b795ffb6bf4908e68e70f9e367140aa1e2524127))
+
+## [2.184.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.1...v2.184.2) (2026-09-25)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.110 ([#2910](https://github.com/intent-hq/cloudlands-fe/issues/2910)) ([ee4448c](https://github.com/intent-hq/cloudlands-fe/commit/ee4448c616c6586dd73ee493794fd4fadc643122))
+* **chat:** preserve reasoning boundary before inline prose ([#2903](https://github.com/intent-hq/cloudlands-fe/issues/2903)) ([fd9a045](https://github.com/intent-hq/cloudlands-fe/commit/fd9a045b30fc702b336eeca429a11bcd43c1c73a))
+* correct Micro encoder effort direction and hint ([#2901](https://github.com/intent-hq/cloudlands-fe/issues/2901)) ([71ea9d8](https://github.com/intent-hq/cloudlands-fe/commit/71ea9d8525860df2e11ce6fe08d13948c8995774))
+
+## [2.184.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.184.0...v2.184.1) (2026-09-25)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.109 ([#2898](https://github.com/intent-hq/cloudlands-fe/issues/2898)) ([36e55c1](https://github.com/intent-hq/cloudlands-fe/commit/36e55c1876f1cf1604fd05edcd6021bfaa318e73))
+* route snapshot verification to owning tests ([#2884](https://github.com/intent-hq/cloudlands-fe/issues/2884)) ([9831edb](https://github.com/intent-hq/cloudlands-fe/commit/9831edb68e316d94779d298bb14d019468a6327c))
+
+## [2.184.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.183.0...v2.184.0) (2026-09-25)
+
+
+### 🚀 Features
+
+* adjust agent effort with the Micro encoder ([#2894](https://github.com/intent-hq/cloudlands-fe/issues/2894)) ([4256b5d](https://github.com/intent-hq/cloudlands-fe/commit/4256b5d8dfef51d797e961a6a169f46eed417d06))
+* enable peer agents by default ([#2890](https://github.com/intent-hq/cloudlands-fe/issues/2890)) ([673e523](https://github.com/intent-hq/cloudlands-fe/commit/673e523372671a4ffdd5b632882bcfcd5b27a5b7))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** recover cap-evicted background tabs on navigation ([#4835](https://github.com/intent-hq/cloudlands-fe/issues/4835)) ([#2749](https://github.com/intent-hq/cloudlands-fe/issues/2749)) ([034665a](https://github.com/intent-hq/cloudlands-fe/commit/034665a1f1122ac2104de03606a55609d0f66662))
+* bump intentd sidecar to v0.9.108 ([#2895](https://github.com/intent-hq/cloudlands-fe/issues/2895)) ([a77ae15](https://github.com/intent-hq/cloudlands-fe/commit/a77ae15c675910b604b56a57346fa7b615652f02))
+* catch translation gate failures in affected verification ([#2892](https://github.com/intent-hq/cloudlands-fe/issues/2892)) ([d6bce57](https://github.com/intent-hq/cloudlands-fe/commit/d6bce577fcb78c9b20390df64ec4be662085158f))
+* **chat:** align subscription card columns with tool rows ([#2811](https://github.com/intent-hq/cloudlands-fe/issues/2811)) ([ee7e4b6](https://github.com/intent-hq/cloudlands-fe/commit/ee7e4b6dd47444c57a85496eac85c800043d0e62))
+* clarify Intent Node.js requirement warnings ([#2891](https://github.com/intent-hq/cloudlands-fe/issues/2891)) ([98ca8a4](https://github.com/intent-hq/cloudlands-fe/commit/98ca8a4ba4c149216d0bf77b9f543044506ce2b6))
+* dismiss cleared attention request toasts ([#2889](https://github.com/intent-hq/cloudlands-fe/issues/2889)) ([9ea3843](https://github.com/intent-hq/cloudlands-fe/commit/9ea38434a41dd6554f28ba3cdc04e6f615dd229b))
+* improve diagram routing and expand visual edge cases ([#2886](https://github.com/intent-hq/cloudlands-fe/issues/2886)) ([e497a01](https://github.com/intent-hq/cloudlands-fe/commit/e497a0170bb9d2c0f0dac1195ad8019b4fd75258))
+* serialize concurrent dead-code canary checks ([#2885](https://github.com/intent-hq/cloudlands-fe/issues/2885)) ([78bb716](https://github.com/intent-hq/cloudlands-fe/commit/78bb7164001adb6da0e02306c047595e8ff6d0a6))
+
+## [2.183.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.182.1...v2.183.0) (2026-09-25)
+
+
+### 🚀 Features
+
+* add a compact sidebar expand rail ([#2879](https://github.com/intent-hq/cloudlands-fe/issues/2879)) ([5759852](https://github.com/intent-hq/cloudlands-fe/commit/5759852244ee634e1e02ec50b584b41f1d647bd2))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.107 ([#2888](https://github.com/intent-hq/cloudlands-fe/issues/2888)) ([72018dd](https://github.com/intent-hq/cloudlands-fe/commit/72018ddfc1940b218aa020df87a7e51ba8be737d))
+* **chat:** compact title-only reasoning activity rows ([#2872](https://github.com/intent-hq/cloudlands-fe/issues/2872)) ([942be02](https://github.com/intent-hq/cloudlands-fe/commit/942be02ce1821e341612253cf3c6fdf884e129c6))
+* **lint:** compare pre-migration baseline debt ([#5773](https://github.com/intent-hq/cloudlands-fe/issues/5773)) ([#2860](https://github.com/intent-hq/cloudlands-fe/issues/2860)) ([19c6e6a](https://github.com/intent-hq/cloudlands-fe/commit/19c6e6a1127b2439a8e545a45accdd59c2fe03f6))
+* normalize bare generated IDs in catalog snapshots ([#2867](https://github.com/intent-hq/cloudlands-fe/issues/2867)) ([6abbb7d](https://github.com/intent-hq/cloudlands-fe/commit/6abbb7d403fbf3dbbd744c62347c8bcb4cbf75e3))
+* reject missing exports in production builds ([#2883](https://github.com/intent-hq/cloudlands-fe/issues/2883)) ([0cdf7e5](https://github.com/intent-hq/cloudlands-fe/commit/0cdf7e58c3c5505659ecbf0784bda18dd2d7759c))
+* report completed CT failures while other shards are pending ([#2866](https://github.com/intent-hq/cloudlands-fe/issues/2866)) ([84f9fb2](https://github.com/intent-hq/cloudlands-fe/commit/84f9fb2abfbc35ebaf96987a195b4508d96ba76b))
+* retain GitHub hover cards when previews fail ([#2873](https://github.com/intent-hq/cloudlands-fe/issues/2873)) ([5b12f1b](https://github.com/intent-hq/cloudlands-fe/commit/5b12f1b90900b3c7398ab1ab3fc3424b0b4631fa))
+* settle markdown and layout work before test teardown ([#2864](https://github.com/intent-hq/cloudlands-fe/issues/2864)) ([2ff3e1f](https://github.com/intent-hq/cloudlands-fe/commit/2ff3e1fd2bc8b86bb2e74aa0ad4a01359561951d))
+* wrap daemon connection details across two lines ([#2887](https://github.com/intent-hq/cloudlands-fe/issues/2887)) ([533be57](https://github.com/intent-hq/cloudlands-fe/commit/533be5797f8783e66c6e2fb23bd482564e29dc03))
+
+## [2.182.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.182.0...v2.182.1) (2026-09-24)
+
+
+### 🐛 Bug Fixes
+
+* smooth focus backgrounds and selection indicators without overshoot ([#2748](https://github.com/intent-hq/cloudlands-fe/issues/2748)) ([5547929](https://github.com/intent-hq/cloudlands-fe/commit/5547929239265fea06311262a15c7405b92f448e))
+
+## [2.182.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.181.0...v2.182.0) (2026-09-24)
+
+
+### 🚀 Features
+
+* **settings:** move experimental multiplayer to the command menu ([#2871](https://github.com/intent-hq/cloudlands-fe/issues/2871)) ([0d8390a](https://github.com/intent-hq/cloudlands-fe/commit/0d8390ae05dfb29c22c8c9314a8b21645459f72b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.106 ([#2878](https://github.com/intent-hq/cloudlands-fe/issues/2878)) ([6ac11b2](https://github.com/intent-hq/cloudlands-fe/commit/6ac11b2d536a0b85b1393fa879bb0d02d6edd2b9))
+
+## [2.181.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.180.2...v2.181.0) (2026-09-24)
+
+
+### 🚀 Features
+
+* make Labs settings an opt-in command ([#2861](https://github.com/intent-hq/cloudlands-fe/issues/2861)) ([31c22ae](https://github.com/intent-hq/cloudlands-fe/commit/31c22ae362895456d935eed0687c6dbd557a5139))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.105 ([#2874](https://github.com/intent-hq/cloudlands-fe/issues/2874)) ([448e6f2](https://github.com/intent-hq/cloudlands-fe/commit/448e6f2bcdf0c27c7b11f6c9f7dc7826d57c2b5e))
+* center settings sidebar row content ([#5786](https://github.com/intent-hq/cloudlands-fe/issues/5786)) ([#2870](https://github.com/intent-hq/cloudlands-fe/issues/2870)) ([c05b7e4](https://github.com/intent-hq/cloudlands-fe/commit/c05b7e4b1284713257faaf99dc7e08e62aeff3cf))
+* preserve production translation namespace exports ([#2865](https://github.com/intent-hq/cloudlands-fe/issues/2865)) ([9054cab](https://github.com/intent-hq/cloudlands-fe/commit/9054cab9563035072a8ffcd55aff17a1b4904e5c))
+* simplify disabled panel movement actions ([#2863](https://github.com/intent-hq/cloudlands-fe/issues/2863)) ([08c17b7](https://github.com/intent-hq/cloudlands-fe/commit/08c17b771502f4cad227f5349ba8d7f3dfa8a295))
+
+## [2.180.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.180.1...v2.180.2) (2026-09-24)
+
+
+### 🐛 Bug Fixes
+
+* stabilize streaming chat updates ([#2857](https://github.com/intent-hq/cloudlands-fe/issues/2857)) ([b66fb1f](https://github.com/intent-hq/cloudlands-fe/commit/b66fb1f26db18e3db497328e99ce201b0c3cdb66))
+
+## [2.180.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.180.0...v2.180.1) (2026-09-24)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** Preserve live tabs across workspace switches ([#2587](https://github.com/intent-hq/cloudlands-fe/issues/2587)) ([b031a20](https://github.com/intent-hq/cloudlands-fe/commit/b031a20cc5f62da8622a9318ec4981cf21c73271))
+* bump intentd sidecar to v0.9.104 ([#2856](https://github.com/intent-hq/cloudlands-fe/issues/2856)) ([1a2ba03](https://github.com/intent-hq/cloudlands-fe/commit/1a2ba0318030f0a4347680ea34c62183fd2aaeec))
+* **settings:** center device row contents vertically ([#2852](https://github.com/intent-hq/cloudlands-fe/issues/2852)) ([9baf943](https://github.com/intent-hq/cloudlands-fe/commit/9baf94359be61848f359809c5f33c7d0fb707963))
+
+## [2.180.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.2...v2.180.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* standardize dropdown menus and picker interactions ([#2821](https://github.com/intent-hq/cloudlands-fe/issues/2821)) ([f3e9ef0](https://github.com/intent-hq/cloudlands-fe/commit/f3e9ef0f709b9306cdc44e4c2410ed3c6a128351))
+
+## [2.179.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.1...v2.179.2) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* **settings:** refine device connection details and host editing ([#2813](https://github.com/intent-hq/cloudlands-fe/issues/2813)) ([c2308f5](https://github.com/intent-hq/cloudlands-fe/commit/c2308f54663fcef2d7edc5f4f744cb47dc08c195))
+
+## [2.179.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.179.0...v2.179.1) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* unify modal layouts and refine responsive interactions ([#2819](https://github.com/intent-hq/cloudlands-fe/issues/2819)) ([47ec95b](https://github.com/intent-hq/cloudlands-fe/commit/47ec95be24efc9323ff561a5e6945b23d40066df))
+
+## [2.179.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.3...v2.179.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **ui:** standardize panel header actions and task filters ([#2788](https://github.com/intent-hq/cloudlands-fe/issues/2788)) ([560db30](https://github.com/intent-hq/cloudlands-fe/commit/560db3023638dee7374b08c43349b020402bda6f))
+
+
+### 🐛 Bug Fixes
+
+* sharpen sidebar and settings header icons ([#2844](https://github.com/intent-hq/cloudlands-fe/issues/2844)) ([73beeb4](https://github.com/intent-hq/cloudlands-fe/commit/73beeb4b9ca1022c37d6a0f0adf0f95110d76cef))
+
+## [2.178.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.2...v2.178.3) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* align protocol mismatch dialog stacking ([#2743](https://github.com/intent-hq/cloudlands-fe/issues/2743)) ([aad0a83](https://github.com/intent-hq/cloudlands-fe/commit/aad0a83b9d70e51ae7f0450437f7585963070fd4))
+* hydrate inline system notices in long chats ([#5762](https://github.com/intent-hq/cloudlands-fe/issues/5762)) ([#2841](https://github.com/intent-hq/cloudlands-fe/issues/2841)) ([ac59d99](https://github.com/intent-hq/cloudlands-fe/commit/ac59d9959770a259c646edca510b2797a0d70951))
+* move Antigravity connection setup into a dialog ([#2815](https://github.com/intent-hq/cloudlands-fe/issues/2815)) ([88d6bee](https://github.com/intent-hq/cloudlands-fe/commit/88d6bee4f5bc331e6d3e7c15db3694ddf5555d63))
+* use custom kebab icons for overflow menus ([#2838](https://github.com/intent-hq/cloudlands-fe/issues/2838)) ([5816d10](https://github.com/intent-hq/cloudlands-fe/commit/5816d103bd7de692b371932701492bbef0869667))
+* **workspace:** keep tab hover cards reachable ([#5755](https://github.com/intent-hq/cloudlands-fe/issues/5755)) ([#2837](https://github.com/intent-hq/cloudlands-fe/issues/2837)) ([52bf6a8](https://github.com/intent-hq/cloudlands-fe/commit/52bf6a89c34e43cdd22aa1e702e0f52b76637f4e))
+
+## [2.178.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.1...v2.178.2) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.103 ([#2839](https://github.com/intent-hq/cloudlands-fe/issues/2839)) ([c8fd915](https://github.com/intent-hq/cloudlands-fe/commit/c8fd915d5e48e6a320646c0db8091fd43e973211))
+
+## [2.178.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.178.0...v2.178.1) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** resolve explicit daemon.localhost / client.localhost aliases typed in the address bar ([#2823](https://github.com/intent-hq/cloudlands-fe/issues/2823)) ([ce9f7bc](https://github.com/intent-hq/cloudlands-fe/commit/ce9f7bc571fd5ad456471cd054ce96795d31a797))
+* bump intentd sidecar to v0.9.102 ([#2835](https://github.com/intent-hq/cloudlands-fe/issues/2835)) ([d522c42](https://github.com/intent-hq/cloudlands-fe/commit/d522c42792c812770f0b5122787b5d13b3689730))
+* **test:** make the tab-strip geometry root and CT specs deterministic under load ([#2826](https://github.com/intent-hq/cloudlands-fe/issues/2826)) ([0a2602b](https://github.com/intent-hq/cloudlands-fe/commit/0a2602bed55b9dc84129480ba607661fce9dfc78))
+
+## [2.178.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.2...v2.178.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **perf:** paired text-rebase alignment benchmark ([#2830](https://github.com/intent-hq/cloudlands-fe/issues/2830)) ([8cd3be9](https://github.com/intent-hq/cloudlands-fe/commit/8cd3be9b23f6ff3917625847f2ea8a32e5981047))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.101 ([#2834](https://github.com/intent-hq/cloudlands-fe/issues/2834)) ([2ca0b1e](https://github.com/intent-hq/cloudlands-fe/commit/2ca0b1e0cb60111559fb491d740a2775b78b5b5b))
+* **model-picker:** warn before send when the agent provider is disabled ([#2829](https://github.com/intent-hq/cloudlands-fe/issues/2829)) ([3543254](https://github.com/intent-hq/cloudlands-fe/commit/354325433ad7bf5e60b57331500bfd6ff7023110))
+
+## [2.177.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.1...v2.177.2) (2026-09-23)
+
+
+### 🐛 Bug Fixes
+
+* **notes:** bound each alignment diff by edit length, not wall clock ([#2824](https://github.com/intent-hq/cloudlands-fe/issues/2824)) ([a94b23d](https://github.com/intent-hq/cloudlands-fe/commit/a94b23dd948845c540695839ece0b2b4cf2704b6))
+
+## [2.177.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.177.0...v2.177.1) (2026-09-23)
+
+
+### ⚡ Performance
+
+* **notes:** stop re-diffing plain text vs markdown on every selection change ([#2740](https://github.com/intent-hq/cloudlands-fe/issues/2740)) ([bb219c3](https://github.com/intent-hq/cloudlands-fe/commit/bb219c3e55b283f218b709a494ad5ea78f4eb3ee))
+
+## [2.177.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.176.0...v2.177.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* add Workspaces and Intent sidebar tabs ([#2751](https://github.com/intent-hq/cloudlands-fe/issues/2751)) ([a7a2b17](https://github.com/intent-hq/cloudlands-fe/commit/a7a2b172716b2a6d56c2e1549f5c329687f245bd))
+
+
+### 🐛 Bug Fixes
+
+* avoid duplicate blocker and discussion notices ([#2818](https://github.com/intent-hq/cloudlands-fe/issues/2818)) ([fe1360d](https://github.com/intent-hq/cloudlands-fe/commit/fe1360dc9ddede7e361e00d266529df83b476e98))
+
+## [2.176.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.175.0...v2.176.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* add consistent image controls across notes and chat ([#2783](https://github.com/intent-hq/cloudlands-fe/issues/2783)) ([c1e09e5](https://github.com/intent-hq/cloudlands-fe/commit/c1e09e59cef894a63bb83b834aa7ef32e6f74552))
+
+## [2.175.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.174.0...v2.175.0) (2026-09-23)
+
+
+### 🚀 Features
+
+* **workspace:** tighten hover card rows, keep it open on hover, make agents and PRs clickable ([#2185](https://github.com/intent-hq/cloudlands-fe/issues/2185)) ([859e4bb](https://github.com/intent-hq/cloudlands-fe/commit/859e4bb9c85aeebc96802827e9edc92d60554b71))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** record the real capture session start time so endSession never fails ([#2797](https://github.com/intent-hq/cloudlands-fe/issues/2797)) ([6bd0b4e](https://github.com/intent-hq/cloudlands-fe/commit/6bd0b4efb74ff69200a0d8d5eff5b8b33d12dec9))
+* bump intentd sidecar to v0.9.100 ([#2814](https://github.com/intent-hq/cloudlands-fe/issues/2814)) ([4876aa3](https://github.com/intent-hq/cloudlands-fe/commit/4876aa3959db9621f37a07b2e188deb76184616c))
+* bump intentd sidecar to v0.9.98 ([#2807](https://github.com/intent-hq/cloudlands-fe/issues/2807)) ([1d9b75c](https://github.com/intent-hq/cloudlands-fe/commit/1d9b75c0597932a572229343658a1b5d50c9f023))
+* bump intentd sidecar to v0.9.99 ([#2810](https://github.com/intent-hq/cloudlands-fe/issues/2810)) ([c46cfe2](https://github.com/intent-hq/cloudlands-fe/commit/c46cfe20436b94c9da9256fc2fcfd261a046e899))
+* **chat:** unify notices and scroll follow-up prompts ([#2750](https://github.com/intent-hq/cloudlands-fe/issues/2750)) ([f916a2d](https://github.com/intent-hq/cloudlands-fe/commit/f916a2d46220c796d6180ee427b6fd575babd35b))
+* show dates on chat messages outside today ([#2785](https://github.com/intent-hq/cloudlands-fe/issues/2785)) ([c38e1f7](https://github.com/intent-hq/cloudlands-fe/commit/c38e1f7b07a29b6dc898ab54bf5235181f245914))
+* stop diagram-workbench specs running at the 30 s timeout edge ([#2806](https://github.com/intent-hq/cloudlands-fe/issues/2806)) ([3266623](https://github.com/intent-hq/cloudlands-fe/commit/32666237652bdb4a088f30dce6d79153be85e097))
+* **terminal:** keep the overlay terminal attached after a panel round trip ([#2805](https://github.com/intent-hq/cloudlands-fe/issues/2805)) ([8fe59fa](https://github.com/intent-hq/cloudlands-fe/commit/8fe59fa4fcaa8dee0815d33e60b759c9a494dd7b))
+
+## [2.174.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.173.0...v2.174.0) (2026-09-22)
+
+
+### 🚀 Features
+
+* **agents:** show only orphaned delegated agents in the Delegated bin ([#2789](https://github.com/intent-hq/cloudlands-fe/issues/2789)) ([7d2065f](https://github.com/intent-hq/cloudlands-fe/commit/7d2065f3c29c68022aadf62b6783fd4dc2ab87c9))
+* **hardware-console:** add Close action key as the CM2 ACT09 default ([#2795](https://github.com/intent-hq/cloudlands-fe/issues/2795)) ([1885413](https://github.com/intent-hq/cloudlands-fe/commit/1885413ee92d036de524cc2009185bb8bd144a42))
+* **invite:** show a cancellable progress dialog while joining a shared workspace ([#2794](https://github.com/intent-hq/cloudlands-fe/issues/2794)) ([5295910](https://github.com/intent-hq/cloudlands-fe/commit/5295910764008de6302d780b12c9f7a139d3df2b))
+* polish diagram layout, motion, and exports ([#2281](https://github.com/intent-hq/cloudlands-fe/issues/2281)) ([88b4bcb](https://github.com/intent-hq/cloudlands-fe/commit/88b4bcb5bd9195517f1105441e3307de24b8f366))
+* reserved-box image rendering from text-block media sidecar ([#2796](https://github.com/intent-hq/cloudlands-fe/issues/2796)) ([6f9bcb0](https://github.com/intent-hq/cloudlands-fe/commit/6f9bcb01441084df01424d75340fd8d3e366ba5d))
+* **settings:** add Labs section with Multiplayer toggle ([#2787](https://github.com/intent-hq/cloudlands-fe/issues/2787)) ([a5f9d82](https://github.com/intent-hq/cloudlands-fe/commit/a5f9d82b2906ac6d2fcb19dd9c0ec1aab78dc840))
+* **share:** surface the tunnel-down daemon code distinctly in the share dialog ([#2758](https://github.com/intent-hq/cloudlands-fe/issues/2758)) ([1204db2](https://github.com/intent-hq/cloudlands-fe/commit/1204db2f6de924a3476d124bdd3b758e1ef937d2))
+* warn about guests on single workspace archive/delete ([#2776](https://github.com/intent-hq/cloudlands-fe/issues/2776)) ([df396ea](https://github.com/intent-hq/cloudlands-fe/commit/df396eab34024ef956a70ade98c8c3f976dc9f0a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.94 ([#2770](https://github.com/intent-hq/cloudlands-fe/issues/2770)) ([a30fb79](https://github.com/intent-hq/cloudlands-fe/commit/a30fb79cdb09f2b877b613e1a9c721d52c4d0d9f))
+* bump intentd sidecar to v0.9.95 ([#2781](https://github.com/intent-hq/cloudlands-fe/issues/2781)) ([b7f457e](https://github.com/intent-hq/cloudlands-fe/commit/b7f457e0119f6626758fff75e8757bed7d5f06c6))
+* bump intentd sidecar to v0.9.97 ([#2804](https://github.com/intent-hq/cloudlands-fe/issues/2804)) ([3e534ae](https://github.com/intent-hq/cloudlands-fe/commit/3e534ae75a701eafa36093d5c2292a5ffeaed0c3))
+* **dev-web:** boot the mock-only preview without the daemon-loss overlay ([#2786](https://github.com/intent-hq/cloudlands-fe/issues/2786)) ([d9b0a11](https://github.com/intent-hq/cloudlands-fe/commit/d9b0a11e63f79c09fadfe7889adb085e300ea77d))
+* **dropdown:** own the portaled submenu so leaf clicks select ([#2773](https://github.com/intent-hq/cloudlands-fe/issues/2773)) ([6193138](https://github.com/intent-hq/cloudlands-fe/commit/61931381f4082d919034fd2c15291442be23d2a4))
+* **i18n-gate:** treat equality-comparison operands as non-rendered ([#2771](https://github.com/intent-hq/cloudlands-fe/issues/2771)) ([914c00f](https://github.com/intent-hq/cloudlands-fe/commit/914c00f3f2e90988433f56e25681fa4680da5f90))
+* **invite:** report a GitHub rate limit instead of "not signed in" ([#2784](https://github.com/intent-hq/cloudlands-fe/issues/2784)) ([4555e30](https://github.com/intent-hq/cloudlands-fe/commit/4555e30880f76cc204d5347713251868cade9114))
+* **notes:** keep the attribution label inside the note panel and near the pointer ([#2780](https://github.com/intent-hq/cloudlands-fe/issues/2780)) ([4ee927d](https://github.com/intent-hq/cloudlands-fe/commit/4ee927da2059727922adab0be2865239e5f5a2bc))
+* **presence:** keep avatars solid and list owner and online members first ([#2764](https://github.com/intent-hq/cloudlands-fe/issues/2764)) ([13c99b9](https://github.com/intent-hq/cloudlands-fe/commit/13c99b9e1246bada86e7eba970741db0b99ed8b3))
+* **presence:** lead the agent chat presence stack with the owner ([#2777](https://github.com/intent-hq/cloudlands-fe/issues/2777)) ([0021212](https://github.com/intent-hq/cloudlands-fe/commit/0021212a83683dfbc1e1e644dc2f5bca5587b2a1))
+* **scripts:** preflight the Paraglide bundle in test:ct ([#2790](https://github.com/intent-hq/cloudlands-fe/issues/2790)) ([14cf4f7](https://github.com/intent-hq/cloudlands-fe/commit/14cf4f7ca4da987c3000ae47ab1b4c48224f9773))
+* **settings:** drop owner row and add avatars to hosting roster ([#2774](https://github.com/intent-hq/cloudlands-fe/issues/2774)) ([6fd15a2](https://github.com/intent-hq/cloudlands-fe/commit/6fd15a21ca3c785ab8dc9fe2c6f83af9e7d0e076))
+* **tooltip:** key the PR hover Queued badge on isInMergeQueue, drop FE hover cache ([#2765](https://github.com/intent-hq/cloudlands-fe/issues/2765)) ([9b36699](https://github.com/intent-hq/cloudlands-fe/commit/9b36699d9c8e3b213e3a6dc65e18231c608f3194))
+* **types:** add isInMergeQueue to the PullRequestInfo wire type ([#2798](https://github.com/intent-hq/cloudlands-fe/issues/2798)) ([e69d695](https://github.com/intent-hq/cloudlands-fe/commit/e69d695dcf5e6188c6f970de0f74c6d762c9236a))
+* **verify-changed:** default to origin/main as base on a clean ahead branch ([#2778](https://github.com/intent-hq/cloudlands-fe/issues/2778)) ([ad03340](https://github.com/intent-hq/cloudlands-fe/commit/ad033403a17a151f1cd5d1076ae2d6820031955c))
+
+## [2.173.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.4...v2.173.0) (2026-09-22)
+
+
+### 🚀 Features
+
+* **agents:** render collapsed delegated bars from daemon counts ([#2738](https://github.com/intent-hq/cloudlands-fe/issues/2738)) ([f621b72](https://github.com/intent-hq/cloudlands-fe/commit/f621b724fae38d2ebae04967807fd6199b2753a4))
+* **settings:** Consolidate local configuration into device settings ([#2617](https://github.com/intent-hq/cloudlands-fe/issues/2617)) ([7f55ecf](https://github.com/intent-hq/cloudlands-fe/commit/7f55ecf7b515807cac4f957b694b9254d3925759))
+* **sidecar:** raise intentd sidecar scheduling priority above agents ([#2737](https://github.com/intent-hq/cloudlands-fe/issues/2737)) ([0c65955](https://github.com/intent-hq/cloudlands-fe/commit/0c65955e462f0176f240219d61eea92ea87f1037))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.93 ([#2762](https://github.com/intent-hq/cloudlands-fe/issues/2762)) ([d3281e5](https://github.com/intent-hq/cloudlands-fe/commit/d3281e53555dc3a56a0df555c5680312192a6480))
+* **providers:** forward mock provider availability to the preload bridge ([#2756](https://github.com/intent-hq/cloudlands-fe/issues/2756)) ([ad6234d](https://github.com/intent-hq/cloudlands-fe/commit/ad6234d7f559155cc659f78c6e154616f5bc7738))
+
+## [2.172.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.3...v2.172.4) (2026-09-21)
+
+
+### 🐛 Bug Fixes
+
+* **sharing:** Prevent overlapping workspace sharing menus ([#2752](https://github.com/intent-hq/cloudlands-fe/issues/2752)) ([663e30a](https://github.com/intent-hq/cloudlands-fe/commit/663e30a5ec8054e950db80f29200571f92482faf))
+
+## [2.172.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.2...v2.172.3) (2026-09-21)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** Restore smooth and subtle aura rendering ([#2591](https://github.com/intent-hq/cloudlands-fe/issues/2591)) ([3c616ce](https://github.com/intent-hq/cloudlands-fe/commit/3c616ce2e1a98e44939280eba9a9bf38473a0126))
+
+## [2.172.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.1...v2.172.2) (2026-09-21)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.92 ([#2741](https://github.com/intent-hq/cloudlands-fe/issues/2741)) ([c57e6a0](https://github.com/intent-hq/cloudlands-fe/commit/c57e6a04100847e74145c1d2c803909fd859b508))
+* **chat:** lock the model picker in guest and collaborator windows ([#2735](https://github.com/intent-hq/cloudlands-fe/issues/2735)) ([f709a4c](https://github.com/intent-hq/cloudlands-fe/commit/f709a4cf1fcd9c0895fadc2b3dedbb1df3c06519))
+* **ct:** apply the launcher heap default when NODE_OPTIONS is pre-set ([#2730](https://github.com/intent-hq/cloudlands-fe/issues/2730)) ([317785a](https://github.com/intent-hq/cloudlands-fe/commit/317785a39eff7e6fe356d46ef88a6c8a18be7c6b))
+* **ct:** print a heap-exhaustion hint when the CT child dies with SIGABRT / 134 ([#2739](https://github.com/intent-hq/cloudlands-fe/issues/2739)) ([e357451](https://github.com/intent-hq/cloudlands-fe/commit/e35745142e4339eeb25492f6b2931e0239520b5d))
+* **deeplink:** await the invite GitHub sign-in from the moment the code is shown ([#2733](https://github.com/intent-hq/cloudlands-fe/issues/2733)) ([44d2dd8](https://github.com/intent-hq/cloudlands-fe/commit/44d2dd888b4ca036e3df7e676783922a531d62bc))
+* **lint:** exclude knip canary dir from tsconfig so type-check can run concurrently ([#2728](https://github.com/intent-hq/cloudlands-fe/issues/2728)) ([4be2578](https://github.com/intent-hq/cloudlands-fe/commit/4be2578c5cdfece4130414e8c484b7998e134a36))
+* **ui:** route accent buttons through Button variants and guard bg-* overrides ([#2734](https://github.com/intent-hq/cloudlands-fe/issues/2734)) ([f3d4c57](https://github.com/intent-hq/cloudlands-fe/commit/f3d4c578470cf155003bd74f59b3b7951ca9c8db))
+
+## [2.172.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.0...v2.172.1) (2026-09-21)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.91 ([#2731](https://github.com/intent-hq/cloudlands-fe/issues/2731)) ([079803b](https://github.com/intent-hq/cloudlands-fe/commit/079803b0ee88736b1d3e00a4f5bcebee0437e2af))
+* **share:** drop "Reusable" prefix from open-invite detail line ([#2726](https://github.com/intent-hq/cloudlands-fe/issues/2726)) ([10bc7aa](https://github.com/intent-hq/cloudlands-fe/commit/10bc7aa7673b29fcc80b468e76509eea101e2a73))
+
+## [2.172.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.171.1...v2.172.0) (2026-09-21)
+
+
+### 🚀 Features
+
+* **daemon-status:** show agent memory with a per-agent breakdown dialog ([#2697](https://github.com/intent-hq/cloudlands-fe/issues/2697)) ([69cb8f0](https://github.com/intent-hq/cloudlands-fe/commit/69cb8f08aa4571901ee9eb2b40e9b3a732fa8bc4))
+* **multiplayer:** workspace sharing, presence, invites and guest sessions (fe stack) ([#2715](https://github.com/intent-hq/cloudlands-fe/issues/2715)) ([76e66cb](https://github.com/intent-hq/cloudlands-fe/commit/76e66cb55ecb0c3a5481ad70dd5b4625f1598cb0))
+* **presence:** workspace presence dots, member rows, chat presence and typing ([#2454](https://github.com/intent-hq/cloudlands-fe/issues/2454)) ([1aca84b](https://github.com/intent-hq/cloudlands-fe/commit/1aca84b4f5dff274362123172b2ef697e001dbcd))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.89 ([#2714](https://github.com/intent-hq/cloudlands-fe/issues/2714)) ([967dbac](https://github.com/intent-hq/cloudlands-fe/commit/967dbaca3c47aabafc8184216c328980bac0c6a0))
+* bump intentd sidecar to v0.9.90 ([#2722](https://github.com/intent-hq/cloudlands-fe/issues/2722)) ([15d3210](https://github.com/intent-hq/cloudlands-fe/commit/15d32109c242917b16d0f756bf341da51f6798ce))
+* **ci:** repair the root Playwright suite and gate it in CI Gate ([#2709](https://github.com/intent-hq/cloudlands-fe/issues/2709)) ([eb43931](https://github.com/intent-hq/cloudlands-fe/commit/eb439311b06921a2fb8cd5ed39a6efed9dd8e6b5))
+* **scripts:** read the RSS test oracle from a file instead of the child stdout ([#2717](https://github.com/intent-hq/cloudlands-fe/issues/2717)) ([d84e6ce](https://github.com/intent-hq/cloudlands-fe/commit/d84e6ced2aba9f7a918b9879ff641f504965e3f2))
+* **settings:** keep the requested tab through the boot window ([#2707](https://github.com/intent-hq/cloudlands-fe/issues/2707)) ([fe7117d](https://github.com/intent-hq/cloudlands-fe/commit/fe7117dc11eaaae8e7970e923d75f43fcb01d297))
+
+
+### ⚡ Performance
+
+* replace unscoped agent.list callers with bounded agent.get / agent.listActive reads ([#2721](https://github.com/intent-hq/cloudlands-fe/issues/2721)) ([c781783](https://github.com/intent-hq/cloudlands-fe/commit/c781783fdade90df8596db573078216603c4de59))
+
+## [2.171.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.171.0...v2.171.1) (2026-09-20)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.88 ([#2711](https://github.com/intent-hq/cloudlands-fe/issues/2711)) ([f3e986f](https://github.com/intent-hq/cloudlands-fe/commit/f3e986fe918463b0beec76315584f0514a959bb2))
+
+## [2.171.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.170.0...v2.171.0) (2026-09-20)
+
+
+### 🚀 Features
+
+* **multiplayer:** guest session store, invite deep link and device-flow join ([#2439](https://github.com/intent-hq/cloudlands-fe/issues/2439)) ([491fcd0](https://github.com/intent-hq/cloudlands-fe/commit/491fcd06e1783f83b2df4abfc045f128724cd52a))
+* **multiplayer:** guest sessions navigation, settings and revoked state ([#2445](https://github.com/intent-hq/cloudlands-fe/issues/2445)) ([6427890](https://github.com/intent-hq/cloudlands-fe/commit/642789000326c102e8edfb199ab7eb8fc1b8e845))
+* **multiplayer:** owner-side share dialog with invite and member management ([#2440](https://github.com/intent-hq/cloudlands-fe/issues/2440)) ([2dfe12d](https://github.com/intent-hq/cloudlands-fe/commit/2dfe12dabfedee1ede5bc1948c23053222979ff1))
+* **multiplayer:** per-workspace Leave, Remove all guests and confirmations in Guest Sessions ([#2451](https://github.com/intent-hq/cloudlands-fe/issues/2451)) ([b3325ea](https://github.com/intent-hq/cloudlands-fe/commit/b3325ea11c37fa049266fc25440bcaebe1827603))
+* **multiplayer:** role-aware desktop for collaborators ([#2438](https://github.com/intent-hq/cloudlands-fe/issues/2438)) ([9a6c6e6](https://github.com/intent-hq/cloudlands-fe/commit/9a6c6e6ed56cdd35e141a3c895f0b1e9e800aae3))
+* **notes:** remote cursors and header avatar stack in the rich note editor ([#2453](https://github.com/intent-hq/cloudlands-fe/issues/2453)) ([2f78c51](https://github.com/intent-hq/cloudlands-fe/commit/2f78c51e3205ecd717639922341361bc4f32f005))
+* **tunnel:** send CREDIT to replenish the daemon's per-stream window on local flush ([#2703](https://github.com/intent-hq/cloudlands-fe/issues/2703)) ([3608778](https://github.com/intent-hq/cloudlands-fe/commit/36087781cce670e328ccfe6e42ae8772ec2bf81b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.86 ([#2696](https://github.com/intent-hq/cloudlands-fe/issues/2696)) ([5cc91f3](https://github.com/intent-hq/cloudlands-fe/commit/5cc91f3c9ff3bb62e4ad9d3cb3aba1f4917a2940))
+* bump intentd sidecar to v0.9.87 ([#2710](https://github.com/intent-hq/cloudlands-fe/issues/2710)) ([71ddf19](https://github.com/intent-hq/cloudlands-fe/commit/71ddf196169136ae4af4115598b6783b6fd33bee))
+* **ct:** disable browser-context reuse in the shared CT test module ([#2701](https://github.com/intent-hq/cloudlands-fe/issues/2701)) ([58e4184](https://github.com/intent-hq/cloudlands-fe/commit/58e4184052ae98c81874b7af7de5f24ee872e9c7))
+* **ct:** isolate browser context per test in mermaid-block-lane spec ([#2693](https://github.com/intent-hq/cloudlands-fe/issues/2693)) ([2d0831a](https://github.com/intent-hq/cloudlands-fe/commit/2d0831a7991d7c009170516bd229d0c1a3ecbc9f))
+* **design-system:** size the remaining icon-only Buttons and retire the lint baseline ([#2684](https://github.com/intent-hq/cloudlands-fe/issues/2684)) ([ce71dd5](https://github.com/intent-hq/cloudlands-fe/commit/ce71dd5e1f5d377b1b6fea79c6e6de5f0345f1e1))
+* **lint:** add a canary to the knip dead-code gate ([#2705](https://github.com/intent-hq/cloudlands-fe/issues/2705)) ([0ce765e](https://github.com/intent-hq/cloudlands-fe/commit/0ce765ede39fd1bb297dfb515123f5586e77b80f))
+* **lint:** detect unused Svelte components and delete 97 unused files ([#2695](https://github.com/intent-hq/cloudlands-fe/issues/2695)) ([e632793](https://github.com/intent-hq/cloudlands-fe/commit/e63279304681746d82e3dc6569b5aee7af375477))
+* **settings:** add section gap above Licenses on App Behavior tab ([#2698](https://github.com/intent-hq/cloudlands-fe/issues/2698)) ([dc515f0](https://github.com/intent-hq/cloudlands-fe/commit/dc515f0c375290a76629c6ed64b29fe1fa21e5ed))
+* **settings:** make inter-section spacing container-owned ([#2706](https://github.com/intent-hq/cloudlands-fe/issues/2706)) ([6e2fc68](https://github.com/intent-hq/cloudlands-fe/commit/6e2fc68554e8acdf515d3108f2cdd5b82574743f)), closes [#2698](https://github.com/intent-hq/cloudlands-fe/issues/2698)
+
+## [2.170.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.169.1...v2.170.0) (2026-09-20)
+
+
+### 🚀 Features
+
+* **agents:** tolerate slim agent.list/workspace.list rows and load detail on demand ([#2687](https://github.com/intent-hq/cloudlands-fe/issues/2687)) ([116d654](https://github.com/intent-hq/cloudlands-fe/commit/116d6544224c13db58698b9120ea38a3ebf2ae63))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.85 ([#2689](https://github.com/intent-hq/cloudlands-fe/issues/2689)) ([46d3085](https://github.com/intent-hq/cloudlands-fe/commit/46d308539e3cb9f10e55efd5fc8ba414239ea21e))
+* **ci:** print svelte-check peak RSS and ground the step heap cap in measurements ([#2682](https://github.com/intent-hq/cloudlands-fe/issues/2682)) ([bc18618](https://github.com/intent-hq/cloudlands-fe/commit/bc18618f1a114778ca5c21a00c5763bde9cc845d))
+* **design-system:** size icon-only Buttons in layout, settings, terminal and browser components ([#2683](https://github.com/intent-hq/cloudlands-fe/issues/2683)) ([84d87f6](https://github.com/intent-hq/cloudlands-fe/commit/84d87f68512e35196ff36c876e143b5b687cb76f))
+* **design-system:** size icon-only Buttons in tiptap, markdown and workspace components ([#2680](https://github.com/intent-hq/cloudlands-fe/issues/2680)) ([1fb0077](https://github.com/intent-hq/cloudlands-fe/commit/1fb0077546d483d19a4c2a8c1f11e96e696a1000))
+* **notes:** quote every paragraph when copying a multi-paragraph blockquote ([#2679](https://github.com/intent-hq/cloudlands-fe/issues/2679)) ([abf25c2](https://github.com/intent-hq/cloudlands-fe/commit/abf25c2bbc5ef78c5f3a1e780537936f97582d63))
+
+## [2.169.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.169.0...v2.169.1) (2026-09-19)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.84 ([#2685](https://github.com/intent-hq/cloudlands-fe/issues/2685)) ([868c653](https://github.com/intent-hq/cloudlands-fe/commit/868c65370dab5bd13ab13f5a52cf3df725ce306a))
+
+## [2.169.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.168.1...v2.169.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* **lint:** require an icon size on icon-only Buttons ([#2675](https://github.com/intent-hq/cloudlands-fe/issues/2675)) ([fa0bb02](https://github.com/intent-hq/cloudlands-fe/commit/fa0bb029c9fcb766ee8c9c4f85a1d2ffc11e8156))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.83 ([#2681](https://github.com/intent-hq/cloudlands-fe/issues/2681)) ([bbbadbe](https://github.com/intent-hq/cloudlands-fe/commit/bbbadbe215ce07fdb59f8eaa4f6731a1989f1070))
+
+## [2.168.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.168.0...v2.168.1) (2026-09-19)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.82 ([#2676](https://github.com/intent-hq/cloudlands-fe/issues/2676)) ([9e186e7](https://github.com/intent-hq/cloudlands-fe/commit/9e186e78d8cb499a8d6f1f1c828f52e6d17ce902))
+
+## [2.168.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.167.0...v2.168.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* cascade Cmd+W from panel to workspace tab to window close ([#2670](https://github.com/intent-hq/cloudlands-fe/issues/2670)) ([34dd2e9](https://github.com/intent-hq/cloudlands-fe/commit/34dd2e99b873e996e2b69820c0694c1ca0bc0bdd))
+* update remote daemons to the bundled version ([#2524](https://github.com/intent-hq/cloudlands-fe/issues/2524)) ([832b1df](https://github.com/intent-hq/cloudlands-fe/commit/832b1df2bb9fb93818a565204bf0d14611a413d7))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.81 ([#2674](https://github.com/intent-hq/cloudlands-fe/issues/2674)) ([6b593ab](https://github.com/intent-hq/cloudlands-fe/commit/6b593abe51d944cfc0b9f867171b9063dde32404))
+* **notes:** copy only the selected text from inside table cells, list items and blockquotes ([#2669](https://github.com/intent-hq/cloudlands-fe/issues/2669)) ([be01da0](https://github.com/intent-hq/cloudlands-fe/commit/be01da077016cd963d72874c808a15f3c2e37658))
+
+## [2.167.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.166.0...v2.167.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* **proposals:** default the card specialist to the New Workspace modal selection ([#2662](https://github.com/intent-hq/cloudlands-fe/issues/2662)) ([6edbe0a](https://github.com/intent-hq/cloudlands-fe/commit/6edbe0a6d55df9981b6271bf1f920c78e3df3a65))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.80 ([#2672](https://github.com/intent-hq/cloudlands-fe/issues/2672)) ([0e8bbdd](https://github.com/intent-hq/cloudlands-fe/commit/0e8bbdd35a8d439010a32504908987b06c6f8595))
+* **chat:** clear the proposal draft when a resolution converges from the daemon ([#2665](https://github.com/intent-hq/cloudlands-fe/issues/2665)) ([fd160f3](https://github.com/intent-hq/cloudlands-fe/commit/fd160f355842970a6a9359e59f8bd59ea10da578))
+* **notes:** restore bubble menu icons clipped by default Button padding ([#2668](https://github.com/intent-hq/cloudlands-fe/issues/2668)) ([f0abb5e](https://github.com/intent-hq/cloudlands-fe/commit/f0abb5ec36b1e0daaa98f8370e965eaf6d44c058))
+
+## [2.166.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.3...v2.166.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* **agent:** per-agent notification mute toggle with unread, toast, sound, and HUD suppression ([#2649](https://github.com/intent-hq/cloudlands-fe/issues/2649)) ([67f81bf](https://github.com/intent-hq/cloudlands-fe/commit/67f81bf9d34534c0ada569ed1e591ad949a0b58d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.79 ([#2661](https://github.com/intent-hq/cloudlands-fe/issues/2661)) ([c2cd10e](https://github.com/intent-hq/cloudlands-fe/commit/c2cd10e3383ef7a92834ce9068a65fd53f75cd7d))
+* **chat:** pin an opted-out followed bottom from the disclosure lease settle ([#2646](https://github.com/intent-hq/cloudlands-fe/issues/2646)) ([bc5eb10](https://github.com/intent-hq/cloudlands-fe/commit/bc5eb10b7a3c10094b297b24c4a84cb7cdef2f34))
+
+## [2.165.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.2...v2.165.3) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* prevent Vim parser crashes and remove unrendered terminals ([#2658](https://github.com/intent-hq/cloudlands-fe/issues/2658)) ([f16d0d3](https://github.com/intent-hq/cloudlands-fe/commit/f16d0d342d98a74114cf674b71d89d8bd5264af4))
+
+## [2.165.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.1...v2.165.2) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** render the host-offline banner in warning ink ([#2643](https://github.com/intent-hq/cloudlands-fe/issues/2643)) ([e8f67d3](https://github.com/intent-hq/cloudlands-fe/commit/e8f67d3d041568e5b4fdf115d139e27c4315d035))
+* bump intentd sidecar to v0.9.78 ([#2657](https://github.com/intent-hq/cloudlands-fe/issues/2657)) ([fea1102](https://github.com/intent-hq/cloudlands-fe/commit/fea1102dae34ef925267e3b142c2f116ad29bf87))
+* **fe:** bound the github.authStatus cache with a TTL so a missed auth event self-heals ([#2641](https://github.com/intent-hq/cloudlands-fe/issues/2641)) ([bab8a31](https://github.com/intent-hq/cloudlands-fe/commit/bab8a31e188227f8f45bd66f96b0b7614399cc76))
+* **fe:** do not stamp a messageId-less interrupt stream:end onto the accumulated turn ([#2651](https://github.com/intent-hq/cloudlands-fe/issues/2651)) ([a2f3334](https://github.com/intent-hq/cloudlands-fe/commit/a2f33340d0e896648046f1c94d520ab55e2349b2))
+* **fe:** portal the Menu playground submenu so nested More actions renders ([#2648](https://github.com/intent-hq/cloudlands-fe/issues/2648)) ([f918a1d](https://github.com/intent-hq/cloudlands-fe/commit/f918a1d7fe366b2d37452eac53954562765c8f7f))
+
+## [2.165.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.0...v2.165.1) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.77 ([#2647](https://github.com/intent-hq/cloudlands-fe/issues/2647)) ([3b3ee7c](https://github.com/intent-hq/cloudlands-fe/commit/3b3ee7ca6986e893f05934400a7b5a3deb7c601f))
+* **ct-failures:** fall back to job logs when an artifact disappears mid-run ([#2632](https://github.com/intent-hq/cloudlands-fe/issues/2632)) ([10c077d](https://github.com/intent-hq/cloudlands-fe/commit/10c077d477eae7b9a658624a4fcb7e7e38b01b82))
+* **ct:** assert the CSS-defined 12px composer inset instead of a mount-time sample ([#2639](https://github.com/intent-hq/cloudlands-fe/issues/2639)) ([bdab4a5](https://github.com/intent-hq/cloudlands-fe/commit/bdab4a56e3b5f9e222abecd94cae26e6c54b81c9))
+* **fe:** keep collapsed accordion content at zero height ([#2634](https://github.com/intent-hq/cloudlands-fe/issues/2634)) ([2cb93cf](https://github.com/intent-hq/cloudlands-fe/commit/2cb93cf15d93d5f6cf3d1b5e2fbdce69c17ccbc4))
+* **fe:** let GitHub Reconnect start a fresh device flow when already connected ([#2633](https://github.com/intent-hq/cloudlands-fe/issues/2633)) ([c8c1413](https://github.com/intent-hq/cloudlands-fe/commit/c8c1413d05544abd093b1b30cd4c812aab9f0586))
+* **fe:** route provider model catalog through the platform detector ([#2631](https://github.com/intent-hq/cloudlands-fe/issues/2631)) ([b72081f](https://github.com/intent-hq/cloudlands-fe/commit/b72081f39cb4c0c7dd42bf2d356d9b04f8c55734))
+* keep Mac mini and Mac Studio icon strokes visible inside buttons ([#2635](https://github.com/intent-hq/cloudlands-fe/issues/2635)) ([a17814f](https://github.com/intent-hq/cloudlands-fe/commit/a17814f8b43bf16bc56f2c91546e5c096ad73203))
+* recover from benign render errors inside ErrorBoundary ([#2637](https://github.com/intent-hq/cloudlands-fe/issues/2637)) ([a5c44e8](https://github.com/intent-hq/cloudlands-fe/commit/a5c44e8dfabe8ead6f180984584329160a4fc274))
+
+## [2.165.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.3...v2.165.0) (2026-09-18)
+
+
+### 🚀 Features
+
+* **lint:** report Tailwind numeric duration and keyword easing utilities ([#2629](https://github.com/intent-hq/cloudlands-fe/issues/2629)) ([8136e2f](https://github.com/intent-hq/cloudlands-fe/commit/8136e2f8f7632dd5bcedb2ca1d521f2f56c74055))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.76 ([#2636](https://github.com/intent-hq/cloudlands-fe/issues/2636)) ([5b8fe06](https://github.com/intent-hq/cloudlands-fe/commit/5b8fe06f31aaf9971eaaea3d3a4971bdd7fada11))
+* **design-system:** commit the generated cheatsheet in-repo and enforce it in lint ([#2624](https://github.com/intent-hq/cloudlands-fe/issues/2624)) ([ab63975](https://github.com/intent-hq/cloudlands-fe/commit/ab639755c569c6f33528b96419c6132b3d59e1fa))
+
+## [2.164.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.2...v2.164.3) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.75 ([#2626](https://github.com/intent-hq/cloudlands-fe/issues/2626)) ([a101155](https://github.com/intent-hq/cloudlands-fe/commit/a101155f752fa24a22a5ab60d0f9ed448c45baf3))
+* **chat:** keep context picker open and clear checked context after send ([#2612](https://github.com/intent-hq/cloudlands-fe/issues/2612)) ([76f77b1](https://github.com/intent-hq/cloudlands-fe/commit/76f77b128bb63fd63e48060fe51ce666092f6991))
+* **ct:** settle the empty-composer prompt inset before sampling the queue baseline ([#2613](https://github.com/intent-hq/cloudlands-fe/issues/2613)) ([5bedf37](https://github.com/intent-hq/cloudlands-fe/commit/5bedf3763cc3245284852c82313916e89593600f))
+* **initializer:** keep typed branch filter across background fetches and return focus to the trigger after Enter ([#2614](https://github.com/intent-hq/cloudlands-fe/issues/2614)) ([221e21e](https://github.com/intent-hq/cloudlands-fe/commit/221e21e6efae55e66afc97d19a595e13fa35c18a))
+* name the unreachable machine in the daemon-stopped overlay ([#2623](https://github.com/intent-hq/cloudlands-fe/issues/2623)) ([c88adee](https://github.com/intent-hq/cloudlands-fe/commit/c88adee1b6ef9e730c9f20b88f5b133c42b10dff))
+* **settings:** Move Tailcat attribution into General licenses ([#2600](https://github.com/intent-hq/cloudlands-fe/issues/2600)) ([1256fd0](https://github.com/intent-hq/cloudlands-fe/commit/1256fd026f91f909e0ee0939371c9aaa368f58f1))
+* **test:** keep the Vitest fork --no-sparkplug flag out of worker_threads execArgv ([#2605](https://github.com/intent-hq/cloudlands-fe/issues/2605)) ([34f6ae4](https://github.com/intent-hq/cloudlands-fe/commit/34f6ae4f48ae438020d398bb3e9a98057909e793))
+* **workspace:** pin Create-button progress bar to the button edge ([#2609](https://github.com/intent-hq/cloudlands-fe/issues/2609)) ([f0661cb](https://github.com/intent-hq/cloudlands-fe/commit/f0661cb3039f2a8501eee98fadb8f62831eb027b))
+
+## [2.164.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.1...v2.164.2) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.73 ([#2608](https://github.com/intent-hq/cloudlands-fe/issues/2608)) ([d699cdf](https://github.com/intent-hq/cloudlands-fe/commit/d699cdfe207d4c75bd738125e9e0c06223ea5939))
+* bump intentd sidecar to v0.9.74 ([#2618](https://github.com/intent-hq/cloudlands-fe/issues/2618)) ([6027b83](https://github.com/intent-hq/cloudlands-fe/commit/6027b839950a2bc559719af5c5663693243ddeb9))
+* **ct:** wait for the panel menu to settle before measuring containment in agent-header-icons ([#2596](https://github.com/intent-hq/cloudlands-fe/issues/2596)) ([919e0d0](https://github.com/intent-hq/cloudlands-fe/commit/919e0d0319d2e17ee9459b2c9537b1c3f15f713f))
+* **ct:** wait for the restored composer inset to settle in SimpleRichInput.queue ([#2606](https://github.com/intent-hq/cloudlands-fe/issues/2606)) ([a59926a](https://github.com/intent-hq/cloudlands-fe/commit/a59926a50a0cf4ea12c77ef3e2498c69cea3b1c3))
+* restore Chief sidebar new-thread icon ([#5315](https://github.com/intent-hq/cloudlands-fe/issues/5315)) ([#2603](https://github.com/intent-hq/cloudlands-fe/issues/2603)) ([038bdf3](https://github.com/intent-hq/cloudlands-fe/commit/038bdf319553737836b57359363735f9926704bd))
+* share benign-error classification so ErrorBoundary honours webview stale-guest suppression ([#2610](https://github.com/intent-hq/cloudlands-fe/issues/2610)) ([5279bed](https://github.com/intent-hq/cloudlands-fe/commit/5279bed493d399dd9b8d22780560fa87926d7072))
+* show filename in file panel header ([#2595](https://github.com/intent-hq/cloudlands-fe/issues/2595)) ([e86c575](https://github.com/intent-hq/cloudlands-fe/commit/e86c5755842cbdb8845fcc778df5c7e830c43603))
+
+## [2.164.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.0...v2.164.1) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* **motion:** pause only looping CSS animations on window blur ([#2584](https://github.com/intent-hq/cloudlands-fe/issues/2584)) ([fa5c696](https://github.com/intent-hq/cloudlands-fe/commit/fa5c696bdf3c57520791075247b8afe6224e68b2))
+
+## [2.164.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.163.1...v2.164.0) (2026-09-18)
+
+
+### 🚀 Features
+
+* **scripts:** add ct:failures to list failed and flaky CT cases of a run ([#2582](https://github.com/intent-hq/cloudlands-fe/issues/2582)) ([1d444e9](https://github.com/intent-hq/cloudlands-fe/commit/1d444e914d49a02172696cba438f4ff271718e76))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.72 ([#2601](https://github.com/intent-hq/cloudlands-fe/issues/2601)) ([c484f5f](https://github.com/intent-hq/cloudlands-fe/commit/c484f5fe275a144b6dc375a14ef04cda897389a0))
+* **ct:** isolate deferred-theme-real-surfaces browser contexts per test ([#2583](https://github.com/intent-hq/cloudlands-fe/issues/2583)) ([a9f50c6](https://github.com/intent-hq/cloudlands-fe/commit/a9f50c67c54f47868e4298fb3efbe7d62cd056a9))
+* **ct:** wait for fonts before onboarding suggestion geometry baseline ([#2577](https://github.com/intent-hq/cloudlands-fe/issues/2577)) ([f4821f1](https://github.com/intent-hq/cloudlands-fe/commit/f4821f112509aedcd1e78dd3a566c566b9858e89))
+* **i18n:** publish generated Paraglide output atomically under a single-writer lock ([#2578](https://github.com/intent-hq/cloudlands-fe/issues/2578)) ([63dda27](https://github.com/intent-hq/cloudlands-fe/commit/63dda2706017b8c3c4cecd872a366160f359c977))
+
+## [2.163.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.163.0...v2.163.1) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** recover dead offscreen guests without URL rollback ([#2590](https://github.com/intent-hq/cloudlands-fe/issues/2590)) ([7b9ab7c](https://github.com/intent-hq/cloudlands-fe/commit/7b9ab7c1f4c59e2f236ae8925b657c283483f885))
+
+## [2.163.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.162.2...v2.163.0) (2026-09-17)
+
+
+### 🚀 Features
+
+* **context:** Show workspace attachments in the sidebar ([#2528](https://github.com/intent-hq/cloudlands-fe/issues/2528)) ([a5e052b](https://github.com/intent-hq/cloudlands-fe/commit/a5e052b87d38dad05632dc8666a595dc91cae944))
+
+
+### ⚡ Performance
+
+* Limit style invalidation on window focus changes ([#2526](https://github.com/intent-hq/cloudlands-fe/issues/2526)) ([834dba5](https://github.com/intent-hq/cloudlands-fe/commit/834dba564108ed11e17fd2d1ace12f26a9037923))
+
+## [2.162.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.162.1...v2.162.2) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* polish chat cards and compact workspace controls ([#2580](https://github.com/intent-hq/cloudlands-fe/issues/2580)) ([5c2165b](https://github.com/intent-hq/cloudlands-fe/commit/5c2165b977943bfb80add10b71afd3ad92a1086c))
+
+## [2.162.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.162.0...v2.162.1) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.71 ([#2581](https://github.com/intent-hq/cloudlands-fe/issues/2581)) ([cad1a12](https://github.com/intent-hq/cloudlands-fe/commit/cad1a1239a97b0c1ba9e12e9745e053d847a6231))
+
+## [2.162.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.5...v2.162.0) (2026-09-17)
+
+
+### 🚀 Features
+
+* align workspace sidebars and panel controls ([#2533](https://github.com/intent-hq/cloudlands-fe/issues/2533)) ([8eb767a](https://github.com/intent-hq/cloudlands-fe/commit/8eb767aa6f81b8627785b7cb0956822320ae29cb))
+* **pr-monitor:** show monitoring paused status when pausedUntil is set ([#2551](https://github.com/intent-hq/cloudlands-fe/issues/2551)) ([b779dee](https://github.com/intent-hq/cloudlands-fe/commit/b779deef0948b92fb82aea4902ef3f46895d06ab))
+* show Queued state in GitHub PR link hover card ([#2562](https://github.com/intent-hq/cloudlands-fe/issues/2562)) ([7255097](https://github.com/intent-hq/cloudlands-fe/commit/72550971602adf28d692f7328ec3c3bb63a0a092))
+* simplify settings navigation and setup controls ([#2532](https://github.com/intent-hq/cloudlands-fe/issues/2532)) ([94918d1](https://github.com/intent-hq/cloudlands-fe/commit/94918d18f8655e39d6c8d8c6d4fd9663f8f37a0f))
+* standardize shared controls and picker interactions ([#2530](https://github.com/intent-hq/cloudlands-fe/issues/2530)) ([41c3428](https://github.com/intent-hq/cloudlands-fe/commit/41c3428a2686cf37453633d88d90ce822d3ab40b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.70 ([#2568](https://github.com/intent-hq/cloudlands-fe/issues/2568)) ([5ef7319](https://github.com/intent-hq/cloudlands-fe/commit/5ef73194db547c12b938471b7a2ca7d0d54f33ba))
+* **ct:** isolate browser context per test in chat-content-columns spec ([#2553](https://github.com/intent-hq/cloudlands-fe/issues/2553)) ([e7e78f8](https://github.com/intent-hq/cloudlands-fe/commit/e7e78f8c01647c69974b270d580ae3b8e6cf7ca8))
+* **hud:** exempt the HUD window from the window-blur animation pause ([#2560](https://github.com/intent-hq/cloudlands-fe/issues/2560)) ([4f52f1c](https://github.com/intent-hq/cloudlands-fe/commit/4f52f1cfd3613d1f1e9fab3f76fa3c71fa8576c8))
+* **hud:** remove Pass/Fail badge from the SYSTEM panel ([#2552](https://github.com/intent-hq/cloudlands-fe/issues/2552)) ([f367a04](https://github.com/intent-hq/cloudlands-fe/commit/f367a04c8aba41e6c1b632b7f7635621b066bfd6))
+* preserve chat images and refine composer interactions ([#2531](https://github.com/intent-hq/cloudlands-fe/issues/2531)) ([898107a](https://github.com/intent-hq/cloudlands-fe/commit/898107a1432d5bd24f049220057f6711e9bd1a44))
+* recover embedded browser tabs from destroyed webview guests and suppress stale detach errors ([#2554](https://github.com/intent-hq/cloudlands-fe/issues/2554)) ([1fa3f53](https://github.com/intent-hq/cloudlands-fe/commit/1fa3f53214fe07f156abadd6ce7d75ebcd43dbb6))
+* **settings:** show the auto memory budget and clear the queue hint on stream evidence ([#2558](https://github.com/intent-hq/cloudlands-fe/issues/2558)) ([7809d5d](https://github.com/intent-hq/cloudlands-fe/commit/7809d5d38bd48dd83df73aa0127baf812c7d835a))
+* **test:** mock presentation deps in browser.ipc pooled-remote cases ([#2566](https://github.com/intent-hq/cloudlands-fe/issues/2566)) ([a51e5eb](https://github.com/intent-hq/cloudlands-fe/commit/a51e5eb44a3498e9a97336a82284ae52c6e060d8))
+* **test:** scrub host Node injection from unit-test child processes ([#2550](https://github.com/intent-hq/cloudlands-fe/issues/2550)) ([6d3425f](https://github.com/intent-hq/cloudlands-fe/commit/6d3425ff92acc0722cc78dbc0cdf082d8c8fee5f))
+
+## [2.161.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.4...v2.161.5) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.68 ([#2548](https://github.com/intent-hq/cloudlands-fe/issues/2548)) ([6c8a265](https://github.com/intent-hq/cloudlands-fe/commit/6c8a2650eb876759855c9cc1236ff818a46b4523))
+* **hud:** disable background throttling for the HUD window ([#2544](https://github.com/intent-hq/cloudlands-fe/issues/2544)) ([29dfc01](https://github.com/intent-hq/cloudlands-fe/commit/29dfc01651d4f8f7d75f7210c84755d3818d0961))
+* **hud:** keep the header volume slider mounted across the button gap ([#2541](https://github.com/intent-hq/cloudlands-fe/issues/2541)) ([49a3286](https://github.com/intent-hq/cloudlands-fe/commit/49a328677a91572b218fde6efffe43075d052b24))
+* **notes:** settle keystrokes typed while a version restore awaits settle ([#2540](https://github.com/intent-hq/cloudlands-fe/issues/2540)) ([bcb0e9e](https://github.com/intent-hq/cloudlands-fe/commit/bcb0e9e1abfd594e11dec66b3b4897fcdb0d82e3))
+* retain tooltip content IDs for accessible descriptions ([#2534](https://github.com/intent-hq/cloudlands-fe/issues/2534)) ([51910e5](https://github.com/intent-hq/cloudlands-fe/commit/51910e5776ba8ddcb9ade39b688024e44f0622fd))
+
+## [2.161.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.3...v2.161.4) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.67 ([#2543](https://github.com/intent-hq/cloudlands-fe/issues/2543)) ([c3e16cd](https://github.com/intent-hq/cloudlands-fe/commit/c3e16cd049a3ede2627e386ec0632f889605eab2))
+* preserve retained browser guest ownership across workspace switches ([#2537](https://github.com/intent-hq/cloudlands-fe/issues/2537)) ([a810410](https://github.com/intent-hq/cloudlands-fe/commit/a8104104b40bd68abc5c033e391d93245eed0d00))
+* **workspace-card:** compact micro key-slot badge and square its corners ([#2538](https://github.com/intent-hq/cloudlands-fe/issues/2538)) ([ae90a5c](https://github.com/intent-hq/cloudlands-fe/commit/ae90a5c008795bd40ab41834aad50a4b568ac678))
+
+## [2.161.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.2...v2.161.3) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* throttle streaming Markdown and preserve DOM ownership ([#2527](https://github.com/intent-hq/cloudlands-fe/issues/2527)) ([a541a48](https://github.com/intent-hq/cloudlands-fe/commit/a541a48111f96f0370b95763d273b96f20ed7ab2))
+
+## [2.161.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.1...v2.161.2) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* **workspace:** Honor clone defaults beyond the first branch page ([#2525](https://github.com/intent-hq/cloudlands-fe/issues/2525)) ([61d4426](https://github.com/intent-hq/cloudlands-fe/commit/61d4426aba57b45700ed461caa8804f4d6913571))
+
+## [2.161.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.0...v2.161.1) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.66 ([#2523](https://github.com/intent-hq/cloudlands-fe/issues/2523)) ([479434a](https://github.com/intent-hq/cloudlands-fe/commit/479434ae616a5a21dfcdf6d65e2bd377cb6a138f))
+* **ui:** keep keyboard focus when the menu open-focus frame runs late ([#2520](https://github.com/intent-hq/cloudlands-fe/issues/2520)) ([9333c72](https://github.com/intent-hq/cloudlands-fe/commit/9333c726cbfcb87fc75a45f1ec1b255678a2bda7))
+
+## [2.161.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.160.0...v2.161.0) (2026-09-16)
+
+
+### 🚀 Features
+
+* **ui:** standardize shared controls and product layouts ([#2441](https://github.com/intent-hq/cloudlands-fe/issues/2441)) ([b64bd68](https://github.com/intent-hq/cloudlands-fe/commit/b64bd682e1dd11ffb5a4a7f09c6b81bde3f854b7))
+
+## [2.160.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.4...v2.160.0) (2026-09-16)
+
+
+### 🚀 Features
+
+* integrate hardened agent task progress surfaces ([#2074](https://github.com/intent-hq/cloudlands-fe/issues/2074)) ([8f962a1](https://github.com/intent-hq/cloudlands-fe/commit/8f962a1e4374f414925d76d76517b4ca845e4fcd))
+* render math in chat and workspace note previews ([#2253](https://github.com/intent-hq/cloudlands-fe/issues/2253)) ([8162b44](https://github.com/intent-hq/cloudlands-fe/commit/8162b442ebb9718a43ab21c7eb4c8f8719678cf4))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.65 ([#2512](https://github.com/intent-hq/cloudlands-fe/issues/2512)) ([b93ea20](https://github.com/intent-hq/cloudlands-fe/commit/b93ea20d61ec0feaf48b56e218bf3efeebaa5daa))
+* queue preview tunnel admission and recover capacity failures ([#2457](https://github.com/intent-hq/cloudlands-fe/issues/2457)) ([b5a76f4](https://github.com/intent-hq/cloudlands-fe/commit/b5a76f4253feea3740deb092136fae2e11d7bf31))
+
+## [2.159.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.3...v2.159.4) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.64 ([#2509](https://github.com/intent-hq/cloudlands-fe/issues/2509)) ([f679ff0](https://github.com/intent-hq/cloudlands-fe/commit/f679ff03d2e6d615cc9c392de27b7e01cbb37d36))
+
+## [2.159.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.2...v2.159.3) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.63 ([#2505](https://github.com/intent-hq/cloudlands-fe/issues/2505)) ([91e071c](https://github.com/intent-hq/cloudlands-fe/commit/91e071c8fd0ec2c2c7ff33424505748386f71e13))
+
+## [2.159.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.1...v2.159.2) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* **main:** start intentd sidecar before daemon-dependent startup steps ([#2500](https://github.com/intent-hq/cloudlands-fe/issues/2500)) ([f979b88](https://github.com/intent-hq/cloudlands-fe/commit/f979b880a25fcdaff2dd1b9a67ae78e755d11eb8))
+
+## [2.159.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.159.0...v2.159.1) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.62 ([#2499](https://github.com/intent-hq/cloudlands-fe/issues/2499)) ([44c710c](https://github.com/intent-hq/cloudlands-fe/commit/44c710c844cfd5cc0bca083f78fabc39fced7e66))
+
+## [2.159.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.4...v2.159.0) (2026-09-16)
+
+
+### 🚀 Features
+
+* **chat:** soften utility cards and pin response triggers ([#2298](https://github.com/intent-hq/cloudlands-fe/issues/2298)) ([5895e7d](https://github.com/intent-hq/cloudlands-fe/commit/5895e7d1aa9b56e6a68f3ba3c398271261d3df32))
+
+
+### 🐛 Bug Fixes
+
+* await clipboard.writeText in WRITE_CLIPBOARD handler ([#2493](https://github.com/intent-hq/cloudlands-fe/issues/2493)) ([3218d7b](https://github.com/intent-hq/cloudlands-fe/commit/3218d7b466955687d603261c715a0c57c3d43e6b))
+* bump intentd sidecar to v0.9.60 ([#2491](https://github.com/intent-hq/cloudlands-fe/issues/2491)) ([6c793a6](https://github.com/intent-hq/cloudlands-fe/commit/6c793a63b6202cde6e2a7d4db01c14432596e3b8))
+* bump intentd sidecar to v0.9.61 ([#2496](https://github.com/intent-hq/cloudlands-fe/issues/2496)) ([6ee393c](https://github.com/intent-hq/cloudlands-fe/commit/6ee393c0e763c3dc6ec23fa7485c617716f372a4))
+* default reduce motion on battery to off ([#2492](https://github.com/intent-hq/cloudlands-fe/issues/2492)) ([e9eee31](https://github.com/intent-hq/cloudlands-fe/commit/e9eee31acec9c1626445018b85a05afb6b8dbde4))
+* **main:** gate activate-triggered window creation on boot readiness ([#2488](https://github.com/intent-hq/cloudlands-fe/issues/2488)) ([ce83f7b](https://github.com/intent-hq/cloudlands-fe/commit/ce83f7b72d2f5bdf77670a588ffd3f8f8c27eaa7))
+* preserve Tailcat addresses during remote pairing ([#2487](https://github.com/intent-hq/cloudlands-fe/issues/2487)) ([29632d2](https://github.com/intent-hq/cloudlands-fe/commit/29632d27dae3d14d5fb124f5cb5b7c23c10a7580))
+* reduce preview imports and preserve navigation state ([#2456](https://github.com/intent-hq/cloudlands-fe/issues/2456)) ([3ce7b04](https://github.com/intent-hq/cloudlands-fe/commit/3ce7b045c44417f0b91b5775405dbb269bc4bc0e))
+
+## [2.158.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.3...v2.158.4) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* merge navigator.getBattery() into the Electron battery source ([#2484](https://github.com/intent-hq/cloudlands-fe/issues/2484)) ([cc4762b](https://github.com/intent-hq/cloudlands-fe/commit/cc4762be004478649cfc98996338db3c7a67c889))
+
+## [2.158.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.2...v2.158.3) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.59 ([#2480](https://github.com/intent-hq/cloudlands-fe/issues/2480)) ([288ed4d](https://github.com/intent-hq/cloudlands-fe/commit/288ed4de098e4819ca3034197944daf2f080fcc1))
+
+## [2.158.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.1...v2.158.2) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.58 ([#2477](https://github.com/intent-hq/cloudlands-fe/issues/2477)) ([501765d](https://github.com/intent-hq/cloudlands-fe/commit/501765d659ba36c0dbf1cc2b66f580221a34d90c))
+
+## [2.158.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.158.0...v2.158.1) (2026-09-15)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.57 ([#2476](https://github.com/intent-hq/cloudlands-fe/issues/2476)) ([6faa028](https://github.com/intent-hq/cloudlands-fe/commit/6faa02858c1db1e3da93b96d665dc5ca4d25c186))
+* record the selector baseline before emitting in Themis selector channels ([#2472](https://github.com/intent-hq/cloudlands-fe/issues/2472)) ([b08fd84](https://github.com/intent-hq/cloudlands-fe/commit/b08fd8436fd6f853b63ce3b1e68b2d3c22f7d310))
+* render an absent threads.unresolved as unknown, not zero ([#2473](https://github.com/intent-hq/cloudlands-fe/issues/2473)) ([1cdbc93](https://github.com/intent-hq/cloudlands-fe/commit/1cdbc937cf7266f37f156f2e60e07bb7dbb2690c))
+
+## [2.158.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.157.0...v2.158.0) (2026-09-15)
+
+
+### 🚀 Features
+
+* reduce motion while on battery power ([#2468](https://github.com/intent-hq/cloudlands-fe/issues/2468)) ([53a0506](https://github.com/intent-hq/cloudlands-fe/commit/53a0506eb726df879ccfd878597c8ede7f650466))
+
+## [2.157.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.156.0...v2.157.0) (2026-09-15)
+
+
+### 🚀 Features
+
+* **chat:** drop inline file block handling; legacy file blocks render as text ([#2442](https://github.com/intent-hq/cloudlands-fe/issues/2442)) ([bf97aba](https://github.com/intent-hq/cloudlands-fe/commit/bf97aba486b752ffbd479f92c6af51b4de3299db))
+* **chat:** make the question wizard free-text field an auto-growing textarea ([#2460](https://github.com/intent-hq/cloudlands-fe/issues/2460)) ([ce0c864](https://github.com/intent-hq/cloudlands-fe/commit/ce0c864417f1f1979f9446548ad97ad29f2dc6c9))
+* **chat:** render markdown links in suggested-prompt rows ([#2462](https://github.com/intent-hq/cloudlands-fe/issues/2462)) ([85f1972](https://github.com/intent-hq/cloudlands-fe/commit/85f19720abc28faa2fdcfb01264d3a31eb12fcd7))
+* **chat:** show red slot-wait warning after Thinking when an agent is queued for a slot ([#2443](https://github.com/intent-hq/cloudlands-fe/issues/2443)) ([60dc87e](https://github.com/intent-hq/cloudlands-fe/commit/60dc87e6c27cc076fcd08a1fc1025b612e4852b5))
+* **lint:** fail protocol version literals in src comments and test titles ([#2450](https://github.com/intent-hq/cloudlands-fe/issues/2450)) ([f08dffc](https://github.com/intent-hq/cloudlands-fe/commit/f08dffcfac5498fbca3af068d65063225c506ce9))
+* **panel:** collapse column on last-pane close, open right-neighbor first, Swiss empty pane ([#2234](https://github.com/intent-hq/cloudlands-fe/issues/2234)) ([7c8f754](https://github.com/intent-hq/cloudlands-fe/commit/7c8f75439cc928e04fd853513d7b76b9e314a7d6))
+* submodule-aware multi-repo GitHub issue/PR search in workspace initializer ([#2447](https://github.com/intent-hq/cloudlands-fe/issues/2447)) ([419f8db](https://github.com/intent-hq/cloudlands-fe/commit/419f8db8b60c7091afbc4cf7a47e5d6b08b6f73b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.56 ([#2469](https://github.com/intent-hq/cloudlands-fe/issues/2469)) ([2c87ae1](https://github.com/intent-hq/cloudlands-fe/commit/2c87ae1f08d586443ac4faee34de4df2b52a9501))
+* center startup loader and match Intent logo animations ([#2301](https://github.com/intent-hq/cloudlands-fe/issues/2301)) ([568e176](https://github.com/intent-hq/cloudlands-fe/commit/568e176b94a24484adef373bfb528cf4934230fd))
+* compact generated Paraglide modules under a symlinked project root ([#2452](https://github.com/intent-hq/cloudlands-fe/issues/2452)) ([e08a1bb](https://github.com/intent-hq/cloudlands-fe/commit/e08a1bb0680f8982828d08eb52551db12ad70bd8))
+* hold the ct-&lt;CT_PORT&gt; lock for direct test:ct runs ([#2446](https://github.com/intent-hq/cloudlands-fe/issues/2446)) ([202c18e](https://github.com/intent-hq/cloudlands-fe/commit/202c18e78372b12bf99b000fc26c766b5baed8c5))
+* ignore iframe navigation when syncing browser tab URLs ([#2362](https://github.com/intent-hq/cloudlands-fe/issues/2362)) ([37fefc9](https://github.com/intent-hq/cloudlands-fe/commit/37fefc9167071d5a442741bf9235458ffdc4566a))
+* **mcp:** negotiate supported OAuth token authentication ([#2361](https://github.com/intent-hq/cloudlands-fe/issues/2361)) ([c429e11](https://github.com/intent-hq/cloudlands-fe/commit/c429e1102b3ea4d49feeeb348fe5deca1c5abd46))
+* preserve Windows updater asset filenames ([#2429](https://github.com/intent-hq/cloudlands-fe/issues/2429)) ([ca64e3d](https://github.com/intent-hq/cloudlands-fe/commit/ca64e3d7ff07082fde552a416fab6e94af4f0cc2))
+* **quit:** only prompt when quitting shuts down the sidecar or disrupts browser tabs ([#2467](https://github.com/intent-hq/cloudlands-fe/issues/2467)) ([6dd2a0e](https://github.com/intent-hq/cloudlands-fe/commit/6dd2a0e304142b9bd8f657676c58ad52aed09234))
+* recover workspace loading after failed daemon startup ([#2458](https://github.com/intent-hq/cloudlands-fe/issues/2458)) ([d1afe6c](https://github.com/intent-hq/cloudlands-fe/commit/d1afe6c534f394597959db160e1a03f1087da163))
+* refine embedded browser header and preserve fit sizing ([#2279](https://github.com/intent-hq/cloudlands-fe/issues/2279)) ([b4d9e79](https://github.com/intent-hq/cloudlands-fe/commit/b4d9e79a1c6c4be6380ac87897a04cd3bab0900b))
+* remove visible development title from header ([#2266](https://github.com/intent-hq/cloudlands-fe/issues/2266)) ([c854678](https://github.com/intent-hq/cloudlands-fe/commit/c854678a9a0d4fd616eba771f9c7e05840853694))
+* **scripts:** recognize Svelte style directives as custom-property definitions in the design-token audit ([#2461](https://github.com/intent-hq/cloudlands-fe/issues/2461)) ([7949e64](https://github.com/intent-hq/cloudlands-fe/commit/7949e64fa5ede00e97af832fbff840e0aac21bfd))
+* **sidebar:** exclude retired agents from the Agents launcher card ([#2463](https://github.com/intent-hq/cloudlands-fe/issues/2463)) ([06048a7](https://github.com/intent-hq/cloudlands-fe/commit/06048a7266d6312b86b588d1772a1f3b8d1438b5))
+* stop firehose transcript writes for chats without a standing subscription ([#2466](https://github.com/intent-hq/cloudlands-fe/issues/2466)) ([31e9801](https://github.com/intent-hq/cloudlands-fe/commit/31e98019ea06bb3c7d98e08e66274bc2fb11a241))
+* **store:** preserve the initial selector emission in Themis selector channels ([#2464](https://github.com/intent-hq/cloudlands-fe/issues/2464)) ([0ef0322](https://github.com/intent-hq/cloudlands-fe/commit/0ef0322365cb44b6934d12905ec2a86eb37f0aa7))
+
+
+### ⚡ Performance
+
+* reduce workspace activation work within existing memory budget ([#2283](https://github.com/intent-hq/cloudlands-fe/issues/2283)) ([8c70c96](https://github.com/intent-hq/cloudlands-fe/commit/8c70c9637607f0a8605d0d045d0d21fc12fbe0ec))
+
+## [2.156.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.155.0...v2.156.0) (2026-09-13)
+
+
+### 🚀 Features
+
+* catch unconsumed actions and repair dead dispatch paths ([#2432](https://github.com/intent-hq/cloudlands-fe/issues/2432)) ([5d500f8](https://github.com/intent-hq/cloudlands-fe/commit/5d500f831735da02da9bb0f205a20729f9cb3e3d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.54 ([#2434](https://github.com/intent-hq/cloudlands-fe/issues/2434)) ([1ba3a04](https://github.com/intent-hq/cloudlands-fe/commit/1ba3a04981ce65fc1524c36876802021e6bae04a))
+* bump intentd sidecar to v0.9.55 ([#2435](https://github.com/intent-hq/cloudlands-fe/issues/2435)) ([7ef19eb](https://github.com/intent-hq/cloudlands-fe/commit/7ef19ebc716871392ceb37afdd1914dfc97c827e))
+
+## [2.155.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.154.0...v2.155.0) (2026-09-13)
+
+
+### 🚀 Features
+
+* **changes:** open a root-scoped diff from secondary-root changed files ([#2428](https://github.com/intent-hq/cloudlands-fe/issues/2428)) ([53f287b](https://github.com/intent-hq/cloudlands-fe/commit/53f287be8a1e37db5ed49046e4f780c7f2e79eed))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.53 ([#2431](https://github.com/intent-hq/cloudlands-fe/issues/2431)) ([63b8c96](https://github.com/intent-hq/cloudlands-fe/commit/63b8c9640ac36fee613d185274c22fb30f8124b2))
+* **chat:** settle stale streaming rows when a re-subscribe snapshot is applied ([#2425](https://github.com/intent-hq/cloudlands-fe/issues/2425)) ([d8c3af6](https://github.com/intent-hq/cloudlands-fe/commit/d8c3af647ecb180371aae83aadf10871e6dc9ad6))
+* fail gates fast on unsupported Node ([#2423](https://github.com/intent-hq/cloudlands-fe/issues/2423)) ([455c6dc](https://github.com/intent-hq/cloudlands-fe/commit/455c6dc527258f3ec0ce7c32aad79cc46112d75c))
+
+## [2.154.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.153.0...v2.154.0) (2026-09-13)
+
+
+### 🚀 Features
+
+* **notes:** character-level note convergence in the editor and save path ([#2404](https://github.com/intent-hq/cloudlands-fe/issues/2404)) ([6bbc439](https://github.com/intent-hq/cloudlands-fe/commit/6bbc43960a00f8d6568e35f54fde0ea5460acf1e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.52 ([#2427](https://github.com/intent-hq/cloudlands-fe/issues/2427)) ([de66b91](https://github.com/intent-hq/cloudlands-fe/commit/de66b919cccc25625219f837568d00e20e9635f1))
+
+## [2.153.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.152.0...v2.153.0) (2026-09-13)
+
+
+### 🚀 Features
+
+* **attachments:** key placements with idempotencyKey and recover lost replies ([#2418](https://github.com/intent-hq/cloudlands-fe/issues/2418)) ([4fea236](https://github.com/intent-hq/cloudlands-fe/commit/4fea2360c24673f928ab0de2f3c930d65d0dda18))
+
+## [2.152.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.151.2...v2.152.0) (2026-09-13)
+
+
+### 🚀 Features
+
+* offer retry on another provider when a turn hits a usage limit ([#2407](https://github.com/intent-hq/cloudlands-fe/issues/2407)) ([6883425](https://github.com/intent-hq/cloudlands-fe/commit/68834258b57693d488b14b3d004939323b0284d1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.51 ([#2420](https://github.com/intent-hq/cloudlands-fe/issues/2420)) ([49e7b7b](https://github.com/intent-hq/cloudlands-fe/commit/49e7b7b8048694ae411278839f577fb2419ae2ef))
+
+## [2.151.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.151.1...v2.151.2) (2026-09-13)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.50 ([#2416](https://github.com/intent-hq/cloudlands-fe/issues/2416)) ([65f0ebb](https://github.com/intent-hq/cloudlands-fe/commit/65f0ebbcb6f90714f491c479a2d617d199e8309b))
+
+## [2.151.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.151.0...v2.151.1) (2026-09-12)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.49 ([#2414](https://github.com/intent-hq/cloudlands-fe/issues/2414)) ([60ff7fc](https://github.com/intent-hq/cloudlands-fe/commit/60ff7fc567bc2fd049c0d0051d327a958f5eb67f))
+
+## [2.151.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.150.0...v2.151.0) (2026-09-12)
+
+
+### 🚀 Features
+
+* add resolve-stack script for production stack traces ([#2400](https://github.com/intent-hq/cloudlands-fe/issues/2400)) ([b131ccc](https://github.com/intent-hq/cloudlands-fe/commit/b131ccc5a3d04d350d406a0bac5341d2abbb7936))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** capture scale-to-fit tabs at their displayed scale ([#2397](https://github.com/intent-hq/cloudlands-fe/issues/2397)) ([344402c](https://github.com/intent-hq/cloudlands-fe/commit/344402c15213d64cb4f4b532f7bfaa9b1e520836))
+* **browser:** keep agent tabs alive and owned while their workspace is out of view ([#2410](https://github.com/intent-hq/cloudlands-fe/issues/2410)) ([f2df5d8](https://github.com/intent-hq/cloudlands-fe/commit/f2df5d8d00fda1f97e0f3e5105e2452c4b17c2b8))
+* bump intentd sidecar to v0.9.45 ([#2403](https://github.com/intent-hq/cloudlands-fe/issues/2403)) ([04a6577](https://github.com/intent-hq/cloudlands-fe/commit/04a65770c7b2c4d291116fb8d348729b38f3927f))
+* bump intentd sidecar to v0.9.46 ([#2408](https://github.com/intent-hq/cloudlands-fe/issues/2408)) ([0db4d71](https://github.com/intent-hq/cloudlands-fe/commit/0db4d71bfe21cf18436dcd72c6f1871e0c1b3642))
+* bump intentd sidecar to v0.9.47 ([#2411](https://github.com/intent-hq/cloudlands-fe/issues/2411)) ([23ace90](https://github.com/intent-hq/cloudlands-fe/commit/23ace90795a9b115f36430b2b8fb79f1fcf09124))
+* bump intentd sidecar to v0.9.48 ([#2413](https://github.com/intent-hq/cloudlands-fe/issues/2413)) ([b97b6cf](https://github.com/intent-hq/cloudlands-fe/commit/b97b6cfded4e14f8035bef7a02c24fd8e7b7644d))
+* **catalog:** wire operational row gap into chat polish preview ([#2406](https://github.com/intent-hq/cloudlands-fe/issues/2406)) ([0096b83](https://github.com/intent-hq/cloudlands-fe/commit/0096b8397f4512d724d6f77b9d8507c967ba29f4))
+* **comments:** stop Collapse click from re-focusing the comment card ([#2405](https://github.com/intent-hq/cloudlands-fe/issues/2405)) ([4b582ab](https://github.com/intent-hq/cloudlands-fe/commit/4b582ab9090471a0a18a53c5099d4cfd86c979d8))
+* **ct:** isolate the composer-geometry spec's browser context per test ([#2401](https://github.com/intent-hq/cloudlands-fe/issues/2401)) ([81674d0](https://github.com/intent-hq/cloudlands-fe/commit/81674d020b8be22d8fd9145de4e3555e6ab20868))
+* honor gitignore and nested repo boundaries in Themis pin scanner ([#2396](https://github.com/intent-hq/cloudlands-fe/issues/2396)) ([ace3b5b](https://github.com/intent-hq/cloudlands-fe/commit/ace3b5bc1a00acfc42386e3444ff1a1da0c49710))
+* key code-block syntax palette on the root theme class ([#2399](https://github.com/intent-hq/cloudlands-fe/issues/2399)) ([5212f90](https://github.com/intent-hq/cloudlands-fe/commit/5212f90495c5221123145b6e12246d19c8ec1dff))
+* **release:** only notify issues closed by a delivered fix PR ([#2394](https://github.com/intent-hq/cloudlands-fe/issues/2394)) ([d1ec266](https://github.com/intent-hq/cloudlands-fe/commit/d1ec26651cc3f101b740d3f970d7fd54bf4b0268))
+
+## [2.150.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.3...v2.150.0) (2026-09-12)
+
+
+### 🚀 Features
+
+* **lint:** reject flushSync inside Svelte effect cleanup and action destroy ([#2384](https://github.com/intent-hq/cloudlands-fe/issues/2384)) ([ddbc9a9](https://github.com/intent-hq/cloudlands-fe/commit/ddbc9a98f848983cb045c5b47f4c02b9d7e32e3b))
+* shared GitHubAvatar with identity-keyed failure recovery ([#2387](https://github.com/intent-hq/cloudlands-fe/issues/2387)) ([06e31a9](https://github.com/intent-hq/cloudlands-fe/commit/06e31a9106dede0dff3a3ed21e2667d748b089e1))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.44 ([#2395](https://github.com/intent-hq/cloudlands-fe/issues/2395)) ([097d483](https://github.com/intent-hq/cloudlands-fe/commit/097d483c76cfd3ab61b4284f7758463176b1013f))
+* **chat-ct:** make chat CT timing assertions load-tolerant ([#2388](https://github.com/intent-hq/cloudlands-fe/issues/2388)) ([546253a](https://github.com/intent-hq/cloudlands-fe/commit/546253a0a0392b56772e2f13240e69fbee7cedb0))
+* **fe:** route sidebar card archive through requestArchiveWorkspace ([#2392](https://github.com/intent-hq/cloudlands-fe/issues/2392)) ([8721410](https://github.com/intent-hq/cloudlands-fe/commit/87214103d8743af395b8301470538f01c0bc6ff7))
+* **modals:** constrain DeleteWarningDialog grid items so long rows truncate ([#2391](https://github.com/intent-hq/cloudlands-fe/issues/2391)) ([e362009](https://github.com/intent-hq/cloudlands-fe/commit/e3620099ea2ec303b6d37dae641edc75f1650a74))
+* **release-notes:** drop a Help-menu fetch result that lands after the modal closed ([#2382](https://github.com/intent-hq/cloudlands-fe/issues/2382)) ([faebfef](https://github.com/intent-hq/cloudlands-fe/commit/faebfef32308d4962a0d890e5aa3986cf1f7f3c5))
+
+## [2.149.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.2...v2.149.3) (2026-09-12)
+
+
+### 🐛 Bug Fixes
+
+* load Chief chat PR subscriptions independently ([#2303](https://github.com/intent-hq/cloudlands-fe/issues/2303)) ([cd31452](https://github.com/intent-hq/cloudlands-fe/commit/cd3145203118c3e2563547f041fa298273f07031))
+
+## [2.149.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.1...v2.149.2) (2026-09-12)
+
+
+### 🐛 Bug Fixes
+
+* **i18n:** rename driving browser label to browser-use on this client ([#2386](https://github.com/intent-hq/cloudlands-fe/issues/2386)) ([298bb6f](https://github.com/intent-hq/cloudlands-fe/commit/298bb6feb74cdab3d8e110f90e3e31d2b2d42603))
+
+## [2.149.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.149.0...v2.149.1) (2026-09-12)
+
+
+### 🐛 Bug Fixes
+
+* **scripts:** route nested package.json pnpm runs through the invoking pnpm ([#2380](https://github.com/intent-hq/cloudlands-fe/issues/2380)) ([a5054fd](https://github.com/intent-hq/cloudlands-fe/commit/a5054fd96585561b5eefbbf25ee6d0d912793502))
+
+## [2.149.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.148.2...v2.149.0) (2026-09-12)
+
+
+### 🚀 Features
+
+* add permanent close actions for agent-owned browser tabs ([#2374](https://github.com/intent-hq/cloudlands-fe/issues/2374)) ([72fe5f0](https://github.com/intent-hq/cloudlands-fe/commit/72fe5f077fe92202ffe2c6ef488de91cd70dc169))
+
+
+### 🐛 Bug Fixes
+
+* **lint:** make verify-changed-triggers taint scope-aware ([#2370](https://github.com/intent-hq/cloudlands-fe/issues/2370)) ([cbcb122](https://github.com/intent-hq/cloudlands-fe/commit/cbcb122b0a22996990c46575818f8954ee3fd9b8))
+* **mcp:** resolve hosted MCP OAuth URL from the daemon record, not the renderer ([#2372](https://github.com/intent-hq/cloudlands-fe/issues/2372)) ([6a3bf97](https://github.com/intent-hq/cloudlands-fe/commit/6a3bf97c69d65ad3560f5315b14c75c5809282ce))
+* stop handleError swallowing unrelated call TypeErrors ([#2371](https://github.com/intent-hq/cloudlands-fe/issues/2371)) ([35d1f30](https://github.com/intent-hq/cloudlands-fe/commit/35d1f30fff0de309329e3b8be7ad718dd00406ee))
+
+## [2.148.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.148.1...v2.148.2) (2026-09-12)
+
+
+### 🐛 Bug Fixes
+
+* prevent workspace tab updates from stalling rendering ([#4616](https://github.com/intent-hq/cloudlands-fe/issues/4616)) ([#2365](https://github.com/intent-hq/cloudlands-fe/issues/2365)) ([54dc58b](https://github.com/intent-hq/cloudlands-fe/commit/54dc58b45c5612353752ab03e418aea1fef40762))
+
+
+### ⚡ Performance
+
+* **css:** audit compiled stylesheet for document-wide :has() and exclude test sources ([#2373](https://github.com/intent-hq/cloudlands-fe/issues/2373)) ([faf80ac](https://github.com/intent-hq/cloudlands-fe/commit/faf80ac0e40ca48ef7e9408d29d27457170c62c4))
+
+## [2.148.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.148.0...v2.148.1) (2026-09-12)
+
+
+### ⚡ Performance
+
+* **sidebar:** contain note rows and drop transition-all on the row root ([#2358](https://github.com/intent-hq/cloudlands-fe/issues/2358)) ([1adac85](https://github.com/intent-hq/cloudlands-fe/commit/1adac85236484e0b1e7ba79874c7a09fe5570b53))
+
+## [2.148.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.147.1...v2.148.0) (2026-09-11)
+
+
+### 🚀 Features
+
+* **onboarding:** launch Claude login from the terminal drawer ([#2307](https://github.com/intent-hq/cloudlands-fe/issues/2307)) ([cdbc6ff](https://github.com/intent-hq/cloudlands-fe/commit/cdbc6ffcc75553bdac5bfb38f383368a028bcc75))
+
+## [2.147.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.147.0...v2.147.1) (2026-09-11)
+
+
+### ⚡ Performance
+
+* **chat:** fix events footer stutter from :has() invalidation amplification ([#2355](https://github.com/intent-hq/cloudlands-fe/issues/2355)) ([60e5730](https://github.com/intent-hq/cloudlands-fe/commit/60e57309755e482cf85fb519b0792da8640086a3))
+
+## [2.147.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.146.0...v2.147.0) (2026-09-11)
+
+
+### 🚀 Features
+
+* **main:** capture renderer hangs with stack, context log, and Reload/Wait dialog ([#2342](https://github.com/intent-hq/cloudlands-fe/issues/2342)) ([0f27e4e](https://github.com/intent-hq/cloudlands-fe/commit/0f27e4eb823fb936679bbc06ffbd755b70c86040))
+* **renderer:** long-task watchdog with workspace-switch context ([#2341](https://github.com/intent-hq/cloudlands-fe/issues/2341)) ([e85db26](https://github.com/intent-hq/cloudlands-fe/commit/e85db2632b042158220c60807cc8e5ffe4f183d3))
+* **scripts:** let verify:changed diff a committed branch against --base ([#2339](https://github.com/intent-hq/cloudlands-fe/issues/2339)) ([1e7a7ae](https://github.com/intent-hq/cloudlands-fe/commit/1e7a7ae06e0a15d8e9f00bafbed9bd01e7e07e15))
+* **scripts:** self-registering verify:changed triggers for disk-reading suites ([#2347](https://github.com/intent-hq/cloudlands-fe/issues/2347)) ([94f042f](https://github.com/intent-hq/cloudlands-fe/commit/94f042f5193f69b94bd42f269d94928d085005c1))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** stop offscreen webview cache rotating unchanged tabs ([#2336](https://github.com/intent-hq/cloudlands-fe/issues/2336)) ([b1d1ed0](https://github.com/intent-hq/cloudlands-fe/commit/b1d1ed0868931ae5122189bcb25b0e8e3abae0ed))
+* bump intentd sidecar to v0.9.42 ([#2354](https://github.com/intent-hq/cloudlands-fe/issues/2354)) ([7f3684e](https://github.com/intent-hq/cloudlands-fe/commit/7f3684ef9e126a9e850be19339150d284eeb6c1c))
+* bump intentd sidecar to v0.9.43 ([#2359](https://github.com/intent-hq/cloudlands-fe/issues/2359)) ([e982d03](https://github.com/intent-hq/cloudlands-fe/commit/e982d0387f177883b71acb2d13b390eb33ee8352))
+* **chat:** queue Q&A answers with their tag and hide the wizard while queued ([#2308](https://github.com/intent-hq/cloudlands-fe/issues/2308)) ([62be100](https://github.com/intent-hq/cloudlands-fe/commit/62be100b7db4961852f2eecd7cd653e245c9ec4b))
+* **ci:** stop fetching font packages in the burst-path CT install step ([#2349](https://github.com/intent-hq/cloudlands-fe/issues/2349)) ([3c8833a](https://github.com/intent-hq/cloudlands-fe/commit/3c8833a67babb5ed96cb6dbe31844cce494c71e5))
+* **ct:** exit with Playwright's status instead of serving the HTML report ([#2335](https://github.com/intent-hq/cloudlands-fe/issues/2335)) ([65fc50b](https://github.com/intent-hq/cloudlands-fe/commit/65fc50b4d0cb6a855444e7accbdf03a5541cdf5c))
+* keep disk-usage loading skeleton inside the repository hover card ([#2356](https://github.com/intent-hq/cloudlands-fe/issues/2356)) ([2a7aa96](https://github.com/intent-hq/cloudlands-fe/commit/2a7aa96cd24fb7503eeacddc094512d2950a09a4))
+* keep failed Mermaid note cards in the prose column ([#2340](https://github.com/intent-hq/cloudlands-fe/issues/2340)) ([f14bc84](https://github.com/intent-hq/cloudlands-fe/commit/f14bc8490b914c85f617ffafcb7136c477ec7a57))
+* **main:** atomic local-prefs writes and CSP font-src ([#2338](https://github.com/intent-hq/cloudlands-fe/issues/2338)) ([d568704](https://github.com/intent-hq/cloudlands-fe/commit/d568704664aad5056171ac6ae84e753b88b98755))
+* **panel-layout:** recover a workspace whose panel tree was lost by a hang ([#2343](https://github.com/intent-hq/cloudlands-fe/issues/2343)) ([74fb1a6](https://github.com/intent-hq/cloudlands-fe/commit/74fb1a6441e8d2e534d61b885b1ff94982df8bd9))
+* **scripts:** spawn nested pnpm through the invoking pnpm ([#2350](https://github.com/intent-hq/cloudlands-fe/issues/2350)) ([d9275ce](https://github.com/intent-hq/cloudlands-fe/commit/d9275ce883566a9c7f46b39feac69f172c95b4ab))
+* toast branch fetch failures in BranchSelector ([#2352](https://github.com/intent-hq/cloudlands-fe/issues/2352)) ([48e8364](https://github.com/intent-hq/cloudlands-fe/commit/48e8364bc4dd84a3d3290d8be215915b68d70992))
+* **verify-changed:** route browser specs to Playwright and drop deleted tests ([#2323](https://github.com/intent-hq/cloudlands-fe/issues/2323)) ([34b751f](https://github.com/intent-hq/cloudlands-fe/commit/34b751f6ffa25b0b5df3806933566873b9777949))
+
+
+### ⚡ Performance
+
+* **chat:** pause the Thinking mark on window blur and drive it at 30 fps without composited layers ([#2353](https://github.com/intent-hq/cloudlands-fe/issues/2353)) ([fe6a1f1](https://github.com/intent-hq/cloudlands-fe/commit/fe6a1f1663b5641381ba9cc1a9992c6279d5cdb4))
+* **sidebar:** stop card morph from restyling the whole card subtree per frame ([#2357](https://github.com/intent-hq/cloudlands-fe/issues/2357)) ([c3e23e6](https://github.com/intent-hq/cloudlands-fe/commit/c3e23e68f374fc51d6d4df11ce648a36875efeec))
+
+## [2.146.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.4...v2.146.0) (2026-09-11)
+
+
+### 🚀 Features
+
+* add hosted MCP OAuth recovery ([#2286](https://github.com/intent-hq/cloudlands-fe/issues/2286)) ([c64ae71](https://github.com/intent-hq/cloudlands-fe/commit/c64ae7156dc1c182f81c148a7063888780735e98))
+* gate local checks on a fresh node_modules install ([#2321](https://github.com/intent-hq/cloudlands-fe/issues/2321)) ([e9312a1](https://github.com/intent-hq/cloudlands-fe/commit/e9312a1d0f3ef83de65510519269e0c731603f47))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.41 ([#2334](https://github.com/intent-hq/cloudlands-fe/issues/2334)) ([1fda7ff](https://github.com/intent-hq/cloudlands-fe/commit/1fda7ffe9345b8881d6bbb55263f1a9d34bcbd37))
+* recover stalled remote workspace previews ([#2285](https://github.com/intent-hq/cloudlands-fe/issues/2285)) ([225609e](https://github.com/intent-hq/cloudlands-fe/commit/225609e8ef26e2b8d6a1e6c4909de4c5837ce641))
+
+## [2.145.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.3...v2.145.4) (2026-09-11)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.40 ([#2330](https://github.com/intent-hq/cloudlands-fe/issues/2330)) ([0c01494](https://github.com/intent-hq/cloudlands-fe/commit/0c014944c91621e44e20190294b4d00f697e9780))
+* render saved video assets in chat and notes ([#2313](https://github.com/intent-hq/cloudlands-fe/issues/2313)) ([a6c67eb](https://github.com/intent-hq/cloudlands-fe/commit/a6c67ebfd080a40d1303ce3f80e91c000c0d2f9e))
+* **scripts:** run the preload drift test in verify:changed for IPC channel sources ([#2319](https://github.com/intent-hq/cloudlands-fe/issues/2319)) ([8651e76](https://github.com/intent-hq/cloudlands-fe/commit/8651e768994d99d4503bf07c6efa13b28204b2e2))
+
+## [2.145.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.2...v2.145.3) (2026-09-11)
+
+
+### 🐛 Bug Fixes
+
+* unblock the unread-agent cycle key on remote daemons ([#2315](https://github.com/intent-hq/cloudlands-fe/issues/2315)) ([0e39b28](https://github.com/intent-hq/cloudlands-fe/commit/0e39b2829752e274dece402951391027901a129e))
+* **workspace-hover-card:** follow canonical avatar-state precedence for agent rows ([#2316](https://github.com/intent-hq/cloudlands-fe/issues/2316)) ([02b7c44](https://github.com/intent-hq/cloudlands-fe/commit/02b7c445a1aa9588c80ce4820ca21e6ef9a97e3c))
+
+## [2.145.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.1...v2.145.2) (2026-09-11)
+
+
+### 🐛 Bug Fixes
+
+* **agent-attention:** let a pending attention request win over a live turn ([#2309](https://github.com/intent-hq/cloudlands-fe/issues/2309)) ([824df3d](https://github.com/intent-hq/cloudlands-fe/commit/824df3d9c36321ad494346deecbccce096d23cd6))
+* bump intentd sidecar to v0.9.39 ([#2317](https://github.com/intent-hq/cloudlands-fe/issues/2317)) ([fa7ac5b](https://github.com/intent-hq/cloudlands-fe/commit/fa7ac5b2eef7de23766cb22315e0789ada566ba5))
+* **release-notes:** show update notes in every window and sync dismissal ([#2314](https://github.com/intent-hq/cloudlands-fe/issues/2314)) ([aabcb07](https://github.com/intent-hq/cloudlands-fe/commit/aabcb07b8d863992c5e444dca18a25cac7ebe9ee))
+* resolve panel Open In paths and stack them into a submenu ([#2059](https://github.com/intent-hq/cloudlands-fe/issues/2059)) ([4e61f03](https://github.com/intent-hq/cloudlands-fe/commit/4e61f0356e7ac39eda0f6ba238788f71d4438732))
+
+
+### ⚡ Performance
+
+* compact generated translation payloads in dev ([#2296](https://github.com/intent-hq/cloudlands-fe/issues/2296)) ([3c9feb6](https://github.com/intent-hq/cloudlands-fe/commit/3c9feb63d38d048eaec547b7c5286e46104207b6))
+
+## [2.145.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.145.0...v2.145.1) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* shorten onboarding project picker labels ([#2305](https://github.com/intent-hq/cloudlands-fe/issues/2305)) ([3a5b4d7](https://github.com/intent-hq/cloudlands-fe/commit/3a5b4d7b11e68e56a46261736c08b858f4e99b23))
+
+## [2.145.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.9...v2.145.0) (2026-09-10)
+
+
+### 🚀 Features
+
+* interactive task constellation for the agent overview ([#2278](https://github.com/intent-hq/cloudlands-fe/issues/2278)) ([96641cc](https://github.com/intent-hq/cloudlands-fe/commit/96641cccb5e610b47c6949d15438bb6c8f04a5a6))
+
+## [2.144.9](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.8...v2.144.9) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* start onboarding at step one and test only Claude Code ([#2297](https://github.com/intent-hq/cloudlands-fe/issues/2297)) ([102d655](https://github.com/intent-hq/cloudlands-fe/commit/102d655a09098a62e8a21db66f5d819f0e54ba1c))
+
+## [2.144.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.7...v2.144.8) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* **workspace:** let WorkspaceActionsMenu wrappers size to content ([#2293](https://github.com/intent-hq/cloudlands-fe/issues/2293)) ([97f8ba7](https://github.com/intent-hq/cloudlands-fe/commit/97f8ba75396db231219924b8f569bfb00d75d422))
+
+## [2.144.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.6...v2.144.7) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* **workspace:** gate driving-client indicator on browser tabs ([#2288](https://github.com/intent-hq/cloudlands-fe/issues/2288)) ([e166746](https://github.com/intent-hq/cloudlands-fe/commit/e16674669a8634758bbf92930986b3dbff063e96))
+
+## [2.144.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.5...v2.144.6) (2026-09-10)
+
+
+### 🐛 Bug Fixes
+
+* stabilize hover-card geometry component tests ([#2291](https://github.com/intent-hq/cloudlands-fe/issues/2291)) ([029edd5](https://github.com/intent-hq/cloudlands-fe/commit/029edd5e67e0eda84d5a6cbeafbe27d155007d9c))
+
+## [2.144.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.4...v2.144.5) (2026-09-09)
+
+
+### 🐛 Bug Fixes
+
+* **diff:** Stack diffs in narrow panels and update Pierre ([#2270](https://github.com/intent-hq/cloudlands-fe/issues/2270)) ([1f700b4](https://github.com/intent-hq/cloudlands-fe/commit/1f700b445e905cb39d37164e5c9b7269613d247b))
+
+## [2.144.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.3...v2.144.4) (2026-09-09)
+
+
+### 🐛 Bug Fixes
+
+* harmonize BranchSelector search strip and input backgrounds ([#2245](https://github.com/intent-hq/cloudlands-fe/issues/2245)) ([0c3e9e2](https://github.com/intent-hq/cloudlands-fe/commit/0c3e9e2b8f4fdbf603ba6bfe0f08b4159167820f))
+
+## [2.144.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.2...v2.144.3) (2026-09-08)
+
+
+### 🐛 Bug Fixes
+
+* preserve default models across provider catalog refreshes ([#2267](https://github.com/intent-hq/cloudlands-fe/issues/2267)) ([010afb6](https://github.com/intent-hq/cloudlands-fe/commit/010afb6836cdc70bf75198ef8f119cdc064c35d4))
+
 ## [2.144.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.144.1...v2.144.2) (2026-09-07)
 
 

@@ -1,0 +1,4 @@
+{
+  "owner": "onboarding",
+  "reason": "Directory picker owns a BE-driven browser body and custom Escape-layer contract that FormDialog does not expose"
+}

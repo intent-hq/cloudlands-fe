@@ -1,0 +1,8 @@
+{
+  "ceilings": {
+    "src/features": { "button": 0, "input": 0, "select": 0, "textarea": 0 },
+    "src/lib": { "button": 0, "input": 0, "select": 0, "textarea": 0 },
+    "src/routes": { "button": 0, "input": 0, "select": 0, "textarea": 0 }
+  },
+  "exceptions": []
+}

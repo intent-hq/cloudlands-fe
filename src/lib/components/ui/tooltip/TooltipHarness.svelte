@@ -1,9 +1,18 @@
 <script lang="ts">
+  /* eslint-disable intent/no-raw-menu-row -- Static tooltip fixture, not a rendered menu row. */
   import Button from '../button/button.svelte';
+  import { menuOverlay } from '$lib/components/ui/menu';
   import * as Tooltip from './index';
 
-  let { open = $bindable(false), delayDuration = 80 }: { open?: boolean; delayDuration?: number } =
-    $props();
+  let {
+    open = $bindable(false),
+    delayDuration = 80,
+    secondary,
+  }: {
+    open?: boolean;
+    delayDuration?: number;
+    secondary?: { label: string; shortcut: string | string[] };
+  } = $props();
 </script>
 
 <Tooltip.Provider {delayDuration}>
@@ -21,9 +30,21 @@
 </div>
 
 <div data-testid="rich-tooltip">
-  <Tooltip.TooltipRich title="Rich button help" delayDuration={0}>
+  <Tooltip.TooltipRich title="Rich button help" delayDuration={0} showClose>
     <button type="button" aria-label="Show rich help">Rich help</button>
   </Tooltip.TooltipRich>
+</div>
+
+<div data-testid="shortcut-tooltip">
+  <Tooltip.TooltipShortcut
+    label="Open navigation"
+    shortcut="mod+k"
+    {secondary}
+    delayDuration={0}
+    portalTarget="[data-testid='shortcut-tooltip']"
+  >
+    <Button aria-label="Show shortcut help" variant="ghost">Shortcut help</Button>
+  </Tooltip.TooltipShortcut>
 </div>
 
 <div data-testid="passive-tooltip">
@@ -35,7 +56,13 @@
 <!-- Static stand-in for bits-ui menu content: the wrapper must not become a
      nested interactive element inside role="menu"/role="menuitem". -->
 <!-- i18n-ignore (test harness fixture, not user-facing) -->
-<div data-testid="menu-tooltip" role="menu" aria-label="Menu tooltip case" tabindex="-1">
+<div
+  data-testid="menu-tooltip"
+  role="menu"
+  aria-label="Menu tooltip case"
+  tabindex="-1"
+  class={menuOverlay()}
+>
   <div role="menuitem" tabindex="-1">
     <Tooltip.Tooltip content="Menu status help" delayDuration={0}>
       <!-- i18n-ignore (test harness fixture, not user-facing) -->

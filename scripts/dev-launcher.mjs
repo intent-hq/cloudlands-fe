@@ -13,6 +13,7 @@ import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readdirSync, statSync, rmSync } from 'fs';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -59,19 +60,6 @@ async function isPortAvailable(port) {
   if (!ipv4Available) return false;
 
   return checkHostPort(port, '::1', { ipv6Only: false });
-}
-
-/**
- * Find next available port starting from a given port
- */
-async function findAvailablePort(startPort, maxAttempts = 20) {
-  for (let i = 0; i < maxAttempts; i++) {
-    const port = startPort + i;
-    if (await isPortAvailable(port)) {
-      return port;
-    }
-  }
-  throw new Error(`No available port found starting from ${startPort}`);
 }
 
 /**
@@ -161,14 +149,13 @@ function runDev(ports, cdpMode = false, devName = '') {
   }
 
   // Use cross-platform approach: set env vars on process.env and spawn pnpm directly
-  // On Windows, we need to use shell to find pnpm in PATH
-  const isWindows = process.platform === 'win32';
-  const child = spawn('pnpm', ['run', script], {
+  const launcher = pnpmInvocation(['run', script]);
+  const child = spawn(launcher.executable, launcher.args, {
     cwd: dirname(__dirname),
     env: process.env,
     stdio: 'inherit',
-    shell: isWindows,
-    windowsVerbatimArguments: isWindows,
+    shell: launcher.shell,
+    windowsVerbatimArguments: launcher.shell,
   });
 
   child.on('error', (err) => {

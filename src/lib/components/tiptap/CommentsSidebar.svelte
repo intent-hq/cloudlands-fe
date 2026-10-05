@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import ResponsiveCommentThread from './comments/ResponsiveCommentThread.svelte';
   import type { CommentV2 } from '$features/comments/comment-types-v2';
   import { selectSelectedComment } from '$store/renderer/slices/comments/comments-selectors';
@@ -429,6 +429,7 @@
   // Watch for selected comment from the store
   $effect(() => {
     const selected = $selectedComment$?.id ?? null;
+    if (!comments.some((comment) => comment.id === selected)) return;
 
     // Only update if the selected comment actually changed
     if (selected && selected !== selectedCommentId) {
@@ -580,9 +581,9 @@
         class:w-64={displayMode === 'compact'}
         class:w-68={displayMode === 'full'}
         class:is-focused={isFocused}
-        style="top: {adjustedTop}px; right: {-10 - horizontalOffset}px; z-index: {isFocused
+        style="--comment-focus-inset: {-horizontalOffset}px; top: {adjustedTop}px; right: {-horizontalOffset}px; z-index: {isFocused
           ? 20
-          : 10}; transition: right 0.3s ease-in-out, top 0.3s ease-in-out;"
+          : 10}; transition: right var(--motion-slow) var(--spring-slow-ease), top var(--motion-slow) var(--spring-slow-ease);"
         role="button"
         tabindex="0"
         data-comment-id={comment.id}
@@ -602,7 +603,7 @@
           }
         }}
       >
-        <div transition:slide={{ axis: 'y', duration: 200 }}>
+        <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
           <ResponsiveCommentThread
             {comment}
             {replies}
@@ -646,12 +647,19 @@
     position: absolute;
     top: 0;
     right: 0;
+    width: 100%;
     pointer-events: none;
     z-index: 10;
   }
 
   .comments-container > * {
     pointer-events: auto;
+  }
+
+  .comments-container > .is-focused {
+    --comment-focused-width: 100%;
+    box-sizing: border-box;
+    width: min(300px, calc(100% - var(--comment-focus-inset)));
   }
 
   :global(.line-clamp-2) {
@@ -665,7 +673,7 @@
 
   /* Responsive comment animations */
   :global(.comment-thread-container) {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--motion-slow) var(--spring-slow-ease);
   }
 
   /* Constrain expanded comments to prevent overflow */

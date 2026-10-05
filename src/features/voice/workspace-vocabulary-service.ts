@@ -1,6 +1,6 @@
 /**
  * Cached read of a workspace's auto-derived vocabulary
- * (`voice.getWorkspaceVocabulary`, PROTOCOL §5.41 v5.1) for the local
+ * (`voice.getWorkspaceVocabulary`, PROTOCOL §5.41) for the local
  * OS-engine dictation path — the client-side counterpart of the daemon's
  * `workspaceId`-driven vocabulary injection on cloud `voice.transcribe`
  * calls, so both engines bias with the same terms.

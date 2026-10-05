@@ -1,13 +1,20 @@
 import { defineConfig, devices } from '@playwright/test';
+import {
+  ROOT_TEST_DIR,
+  ROOT_TEST_IGNORE,
+  ROOT_TEST_MATCH,
+} from './playwright/root-spec-pattern.mjs';
 
 /**
  * Playwright configuration for browser-based unit tests
  * These tests render components in a real browser to verify DOM measurements
  */
 export default defineConfig({
-  testDir: './test',
-  testMatch: '**/*.spec.ts',
-  testIgnore: ['**/catalog-manual-review.capture.spec.ts', '**/current-main-baseline.spec.ts'],
+  /* Discovery is defined once in playwright/root-spec-pattern.mjs so the
+     scripts that classify root specs cannot drift from what runs here. */
+  testDir: `./${ROOT_TEST_DIR}`,
+  testMatch: ROOT_TEST_MATCH,
+  testIgnore: ROOT_TEST_IGNORE,
 
   // Run tests in parallel
   fullyParallel: true,
@@ -18,8 +25,8 @@ export default defineConfig({
   // Retry on CI only
   retries: process.env.CI ? 2 : 0,
 
-  // Opt out of parallel tests on CI
-  workers: process.env.CI ? 1 : undefined,
+  // Each worker starts its own Vite module graph; bound concurrent cold compilation locally.
+  workers: process.env.CI ? 1 : 2,
 
   // Reporter to use
   reporter: 'html',

@@ -14,11 +14,13 @@ import { createTiptapTaskListMarked } from './tiptap-task-list-extension';
 import { normalizeAnchorPositions } from './anchor-normalization';
 
 // Singleton marked instance (same pattern as main thread)
-let markedInstance: ReturnType<typeof createTiptapTaskListMarked> | null = null;
+const markedInstances = new Map<boolean, ReturnType<typeof createTiptapTaskListMarked>>();
 
-function getMarkedInstance() {
+function getMarkedInstance(renderMath = false) {
+  let markedInstance = markedInstances.get(renderMath);
   if (!markedInstance) {
-    markedInstance = createTiptapTaskListMarked();
+    markedInstance = createTiptapTaskListMarked({ renderMath });
+    markedInstances.set(renderMath, markedInstance);
   }
   return markedInstance;
 }
@@ -46,6 +48,7 @@ export interface MarkdownWorkerRequest {
    */
   pipeline?: {
     preserveAnchors: boolean;
+    renderMath: boolean;
   };
 }
 
@@ -57,10 +60,12 @@ export interface MarkdownWorkerResponse {
 
 // ---------- Message handler ----------
 
-self.onmessage = async (event: MessageEvent<MarkdownWorkerRequest>) => {
-  const { id, markdown, pipeline } = event.data;
+export async function processMarkdownWorkerRequest(
+  request: MarkdownWorkerRequest,
+): Promise<MarkdownWorkerResponse> {
+  const { id, markdown, pipeline } = request;
   try {
-    const marked = getMarkedInstance();
+    const marked = getMarkedInstance(pipeline?.renderMath);
 
     if (pipeline) {
       // Extended pipeline: normalize → legacy syntax → parse → convert anchors
@@ -74,17 +79,21 @@ self.onmessage = async (event: MessageEvent<MarkdownWorkerRequest>) => {
         html = convertHTMLCommentsToSpanAnchors(html);
       }
 
-      self.postMessage({ id, html, error: null } satisfies MarkdownWorkerResponse);
+      return { id, html, error: null };
     } else {
       // Simple mode: just marked.parse (backward compatible)
       const html = await marked.parse(markdown);
-      self.postMessage({ id, html, error: null } satisfies MarkdownWorkerResponse);
+      return { id, html, error: null };
     }
   } catch (error) {
-    self.postMessage({
+    return {
       id,
       html: null,
       error: error instanceof Error ? error.message : String(error),
-    } satisfies MarkdownWorkerResponse);
+    };
   }
+}
+
+self.onmessage = async (event: MessageEvent<MarkdownWorkerRequest>) => {
+  self.postMessage(await processMarkdownWorkerRequest(event.data));
 };

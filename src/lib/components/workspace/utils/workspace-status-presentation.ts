@@ -2,9 +2,9 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
   faCircleCheck,
   faCircleQuestion,
-  faClock,
   faCodeMerge,
   faCodePullRequest,
+  faHourglass,
   faHourglassHalf,
   faTriangleExclamation,
   faXmark,
@@ -46,13 +46,13 @@ const VISUALS: Record<
 > = {
   failed: { visual: 'icon', icon: faTriangleExclamation, className: 'text-foreground' },
   blocked: { visual: 'icon', icon: faXmark, className: 'text-danger' },
-  needs_attention: { visual: 'icon', icon: faCircleQuestion, className: 'text-warning' },
+  needs_attention: { visual: 'icon', icon: faCircleQuestion, className: 'text-warning-ink' },
   in_progress: {
     visual: 'dot',
     icon: null,
     className: 'workspace-status-color-active',
   },
-  waiting: { visual: 'icon', icon: faClock, className: 'text-muted-foreground' },
+  waiting: { visual: 'icon', icon: faHourglass, className: 'text-muted-foreground' },
   unread: {
     visual: 'dot',
     icon: null,

@@ -2,15 +2,15 @@
  * Standing chat-subscription registry — which agents a standing
  * `chat.subscribe` registration (PROTOCOL §7.1) currently covers.
  *
- * The standing subscription is the SOLE canonical writer of a covered agent's
- * transcript message CONTENT. The legacy `agent:*` firehose accumulator
- * (daemon-events-bridge) consults this registry so its stream dispatches stop
- * carrying content blocks for covered agents — its terminal `complete`
- * dispatch would otherwise clobber the transcript the subscription already
- * reconciled (stale tool-block copies with no later emit to heal them), and
- * its mid-turn `content-blocks` dispatches cause visible flicker. Agents with
- * NO standing subscription (background/unviewed agents) keep the accumulator
- * as their transcript writer, so entries here are strictly per-agent.
+ * The standing subscription is the SOLE writer of an agent's transcript
+ * message CONTENT; the legacy `agent:*` firehose (daemon-events-bridge) is
+ * bookkeeping-only and never dispatches content blocks. The agent-stream saga
+ * consults this registry to decide what that bookkeeping may touch: a covered
+ * agent's target row takes streaming flags and terminal metadata, while an
+ * agent with NO standing subscription (background/unviewed) gets no row
+ * writes at all — only session-level resets — so a firehose-built partial
+ * row can never become the seq-0 resume anchor. Entries are strictly
+ * per-agent.
  *
  * Written only by the chat-subscribe saga: marked when a registration
  * installs, cleared when it closes (and on coordinator dispose). Entries are

@@ -1,17 +1,12 @@
 <script lang="ts">
+  import { commentAuthorLabel } from '$features/comments/comment-attribution';
   /* eslint-disable max-lines */
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { writable } from 'svelte/store';
   import type { ParsedToolResult } from './tool-result-parser';
   import { extractPayloadText } from './tool-result-pairing';
   import Fa from 'svelte-fa';
-  import {
-    faCopy,
-    faCheck,
-    faExclamationTriangle,
-    faFolder,
-    faFile,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faExclamationTriangle, faFolder, faFile } from '@fortawesome/free-solid-svg-icons';
   import { DiffViewer } from '$features/file-tracking/components/diff';
   import MarkdownRenderer from '$lib/components/editor/MarkdownRenderer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
@@ -20,6 +15,7 @@
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { isGenericAgentName } from '$lib/utils/agent-name-generator';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import {
     focusBrowserTabRequested,
@@ -29,6 +25,7 @@
     openWorkspaceFile,
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { formatDate, formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -38,6 +35,8 @@
     sanitizeToolText,
   } from './tool-display-model';
   import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
+  import { Button } from '$lib/components/ui/button';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
 
   interface Props {
     input: Record<string, any>;
@@ -49,6 +48,7 @@
     /** The tool is classified as a terminal command (gates the terminal-style pending view). */
     isTerminal?: boolean;
     workspaceId?: string;
+    agentId?: string;
     suppressOkOnlyResult?: boolean;
   }
 
@@ -60,6 +60,7 @@
     pending = false,
     isTerminal = false,
     workspaceId,
+    agentId,
     suppressOkOnlyResult = false,
   }: Props = $props();
 
@@ -74,7 +75,6 @@
   });
   const toolWorkspace = selectWorkspaceById(toolWorkspaceIdStore);
 
-  let copied = $state(false);
   const sanitizedInput = $derived(sanitizeToolPayload(input) as Record<string, any>);
   const sanitizedResult = $derived(sanitizeToolPayload(result));
   const browserScreenshotSource = $derived(
@@ -127,13 +127,6 @@
     const lines = content.split('\n');
     if (lines.length <= maxLines) return content;
     return lines.slice(0, maxLines).join('\n') + '\n...';
-  }
-
-  // Copy to clipboard
-  async function copyToClipboard(text: string) {
-    await navigator.clipboard.writeText(text);
-    copied = true;
-    setTimeout(() => (copied = false), 2000);
   }
 
   // Extract evaluate expressions from browser tool input actions
@@ -318,16 +311,11 @@
         >
           <!-- Copy button - Skip for file-view since CodeBlock has its own copy button -->
           {#if (parsedResult?.content || parsedResult?.newContent) && parsedResult?.type !== 'file-view'}
-            <button
-              class="cursor-pointer border-0 bg-transparent p-1 text-muted-foreground transition-colors hover:text-foreground"
-              onclick={() =>
-                copyToClipboard(
-                  input.content || parsedResult?.newContent || parsedResult?.content || '',
-                )}
-              title={m.chat_toolDetails_copyContent_title()}
-            >
-              <Fa icon={copied ? faCheck : faCopy} size="xs" />
-            </button>
+            <CopyButton
+              text={input.content || parsedResult?.newContent || parsedResult?.content || ''}
+              label={m.chat_toolDetails_copyContent_title()}
+              class="text-muted-foreground"
+            />
           {/if}
         </div>
 
@@ -359,15 +347,21 @@
             <!-- File edit without diff - show new content as code block with file name header -->
             <div class="flex flex-col gap-1">
               {#if parsedResult.filePath}
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   class="flex items-center gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer w-fit"
                   onclick={(e) => {
                     const line = parsedResult?.lineRange?.[0];
                     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                    if (!workspaceId || !parsedResult?.filePath) return;
+                    if (
+                      !workspaceId ||
+                      !parsedResult?.filePath ||
+                      !canOpenAgentPath(appStore.state, agentId)
+                    )
+                      return;
                     appStore.dispatch(
                       openWorkspaceFile(workspaceId, parsedResult.filePath, {
                         line,
@@ -387,7 +381,7 @@
                   {#if parsedResult.editSummary}
                     <span class="text-subtle">{parsedResult.editSummary}</span>
                   {/if}
-                </button>
+                </Button>
               {/if}
               <CodeBlock
                 code={parsedResult.newContent}
@@ -402,14 +396,20 @@
           {:else if parsedResult.type === 'file-edit' && parsedResult.filePath}
             <!-- File edit fallback - show file name header with result summary -->
             <div class="flex flex-col gap-1">
-              <button
+              <Button
                 type="button"
+                variant="link"
                 class="flex items-center gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer w-fit"
                 onclick={(e) => {
                   const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                   const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                   const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                  if (!workspaceId || !parsedResult?.filePath) return;
+                  if (
+                    !workspaceId ||
+                    !parsedResult?.filePath ||
+                    !canOpenAgentPath(appStore.state, agentId)
+                  )
+                    return;
                   appStore.dispatch(
                     openWorkspaceFile(workspaceId, parsedResult.filePath, {
                       openInAdjacentPanel,
@@ -423,7 +423,7 @@
                 {#if parsedResult.editSummary}
                   <span class="text-subtle">{parsedResult.editSummary}</span>
                 {/if}
-              </button>
+              </Button>
               {#if parsedResult.content}
                 <!-- Use plaintext since this fallback content is status messages, not source code -->
                 <CodeBlock
@@ -470,7 +470,7 @@
                 </div>
               {/each}
               {#if parsedResult.snippets.length > 8}
-                <div class="text-center text-xs text-subtle py-1 border-t border-border mt-1">
+                <div class="mt-1 border-t border-border py-1 text-left text-xs text-subtle">
                   {plural(
                     parsedResult.snippets.length - 8,
                     m.chat_toolDetails_moreResults_one,
@@ -489,7 +489,7 @@
             <!-- No parsed snippets - only claim "No results" when the search was
                  genuinely empty; unparsed fallback content still holds real matches -->
             {#if parsedResult.noMatches || !parsedResult.content}
-              <div class="text-center py-2 text-subtle text-sm">
+              <div class="py-2 text-left text-sm text-subtle">
                 {m.chat_toolDetails_noResults_label()}
               </div>
             {/if}
@@ -538,15 +538,21 @@
             <div class="flex flex-col gap-1">
               {#if parsedResult.filePath}
                 <!-- Clickable file link - shows filename, links to full path -->
-                <button
+                <Button
                   type="button"
+                  variant="link"
                   class="flex items-center gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer w-fit"
                   onclick={(e) => {
                     const line = parsedResult?.lineRange?.[0];
                     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
                     const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
                     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
-                    if (!workspaceId || !parsedResult?.filePath) return;
+                    if (
+                      !workspaceId ||
+                      !parsedResult?.filePath ||
+                      !canOpenAgentPath(appStore.state, agentId)
+                    )
+                      return;
                     appStore.dispatch(
                       openWorkspaceFile(workspaceId, parsedResult.filePath, {
                         line,
@@ -563,7 +569,7 @@
                       >:{parsedResult.lineRange[0]}-{parsedResult.lineRange[1]}</span
                     >
                   {/if}
-                </button>
+                </Button>
               {/if}
               <CodeBlock
                 code={parsedResult.content}
@@ -631,14 +637,16 @@
                       : agent.status === 'error'
                         ? 'text-red-500'
                         : 'text-subtle'}
-                <button
+                <Button
                   type="button"
+                  variant="plain"
                   class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
                   onclick={(e) => {
                     if (!workspaceId) return;
                     appStore.dispatch(
                       openAgentTabRequested(workspaceId, {
                         agentId: agent.agentId,
+                        sourcePanelId: findSourcePanelId(e.currentTarget),
                         openInAdjacentPanel: e.metaKey || e.ctrlKey,
                       }),
                     );
@@ -653,7 +661,7 @@
                       >{agent.status}</span
                     >
                   {/if}
-                </button>
+                </Button>
               {/each}
               <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                 {plural(
@@ -674,7 +682,7 @@
                   <Fa
                     icon={isDirectory ? faFolder : faFile}
                     size="xs"
-                    class={isDirectory ? 'text-amber-500/70' : 'text-subtle'}
+                    class={isDirectory ? 'text-warning-ink' : 'text-subtle'}
                   />
                   <span class={isDirectory ? 'text-foreground' : 'text-subtle'}>
                     {file}
@@ -752,14 +760,16 @@
               <div class="flex items-center gap-1.5">
                 <span class="text-subtle">{m.chat_toolDetails_sentMessageTo_before()}</span>
                 {#if agentId}
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
                     class="inline-flex items-center gap-1 text-foreground font-medium hover:text-foreground cursor-pointer bg-transparent border-0 p-0"
                     onclick={(e) => {
                       if (!workspaceId) return;
                       appStore.dispatch(
                         openAgentTabRequested(workspaceId, {
                           agentId,
+                          sourcePanelId: findSourcePanelId(e.currentTarget),
                           openInAdjacentPanel: e.metaKey || e.ctrlKey,
                         }),
                       );
@@ -767,7 +777,7 @@
                   >
                     <AgentAvatar {agentId} size={14} class="shrink-0" />
                     <span>{agentName}</span>
-                  </button>
+                  </Button>
                 {:else}
                   <span class="text-foreground font-medium"
                     >{m.chat_toolDetails_agent_fallback()}</span
@@ -780,7 +790,7 @@
               </p>
               {#if parsedResult.messagePriority === 'high'}
                 <span
-                  class="inline-flex self-start px-1.5 py-0.5 text-ui font-semibold rounded-full bg-amber-500/30 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                  class="inline-flex self-start px-1.5 py-0.5 text-ui font-semibold rounded-full bg-warning/10 text-warning-ink border border-warning/30"
                 >
                   {m.chat_toolDetails_highPriority_label()}
                 </span>
@@ -820,6 +830,21 @@
                         {m.chat_toolDetails_noAnchor_label()}
                       {/if}
                     </span>
+                    {#if thread.latestAuthor || thread.latestAuthorIdentity}
+                      {@const authorLabel = commentAuthorLabel({
+                        author: thread.latestAuthor,
+                        authorType: thread.latestAuthorType,
+                        authorIdentity: thread.latestAuthorIdentity,
+                      })}
+                      <span
+                        data-comment-author
+                        aria-label={authorLabel}
+                        title={authorLabel}
+                        class="text-xs text-subtle truncate"
+                      >
+                        {authorLabel}
+                      </span>
+                    {/if}
                     <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-subtle shrink-0">
                       {thread.status}
                     </span>
@@ -852,8 +877,9 @@
             <div class="flex flex-col gap-1 max-h-64 overflow-y-auto">
               {#if parsedResult.notes && parsedResult.notes.length > 0}
                 {#each parsedResult.notes as note}
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     class="flex items-center gap-2 p-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer text-left w-full"
                     onclick={(e) => {
                       const openInAdjacentPanel = e.metaKey || e.ctrlKey;
@@ -885,7 +911,7 @@
                         {/if}
                       </div>
                     {/if}
-                  </button>
+                  </Button>
                 {/each}
                 <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                   {plural(
@@ -932,7 +958,7 @@
                       href={asset.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="text-primary hover:underline truncate"
+                      class="text-primary-ink hover:underline truncate"
                     >
                       {asset.name}
                     </a>
@@ -972,7 +998,8 @@
                 <!-- Tab list -->
                 <div class="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
                   {#each parsedResult.browserTabs as tab}
-                    <button
+                    <Button
+                      variant="plain"
                       class="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/30 rounded cursor-pointer text-left w-full"
                       onclick={() => {
                         if (tab.tabId && workspaceId) {
@@ -994,7 +1021,7 @@
                           {tab.url}
                         </span>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                   <div class="text-xs text-subtle pt-1 border-t border-border mt-1">
                     {plural(
@@ -1062,7 +1089,7 @@
                 : issue.level === 'error'
                   ? 'bg-red-500/20 text-red-600 dark:text-red-400'
                   : issue.level === 'warning'
-                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                    ? 'bg-warning/10 text-warning-ink'
                     : issue.level === 'info'
                       ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
                       : 'bg-muted text-subtle'}
@@ -1128,7 +1155,7 @@
                     href={issue.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="text-ui text-primary hover:underline"
+                    class="text-ui text-primary-ink hover:underline"
                   >
                     {m.chat_toolDetails_viewInSentry_label()}
                   </a>
@@ -1145,7 +1172,7 @@
                     : issue.level === 'error'
                       ? 'bg-red-500'
                       : issue.level === 'warning'
-                        ? 'bg-amber-500'
+                        ? 'bg-warning'
                         : issue.level === 'info'
                           ? 'bg-blue-500'
                           : 'bg-muted-foreground'}
@@ -1268,7 +1295,7 @@
                     ? 'text-green-600 dark:text-green-400'
                     : file.status === 'removed'
                       ? 'text-red-600 dark:text-red-400'
-                      : 'text-amber-600 dark:text-amber-400'}
+                      : 'text-warning-ink'}
                 <div
                   class="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/30 transition-colors"
                 >
@@ -1324,7 +1351,7 @@
                     : parsedResult.githubOverallStatus === 'failure' ||
                         parsedResult.githubOverallStatus === 'error'
                       ? 'text-red-600 dark:text-red-400'
-                      : 'text-amber-600 dark:text-amber-400'}
+                      : 'text-warning-ink'}
                 <div class="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-border">
                   <span class="text-sm font-medium {overallColor}"
                     >{m.chat_toolDetails_overall_label({
@@ -1359,7 +1386,7 @@
                       : conclusion === 'in_progress' ||
                           conclusion === 'queued' ||
                           conclusion === 'pending'
-                        ? 'text-amber-600 dark:text-amber-400'
+                        ? 'text-warning-ink'
                         : 'text-subtle'}
                 <div
                   class="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/30 transition-colors"

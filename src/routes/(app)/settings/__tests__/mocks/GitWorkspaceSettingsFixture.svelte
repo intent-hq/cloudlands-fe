@@ -12,7 +12,9 @@
   </div>
   <div id="shell">
     <h2>Shell</h2>
-    {#if shellAdditions}{@render shellAdditions()}{/if}
+    {#if shellAdditions}<div id="cli-optimization" data-highlight-id="cli-optimization">
+        {@render shellAdditions()}
+      </div>{/if}
   </div>
   <div id="workspace">
     <h2>Workspace</h2>

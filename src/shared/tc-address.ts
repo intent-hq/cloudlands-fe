@@ -1,21 +1,24 @@
 /**
- * tailcat tunnel address helpers (PROTOCOL §12.3). A tc address is the
- * daemon-minted stable tunnel endpoint identifier (`tc-…`, e.g. `tc-key-…`),
- * carried in pairing URIs (`tc=`), `system.status.tcAddress`, and
- * `server.pairingInfo.tcAddress`. Shared main + renderer so manual-entry
- * detection and main-process tunnel routing agree on the same predicate.
+ * Shared main + renderer recognition for Tailcat's address wire format:
+ * literal `tc` followed by case-sensitive, unpadded base64url-encoded CBOR.
+ * https://github.com/tailscale/tailcat/blob/main/tailcat.go (ConnInfo.Addr)
  */
-
-// i18n-ignore (wire constant, PROTOCOL §12.3 tc address prefix)
-const TC_ADDRESS_PREFIX = 'tc-';
 
 /**
- * Whether a user-entered host string is a tailcat tunnel address rather than
- * a hostname/IP. tc addresses are daemon-minted with the `tc-` prefix; no
- * real-world hostname label starts with `tc-` followed by the daemon's key
- * encoding, but the check stays a cheap prefix test on purpose — the tunnel
- * dial itself is the authoritative validation.
+ * Recognize the encoded map before URL parsing can lowercase it or send it
+ * to DNS. Require room for the map's public key (37 CBOR bytes / 50 base64url
+ * characters) and a map header, not just a hostname starting with `tc`.
+ * Only the header is decoded; Tailcat validates the complete endpoint.
  */
 export function isTcAddress(host: string): boolean {
-  return host.trim().toLowerCase().startsWith(TC_ADDRESS_PREFIX);
+  const address = host.trim();
+  if (!address.startsWith('tc')) return false;
+  const payload = address.slice(2);
+  if (payload.length < 50 || payload.length % 4 === 1 || !/^[A-Za-z0-9_-]+$/.test(payload)) {
+    return false;
+  }
+
+  const header = atob(payload.slice(0, 4).replace(/-/g, '+').replace(/_/g, '/')).charCodeAt(0);
+  // Non-empty definite map, or an indefinite map; exclude reserved headers.
+  return (header >= 0xa1 && header <= 0xbb) || header === 0xbf;
 }

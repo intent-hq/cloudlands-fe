@@ -1,12 +1,12 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   addItems,
   createCollection,
   removeItem,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 
 // ============================================================================
 // Types
@@ -14,6 +14,7 @@ import {
 
 export interface PermissionRequest {
   requestId: string;
+  workspaceId?: string;
   sessionId: string;
   title: string;
   description?: string | null;

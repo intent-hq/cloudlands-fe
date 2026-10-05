@@ -38,7 +38,7 @@
       <StreamingStatus error="Stream timeout" />
     </div>
 
-    <div data-testid="turn-failure-surface" data-background-kind="destructive-tint">
+    <div data-testid="turn-failure-surface" data-background-kind="normal">
       <TurnFailureNotice reason="The agent turn failed" />
     </div>
 

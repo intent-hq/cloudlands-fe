@@ -1,3 +1,4 @@
+import { selectPersonalDevicesSession } from '$features/devices/personal-devices-selectors';
 /**
  * Browser Clients Saga (renderer)
  *
@@ -9,13 +10,13 @@
  * such presence refresh also requests the mounted workspaces' daemon
  * browser-client resolution, since the pin or default may now resolve
  * differently), and the per-workspace `workspace.getBrowserClient` /
- * `setBrowserClient` / `browser.listTabs` calls keyed by workspace. Every
+ * `setBrowserClient` calls keyed by workspace. Every
  * resolution read — mount, `workspace:updated`, presence — goes through one
  * single-flight lane per workspace (one in flight, at most one trailing), and
  * a read that overlapped a pin write in any way (started before it, or
  * during it and settled after) discards its reply and re-queues itself, so an
  * older read can never overwrite the write's echo or a newer read. Pin writes
- * and tab reads are latest-wins per workspace, so a slow earlier pin write
+ * are latest-wins per workspace, so a slow earlier pin write
  * cannot overwrite a later daemon echo. A viewer's `browser.navigateTab` /
  * `browser.closeTab` requests (REV-2 Model 3) are fire-and-forget commands to
  * the tab's host: nothing is stored from the reply — the mirror follows the
@@ -30,10 +31,12 @@
  * can neither resurrect a deleted workspace nor leak into a later remount,
  * which starts a fresh lane.
  */
+import { eventChannel, buffers } from 'redux-saga';
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { call, put, race, take, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
 
 import {
   takeLatestByWorkspace,
@@ -46,29 +49,22 @@ import {
   workspaceMounted,
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
-import {
-  selectLiveClientsLoaded,
-  selectOwnClientId,
-  selectWorkspaceBrowserTabsRevision,
-} from '../browser-clients-selectors';
+import { selectLiveClientsLoaded, selectOwnClientId } from '../browser-clients-selectors';
 import {
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
-  fetchWorkspaceBrowserTabsRequested,
   hydrateBrowserClientsRequested,
   liveClientsReceived,
+  liveClientListsInvalidated,
   navigateBrowserTabRequested,
   ownClientIdReceived,
   refreshLiveClientsRequested,
   setWorkspaceBrowserClientRequested,
   workspaceBrowserClientReceived,
-  workspaceBrowserTabsReceived,
 } from '../browser-clients-slice';
 
 const logger = createLogger('BrowserClientsSaga');
 const LIVE_CLIENTS_CONTEXT = 'live-clients';
-/** Re-reads allowed when `browser:tab-*` patches keep landing mid-`browser.listTabs`. */
-const MAX_TABS_READ_ATTEMPTS = 3;
 
 /**
  * Saga-local, per-workspace pin-write epoch, bumped when a pin write starts
@@ -109,14 +105,44 @@ function browserClientReadContext(action: BrowserClientReadAction) {
  * resolution lane, so a presence burst cannot start overlapping resolution
  * calls: one read is in flight and at most one trailing read follows it.
  */
-function* readLiveClients(): SagaGenerator<void> {
+function* readLiveClients(
+  connection: { epoch: number; nextRead: number; reads: Map<string, number> },
+  action:
+    | ReturnType<typeof refreshLiveClientsRequested>
+    | ReturnType<typeof workspaceUnmounted>
+    | ReturnType<typeof workspaceDeleted>
+    | ReturnType<typeof removeWorkspaceEntity>,
+): SagaGenerator<void> {
+  if (action.type !== refreshLiveClientsRequested.type) return;
+  const epoch = connection.epoch;
   try {
-    const presenceChange = yield* selectLiveClientsLoaded.effect();
-    const clients = yield* call([appClient.clients, appClient.clients.list]);
-    yield* put(liveClientsReceived(clients));
-    if (!presenceChange) return;
-    const mounted = yield* selectMountedWorkspaceIds.effect();
-    for (const wsId of mounted) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+    const mounted = action.payload[0]
+      ? [action.payload[0]]
+      : yield* selectMountedWorkspaceIds.effect();
+    if (mounted.length === 0 && !(yield* selectPersonalDevicesSession.effect())) {
+      const clients = yield* call([appClient.clients, appClient.clients.list]);
+      if (epoch === connection.epoch && !(yield* selectPersonalDevicesSession.effect()))
+        yield* put(liveClientsReceived(clients));
+    }
+    // Own every target before awaiting another workspace. Cleanup/remount must
+    // invalidate queued targets as well as requests already in flight.
+    const targets = mounted.map((wsId) => {
+      const version = ++connection.nextRead;
+      connection.reads.set(wsId, version);
+      return { wsId, version };
+    });
+    for (const { wsId, version } of targets) {
+      if (epoch !== connection.epoch || connection.reads.get(wsId) !== version) continue;
+      const presenceChange = yield* selectLiveClientsLoaded.effect(wsId);
+      const read = yield* untilWorkspaceCleanup(
+        wsId,
+        call([appClient.clients, appClient.clients.list], wsId),
+      );
+      if (read.cleanup || epoch !== connection.epoch || connection.reads.get(wsId) !== version)
+        continue;
+      yield* put(liveClientsReceived(read.result, wsId));
+      if (presenceChange) yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+    }
   } catch (error) {
     logger.warn('client.list failed', { error: error instanceof Error ? error.message : error });
   }
@@ -133,9 +159,13 @@ function* readOwnClientId(): SagaGenerator<void> {
   }
 }
 
-function* hydrate(): SagaGenerator<void> {
+function* hydrate(action: ReturnType<typeof hydrateBrowserClientsRequested>): SagaGenerator<void> {
   yield* call(readOwnClientId);
-  yield* put(refreshLiveClientsRequested());
+  yield* put(
+    action.payload[0]
+      ? refreshLiveClientsRequested(action.payload[0])
+      : refreshLiveClientsRequested(),
+  );
 }
 
 function matchesWorkspaceCleanup(wsId: string) {
@@ -213,36 +243,10 @@ function* writeWorkspaceBrowserClient(
   }
 }
 
-function* readWorkspaceBrowserTabs(
-  action: ReturnType<typeof fetchWorkspaceBrowserTabsRequested>,
-): SagaGenerator<void> {
-  const [wsId] = action.payload;
-  try {
-    for (let attempt = 0; attempt < MAX_TABS_READ_ATTEMPTS; attempt++) {
-      const revision = yield* selectWorkspaceBrowserTabsRevision.effect(wsId);
-      const read = yield* untilWorkspaceCleanup(
-        wsId,
-        call([appClient.browser, appClient.browser.listTabs], wsId),
-      );
-      if (read.cleanup) return;
-      yield* put(workspaceBrowserTabsReceived(wsId, read.result, revision));
-      if ((yield* selectWorkspaceBrowserTabsRevision.effect(wsId)) === revision) return;
-    }
-    logger.warn('browser.listTabs snapshot kept racing browser:tab-* events; keeping patches', {
-      wsId,
-    });
-  } catch (error) {
-    logger.warn('browser.listTabs failed', {
-      wsId,
-      error: error instanceof Error ? error.message : error,
-    });
-  }
-}
-
 async function toastError(message: string, description?: string): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(message, description ? { description } : undefined);
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(message, description ? { description } : undefined);
   } catch {
     // Toasts are best-effort.
   }
@@ -297,19 +301,55 @@ function* onWorkspaceMounted(action: ReturnType<typeof workspaceMounted>): SagaG
   const [wsId] = action.payload;
   if (!wsId) return;
   const ownClientId = yield* selectOwnClientId.effect();
-  const liveClientsLoaded = yield* selectLiveClientsLoaded.effect();
-  if (ownClientId === null || !liveClientsLoaded) yield* put(hydrateBrowserClientsRequested());
+  if (ownClientId === null) yield* put(hydrateBrowserClientsRequested(wsId));
+  else yield* put(refreshLiveClientsRequested(wsId));
   yield* put(fetchWorkspaceBrowserClientRequested(wsId));
+}
+
+function* watchClientConnection(connection: { epoch: number }) {
+  const channel = eventChannel<true>(
+    (emit) =>
+      onBackendReconnected(() => {
+        connection.epoch++;
+        emit(true);
+      }),
+    buffers.sliding(1),
+  );
+  try {
+    while (true) {
+      yield* take(channel);
+      yield* put(liveClientListsInvalidated());
+      yield* put(refreshLiveClientsRequested());
+    }
+  } finally {
+    channel.close();
+  }
 }
 
 export function* browserClientsSaga(): SagaGenerator<void> {
   const pinWriteEpochs: PinWriteEpochs = {};
+  const connection = { epoch: 0, nextRead: 0, reads: new Map<string, number>() };
+  yield* takeEvery(
+    [workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
+    function* (action) {
+      connection.reads.delete(action.payload[0]);
+    },
+  );
+  yield* fork(watchClientConnection, connection);
   yield* takeEvery(workspaceMounted, onWorkspaceMounted);
-  yield* takeLatest(hydrateBrowserClientsRequested, hydrate);
   yield* takeSingleFlightInContext(
-    refreshLiveClientsRequested,
-    () => LIVE_CLIENTS_CONTEXT,
+    hydrateBrowserClientsRequested,
+    (action) => action.payload[0] ?? LIVE_CLIENTS_CONTEXT,
+    hydrate,
+  );
+  yield* takeSingleFlightInContext(
+    [refreshLiveClientsRequested, workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity],
+    (action) =>
+      action.type === refreshLiveClientsRequested.type
+        ? (action.payload[0] ?? LIVE_CLIENTS_CONTEXT)
+        : { context: action.payload[0] ?? LIVE_CLIENTS_CONTEXT, cancel: true as const },
     readLiveClients,
+    connection,
   );
   yield* takeSingleFlightInContext(
     [
@@ -327,7 +367,6 @@ export function* browserClientsSaga(): SagaGenerator<void> {
     writeWorkspaceBrowserClient,
     pinWriteEpochs,
   );
-  yield* takeLatestByWorkspace(fetchWorkspaceBrowserTabsRequested, readWorkspaceBrowserTabs);
   yield* takeEvery(navigateBrowserTabRequested, forwardBrowserTabNavigation);
   yield* takeEvery(closeBrowserTabRequested, closeRemoteBrowserTab);
 }

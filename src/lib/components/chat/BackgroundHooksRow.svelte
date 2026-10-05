@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * BackgroundHooksRow Component
    *
@@ -18,16 +20,21 @@
    */
 
   import Fa from 'svelte-fa';
-  import { faChevronDown, faCode, faPlay, faXmark } from '@fortawesome/free-solid-svg-icons';
-  import HourglassMedium from 'phosphor-svelte/lib/HourglassMedium';
-  import { safeSlide } from '$lib/utils/animations';
+  import {
+    faChevronDown,
+    faCode,
+    faHourglass,
+    faPlay,
+    faXmark,
+  } from '@fortawesome/free-solid-svg-icons';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import * as Menu from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatCompactDuration, formatDateTime, formatInteger } from '$lib/i18n/format';
+  import { formatDateTime, formatInteger, formatSalientDuration } from '$lib/i18n/format';
   import type { BackgroundHook } from '$features/hooks/background-hooks-service';
   import {
     selectBackgroundHooks,
@@ -44,12 +51,15 @@
   import {
     safeSubscriptionRowTransition,
     safeSubscriptionSlide,
-    SUBSCRIPTION_ACTION_ICON_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_ICON_BUTTON_CLASS,
+    SUBSCRIPTION_LEADING_COLUMN_CLASS,
+    SUBSCRIPTION_LEADING_CONTENT_CLASS,
+    SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
   } from './subscription-disclosure';
 
   interface Props {
@@ -102,20 +112,17 @@
     count = agentHooks.length;
   });
 
-  function handleRunNow(hook: BackgroundHook, close?: () => void) {
-    close?.();
+  function handleRunNow(hook: BackgroundHook) {
     appStore.dispatch(runBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
-  function handleCancel(hook: BackgroundHook, close?: () => void) {
-    close?.();
+  function handleCancel(hook: BackgroundHook) {
     appStore.dispatch(cancelBackgroundHookRequested(hook.workspaceId, hook.hookId));
   }
 
   let expandedHookId = $state<string | null>(null);
 
-  function handleViewScript(hook: BackgroundHook, close?: () => void) {
-    close?.();
+  function handleViewScript(hook: BackgroundHook) {
     const panelLayoutManager = getPanelLayoutManager(hook.workspaceId);
     const sourcePanelId = panelLayoutManager
       .getPanelIds()
@@ -140,12 +147,6 @@
     expandedHookId = expandedHookId === hookId ? null : hookId;
   }
 
-  function stateLabel(hook: BackgroundHook): string {
-    return hook.state === 'running'
-      ? m.chat_backgroundHooks_running_label()
-      : m.chat_backgroundHooks_state_scheduled_label();
-  }
-
   // Reactive clock driving the countdown readouts: ticks once per second, but
   // only while a rendered hook has a timed target. Ephemeral UI state — the
   // actual row removal/state change still comes from `hook:*` events.
@@ -162,14 +163,21 @@
 
   /**
    * Relative timing shown beside localized absolute timestamps in the inline
-   * details. `formatCompactDuration` clamps negative durations to "0s".
+   * details. `formatSalientDuration` clamps negative durations to "0s".
    */
   function nextRunIn(hook: BackgroundHook): string {
-    return formatCompactDuration(new Date(hook.nextRunAt!).getTime() - now);
+    return formatSalientDuration(new Date(hook.nextRunAt!).getTime() - now);
   }
 
   function expiresIn(hook: BackgroundHook): string {
-    return formatCompactDuration(new Date(hook.expiresAt!).getTime() - now);
+    return formatSalientDuration(new Date(hook.expiresAt!).getTime() - now);
+  }
+
+  function summaryStatus(hook: BackgroundHook): string {
+    // `lastRunAt` records completion; run-started events carry no start timestamp.
+    if (hook.state === 'running') return m.chat_backgroundHooks_running_label();
+    if (!hook.nextRunAt) return m.chat_backgroundHooks_state_scheduled_label();
+    return m.chat_backgroundHooks_scheduledIn({ duration: nextRunIn(hook) });
   }
 
   /**
@@ -189,7 +197,7 @@
     if (hook.runAt) {
       return m.chat_backgroundHooks_details_onceAt_value({ time: formatDateTime(hook.runAt) });
     }
-    return hook.delayMs ? formatCompactDuration(hook.delayMs) : '—';
+    return hook.delayMs ? formatSalientDuration(hook.delayMs) : '—';
   }
 </script>
 
@@ -201,9 +209,7 @@
     role={$snapshotStatus$ === 'failed' ? 'alert' : 'status'}
   >
     {#if $snapshotStatus$ === 'loading'}
-      <span
-        class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"
-      ></span>
+      <span aria-hidden="true" class="shrink-0"><IntentMarkLoader size={12} /></span>
       <span>{m.chat_chatMessage_loading_label()}</span>
     {:else}
       <span>{m.chat_streamingStatus_responseFailed_label()}</span>
@@ -217,7 +223,7 @@
     role="group"
     aria-label={m.chat_backgroundHooks_row_ariaLabel()}
     data-testid="background-hooks-row"
-    transition:safeSlide={{ axis: 'y', duration: 200 }}
+    transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
     {#each agentHooks as hook (hook.hookId)}
       {@const detailsId = `background-hook-details-${hook.hookId}`}
@@ -233,12 +239,13 @@
         transition:safeSubscriptionRowTransition
       >
         <div
-          class="flex min-h-10 min-w-0 max-w-full items-center gap-1.5 px-2 py-1.5 text-muted-foreground"
+          class="{SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+          data-testid="background-hook-summary-row"
         >
           <Button
             variant="plain"
             type="button"
-            class="h-auto min-h-7 w-auto min-w-0 max-w-full flex-1 shrink overflow-hidden whitespace-normal rounded border-0 px-1.5 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+            class="h-auto min-h-0 w-auto min-w-0 max-w-full flex-1 shrink justify-start overflow-hidden whitespace-nowrap rounded border-0 p-0! text-left {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
             data-testid="background-hook-summary"
             data-subscription-row="event-subscription"
             aria-expanded={expandedHookId === hook.hookId}
@@ -246,85 +253,97 @@
             onclick={() => toggleHookDetails(hook.hookId)}
           >
             <span
-              class="inline-flex h-5 w-5 shrink-0 items-center justify-center leading-none {SUBSCRIPTION_ICON_CLASS}"
+              class="{SUBSCRIPTION_LEADING_COLUMN_CLASS} {SUBSCRIPTION_ICON_CLASS}"
               data-testid="background-hook-icon"
               aria-hidden="true"
             >
-              <HourglassMedium
-                size={16}
-                weight="regular"
-                class="h-4 w-4"
-                data-icon="hourglass-medium"
-              />
+              <Fa icon={faHourglass} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
             </span>
             <span
               id={titleId}
-              class="min-w-0 flex-1 truncate text-foreground {embedded
+              class="min-w-0 flex-auto truncate text-muted-foreground {embedded
                 ? 'font-normal'
-                : 'font-medium'}">{hook.name}</span
+                : 'font-medium'}"
+              data-testid="background-hook-title">{hook.name}</span
             >
-            <span class="min-w-0 shrink truncate text-muted-foreground">{stateLabel(hook)}</span>
-            {#if hook.nextRunAt}<span class="shrink-0 text-muted-foreground">{nextRunIn(hook)}</span
-              >{/if}
-            <span class="shrink-0" data-testid="background-hook-chevron">
-              <Fa
-                icon={faChevronDown}
-                size={16}
-                class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedHookId ===
-                hook.hookId
-                  ? ''
-                  : 'rotate-90'}"
-              />
-            </span>
+            <span
+              class="min-w-0 shrink-[999] truncate text-muted-foreground"
+              data-testid="background-hook-state">{summaryStatus(hook)}</span
+            >
           </Button>
-          <DropdownMenu side="top" align="end">
-            {#snippet trigger({ props })}
-              <Button
-                {...props}
-                variant="plain"
-                size="icon-xs"
-                type="button"
-                class="h-6 w-6 border-0 {SUBSCRIPTION_ACTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
-                data-testid="background-hook-chip"
+          <div
+            class={SUBSCRIPTION_TRAILING_CONTROLS_CLASS}
+            data-testid="background-hook-trailing-controls"
+          >
+            <Menu.Root>
+              <Menu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    variant="plain"
+                    size="icon-xs"
+                    type="button"
+                    class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_CLASS} {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+                    data-testid="background-hook-chip"
+                    aria-label={m.chat_backgroundHooks_row_ariaLabel()}
+                  >
+                    <KebabIcon class="h-3 w-3" />
+                  </Button>
+                {/snippet}
+              </Menu.Trigger>
+              <Menu.Content
+                side="top"
+                align="end"
+                class="w-36"
                 aria-label={m.chat_backgroundHooks_row_ariaLabel()}
               >
-                <KebabIcon class="h-3 w-3" />
-              </Button>
-            {/snippet}
-            {#snippet content({ close }: { close: () => void })}
-              <div class="flex w-36 flex-col p-1">
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="justify-start"
-                  disabled={hook.state === 'running'}
-                  onclick={() => handleRunNow(hook, close)}
-                >
+                <Menu.Item disabled={hook.state === 'running'} onSelect={() => handleRunNow(hook)}>
                   <Fa icon={faPlay} class="h-2.5 w-2.5" />
                   {m.chat_backgroundHooks_runNow_label()}
-                </Button>
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="justify-start"
+                </Menu.Item>
+                <Menu.Item
                   data-testid="background-hook-view-script-item"
-                  onclick={() => handleViewScript(hook, close)}
+                  onSelect={() => handleViewScript(hook)}
                 >
                   <Fa icon={faCode} class="h-2.5 w-2.5" />
                   {m.chat_backgroundHooks_viewScript_label()}
-                </Button>
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="justify-start"
-                  onclick={() => handleCancel(hook, close)}
-                >
+                </Menu.Item>
+                <Menu.Separator />
+                <Menu.Item onSelect={() => handleCancel(hook)}>
                   <Fa icon={faXmark} class="h-2.5 w-2.5" />
                   {m.chat_backgroundHooks_cancel_label()}
-                </Button>
-              </div>
-            {/snippet}
-          </DropdownMenu>
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Root>
+            <Button
+              variant="plain"
+              size="icon-xs"
+              type="button"
+              class="h-6 w-6 shrink-0 border-0 {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:ring-1"
+              data-testid="background-hook-disclosure"
+              aria-label={hook.name}
+              aria-expanded={expandedHookId === hook.hookId}
+              aria-controls={detailsId}
+              onclick={(event) => {
+                event.stopPropagation();
+                toggleHookDetails(hook.hookId);
+              }}
+            >
+              <span
+                class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                data-testid="background-hook-chevron"
+              >
+                <Fa
+                  icon={faChevronDown}
+                  size={16}
+                  class="{SUBSCRIPTION_CHEVRON_SIZE_CLASS} {SUBSCRIPTION_CHEVRON_CLASS} {expandedHookId ===
+                  hook.hookId
+                    ? ''
+                    : 'rotate-90'}"
+                />
+              </span>
+            </Button>
+          </div>
         </div>
         {#if expandedHookId === hook.hookId}
           <div

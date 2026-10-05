@@ -1,18 +1,22 @@
 <script lang="ts">
   import { cn } from '$lib/utils';
+  import { ProximityHighlight } from '$lib/components/ui/proximity-highlight';
+  import { ChoiceGroupState } from '../choice-group-state.svelte';
   import { ToggleGroup as ToggleGroupPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
   import type { HTMLAttributes } from 'svelte/elements';
-  import { setContext } from 'svelte';
+  import { setContext, untrack } from 'svelte';
   import { tv, type VariantProps } from 'tailwind-variants';
+  import type { ProximityAxis } from '$lib/interaction';
+  import { TOGGLE_GROUP_CONTEXT, type ToggleGroupContext } from './context';
 
   const toggleGroupVariants = tv({
-    base: 'inline-flex items-center justify-center gap-px rounded-(--radius-medium) border border-border bg-card p-0.5',
+    base: 'relative isolate inline-flex shrink-0 items-center justify-center gap-0.5 rounded-(--radius-medium) border-0 bg-card',
     variants: {
       variant: {
         default: 'shadow-(--elevation-raised)',
-        outline: 'shadow-none',
-        flat: 'border-transparent bg-muted/40 shadow-none',
+        outline: 'border border-border shadow-none',
+        flat: 'bg-muted/40 shadow-none',
       },
       size: {
         default: '',
@@ -34,6 +38,7 @@
     onValueChange?: ((value: string) => void) | ((value: string[]) => void);
     type?: 'single' | 'multiple';
     disabled?: boolean;
+    axis?: ProximityAxis;
     class?: string;
     children?: Snippet;
   }
@@ -43,20 +48,33 @@
     onValueChange,
     type = 'single',
     disabled = false,
+    axis = 'x',
     variant = 'default',
     size = 'default',
     class: className = '',
     children,
     ...restProps
   }: Props = $props();
+  let root = $state<HTMLElement | null>(null);
+  const choiceGroup = new ChoiceGroupState(
+    () => (Array.isArray(value) ? value : typeof value === 'string' && value ? [value] : []),
+    untrack(() => axis),
+  );
 
-  setContext('toggle-group-style', {
+  setContext<ToggleGroupContext>(TOGGLE_GROUP_CONTEXT, {
+    state: choiceGroup,
     get size() {
       return size;
     },
     get variant() {
       return variant;
     },
+  });
+
+  $effect(() => {
+    if (!root) return;
+    choiceGroup.connect(root);
+    return () => choiceGroup.disconnect();
   });
 
   function handleSingleValueChange(nextValue: string) {
@@ -72,6 +90,7 @@
 
 {#if type === 'multiple'}
   <ToggleGroupPrimitive.Root
+    bind:ref={root}
     type="multiple"
     value={Array.isArray(value) ? value : []}
     onValueChange={handleMultipleValueChange}
@@ -79,10 +98,14 @@
     class={cn(toggleGroupVariants({ variant, size }), className)}
     {...restProps as any}
   >
+    {#if choiceGroup.hover}
+      <ProximityHighlight store={choiceGroup.hover} selectedIndexes={choiceGroup.selectedIndexes} />
+    {/if}
     {@render children?.()}
   </ToggleGroupPrimitive.Root>
 {:else}
   <ToggleGroupPrimitive.Root
+    bind:ref={root}
     type="single"
     value={typeof value === 'string' ? value : ''}
     onValueChange={handleSingleValueChange}
@@ -90,6 +113,9 @@
     class={cn(toggleGroupVariants({ variant, size }), className)}
     {...restProps as any}
   >
+    {#if choiceGroup.hover}
+      <ProximityHighlight store={choiceGroup.hover} selectedIndexes={choiceGroup.selectedIndexes} />
+    {/if}
     {@render children?.()}
   </ToggleGroupPrimitive.Root>
 {/if}

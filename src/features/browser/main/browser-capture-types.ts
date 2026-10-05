@@ -63,6 +63,8 @@ export interface SnapshotResult {
  * Options for starting a capture session
  */
 export interface SessionOptions {
+  /** Agent identity supplied by the executor, never by a browser action. */
+  ownerAgentId?: string;
   /** Tab to capture (defaults to first tab) */
   tabId?: string;
   /** Workspace ID for storage location */
@@ -75,6 +77,8 @@ export interface SessionOptions {
  * Active capture session
  */
 export interface CaptureSession {
+  ownerAgentId?: string;
+  diagnostics: { bytes: number; events: number; dropped: number };
   /** Unique session ID */
   id: string;
   /** Workspace-relative identifier for reading capture artifacts */
@@ -89,6 +93,8 @@ export interface CaptureSession {
   domain: string;
   /** Output directory */
   outputDir: string;
+  /** ISO timestamp of when the session was started */
+  startTime: string;
   /** Step counter */
   stepCount: number;
   /** Whether capture is active (listening to events) */
@@ -118,6 +124,8 @@ export interface ConsoleMessage {
   timestamp: string;
   level: 'log' | 'info' | 'warn' | 'error' | 'debug';
   text: string;
+  source?: string;
+  stack?: string;
   url?: string;
   lineNumber?: number;
 }
@@ -137,6 +145,10 @@ export interface NetworkRequest {
   size?: number;
   failed?: boolean;
   failureReason?: string;
+  initiator?: { type: string; stack?: string; url?: string };
+  body?: string;
+  bodyTruncated?: boolean;
+  bodyUnavailable?: string;
 }
 
 /**

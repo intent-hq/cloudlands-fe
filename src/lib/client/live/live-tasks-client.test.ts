@@ -116,7 +116,7 @@ describe('LiveTasksClient mutations (fake transport)', () => {
     });
   });
 
-  it('markAsTask forwards dependsOn/conflictsWith relation seeds when provided (v6.8)', async () => {
+  it('markAsTask forwards dependsOn/conflictsWith relation seeds when provided (task relations)', async () => {
     mockedRequest.mockResolvedValue({ ok: true });
     const client = new LiveTasksClient();
 
@@ -311,9 +311,9 @@ describe('LiveTasksClient mutations (fake transport)', () => {
     expect(tasks[0].rev).toBeUndefined();
   });
 
-  // ---- v6.8: relation fields (dependsOn / conflictsWith / unmetDependsOn) ---
+  // ---- task relation fields (dependsOn / conflictsWith / unmetDependsOn) ----
 
-  it('list carries dependsOn/conflictsWith/unmetDependsOn from the wire row (v6.8)', async () => {
+  it('list carries dependsOn/conflictsWith/unmetDependsOn from the wire row (task relations)', async () => {
     mockedRequest.mockResolvedValueOnce({
       tasks: [
         {
@@ -810,7 +810,9 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
     workspaceIds = ['ws-1'];
     fireWorkspaceSetEvent('workspace:deleted');
     await vi.waitFor(() => {
-      expect(requestsFor('task.unsubscribe')).toEqual([{ subscriptionId: 'chan-2' }]);
+      expect(requestsFor('task.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
+      ]);
     });
     const evicted = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(evicted.map((t) => t.id)).toEqual(['a']);
@@ -875,7 +877,9 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
         { workspaceId: 'ws-1' },
         { workspaceId: 'ws-2' },
       ]);
-      expect(requestsFor('task.unsubscribe')).toEqual([{ subscriptionId: 'chan-4' }]);
+      expect(requestsFor('task.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-4', workspaceId: 'ws-2' },
+      ]);
     });
 
     // The surviving ws-1 channel's recovery snapshot re-populates with only
@@ -895,8 +899,8 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
 
     unsubscribe();
     expect(requestsFor('task.unsubscribe')).toEqual([
-      { subscriptionId: 'chan-1' },
-      { subscriptionId: 'chan-2' },
+      { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
+      { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
   });
 });

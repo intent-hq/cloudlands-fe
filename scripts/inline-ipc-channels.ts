@@ -6,9 +6,13 @@
  * This script reads the IPC registry and inlines the channel data
  * directly into the preload script to avoid module resolution issues.
  *
+ * The output, `src/preload/index.ts`, is gitignored: it exists only in the
+ * local working tree and is (re)created by this script on every dev run and
+ * every build (or explicitly via `pnpm run generate:ipc-channels`).
+ *
  * It also refuses to run when `src/preload/index.ts` contains hand-written
- * lines that are not in the template: that file is regenerated on every dev
- * run and every build, so such edits are silently deleted and never reach a
+ * lines that are not in the template: such edits live only in the local file,
+ * so regenerating would silently delete them and they would never reach a
  * packaged app. See `discardedLines()` below.
  *
  * Usage: tsx scripts/inline-ipc-channels.ts [projectRoot] [--force]
@@ -156,7 +160,7 @@ function discardedLines(generated: string, template: string): DiscardedLine[] {
 let templateContent: string;
 try {
   templateContent = fs.readFileSync(preloadTemplatePath, 'utf-8');
-} catch (error) {
+} catch {
   // If template doesn't exist, use the current index.ts as template
   templateContent = fs.readFileSync(preloadOutputPath, 'utf-8');
 
@@ -186,10 +190,12 @@ if (fs.existsSync(preloadOutputPath)) {
         `\n❌ ${relOutput} has ${discarded.length} line(s) that regenerating would not reproduce.\n`,
       );
       console.error(
-        `${relOutput} is GENERATED from ${relTemplate} on every 'npm run dev' and every`,
+        `${relOutput} is an untracked file GENERATED from ${relTemplate} on every 'npm run dev'`,
       );
-      console.error("'npm run build', so these lines would be deleted now and would never reach a");
-      console.error('packaged app:\n');
+      console.error(
+        "and every 'npm run build', so these lines would be deleted now and would never",
+      );
+      console.error('reach a packaged app:\n');
       for (const entry of preview) {
         console.error(`    ${entry.line}${entry.reordered ? '   [moved]' : ''}`);
       }
@@ -262,7 +268,7 @@ if (placeholderIndex !== -1) {
   // Fallback: insert after imports
   const importEndMatch = templateContent.match(/(import[^;]+;[\s\n]*)+/);
   if (importEndMatch) {
-    const importEnd = importEndMatch.index! + importEndMatch[0].length;
+    const importEnd = (importEndMatch.index ?? 0) + importEndMatch[0].length;
     const beforeImports = templateContent.slice(0, importEnd);
     const afterImports = templateContent.slice(importEnd);
     templateContent = `${beforeImports}\n${inlineChannels}\n${afterImports}`;

@@ -1,7 +1,14 @@
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn(), restart: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  start: vi.fn(),
+  stop: vi.fn(),
+  restart: vi.fn(),
+}));
+vi.mock('$lib/client', () => ({ appClient: { scripts: mocks } }));
 
 vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: mocks }));
 
@@ -10,6 +17,7 @@ import {
   workspaceUnmounted,
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  scriptsReducer,
   clearScriptOperations,
   refreshScripts,
   restartScriptRequested,
@@ -19,6 +27,14 @@ import {
   stopScriptRequested,
 } from '../scripts-slice';
 import { scriptsOperationSaga } from './scripts-operation-saga';
+
+import { store as appStore } from '../../../store';
+
+beforeEach(() => {
+  appStore.dispose();
+  appStore.init();
+});
+afterEach(() => appStore.dispose());
 
 const WS = 'ws-1';
 const settle = async () => {
@@ -36,11 +52,30 @@ function deferred<T>() {
 function start() {
   const channel = stdChannel();
   const actions: any[] = [];
+  const state = withLegacyPrincipal({
+    scripts: scriptsReducer(undefined, { type: '@@init' }),
+    workspace: {
+      workspaces: createCollection('id', [
+        { id: WS, myRole: 'owner' },
+        { id: 'ws-2', myRole: 'owner' },
+      ]),
+    },
+  });
+  const dispatch = (action: { type: string }) => {
+    state.scripts = scriptsReducer(state.scripts, action);
+    actions.push(action);
+    channel.put(action);
+    return action;
+  };
   const task = runSaga(
-    { channel, dispatch: (action) => (actions.push(action), channel.put(action), action) },
+    {
+      channel,
+      getState: () => state,
+      dispatch,
+    },
     scriptsOperationSaga,
   );
-  return { actions, channel, task };
+  return { actions, channel, task, state, dispatch };
 }
 
 async function stop(task: Task) {
@@ -56,7 +91,7 @@ describe('scriptsOperationSaga', () => {
     mocks.restart.mockResolvedValue({ success: true });
   });
 
-  it('runs start, stop, and restart then refreshes canonical state', async () => {
+  it('runs start, stop, and restart without redundant list refreshes', async () => {
     const run = start();
     run.channel.put(startScriptRequested(WS, 'start-me'));
     await settle();
@@ -70,11 +105,8 @@ describe('scriptsOperationSaga', () => {
     expect(mocks.restart).toHaveBeenCalledWith(WS, 'restart-me');
     expect(run.actions).toEqual([
       scriptOperationSucceeded(WS, 'start-me', 'start'),
-      refreshScripts(WS),
       scriptOperationSucceeded(WS, 'stop-me', 'stop'),
-      refreshScripts(WS),
       scriptOperationSucceeded(WS, 'restart-me', 'restart'),
-      refreshScripts(WS),
     ]);
     await stop(run.task);
   });
@@ -109,6 +141,22 @@ describe('scriptsOperationSaga', () => {
     expect(mocks.restart).not.toHaveBeenCalled();
     pending.resolve({ success: true });
     await settle();
+    await stop(run.task);
+  });
+
+  it('withholds a remembered action and drops completion after admission changes', async () => {
+    const pending = deferred<{ success: boolean }>();
+    mocks.start.mockReturnValue(pending.promise);
+    const run = start();
+    run.channel.put(startScriptRequested(WS, 'old-action'));
+    await settle();
+    run.state.principal.status = 'loading';
+    pending.resolve({ success: true });
+    await settle();
+    run.channel.put(stopScriptRequested(WS, 'old-action'));
+    await settle();
+    expect(run.actions).toEqual([]);
+    expect(mocks.stop).not.toHaveBeenCalled();
     await stop(run.task);
   });
 

@@ -12,6 +12,7 @@
 export const PROVIDER_AUTH_STATUS_METHOD = 'host.providerAuthStatus';
 
 export interface ProviderAuthStatusParams {
+  workspaceId?: string;
   /** Restrict the probe to one provider; omit for a full sweep. */
   providerId?: string;
   /** Bypass the daemon's result cache (must be a boolean when present). */
@@ -19,9 +20,9 @@ export interface ProviderAuthStatusParams {
 }
 
 /**
- * Additive identity metadata a logged-in probe captured (protocol 9.4,
- * intent-hq/intentd#1685). Present only when at least one field survived the
- * daemon's trimming; pre-9.4 daemons never send it.
+ * Additive identity metadata a logged-in probe captured
+ * (intent-hq/intentd#1685). Present only when at least one field survived the
+ * daemon's trimming; daemons that predate the `identity` object never send it.
  */
 export interface ProviderAuthIdentity {
   email?: string;
@@ -60,6 +61,7 @@ export function buildProviderAuthStatusParams(
   options: ProviderAuthStatusParams = {},
 ): ProviderAuthStatusParams {
   const params: ProviderAuthStatusParams = {};
+  if (options.workspaceId) params.workspaceId = options.workspaceId;
   if (typeof options.providerId === 'string' && options.providerId.length > 0) {
     params.providerId = options.providerId;
   }
@@ -105,7 +107,7 @@ export function formatProviderIdentity(
  * ("unknown") to `undefined` so `ProviderStatus.authenticated` renders no
  * indicator for unknowns. The optional wire `identity` is rendered via
  * {@link formatProviderIdentity} into `authDetails`; entries without it (or
- * from pre-9.4 daemons) carry no `authDetails` key.
+ * from daemons that do not serve `identity`) carry no `authDetails` key.
  */
 export function toAuthVerdictMap(
   response: ProviderAuthStatusResponse | null | undefined,

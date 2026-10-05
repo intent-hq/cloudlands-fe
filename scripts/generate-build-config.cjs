@@ -28,15 +28,26 @@
  * USAGE:
  * ------
  *   node scripts/generate-build-config.cjs
+ *   node scripts/generate-build-config.cjs --if-missing
  *
  * This is automatically run by:
  *   - pnpm run build (production builds)
  *   - pnpm run dev (development builds)
+ *   - pnpm run verify:changed, with --if-missing, before the main-process
+ *     type check: the generated module is the only input tsc needs, so a
+ *     cold checkout gets a file and an existing one is left untouched
+ *     (every run embeds a fresh timestamp, so there is no content hash to gate on).
  */
 
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+
+const outputPath = path.join(__dirname, '..', 'src', 'main', 'build-config.generated.ts');
+
+if (process.argv.includes('--if-missing') && fs.existsSync(outputPath)) {
+  process.exit(0);
+}
 
 // Load .env file manually
 const envPath = path.join(__dirname, '..', '.env');
@@ -75,10 +86,19 @@ try {
 const CONFIG = {
   // Git commit hash for version identification
   GIT_COMMIT_HASH: gitCommitHash,
+  ISOLATED_TEST_BUILD_ID: process.env.INTENT_ISOLATED_TEST_BUILD_ID || '',
+  ISOLATED_TEST_BACKEND_SHA: process.env.INTENT_ISOLATED_TEST_BACKEND_SHA || '',
 };
 
+if (
+  (CONFIG.ISOLATED_TEST_BUILD_ID !== '' || CONFIG.ISOLATED_TEST_BACKEND_SHA !== '') &&
+  (!/^manual-[1-9][0-9]{0,19}-[1-9][0-9]{0,2}$/.test(CONFIG.ISOLATED_TEST_BUILD_ID) ||
+    !/^[a-f0-9]{40}$/.test(CONFIG.ISOLATED_TEST_BACKEND_SHA))
+) {
+  throw new Error('Isolated test builds require an exact manual build ID and backend commit');
+}
+
 // Generate the TypeScript file
-const outputPath = path.join(__dirname, '..', 'src', 'main', 'build-config.generated.ts');
 const content = `/**
  * BUILD-TIME GENERATED CONFIGURATION
  * ===================================
@@ -103,6 +123,8 @@ export const BUILD_CONFIG = {
    * Used for version identification in About dialog
    */
   GIT_COMMIT_HASH: ${JSON.stringify(CONFIG.GIT_COMMIT_HASH)},
+  ISOLATED_TEST_BUILD_ID: ${JSON.stringify(CONFIG.ISOLATED_TEST_BUILD_ID)},
+  ISOLATED_TEST_BACKEND_SHA: ${JSON.stringify(CONFIG.ISOLATED_TEST_BACKEND_SHA)},
 } as const;
 
 export type BuildConfig = typeof BUILD_CONFIG;

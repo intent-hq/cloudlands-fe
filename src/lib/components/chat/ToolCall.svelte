@@ -13,6 +13,9 @@
   import { handleIntentLink } from '$lib/utils/workspaces-link-handler';
   import { getPanelIdFromEvent } from '$lib/components/layout/panel-system/panel-context';
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { canOpenAgentPath } from './agent-path-actions';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -26,8 +29,15 @@
   import { resolveToolLeadingIcon } from './tool-leading-icon';
   import { resolveBrowserScreenshotSource } from './browser-screenshot-source';
   import { Button } from '$lib/components/ui/button';
+  import { cn } from '$lib/utils';
+  import { toStore } from 'svelte/store';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
+  import { resolveLocalToolImageSource } from './local-tool-image-source';
+  import ChatImageBlock from './ChatImageBlock.svelte';
 
   interface Props {
+    saved?: { expanded?: boolean; showImageTechnicalDetails?: boolean };
     toolUse: ToolUseBlock;
     toolState?: 'running' | 'completed' | 'error';
     result?: any;
@@ -42,6 +52,7 @@
   }
 
   let {
+    saved,
     toolUse,
     toolState = 'completed',
     result = null,
@@ -52,7 +63,29 @@
     messageId,
   }: Props = $props();
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  const toolWorkspace = selectWorkspaceById(toStore(() => workspaceId ?? ''));
+  const imageAgent = selectAgentSession(toStore(() => agentId));
+  const imageVersion = createWorkspaceFileVersion();
+  const localImageSource = $derived.by(() => {
+    if (
+      toolState !== 'completed' ||
+      toolDisplay.category !== 'file-read' ||
+      !workspaceId ||
+      !toolDisplay.filePath ||
+      !/\.(?:png|jpe?g|gif|webp)$/i.test(toolDisplay.filePath)
+    ) {
+      return null;
+    }
+    if (agentId && (!$imageAgent || hasNodeOwnedAgentPath($imageAgent))) return null;
+    const source = resolveLocalToolImageSource(
+      toolDisplay.filePath,
+      workspaceId,
+      $toolWorkspace?.worktreePath || $toolWorkspace?.repositoryPath,
+    );
+    return source ? `${source}?v=${imageVersion}` : null;
+  });
+
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock): rows served slim carry `inputTruncated` /
   // `outputTruncated`; expanding such a row dispatches a single-flight fetch
   // for each truncated block (reducer + saga dedupe re-dispatches). Once the
@@ -172,8 +205,11 @@
   // Should render: not hidden, not empty
   const shouldRender = $derived(!toolDisplay.hidden && !isEmptyEvent);
 
-  let expanded = $state(false);
-  const isExpandable = $derived(displayModel.hasDetails);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let expanded = $state(saved?.expanded ?? false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let showImageTechnicalDetails = $state(saved?.showImageTechnicalDetails ?? false);
+  const isExpandable = $derived(displayModel.hasDetails || Boolean(localImageSource));
   const hasTrailing = $derived(
     displayModel.status === 'success' ||
       displayModel.status === 'error' ||
@@ -184,6 +220,11 @@
   function toggleExpanded() {
     if (!isExpandable) return;
     expanded = !expanded;
+    if (saved) saved.expanded = expanded;
+    if (!expanded) {
+      showImageTechnicalDetails = false;
+      if (saved) saved.showImageTechnicalDetails = false;
+    }
     // Expanding a slim-truncated row triggers the on-demand full-block fetch
     // (no-op for under-budget rows: truncatedBlockIds is empty).
     if (expanded) requestHydration();
@@ -198,7 +239,7 @@
   function openFile(event: MouseEvent | KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
-    if (!workspaceId || !toolDisplay.filePath) return;
+    if (!workspaceId || !toolDisplay.filePath || !canOpenAgentPath(appStore.state, agentId)) return;
     appStore.dispatch(
       openWorkspaceFile(workspaceId, toolDisplay.filePath, {
         line: toolDisplay.fileLine ?? undefined,
@@ -237,13 +278,15 @@
           }}>{segment.text}</span
         >
       {:else if workspaceId}
-        <button
+        <Button
           type="button"
+          variant="plain"
+          truncateLabel={false}
           data-testid="tool-call-file-link"
-          class="min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
+          class="type-body min-w-0 truncate whitespace-pre border-0 bg-transparent p-0 text-left font-normal underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
           data-tool-secondary
           aria-label={displayModel.accessibleSentence}
-          onclick={openFile}>{segment.text}</button
+          onclick={openFile}>{segment.text}</Button
         >
       {:else}
         <span
@@ -271,7 +314,7 @@
     <a
       href={noteUrl(toolDisplay.noteId)}
       data-testid="tool-call-note-link"
-      class="{COMPACT_TOOL_TRAILING_CLASS} hover:underline"
+      class={cn(COMPACT_TOOL_TRAILING_CLASS, 'type-body hover:underline')}
       aria-label={displayModel.accessibleSentence}
       onclick={async (event) => {
         event.preventDefault();
@@ -302,21 +345,61 @@
       <span>{m.chat_toolCall_loadingFullOutput_label()}</span>
     </div>
   {/if}
-  <ToolDetails
-    input={toolUse.input}
-    {result}
-    {parsedResult}
-    isError={toolState === 'error'}
-    pending={toolState === 'running'}
-    isTerminal={toolDisplay.category === 'terminal'}
-    {workspaceId}
-    suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
-  />
+  {#if localImageSource}
+    <div class="flex min-w-0 flex-col gap-3" data-testid="image-read-details">
+      <dl class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 type-caption">
+        <dt class="text-muted-foreground">{m.chat_shared_file_fallback()}</dt>
+        <dd class="min-w-0 break-words">{toolDisplay.filePath?.split('/').pop()}</dd>
+        <dt class="text-muted-foreground">{m.onboarding_dirPicker_path_ariaLabel()}</dt>
+        <dd class="min-w-0 break-all text-muted-foreground" data-testid="image-read-path">
+          {toolDisplay.filePath}
+        </dd>
+      </dl>
+      {#key localImageSource}
+        <ChatImageBlock
+          variant="file"
+          src={localImageSource}
+          mimeType={`image/${toolDisplay.filePath?.split('.').pop()?.toLowerCase().replace('jpg', 'jpeg')}`}
+          alt={toolDisplay.filePath?.split('/').pop()}
+        />
+      {/key}
+      <Button
+        variant="plain"
+        class="h-auto self-start p-0 type-caption text-muted-foreground"
+        aria-expanded={showImageTechnicalDetails}
+        aria-controls={`${detailsId}-technical`}
+        onclick={() => {
+          showImageTechnicalDetails = !showImageTechnicalDetails;
+          if (saved) saved.showImageTechnicalDetails = showImageTechnicalDetails;
+        }}
+      >
+        {m.chat_toolCall_technicalDetails_label()}
+      </Button>
+      {#if showImageTechnicalDetails}
+        <div id={`${detailsId}-technical`}>
+          <ToolDetails {agentId} input={toolUse.input} {result} {workspaceId} />
+        </div>
+      {/if}
+    </div>
+  {:else}
+    <ToolDetails
+      {agentId}
+      input={toolUse.input}
+      {result}
+      {parsedResult}
+      isError={toolState === 'error'}
+      pending={toolState === 'running'}
+      isTerminal={toolDisplay.category === 'terminal'}
+      {workspaceId}
+      suppressOkOnlyResult={displayModel.isOkOnlyWorkspaceResult}
+    />
+  {/if}
 {/snippet}
 
 <!-- Special rendering for Augment Context Engine tools -->
 {#if isContextEngine}
   <ContextEngineToolCall
+    {saved}
     {toolUse}
     {toolState}
     {result}
@@ -329,7 +412,8 @@
     {summary}
     trailing={hasTrailing ? trailing : undefined}
     showChevron={false}
-    details={expanded ? details : undefined}
+    {details}
+    animateDetailsHeight
     interactive={isExpandable}
     {expanded}
     controls={detailsId}
@@ -354,12 +438,11 @@
 
   <!-- Inline image preview for Figma screenshots (always visible, not just when expanded) -->
   {#if !expanded && parsedResult?.type === 'figma' && parsedResult.figmaScreenshot && toolState === 'completed'}
-    <button
+    <Button
       type="button"
+      variant="plain"
       class="block w-full px-2 pb-1 cursor-pointer bg-transparent border-0 p-0 text-left"
-      onclick={() => {
-        if (isExpandable) expanded = !expanded;
-      }}
+      onclick={toggleExpanded}
     >
       <div class="overflow-hidden rounded border border-border">
         <img
@@ -369,7 +452,7 @@
           style="max-height: 200px; max-width: 400px"
         />
       </div>
-    </button>
+    </Button>
   {/if}
 
   <!-- Browser screenshots use the same always-visible collapsed preview as Figma results. -->

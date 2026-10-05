@@ -8,15 +8,17 @@
     theme?: 'light' | 'dark';
     state?: AvatarState;
     zoom?: number;
+    motionReduced?: boolean;
   }
 
-  let { theme = 'light', state = 'idle', zoom = 1 }: Props = $props();
+  let { theme = 'light', state = 'idle', zoom = 1, motionReduced = false }: Props = $props();
 </script>
 
 <section
   class:dark={theme === 'dark'}
   class:light={theme === 'light'}
   style:zoom
+  style:--motion-reduced={motionReduced ? 1 : 0}
   class="w-max bg-background p-4 text-foreground"
 >
   <div data-testid="reactive-waiting-avatar">
@@ -29,6 +31,9 @@
   </div>
   <div data-testid="plain-idle-avatar">
     <AgentAvatar agentId="plain-idle-agent" variant="standard" />
+  </div>
+  <div data-testid="legacy-sized-avatar">
+    <AgentAvatar agentId="legacy-sized-agent" size={18} />
   </div>
   <AgentAvatarCatalog />
 </section>

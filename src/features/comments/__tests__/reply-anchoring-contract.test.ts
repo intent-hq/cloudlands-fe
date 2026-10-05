@@ -126,6 +126,78 @@ describe('reply-anchoring contract (PROTOCOL §5.3, monorepo#754)', () => {
     destroyTestEditor(editor);
   });
 
+  it('late hydration preserves a concurrently opened workspace with the same note ID', async () => {
+    let release!: (comments: (typeof backendRoot)[]) => void;
+    vi.mocked(commentLoader.loadComments).mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const pending = manager.initialize(editor);
+    const otherEditor = createTestEditor('Hello world');
+    const otherManager = new CommentManagerV2('other-workspace', 'spec');
+    vi.mocked(commentLoader.loadComments).mockResolvedValueOnce([
+      { ...backendRoot, id: 'other-root', threadId: 'other-thread' },
+    ]);
+    try {
+      await otherManager.initialize(otherEditor);
+      release([backendRoot]);
+      await pending;
+      expect(selectCommentById.select(appStore.state, 'other-root')?.workspaceId).toBe(
+        'other-workspace',
+      );
+      expect(selectCommentById.select(appStore.state, 'root-1')?.workspaceId).toBe(
+        'test-workspace',
+      );
+    } finally {
+      otherManager.destroy();
+      destroyTestEditor(otherEditor);
+    }
+  });
+
+  it('anchor scans do not change another workspace sharing the note ID', async () => {
+    await manager.initialize(editor);
+    appStore.dispatch(addCommentAction({ ...backendRoot, workspaceId: 'other-workspace' }));
+    await manager.scanAnchorHealth();
+    expect(selectCommentById.select(appStore.state, 'root-1')?.isOrphaned).toBeUndefined();
+  });
+
+  it('a destroyed manager cannot overwrite newer hydration for its former note', async () => {
+    let release!: (comments: (typeof backendRoot)[]) => void;
+    vi.mocked(commentLoader.loadComments).mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const pending = manager.initialize(editor);
+    manager.destroy();
+    appStore.dispatch(
+      addCommentAction({ ...backendRoot, content: 'Newer comment', workspaceId: 'test-workspace' }),
+    );
+    release([backendRoot]);
+    await pending;
+    expect(selectCommentById.select(appStore.state, 'root-1')?.content).toBe('Newer comment');
+  });
+
+  it('an empty refresh removes only the owning note comments', async () => {
+    appStore.dispatch(
+      loadCommentsAction([
+        { ...backendRoot, workspaceId: 'test-workspace' },
+        {
+          ...backendRoot,
+          id: 'other-root',
+          threadId: 'other-thread',
+          workspaceId: 'other-workspace',
+        },
+      ]),
+    );
+    await manager.initialize(editor);
+    expect(selectCommentById.select(appStore.state, 'root-1')).toBeUndefined();
+    expect(selectCommentById.select(appStore.state, 'other-root')?.workspaceId).toBe(
+      'other-workspace',
+    );
+  });
+
   describe('legacy loadComments path', () => {
     it('does not synthesize an anchor for replies (parentId set)', async () => {
       vi.mocked(commentLoader.loadComments).mockResolvedValueOnce([backendRoot, backendReply]);

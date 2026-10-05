@@ -28,7 +28,7 @@ describe('AgentFailureToast', () => {
 
     expect(screen.getByText('Implementor failed')).toBeTruthy();
     expect(screen.getByText('spawn failed: EPERM')).toBeTruthy();
-    expect(screen.getByText('Implementor — Fix login')).toBeTruthy();
+    expect(screen.getByText('Implementor / Fix login')).toBeTruthy();
 
     await fireEvent.click(screen.getByText('Retry Implementor'));
     expect(onRetry).toHaveBeenCalledTimes(1);

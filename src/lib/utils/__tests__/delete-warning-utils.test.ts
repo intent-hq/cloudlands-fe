@@ -1,4 +1,11 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
+import {
+  principalReceived,
+  principalIdentityChanged,
+} from '$store/renderer/slices/principal/principal-slice';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import type { WorkspaceMember } from '$features/workspace-sharing/types';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
 
 // FAKE daemon transport: getActiveHookNames' `hook.list` fallback bottoms out
@@ -18,6 +25,7 @@ import {
 import {
   getActiveHookNames,
   getActiveWorkNames,
+  getGuestsSummary,
   getLocalChanges,
   getOpenPrItems,
   type LocalChangesWarning,
@@ -125,7 +133,7 @@ describe('getActiveHookNames', () => {
         makeHook('hook-3', 'dispatched'),
         makeHook('hook-4', 'evicted'),
         makeHook('hook-5', 'cancelled'),
-        // Terminal v3.1 state not yet in the BackgroundHook union
+        // Terminal hook-TTL `expired` state not yet in the BackgroundHook union
         // (pre-existing gap); inactive either way.
         makeHook('hook-6', 'expired' as BackgroundHook['state']),
       ],
@@ -353,13 +361,221 @@ describe('getLocalChanges', () => {
   });
 });
 
+describe('getGuestsSummary', () => {
+  let backend: MockBackendHandle;
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    admitLegacyPrincipal();
+    backend = installMockBackend();
+    backend.onRequest('workspace.members.list', () => ({ members: [], guestCount: 0 }));
+  });
+
+  afterEach(() => {
+    appStore.dispatch(removeWorkspaceEntity(WS));
+    resetMockBackend();
+  });
+
+  const seedMembership = (membership: Partial<Workspace>) =>
+    appStore.dispatch(
+      setWorkspaceEntity({ id: WS, title: WS, status: 'Active', ...membership } as Workspace),
+    );
+
+  it('reports zero guests for an unknown workspace', async () => {
+    expect(await getGuestsSummary('ws-missing')).toEqual({
+      collaboratorCount: 0,
+      openInviteCount: 0,
+    });
+  });
+
+  it('reports zero guests when the row omits the membership summary (older daemon)', async () => {
+    seedMembership({});
+
+    expect(await getGuestsSummary(WS)).toEqual({ collaboratorCount: 0, openInviteCount: 0 });
+  });
+
+  it('supports legacy collaborator roles and the stored invite count when the daemon omits seat spend', async () => {
+    seedMembership({ memberCount: 3, openInviteCount: 2 });
+    backend.onRequest('workspace.members.list', () => ({
+      members: [
+        { principalId: 'owner', role: 'owner' },
+        { principalId: 'guest-a', role: 'collaborator' },
+        { principalId: 'guest-b', role: 'collaborator' },
+      ],
+    }));
+
+    expect(await getGuestsSummary(WS)).toEqual({ collaboratorCount: 2, openInviteCount: 2 });
+  });
+
+  it('reports no collaborators for an owner-only workspace', async () => {
+    seedMembership({ memberCount: 1, openInviteCount: 1 });
+    backend.onRequest('workspace.members.list', () => ({
+      members: [{ principalId: 'owner', role: 'owner' }],
+      guestCount: 1,
+    }));
+
+    expect(await getGuestsSummary(WS)).toEqual({ collaboratorCount: 0, openInviteCount: 1 });
+  });
+});
+
+describe('archive guest impact uses effective membership', () => {
+  let backend: MockBackendHandle;
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    appStore.dispose();
+    appStore.init();
+    admitLegacyPrincipal();
+    const { principal } = withHostPrincipal(appStore.state);
+    appStore.dispatch(
+      principalReceived(
+        {
+          context: principal.context!,
+          invalidation: principal.invalidation,
+          presentationVersion: principal.presentationVersion,
+        },
+        principal.snapshot!,
+      ),
+    );
+    backend = installMockBackend();
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: WS,
+        status: 'Active',
+        memberCount: 4,
+        openInviteCount: 0,
+      } as Workspace),
+    );
+  });
+  afterEach(() => {
+    appStore.dispatch(removeWorkspaceEntity(WS));
+    resetMockBackend();
+  });
+  const member = (
+    principalId: string,
+    hostRole?: WorkspaceMember['hostRole'],
+  ): WorkspaceMember => ({
+    principalId,
+    hostRole,
+    role: hostRole === 'owner' ? 'owner' : 'collaborator',
+    login: 'same-login',
+    displayName: null,
+    avatarUrl: null,
+    addedAt: '2026-10-01T00:00:00Z',
+  });
+
+  it('excludes inherited instance members, including retained direct collaborator grants', async () => {
+    backend.onRequest('workspace.members.list', () => ({
+      members: [
+        member('owner', 'owner'),
+        member('member-a', 'member'),
+        member('member-b', 'member'),
+      ],
+      guestCount: 0,
+      guestLimit: 10,
+    }));
+    expect(await getGuestsSummary(WS)).toEqual({ collaboratorCount: 0, openInviteCount: 0 });
+    expect(backend.requests.filter((r) => r.method === 'workspace.members.list')).toEqual([
+      {
+        method: 'workspace.members.list',
+        params: { workspaceId: WS },
+        options: { timeoutMs: 10000 },
+      },
+    ]);
+  });
+
+  it('counts only workspace guests and pending workspace invitations from the fresh snapshot', async () => {
+    backend.onRequest('workspace.members.list', () => ({
+      members: [
+        member('owner', 'owner'),
+        member('inherited', 'member'),
+        {
+          ...member('github-guest', 'guest'),
+          identity: { provider: 'github', host: 'github.com', externalUserId: '42' },
+        },
+        {
+          ...member('gitlab-guest', 'guest'),
+          identity: { provider: 'gitlab', host: 'gitlab.com', externalUserId: '42' },
+        },
+      ],
+      guestCount: 3,
+      guestLimit: 10,
+    }));
+    expect(await getGuestsSummary(WS)).toEqual({ collaboratorCount: 2, openInviteCount: 1 });
+  });
+
+  it('keeps pending invitations when all accepted collaborators inherit instance access', async () => {
+    backend.onRequest('workspace.members.list', () => ({
+      members: [member('owner', 'owner'), member('inherited', 'member')],
+      guestCount: 2,
+      guestLimit: 10,
+    }));
+    expect(await getGuestsSummary(WS)).toEqual({ collaboratorCount: 0, openInviteCount: 2 });
+  });
+
+  it('does not treat an unreadable roster as proof that no guests lose access', async () => {
+    expect(await getGuestsSummary(WS)).toBeNull();
+  });
+
+  it('discards a roster that settles after the admitted connection changes', async () => {
+    let finish!: (value: object) => void;
+    backend.onRequest(
+      'workspace.members.list',
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = getGuestsSummary(WS);
+    appStore.dispatch(connectionStatusChanged('disconnected'));
+    finish({ members: [member('guest', 'guest')], guestCount: 1, guestLimit: 10 });
+    expect(await pending).toBeNull();
+  });
+  it('discards a roster after the current provider identity is invalidated', async () => {
+    let finish!: (value: object) => void;
+    backend.onRequest(
+      'workspace.members.list',
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = getGuestsSummary(WS);
+    appStore.dispatch(principalIdentityChanged(appStore.state.principal.snapshot!.principal.id));
+    finish({ members: [member('guest', 'guest')], guestCount: 1, guestLimit: 10 });
+    expect(await pending).toBeNull();
+  });
+
+  it('withholds impact while admission is loading instead of using a cached row', async () => {
+    appStore.dispatch(connectionStatusChanged('connecting'));
+    expect(await getGuestsSummary(WS)).toBeNull();
+    expect(backend.requests.filter((r) => r.method === 'workspace.members.list')).toHaveLength(0);
+  });
+
+  it('requires host roles from a daemon advertising instance membership', async () => {
+    backend.onRequest('workspace.members.list', () => ({
+      members: [member('unclassified')],
+      guestCount: 1,
+    }));
+    expect(await getGuestsSummary(WS)).toBeNull();
+  });
+
+  it('does not publish partial active-work results when the guest snapshot is unavailable', async () => {
+    appStore.dispatch(backgroundHooksUpdated(WS, []));
+    expect(await getActiveWorkNames(WS)).toBeNull();
+  });
+});
+
 describe('getActiveWorkNames', () => {
   let backend: MockBackendHandle;
 
   beforeAll(() => appStore.init());
 
   beforeEach(() => {
+    appStore.dispose();
+    appStore.init();
+    admitLegacyPrincipal();
     backend = installMockBackend();
+    backend.onRequest('workspace.members.list', () => ({ members: [], guestCount: 0 }));
     appStore.dispatch(backgroundHooksUpdated(WS, []));
   });
 
@@ -367,6 +583,8 @@ describe('getActiveWorkNames', () => {
     appStore.dispatch(removeWorkspaceEntity(WS));
     resetMockBackend();
   });
+
+  const noGuests = { collaboratorCount: 0, openInviteCount: 0 };
 
   const localChangesRequests = () =>
     backend.requests.filter((r) => r.method === 'workspace.localChanges');
@@ -381,6 +599,7 @@ describe('getActiveWorkNames', () => {
       hookNames: [],
       openPrs: [],
       localChanges: localChangesResult,
+      guests: noGuests,
     });
     expect(localChangesRequests()).toEqual([
       {
@@ -396,7 +615,7 @@ describe('getActiveWorkNames', () => {
 
     const result = await getActiveWorkNames(WS);
 
-    expect(result.localChanges).toBeNull();
+    expect(result?.localChanges).toBeNull();
     expect(localChangesRequests()).toHaveLength(0);
   });
 
@@ -407,6 +626,92 @@ describe('getActiveWorkNames', () => {
 
     const result = await getActiveWorkNames(WS, { includeLocalChanges: true });
 
-    expect(result).toEqual({ agentNames: [], hookNames: [], openPrs: [], localChanges: null });
+    expect(result).toEqual({
+      agentNames: [],
+      hookNames: [],
+      openPrs: [],
+      localChanges: null,
+      guests: noGuests,
+    });
+  });
+
+  it('carries the fresh guest summary without requesting workspace.get', async () => {
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: WS,
+        status: 'Active',
+        memberCount: 2,
+        openInviteCount: 1,
+      } as Workspace),
+    );
+
+    backend.onRequest('workspace.members.list', () => ({
+      members: [{ principalId: 'guest', role: 'collaborator', hostRole: 'guest' }],
+      guestCount: 2,
+    }));
+    const result = await getActiveWorkNames(WS);
+
+    expect(result?.guests).toEqual({ collaboratorCount: 1, openInviteCount: 1 });
+    expect(backend.requests.map((r) => r.method)).not.toContain('workspace.get');
+  });
+
+  const workspaceGetRequests = () => backend.requests.filter((r) => r.method === 'workspace.get');
+
+  it('counts open PRs from the full pool when the list row is capped (pullRequestsTotal)', async () => {
+    const capped = [1, 2, 3, 4, 5].map((n) => makePr(n));
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: WS,
+        status: 'Active',
+        pullRequests: capped,
+        pullRequestsTotal: 7,
+      } as unknown as Workspace),
+    );
+    backend.onRequest('workspace.get', () => ({
+      workspace: {
+        id: WS,
+        title: WS,
+        status: 'Active',
+        pullRequests: [...capped, makePr(6), makePr(7, { status: PullRequestStatus.Merged })],
+      },
+    }));
+
+    const result = await getActiveWorkNames(WS);
+
+    expect(workspaceGetRequests()).toEqual([
+      { method: 'workspace.get', params: { workspaceId: WS } },
+    ]);
+    expect(result?.openPrs.map((pr) => pr.number)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('issues no workspace.get when the stored pool is already complete', async () => {
+    seedWorkspace([makePr(1)]);
+
+    const result = await getActiveWorkNames(WS);
+
+    expect(workspaceGetRequests()).toHaveLength(0);
+    expect(result?.openPrs.map((pr) => pr.number)).toEqual([1]);
+  });
+
+  it('fails open to the capped pool when workspace.get rejects', async () => {
+    const capped = [1, 2, 3, 4, 5].map((n) => makePr(n));
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: WS,
+        status: 'Active',
+        pullRequests: capped,
+        pullRequestsTotal: 6,
+      } as unknown as Workspace),
+    );
+    backend.onRequest('workspace.get', () => {
+      throw new Error('boom');
+    });
+
+    const result = await getActiveWorkNames(WS);
+
+    expect(result?.openPrs.map((pr) => pr.number)).toEqual([1, 2, 3, 4, 5]);
   });
 });

@@ -1,25 +1,46 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
+  import type { Snippet } from 'svelte';
   import { cn } from '$lib/utils.js';
+  import type { WithoutChildrenOrChild } from '$lib/utils.js';
+  import { menuItem } from './menu-recipes';
+  import { useMenuIconColumn } from './menu-layout-context.svelte';
 
   let {
     ref = $bindable(null),
     class: className,
     destructive = false,
+    leading,
+    children,
     ...restProps
-  }: MenuPrimitive.ItemProps & { destructive?: boolean } = $props();
+  }: WithoutChildrenOrChild<MenuPrimitive.ItemProps> & {
+    destructive?: boolean;
+    leading?: Snippet;
+    children?: Snippet;
+  } = $props();
+  const reserveIcon = useMenuIconColumn(() => !!leading);
 </script>
 
 <MenuPrimitive.Item
   bind:ref
   data-slot="menu-item"
+  data-menu-item
   data-destructive={destructive ? '' : undefined}
   class={cn(
-    'type-body relative flex min-h-7 cursor-default select-none items-center gap-2 rounded-md px-2 py-1 outline-none',
-    'focus:bg-accent focus:text-accent-foreground data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-    'data-[destructive]:text-foreground',
-    'transition-colors duration-[var(--motion-fast)] motion-reduce:transition-none',
+    menuItem(),
+    'data-[destructive]:text-danger data-[destructive]:focus:text-danger',
     className,
   )}
   {...restProps}
-/>
+>
+  {#if leading || reserveIcon()}
+    <span
+      data-slot="menu-item-leading"
+      class="flex h-lh w-4 shrink-0 items-center justify-center"
+      aria-hidden="true"
+    >
+      {@render leading?.()}
+    </span>
+  {/if}
+  {@render children?.()}
+</MenuPrimitive.Item>

@@ -5,9 +5,17 @@ import {
 } from '$lib/client/live/backend-transport';
 import type { GitHubAuthStatus } from '../types';
 
-let cached: GitHubAuthStatus | undefined;
-let pending: { generation: number; promise: Promise<GitHubAuthStatus> } | undefined;
-let trailing: Promise<GitHubAuthStatus> | undefined;
+// Bounded cache lifetime so a missed `github:auth-changed` event (or reconnect)
+// self-heals on the next read instead of pinning the first snapshot forever
+// (intent#5362). Event/reconnect invalidation still refreshes immediately.
+export const GITHUB_AUTH_STATUS_TTL_MS = 20_000;
+
+type Entry = {
+  cached?: { status: GitHubAuthStatus; at: number };
+  pending?: { generation: number; promise: Promise<GitHubAuthStatus> };
+  trailing?: Promise<GitHubAuthStatus>;
+};
+const entries = new Map<string | undefined, Entry>();
 let generation = 0;
 
 function eventType(notification: { method: string; params?: unknown }): string | undefined {
@@ -20,7 +28,7 @@ function eventType(notification: { method: string; params?: unknown }): string |
 
 export function invalidateGitHubAuthStatus(): void {
   generation += 1;
-  cached = undefined;
+  for (const entry of entries.values()) entry.cached = undefined;
 }
 
 if (typeof onBackendNotification === 'function') {
@@ -29,44 +37,66 @@ if (typeof onBackendNotification === 'function') {
   });
 }
 if (typeof onBackendReconnected === 'function') {
-  onBackendReconnected(() => invalidateGitHubAuthStatus());
+  onBackendReconnected(() => {
+    entries.clear();
+    invalidateGitHubAuthStatus();
+  });
 }
 
-export function readGitHubAuthStatus(force = false): Promise<GitHubAuthStatus> {
+function freshCached(entry: Entry): GitHubAuthStatus | undefined {
+  if (!entry.cached) return undefined;
+  if (Date.now() - entry.cached.at >= GITHUB_AUTH_STATUS_TTL_MS) {
+    entry.cached = undefined;
+    return undefined;
+  }
+  return entry.cached.status;
+}
+
+export function readGitHubAuthStatus(
+  force = false,
+  workspaceId?: string,
+): Promise<GitHubAuthStatus> {
+  const entry = entries.get(workspaceId) ?? {};
+  entries.set(workspaceId, entry);
   if (force) invalidateGitHubAuthStatus();
-  else if (cached) return Promise.resolve(cached);
-  if (!force && pending?.generation === generation) return pending.promise;
-  if (pending) {
-    if (trailing) return trailing;
-    const run = pending.promise
+  else {
+    const fresh = freshCached(entry);
+    if (fresh) return Promise.resolve(fresh);
+  }
+  if (!force && entry.pending?.generation === generation) return entry.pending.promise;
+  if (entry.pending) {
+    if (entry.trailing) return entry.trailing;
+    const run = entry.pending.promise
       .catch(() => undefined)
       .then(() => {
-        if (trailing === run) trailing = undefined;
-        return readGitHubAuthStatus();
+        if (entry.trailing === run) entry.trailing = undefined;
+        return readGitHubAuthStatus(false, workspaceId);
       })
       .finally(() => {
-        if (trailing === run) trailing = undefined;
+        if (entry.trailing === run) entry.trailing = undefined;
       });
-    trailing = run;
+    entry.trailing = run;
     return run;
   }
 
   const requestGeneration = generation;
-  const run = backendRequest<GitHubAuthStatus>('github.authStatus')
+  const run = (
+    workspaceId === undefined
+      ? backendRequest<GitHubAuthStatus>('github.authStatus')
+      : backendRequest<GitHubAuthStatus>('github.authStatus', { workspaceId })
+  )
     .then((status) => {
-      if (requestGeneration === generation) cached = status;
+      if (requestGeneration === generation) entry.cached = { status, at: Date.now() };
       return status;
     })
     .finally(() => {
-      if (pending?.promise === run) pending = undefined;
+      if (entry.pending?.promise === run) entry.pending = undefined;
     });
-  pending = { generation: requestGeneration, promise: run };
+  entry.pending = { generation: requestGeneration, promise: run };
   return run;
 }
 
 export function __resetGitHubAuthStatusForTests(): void {
-  cached = undefined;
-  pending = undefined;
-  trailing = undefined;
+  entries.clear();
   generation += 1;
 }

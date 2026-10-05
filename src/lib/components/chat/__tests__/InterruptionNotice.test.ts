@@ -29,12 +29,11 @@ describe('InterruptionNotice', () => {
     expect(alert.getAttribute('aria-live')).toBe('polite');
   });
 
-  it('displays warning icon', () => {
-    const { container } = render(InterruptionNotice);
-
-    // Check for icon presence via SVG element
-    const icon = container.querySelector('svg');
-    expect(icon).toBeTruthy();
+  it('updates the announcement when the interruption message changes', async () => {
+    const { rerender } = render(InterruptionNotice, { props: { message: 'First interruption' } });
+    await rerender({ message: 'Updated interruption' });
+    expect(screen.getByRole('alert').textContent).toContain('Updated interruption');
+    expect(screen.queryByText('First interruption')).toBeNull();
   });
 
   it('applies custom class when provided', () => {

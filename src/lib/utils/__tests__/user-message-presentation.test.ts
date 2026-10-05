@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import { stripAgentMessageHeader } from '../agent-message-attribution';
 import {
+  buildCollaboratorSenderPreamble,
+  getCollaboratorSenderAttribution,
+} from '../collaborator-sender-attribution';
+import {
   getPresentedUserMessageText,
   stripInternalDeliveryNotes,
   stripTruncatedTrailingDeliveryNote,
@@ -72,6 +76,64 @@ describe('user-message presentation sanitization', () => {
 
     expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
     expect(message.contentBlocks).toHaveLength(4);
+  });
+
+  // Older daemons persisted inline file bytes on the block; the daemon's
+  // `degrade_inline_file_blocks` pass now serves that row with each such block
+  // replaced in place by `{ type: 'text', text: 'Attached file: <fileName>' }`.
+  // The FE mirrors that
+  // projection for a legacy block, in block order, and never surfaces the bytes.
+  it('presents a legacy inline file block (no attachmentId) as attached-file text', () => {
+    const message = user('Review the attachment');
+    message.contentBlocks = [
+      { type: 'text', text: 'Review the attachment ' },
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: ' notes.txt ' },
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'application/octet-stream' },
+      { type: 'text', text: WAIT_NOTE },
+    ];
+
+    const presented = getPresentedUserMessageText(message);
+    expect(presented).toBe('Review the attachment Attached file: notes.txtAttached file');
+    expect(presented).not.toContain('aGVsbG8=');
+  });
+
+  it('keeps a legacy inline file block in its authored position, as the daemon serves it', () => {
+    const legacy = user('');
+    legacy.contentBlocks = [
+      { id: 'b1', type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
+      { type: 'text', text: ' is the file; ' },
+      { id: 'b3', type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'x.csv' },
+      { type: 'text', text: ' too.' },
+    ];
+    // The same row as the daemon serves it (degrade_inline_file_blocks).
+    const served = user('');
+    served.contentBlocks = [
+      { id: 'b1', type: 'text', text: 'Attached file: notes.txt' },
+      { type: 'text', text: ' is the file; ' },
+      { id: 'b3', type: 'text', text: 'Attached file: x.csv' },
+      { type: 'text', text: ' too.' },
+    ];
+
+    expect(getPresentedUserMessageText(legacy)).toBe(
+      'Attached file: notes.txt is the file; Attached file: x.csv too.',
+    );
+    expect(getPresentedUserMessageText(legacy)).toBe(getPresentedUserMessageText(served));
+  });
+
+  it('presents a legacy inline file block alone as attached-file text', () => {
+    const message = user('');
+    message.contentBlocks = [
+      { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'notes.txt' },
+    ];
+
+    expect(getPresentedUserMessageText(message)).toBe('Attached file: notes.txt');
+  });
+
+  it('leaves attachment-reference file blocks out of the presented text', () => {
+    const message = user('Review the attachment');
+    message.contentBlocks!.push({ type: 'file', attachmentId: 'attachment-1', fileName: 'a.txt' });
+
+    expect(getPresentedUserMessageText(message)).toBe('Review the attachment');
   });
 });
 
@@ -182,7 +244,7 @@ describe('stripAgentMessageHeader', () => {
   });
 
   it('a chief attribution uses only the pinned regex fallback', () => {
-    const attribution = { kind: 'chief' as const, fromAgentId: 'agent-chief' };
+    const attribution = { kind: 'chief' as const, fromAgentId: 'agent-chief', rawName: '' };
     expect(stripAgentMessageHeader(`${A2A_HEADER}\n\nbody`, attribution)).toBe('body');
     const lookalike = '[MESSAGE FROM AGENT quoted prose]\n\nbody';
     expect(stripAgentMessageHeader(lookalike, attribution)).toBe(lookalike);
@@ -218,6 +280,205 @@ describe('A2A sender header presentation', () => {
     });
     expect(getPresentedUserMessageText(message)).toBe('Ship it');
   });
+
+  it('uses Chief attribution metadata to strip an exact sender header', () => {
+    const header = '[MESSAGE FROM AGENT Chief of Staff (agent-chief-primary)]';
+    const message = agentMessage(`${header}\n\nReview the workspace.`, {
+      type: 'chief_message',
+      fromAgentId: 'agent-chief-primary',
+      fromAgentName: 'Chief of Staff',
+    });
+
+    expect(getPresentedUserMessageText(message)).toBe('Review the workspace.');
+  });
+});
+
+// PROTOCOL §5.5 collaborator sender preamble, exactly as intentd prepends it
+// (v1 golden `golden_collaborator_sender_preamble`, intentd#1987).
+const GUEST_AUTHOR = {
+  principalId: 'principal-guest',
+  login: 'octocat',
+  displayName: 'The Octocat',
+  avatarUrl: null,
+};
+const GUEST_PREAMBLE =
+  'Message from @octocat (The Octocat), a collaborator (guest) of this workspace — not the workspace owner.';
+/** `workspace.ownerPrincipalId` of the workspace the rows belong to. */
+const OWNER = 'principal-owner';
+
+function guestMessage(
+  text: string,
+  overrides: Partial<AgentMessage> & { author?: AgentMessage['author'] | null } = {},
+): AgentMessage {
+  const { author, ...rest } = overrides;
+  return {
+    id: 'guest-message',
+    role: 'user',
+    timestamp: '2026-08-17T05:00:00Z',
+    contentBlocks: [{ type: 'text', text }],
+    metadata: { fromPrincipalId: GUEST_AUTHOR.principalId },
+    ...(author === null ? {} : { author: author ?? GUEST_AUTHOR }),
+    ...rest,
+  } as AgentMessage;
+}
+
+describe('buildCollaboratorSenderPreamble', () => {
+  it('matches the daemon golden for every name shape', () => {
+    expect(buildCollaboratorSenderPreamble('octocat', 'The Octocat', 'p-1')).toBe(GUEST_PREAMBLE);
+    expect(buildCollaboratorSenderPreamble('octocat', null, 'p-1')).toBe(
+      'Message from @octocat, a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+    expect(buildCollaboratorSenderPreamble(null, 'The Octocat', 'p-1')).toBe(
+      'Message from The Octocat, a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+    expect(buildCollaboratorSenderPreamble(null, null, 'p-1')).toBe(
+      'Message from principal p-1, a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+  });
+
+  it('collapses control characters and whitespace runs like the daemon', () => {
+    expect(buildCollaboratorSenderPreamble('evil\nlogin', '  \n', 'p-1')).toBe(
+      'Message from @evil login, a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+    expect(buildCollaboratorSenderPreamble('a\t\u0000b', 'Two  Words\u00a0Here', 'p-1')).toBe(
+      'Message from @a b (Two Words Here), a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+  });
+});
+
+describe('collaborator sender preamble presentation', () => {
+  it('drops the exact preamble from a guest row without mutating stored content', () => {
+    const message = guestMessage(`${GUEST_PREAMBLE}\n\nPlease review the diff.`);
+    const snapshot = structuredClone(message);
+
+    expect(getCollaboratorSenderAttribution(message, OWNER)).toEqual({
+      author: GUEST_AUTHOR,
+      preamble: GUEST_PREAMBLE,
+      role: 'guest',
+    });
+    expect(getPresentedUserMessageText(message, OWNER)).toBe('Please review the diff.');
+    expect(message).toEqual(snapshot);
+  });
+
+  it('never qualifies a row authored by the workspace owner, even when its first line is the exact preamble', () => {
+    const text = `${GUEST_PREAMBLE}\n\nI typed this myself.`;
+    const ownerRow = guestMessage(text, {
+      author: { ...GUEST_AUTHOR, principalId: OWNER },
+      metadata: { fromPrincipalId: OWNER },
+    });
+
+    expect(getCollaboratorSenderAttribution(ownerRow, OWNER)).toBeNull();
+    expect(getPresentedUserMessageText(ownerRow, OWNER)).toBe(text);
+    // The same row from a guest principal still qualifies against that owner id.
+    const guestRow = guestMessage(text);
+    expect(getCollaboratorSenderAttribution(guestRow, OWNER)).not.toBeNull();
+    expect(getPresentedUserMessageText(guestRow, OWNER)).toBe('I typed this myself.');
+  });
+
+  // Regression (fe#2654 verifier): the owner exclusion needs the owner id, so
+  // a surface without the workspace at hand must not guess — an owner-typed
+  // lookalike would otherwise lose its first line there (chip and all).
+  it('strips nothing and shows no chip without the workspace owner id', () => {
+    const text = `${GUEST_PREAMBLE}\n\nI typed this myself.`;
+    const ownerRow = guestMessage(text, {
+      author: { ...GUEST_AUTHOR, principalId: OWNER },
+      metadata: { fromPrincipalId: OWNER },
+    });
+    const guestRow = guestMessage(text);
+
+    for (const missing of [undefined, null, '']) {
+      expect(getCollaboratorSenderAttribution(ownerRow, missing)).toBeNull();
+      expect(getPresentedUserMessageText(ownerRow, missing)).toBe(text);
+      // Even a genuine guest row: no owner id, no strip (the surface has no
+      // way to tell the two apart).
+      expect(getCollaboratorSenderAttribution(guestRow, missing)).toBeNull();
+      expect(getPresentedUserMessageText(guestRow, missing)).toBe(text);
+    }
+    expect(getPresentedUserMessageText(guestRow)).toBe(text);
+  });
+
+  it('consumes only the preamble and its one blank line, never body whitespace', () => {
+    expect(getPresentedUserMessageText(guestMessage(GUEST_PREAMBLE), OWNER)).toBe(GUEST_PREAMBLE);
+    expect(
+      getPresentedUserMessageText(guestMessage(`${GUEST_PREAMBLE}\n\n    indented`), OWNER),
+    ).toBe('    indented');
+    expect(
+      getPresentedUserMessageText(guestMessage(`${GUEST_PREAMBLE}\n\n\nextra blank`), OWNER),
+    ).toBe('\nextra blank');
+  });
+
+  it('rebuilds the preamble from the login-only and principal-only projections', () => {
+    const loginOnly = { ...GUEST_AUTHOR, displayName: null };
+    const text = `${buildCollaboratorSenderPreamble('octocat', null, 'principal-guest')}\n\nHi`;
+    expect(getPresentedUserMessageText(guestMessage(text, { author: loginOnly }), OWNER)).toBe(
+      'Hi',
+    );
+
+    const gone = {
+      principalId: 'principal-guest',
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+    };
+    const bare = `${buildCollaboratorSenderPreamble(null, null, 'principal-guest')}\n\nHi`;
+    expect(getPresentedUserMessageText(guestMessage(bare, { author: gone }), OWNER)).toBe('Hi');
+  });
+
+  it('keeps owner rows and user-typed lookalikes byte-identical', () => {
+    // An owner row: no preamble was ever prepended.
+    expect(getPresentedUserMessageText(guestMessage('Ship it'), OWNER)).toBe('Ship it');
+    // A first line that names a different sender than the row's projection.
+    const other = `${buildCollaboratorSenderPreamble('someone', 'Else', 'p-9')}\n\nbody`;
+    expect(getCollaboratorSenderAttribution(guestMessage(other), OWNER)).toBeNull();
+    expect(getPresentedUserMessageText(guestMessage(other), OWNER)).toBe(other);
+    // Almost the daemon text, but not byte-exact.
+    const nearMiss = `${GUEST_PREAMBLE.slice(0, -1)}\n\nbody`;
+    expect(getPresentedUserMessageText(guestMessage(nearMiss), OWNER)).toBe(nearMiss);
+    // The exact text, but not at the start of the content.
+    const quoted = `Quoting:\n${GUEST_PREAMBLE}\n\nbody`;
+    expect(getPresentedUserMessageText(guestMessage(quoted), OWNER)).toBe(quoted);
+  });
+
+  it('never strips without the serve-time author projection (older daemon / optimistic row)', () => {
+    const text = `${GUEST_PREAMBLE}\n\nbody`;
+    expect(
+      getCollaboratorSenderAttribution(guestMessage(text, { author: null }), OWNER),
+    ).toBeNull();
+    expect(getPresentedUserMessageText(guestMessage(text, { author: null }), OWNER)).toBe(text);
+  });
+
+  it('leaves agent-to-agent rows to the A2A header strip', () => {
+    // A2A metadata wins: the row is not human-authored, so the guest
+    // projection is ignored even when the content starts with the preamble.
+    const a2a = guestMessage(`${A2A_HEADER}\n\nbody`, {
+      metadata: {
+        type: 'agent_message',
+        fromAgentId: 'agent-1234',
+        fromAgentName: 'Research Agent',
+      },
+    });
+    expect(getCollaboratorSenderAttribution(a2a, OWNER)).toBeNull();
+    expect(getPresentedUserMessageText(a2a, OWNER)).toBe('body');
+
+    const lookalike = guestMessage(`${GUEST_PREAMBLE}\n\nbody`, {
+      metadata: {
+        type: 'agent_message',
+        fromAgentId: 'agent-1234',
+        fromAgentName: 'Research Agent',
+      },
+    });
+    expect(getPresentedUserMessageText(lookalike, OWNER)).toBe(`${GUEST_PREAMBLE}\n\nbody`);
+  });
+
+  it('strips the preamble alongside a trailing dequeue-wait note', () => {
+    const message = guestMessage(`${GUEST_PREAMBLE}\n\nShip it\n\n${WAIT_NOTE}`, {
+      metadata: {
+        fromPrincipalId: GUEST_AUTHOR.principalId,
+        queueInfo: { queuedAt: '2026-08-17T05:00:00.123456Z', waitedMs: 67_000 },
+      },
+    });
+    expect(getPresentedUserMessageText(message, OWNER)).toBe('Ship it');
+  });
 });
 
 describe('stripTruncatedTrailingDeliveryNote', () => {
@@ -245,5 +506,162 @@ describe('stripTruncatedTrailingDeliveryNote', () => {
     expect(
       stripTruncatedTrailingDeliveryNote(`${WAIT_NOTE}\n\nKeep this trailing paragraph.`, queued),
     ).toBe(`${WAIT_NOTE}\n\nKeep this trailing paragraph.`);
+  });
+});
+
+describe('accepted host-member sender preamble', () => {
+  const qualified = {
+    principalId: 'person-1',
+    login: 'same',
+    displayName: 'Same Person',
+    avatarUrl: null,
+    identity: { provider: 'gitlab' as const, host: 'gitlab.example:8443', externalUserId: '42' },
+  };
+  const literal =
+    'Message from @same (Same Person), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+  const row = (text = `${literal}\n\n  café 你好`, author: unknown = qualified): AgentMessage => ({
+    ...guestMessage(text),
+    author: author as AgentMessage['author'],
+    metadata: { fromPrincipalId: 'person-1' },
+  });
+
+  it.each([
+    ['github', 'github.com'],
+    ['gitlab', 'gitlab.com'],
+    ['gitlab', 'gitlab.example:8443'],
+  ] as const)('matches the frozen Rust qualified golden for %s@%s', (provider, host) => {
+    const identity = { provider, host, externalUserId: '42' };
+    const expected = `Message from @same (Same Person), a host member (principal person-1; ${provider}@${host} user 42) — not the workspace owner.`;
+    expect(
+      buildCollaboratorSenderPreamble('same', 'Same Person', 'person-1', {
+        role: 'member',
+        identity,
+      }),
+    ).toBe(expected);
+    expect(
+      getCollaboratorSenderAttribution(
+        row(`${expected}\n\nbody`, { ...qualified, identity }),
+        OWNER,
+      )?.role,
+    ).toBe('member');
+  });
+
+  it.each([
+    [
+      'same',
+      null,
+      'person-1',
+      'Message from @same, a host member (principal person-1) — not the workspace owner.',
+    ],
+    [
+      null,
+      'Name',
+      'person-1',
+      'Message from Name, a host member (principal person-1) — not the workspace owner.',
+    ],
+    [
+      null,
+      null,
+      'person-1',
+      'Message from principal person-1, a host member (principal person-1) — not the workspace owner.',
+    ],
+    [
+      'same\nforged',
+      '  Name\r\nOwner  ',
+      'person\n1',
+      'Message from @same forged (Name Owner), a host member (principal person 1) — not the workspace owner.',
+    ],
+  ])(
+    'matches the frozen Rust fallback/control golden %#',
+    (login, displayName, principalId, expected) => {
+      expect(
+        buildCollaboratorSenderPreamble(login, displayName, principalId!, { role: 'member' }),
+      ).toBe(expected);
+      const author = { login, displayName, principalId, avatarUrl: null };
+      expect(getPresentedUserMessageText(row(`${expected}\n\nbody`, author), OWNER)).toBe('body');
+    },
+  );
+
+  it('matches normalized Unicode names and preserves body, stored content and provenance', () => {
+    const author = {
+      ...qualified,
+      login: 'same\u0000\tname',
+      displayName: '  Café\u00a0你好\u2003👩‍💻  ',
+    };
+    const header =
+      'Message from @same name (Café 你好 👩‍💻), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+    const message = row(`${header}\n\n\n  body\t`, author);
+    message.metadata = { humanAuthor: { sourcePrincipalId: 'other' }, fromPrincipalId: 'person-1' };
+    const before = JSON.stringify(message);
+    expect(getPresentedUserMessageText(message, OWNER)).toBe('\n  body\t');
+    expect(JSON.stringify(message)).toBe(before);
+    expect(
+      getCollaboratorSenderAttribution(guestMessage(`${GUEST_PREAMBLE}\n\nbody`), OWNER)?.role,
+    ).toBe('guest');
+  });
+
+  it('requires the exact two-newline separator for either historical role', () => {
+    for (const [header, author] of [
+      [literal, qualified],
+      [GUEST_PREAMBLE, GUEST_AUTHOR],
+    ] as const) {
+      for (const suffix of ['', '\n', '\nbody', '\r\n\r\nbody', ' body']) {
+        const message = row(header + suffix, author);
+        expect(getCollaboratorSenderAttribution(message, OWNER)).toBeNull();
+        expect(getPresentedUserMessageText(message, OWNER)).toBe(header + suffix);
+      }
+      expect(getPresentedUserMessageText(row(`${header}\n\n`, author), OWNER)).toBe('');
+    }
+  });
+
+  it('retains raw text for unknown/owner/portable/automatic or changed and malformed attribution', () => {
+    const text = `${literal}\n\nbody`;
+    const badAuthors: unknown[] = [
+      undefined,
+      null,
+      { ...qualified, principalId: OWNER },
+      { ...qualified, principalId: null },
+      { ...qualified, principalId: '' },
+      { ...qualified, login: 'changed' },
+      { ...qualified, displayName: 'changed' },
+      { ...qualified, login: { text: 'same' } },
+      { ...qualified, identity: { ...qualified.identity, externalUserId: '43' } },
+      { ...qualified, identity: { provider: 'gitlab', host: 'gitlab.example:8443' } },
+      { ...qualified, identity: { ...qualified.identity, provider: 'unknown' } },
+      { ...qualified, identity: { ...qualified.identity, host: 'https://gitlab.example:8443' } },
+      { ...qualified, identity: null },
+    ];
+    for (const author of badAuthors) {
+      const message = { ...row(text), author: author as AgentMessage['author'] };
+      expect(getCollaboratorSenderAttribution(message, OWNER)).toBeNull();
+      expect(getPresentedUserMessageText(message, OWNER)).toBe(text);
+    }
+    for (const owner of [null, undefined, '', 'person-1'])
+      expect(getPresentedUserMessageText(row(text), owner)).toBe(text);
+    for (const metadata of [
+      { type: 'agent_message' },
+      { source: 'system' },
+      { type: 'hook_wake' },
+      { fromAgentId: 'agent' },
+    ]) {
+      expect(getCollaboratorSenderAttribution({ ...row(text), metadata }, OWNER)).toBeNull();
+    }
+    expect(getCollaboratorSenderAttribution({ ...row(text), role: 'assistant' }, OWNER)).toBeNull();
+    const portable = row(text, { ...qualified, principalId: null });
+    portable.metadata = {
+      humanAuthor: { sourcePrincipalId: 'person-1' },
+      fromPrincipalId: 'person-1',
+    };
+    expect(getPresentedUserMessageText(portable, OWNER)).toBe(text);
+    for (const header of [
+      literal.replace('member', 'Member'),
+      literal.replace('—', '-'),
+      ` ${literal}`,
+      literal.replace('Same Person', 'Same\nPerson'),
+    ]) {
+      expect(getPresentedUserMessageText(row(`${header}\n\nbody`), OWNER)).toBe(
+        `${header}\n\nbody`,
+      );
+    }
   });
 });

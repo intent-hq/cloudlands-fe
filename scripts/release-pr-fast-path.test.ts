@@ -1,6 +1,14 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+  unlinkSync,
+  renameSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -39,6 +47,7 @@ function initRepo(): string {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'Test');
+  git('config', 'core.fileMode', 'true');
   writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_A));
   writeFileSync(join(dir, '.release-please-manifest.json'), baseManifest(VERSION_A));
   writeFileSync(join(dir, 'CHANGELOG.md'), '# Changelog\n\n## 2.28.0\n\n- old entry\n');
@@ -61,8 +70,47 @@ function releaseBump(dir: string): void {
   writeFileSync(join(dir, 'CHANGELOG.md'), '# Changelog\n\n## 2.29.0\n\n- new entry\n');
 }
 
-function evaluate(dir: string) {
-  return evaluateFastPath('base', 'HEAD', dir) as { fastPath: boolean; reason?: string };
+function evaluate(dir: string, baseRef = 'base') {
+  return evaluateFastPath(baseRef, 'HEAD', dir) as { fastPath: boolean; reason?: string };
+}
+
+// Shapes HEAD like a merge_group entry: the PR branch is cut from `base`,
+// main advances past it (the previous queue entry), and head_sha is the PR's
+// change applied onto that advanced main. The repo's queue uses the squash
+// method, so the real head is a single-parent commit (parent = base_sha);
+// 'merge' models a merge-method queue (two parents). Returns the entry's
+// base_sha.
+function mergeQueueEntry(
+  dir: string,
+  editPrTip: () => void,
+  method: 'squash' | 'merge' = 'squash',
+): string {
+  const git = (...args: string[]) =>
+    execFileSync('git', args, {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  git('checkout', '-q', '-b', 'release-pr');
+  editPrTip();
+  commit(dir, 'chore(main): release');
+  git('checkout', '-q', 'main');
+  writeFileSync(join(dir, 'other.ts'), 'export const other = 1;\n');
+  commit(dir, 'previous queue entry');
+  const baseSha = git('rev-parse', 'HEAD');
+  if (method === 'squash') {
+    git('merge', '-q', '--squash', 'release-pr');
+    commit(dir, 'chore(main): release (squash)');
+    expect(git('rev-list', '--parents', '-n', '1', 'HEAD').split(' ')).toEqual([
+      git('rev-parse', 'HEAD'),
+      baseSha,
+    ]);
+  } else {
+    git('merge', '-q', '--no-ff', '--no-edit', 'release-pr');
+    expect(git('rev-parse', 'HEAD^1')).toBe(baseSha);
+    expect(git('rev-parse', 'HEAD^2')).toBe(git('rev-parse', 'release-pr'));
+  }
+  return baseSha;
 }
 
 afterEach(() => {
@@ -70,6 +118,73 @@ afterEach(() => {
 });
 
 describe('release-pr-fast-path', () => {
+  it('accepts metadata in release-only mode', () => {
+    const dir = initRepo();
+    releaseBump(dir);
+    commit(dir);
+    expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(true);
+  });
+
+  it.each(['package.json', 'CHANGELOG.md', '.release-please-manifest.json'])(
+    'rejects a mode change to %s in release-only mode',
+    (file) => {
+      const dir = initRepo();
+      releaseBump(dir);
+      chmodSync(join(dir, file), 0o755);
+      commit(dir);
+      expect(evaluate(dir).fastPath).toBe(true);
+      expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+    },
+  );
+
+  it('rejects changed symlink targets in release-only mode', () => {
+    const dir = initRepo();
+    unlinkSync(join(dir, 'CHANGELOG.md'));
+    symlinkSync('old-target', join(dir, 'CHANGELOG.md'));
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_B));
+    unlinkSync(join(dir, 'CHANGELOG.md'));
+    symlinkSync('new-target', join(dir, 'CHANGELOG.md'));
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
+  it('excludes sidecar pins from direct release eligibility without changing CI fast paths', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+    commit(dir);
+    expect(evaluate(dir).fastPath).toBe(true);
+    expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
+  it('rejects nested package version changes accompanying the release version', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_A, { version: VERSION_A }));
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_B, { version: VERSION_B }));
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
+  it('rejects another manifest package version changing alongside the root version', () => {
+    const dir = initRepo();
+    writeFileSync(
+      join(dir, '.release-please-manifest.json'),
+      `{ ".": "${VERSION_A}", "other": "${VERSION_A}" }\n`,
+    );
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    releaseBump(dir);
+    writeFileSync(
+      join(dir, '.release-please-manifest.json'),
+      `{ ".": "${VERSION_B}", "other": "${VERSION_B}" }\n`,
+    );
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
   it('matches a true release-shaped diff (version + manifest + changelog)', () => {
     const dir = initRepo();
     releaseBump(dir);
@@ -249,6 +364,30 @@ describe('release-pr-fast-path', () => {
     expect(evaluate(dir)).toEqual({
       fastPath: false,
       reason: 'expected exactly one pin line at head (found 2)',
+    });
+  });
+
+  it('matches a release-shaped merge_group entry (squash queue: single-parent head on base_sha)', () => {
+    const dir = initRepo();
+    const baseSha = mergeQueueEntry(dir, () => releaseBump(dir));
+    expect(evaluate(dir, baseSha)).toEqual({ fastPath: true });
+  });
+
+  it('matches a release-shaped merge_group entry (merge queue: two-parent head on base_sha)', () => {
+    const dir = initRepo();
+    const baseSha = mergeQueueEntry(dir, () => releaseBump(dir), 'merge');
+    expect(evaluate(dir, baseSha)).toEqual({ fastPath: true });
+  });
+
+  it('rejects a merge_group entry whose PR tip also touches another file', () => {
+    const dir = initRepo();
+    const baseSha = mergeQueueEntry(dir, () => {
+      releaseBump(dir);
+      writeFileSync(join(dir, 'src.ts'), 'export const value = 2;\n');
+    });
+    expect(evaluate(dir, baseSha)).toEqual({
+      fastPath: false,
+      reason: 'disallowed file: src.ts',
     });
   });
 });

@@ -65,15 +65,14 @@
   resizeScrollContainer={scrollContainer}
   syncWithDefaultWidth={true}
   disableWidthTransition={true}
-  showHandleIndicator={true}
-  handleClassName="panel-canvas-resize-handle"
+  resizable={false}
   lockRenderedWidthDuringResize={sizing === 'viewport'}
   {onWidthChange}
   {onResizeStart}
   onResize={(_previousWidth, nextWidth) => onResizePreview(nextWidth - widths.defaultWidth)}
   {onResizeEnd}
   {onResizeCancel}
-  className="h-full min-h-0 mx-0!"
+  className="panel-canvas-frame h-full min-h-0 mx-0!"
 >
   {@render children()}
 </ResizablePanel>

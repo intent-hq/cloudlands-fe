@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: heading element wrapper with no interactive DOM -->
+
 <script lang="ts">
   import { cn } from '$lib/utils';
   import type { Snippet } from 'svelte';
@@ -18,10 +20,10 @@
     {
       1: 'text-2xl font-semibold leading-tight tracking-tight antialiased',
       2: 'text-xl font-semibold leading-tight tracking-tight antialiased',
-      3: 'text-xs uppercase tracking-wider font-medium text-muted-foreground antialiased',
+      3: 'text-xs font-medium text-muted-foreground antialiased',
       4: 'text-xs font-medium text-subtle antialiased',
       5: 'text-sm font-medium leading-normal antialiased',
-      6: 'text-[0.66rem] uppercase tracking-wider font-medium text-muted-foreground antialiased',
+      6: 'text-[0.66rem] font-medium text-muted-foreground antialiased',
     }[size] || 'text-base antialiased',
   );
 </script>

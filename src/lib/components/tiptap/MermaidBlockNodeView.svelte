@@ -1,25 +1,37 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
   import type { NodeViewProps } from '@tiptap/core';
   import hljs from 'highlight.js';
   import '$lib/styles/syntax-highlighting.css';
   import Fa from 'svelte-fa';
-  import { faPencil, faExpand } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
-  import { tick } from 'svelte';
+  import { faPencil, faExpand, faCode } from '@fortawesome/free-solid-svg-icons';
+  import { slide } from '$lib/motion';
+  import { onDestroy, tick } from 'svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
-  import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
+  import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
+  import { serializeDiagramSvg } from '$lib/components/diagrams/diagram-export';
+  import { toast } from '$lib/components/ui/toast';
+  import MermaidRenderer, {
+    type MermaidRenderState,
+  } from '$lib/components/markdown/MermaidRenderer.svelte';
   import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   // TipTap NodeViewProps
-  let { node, selected, updateAttributes }: NodeViewProps = $props();
+  let { node, selected, updateAttributes, editor }: NodeViewProps = $props();
 
   const isDarkTheme = selectIsDarkTheme();
+  let isEditable = $derived(editor?.isEditable !== false);
 
   // Extract mermaid code from node attributes
   let savedCode = $derived<string>(node?.attrs?.code || '');
+
+  // Exposed on the wrapper so tiptap-editor.css can keep failed renders in
+  // the prose column instead of the wide diagram lane.
+  let renderState = $state<MermaidRenderState>('pending');
 
   // Decode base64 for display
   function decodeBase64(str: string): string {
@@ -58,25 +70,80 @@
   let diagramContainerEl: HTMLDivElement | undefined = $state();
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
 
+  let cancelFullscreenRequest: (() => void) | undefined;
+
+  function cancelPendingFullscreen() {
+    cancelFullscreenRequest?.();
+    cancelFullscreenRequest = undefined;
+  }
+
+  onDestroy(cancelPendingFullscreen);
+
   function openFullscreen(e: MouseEvent) {
-    // Prevent the click from propagating to ProseMirror selection handling
+    // Prevent the click from propagating to ProseMirror selection handling.
     e.stopPropagation();
     e.preventDefault();
-    fullscreenOpenerElement = e.currentTarget as HTMLElement;
-    // Blur any focused element (including TipTap editor) to avoid RangeError
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
+    cancelPendingFullscreen();
+    const opener = e.currentTarget as HTMLElement;
+    const container = diagramContainerEl;
+    const source = displayCode;
+    const requestedNode = node;
+    const presentation = container?.closest<HTMLElement>('[data-diagram-presentation]');
+
+    const open = () => {
+      cancelPendingFullscreen();
+      if (requestedNode !== node || source !== displayCode || container !== diagramContainerEl)
+        return;
+      try {
+        if (!container) throw new Error('Diagram container is unavailable');
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous DOM snapshot; this export helper does not fetch domain data
+        fullscreenSvg = serializeDiagramSvg(container);
+      } catch {
+        fullscreenSvg = '';
+        toast.error(m.markdown_mermaid_renderFailed_error());
+        return;
+      }
+      fullscreenOpenerElement = opener;
+      // Blur only when ready to open, so settling does not discard keyboard focus.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      isFullscreen = true;
+    };
+
+    if (
+      renderState !== 'rendered' ||
+      presentation?.dataset.diagramPresentationSettled !== 'false'
+    ) {
+      open();
+      return;
     }
 
-    // Grab the rendered SVG from the diagram container
-    const svgEl = diagramContainerEl?.querySelector('.mermaid-svg svg, .mermaid-renderer svg');
-    if (svgEl) {
-      fullscreenSvg = svgEl.outerHTML;
-    }
-    isFullscreen = true;
+    // Source disclosure can queue presentation geometry without changing the graph.
+    // Retain this activation until the atomic width/readiness publication, keeping
+    // the serializer's guard authoritative instead of guessing a number of frames.
+    const observer = new MutationObserver(() => {
+      if (presentation.dataset.diagramPresentationSettled === 'true') open();
+    });
+    observer.observe(presentation, {
+      attributes: true,
+      attributeFilter: ['data-diagram-presentation-settled'],
+    });
+    const onKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') cancelPendingFullscreen();
+    };
+    const onFocus = (event: FocusEvent) => {
+      if (event.target !== opener) cancelPendingFullscreen();
+    };
+    window.addEventListener('keydown', onKeydown);
+    document.addEventListener('focusin', onFocus);
+    cancelFullscreenRequest = () => {
+      observer.disconnect();
+      window.removeEventListener('keydown', onKeydown);
+      document.removeEventListener('focusin', onFocus);
+    };
   }
 
   function closeFullscreen() {
+    cancelPendingFullscreen();
     isFullscreen = false;
     fullscreenSvg = '';
   }
@@ -89,6 +156,14 @@
 
   // Whether code editor is visible
   let showCode = $state(false);
+  let showSource = $state(false);
+
+  function toggleSource(e: MouseEvent) {
+    cancelPendingFullscreen();
+    e.stopPropagation();
+    e.preventDefault();
+    showSource = !showSource;
+  }
 
   // The code being edited (live updates the diagram)
   let editCode = $state('');
@@ -104,6 +179,13 @@
     showCode ? (isBase64(savedCode) ? encodeBase64(editCode) : editCode) : savedCode,
   );
 
+  // A request belongs to the exact source activated by the user, never its replacement.
+  $effect.pre(() => {
+    node;
+    displayCode;
+    cancelPendingFullscreen();
+  });
+
   // Syntax highlighted HTML
   let highlightedCode = $derived.by(() => {
     try {
@@ -116,9 +198,10 @@
 
   // Debounce timer for auto-saving
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-  let textareaEl: HTMLTextAreaElement;
+  let textareaEl = $state<HTMLTextAreaElement>();
 
   async function openCodeView(e: MouseEvent) {
+    cancelPendingFullscreen();
     // Prevent the click from selecting text or triggering bubble menu
     e.stopPropagation();
     e.preventDefault();
@@ -185,71 +268,98 @@
   }
 </script>
 
-<NodeViewWrapper class="mermaid-block-wrapper" data-drag-handle>
-  <div class="mermaid-block" class:selected class:dark-mode={$isDarkTheme}>
-    <!-- Diagram -->
-    <div bind:this={diagramContainerEl}>
-      <MermaidRenderer code={displayCode} showExpandButton={false} />
-    </div>
-
-    <!-- Code editor -->
-    {#if showCode}
-      <div
-        class="mermaid-code-section"
-        contenteditable="false"
-        transition:slide={{ axis: 'y', duration: 200 }}
-      >
-        <div class="code-editor-wrapper">
-          <pre class="code-highlight hljs" aria-hidden="true">{@html highlightedCode + '\n'}</pre>
-          <textarea
-            bind:this={textareaEl}
-            class="code-textarea"
-            value={editCode}
-            oninput={handleCodeInput}
-            onkeydown={handleKeyDown}
-            spellcheck="false"
-            autocorrect="off"
-            autocapitalize="off"></textarea>
-        </div>
-        <div class="edit-actions">
-          {#if hasChanges}
-            <button type="button" class="action-btn" onclick={cancelChanges}
-              >{m.tiptap_mermaidBlock_cancel_label()}</button
-            >
-            <button type="button" class="action-btn primary" onclick={saveChanges}
-              >{m.tiptap_mermaidBlock_save_label()}</button
-            >
-          {:else}
-            <button type="button" class="action-btn" onclick={closeCodeView}
-              >{m.tiptap_mermaidBlock_close_label()}</button
-            >
-          {/if}
-        </div>
-      </div>
-    {/if}
-
-    <!-- Action buttons (edit + expand) -->
-    {#if !showCode}
-      <div class="action-btns">
-        <button
+<NodeViewWrapper class="mermaid-block-wrapper" data-drag-handle data-render-state={renderState}>
+  <DiagramPresentation kind="mermaid" selected={Boolean(selected)} actionsInTopMargin>
+    {#snippet actions()}
+      {#if !showCode}
+        {#if isEditable}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
+            onclick={openCodeView}
+            title={m.tiptap_mermaidBlock_editCode_tooltip()}
+            aria-label={m.tiptap_mermaidBlock_editCode_tooltip()}
+          >
+            <Fa icon={faPencil} size="xs" />
+          </Button>
+        {:else if renderState === 'rendered'}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
+            onclick={toggleSource}
+            aria-pressed={showSource}
+            title={m.markdown_mermaid_viewSource_label()}
+            aria-label={m.markdown_mermaid_viewSource_label()}
+          >
+            <Fa icon={faCode} size="xs" />
+          </Button>
+        {/if}
+        <Button
           type="button"
-          class="hover-btn"
-          onclick={openCodeView}
-          title={m.tiptap_mermaidBlock_editCode_tooltip()}
-        >
-          <Fa icon={faPencil} size="xs" />
-        </button>
-        <button
-          type="button"
-          class="hover-btn"
+          variant="ghost"
+          size="icon-compact"
+          iconOnly
           onclick={openFullscreen}
           title={m.tiptap_mermaidBlock_fullscreen_tooltip()}
+          aria-label={m.tiptap_mermaidBlock_fullscreen_tooltip()}
         >
           <Fa icon={faExpand} size="xs" />
-        </button>
+        </Button>
+      {/if}
+    {/snippet}
+
+    <div class="mermaid-note-content" class:dark-mode={$isDarkTheme}>
+      <div bind:this={diagramContainerEl}>
+        <MermaidRenderer
+          code={displayCode}
+          showExpandButton={false}
+          showSourceButton={false}
+          showSource={showSource && !isEditable}
+          onRenderStateChange={(state) => (renderState = state)}
+        />
       </div>
-    {/if}
-  </div>
+
+      {#if showCode}
+        <div
+          class="mermaid-code-section"
+          contenteditable="false"
+          transition:slide={{ axis: 'y', tier: 'moderate' }}
+        >
+          <div class="code-editor-wrapper">
+            <pre class="code-highlight hljs" aria-hidden="true">{@html highlightedCode + '\n'}</pre>
+            <Textarea
+              bind:ref={textareaEl}
+              class="code-textarea"
+              value={editCode}
+              oninput={handleCodeInput}
+              onkeydown={handleKeyDown}
+              spellcheck="false"
+              autocorrect="off"
+              autocapitalize="off"
+            ></Textarea>
+          </div>
+          <div class="edit-actions">
+            {#if hasChanges}
+              <Button type="button" variant="ghost" class="action-btn" onclick={cancelChanges}
+                >{m.tiptap_mermaidBlock_cancel_label()}</Button
+              >
+              <Button type="button" class="action-btn primary" onclick={saveChanges}
+                >{m.tiptap_mermaidBlock_save_label()}</Button
+              >
+            {:else}
+              <Button type="button" variant="ghost" class="action-btn" onclick={closeCodeView}
+                >{m.tiptap_mermaidBlock_close_label()}</Button
+              >
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </div>
+  </DiagramPresentation>
 </NodeViewWrapper>
 
 <MediaLightbox
@@ -273,46 +383,6 @@
 <style>
   .mermaid-block-wrapper {
     display: block;
-  }
-
-  .mermaid-block {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid hsl(var(--border));
-    border-radius: 0.5rem;
-  }
-
-  .mermaid-block:hover .action-btns {
-    opacity: 1;
-  }
-
-  .action-btns {
-    position: absolute;
-    top: 0.375rem;
-    right: 0.375rem;
-    display: flex;
-    gap: 0.25rem;
-    opacity: 0;
-    transition: opacity 0.15s;
-  }
-
-  .hover-btn {
-    width: 1.75rem;
-    height: 1.75rem;
-    padding: 0;
-    background: rgb(0 0 0 / 0.6);
-    border: none;
-    border-radius: 0.375rem;
-    color: white;
-    cursor: pointer;
-    transition: background 0.15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .hover-btn:hover {
-    background: rgb(0 0 0 / 0.75);
   }
 
   .fullscreen-diagram {
@@ -355,7 +425,7 @@
     background: transparent;
   }
 
-  .code-textarea {
+  .code-editor-wrapper :global(.code-textarea) {
     position: absolute;
     top: 0;
     left: 0;
@@ -375,7 +445,7 @@
     overflow: hidden;
   }
 
-  .code-textarea:focus {
+  .code-editor-wrapper :global(.code-textarea:focus) {
     outline: none;
   }
 
@@ -465,32 +535,32 @@
   }
 
   /* Syntax highlighting for light mode */
-  .mermaid-block:not(.dark-mode) .code-highlight {
+  .mermaid-note-content:not(.dark-mode) .code-highlight {
     color: #1f2937;
   }
 
-  .mermaid-block:not(.dark-mode) :global(.hljs-keyword) {
+  .mermaid-note-content:not(.dark-mode) :global(.hljs-keyword) {
     color: #0000ff;
   }
-  .mermaid-block:not(.dark-mode) :global(.hljs-string) {
+  .mermaid-note-content:not(.dark-mode) :global(.hljs-string) {
     color: #a31515;
   }
-  .mermaid-block:not(.dark-mode) :global(.hljs-number) {
+  .mermaid-note-content:not(.dark-mode) :global(.hljs-number) {
     color: #098658;
   }
-  .mermaid-block:not(.dark-mode) :global(.hljs-comment) {
+  .mermaid-note-content:not(.dark-mode) :global(.hljs-comment) {
     color: #008000;
   }
-  .mermaid-block:not(.dark-mode) :global(.hljs-section) {
+  .mermaid-note-content:not(.dark-mode) :global(.hljs-section) {
     color: #0000ff;
   }
-  .mermaid-block:not(.dark-mode) :global(.hljs-bullet) {
+  .mermaid-note-content:not(.dark-mode) :global(.hljs-bullet) {
     color: #795e26;
   }
-  .mermaid-block:not(.dark-mode) :global(.hljs-emphasis) {
+  .mermaid-note-content:not(.dark-mode) :global(.hljs-emphasis) {
     font-style: italic;
   }
-  .mermaid-block:not(.dark-mode) :global(.hljs-strong) {
+  .mermaid-note-content:not(.dark-mode) :global(.hljs-strong) {
     font-weight: bold;
   }
 </style>

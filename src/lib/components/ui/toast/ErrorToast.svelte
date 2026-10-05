@@ -1,20 +1,16 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import Fa from 'svelte-fa';
-  import {
-    faExclamationCircle,
-    faTriangleExclamation,
-    faCircleInfo,
-  } from '@fortawesome/free-solid-svg-icons';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button } from '$lib/components/ui/button';
   import type { AppError } from '$lib/utils/error-handler.svelte';
   import ToastCloseButton from './ToastCloseButton.svelte';
+  import ToastGlyph from './ToastGlyph.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     error: AppError;
     onCopy: () => void;
-    onDebug: () => void;
+    /** Omitted when the window may not create agents (collaborator connection). */
+    onDebug?: () => void;
     onRetry?: () => void;
   }
 
@@ -26,54 +22,46 @@
     dispatch('closeToast');
   }
 
-  function getIcon(type: string) {
+  function getGlyph(type: string): 'error' | 'warning' | 'info' {
     switch (type) {
-      case 'error':
-        return faExclamationCircle;
       case 'warning':
-        return faTriangleExclamation;
+        return 'warning';
       case 'info':
-        return faCircleInfo;
+        return 'info';
       default:
-        return faExclamationCircle;
-    }
-  }
-
-  function getIconColor(type: string) {
-    switch (type) {
-      case 'error':
-        return 'text-danger';
-      case 'warning':
-        return 'text-warning';
-      case 'info':
-        return 'text-info';
-      default:
-        return 'text-danger';
+        return 'error';
     }
   }
 </script>
 
-<!-- Content-only: the Sonner wrapper owns the card chrome (bg, border, padding);
-     the severity border tint is passed as a wrapper class by error-toast.ts. -->
-<div class="relative flex w-full min-w-0 items-start gap-3">
-  <!-- Icon -->
-  <div class="flex-shrink-0 mt-0.5 {getIconColor(error.type)}">
-    <Fa icon={getIcon(error.type)} class="w-5 h-5" />
-  </div>
+<!-- Content-only: the Sonner wrapper owns the shared card chrome (bg, neutral border, padding). -->
+<div
+  class="relative flex w-full min-w-0 items-start gap-2.5 pr-6"
+  data-toast-layout="application-error"
+>
+  <span class="first-line-icon toast-first-line"><ToastGlyph variant={getGlyph(error.type)} /></span
+  >
 
   <!-- Content -->
   <div class="flex-1 min-w-0">
-    <p class="text-sm font-medium text-foreground line-clamp-2 break-words">{error.message}</p>
+    <p class="toast-title line-clamp-2 break-words">{error.title}</p>
+    <p class="toast-description line-clamp-2 break-words">{error.message}</p>
 
     <!-- Action buttons -->
-    <div class="flex flex-wrap items-center gap-2 mt-3">
-      <Button variant="outline" size="sm" onclick={onCopy}>{m.ui_errorToast_copy_label()}</Button>
-      <Button variant="outline" size="sm" onclick={onDebug}>{m.ui_errorToast_debug_label()}</Button>
+    <div class="toast-actions">
       {#if error.recoverable && onRetry}
-        <Button variant="outline" size="sm" onclick={onRetry}
+        <Button variant="outline" size="compact" class="toast-action" onclick={onRetry}
           >{m.ui_errorToast_retry_label()}</Button
         >
       {/if}
+      {#if onDebug}
+        <Button variant="outline" size="compact" class="toast-action" onclick={onDebug}
+          >{m.ui_errorToast_debug_label()}</Button
+        >
+      {/if}
+      <Button variant="ghost" size="compact" class="toast-action" onclick={onCopy}
+        >{m.ui_errorToast_copy_label()}</Button
+      >
     </div>
   </div>
 
@@ -88,5 +76,40 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .toast-title,
+  .toast-first-line {
+    color: hsl(var(--foreground));
+    font-size: var(--toast-title-size, 0.8125rem);
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .toast-description {
+    margin-top: 0.25rem;
+    color: hsl(var(--muted-foreground));
+    font-size: var(--toast-description-size, 0.8125rem);
+    font-weight: 400;
+    line-height: 1.4;
+  }
+
+  .toast-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  :global(.toast-action) {
+    min-height: var(--toast-action-height, var(--control-height-compact));
+    border-radius: var(--toast-action-radius, var(--radius));
+  }
+
+  :global(.toast-action:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring));
+    outline-offset: 2px;
+    box-shadow: none;
   }
 </style>

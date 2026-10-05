@@ -3,8 +3,7 @@
  *
  * `status` (and `changes`, which mirrors it) resolve via `git.status`, returning
  * the daemon's working-tree summary directly in the renderer `GitStatus` shape.
- * `prStatus` resolves via `pr.status` (the daemon errors when no PR is active, so
- * that is folded to `null`). `diffs` resolves via the additive `git.diffs` read
+ * `diffs` resolves via the additive `git.diffs` read
  * (PROTOCOL §5.6); `trackedChanges` / `commits` resolve via the daemon
  * file-tracking reads `file-tracking.getChanges` / `file-tracking.loadCommits`
  * (PROTOCOL §5.19 — the per-file audit trail with agent attribution, replacing
@@ -49,7 +48,6 @@ import type {
   GitDiffsOptions,
   MutationResult,
   PrRefreshResult,
-  PrStatusSummary,
   SubscriptionHandler,
   Unsubscribe,
 } from '../app-client';
@@ -520,7 +518,7 @@ export class LiveGitClient implements GitClient {
 
   // `git.commitDetails` (PROTOCOL §5.6) returns the metadata + per-file
   // `(additions, deletions)` for one commit. `opts.gitRootId` scopes the read
-  // to a registered secondary root (v6.15 param family); omitted keeps the
+  // to a registered secondary root (§5.6 git roots); omitted keeps the
   // request byte-identical. The daemon already degrades non-repo / remote /
   // unknown-hash workspaces to an empty envelope, so we only fold transport
   // failures to `null`.
@@ -611,16 +609,21 @@ export class LiveGitClient implements GitClient {
     }
   }
 
-  // `git.getBranches` (PROTOCOL §5.6) is path-based, NOT workspace-scoped: the
-  // workspace-initializer asks for an arbitrary repo path BEFORE a workspace
-  // exists. Maps the daemon `GitBranches` (snake_case fields are serialized as
+  // `git.getBranches` (PROTOCOL §5.6) keeps path-based repository selection.
+  // Existing workspaces may supply their origin for routing; the initializer
+  // omits it before a workspace exists. Maps the daemon `GitBranches` (snake_case fields are serialized as
   // camelCase per the wire model) into the renderer `GitBranchesResult`.
   // Errors (including the daemon's "Unknown or unauthorized repository path"
   // gate rejection) fold to `null` so the caller surfaces a friendly fallback
   // instead of crashing on `result.success` against an undefined payload.
-  async getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null> {
+  async getBranches(
+    repoPath: string,
+    includeRemote: boolean,
+    workspaceId?: string,
+  ): Promise<GitBranchesResult | null> {
     try {
       const result = await backendRequest<Record<string, unknown>>('git.getBranches', {
+        ...(workspaceId === undefined ? {} : { workspaceId }),
         repoPath,
         includeRemote,
       });
@@ -649,9 +652,14 @@ export class LiveGitClient implements GitClient {
   // the wire model) into the renderer `GitBranchStatusResult`. Errors
   // (including the known-repo gate rejection) fold to `null` so the seam
   // degrades silently — branch status is informational, never a hard failure.
-  async branchStatus(repoPath: string, branchName: string): Promise<GitBranchStatusResult | null> {
+  async branchStatus(
+    repoPath: string,
+    branchName: string,
+    workspaceId?: string,
+  ): Promise<GitBranchStatusResult | null> {
     try {
       const result = await backendRequest<Record<string, unknown>>('git.branchStatus', {
+        ...(workspaceId === undefined ? {} : { workspaceId }),
         repoPath,
         branchName,
       });
@@ -669,25 +677,9 @@ export class LiveGitClient implements GitClient {
     }
   }
 
-  // `pr.status` returns the active PR summary; it errors when the workspace has
-  // no active PR, which is folded to `null` (the seam's "no PR" signal).
-  async prStatus(workspaceId: string): Promise<PrStatusSummary | null> {
-    try {
-      const result = await backendRequest<Record<string, unknown>>('pr.status', { workspaceId });
-      if (!result || typeof result !== 'object') return null;
-      return {
-        prNumber: typeof result.prNumber === 'number' ? result.prNumber : undefined,
-        url: typeof result.url === 'string' ? result.url : undefined,
-        state: typeof result.state === 'string' ? result.state : undefined,
-      };
-    } catch {
-      return null;
-    }
-  }
-
   // `pr.refresh` (§5.7 extension) forces the daemon's PR discovery/refresh for
-  // one workspace and returns the post-refresh linkage state. Unlike
-  // `pr.status` it does not require an active PR; transport/daemon errors fold
+  // one workspace and returns the post-refresh linkage state. It does not
+  // require an active PR; transport/daemon errors fold
   // to `null` so a failed refresh leaves store state intact. `outcome` is
   // narrowed against the documented closed set (an unknown value is a contract
   // divergence, folded to null like any malformed response); the BE-owned
@@ -779,11 +771,11 @@ export class LiveGitClient implements GitClient {
   // than the daemon's bound — so the daemon's structured `{ok:false}` result
   // wins over a flat 30s JSON-RPC transport timeout when a pull genuinely runs
   // long.
-  async pull(repoPath: string, branchName: string): Promise<MutationResult> {
+  async pull(repoPath: string, branchName: string, workspaceId?: string): Promise<MutationResult> {
     try {
       const result = await backendRequest<Record<string, unknown>>(
         'git.pull',
-        { repoPath, branchName },
+        { repoPath, branchName, ...(workspaceId === undefined ? {} : { workspaceId }) },
         { timeoutMs: PULL_TIMEOUT_MS },
       );
       if (result && typeof result === 'object' && result.ok === true) return { success: true };

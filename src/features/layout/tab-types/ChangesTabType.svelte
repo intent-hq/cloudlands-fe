@@ -6,7 +6,7 @@
    * Includes header actions for expand/collapse and view controls.
    */
 
-  import { untrack } from 'svelte';
+  import { toStore } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
@@ -31,7 +31,8 @@
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { appClient } from '$lib/client';
+  import { gitReadRequested, releaseGitRead } from '$store/renderer/slices/git/git-slice';
+  import { selectGitRead } from '$store/renderer/slices/git/git-selectors';
   import { isAbsolutePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
 
@@ -41,15 +42,16 @@
   let { tab, workspaceId, isActive }: TabTypeComponentProps = $props();
 
   const headerContext = getPanelHeaderContext();
-  // svelte-ignore state_referenced_locally
-  const workspace = selectWorkspaceById(workspaceId);
-  // svelte-ignore state_referenced_locally
-  const gitRoots$ = selectGitRoots(workspaceId);
+  const workspaceId$ = toStore(() => workspaceId);
+  const workspace = selectWorkspaceById(workspaceId$);
+  const gitRoots$ = selectGitRoots(workspaceId$);
+  const consumerId = crypto.randomUUID();
+  const commitRead$ = selectGitRead(workspaceId$, consumerId);
 
   // Get commit data from tab
   const commitHash = $derived((tab.data?.commitHash as string) || '');
   const commitMessage = $derived((tab.data?.commitMessage as string) || '');
-  // Secondary git root scoping the changeset (multi git root tracking, v6.15).
+  // Secondary git root scoping the changeset (multi git root tracking).
   // Absent → primary-root behavior, byte-identical to before.
   const gitRootId = $derived((tab.data?.gitRootId as string) || '');
   // Root path used to absolutize the daemon's root-relative file paths: the
@@ -61,72 +63,54 @@
   const workspacePath = $derived(
     gitRootPath || $workspace?.worktreePath || $workspace?.repositoryPath || '',
   );
-  // svelte-ignore state_referenced_locally
-  const ftCommits$ = selectFileTrackingCommits(workspaceId);
-  // svelte-ignore state_referenced_locally
-  const ftOlderCommits$ = selectFileTrackingOlderCommits(workspaceId);
-  // svelte-ignore state_referenced_locally
-  const ftLoading$ = selectFileTrackingLoading(workspaceId);
+  const ftCommits$ = selectFileTrackingCommits(workspaceId$);
+  const ftOlderCommits$ = selectFileTrackingOlderCommits(workspaceId$);
+  const ftLoading$ = selectFileTrackingLoading(workspaceId$);
   const allCommits = $derived($ftCommits$ || []);
   const olderCommits = $derived($ftOlderCommits$ || []);
   const targetCommit = $derived(
-    allCommits.find((c) => c.hash === commitHash) ||
-      olderCommits.find((c) => c.hash === commitHash),
+    gitRootId
+      ? undefined
+      : allCommits.find((c) => c.hash === commitHash) ||
+          olderCommits.find((c) => c.hash === commitHash),
   );
   const storeCommitFiles = $derived(targetCommit?.files || []);
 
-  // Fetched commit details for commits not in the store (or with empty files like older commits)
-  let fetchedFileDetails = $state<Array<{ path: string; additions: number; deletions: number }>>(
-    [],
+  // Bind this view to one resource. The owner correlates request and consumer
+  // identity; the selector check also prevents old rows flashing on a prop change.
+  const currentRead = $derived(
+    $commitRead$?.request.kind === 'commitDetails' &&
+      $commitRead$.request.commitHash === commitHash &&
+      ($commitRead$.request.gitRootId ?? '') === gitRootId
+      ? $commitRead$
+      : undefined,
   );
-  let fetchedCommitInfo = $state<{ author?: string; authorEmail?: string; date?: string } | null>(
-    null,
+  const fetchedCommitInfo = $derived(
+    currentRead?.result?.kind === 'commitDetails' ? currentRead.result.details : null,
   );
-  let isFetchingDetails = $state(false);
-  let fetchedForHash = $state('');
+  const fetchedFileDetails = $derived(
+    fetchedCommitInfo
+      ? fetchedCommitInfo.fileDetails.length > 0
+        ? fetchedCommitInfo.fileDetails
+        : fetchedCommitInfo.files.map((path) => ({ path, additions: 0, deletions: 0 }))
+      : [],
+  );
+  const isFetchingDetails = $derived(currentRead?.loading ?? false);
 
-  // Fetch commit details when store doesn't have file info
   $effect(() => {
     const hash = commitHash;
-    const storeFiles = storeCommitFiles;
     const wsId = workspaceId;
     const rootId = gitRootId;
-
-    if (!hash || !wsId) return;
-    // If store already has files for this commit, no need to fetch
-    if (storeFiles.length > 0) return;
-    // Don't re-fetch for the same hash
-    if (untrack(() => fetchedForHash) === hash) return;
-
-    untrack(() => {
-      isFetchingDetails = true;
-      fetchedForHash = hash;
-    });
-
-    // Daemon-backed read (PROTOCOL §5.6): `appClient.git.commitDetails`
-    // folds transport/gate errors to `null` and the daemon degrades non-repo /
-    // remote / unknown-hash workspaces to an empty envelope, so this $effect
-    // never throws into the renderer. `gitRootId` scopes the read to a
-    // registered secondary root (v6.15 param family).
-    appClient.git
-      .commitDetails(wsId, hash, rootId ? { gitRootId: rootId } : undefined)
-      .then((result) => {
-        if (result) {
-          fetchedFileDetails =
-            result.fileDetails.length > 0
-              ? result.fileDetails
-              : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
-          fetchedCommitInfo = {
-            author: result.author || undefined,
-            authorEmail: result.authorEmail || undefined,
-            date: result.date || undefined,
-          };
-        }
-        isFetchingDetails = false;
-      })
-      .catch(() => {
-        isFetchingDetails = false;
-      });
+    if (!hash || !wsId || storeCommitFiles.length > 0) return;
+    const requestId = crypto.randomUUID();
+    appStore.dispatch(
+      gitReadRequested(wsId, consumerId, requestId, {
+        kind: 'commitDetails',
+        commitHash: hash,
+        gitRootId: rootId || undefined,
+      }),
+    );
+    return () => appStore.dispatch(releaseGitRead(wsId, consumerId, requestId));
   });
 
   // Use store files if available, otherwise use fetched details
@@ -183,7 +167,7 @@
   />
 {/snippet}
 
-{#key commitHash}
+{#key JSON.stringify([workspaceId, gitRootId, commitHash])}
   <ChatChangesPanel
     bind:this={changesPanelRef}
     isLoading={$ftLoading$ || isFetchingDetails}

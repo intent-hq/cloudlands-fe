@@ -1,4 +1,6 @@
 <script lang="ts">
+  import HostExecutionNotice from '$features/providers/HostExecutionNotice.svelte';
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
    * QuakeTerminalOverlay - A sleek, Quake-style terminal overlay
@@ -46,6 +48,7 @@
   import SetupScriptBanner from './SetupScriptBanner.svelte';
   import ScriptOutputViewer from './ScriptOutputViewer.svelte';
   import TerminalSidebar from './TerminalSidebar.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faPlus,
@@ -57,7 +60,6 @@
     faPlay,
     faStop,
     faRotateRight,
-    faSpinner,
     faTableColumns,
     faArrowUpRightFromSquare,
     faCircle,
@@ -70,16 +72,21 @@
     isLiveScriptStatus,
     type ScriptStatusKind,
   } from '$features/scripts/utils/script-status';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { rewriteBrowserLinkForDisplay } from '$lib/utils/browser-url-resolution';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
   import {
     selectWorkspaceScriptEntries,
+    selectAllWorkspaceScriptEntries,
     selectWorkspaceScriptsInitialized,
   } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { refreshScripts, removeScript } from '$store/renderer/slices/scripts/scripts-slice';
+  import {
+    refreshScripts,
+    removeScript,
+    stopScriptRequested,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import { cn } from '$lib/utils';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Tooltip, TooltipRich } from '$lib/components/ui/tooltip';
@@ -114,6 +121,7 @@
   const activeTerminalId = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const terminals = selectTerminalsForWorkspace(workspaceIdStore);
   const workspaceTerminalState$ = selectWorkspaceTerminalState(workspaceIdStore);
+  const allScriptEntries$ = selectAllWorkspaceScriptEntries(workspaceIdStore);
   const scriptEntries$ = selectWorkspaceScriptEntries(workspaceIdStore);
   const scriptsInitialized$ = selectWorkspaceScriptsInitialized(workspaceIdStore);
 
@@ -192,7 +200,7 @@
       const result = await scriptsClient.detect(workspaceId);
       appStore.dispatch(refreshScripts(workspaceId));
       if (!result.success) {
-        toast.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
+        notify.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
         return;
       }
       const detected = result.detected ?? 0;
@@ -217,13 +225,13 @@
             ? m.terminal_quakeOverlay_detectedNoNew_one({ count: detected })
             : m.terminal_quakeOverlay_detectedNoNew_many({ count: detected });
       if (detected === 0) {
-        toast.info(m.terminal_quakeOverlay_noScriptsDetected_info());
+        notify.info(m.terminal_quakeOverlay_noScriptsDetected_info());
       } else {
-        toast.success(summary);
+        notify.success(summary);
       }
       const skippedRunning = result.skippedRunning ?? [];
       if (skippedRunning.length > 0) {
-        toast.warning(
+        notify.warning(
           skippedRunning.length === 1
             ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
             : m.scripts_detect_skippedRunning_many({
@@ -253,8 +261,8 @@
     },
     restarting: {
       label: () => m.workspace_devScripts_restarting_label(),
-      dotClass: 'bg-amber-500',
-      textClass: 'text-amber-500',
+      dotClass: 'bg-warning',
+      textClass: 'text-warning-ink',
     },
     idle: {
       label: () => m.terminal_quakeOverlay_status_idle(),
@@ -300,8 +308,8 @@
 
   function sortScripts(scripts: ScriptWithState[]): ScriptWithState[] {
     return [...scripts].sort((a, b) => {
-      // Priority: live (running/restarting) > exited > idle
-      const statusPriority = { running: 0, restarting: 0, exited: 1, idle: 2 };
+      // Priority: live (starting/running/restarting) > exited > idle
+      const statusPriority = { starting: 0, running: 0, restarting: 0, exited: 1, idle: 2 };
       const aPriority = statusPriority[a.runtime.status] ?? 3;
       const bPriority = statusPriority[b.runtime.status] ?? 3;
 
@@ -347,12 +355,12 @@
     try {
       const result = await mutation();
       if (!result.success) {
-        toast.error(result.error || fallbackError);
+        notify.error(result.error || fallbackError);
         return false;
       }
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : fallbackError);
+      notify.error(error instanceof Error ? error.message : fallbackError);
       return false;
     }
   }
@@ -370,6 +378,12 @@
       restart: m.terminal_quakeOverlay_restartScriptFailed_error,
       delete: m.terminal_quakeOverlay_deleteScriptFailed_error,
     };
+    if (action === 'stop') {
+      appStore.dispatch(
+        stopScriptRequested(mutationWorkspaceId, scriptId, scriptActionErrors.stop()),
+      );
+      return;
+    }
     const succeeded = await runScriptMutation(
       () => scriptsClient[action === 'delete' ? 'remove' : action](mutationWorkspaceId, scriptId),
       scriptActionErrors[action](),
@@ -389,7 +403,7 @@
 
   const selectedScript = $derived(
     selectedScriptId
-      ? ($scriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
+      ? ($allScriptEntries$.find((script) => script.id === selectedScriptId) ?? null)
       : null,
   );
   const selectedScriptRuntime = $derived(selectedScript?.runtime ?? null);
@@ -566,11 +580,13 @@
   async function dismissPreviouslyRunningTab(scriptId: string, event: MouseEvent) {
     event.stopPropagation();
     if (!workspaceId) return;
-    const succeeded = await runScriptMutation(
-      () => scriptsClient.stop(workspaceId, scriptId),
-      m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
+    appStore.dispatch(
+      stopScriptRequested(
+        workspaceId,
+        scriptId,
+        m.terminal_quakeOverlay_dismissScriptTab_ariaLabel(),
+      ),
     );
-    if (succeeded) appStore.dispatch(refreshScripts(workspaceId));
   }
 
   // Constants
@@ -813,7 +829,7 @@
         rows: 24,
       });
       if (!result.success || !result.id) {
-        toast.error(m.terminal_adapter_openFailed_error());
+        notify.error(m.terminal_adapter_openFailed_error());
         return;
       }
       const stale = workspaceId !== createWorkspaceId;
@@ -830,7 +846,7 @@
       if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
       requestAnimationFrame(() => overlayContainer?.focus());
     } catch {
-      toast.error(m.terminal_adapter_openFailed_error());
+      notify.error(m.terminal_adapter_openFailed_error());
     } finally {
       isCreatingTerminal = false;
     }
@@ -839,7 +855,7 @@
   function closeTerminal(termId: string, e?: MouseEvent) {
     e?.stopPropagation();
     if (workspaceId) appStore.dispatch(removeTerminal(workspaceId, termId));
-    terminalManager.disposeTerminal(termId);
+    terminalManager.disposeTerminal(termId, workspaceId);
   }
 
   function clearActiveTerminal() {
@@ -1010,13 +1026,14 @@
               <!-- Script name (editable) -->
               <div class="relative inline-flex min-w-0 items-center">
                 {#if isEditingScriptName}
-                  <input
+                  <Input
                     type="text"
                     data-edit-script-header-name
                     bind:value={editedScriptName}
                     onblur={finishEditingScriptName}
                     onkeydown={handleScriptNameKeydown}
-                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
+                    noFocusStyle
+                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent hover:bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
                     placeholder={m.terminal_quakeOverlay_scriptName_placeholder()}
                   />
                 {:else}
@@ -1044,10 +1061,11 @@
                   <span class="relative z-10 flex-shrink-0 text-xs font-semibold text-green-500"
                     >$</span
                   >
-                  <input
-                    bind:this={editScriptCommandTextarea}
+                  <Input
+                    bind:ref={editScriptCommandTextarea}
                     bind:value={editedScriptCommand}
-                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-0 bg-transparent px-0 font-mono text-xs text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
+                    noFocusStyle
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-0 bg-transparent hover:bg-transparent px-0 font-mono text-xs text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
                     placeholder={/* i18n-ignore (shell command example) */ 'npm run dev'}
                     spellcheck="false"
                   />
@@ -1178,13 +1196,14 @@
               <Fa icon={faTerminal} class="w-3.5 h-3.5 text-muted-foreground/75" />
               <div class="relative inline-flex min-w-0 items-center">
                 {#if isEditingHeaderName}
-                  <input
+                  <Input
                     type="text"
                     data-edit-header-terminal
                     bind:value={headerEditValue}
                     onblur={finishEditingHeaderName}
                     onkeydown={handleHeaderEditKeydown}
-                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
+                    noFocusStyle
+                    class="inline-edit-input relative z-10 w-40 border-0 bg-transparent hover:bg-transparent px-0 text-sm font-medium text-foreground/80 outline-none focus:outline-none! focus:ring-0! a11y-ignore"
                     placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
                   />
                 {:else}
@@ -1247,6 +1266,7 @@
           {/if}
         </div>
 
+        <HostExecutionNotice />
         <!-- Terminal Content with Sidebar -->
         <div class="flex-1 flex min-h-0 relative overflow-hidden">
           <!-- Terminal Content + Setup Script Editor -->
@@ -1335,7 +1355,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class={cn(
-                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none min-w-0 max-w-90 whitespace-nowrap group/tab',
                 'hover:text-foreground hover:bg-muted/80',
                 isActive && 'text-foreground bg-sidebar shadow-sm',
               )}
@@ -1349,15 +1369,16 @@
               <!-- Tab Label (editable) -->
               <div class="relative inline-flex min-w-0 items-center">
                 {#if editingTerminalId === term.id}
-                  <input
+                  <Input
                     type="text"
                     data-edit-terminal={term.id}
                     bind:value={editingValue}
                     onblur={finishEditing}
                     onkeydown={handleEditKeydown}
+                    noFocusStyle
                     onclick={(e) => e.stopPropagation()}
                     placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent hover:bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
                   />
                 {:else}
                   <span
@@ -1379,7 +1400,7 @@
                 variant="plain"
                 size="icon-xs"
                 iconOnly
-                class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
                 aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
               >
@@ -1399,7 +1420,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               class={cn(
-                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none min-w-0 max-w-90 whitespace-nowrap group/tab',
                 'hover:text-foreground hover:bg-muted/80',
                 isScriptActive && 'text-foreground bg-sidebar shadow-sm',
               )}
@@ -1430,15 +1451,16 @@
               ></div>
               <div class="relative inline-flex min-w-0 items-center">
                 {#if editingScriptTabId === script.id}
-                  <input
+                  <Input
                     type="text"
                     data-edit-script-tab={script.id}
                     bind:value={editingScriptTabValue}
                     onblur={finishEditingScriptTab}
                     onkeydown={handleEditScriptTabKeydown}
+                    noFocusStyle
                     onclick={(e) => e.stopPropagation()}
                     placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent hover:bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
                   />
                 {:else}
                   <span
@@ -1476,7 +1498,7 @@
                   variant="plain"
                   size="icon-xs"
                   iconOnly
-                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                   data-dismiss-script-tab={script.id}
                   onclick={(event) => dismissPreviouslyRunningTab(script.id, event)}
                   aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}
@@ -1517,7 +1539,7 @@
               disabled={isDetectingScripts}
             >
               {#if isDetectingScripts}
-                <Fa icon={faSpinner} spin size="sm" class="mr-1.5" />
+                <IntentMarkLoader size={14} class="mr-1.5" />
                 {m.terminal_quakeOverlay_detecting_label()}
               {:else}
                 {m.terminal_quakeOverlay_detectScripts_label()}
@@ -1684,7 +1706,7 @@
     pointer-events: none;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .terminal-panel,
     .terminal-panel.is-visible {
       transition: none;

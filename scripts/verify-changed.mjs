@@ -1,19 +1,36 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { escape as escapeGlob, globSync } from 'glob';
+import ts from 'typescript';
+import {
+  CT_TEST_DIR,
+  ctGeometryScene,
+  hasCtSpecSuffix,
+  isCtSpec,
+} from '../playwright/ct-spec-pattern.mjs';
+import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
+import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
+import { isCtContractPath } from './ct-contract-paths.mjs';
+import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
+import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
+import {
+  acquireVerificationLock,
+  ctLockKey,
+  defaultLockPath,
+  HELD_LOCK_ENV,
+  lockTimeout,
+} from './verification-lock.mjs';
+import {
+  listDeclaredSuites,
+  selectDeclaredSuites,
+  TRIGGER_MARKER,
+} from './verify-changed-triggers.mjs';
+
+export { acquireVerificationLock, defaultLockPath, lockTimeout };
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FRONTEND_PREFIX = 'packages/cloudlands-fe/';
@@ -29,7 +46,7 @@ const SKIP_DIRS = new Set([
   'test-reports',
 ]);
 const CODE_EXTENSIONS = new Set(['.cjs', '.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
-const LINT_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
+const LINT_EXTENSIONS = new Set(['.cjs', '.js', '.jsx', '.mjs', '.svelte', '.ts', '.tsx']);
 const FORMAT_EXTENSIONS = new Set([
   '.cjs',
   '.css',
@@ -47,13 +64,41 @@ const FORMAT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
-const CT_TEST_RE = /\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/;
+// This suite executes the full required scan with the checked-in baseline.
+const TRANSLATION_INVENTORY_SUITE = 'scripts/check-hardcoded-strings.test.ts';
+// Its final test executes the checker against the real repository catalogs.
+const LOCALE_COMPLETENESS_SUITE = 'scripts/check-i18n-completeness.test.ts';
+const LOCALE_COMPLETENESS_INPUTS = new Set([
+  'project.inlang/settings.json',
+  'scripts/i18n-equal-allowlist.json',
+  'scripts/check-i18n-completeness.mjs',
+  LOCALE_COMPLETENESS_SUITE,
+  'package.json',
+  'pnpm-lock.yaml',
+]);
+// Mirrors the runner-owned excludes in vitest.config.ts /
+// tests/integration/vitest.integration.config.ts. Neither Playwright pattern is
+// mirrored: `isCtSpec` and playwright-ct.config.ts both read
+// playwright/ct-spec-pattern.mjs; `isRootSpec` / `isIgnoredRootSpec` and
+// playwright.config.ts both read playwright/root-spec-pattern.mjs.
+const VISUAL_TEST_RE = /\.visual\.spec\.ts$/;
+const INTEGRATION_TEST_RE = /^tests\/integration\/.*\.test\.ts$/;
+const VITEST_EXCLUDED_RE = /(?:^|\/)remote-(?:env|git)\.test\.ts$/;
 const FULL_RISK_FILES = new Set([
   'package.json',
   'pnpm-lock.yaml',
   'svelte.config.js',
   'vite.config.mjs',
   'vitest.config.ts',
+]);
+// Files that decide which root specs playwright.config.ts runs: the config and the
+// modules it reads its testDir/testMatch/testIgnore from (root-spec-pattern.mjs
+// builds on ct-spec-pattern.mjs's matchers). The pull_request workflow's root
+// relevance step names the same set (`Evaluate root Playwright relevance`).
+const ROOT_PLAYWRIGHT_CONFIG_FILES = new Set([
+  'playwright.config.ts',
+  'playwright/root-spec-pattern.mjs',
+  'playwright/ct-spec-pattern.mjs',
 ]);
 
 function slash(path) {
@@ -84,12 +129,17 @@ function assertCanonicalPathInsideRoot(path, root, displayPath) {
 }
 
 export function parseArgs(argv) {
-  const result = { dryRun: false, help: false, paths: [] };
-  for (const arg of argv) {
+  const result = { base: null, dryRun: false, help: false, paths: [] };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--help' || arg === '-h') result.help = true;
-    else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
+    else if (arg === '--base' || arg.startsWith('--base=')) {
+      const value = arg === '--base' ? argv[(index += 1)] : arg.slice('--base='.length);
+      if (!value || value.startsWith('-')) throw new Error('missing value for option: --base');
+      result.base = value;
+    } else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else result.paths.push(arg);
   }
   return result;
@@ -138,19 +188,58 @@ function gitNames(args, root) {
     .map((file) => slash(file));
 }
 
-export function collectChangedFiles(root = REPO_ROOT) {
+const DEFAULT_BASE = 'origin/main';
+
+function gitRevision(args, root) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+function mergeBase(ref, root) {
+  try {
+    return gitRevision(['merge-base', ref, 'HEAD'], root);
+  } catch (error) {
+    const detail = String(error?.stderr ?? error?.message ?? error).trim();
+    throw new Error(`cannot resolve --base ${ref}: ${detail}`, { cause: error });
+  }
+}
+
+// True when HEAD has commits that `ref` does not; false when `ref` cannot be
+// resolved (no remote-tracking ref, detached fixture), so the caller can fall
+// back to the plain "nothing to verify" exit instead of throwing.
+function isAheadOf(ref, root) {
+  try {
+    return mergeBase(ref, root) !== gitRevision(['rev-parse', 'HEAD'], root);
+  } catch {
+    return false;
+  }
+}
+
+export function collectChangedFiles(root = REPO_ROOT, options = {}) {
   const files = [
     ...gitNames(['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', 'HEAD', '--'], root),
     ...gitNames(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRTUXBD', '--'], root),
     ...gitNames(['ls-files', '--others', '--exclude-standard', '-z'], root),
   ];
+  if (options.base) {
+    const base = mergeBase(options.base, root);
+    files.push(
+      ...gitNames(
+        ['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'],
+        root,
+      ),
+    );
+  }
   return [...new Set(files)].sort();
 }
 
 function listCtTests(root) {
   const files = [];
-  walk(resolve(root, 'src'), root, files);
-  return files.filter((file) => CT_TEST_RE.test(file));
+  walk(resolve(root, CT_TEST_DIR), root, files);
+  return files.filter(isCtSpec);
 }
 
 function importTargets(source, testPath, root) {
@@ -176,10 +265,9 @@ function importTargets(source, testPath, root) {
 }
 
 function geometrySnapshotTargets(testPath, root, readText) {
-  const match = testPath.match(/^(.*\/)?([^/]+)\.geometry\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/);
-  if (!match) return new Set();
-  const directory = match[1] ?? '';
-  const scene = match[2];
+  const geometry = ctGeometryScene(testPath);
+  if (!geometry) return new Set();
+  const { directory, scene } = geometry;
   const targets = new Set([
     `${directory}__geometry__/${scene}.geometry.json`,
     ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
@@ -199,6 +287,20 @@ function geometrySnapshotTargets(testPath, root, readText) {
   return targets;
 }
 
+// A CT spec usually mounts a host/harness `.svelte` that composes the component
+// under test, so follow one hop through each directly imported `.svelte` file
+// and add the `.svelte` files it imports (mirrors `geometrySnapshotTargets`).
+function hostComponentTargets(targets, root, readText) {
+  const hosted = new Set();
+  for (const host of [...targets].filter((target) => target.endsWith('.svelte'))) {
+    if (!existsSync(resolve(root, host))) continue;
+    for (const imported of importTargets(readText(host), host, root)) {
+      if (imported.endsWith('.svelte')) hosted.add(imported);
+    }
+  }
+  return hosted;
+}
+
 export function findRelatedCtTests(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
   const ctTests = options.ctTests ?? listCtTests(root);
@@ -206,10 +308,13 @@ export function findRelatedCtTests(files, options = {}) {
   const sourceFiles = files.filter(
     (file) => CODE_EXTENSIONS.has(extname(file)) && !UNIT_TEST_RE.test(file),
   );
-  const selected = new Set(files.filter((file) => CT_TEST_RE.test(file)));
+  const selected = new Set(
+    files.filter((file) => testRunner(file) === 'ct' && existsSync(resolve(root, file))),
+  );
   for (const test of ctTests) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
+    for (const hosted of hostComponentTargets(targets, root, readText)) targets.add(hosted);
     const geometryTargets = geometrySnapshotTargets(test, root, readText);
     if (files.some((file) => geometryTargets.has(file))) selected.add(test);
     else if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
@@ -221,9 +326,226 @@ function isExisting(file, root) {
   return existsSync(resolve(root, file));
 }
 
+export function testRunner(file) {
+  // Before UNIT_TEST_RE: Playwright discovers specs case-insensitively, so a
+  // `.CT.SPEC.TS` under src/ or a `.SPEC.ts` under test/ is a Playwright spec
+  // although no unit-test pattern sees it.
+  if (isCtSpec(file)) return 'ct';
+  if (isRootSpec(file)) return 'playwright';
+  if (isIgnoredRootSpec(file)) return 'manual';
+  if (!UNIT_TEST_RE.test(file)) return null;
+  if (file.startsWith(`${ROOT_TEST_DIR}/`)) return 'manual';
+  if (file.startsWith('tests/integration/')) {
+    return INTEGRATION_TEST_RE.test(file) ? 'integration' : 'manual';
+  }
+  if (hasCtSpecSuffix(file)) return 'manual';
+  if (VISUAL_TEST_RE.test(file) || VITEST_EXCLUDED_RE.test(file)) return 'manual';
+  return 'vitest';
+}
+
+// Vitest's default `test.include`; vitest.config.ts does not override it.
+const VITEST_INCLUDE_GLOB = '**/*.{test,spec}.?(c|m)[jt]s?(x)';
+
+// Bounded static interpretation only: never evaluate a project's config while
+// planning. Unknown expressions must not establish equivalent inventory coverage.
+function literalProperty(object, name) {
+  if (
+    !object ||
+    !ts.isObjectLiteralExpression(object) ||
+    object.properties.some(
+      (property) => ts.isSpreadAssignment(property) || ts.isComputedPropertyName(property.name),
+    )
+  )
+    return null;
+  const matches = object.properties.filter((property) => property.name.text === name);
+  if (matches.length > 1 || (matches.length && !ts.isPropertyAssignment(matches[0]))) return null;
+  return matches[0]?.initializer;
+}
+
+function vitestExclusions(root, configFile = 'vitest.config.ts') {
+  const unknown = { patterns: [], exclusionsKnown: false, complete: false };
+  const configPath = resolve(root, configFile);
+  if (!existsSync(configPath)) return unknown;
+  const source = ts.createSourceFile(
+    configPath,
+    readFileSync(configPath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    false,
+  );
+  if (source.parseDiagnostics.length) return unknown;
+  const imports = new Map();
+  for (const statement of source.statements.filter(ts.isImportDeclaration)) {
+    const clause = statement.importClause;
+    if (clause?.name) imports.set(clause.name.text, [statement.moduleSpecifier.text, 'default']);
+    if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+      for (const binding of clause.namedBindings.elements)
+        imports.set(binding.name.text, [
+          statement.moduleSpecifier.text,
+          (binding.propertyName ?? binding.name).text,
+        ]);
+    }
+  }
+  const imported = (node, module, name) =>
+    node && ts.isIdentifier(node) && imports.get(node.text)?.join(':') === `${module}:${name}`;
+  const shadowed = new Set();
+  const forgetBindings = (node) => {
+    if (ts.isIdentifier(node)) {
+      imports.delete(node.text);
+      shadowed.add(node.text);
+    } else if (ts.isBindingElement(node)) forgetBindings(node.name);
+    else ts.forEachChild(node, forgetBindings);
+  };
+  for (const statement of source.statements.filter(ts.isVariableStatement))
+    for (const declaration of statement.declarationList.declarations)
+      forgetBindings(declaration.name);
+  const exports = source.statements.filter(ts.isExportAssignment);
+  if (exports.length !== 1 || exports[0].isExportEquals) return unknown;
+  let config = exports[0].expression;
+  if (
+    ts.isCallExpression(config) &&
+    imported(config.expression, 'vitest/config', 'defineConfig') &&
+    config.arguments.length === 1
+  ) {
+    config = config.arguments[0];
+    if (ts.isArrowFunction(config) && config.parameters.length === 0 && ts.isBlock(config.body)) {
+      const statements = config.body.statements;
+      const returned = statements.at(-1);
+      if (
+        !returned ||
+        !ts.isReturnStatement(returned) ||
+        !statements.slice(0, -1).every(ts.isVariableStatement)
+      )
+        return unknown;
+      // A callback-local binding must not masquerade as one of the known imports.
+      for (const statement of statements.slice(0, -1))
+        for (const declaration of statement.declarationList.declarations)
+          forgetBindings(declaration.name);
+      config = returned.expression;
+    }
+  }
+  const test = literalProperty(config, 'test');
+  const exclude = literalProperty(test, 'exclude');
+  if (exclude === null || (exclude && !ts.isArrayLiteralExpression(exclude))) return unknown;
+  // Discovery and execution filters need a real config evaluator; keep the scan then.
+  const complete =
+    literalProperty(config, 'root') === undefined &&
+    [
+      'include',
+      'dir',
+      'root',
+      'projects',
+      'workspace',
+      'testNamePattern',
+      'typecheck',
+      'related',
+      'changed',
+      'shard',
+      'tagsFilter',
+      'cliExclude',
+      'listTags',
+      'clearCache',
+      'mergeReports',
+    ].every((name) => literalProperty(test, name) === undefined);
+  const patterns = [];
+  let exclusionsKnown = true;
+  for (const element of exclude?.elements ?? []) {
+    if (ts.isStringLiteral(element)) {
+      patterns.push(element.text);
+      continue;
+    }
+    // The repo's one computed exclusion source has an existing pure helper.
+    // Accept only its imported call with the exact root .gitignore argument.
+    const call = ts.isSpreadElement(element) ? element.expression : null;
+    const argument =
+      call && ts.isCallExpression(call) && call.arguments.length === 1 ? call.arguments[0] : null;
+    const callee = argument && ts.isCallExpression(argument) ? argument.expression : null;
+    if (
+      call &&
+      ts.isCallExpression(call) &&
+      imported(call.expression, './scripts/gitignore-dir-excludes.mjs', 'gitignoreDirExcludes') &&
+      callee &&
+      ts.isPropertyAccessExpression(callee) &&
+      callee.name.text === 'join' &&
+      (imported(callee.expression, 'path', 'default') ||
+        imported(callee.expression, 'node:path', 'default')) &&
+      argument.arguments.length === 2 &&
+      ts.isIdentifier(argument.arguments[0]) &&
+      argument.arguments[0].text === '__dirname' &&
+      !shadowed.has('__dirname') &&
+      ts.isStringLiteral(argument.arguments[1]) &&
+      argument.arguments[1].text === '.gitignore' &&
+      existsSync(resolve(root, '.gitignore'))
+    ) {
+      patterns.push(...gitignoreDirExcludes(resolve(root, '.gitignore')));
+    } else exclusionsKnown = false;
+  }
+  return { patterns, exclusionsKnown, complete: complete && exclusionsKnown };
+}
+
+export function vitestExcludePatterns(root = REPO_ROOT) {
+  return vitestExclusions(root).patterns;
+}
+
+function snapshotOwner(file, root) {
+  // Vitest's default external snapshot path preserves the complete test basename.
+  // Do not guess custom layouts or search for similarly named tests.
+  if (basename(dirname(file)) !== '__snapshots__') return null;
+  const owner = slash(join(dirname(dirname(file)), basename(file, '.snap')));
+  const runner = testRunner(owner);
+  if (!runner || runner === 'manual' || !CODE_EXTENSIONS.has(extname(owner))) return null;
+  try {
+    assertCanonicalPathInsideRoot(resolve(root, owner), root, owner);
+    if (!statSync(resolve(root, owner), { throwIfNoEntry: false })?.isFile()) return null;
+  } catch {
+    return null;
+  }
+
+  const exclusions =
+    runner === 'vitest'
+      ? vitestExclusions(root)
+      : runner === 'integration'
+        ? vitestExclusions(root, 'tests/integration/vitest.integration.config.ts')
+        : { patterns: ['**/node_modules/**'], exclusionsKnown: true };
+  // Unknown excludes must not look like an empty policy. Integration's supported
+  // root/include settings do not make its literal exclusion policy unknown.
+  if (!exclusions.exclusionsKnown) return null;
+  const exclude = exclusions.patterns;
+  const gitignore = resolve(root, '.gitignore');
+  // Only the unit config derives exclusions from .gitignore. The integration
+  // config has its own excludes; both Playwright configs set an explicit testDir.
+  if (runner === 'vitest' && existsSync(gitignore)) {
+    exclude.push(...gitignoreDirExcludes(gitignore));
+  }
+  const matches = globSync(escapeGlob(owner, { windowsPathsNoEscape: true }), {
+    cwd: root,
+    ignore: exclude,
+    nodir: true,
+    dot: true,
+    posix: true,
+  });
+  return matches.includes(owner) ? owner : null;
+}
+
+function hasRunnableUnitTests(directory, root, exclude) {
+  const absolute = resolve(root, directory);
+  if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return false;
+  const literalDirectory = escapeGlob(directory, { windowsPathsNoEscape: true });
+  return globSync(`${literalDirectory}/${VITEST_INCLUDE_GLOB}`, {
+    cwd: root,
+    ignore: exclude,
+    nodir: true,
+    posix: true,
+  }).some((file) => testRunner(file) === 'vitest');
+}
+
+function survivingUnitTestDirectory(file, root, exclude) {
+  const directory = dirname(file);
+  return directory !== '.' && hasRunnableUnitTests(directory, root, exclude) ? directory : null;
+}
+
 function isLintable(file) {
   if (!LINT_EXTENSIONS.has(extname(file))) return false;
-  return !/^(?:scripts|e2e|test)\//.test(file) && !file.endsWith('.cjs');
+  return !/^(?:e2e|test)\//.test(file);
 }
 
 function isKnownNonCode(file) {
@@ -233,6 +555,15 @@ function isKnownNonCode(file) {
     file.startsWith('messages/') ||
     file.startsWith('static/') ||
     ['.css', '.html', '.json', '.md', '.scss', '.svg', '.yaml', '.yml'].includes(extname(file))
+  );
+}
+
+function isArchitectureSource(file) {
+  return (
+    (file.startsWith('src/') && CODE_EXTENSIONS.has(extname(file))) ||
+    /^scripts\/check-[^/]+\.mjs$/.test(file) ||
+    file === 'scripts/type-check.ts' ||
+    basename(file) === 'AGENTS.md'
   );
 }
 
@@ -263,7 +594,7 @@ function command(id, label, args, lockKind = null) {
   return {
     id,
     label,
-    executable: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    executable: 'pnpm',
     args,
     lockKind,
   };
@@ -271,55 +602,85 @@ function command(id, label, args, lockKind = null) {
 
 export function createVerificationPlan(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
+  const declared = options.declaredSuites
+    ? { suites: options.declaredSuites, violations: [] }
+    : listDeclaredSuites(root);
   const existing = files.filter((file) => isExisting(file, root));
   const formatFiles = existing.filter((file) => FORMAT_EXTENSIONS.has(extname(file)));
   const lintFiles = existing.filter(isLintable);
-  const directCt = files.filter((file) => CT_TEST_RE.test(file));
-  const directIntegration = files.filter(
-    (file) =>
-      file.startsWith('tests/integration/') && UNIT_TEST_RE.test(file) && !CT_TEST_RE.test(file),
+  const snapshots = new Map(
+    files
+      .filter((file) => extname(file) === '.snap')
+      .map((file) => [file, snapshotOwner(file, root)]),
   );
-  const directUnit = files.filter(
-    (file) =>
-      UNIT_TEST_RE.test(file) && !CT_TEST_RE.test(file) && !file.startsWith('tests/integration/'),
+  const testFiles = [...new Set([...existing, ...[...snapshots.values()].filter(Boolean)])];
+  const directTests = (runner) => testFiles.filter((file) => testRunner(file) === runner);
+  const directCt = directTests('ct');
+  const directIntegration = directTests('integration');
+  const directPlaywright = directTests('playwright');
+  const deletedUnitTests = files.filter(
+    (file) => testRunner(file) === 'vitest' && !isExisting(file, root),
   );
+  const vitestExclude = vitestExclusions(root);
+  const deletedUnitDirectories = deletedUnitTests
+    .map((file) => survivingUnitTestDirectory(file, root, vitestExclude.patterns))
+    .filter(Boolean);
+  const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
     (file) =>
-      /^(?:src|scripts)\//.test(file) &&
+      /^(?:src|scripts|playwright)\//.test(file) &&
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
   const uiInvariants = files.some(isRendererSource);
+  const declaredUnit = selectDeclaredSuites(declared.suites, files).filter(
+    (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
+  );
+  let architecture = files.some(isArchitectureSource);
+  const typeCheckWrapper = files.includes('scripts/type-check.ts');
+  const deadCode = files.some(
+    (file) =>
+      CODE_EXTENSIONS.has(extname(file)) ||
+      file === 'knip.jsonc' ||
+      file === 'package.json' ||
+      /^tsconfig[^/]*\.json$/.test(file),
+  );
   const boundaries = new Set();
   let svelteCheck = false;
   let fullUnit = false;
   let fullCt = false;
+  let fullPlaywright = false;
   const fallbackReasons = [];
 
   for (const file of files) {
+    // A resolved snapshot selects its runner above; it did not change source or types.
+    if (snapshots.get(file)) continue;
     addBoundary(boundaries, file);
     if (file.endsWith('.svelte')) svelteCheck = true;
     if (file === 'tsconfig.json') boundaries.add('renderer');
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
-    else if (file === 'playwright-ct.config.ts' || file.startsWith('playwright/')) fullCt = true;
+    else if (ROOT_PLAYWRIGHT_CONFIG_FILES.has(file)) fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
+    // Shared with the pull_request workflow's test-ct relevance step.
+    if (isCtContractPath(file)) fullCt = true;
 
     const known =
       CODE_EXTENSIONS.has(extname(file)) ||
       isKnownNonCode(file) ||
+      file === 'knip.jsonc' ||
       /^(?:scripts|tests\/integration)\//.test(file) ||
       /^(?:eslint|playwright|postcss|prettier|svelte|tailwind|tsconfig|vite|vitest)[^/]*\./.test(
         file,
       );
-    if (FULL_RISK_FILES.has(file) || !known) {
+    if (snapshots.has(file) || FULL_RISK_FILES.has(file) || !known) {
       fallbackReasons.push(file);
+      architecture = true;
       fullUnit = true;
       boundaries.add('renderer');
       boundaries.add('main');
       boundaries.add('preload');
       svelteCheck = true;
-      if (file === 'package.json' || file === 'pnpm-lock.yaml') fullCt = true;
     }
   }
 
@@ -335,12 +696,59 @@ export function createVerificationPlan(files, options = {}) {
     );
   if (lintFiles.length)
     checks.push(command('eslint', 'ESLint (changed files)', ['exec', 'eslint', ...lintFiles]));
+  if (architecture)
+    checks.push(
+      command('architecture', 'Architecture gates (repo-wide static scans)', [
+        'run',
+        'lint:architecture',
+      ]),
+    );
+  if (typeCheckWrapper)
+    checks.push(
+      command('type-check-validate', 'Type check (validate wrapper)', [
+        'run',
+        'type-check:validate',
+      ]),
+    );
+  // Selected test coverage is only equivalent if the real-repository test can run.
+  const suiteCovered = (requiredSuite) =>
+    vitestExclude.complete &&
+    (fullUnit ||
+      [...directUnit, ...declaredUnit].some(
+        (suite) => suite === requiredSuite || requiredSuite.startsWith(`${suite}/`),
+      )) &&
+    globSync(requiredSuite, {
+      cwd: root,
+      ignore: vitestExclude.patterns,
+      nodir: true,
+    }).length > 0;
+  if (files.some(isEnforcedFile) && !suiteCovered(TRANSLATION_INVENTORY_SUITE))
+    checks.push(
+      command('i18n-strings', 'Translation strings (required inventory scan)', [
+        'run',
+        'lint:i18n-strings',
+      ]),
+    );
+  if (
+    files.some(
+      (file) => /^messages\/[^/]+\.json$/.test(file) || LOCALE_COMPLETENESS_INPUTS.has(file),
+    ) &&
+    !suiteCovered(LOCALE_COMPLETENESS_SUITE)
+  )
+    checks.push(
+      command('i18n-completeness', 'Locale catalog completeness', [
+        'run',
+        'lint:i18n-completeness',
+      ]),
+    );
+  if (deadCode)
+    checks.push(command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']));
   if (fullUnit)
     checks.push(
       command(
         'vitest-full',
         'Vitest unit suite (safe fallback)',
-        ['run', 'test:unit'],
+        ['exec', 'vitest', 'run', '--config', 'vitest.config.ts', '--maxWorkers=1'],
         'vitest-full',
       ),
     );
@@ -357,18 +765,21 @@ export function createVerificationPlan(files, options = {}) {
         ]),
       );
     }
-    if (directIntegration.length) {
-      checks.push(
-        command('vitest-integration', 'Vitest integration (changed tests)', [
-          'exec',
-          'vitest',
-          'run',
-          '--config',
-          'tests/integration/vitest.integration.config.ts',
-          ...directIntegration,
-        ]),
-      );
-    }
+  }
+  // The unit fallback excludes integration tests, so it cannot replace this lane.
+  if (directIntegration.length) {
+    checks.push(
+      command('vitest-integration', 'Vitest integration (changed tests)', [
+        'exec',
+        'vitest',
+        'run',
+        '--config',
+        'tests/integration/vitest.integration.config.ts',
+        ...directIntegration,
+      ]),
+    );
+  }
+  if (!fullUnit) {
     if (relatedSources.length) {
       checks.push(
         command('vitest-related', 'Vitest (tests related to changed sources)', [
@@ -379,6 +790,18 @@ export function createVerificationPlan(files, options = {}) {
           '--config',
           'vitest.config.ts',
           ...relatedSources,
+        ]),
+      );
+    }
+    if (declaredUnit.length) {
+      checks.push(
+        command('vitest-declared', 'Vitest (suites declaring changed paths as triggers)', [
+          'exec',
+          'vitest',
+          'run',
+          '--config',
+          'vitest.config.ts',
+          ...declaredUnit,
         ]),
       );
     }
@@ -413,6 +836,23 @@ export function createVerificationPlan(files, options = {}) {
       ),
     );
   }
+  if (fullPlaywright)
+    checks.push(
+      command('playwright-full', 'Playwright browser suite (config changed)', [
+        'run',
+        'test:playwright',
+      ]),
+    );
+  else if (directPlaywright.length) {
+    checks.push(
+      command('playwright-direct', 'Playwright browser tests (changed specs)', [
+        'exec',
+        'playwright',
+        'test',
+        ...directPlaywright,
+      ]),
+    );
+  }
   if (svelteCheck) checks.push(command('svelte-check', 'Svelte check', ['run', 'check']));
   if (boundaries.has('renderer')) {
     checks.push(
@@ -427,6 +867,12 @@ export function createVerificationPlan(files, options = {}) {
   }
   if (boundaries.has('main')) {
     checks.push(
+      command('generate-build-config', 'Generate main build config (if missing)', [
+        'run',
+        'generate:build-config',
+        '--',
+        '--if-missing',
+      ]),
       command('tsc-main', 'TypeScript (main)', [
         'exec',
         'tsc',
@@ -438,6 +884,10 @@ export function createVerificationPlan(files, options = {}) {
   }
   if (boundaries.has('preload')) {
     checks.push(
+      command('generate-ipc-channels', 'Generate preload IPC channels', [
+        'run',
+        'generate:ipc-channels',
+      ]),
       command('tsc-preload', 'TypeScript (preload)', [
         'exec',
         'tsc',
@@ -447,86 +897,18 @@ export function createVerificationPlan(files, options = {}) {
       ]),
     );
   }
-  return { files, checks, fallbackReasons: [...new Set(fallbackReasons)].sort() };
-}
-
-function processIsAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error?.code === 'EPERM';
-  }
+  return {
+    files,
+    checks,
+    fallbackReasons: [...new Set(fallbackReasons)].sort(),
+    triggerViolations: declared.violations.map((entry) => entry.path),
+  };
 }
 
 export function verificationLockKey(check, env = process.env) {
   if (check.lockKind === 'vitest-full') return 'vitest-full';
-  if (check.lockKind === 'ct') return `ct-${env.CT_PORT ? Number(env.CT_PORT) : 3100}`;
+  if (check.lockKind === 'ct') return ctLockKey(env);
   return null;
-}
-
-export function defaultLockPath(lockKey) {
-  const key = createHash('sha256')
-    .update(`cloudlands-fe-verification:${lockKey}`)
-    .digest('hex')
-    .slice(0, 12);
-  return join(tmpdir(), `intent-${key}.lock`);
-}
-
-export async function acquireVerificationLock(options = {}) {
-  const lockPath = options.lockPath ?? defaultLockPath();
-  const timeoutMs = options.timeoutMs ?? 30_000;
-  const pollMs = options.pollMs ?? 250;
-  const statLock = options.statLock ?? statSync;
-  const token = randomUUID();
-  const started = Date.now();
-  while (true) {
-    try {
-      mkdirSync(lockPath);
-      writeFileSync(
-        join(lockPath, 'owner.json'),
-        JSON.stringify({ pid: process.pid, cwd: options.cwd ?? process.cwd(), token }),
-      );
-      return () => {
-        try {
-          const owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
-          if (owner.token === token) rmSync(lockPath, { recursive: true, force: true });
-        } catch {
-          // A missing or replaced lock is not ours to remove.
-        }
-      };
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-      let stale;
-      let owner;
-      try {
-        owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
-        stale = !processIsAlive(owner.pid);
-      } catch {
-        try {
-          stale = Date.now() - statLock(lockPath).mtimeMs > 4 * 60 * 60 * 1000;
-        } catch (statError) {
-          if (statError?.code === 'ENOENT') continue;
-          throw statError;
-        }
-      }
-      if (stale) {
-        rmSync(lockPath, { recursive: true, force: true });
-        continue;
-      }
-      if (Date.now() - started >= timeoutMs) {
-        const waitedMs = Date.now() - started;
-        const ownerDetails = owner
-          ? `owner pid ${owner.pid} cwd ${owner.cwd ?? '<unknown>'}`
-          : 'owner metadata unavailable';
-        throw new Error(`verification lock ${lockPath}: ${ownerDetails}; waited ${waitedMs}ms`, {
-          cause: error,
-        });
-      }
-      await new Promise((done) => setTimeout(done, pollMs));
-    }
-  }
 }
 
 function shellQuote(value) {
@@ -539,6 +921,11 @@ export function printPlan(plan, dryRun, log = console.log) {
   if (plan.fallbackReasons.length) {
     log(`verify:changed: safe fallback for ${plan.fallbackReasons.join(', ')}`);
   }
+  if (plan.triggerViolations?.length) {
+    log(
+      `verify:changed: warning: ${plan.triggerViolations.length} vitest suite(s) read the tree from disk without a ${TRIGGER_MARKER} header and are never selected here; see pnpm run lint:verify-changed-triggers`,
+    );
+  }
   log(`verify:changed: ${plan.checks.length} check(s)`);
   for (const check of plan.checks) {
     log(`  - ${check.label}: ${[check.executable, ...check.args].map(shellQuote).join(' ')}`);
@@ -546,13 +933,20 @@ export function printPlan(plan, dryRun, log = console.log) {
   if (dryRun) log('verify:changed: dry-run; no commands were run');
 }
 
-async function runCheck(check, root) {
+async function runCheck(check, root, { heldLock = null } = {}) {
   console.log(`\n[verify:changed] ${check.label}`);
+  const launcher = pnpmInvocation(check.args);
+  // A locked check spawns the CT launcher, which takes the same `ct-<port>`
+  // lock for direct runs; tell it the lock is already held so it does not
+  // wait on its own parent.
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  if (heldLock) env[HELD_LOCK_ENV] = heldLock;
   await new Promise((resolveRun, reject) => {
-    const child = spawn(check.executable, check.args, {
+    const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
       stdio: 'inherit',
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      shell: launcher.shell,
+      env,
     });
     child.on('error', reject);
     child.on('exit', (code, signal) => {
@@ -565,12 +959,6 @@ async function runCheck(check, root) {
         );
     });
   });
-}
-
-export function lockTimeout(lockKey, envValue) {
-  const value = Number(envValue);
-  const defaultMs = lockKey.startsWith('ct-') ? 240_000 : 120_000;
-  return Number.isFinite(value) && value >= 0 ? Math.min(value, 300_000) : defaultMs;
 }
 
 export async function runVerificationPlan(plan, root, options = {}) {
@@ -595,32 +983,66 @@ export async function runVerificationPlan(plan, root, options = {}) {
       cwd: root,
     });
     try {
-      await run(check, root);
+      await run(check, root, { heldLock: lockKey });
     } finally {
       releaseLock();
     }
   }
 }
 
-export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT) {
+export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, options = {}) {
+  const log = options.log ?? console.log;
+  const checkNode = options.checkNode ?? checkNodeSupport;
+  const checkDeps = options.checkDeps ?? checkDepsFresh;
+  const ensureI18n = options.ensureI18n ?? ensureI18nFresh;
+  const runPlan = options.runPlan ?? runVerificationPlan;
   const args = parseArgs(argv);
   if (args.help) {
-    console.log('Usage: pnpm run verify:changed -- [--dry-run] [paths...]');
-    return;
+    log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    log(
+      `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
+    );
+    return 0;
   }
-  const files = args.paths.length ? expandInputPaths(args.paths, root) : collectChangedFiles(root);
+  let base = args.base;
+  let files = args.paths.length
+    ? expandInputPaths(args.paths, root)
+    : collectChangedFiles(root, { base });
+  if (!args.paths.length && !base && files.length === 0 && isAheadOf(DEFAULT_BASE, root)) {
+    base = DEFAULT_BASE;
+    log(`verify:changed: worktree clean; verifying commits since merge-base with ${base}`);
+    files = collectChangedFiles(root, { base });
+  }
+  if (!args.paths.length && files.length === 0) {
+    const hint = base
+      ? ` and no files changed relative to the merge-base with ${base}`
+      : `; pass --base ${DEFAULT_BASE} to verify this branch's commits against main`;
+    log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
+    return 2;
+  }
   const plan = createVerificationPlan(files, { root });
-  printPlan(plan, args.dryRun);
-  if (args.dryRun || plan.checks.length === 0) return;
+  printPlan(plan, args.dryRun, log);
+  if (args.dryRun || plan.checks.length === 0) return 0;
 
-  await runVerificationPlan(plan, root);
+  const node = checkNode({ root });
+  if (!node.ok) throw new Error(node.reason);
+  const deps = checkDeps(root);
+  if (!deps.ok) throw new Error(deps.reason);
+  const i18n = await ensureI18n(root);
+  if (!i18n.ok) throw new Error(i18n.reason);
+  await runPlan(plan, root);
+  return 0;
 }
 
 const isDirectRun =
   process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isDirectRun) {
-  runCli().catch((error) => {
-    console.error(`[verify:changed] ${error instanceof Error ? error.message : error}`);
-    process.exitCode = 1;
-  });
+  runCli()
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error) => {
+      console.error(`[verify:changed] ${error instanceof Error ? error.message : error}`);
+      process.exitCode = 1;
+    });
 }

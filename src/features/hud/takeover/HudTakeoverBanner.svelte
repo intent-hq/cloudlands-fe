@@ -146,8 +146,6 @@
     font:
       600 10px 'JetBrains Mono',
       monospace;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
   }
   .ov-anim-blink {
     animation: hudblink 1.6s step-end infinite;
@@ -157,11 +155,9 @@
       700 42px 'Doto',
       'JetBrains Mono',
       monospace;
-    letter-spacing: 0.08em;
     line-height: 1.05;
     white-space: nowrap;
     overflow: hidden;
-    text-transform: uppercase;
   }
   .ov-banner-big-wrap {
     font-size: 24px;
@@ -187,9 +183,7 @@
     font:
       500 11.5px 'JetBrains Mono',
       monospace;
-    letter-spacing: 0.18em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .ov-banner-status {
     margin-top: 8px;
@@ -209,7 +203,7 @@
   .ov-no-motion .ov-banner-marquee {
     animation: none;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .ov-banner,
     .ov-banner-marquee,
     .ov-anim-blink {

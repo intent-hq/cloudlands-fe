@@ -25,7 +25,7 @@ import type {
 import type { GitHubUser } from '$features/github-auth/types';
 import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
 import type { SentryIssueResult } from '$features/sentry-auth/types';
-import { backendRequest } from './backend-transport';
+import { captureBackendRepositoryResource, backendRequest } from './backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('LiveIntegrationsClient');
@@ -58,6 +58,8 @@ interface GithubPullWire {
   baseRef: string;
   merged: boolean;
   draft: boolean;
+  /** `true` while the PR sits in the merge queue (GraphQL `isInMergeQueue`); absent when unknown. */
+  isInMergeQueue?: boolean;
 }
 
 /** Daemon `GithubIssue` (§5.27 DTO schemas — subset the preview consumes). */
@@ -72,20 +74,25 @@ interface GithubIssueWire {
 }
 
 /**
- * Collapse the wire's `state` + `merged` + `draft` into the FE's single state.
- * GitHub keeps `draft: true` on a closed draft PR, so `closed` wins over `draft`.
+ * Collapse the wire's `state` + `merged` + `draft` + `isInMergeQueue` into the
+ * FE's single state. GitHub keeps `draft: true` on a closed draft PR, so
+ * `closed` wins over `draft`; `queued` applies only to an open, non-draft PR.
  */
 function pullRequestState(pull: GithubPullWire): GitHubPullRequestState {
   if (pull.merged === true) return 'merged';
   if (pull.state === 'closed') return 'closed';
   if (pull.draft === true) return 'draft';
+  if (pull.isInMergeQueue === true) return 'queued';
   return 'open';
 }
 
 export class LiveIntegrationsClient implements IntegrationsClient {
-  async githubUser(): Promise<GitHubUser | null> {
+  async githubUser(workspaceId?: string): Promise<GitHubUser | null> {
     try {
-      const result = await backendRequest<GithubGetUserResult>('github.getUser');
+      const result = await backendRequest<GithubGetUserResult>(
+        'github.getUser',
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
       const user = result?.user;
       if (!user || typeof user.login !== 'string' || user.login.length === 0) return null;
       // The wire carries login/avatarUrl/htmlUrl only; name/email have no
@@ -114,9 +121,15 @@ export class LiveIntegrationsClient implements IntegrationsClient {
    * can't change based on the filter and the caller discards it, so per-
    * keystroke searches cost one REST call, not two.
    */
-  async githubBranches(owner: string, repo: string, prefix?: string): Promise<GitHubBranchListing> {
+  async githubBranches(
+    owner: string,
+    repo: string,
+    prefix?: string,
+    workspaceId?: string,
+  ): Promise<GitHubBranchListing> {
     const [result, defaultBranch] = await Promise.all([
       backendRequest<{ branches?: unknown }>('github.branches.list', {
+        ...(workspaceId === undefined ? {} : { workspaceId }),
         owner,
         repo,
         ...(prefix ? { prefix } : {}),
@@ -124,6 +137,7 @@ export class LiveIntegrationsClient implements IntegrationsClient {
       prefix
         ? Promise.resolve(undefined)
         : backendRequest<{ repo?: { defaultBranch?: unknown } | null }>('github.repos.get', {
+            ...(workspaceId === undefined ? {} : { workspaceId }),
             owner,
             repo,
           }).then(
@@ -149,14 +163,22 @@ export class LiveIntegrationsClient implements IntegrationsClient {
    * (`{ cached: false, branches: [] }`) so the authoritative
    * `githubBranches` path stays the only error authority.
    */
-  async githubBranchesCached(owner: string, repo: string): Promise<GitHubCachedBranchListing> {
+  async githubBranchesCached(
+    owner: string,
+    repo: string,
+    workspaceId?: string,
+  ): Promise<GitHubCachedBranchListing> {
     try {
       const result = await backendRequest<{
         cached?: unknown;
         branches?: unknown;
         defaultBranch?: unknown;
         source?: unknown;
-      }>('github.branches.listCached', { owner, repo });
+      }>('github.branches.listCached', {
+        owner,
+        repo,
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      });
       const branches = Array.isArray(result?.branches)
         ? result.branches.filter((branch): branch is string => typeof branch === 'string')
         : [];
@@ -173,7 +195,7 @@ export class LiveIntegrationsClient implements IntegrationsClient {
   }
 
   /**
-   * `github.repoConfig.get` (§5.27 v2.4) — the repo's committed
+   * `github.repoConfig.get` (§5.27) — the repo's committed
    * `.intent/config.json` read via the contents API, no clone. `ref` is only
    * sent when provided (daemon defaults to the repo's default branch).
    * Failures PROPAGATE; the setup-script probe folds them to "no script".
@@ -182,10 +204,16 @@ export class LiveIntegrationsClient implements IntegrationsClient {
     owner: string,
     repo: string,
     ref?: string,
+    workspaceId?: string,
   ): Promise<GitHubRepoConfigResult> {
     const result = await backendRequest<{ config?: unknown; exists?: unknown }>(
       'github.repoConfig.get',
-      ref ? { owner, repo, ref } : { owner, repo },
+      {
+        owner,
+        repo,
+        ...(ref ? { ref } : {}),
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      },
     );
     const config =
       result?.config && typeof result.config === 'object' && !Array.isArray(result.config)
@@ -195,6 +223,7 @@ export class LiveIntegrationsClient implements IntegrationsClient {
     // daemon wire regression instead of silently degrading to "no script".
     if (config === null && result?.config != null) {
       logger.warn('github.repoConfig.get returned a non-object config; treating as null', {
+        ...(workspaceId === undefined ? {} : { workspaceId }),
         owner,
         repo,
       });
@@ -207,12 +236,18 @@ export class LiveIntegrationsClient implements IntegrationsClient {
    * PROPAGATE (and a `pull: null` result throws) so the card renders its
    * URL-only fallback instead of a fabricated preview.
    */
+  captureRepositoryResource(workspaceId: string) {
+    return captureBackendRepositoryResource(workspaceId);
+  }
+
   async githubPullRequest(
     owner: string,
     repo: string,
     number: number,
+    workspaceId?: string,
   ): Promise<GitHubPullRequestDetails> {
     const result = await backendRequest<{ pull?: GithubPullWire | null }>('github.pulls.get', {
+      ...(workspaceId === undefined ? {} : { workspaceId }),
       owner,
       repo,
       number,
@@ -238,8 +273,14 @@ export class LiveIntegrationsClient implements IntegrationsClient {
    * `github.issues.get` (§5.27) — one issue for the link hover card. Same
    * propagate-failures contract as `githubPullRequest`.
    */
-  async githubIssue(owner: string, repo: string, number: number): Promise<GitHubIssueDetails> {
+  async githubIssue(
+    owner: string,
+    repo: string,
+    number: number,
+    workspaceId?: string,
+  ): Promise<GitHubIssueDetails> {
     const result = await backendRequest<{ issue?: GithubIssueWire | null }>('github.issues.get', {
+      ...(workspaceId === undefined ? {} : { workspaceId }),
       owner,
       repo,
       number,
@@ -259,26 +300,38 @@ export class LiveIntegrationsClient implements IntegrationsClient {
     };
   }
 
-  async linearIssues(): Promise<LinearIssueResult[]> {
+  async linearIssues(workspaceId?: string): Promise<LinearIssueResult[]> {
     try {
-      const status = await backendRequest<IntegrationAuthStatus>('linear.authStatus');
+      const status = await backendRequest<IntegrationAuthStatus>(
+        'linear.authStatus',
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
       if (status?.authenticated !== true) return [];
       // §5.28: cursor-paginated `{ issues, nextToken }` envelope; the pane
       // consumes the first page only.
-      const result = await backendRequest<{ issues: LinearIssueResult[] }>('linear.listIssues');
+      const result = await backendRequest<{ issues: LinearIssueResult[] }>(
+        'linear.listIssues',
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
       return result.issues;
     } catch {
       return [];
     }
   }
 
-  async sentryIssues(): Promise<SentryIssueResult[]> {
+  async sentryIssues(workspaceId?: string): Promise<SentryIssueResult[]> {
     try {
-      const status = await backendRequest<IntegrationAuthStatus>('sentry.authStatus');
+      const status = await backendRequest<IntegrationAuthStatus>(
+        'sentry.authStatus',
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
       if (status?.authenticated !== true) return [];
       // §5.29: cursor-paginated `{ issues, nextToken }` envelope; the pane
       // consumes the first page only.
-      const result = await backendRequest<{ issues: SentryIssueResult[] }>('sentry.listIssues');
+      const result = await backendRequest<{ issues: SentryIssueResult[] }>(
+        'sentry.listIssues',
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
       return result.issues;
     } catch {
       return [];

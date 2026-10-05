@@ -1,7 +1,14 @@
+import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
+import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
+import { invitationAccountSearchReducer } from './slices/invitation-account-search/invitation-account-search-slice';
+import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
+import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
+import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
 import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
+import { agentModelReducer } from './slices/agent-model/agent-model-slice';
 import { backgroundAgentSettingsReducer } from './slices/background-agent-settings/background-agent-settings-slice';
 import { externalEditorsReducer } from './slices/external-editors/external-editors-slice';
 import { uiLayoutReducer } from './slices/ui-layout/ui-layout-slice';
@@ -14,6 +21,7 @@ import { noteReadTrackingReducer } from './slices/note-read-tracking/note-read-t
 import { multiPanelContextReducer } from './slices/multi-panel-context/multi-panel-context-slice';
 import { permissionReducer } from './slices/permission/permission-slice';
 import { pipReducer } from './slices/pip/pip-slice';
+import { powerReducer } from './slices/power/power-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
 import { globalModalsReducer } from './slices/global-modals/global-modals-slice';
 import { knownReposReducer } from './slices/known-repos/known-repos-slice';
@@ -24,6 +32,7 @@ import { systemStatusReducer } from './slices/system-status/system-status-slice'
 import { transientUiReducer } from './slices/transient-ui/transient-ui-slice';
 import { workspaceOperationsReducer } from './slices/workspace-operations/workspace-operations-slice';
 import { workspaceAgentsReducer } from './slices/workspace-agents/workspace-agents-slice';
+import { agentMutationUiReducer } from './slices/agent-mutation-ui/agent-mutation-ui-slice';
 import { workspaceNavigationReducer } from './slices/workspace-navigation/workspace-navigation-slice';
 import { workspaceNotesReducer } from './slices/workspace-notes/workspace-notes-slice';
 import { workspaceTasksReducer } from './slices/workspace-tasks/workspace-tasks-slice';
@@ -34,11 +43,14 @@ import { releaseNotesReducer } from './slices/release-notes/release-notes-slice'
 import { skillsReducer } from './slices/skills/skills-slice';
 import { workspaceReducer } from './slices/workspace/workspace-slice';
 import { githubAuthReducer } from './slices/github-auth/github-auth-slice';
+import { gitlabAuthReducer } from './slices/gitlab-auth/gitlab-auth-slice';
 import { githubReposReducer } from './slices/github-repos/github-repos-slice';
 import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo-search-slice';
+import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
 import { legacyImportReducer } from './slices/legacy-import/legacy-import-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
+import { identityReducer } from './slices/identity/identity-slice';
 import { voiceSettingsReducer } from './slices/voice-settings/voice-settings-slice';
 import { browserReducer } from './slices/browser/browser-slice';
 import { browserClientsReducer } from './slices/browser-clients/browser-clients-slice';
@@ -56,9 +68,13 @@ import { sidebarNavReducer } from './slices/sidebar-nav/sidebar-nav-slice';
 import { scriptsReducer } from './slices/scripts/scripts-slice';
 import { statsReducer } from './slices/stats/stats-slice';
 import { backgroundHooksReducer } from './slices/background-hooks/background-hooks-slice';
+import { scriptMonitorReducer } from './slices/script-monitor/script-monitor-slice';
 import { prMonitorReducer } from './slices/pr-monitor/pr-monitor-slice';
 import { agentFollowReducer } from './slices/agent-follow/agent-follow-slice';
 import { gitReducer } from './slices/git/git-slice';
+import { gitWriteReducer } from './slices/git/git-write-slice';
+import { acceptWorkflowReducer } from './slices/accept-workflow/accept-workflow-slice';
+import { prWorkflowReducer } from './slices/pr-workflow/pr-workflow-slice';
 import { gitRootsReducer } from './slices/git-roots/git-roots-slice';
 import { fileTrackingReducer } from './slices/changes/changes-slice';
 import { agentLockReducer } from './slices/agent-lock/agent-lock-slice';
@@ -71,6 +87,7 @@ import { backgroundAgentExecutorReducer } from './slices/background-agent-execut
 import { chatStateReducer } from './slices/chat-state/chat-state-slice';
 import { chatChangesReducer } from './slices/chat-changes/chat-changes-slice';
 import { fileExplorerReducer } from './slices/file-explorer/file-explorer-slice';
+import { pdfPreviewReducer } from './slices/pdf-preview/pdf-preview-slice';
 import { filesReducer } from './slices/files/files-slice';
 import { agentSessionReducer } from './slices/agent-session/agent-session-slice';
 import { agentQueueReducer } from './slices/agent-queue/agent-queue-slice';
@@ -90,14 +107,21 @@ import { proposalLifecycleReducer } from './slices/proposal-lifecycle/proposal-l
 import { prBranchLookupReducer } from './slices/pr-branch-lookup/pr-branch-lookup-slice';
 import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice';
 import { connectionsReducer } from './slices/connections/connections-slice';
+import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
+import { principalReducer } from './slices/principal/principal-slice';
+import { presenceFollowReducer } from './slices/presence-follow/presence-follow-slice';
+import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
 import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
+import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
 export const reducers = {
+  repositoryContext: repositoryContextReducer,
   providerSettings: providerSettingsReducer,
+  settingsEvents: settingsEventsReducer,
   antigravitySetup: antigravitySetupReducer,
   providerCatalog: providerCatalogReducer,
   providerModels: providerModelsReducer,
@@ -115,12 +139,15 @@ export const reducers = {
   knownRepos: knownReposReducer,
   deepLinks: deepLinksReducer,
   model: modelReducer,
+  agentModel: agentModelReducer,
   pip: pipReducer,
+  power: powerReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,
   transientUi: transientUiReducer,
   userPreferences: userPreferencesReducer,
   workspaceAgents: workspaceAgentsReducer,
+  agentMutationUi: agentMutationUiReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
   workspaceTasks: workspaceTasksReducer,
@@ -133,11 +160,14 @@ export const reducers = {
   workspace: workspaceReducer,
   skills: skillsReducer,
   githubAuth: githubAuthReducer,
+  gitlabAuth: gitlabAuthReducer,
   githubRepos: githubReposReducer,
   githubRepoSearch: githubRepoSearchReducer,
+  githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
   legacyImport: legacyImportReducer,
   linearAuth: linearAuthReducer,
+  identity: identityReducer,
   voiceSettings: voiceSettingsReducer,
   sentryAuth: sentryAuthReducer,
   browser: browserReducer,
@@ -156,8 +186,12 @@ export const reducers = {
   stats: statsReducer,
   backgroundHooks: backgroundHooksReducer,
   prMonitor: prMonitorReducer,
+  scriptMonitor: scriptMonitorReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
+  gitWrite: gitWriteReducer,
+  acceptWorkflow: acceptWorkflowReducer,
+  prWorkflow: prWorkflowReducer,
   gitRoots: gitRootsReducer,
   changes: fileTrackingReducer,
   agentLock: agentLockReducer,
@@ -171,8 +205,10 @@ export const reducers = {
   chatChanges: chatChangesReducer,
   fileExplorer: fileExplorerReducer,
   files: filesReducer,
+  pdfPreview: pdfPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
+  pendingSubmissions: pendingSubmissionsReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,
   onboarding: onboardingReducer,
   workspaceInitializer: workspaceInitializerReducer,
@@ -189,9 +225,17 @@ export const reducers = {
   prBranchLookup: prBranchLookupReducer,
   daemonHealth: daemonHealthReducer,
   connections: connectionsReducer,
+  guestSessions: guestSessionsReducer,
+  presence: presenceReducer,
+  presenceFollow: presenceFollowReducer,
+  principal: principalReducer,
+  hostExecution: hostExecutionReducer,
   hostRequirements: hostRequirementsReducer,
   hud: hudReducer,
   setupPrompt: setupPromptReducer,
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
+  workspaceShare: workspaceShareReducer,
+  invitationAccountSearch: invitationAccountSearchReducer,
+  hostMembership: hostMembershipReducer,
 } as const;

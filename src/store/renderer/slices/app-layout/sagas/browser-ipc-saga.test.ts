@@ -1,6 +1,6 @@
 import { runSaga } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   isElectron: vi.fn(() => true),
@@ -35,8 +35,23 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import { PANEL_LAYOUT_STORAGE_KEY_PREFIX } from '../../panel-layout/panel-layout-types';
-import { emptyWorkspaceState, panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
+import {
+  emptyWorkspaceState,
+  panelLayoutReducer as rawPanelLayoutReducer,
+} from '../../panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { browserIpcSaga } from './browser-ipc-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
+
+/** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
+const ownerWindowSlices = {
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+  // Settled owner window: guest list received, no host joined.
+  guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
+};
 
 const NOW = new Date('2026-07-31T00:00:00.000Z').getTime();
 const TAB = (url: string) => ({
@@ -199,6 +214,10 @@ describe('browserIpcSaga', () => {
         },
       },
       {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-1', 'https://replace.test'],
+      },
+      {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-1', 'https://replace.test', null],
       },
@@ -254,6 +273,10 @@ describe('browserIpcSaga', () => {
     });
 
     expect(actions).toMatchObject([
+      {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-checked', 'https://bound.test'],
+      },
       {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-checked', 'https://bound.test', null],
@@ -349,6 +372,7 @@ describe('browserIpcSaga', () => {
         });
 
         expect(actions.map((a: any) => a.type)).toEqual([
+          'tabState/requestBrowserTabNavigation',
           'panelLayout/updateTabBrowserUrl',
           'panelLayout/setTabOwnerAgent',
           'panelLayout/activateVisibleTab',
@@ -404,6 +428,7 @@ describe('browserIpcSaga', () => {
       });
 
       expect(actions.map((a: any) => a.type)).toEqual([
+        'tabState/requestBrowserTabNavigation',
         'panelLayout/updateTabBrowserUrl',
         'panelLayout/setActiveTab',
       ]);
@@ -445,6 +470,10 @@ describe('browserIpcSaga', () => {
     // Navigate + ownership only — no setActiveTab/openTab: the tab stays
     // hidden (the user's close is respected).
     expect(actions).toMatchObject([
+      {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-hidden', 'https://hidden.test'],
+      },
       {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-hidden', 'https://hidden.test', null],
@@ -666,6 +695,10 @@ describe('browserIpcSaga', () => {
         },
       },
       {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-1', 'http://127.0.0.1:52345/'],
+      },
+      {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-1', 'http://127.0.0.1:52345/', 'http://daemon.localhost:3000/'],
       },
@@ -703,7 +736,7 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('persists a main-driven navigation with its requested URL via browser:tab-navigated (monorepo#2789)', async () => {
+  it('marks main navigation as already initiated before persisting its URL and requested URL', async () => {
     const actions: unknown[] = [];
     const task = start((action) => actions.push(action));
     state = {
@@ -732,6 +765,10 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toEqual([
       {
+        type: 'tabState/observeBrowserTabNavigation',
+        payload: ['browser-1', 'http://127.0.0.1:52345/page'],
+      },
+      {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: [
           'ws-1',
@@ -739,6 +776,10 @@ describe('browserIpcSaga', () => {
           'http://127.0.0.1:52345/page',
           'http://daemon.localhost:3000/page',
         ],
+      },
+      {
+        type: 'tabState/observeBrowserTabNavigation',
+        payload: ['browser-1', 'https://example.test/'],
       },
       {
         type: 'panelLayout/updateTabBrowserUrl',
@@ -1070,12 +1111,16 @@ describe('browserIpcSaga', () => {
 
     expect(actions).toMatchObject([
       {
+        type: 'tabState/requestBrowserTabNavigation',
+        payload: ['browser-1', 'https://adopt.test'],
+      },
+      {
         type: 'panelLayout/updateTabBrowserUrl',
         payload: ['ws-1', 'browser-1', 'https://adopt.test', null],
       },
       { type: 'panelLayout/setTabOwnerAgent', payload: ['ws-1', 'browser-1', 'agent-1'] },
     ]);
-    expect(actions).toHaveLength(2);
+    expect(actions).toHaveLength(3);
     task.cancel();
     await task.toPromise();
   });
@@ -1400,7 +1445,7 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('marks hidden owned tabs with hidden: true in list replies (monorepo#3045)', async () => {
+  it('lists requested URLs for visible and hidden tabs but omits them for legacy tabs', async () => {
     const task = start();
     state = {
       panelLayout: {
@@ -1413,8 +1458,15 @@ describe('browserIpcSaga', () => {
                     id: 'browser-visible',
                     type: 'browser',
                     browserUrl: 'http://a/',
+                    browserRequestedUrl: 'http://daemon.localhost:3000/',
                     title: 'A',
                     ownerAgentId: 'agent-1',
+                  },
+                  {
+                    id: 'browser-legacy',
+                    type: 'browser',
+                    browserUrl: 'http://legacy/',
+                    title: 'Legacy',
                   },
                 ],
                 activeTabId: null,
@@ -1425,6 +1477,7 @@ describe('browserIpcSaga', () => {
                 id: 'browser-hidden',
                 type: 'browser',
                 browserUrl: 'http://b/',
+                browserRequestedUrl: 'http://daemon.localhost:4000/',
                 title: 'B',
                 ownerAgentId: 'agent-1',
               },
@@ -1442,13 +1495,21 @@ describe('browserIpcSaga', () => {
         {
           tabId: 'browser-visible',
           url: 'http://a/',
+          requestedUrl: 'http://daemon.localhost:3000/',
           title: 'A',
           closable: true,
           ownerAgentId: 'agent-1',
         },
         {
+          tabId: 'browser-legacy',
+          url: 'http://legacy/',
+          title: 'Legacy',
+          closable: true,
+        },
+        {
           tabId: 'browser-hidden',
           url: 'http://b/',
+          requestedUrl: 'http://daemon.localhost:4000/',
           title: 'B',
           closable: true,
           ownerAgentId: 'agent-1',
@@ -1679,6 +1740,48 @@ describe('browserIpcSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  it.each(['tab-a', 'missing', undefined])(
+    'routes recovery only for an existing requested browser tab: %s',
+    async (recoverTabId) => {
+      const dispatch = vi.fn();
+      state = {
+        panelLayout: {
+          byWorkspaceId: {
+            'ws-a': {
+              panels: { one: { tabs: [{ id: 'tab-a', ...TAB('http://a/') }] } },
+            },
+          },
+        },
+      };
+      const task = start(dispatch);
+      try {
+        await emit(
+          { workspaceId: 'ws-a', requestId: 'req-1', recoverTabId },
+          'browser:list-tabs-request',
+        );
+        expect(dispatch.mock.calls).toEqual(
+          recoverTabId === 'tab-a'
+            ? [
+                [
+                  {
+                    type: 'tabState/requestBrowserTabRecovery',
+                    payload: ['tab-a', 'req-1'],
+                  },
+                ],
+              ]
+            : [],
+        );
+        expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+          requestId: 'req-1',
+          tabs: [{ tabId: 'tab-a', url: 'http://a/', title: 'Browser', closable: true }],
+        });
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
 
   it('replies with an empty tab list for a held workspace with no browser tabs', async () => {
     const task = start();
@@ -1935,9 +2038,11 @@ describe('browserIpcSaga', () => {
     };
     const hostedState = (wsId: string) => {
       state = {
+        ...ownerWindowSlices,
         panelLayout: { byWorkspaceId: {} },
         tabState: { workspaceStacks: [[wsId]] },
         workspaceAgents: { byWorkspaceId: {} },
+        workspace: { workspaces: createCollection('id') },
       };
     };
     const seedStorage = (wsId: string, tabs: unknown[]) => {
@@ -2046,7 +2151,12 @@ describe('browserIpcSaga', () => {
       // workspaceStacks — staying silent times the request out as "renderer
       // did not respond" (monorepo#2789 live regression in v2.64.0).
       const { task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        ...ownerWindowSlices,
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       seedStorage('ws-routed-1', [
         { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
       ]);
@@ -2070,7 +2180,12 @@ describe('browserIpcSaga', () => {
 
     it('stays silent when the route is /workspace/new and the workspace is otherwise unhosted', async () => {
       const { actions, task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        ...ownerWindowSlices,
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       window.history.pushState({}, '', '/workspace/new');
       try {
         await emit({ workspaceId: 'new', requestId: 'req-r2' }, 'browser:list-tabs-request');
@@ -2086,7 +2201,12 @@ describe('browserIpcSaga', () => {
 
     it('stays silent for a non-routed workspace when the window is routed to a different one', async () => {
       const { actions, task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        ...ownerWindowSlices,
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       window.history.pushState({}, '', '/workspace/ws-routed-other');
       try {
         await emit(

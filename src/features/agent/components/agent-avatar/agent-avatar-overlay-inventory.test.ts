@@ -1,3 +1,5 @@
+// @verify-changed-triggers: src/**/*.svelte
+
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,13 +9,9 @@ const consumerFiles = [
   'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte',
   'src/features/agent/components/agent-avatar/__tests__/AgentAvatarWaitingHost.svelte',
   'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
-  'src/features/layout/components/panel-tabs/Tab.svelte',
-  'src/features/log/components/ActivityTimeline.svelte',
-  'src/features/log/components/ActivityTimelineItem.svelte',
   'src/lib/components/CommandPalette.svelte',
   'src/lib/components/agent-overview/AgentHierarchyCard.svelte',
   'src/lib/components/agent-overview/AgentHierarchyGraph.svelte',
-  'src/lib/components/agent-overview/AgentNodeCard.svelte',
   'src/lib/components/agent-overview/BackgroundAgentCard.svelte',
   'src/lib/components/chat/AgentCard.svelte',
   'src/lib/components/chat/AgentMessageAttributionHeader.svelte',
@@ -24,18 +22,15 @@ const consumerFiles = [
   'src/lib/components/chat/InlineAgentAvatar.svelte',
   'src/lib/components/chat/RegularAgentWelcome.svelte',
   'src/lib/components/chat/SpecialistDropdown.svelte',
-  'src/lib/components/chat/SpecialistSwitcher.svelte',
   'src/lib/components/chat/ToolDetails.svelte',
   'src/lib/components/chat/input/EnhancedMentionList.svelte',
   'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
-  'src/lib/components/file-tracking/TreeNode.svelte',
   'src/lib/components/layout/panel-system/PanelTabBar.svelte',
   'src/lib/components/notes/primitives/AgentActionBlock.svelte',
   'src/lib/components/notes/primitives/CliBlock.svelte',
   'src/lib/components/notes/primitives/DiagramBlock.svelte',
   'src/lib/components/notes/primitives/ReferenceBlock.svelte',
   'src/lib/components/settings/AIBehaviorSidebar.svelte',
-  'src/lib/components/shared/AgentAttributionBadge.svelte',
   'src/lib/components/terminal/TerminalSidebar.svelte',
   'src/lib/components/tiptap/LineAttributionGutter.svelte',
   'src/lib/components/tiptap/TaskAgentStatus.svelte',
@@ -61,7 +56,6 @@ const overflowFiles = [
 
 const canonicalStackConsumers = [
   'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte',
-  'src/features/layout/components/panel-tabs/Tab.svelte',
   'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',
@@ -84,7 +78,7 @@ function productionSvelteFiles(directory = 'src'): string[] {
 
 describe('agent avatar overlay inventory', () => {
   it('keeps every audited consumer on the icon-free canonical avatar surface', () => {
-    expect(consumerFiles).toHaveLength(49);
+    expect(consumerFiles).toHaveLength(42);
     for (const path of consumerFiles) {
       const contents = source(path);
       expect(contents, path).not.toContain('/auggie-avatar/');

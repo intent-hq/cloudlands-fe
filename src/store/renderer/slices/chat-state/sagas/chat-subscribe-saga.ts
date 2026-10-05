@@ -1,3 +1,7 @@
+import {
+  observeSubmissionEvidence,
+  submissionHistoryEvidence,
+} from '$features/agent/submission-evidence';
 /**
  * Chat subscribe saga — feeds the STANDING `chat.subscribe` transcript
  * (PROTOCOL §7.1) into the agent-session slice so ChatPanel renders from the
@@ -6,6 +10,10 @@
  * `chatSubscribeSaga()` observes the concrete subscription lifecycle actions:
  *  - `initializeChatRequested` opens one standing subscription for that agent
  *    (deduped per agent id; skipped while a soft-hidden deletion is pending).
+ *  - `retainedChatTranscriptsSet` reference-counts the exact child-agent set
+ *    shown by mounted subscription lists. First coverage loads the AgentLite
+ *    shell through the existing read saga and opens the standing transcript;
+ *    final release closes it unless a normal agent panel still owns it.
  *  - `markAgentAsViewed` swaps subscriptions on agent switch: it closes every
  *    other agent's subscription and (re)opens the viewed agent's when its
  *    session exists — so switching chats never leaks registrations. The swap
@@ -127,6 +135,7 @@ import {
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -140,6 +149,7 @@ import {
   removeSession,
   removeWorkspaceSessions,
   replaceMessages,
+  restoreStoredSessions,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
@@ -159,6 +169,10 @@ import {
   setReplayableChatSnapshot,
 } from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
+import {
+  reportStreamLifecycle,
+  streamTurnCorrelation,
+} from '$lib/utils/stream-lifecycle-telemetry';
 import {
   hasChatInterestLease,
   onLastChatInterestLeaseReleased,
@@ -182,6 +196,8 @@ interface SubscriptionEntry {
   wasStreaming: boolean;
   /** Last reconciled transcript, re-applied on transcriptHydrationSettled. */
   lastTranscript?: ChatTranscript;
+  /** Last transcript whose submission evidence actually reached a hydrated session. */
+  lastObservedTranscript?: ChatTranscript;
   /**
    * A seq-0 snapshot that arrived BEFORE the session shell existed (the
    * chat-read saga's `agents.get` was still pending), held back so its meta
@@ -191,7 +207,13 @@ interface SubscriptionEntry {
 }
 
 type ChatSubscriptionEvent =
-  | { kind: 'transcript'; agentId: string; token: object; transcript: ChatTranscript }
+  | {
+      kind: 'transcript';
+      agentId: string;
+      token: object;
+      transcript: ChatTranscript;
+      replayed?: true;
+    }
   | { kind: 'phase'; agentId: string; token: object; phase: ChatLiveStreamPhase };
 
 type MaybePromise<T> = T | Promise<T>;
@@ -242,17 +264,16 @@ interface SubscriptionCoordinator {
    */
   leaseReleases: Channel<string>;
   /**
-   * Agents spared from a sweep — the viewed-agent swap's, an applied
-   * clear's close-all, or a scoped clear's own-slot close — because a live
-   * consumer held a chat interest lease at sweep time (a mounted ChatPanel
-   * instance, an in-flight chat-read hydration; monorepo#3295, replacing
-   * the heuristic loading/acquiring/panel-tab spares of the
-   * #2864/#2917/#3073/#3185 family). Revisited when the agent's LAST lease
-   * releases (watchLeaseReleases): with nothing depending on it and no
-   * re-view, the deferred close runs then instead of leaking the
-   * subscription. The spare defers the close, it never cancels it.
+   * Agents whose close was deferred because a live consumer held a chat
+   * interest lease. The close can come from a viewed-agent sweep, an applied
+   * or scoped clear, or the final retained-transcript owner release. Revisited
+   * when the agent's LAST lease releases (watchLeaseReleases): with no other
+   * retention and no re-view, the deferred close runs then instead of leaking
+   * the subscription.
    */
   pendingSweepCloses: Set<string>;
+  retainedTranscriptOwners: Map<string, { wsId: string; agentIds: Set<string> }>;
+  retainedTranscriptAgents: Map<string, { wsId: string; ownerIds: Set<string> }>;
 }
 
 function createCompletion(): TransitionCompletion {
@@ -285,7 +306,7 @@ function createSubscriptionAcquisition(
   agentId: string,
   onTranscript: (transcript: ChatTranscript) => void,
   onPhase: (phase: ChatLiveStreamPhase) => void,
-  options?: { sinceMessageId: string },
+  options?: { sinceMessageId?: string; workspaceId?: string },
 ): SubscriptionAcquisition {
   let unsubscribe: AsyncUnsubscribe | undefined;
   let disposeRequested = false;
@@ -312,7 +333,7 @@ function createSubscriptionAcquisition(
     agentId: string,
     handler: (transcript: ChatTranscript) => void,
     onPhase: (phase: ChatLiveStreamPhase) => void,
-    options?: { sinceMessageId: string },
+    options?: { sinceMessageId?: string; workspaceId?: string },
   ) => MaybePromise<AsyncUnsubscribe>;
   const raw = options
     ? subscribe(agentId, onTranscript, onPhase, options)
@@ -390,9 +411,18 @@ function* applyTranscript(
   entry: SubscriptionEntry,
   transcript: ChatTranscript,
   discardStoreOnly = false,
+  restoration = false,
 ): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
-  if (!isCurrentSubscription(coordinator, agentId, entry)) return;
+  if (!isCurrentSubscription(coordinator, agentId, entry)) {
+    // A supersede landing across the select yield above: the drop is correct,
+    // but a dropped snapshot must not vanish unlogged (see reportSnapshotGuard).
+    reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
+    return;
+  }
+  // Read before the flag reconcile below consumes the marker: a snapshot that
+  // may predate a locally-started turn is not authoritative about liveness.
+  const racesLocalStart = coordinator.locallyStartedTurns.has(agentId);
   if (session) {
     const transcriptIds = new Set<string>();
     for (const message of transcript.messages) {
@@ -406,12 +436,47 @@ function* applyTranscript(
             !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
             !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
         );
+    // A snapshot is the authoritative newest page with the in-flight turn
+    // MERGED INTO IT (§7.1), so a retained row the page does not cover cannot
+    // still be in flight — settle its streaming flags, exactly as the
+    // close-time teardown does (flags only; content is never touched).
+    // Otherwise a partial row evicted from the served window (the slim page
+    // budget re-mints `truncated` after the live-turn merge) keeps rendering
+    // as a live turn beside the daemon's real one, and the firehose cannot
+    // clear it while this registration is the sole writer.
+    // Trade-off of the `racesLocalStart` exemption: a snapshot pending since
+    // before a local send may predate the turn the renderer just started, so
+    // it must not settle the optimistic in-flight row — but skipping the
+    // settle also spares a frozen PRIOR-turn row, and when that snapshot is
+    // itself `isStreaming: true` the flag reconcile below consumes the
+    // marker, so the frozen row persists until some LATER snapshot arrives
+    // (which a healthy standing registration may never emit). Protecting the
+    // optimistic row matters more than closing that residual window.
+    const retained =
+      transcript.fromSnapshot === true && !racesLocalStart
+        ? storeOnly.map((message) => (claimsLiveness(message) ? settleStreaming(message) : message))
+        : storeOnly;
     const merged =
-      storeOnly.length === 0
+      retained.length === 0
         ? transcript.messages
-        : deduplicateAgentMessages([...storeOnly, ...transcript.messages]);
+        : deduplicateAgentMessages([...retained, ...transcript.messages]);
     if (isCurrentSubscription(coordinator, agentId, entry)) {
+      // Hydration settlement restores the live transcript after a history read.
+      // Re-observing that same evidence would invalidate the read and schedule
+      // another refresh forever. New subscription deliveries still invalidate,
+      // even when the client emits the same object; deferred first applies do too.
+      if (!restoration || entry.lastObservedTranscript !== transcript) {
+        observeSubmissionEvidence(
+          agentId,
+          session.workspaceId,
+          'history',
+          submissionHistoryEvidence(transcript.messages),
+        );
+        entry.lastObservedTranscript = transcript;
+      }
       yield* put(replaceMessages(agentId, merged));
+    } else {
+      reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
     }
   }
 
@@ -440,6 +505,20 @@ function* applyTranscript(
   }
 }
 
+/** True while a row still presents itself as mid-stream. */
+function claimsLiveness(message: AgentMessage): boolean {
+  return message.isStreaming === true || message.streamingComplete === false;
+}
+
+/**
+ * The same row with its streaming flags settled; content untouched. The
+ * settle is the renderer's, not a §7.1 terminal delivery, so the row is
+ * `provisional` until a snapshot/delta replaces it by id.
+ */
+function settleStreaming(message: AgentMessage): AgentMessage {
+  return { ...message, isStreaming: false, streamingComplete: true, provisional: true };
+}
+
 /**
  * Clear stale message-level streaming flags left behind when a standing
  * subscription closes mid-turn. Message content is untouched; a re-view's
@@ -449,16 +528,43 @@ function* clearStaleStreamingMessageFlags(agentId: string): SagaGenerator<void> 
   const session = yield* selectAgentSession.effect(agentId);
   const messages = session?.messages;
   if (!messages?.length) return;
-  const hasStale = messages.some(
-    (message) => message.isStreaming === true || message.streamingComplete === false,
-  );
-  if (!hasStale) return;
+  if (!messages.some(claimsLiveness)) return;
   const normalized = messages.map((message) =>
-    message.isStreaming === true || message.streamingComplete === false
-      ? { ...message, isStreaming: false, streamingComplete: true }
-      : message,
+    claimsLiveness(message) ? settleStreaming(message) : message,
   );
   yield* put(replaceMessages(agentId, normalized));
+}
+
+/**
+ * One `stream-lifecycle` breadcrumb for a snapshot a guard below drops or
+ * holds. A snapshot is the only emit that can displace a stale in-flight turn
+ * (§7.1 serves the newest page with the live turn merged in), so each guard
+ * names itself — a distinct event per structurally distinct guard — instead
+ * of returning silently: the next stuck-transcript report is then
+ * diagnosable from the log. The transcript's own liveness is implied by
+ * `pushKind: 'snapshot'` plus the `turnCorrelation`/`blockCount` presence;
+ * `storeStreamState` is deliberately omitted — its other producers report
+ * the store's actual state, which this callback cannot cheaply read.
+ * Content-free: the correlation is the hashed message id, never its text.
+ */
+function reportSnapshotGuard(
+  transcript: ChatTranscript,
+  event: string,
+  callbackResult: 'ignored' | 'buffered',
+): void {
+  if (transcript.fromSnapshot !== true) return;
+  const inFlight = transcript.messages.find(
+    (message) => message.role === 'assistant' && message.isStreaming === true,
+  );
+  reportStreamLifecycle({
+    stage: 'subscription',
+    event,
+    ...(inFlight ? { turnCorrelation: streamTurnCorrelation(inFlight.id) } : {}),
+    correlationBasis: inFlight ? 'assistant-message' : 'unjoinable',
+    pushKind: 'snapshot',
+    ...(inFlight?.contentBlocks ? { blockCount: inFlight.contentBlocks.length } : {}),
+    callbackResult,
+  });
 }
 
 function* handleSubscriptionEvent(
@@ -466,8 +572,24 @@ function* handleSubscriptionEvent(
   event: ChatSubscriptionEvent,
 ): SagaGenerator<void> {
   const entry = coordinator.subscriptions.get(event.agentId);
-  if (!entry || entry.token !== event.token) return;
-  if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
+  if (!entry || entry.token !== event.token) {
+    if (event.kind === 'transcript') {
+      // A queued event whose registration rotated before the saga drained it
+      // (vs `-emit`: a wire callback outliving its registration).
+      reportSnapshotGuard(
+        event.transcript,
+        'snapshot-dropped-stale-registration-queued',
+        'ignored',
+      );
+    }
+    return;
+  }
+  if (!isCurrentSubscription(coordinator, event.agentId, entry)) {
+    if (event.kind === 'transcript') {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-superseded-registration', 'ignored');
+    }
+    return;
+  }
   try {
     if (event.kind === 'phase') {
       if (isCurrentSubscription(coordinator, event.agentId, entry)) {
@@ -475,8 +597,14 @@ function* handleSubscriptionEvent(
       }
       return;
     }
-    if (yield* call(isAgentDeletionPending, event.agentId)) return;
-    if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
+    if (yield* call(isAgentDeletionPending, event.agentId)) {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-deletion-pending', 'ignored');
+      return;
+    }
+    if (!isCurrentSubscription(coordinator, event.agentId, entry)) {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-superseded-registration', 'ignored');
+      return;
+    }
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
     // Pre-session seq-0 race: `initializeChatRequested` starts this saga and
@@ -492,6 +620,7 @@ function* handleSubscriptionEvent(
       if (!preSession) {
         entry.pendingSnapshot = event.transcript;
         setReplayableChatSnapshot(event.agentId, true);
+        reportSnapshotGuard(event.transcript, 'snapshot-held-pre-session', 'buffered');
         return;
       }
       entry.pendingSnapshot = undefined;
@@ -509,7 +638,9 @@ function* handleSubscriptionEvent(
     // re-apply of the same transcript must not wipe the background
     // older-history pages fetched after it.
     const discardStoreOnly =
-      event.transcript.fromSnapshot === true && event.transcript.resumed === false;
+      !event.replayed &&
+      event.transcript.fromSnapshot === true &&
+      event.transcript.resumed === false;
     yield* applyTranscript(coordinator, event.agentId, entry, event.transcript, discardStoreOnly);
     // Seq-0 snapshot applied (single-transfer hydration): seed the firehose
     // stream accumulator with the snapshot's in-flight assistant message so
@@ -529,18 +660,27 @@ function* handleSubscriptionEvent(
         (message) => typeof message.id === 'string' && message.id.length > 0,
       );
       yield* put(
-        chatTranscriptSnapshotApplied(event.agentId, {
-          truncated: event.transcript.truncated,
-          totalMessages: event.transcript.totalMessages,
-          ...(oldest ? { oldestMessageId: oldest.id } : {}),
-          ...(event.transcript.resumed === undefined ? {} : { resumed: event.transcript.resumed }),
-        }),
+        chatTranscriptSnapshotApplied(
+          event.agentId,
+          {
+            truncated: event.transcript.truncated,
+            ...(event.transcript.nextToken !== undefined
+              ? { nextToken: event.transcript.nextToken }
+              : {}),
+            totalMessages: event.transcript.totalMessages,
+            ...(oldest ? { oldestMessageId: oldest.id } : {}),
+            ...(event.transcript.resumed === undefined
+              ? {}
+              : { resumed: event.transcript.resumed }),
+          },
+          event.replayed,
+        ),
       );
       // §7.1 resume fallback: the daemon did not honor the requested
       // `sinceMessageId` (unknown/pruned anchor) and served the standard
       // newest page instead — the retained older history may be stale, so
       // trigger a full rehydration through the chat-read saga.
-      if (event.transcript.resumed === false && wsId) {
+      if (!event.replayed && event.transcript.resumed === false && wsId) {
         yield* put(refreshChatTranscriptRequested(wsId, event.agentId));
       }
     }
@@ -563,11 +703,20 @@ function* handleSubscriptionEvent(
  */
 const resumeAnchors = new Map<string, string>();
 
-/** The newest fully-persisted message id, or undefined when none exists. */
+/**
+ * The newest fully-persisted message id, or undefined when none exists.
+ * Partial rows (still streaming) and `provisional` rows are skipped: a
+ * provisional row was settled by the renderer (covered-path terminal
+ * placeholder, firehose-settled row, close-time normalize) and the §7.1
+ * reconcile has not replaced it yet — anchoring on it would make the reopen
+ * skip that message's daemon-canonical contents. Anchoring one row earlier
+ * only refetches more, never less.
+ */
 function newestPersistedMessageId(messages: AgentMessage[]): string | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message.isStreaming === true || message.streamingComplete === false) continue;
+    if (message.provisional === true) continue;
     if (typeof message.id === 'string' && message.id.length > 0) return message.id;
   }
   return undefined;
@@ -619,7 +768,19 @@ function* openSubscription(
   const pending: ChatSubscriptionEvent[] = [];
   let ready = false;
   const emit = (event: ChatSubscriptionEvent) => {
-    if (slot.desiredToken !== transition.token) return;
+    if (slot.desiredToken !== transition.token) {
+      // A superseded registration still holding the wire callback: the drop
+      // is correct, but a dropped SNAPSHOT is the one emit that could have
+      // displaced a stale in-flight turn, so it leaves a breadcrumb.
+      if (event.kind === 'transcript') {
+        reportSnapshotGuard(
+          event.transcript,
+          'snapshot-dropped-stale-registration-emit',
+          'ignored',
+        );
+      }
+      return;
+    }
     if (ready) coordinator.events.put(event);
     else pending.push(event);
   };
@@ -635,7 +796,10 @@ function* openSubscription(
         emit({ kind: 'transcript', agentId, token: transition.token, transcript }),
       (phase: ChatLiveStreamPhase) =>
         emit({ kind: 'phase', agentId, token: transition.token, phase }),
-      sinceMessageId === undefined ? undefined : { sinceMessageId },
+      {
+        ...(sinceMessageId !== undefined ? { sinceMessageId } : {}),
+        ...(transition.wsId !== undefined ? { workspaceId: transition.wsId } : {}),
+      },
     );
     slot.acquisition = acquisition;
     const unsubscribe = yield* call(acquisition.wait);
@@ -762,7 +926,7 @@ function* applyHydrationSettled(
 ): SagaGenerator<void> {
   const entry = coordinator.subscriptions.get(agentId);
   if (entry?.hasEmitted && entry.lastTranscript) {
-    yield* applyTranscript(coordinator, agentId, entry, entry.lastTranscript);
+    yield* applyTranscript(coordinator, agentId, entry, entry.lastTranscript, false, true);
   }
 }
 
@@ -910,6 +1074,92 @@ function closeMatchingSlots(
   return completions;
 }
 
+function isTranscriptRetained(coordinator: SubscriptionCoordinator, agentId: string): boolean {
+  return coordinator.retainedTranscriptAgents.has(agentId);
+}
+
+function removeRetainedAgent(coordinator: SubscriptionCoordinator, agentId: string): void {
+  const retained = coordinator.retainedTranscriptAgents.get(agentId);
+  if (!retained) return;
+  coordinator.retainedTranscriptAgents.delete(agentId);
+  for (const ownerId of retained.ownerIds) {
+    const owner = coordinator.retainedTranscriptOwners.get(ownerId);
+    owner?.agentIds.delete(agentId);
+    if (owner?.agentIds.size === 0) coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+}
+
+function removeRetainedWorkspace(coordinator: SubscriptionCoordinator, wsId: string): void {
+  for (const [ownerId, owner] of [...coordinator.retainedTranscriptOwners.entries()]) {
+    if (owner.wsId !== wsId) continue;
+    for (const agentId of owner.agentIds) {
+      const retained = coordinator.retainedTranscriptAgents.get(agentId);
+      retained?.ownerIds.delete(ownerId);
+      if (retained?.ownerIds.size === 0) coordinator.retainedTranscriptAgents.delete(agentId);
+    }
+    coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+}
+
+function* releaseRetainedTranscriptIfUnused(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+): SagaGenerator<void> {
+  if (isTranscriptRetained(coordinator, agentId)) return;
+  if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
+  if (yield* call(hasChatInterestLease, agentId)) {
+    coordinator.pendingSweepCloses.add(agentId);
+    return;
+  }
+  enqueueClose(coordinator, agentId);
+}
+
+function* setRetainedChatTranscripts(
+  coordinator: SubscriptionCoordinator,
+  ownerId: string,
+  wsId: string,
+  agentIds: string[],
+): SagaGenerator<void> {
+  if (!ownerId || !wsId) return;
+  const previous = coordinator.retainedTranscriptOwners.get(ownerId);
+  const previousIds = previous?.agentIds ?? new Set<string>();
+  const nextIds = new Set(agentIds.filter(Boolean));
+  const released: string[] = [];
+  const added: string[] = [];
+
+  for (const agentId of previousIds) {
+    if (previous?.wsId === wsId && nextIds.has(agentId)) continue;
+    const retained = coordinator.retainedTranscriptAgents.get(agentId);
+    retained?.ownerIds.delete(ownerId);
+    if (retained?.ownerIds.size === 0) {
+      coordinator.retainedTranscriptAgents.delete(agentId);
+      released.push(agentId);
+    }
+  }
+
+  for (const agentId of nextIds) {
+    if (previous?.wsId === wsId && previousIds.has(agentId)) continue;
+    const retained = coordinator.retainedTranscriptAgents.get(agentId);
+    if (retained) {
+      retained.ownerIds.add(ownerId);
+    } else {
+      coordinator.retainedTranscriptAgents.set(agentId, { wsId, ownerIds: new Set([ownerId]) });
+      added.push(agentId);
+    }
+  }
+
+  if (nextIds.size > 0) {
+    coordinator.retainedTranscriptOwners.set(ownerId, { wsId, agentIds: nextIds });
+  } else {
+    coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+
+  for (const agentId of added) {
+    yield* put(initializeChatRequested(agentId, { wsId }));
+  }
+  for (const agentId of released) yield* releaseRetainedTranscriptIfUnused(coordinator, agentId);
+}
+
 /**
  * Bounded fallback for the switch-back transcript reveal gate. Margin for the
  * healed registration's fresh snapshot to arrive and apply (mirrors the
@@ -1031,6 +1281,7 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
     (otherId, slot) =>
       otherId !== agentId &&
       (slot.wsId === CHIEF_WORKSPACE_ID) === viewedIsChief &&
+      !isTranscriptRetained(coordinator, otherId) &&
       !spared.has(otherId),
   );
   const session = yield* selectAgentSession.effect(agentId);
@@ -1040,8 +1291,8 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 }
 
 /**
- * Revisit an agent spared from a sweep because a lease was held, now that
- * its LAST lease has released (every panel instance destroyed, every
+ * Revisit an agent whose close was deferred because a lease was held, now
+ * that its LAST lease has released (every panel instance destroyed, every
  * hydration settled/failed/cancelled). A re-viewed agent stays: the view is
  * an authoritative keep the swap will retire on the next switch. A tab
  * persisted in a panel layout without a live lease holds nothing open — an
@@ -1057,6 +1308,7 @@ function* runDeferredSweepCloseIfUnleased(
   if (!coordinator.pendingSweepCloses.has(agentId)) return;
   if (yield* call(hasChatInterestLease, agentId)) return;
   coordinator.pendingSweepCloses.delete(agentId);
+  if (isTranscriptRetained(coordinator, agentId)) return;
   if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
   enqueueClose(coordinator, agentId);
 }
@@ -1150,6 +1402,7 @@ function* emitOrCycleSnapshot(
       agentId,
       token: entry.token,
       transcript: entry.lastTranscript,
+      replayed: true,
     });
     return;
   }
@@ -1159,6 +1412,7 @@ function* emitOrCycleSnapshot(
 
 type ChatSubscribeAction =
   | ReturnType<typeof initializeChatRequested>
+  | ReturnType<typeof retainedChatTranscriptsSet>
   | ReturnType<typeof chatSendStarted>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
@@ -1166,6 +1420,7 @@ type ChatSubscribeAction =
   | ReturnType<typeof chatTranscriptSnapshotRerequested>
   | ReturnType<typeof clearCurrentlyViewedAgent>
   | ReturnType<typeof bulkUpsertSessions>
+  | ReturnType<typeof restoreStoredSessions>
   | ReturnType<typeof removeSession>
   | ReturnType<typeof removeWorkspaceSessions>
   | ReturnType<typeof workspaceDeleted>
@@ -1180,6 +1435,11 @@ function* routeLifecycleAction(
       typeof initializeChatRequested
     >['payload'];
     if (agentId) yield* enqueueOpen(coordinator, agentId, wsId);
+  } else if (action.type === retainedChatTranscriptsSet.type) {
+    const [ownerId, wsId, agentIds] = action.payload as ReturnType<
+      typeof retainedChatTranscriptsSet
+    >['payload'];
+    yield* setRetainedChatTranscripts(coordinator, ownerId, wsId, agentIds);
   } else if (action.type === chatSendStarted.type) {
     const { agentId } = action.payload as ReturnType<typeof chatSendStarted>['payload'];
     if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
@@ -1211,7 +1471,7 @@ function* routeLifecycleAction(
       typeof clearCurrentlyViewedAgent
     >['payload'];
     if (scopeAgentId && (yield* isChiefChatAgent(coordinator, scopeAgentId))) {
-      enqueueClose(coordinator, scopeAgentId);
+      if (!isTranscriptRetained(coordinator, scopeAgentId)) enqueueClose(coordinator, scopeAgentId);
     } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
       // Same-agent remount hole in the monorepo#1215 guard (monorepo#2864):
       // on a ChatPanel remount for the SAME agent, the new instance's
@@ -1241,7 +1501,10 @@ function* routeLifecycleAction(
       }
       closeMatchingSlots(
         coordinator,
-        (agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID && !leased.has(agentId),
+        (agentId, slot) =>
+          slot.wsId !== CHIEF_WORKSPACE_ID &&
+          !isTranscriptRetained(coordinator, agentId) &&
+          !leased.has(agentId),
       );
     } else if (scopeAgentId) {
       // Another agent is still viewed, so this scoped clear was a reducer
@@ -1258,26 +1521,35 @@ function* routeLifecycleAction(
       // contract while a lease is still held (a cached-but-mounted
       // deactivated panel, a remounting instance, or an in-flight
       // hydration).
-      if (!(yield* call(hasChatInterestLease, scopeAgentId))) {
+      if (isTranscriptRetained(coordinator, scopeAgentId)) {
+        coordinator.pendingSweepCloses.delete(scopeAgentId);
+      } else if (!(yield* call(hasChatInterestLease, scopeAgentId))) {
         enqueueClose(coordinator, scopeAgentId);
       } else {
         coordinator.pendingSweepCloses.add(scopeAgentId);
       }
     }
-  } else if (action.type === bulkUpsertSessions.type) {
+  } else if (
+    action.type === bulkUpsertSessions.type ||
+    action.type === restoreStoredSessions.type
+  ) {
     // Reducers commit the entire session batch before saga observers receive
     // this action. It is the sole shell-ready signal for pending snapshots;
     // membership-only per-agent upserts must not replay against a missing shell.
+    // A stored-snapshot restore reinstates the shell the same way.
     const [sessions] = action.payload as [AgentSession[]];
     for (const session of sessions) replayPendingSnapshot(coordinator, session.id);
   } else if (action.type === removeSession.type) {
     const [agentId] = action.payload as ReturnType<typeof removeSession>['payload'];
+    removeRetainedAgent(coordinator, agentId);
     enqueueClose(coordinator, agentId, true);
   } else if (action.type === removeWorkspaceSessions.type) {
     const [wsId] = action.payload as ReturnType<typeof removeWorkspaceSessions>['payload'];
+    removeRetainedWorkspace(coordinator, wsId);
     closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId === wsId, true);
   } else if (action.type === workspaceDeleted.type) {
     const [wsId, agentIds] = action.payload as ReturnType<typeof workspaceDeleted>['payload'];
+    removeRetainedWorkspace(coordinator, wsId);
     for (const agentId of agentIds) resumeAnchors.delete(agentId);
     closeMatchingSlots(
       coordinator,
@@ -1285,6 +1557,8 @@ function* routeLifecycleAction(
       true,
     );
   } else {
+    coordinator.retainedTranscriptOwners.clear();
+    coordinator.retainedTranscriptAgents.clear();
     closeMatchingSlots(coordinator, () => true, true);
   }
 }
@@ -1330,6 +1604,8 @@ function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
   // retires them; only the bookkeeping map needs clearing.
   coordinator.revealGateWatchers.clear();
   coordinator.pendingSweepCloses.clear();
+  coordinator.retainedTranscriptOwners.clear();
+  coordinator.retainedTranscriptAgents.clear();
   return agentIds;
 }
 
@@ -1343,6 +1619,8 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     revealGateWatchers: new Map(),
     leaseReleases: createChannel(buffers.expanding<string>()),
     pendingSweepCloses: new Set(),
+    retainedTranscriptOwners: new Map(),
+    retainedTranscriptAgents: new Map(),
   };
   const unsubscribeLeaseReleases = onLastChatInterestLeaseReleased((agentId) =>
     coordinator.leaseReleases.put(agentId),
@@ -1350,6 +1628,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
   const lifecycleActions = yield* actionChannel(
     [
       initializeChatRequested,
+      retainedChatTranscriptsSet,
       chatSendStarted,
       markAgentAsViewed,
       transcriptHydrationSettled,
@@ -1357,6 +1636,7 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
       chatTranscriptSnapshotRerequested,
       clearCurrentlyViewedAgent,
       bulkUpsertSessions,
+      restoreStoredSessions,
       removeSession,
       removeWorkspaceSessions,
       workspaceDeleted,

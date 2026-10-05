@@ -64,8 +64,7 @@ export async function runShrinkWorkspaceAction(workspace: Workspace): Promise<vo
       source: 'shrink-workspace',
       metadata: { specialist: 'implementor', source: 'shrink-workspace' },
     });
-    appStore.dispatch(launchAction);
-    const session = await launchAction.promise;
+    const session = await appStore.dispatch(launchAction);
 
     // Persist the draft BEFORE opening the tab so ChatPanel's restore-on-mount
     // (drafts.get) finds it and prefills the composer.

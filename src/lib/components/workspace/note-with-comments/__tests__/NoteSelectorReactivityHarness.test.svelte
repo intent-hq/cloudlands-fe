@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
-  import type { Store } from '@augmentcode/themis/svelte-store';
+  import type { Store } from '@themislib/themis/svelte-store';
   import {
     selectAllNotes,
     selectNoteById,

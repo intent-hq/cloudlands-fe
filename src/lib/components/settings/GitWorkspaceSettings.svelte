@@ -1,14 +1,30 @@
 <script lang="ts">
-  import { logger } from '../../../shared/logger';
-  import { appClient } from '$lib/client';
-  import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
+  import {
+    settingsFormOpened,
+    settingsFormClosed,
+    settingsFormLoadRequested,
+    settingsFormSaveRequested,
+    settingsFormDraftChanged,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsForm,
+    selectSettingsFormEntries,
+    selectSettingsFormError,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingsControlContext,
+  } from '$lib/components/patterns/settings';
+  import { Checkbox } from '$lib/components/patterns/settings/custom-controls';
+  // eslint-disable-next-line intent/settings-use-schema -- shared inline recipe used inside schema description snippets
+  import { InlineCode } from '$lib/components/ui/inline-code';
   import PathSettingField from './PathSettingField.svelte';
-  import { Select } from '$lib/components/ui/select';
-  import { Toggle } from '$lib/components/ui/toggle';
   import type { Snippet } from 'svelte';
 
   let { shellAdditions }: { shellAdditions?: Snippet } = $props();
@@ -18,26 +34,59 @@
   // i18n-ignore (file path)
   const SSH_KEY_PLACEHOLDER = '~/.ssh/id_ed25519';
 
-  // Settings state
-  let worktreesLocation = $state('');
-  let sshKeyPath = $state('');
-  let autoCommit = $state(true);
-  let cowIsolation = $state(false);
-  let exposeGitCredential = $state(true);
-  let defaultShell = $state('auto');
-  let branchPrefix = $state('');
+  const identity = { formId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
+  const form$ = selectSettingsForm(identity);
+  const entries$ = selectSettingsFormEntries(identity);
+  const error$ = selectSettingsFormError(identity);
+  const worktreesLocation = $derived(
+    String(
+      $form$?.drafts['workspace.worktreesLocation'] ??
+        $entries$['workspace.worktreesLocation']?.value ??
+        '',
+    ),
+  );
+  const sshKeyPath = $derived(
+    String(
+      $form$?.drafts['workspace.sshKeyPath'] ?? $entries$['workspace.sshKeyPath']?.value ?? '',
+    ),
+  );
+  const autoCommit = $derived(
+    ($form$?.drafts['git.autoCommit'] ?? $entries$['git.autoCommit']?.value) !== false,
+  );
+  const cowIsolation = $derived(
+    ($form$?.drafts['workspace.cowIsolation'] ?? $entries$['workspace.cowIsolation']?.value) ===
+      true,
+  );
+  const exposeGitCredential = $derived(
+    ($form$?.drafts['sourceControl.github.exposeGitCredentialToChildren'] ??
+      $entries$['sourceControl.github.exposeGitCredentialToChildren']?.value) === true,
+  );
+  const defaultShell = $derived(
+    String(
+      $form$?.drafts['workspace.defaultShell'] ??
+        $entries$['workspace.defaultShell']?.value ??
+        'auto',
+    ),
+  );
+  const branchPrefix = $derived(
+    String(
+      $form$?.drafts['workspace.branchPrefix'] ?? $entries$['workspace.branchPrefix']?.value ?? '',
+    ),
+  );
   let branchPrefixError = $state('');
-  let settingsError = $state('');
+  const settingsError = $derived($error$);
 
   // The git-credential toggle is only shown when the daemon reports the
   // setting (older daemons don't have it); we also never write the path back
   // to a daemon that didn't report it.
-  let gitCredentialSettingSupported = $state(false);
+  const gitCredentialSettingSupported = $derived(
+    $entries$['sourceControl.github.exposeGitCredentialToChildren'] !== undefined,
+  );
 
   // CoW toggle is visible only when the machine supports it — a direct probe
   // of the workspaces root via `system.capabilities` (PROTOCOL §5.7), with no
   // dependency on an active/hydrated workspace.
-  let cowSupported = $state(false);
+  const cowSupported = $derived($form$?.values.cowSupported === true);
   const showCowToggle = $derived(cowSupported);
 
   // Daemon setting path per field (PROTOCOL §5.12, BE-owned workspace/git group).
@@ -50,11 +99,6 @@
     branchPrefix: 'workspace.branchPrefix',
     exposeGitCredential: 'sourceControl.github.exposeGitCredentialToChildren',
   } as const;
-
-  // Last-loaded/saved value per daemon path so saves only send changed
-  // settings — `workspace.sshKeyPath` is sensitive and reads back redacted
-  // (§5.12), so its placeholder must never be written back unchanged.
-  let loadedValues: Record<string, unknown> = {};
 
   // Available shells (filtered by platform); shell names are product names — not translated
   const isWindows = navigator.platform.startsWith('Win');
@@ -75,107 +119,57 @@
         ]),
   ];
 
-  // Unknown/custom values (e.g. hand-edited settings) fall back to the raw value.
-  const selectedShellLabel = $derived(
-    shellOptions.find((option) => option.value === defaultShell)?.label ?? defaultShell,
-  );
-
   function handleShellChange(value: string) {
-    defaultShell = value;
+    appStore.dispatch(settingsFormDraftChanged(identity, SETTING_PATHS.defaultShell, value));
     handleSave();
   }
 
-  function handleAutoCommitToggle() {
-    autoCommit = !autoCommit;
-    handleSave();
-  }
-
-  function handleGitCredentialToggle() {
-    exposeGitCredential = !exposeGitCredential;
-    handleSave();
-  }
-
-  onMount(async () => {
-    void loadCowCapability();
-    await loadSettings();
+  onMount(() => {
+    appStore.dispatch(settingsFormOpened(identity, 'git-workspace'));
+    appStore.dispatch(
+      settingsFormLoadRequested({ ...identity, requestId: crypto.randomUUID(), resource: 'load' }),
+    );
+    return () => appStore.dispatch(settingsFormClosed(identity));
   });
 
-  async function loadCowCapability() {
-    // capabilities() always resolves ({} on failure), so unknown/error keeps
-    // the toggle hidden rather than crashing the settings pane.
-    const caps = await appClient.system.capabilities();
-    cowSupported = caps.cowSupported === true;
-  }
-
-  function stringValue(value: unknown): string {
-    return typeof value === 'string' ? value : '';
-  }
-
-  function currentValues(): Record<string, unknown> {
-    return {
-      [SETTING_PATHS.worktreesLocation]: worktreesLocation,
-      [SETTING_PATHS.sshKeyPath]: sshKeyPath,
-      [SETTING_PATHS.defaultShell]: defaultShell,
-      [SETTING_PATHS.autoCommit]: autoCommit,
-      [SETTING_PATHS.cowIsolation]: cowIsolation,
-      [SETTING_PATHS.branchPrefix]: branchPrefix,
-      ...(gitCredentialSettingSupported
-        ? { [SETTING_PATHS.exposeGitCredential]: exposeGitCredential }
-        : {}),
-    };
-  }
-
-  async function loadSettings() {
-    const settings = await appClient.settings.list();
-    if (settings.length === 0) {
-      settingsError = m.settings_gitWorkspace_loadError();
-      return;
-    }
-    settingsError = '';
-    const byPath = new Map(settings.map((entry) => [entry.path, entry.value]));
-    worktreesLocation = stringValue(byPath.get(SETTING_PATHS.worktreesLocation));
-    sshKeyPath = stringValue(byPath.get(SETTING_PATHS.sshKeyPath));
-    defaultShell = stringValue(byPath.get(SETTING_PATHS.defaultShell)) || 'auto';
-    autoCommit = byPath.get(SETTING_PATHS.autoCommit) !== false;
-    cowIsolation = byPath.get(SETTING_PATHS.cowIsolation) === true;
-    branchPrefix = stringValue(byPath.get(SETTING_PATHS.branchPrefix));
-    gitCredentialSettingSupported = byPath.has(SETTING_PATHS.exposeGitCredential);
-    // Security-sensitive: only an explicit boolean `true` counts as enabled, so
-    // malformed/unexpected values fail safe to off.
-    exposeGitCredential = byPath.get(SETTING_PATHS.exposeGitCredential) === true;
-    loadedValues = currentValues();
-  }
-
-  async function handleSave() {
-    const values = currentValues();
-    const changes = Object.entries(values)
-      .filter(([path, value]) => value !== loadedValues[path])
+  function handleSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    const changes = Object.entries(form.drafts)
+      .filter(([path, value]) => entries[path]?.value !== value)
       .map(([path, value]) => ({ path, value }));
     if (changes.length === 0) return;
-    try {
-      await appClient.settings.update(changes);
-      settingsError = '';
-      loadedValues = values;
-
-      // Refresh global autoCommit so workspaces pick up the new setting
-      appStore.dispatch(refreshAutoCommitSettings());
-    } catch (error) {
-      settingsError = m.settings_gitWorkspace_saveError();
-      logger.error('Failed to save settings:', error);
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, requestId: crypto.randomUUID(), resource: 'git-workspace' },
+        changes,
+      ),
+    );
   }
 
   /**
    * Handle branch prefix input change with validation
    */
   function handleBranchPrefixChange() {
-    const validation = validateBranchPrefix(branchPrefix);
+    const form = selectSettingsForm.select(appStore.state, identity);
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    const prefix = String(
+      form?.drafts[SETTING_PATHS.branchPrefix] ?? entries[SETTING_PATHS.branchPrefix]?.value ?? '',
+    );
+    const validation = validateBranchPrefix(prefix);
     if (!validation.valid) {
       branchPrefixError = validation.error || m.settings_gitWorkspace_branchPrefix_invalid();
     } else {
       branchPrefixError = '';
       // Sanitize and normalize the prefix
-      branchPrefix = sanitizeBranchPrefix(branchPrefix);
+      appStore.dispatch(
+        settingsFormDraftChanged(
+          identity,
+          SETTING_PATHS.branchPrefix,
+          sanitizeBranchPrefix(prefix),
+        ),
+      );
       handleSave();
     }
   }
@@ -184,202 +178,205 @@
    * Reset Git & Workspace settings to defaults
    */
   export function resetToDefaults() {
-    worktreesLocation = '';
-    sshKeyPath = '';
-    autoCommit = true;
-    cowIsolation = false;
-    exposeGitCredential = true;
-    defaultShell = 'auto';
-    branchPrefix = '';
+    if (!selectSettingsForm.select(appStore.state, identity)?.loaded) return;
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    const defaults = {
+      [SETTING_PATHS.worktreesLocation]: '',
+      [SETTING_PATHS.sshKeyPath]: '',
+      [SETTING_PATHS.autoCommit]: true,
+      [SETTING_PATHS.cowIsolation]: false,
+      [SETTING_PATHS.defaultShell]: 'auto',
+      [SETTING_PATHS.branchPrefix]: '',
+      ...(entries[SETTING_PATHS.exposeGitCredential]
+        ? { [SETTING_PATHS.exposeGitCredential]: true }
+        : {}),
+    };
+    for (const [path, value] of Object.entries(defaults))
+      appStore.dispatch(settingsFormDraftChanged(identity, path, value));
     branchPrefixError = '';
     handleSave();
   }
+
+  const schema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'git',
+          title: m.settings_section_git(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'ssh-key-path',
+              label: m.settings_gitWorkspace_sshKeyPath_label(),
+              description: m.settings_gitWorkspace_sshKeyPath_description_before(),
+              error: () => settingsError || undefined,
+            },
+            {
+              kind: 'input',
+              id: 'branch-prefix',
+              label: m.settings_gitWorkspace_branchPrefix_label(),
+              description: m.settings_gitWorkspace_branchPrefix_description_before(),
+              placeholder: m.settings_gitWorkspace_branchPrefix_placeholder(),
+              get: () => `${branchPrefix}`,
+              set: (value: string) => {
+                appStore.dispatch(
+                  settingsFormDraftChanged(identity, SETTING_PATHS.branchPrefix, value),
+                );
+              },
+              onBlur: handleBranchPrefixChange,
+              error: () => branchPrefixError || undefined,
+            },
+            {
+              kind: 'switch',
+              id: 'auto-commit',
+              label: m.settings_gitWorkspace_autoCommit_label(),
+              get: () => Boolean(autoCommit),
+              set: (value: boolean) => {
+                appStore.dispatch(
+                  settingsFormDraftChanged(identity, SETTING_PATHS.autoCommit, value),
+                );
+                void handleSave();
+              },
+            },
+            {
+              kind: 'switch',
+              id: 'git-credentials',
+              label: m.settings_gitWorkspace_gitCredentials_label(),
+              description: m.settings_gitWorkspace_gitCredentials_description(),
+              when: () => Boolean(gitCredentialSettingSupported),
+              get: () => Boolean(exposeGitCredential),
+              set: (value: boolean) => {
+                appStore.dispatch(
+                  settingsFormDraftChanged(identity, SETTING_PATHS.exposeGitCredential, value),
+                );
+                void handleSave();
+              },
+            },
+          ],
+        },
+        {
+          id: 'shell',
+          title: m.settings_section_shell(),
+          entries: [
+            {
+              kind: 'select',
+              id: 'default-shell',
+              label: m.settings_gitWorkspace_defaultShell_label(),
+              options: shellOptions,
+              get: () => `${defaultShell}`,
+              set: handleShellChange,
+            },
+            {
+              kind: 'custom',
+              id: 'cli-optimization',
+              label: m.settings_section_cliOptimization(),
+              layout: 'full-width',
+              class: 'py-0 first:pt-0 last:pb-0',
+              when: () => Boolean(shellAdditions),
+            },
+          ],
+        },
+        {
+          id: 'workspace',
+          title: m.settings_section_workspace(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'worktrees-location',
+              label: m.settings_gitWorkspace_worktreesLocation_label(),
+            },
+            {
+              kind: 'custom',
+              id: 'cow-isolation',
+              label: m.settings_gitWorkspace_cowIsolation_label(),
+              description: m.settings_gitWorkspace_cowIsolation_description(),
+              experimental: true,
+              when: () => Boolean(showCowToggle),
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div class="flex min-w-0 flex-col gap-4" data-settings-git-workspace>
-  <div id="git" class="mb-12">
-    <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-      {m.settings_section_git()}
-    </h2>
-    <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-      {#if settingsError}
-        <section class="px-6 py-5">
-          <p
-            class="text-xs text-danger bg-danger-background/10 border border-danger/20 rounded-md px-3 py-2"
-          >
-            {settingsError}
-          </p>
-        </section>
-      {/if}
-      <section class="px-6 py-5">
-        <div class="flex items-center justify-between gap-4">
-          <div class="shrink-0">
-            <label for="sshKeyPath" class="text-sm font-medium text-foreground">
-              {m.settings_gitWorkspace_sshKeyPath_label()}
-            </label>
-            <p class="text-xs text-subtle">
-              {m.settings_gitWorkspace_sshKeyPath_description_before()}
-              <!-- i18n-ignore (file path) -->
-              <code class="bg-muted px-1 rounded">~/.ssh/id_ed25519</code>)
-            </p>
-          </div>
-          <PathSettingField
-            mode="file"
-            id="sshKeyPath"
-            bind:value={sshKeyPath}
-            placeholder={SSH_KEY_PLACEHOLDER}
-            defaultPath={'~/.ssh'}
-            pickerTitle={m.settings_gitWorkspace_sshKeyPath_label()}
-            onchange={handleSave}
-          />
-        </div>
-      </section>
-      <section class="px-6 py-5">
-        <div class="flex items-center justify-between gap-4">
-          <div class="shrink-0">
-            <label for="branchPrefix" class="text-sm font-medium text-foreground">
-              {m.settings_gitWorkspace_branchPrefix_label()}
-            </label>
-            <p class="text-xs text-subtle">
-              {m.settings_gitWorkspace_branchPrefix_description_before()}
-              <!-- i18n-ignore (branch prefix example) -->
-              <code class="bg-muted px-1 rounded">feature/</code>)
-            </p>
-          </div>
-          <div class="flex flex-col items-end gap-1 flex-1 max-w-md">
-            <input
-              id="branchPrefix"
-              type="text"
-              bind:value={branchPrefix}
-              onblur={handleBranchPrefixChange}
-              class="w-full px-3 py-1.5 bg-background border rounded-md text-sm text-foreground transition-all focus:outline-none focus:ring-2 focus:ring-primary/10 {branchPrefixError
-                ? 'border-danger focus:border-danger'
-                : 'border-border focus:border-primary'}"
-              placeholder={m.settings_gitWorkspace_branchPrefix_placeholder()}
-            />
-            {#if branchPrefixError}<p class="text-xs text-danger">
-                {branchPrefixError}
-              </p>{/if}
-          </div>
-        </div>
-      </section>
-      <section class="px-6 py-5">
-        <div class="flex items-center justify-between gap-4">
-          <p class="text-sm font-medium text-foreground">
-            {m.settings_gitWorkspace_autoCommit_label()}
-          </p>
-          <Toggle
-            pressed={autoCommit}
-            onclick={handleAutoCommitToggle}
-            variant="indicator"
-            size="xs"
-            class="mb-auto"
-            ariaLabel={m.settings_gitWorkspace_autoCommit_label()}
-          />
-        </div>
-      </section>
-      {#if gitCredentialSettingSupported}
-        <section class="px-6 py-5">
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <p class="text-sm font-medium text-foreground">
-                {m.settings_gitWorkspace_gitCredentials_label()}
-              </p>
-              <p id="git-credentials-description" class="text-xs text-subtle mt-1">
-                {m.settings_gitWorkspace_gitCredentials_description()}
-              </p>
-            </div>
-            <Toggle
-              pressed={exposeGitCredential}
-              onclick={handleGitCredentialToggle}
-              variant="indicator"
-              size="xs"
-              class="mb-auto"
-              ariaLabel={m.settings_gitWorkspace_gitCredentials_label()}
-              ariaDescribedby="git-credentials-description"
-            />
-          </div>
-        </section>
-      {/if}
-    </div>
-  </div>
+{#snippet sshKeyControl()}
+  <PathSettingField
+    mode="file"
+    bind:value={
+      () => sshKeyPath,
+      (value) =>
+        appStore.dispatch(settingsFormDraftChanged(identity, SETTING_PATHS.sshKeyPath, value))
+    }
+    placeholder={SSH_KEY_PLACEHOLDER}
+    defaultPath={'~/.ssh'}
+    ariaLabel={m.settings_gitWorkspace_sshKeyPath_label()}
+    pickerTitle={m.settings_gitWorkspace_sshKeyPath_label()}
+    onchange={handleSave}
+  />
+{/snippet}
 
-  <div id="shell" class="mb-12">
-    <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-      {m.settings_section_shell()}
-    </h2>
-    <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-      <section class="px-6 py-5">
-        <div class="flex items-center justify-between gap-4">
-          <label for="defaultShell" class="text-sm font-medium text-foreground shrink-0">
-            {m.settings_gitWorkspace_defaultShell_label()}
-          </label>
-          <div class="w-56 shrink-0">
-            <Select.Root value={defaultShell} onchange={handleShellChange}>
-              <Select.Trigger id="defaultShell" class="py-1.5"
-                ><span class="truncate">{selectedShellLabel}</span></Select.Trigger
-              >
-              <Select.Content portal class="max-h-[300px] w-56">
-                {#each shellOptions as option (option.value)}
-                  <Select.Item value={option.value}
-                    ><span class="truncate">{option.label}</span></Select.Item
-                  >
-                {/each}
-              </Select.Content>
-            </Select.Root>
-          </div>
-        </div>
-      </section>
-      {#if shellAdditions}<section class="px-6 py-5">{@render shellAdditions()}</section>{/if}
-    </div>
-  </div>
+{#snippet sshKeyDescription()}
+  {m.settings_gitWorkspace_sshKeyPath_description_before()}
+  <!-- i18n-ignore (file path) -->
+  <InlineCode>~/.ssh/id_ed25519</InlineCode>)
+{/snippet}
 
-  <div id="workspace" class="mb-12">
-    <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-      {m.settings_section_workspace()}
-    </h2>
-    <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-      <section class="px-6 py-5">
-        <div class="flex items-center justify-between gap-4">
-          <label for="worktreesLocation" class="text-sm font-medium text-foreground shrink-0">
-            {m.settings_gitWorkspace_worktreesLocation_label()}
-          </label>
-          <PathSettingField
-            id="worktreesLocation"
-            bind:value={worktreesLocation}
-            placeholder={WORKTREES_PLACEHOLDER}
-            pickerTitle={m.settings_gitWorkspace_worktreesLocation_label()}
-            confirm={{
-              title: m.settings_gitWorkspace_worktreesLocation_confirm_title(),
-              message: m.settings_gitWorkspace_worktreesLocation_confirm_message(),
-            }}
-            onchange={handleSave}
-          />
-        </div>
-      </section>
-      {#if showCowToggle}
-        <section class="px-6 py-5">
-          <div class="flex items-center gap-2">
-            <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={cowIsolation}
-                onchange={handleSave}
-                class="cursor-pointer"
-                aria-describedby="cow-isolation-description"
-              />
-              <span>{m.settings_gitWorkspace_cowIsolation_label()}</span>
-            </label>
-            <span
-              class="inline-flex items-center shrink-0 rounded-full bg-muted/20 px-1 text-ui-sm leading-4 text-subtle"
-              >{m.settings_gitWorkspace_experimental_badge()}</span
-            >
-          </div>
-          <p id="cow-isolation-description" class="text-xs text-subtle mt-0.5 ml-6">
-            {m.settings_gitWorkspace_cowIsolation_description()}
-          </p>
-        </section>
-      {/if}
-    </div>
-  </div>
+{#snippet branchPrefixDescription()}
+  {m.settings_gitWorkspace_branchPrefix_description_before()}
+  <!-- i18n-ignore (branch prefix example) -->
+  <InlineCode>feature/</InlineCode>)
+{/snippet}
+
+{#snippet worktreesControl()}
+  <PathSettingField
+    bind:value={
+      () => worktreesLocation,
+      (value) =>
+        appStore.dispatch(
+          settingsFormDraftChanged(identity, SETTING_PATHS.worktreesLocation, value),
+        )
+    }
+    placeholder={WORKTREES_PLACEHOLDER}
+    ariaLabel={m.settings_gitWorkspace_worktreesLocation_label()}
+    pickerTitle={m.settings_gitWorkspace_worktreesLocation_label()}
+    confirm={{
+      title: m.settings_gitWorkspace_worktreesLocation_confirm_title(),
+      message: m.settings_gitWorkspace_worktreesLocation_confirm_message(),
+    }}
+    onchange={handleSave}
+  />
+{/snippet}
+
+{#snippet cowControl({ labelId, descriptionId }: SettingsControlContext)}
+  <Checkbox
+    checked={cowIsolation}
+    onCheckedChange={(value) => {
+      appStore.dispatch(settingsFormDraftChanged(identity, SETTING_PATHS.cowIsolation, value));
+      void handleSave();
+    }}
+    ariaLabelledby={labelId}
+    ariaDescribedby={descriptionId}
+  />
+{/snippet}
+
+{#snippet shellAdditionsControl()}
+  {@render shellAdditions?.()}
+{/snippet}
+
+<div data-settings-git-workspace>
+  <SettingsForm
+    {schema}
+    compact={false}
+    custom={defineSettingsCustomControls({
+      'ssh-key-path': sshKeyControl,
+      'worktrees-location': worktreesControl,
+      'cow-isolation': cowControl,
+      'cli-optimization': shellAdditionsControl,
+    })}
+    descriptions={{
+      'ssh-key-path': sshKeyDescription,
+      'branch-prefix': branchPrefixDescription,
+    }}
+  />
 </div>

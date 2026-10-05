@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /**
    * ActiveWorkspacesCard - Shows workspaces split into Unread, Running, Waiting, and Pinned sections
    *
@@ -51,10 +52,9 @@
   // local version counter when the tracker notifies so deriveds recompute.
   let activeStreamsVersion = $state(0);
 
-  // Fetch fresh stream state when the card mounts so data is up-to-date
+  // Start event listening and its initial refresh when the card mounts.
   onMount(() => {
     activeStreamsTracker.startPolling();
-    activeStreamsTracker.fetchActiveStreams();
     return activeStreamsTracker.subscribe(() => activeStreamsVersion++);
   });
 
@@ -335,13 +335,13 @@
   {:else}
     {#if expanded && totalCount > 3}
       <div class="px-3 pt-1 pb-2">
-        <input
-          bind:this={searchInputEl}
+        <Input
+          bind:ref={searchInputEl}
           type="text"
           placeholder={m.layout_activeCard_search_placeholder()}
           aria-label={m.layout_activeCard_search_placeholder()}
           bind:value={searchQuery}
-          class="w-full rounded-md border border-input bg-background/30 px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-ring focus:outline-none"
+          class="w-full rounded-md border border-input bg-background/30 px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
       </div>
     {/if}

@@ -14,8 +14,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Logger } from '$shared/logger';
 import {
   __resetIntentdSidecarForTesting,
+  __setSidecarPrioritySetterForTesting,
   getSidecarRunLog,
   getSidecarStartupFailure,
   onSidecarStartupFailed,
@@ -418,6 +420,8 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
     vi.clearAllMocks();
     __resetIntentdSidecarForTesting();
     __resetConnectionModeForTesting();
+    // The fake process carries a pid; never touch a real process's priority.
+    __setSidecarPrioritySetterForTesting(() => {});
     // Binary "exists"; socket does not (probe reports no live daemon).
     mockExistsSync.mockImplementation((p) => !String(p).endsWith('.sock'));
   });
@@ -584,5 +588,128 @@ describe('sidecar run-log capture (backend:get-sidecar-run-log contract)', () =>
     mockExistsSync.mockImplementation((p) => !String(p).endsWith('.sock'));
     await startWithFakeProc();
     expect(getSidecarStartupFailure()).toBeNull();
+  });
+});
+
+describe('sidecar scheduling priority (best-effort)', () => {
+  const mockExistsSync = vi.mocked(fs.existsSync);
+  const mockSpawn = vi.mocked(spawn);
+
+  /** Node wraps a libuv setpriority failure in ERR_SYSTEM_ERROR with the errno name under `info.code`. */
+  function systemError(errnoName: string): Error {
+    const err = new Error(
+      `A system error occurred: uv_os_setpriority returned ${errnoName}`,
+    ) as Error & { code: string; info: { code: string; syscall: string } };
+    err.code = 'ERR_SYSTEM_ERROR';
+    err.info = { code: errnoName, syscall: 'uv_os_setpriority' };
+    return err;
+  }
+
+  async function startWithFakeProc(): Promise<FakeSidecarProcess> {
+    const proc = new FakeSidecarProcess();
+    mockSpawn.mockReturnValueOnce(proc as never);
+    await startIntentdSidecar(
+      { INTENTD_SIDECAR: '1', INTENTD_BIN: '/fake/intentd' },
+      false,
+      '/resources',
+      '/cwd',
+    );
+    return proc;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetIntentdSidecarForTesting();
+    __resetConnectionModeForTesting();
+    mockExistsSync.mockImplementation((p) => !String(p).endsWith('.sock'));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    __resetIntentdSidecarForTesting();
+    __resetConnectionModeForTesting();
+  });
+
+  it('raises the spawned pid to ABOVE_NORMAL', async () => {
+    const setPriority = vi.fn();
+    __setSidecarPrioritySetterForTesting(setPriority);
+
+    const proc = await startWithFakeProc();
+
+    expect(setPriority).toHaveBeenCalledTimes(1);
+    expect(setPriority).toHaveBeenCalledWith(proc.pid, os.constants.priority.PRIORITY_ABOVE_NORMAL);
+    expect(getSidecarRunLog().available).toBe(true);
+  });
+
+  it('does not call the setter when spawn assigned no pid', async () => {
+    const setPriority = vi.fn();
+    __setSidecarPrioritySetterForTesting(setPriority);
+    const proc = new FakeSidecarProcess();
+    proc.pid = undefined;
+    mockSpawn.mockReturnValueOnce(proc as never);
+
+    await startIntentdSidecar(
+      { INTENTD_SIDECAR: '1', INTENTD_BIN: '/fake/intentd' },
+      false,
+      '/resources',
+      '/cwd',
+    );
+
+    expect(setPriority).not.toHaveBeenCalled();
+  });
+
+  it.each(['EPERM', 'EACCES'])(
+    '%s (unprivileged macOS/Linux) is swallowed at info level and leaves the run untouched',
+    async (errnoName) => {
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn');
+      const infoSpy = vi.spyOn(Logger.prototype, 'info');
+      __setSidecarPrioritySetterForTesting(() => {
+        throw systemError(errnoName);
+      });
+
+      const proc = await startWithFakeProc();
+      proc.stdout.emit('data', Buffer.from('listening\n'));
+
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+      const log = getSidecarRunLog();
+      expect(log.available).toBe(true);
+      expect(log.spawnError).toBeNull();
+      expect(log.endedAt).toBeNull();
+      expect(log.lines).toEqual(['listening']);
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(
+        infoSpy.mock.calls.filter(([msg]) =>
+          String(msg).includes('Cannot raise intentd sidecar priority'),
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it('logs the permission denial once across respawns', async () => {
+    const infoSpy = vi.spyOn(Logger.prototype, 'info');
+    __setSidecarPrioritySetterForTesting(() => {
+      throw systemError('EPERM');
+    });
+
+    await startWithFakeProc();
+    await startWithFakeProc();
+
+    expect(
+      infoSpy.mock.calls.filter(([msg]) =>
+        String(msg).includes('Cannot raise intentd sidecar priority'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('warns (but never throws) on an unexpected setter failure', async () => {
+    const warnSpy = vi.spyOn(Logger.prototype, 'warn');
+    __setSidecarPrioritySetterForTesting(() => {
+      throw systemError('ESRCH');
+    });
+
+    await expect(startWithFakeProc()).resolves.toBeDefined();
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(getSidecarRunLog().spawnError).toBeNull();
   });
 });

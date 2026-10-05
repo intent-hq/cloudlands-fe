@@ -1,6 +1,7 @@
 import { THEME_PRESET_MANIFEST } from '../../shared/theme-presets-manifest';
 
 const catalogThemes = ['system', 'light', 'dark'] as const;
+const catalogMotions = ['system', 'full', 'reduced'] as const;
 export const catalogColorThemes = [
   'default',
   ...THEME_PRESET_MANIFEST.map(({ id }) => id),
@@ -8,26 +9,27 @@ export const catalogColorThemes = [
 
 export type CatalogTheme = (typeof catalogThemes)[number];
 export type CatalogColorTheme = 'default' | (typeof THEME_PRESET_MANIFEST)[number]['id'];
+export type CatalogMotion = (typeof catalogMotions)[number];
 export type CatalogPreviewFit = 'component';
 
 export interface CatalogPreferences {
   theme: CatalogTheme;
   colorTheme: CatalogColorTheme;
-  reducedMotion: boolean;
+  motion: CatalogMotion;
 }
 
 export interface CatalogUrlSettings {
   state?: string;
   theme?: CatalogTheme;
   width?: number;
-  reducedMotion?: boolean;
+  motion?: CatalogMotion;
   fit?: CatalogPreviewFit;
 }
 
 export const defaultCatalogPreferences: CatalogPreferences = {
   theme: 'system',
   colorTheme: 'default',
-  reducedMotion: false,
+  motion: 'system',
 };
 
 export function parseCatalogUrlSettings(params: URLSearchParams): CatalogUrlSettings {
@@ -46,11 +48,12 @@ export function parseCatalogUrlSettings(params: URLSearchParams): CatalogUrlSett
       Number.isInteger(width) && width !== undefined && width >= 240 && width <= 1600
         ? width
         : undefined,
-    reducedMotion:
-      motion === 'reduced' || legacyReducedMotion === 'true'
-        ? true
-        : motion === 'full' || legacyReducedMotion === 'false'
-          ? false
+    motion: catalogMotions.includes(motion as CatalogMotion)
+      ? (motion as CatalogMotion)
+      : legacyReducedMotion === 'true'
+        ? 'reduced'
+        : legacyReducedMotion === 'false'
+          ? 'full'
           : undefined,
     ...(fit === 'component' ? { fit: 'component' as const } : {}),
   };
@@ -60,7 +63,9 @@ const storageKey = 'component-catalog-preferences';
 
 export function readCatalogPreferences(storage: Storage): CatalogPreferences {
   try {
-    const value = JSON.parse(storage.getItem(storageKey) ?? '{}') as Partial<CatalogPreferences>;
+    const value = JSON.parse(storage.getItem(storageKey) ?? '{}') as Partial<CatalogPreferences> & {
+      reducedMotion?: unknown;
+    };
     return {
       theme: catalogThemes.includes(value.theme as CatalogTheme)
         ? (value.theme as CatalogTheme)
@@ -68,10 +73,11 @@ export function readCatalogPreferences(storage: Storage): CatalogPreferences {
       colorTheme: catalogColorThemes.includes(value.colorTheme as CatalogColorTheme)
         ? (value.colorTheme as CatalogColorTheme)
         : defaultCatalogPreferences.colorTheme,
-      reducedMotion:
-        typeof value.reducedMotion === 'boolean'
-          ? value.reducedMotion
-          : defaultCatalogPreferences.reducedMotion,
+      motion: catalogMotions.includes(value.motion as CatalogMotion)
+        ? (value.motion as CatalogMotion)
+        : value.reducedMotion === true
+          ? 'reduced'
+          : defaultCatalogPreferences.motion,
     };
   } catch {
     return defaultCatalogPreferences;

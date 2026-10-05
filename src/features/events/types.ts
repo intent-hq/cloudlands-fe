@@ -1,3 +1,5 @@
+import type { SubmissionCorrelation } from '$shared/types/agent-message';
+import type { AgentNodeFields } from '$shared/types/agent-node';
 /**
  * Type definitions for the Workspace Event System
  *
@@ -37,7 +39,7 @@ export interface EventActor {
  * Properties are required for in-scope lifecycle event payloads; use explicit
  * null when a value is not semantically known for a refresh-style notification.
  */
-export interface CanonicalAgentStatusFields {
+export interface CanonicalAgentStatusFields extends AgentNodeFields {
   status: string | null;
   activationState: string | null;
   isActive: boolean | null;
@@ -59,13 +61,21 @@ export interface CanonicalAgentStatusFields {
    */
   sessionCorrupted?: boolean;
   /**
-   * Idle-visibility for hook-owning agents (PROTOCOL §3.1, within v3.1,
+   * Idle-visibility for hook-owning agents (PROTOCOL §6.5 `agent:idle`,
    * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
    * background hooks (§5.40) — omitted when empty (absent, never `[]`) — so
    * a parent or client can tell a hook-waiting idle agent from a stalled
    * one. Rendered verbatim.
    */
   waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
+  /** Active script-run watches (§5.8a), omitted by the daemon when empty. */
+  waitingOnScriptMonitors?: Array<{
+    monitorId: string;
+    scriptId: string;
+    runId: string;
+    scriptName: string;
+    expiresAt: string;
+  }>;
   /**
    * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
    * companion for centralized PR monitoring (§5.42): light metadata for the
@@ -116,6 +126,7 @@ export const WorkspaceEventType = {
   AgentRenamed: 'agent:renamed',
   AgentIdle: 'agent:idle',
   AgentStatusChanged: 'agent:status-changed',
+  HubCheckpoint: 'hub:checkpoint',
   AgentMessageSent: 'agent:message:sent',
   AgentMessageReceived: 'agent:message:received',
   AgentSubscribed: 'agent:subscribed',
@@ -277,7 +288,7 @@ export interface AgentToolCallEvent extends WorkspaceEventBase {
  */
 export interface AgentMessageEvent extends WorkspaceEventBase {
   type: 'agent:message';
-  data: {
+  data: SubmissionCorrelation & {
     messageId: string;
     turnNumber: number;
     content: string;
@@ -450,6 +461,8 @@ export interface AgentIdleEvent extends WorkspaceEventBase {
     workspaceArchived?: boolean;
     /** Whether the agent is awaiting delegated sub-agents (pending completion watches); absent on older daemons */
     isWaitingForOtherAgents?: boolean;
+    /** Per-agent notification mute (§5.5 `notificationsMuted`); stamped only when true, absent on older daemons */
+    notificationsMuted?: boolean;
     /** Explicit completion report set by the agent via report_to_parent tool */
     completionReport?: string;
     /** ID of the parent agent that created this agent (for delegation) */
@@ -466,8 +479,26 @@ export interface AgentStatusChangedEvent extends WorkspaceEventBase {
   type: 'agent:status-changed';
   data: Omit<CanonicalAgentStatusFields, 'status'> & {
     agentId: string;
-    previousStatus: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
-    status: 'idle' | 'responding' | 'waiting' | 'completed' | 'failed';
+    previousStatus:
+      | 'pending'
+      | 'active'
+      | 'idle'
+      | 'responding'
+      | 'waiting'
+      | 'completed'
+      | 'failed'
+      | 'halted'
+      | 'resuming';
+    status:
+      | 'pending'
+      | 'active'
+      | 'idle'
+      | 'responding'
+      | 'waiting'
+      | 'completed'
+      | 'failed'
+      | 'halted'
+      | 'resuming';
   };
 }
 

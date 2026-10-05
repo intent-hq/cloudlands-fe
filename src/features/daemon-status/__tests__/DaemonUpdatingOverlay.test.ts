@@ -14,14 +14,24 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/slices/daemon-health/daemon-health-slice');
   const { connectionsReducer, initialState: connectionsInitialState } =
     await import('$store/renderer/slices/connections/connections-slice');
-  let state = { daemonHealth: initialState, connections: connectionsInitialState };
+  const { guestSessionsReducer, initialState: guestSessionsInitialState } =
+    await import('$store/renderer/slices/guest-sessions/guest-sessions-slice');
+  const { userPreferencesReducer, initialState: userPreferencesInitialState } =
+    await import('$store/renderer/slices/user-preferences/user-preferences-slice');
+  const freshState = () => ({
+    daemonHealth: initialState,
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsInitialState,
+    userPreferences: userPreferencesInitialState,
+  });
+  let state = freshState();
   const listeners = new Set<() => void>();
   const store = {
     get state() {
       return state;
     },
     init() {
-      state = { daemonHealth: initialState, connections: connectionsInitialState };
+      state = freshState();
       listeners.forEach((listener) => listener());
       return () => {};
     },
@@ -32,6 +42,8 @@ vi.mock('$store/renderer/store', async () => {
       state = {
         daemonHealth: daemonHealthReducer(state.daemonHealth, action as never),
         connections: connectionsReducer(state.connections, action as never),
+        guestSessions: guestSessionsReducer(state.guestSessions, action as never),
+        userPreferences: userPreferencesReducer(state.userPreferences, action as never),
       };
       listeners.forEach((listener) => listener());
       return action;

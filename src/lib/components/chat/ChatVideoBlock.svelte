@@ -1,18 +1,28 @@
 <script lang="ts">
+  import { canLoadMediaUrl } from '$lib/utils/media-provenance';
   import type { VideoSource } from '$shared/types';
   import { m } from '$shared/paraglide/messages.js';
   import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
   import VideoLightbox from '$lib/components/ui/VideoLightbox.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
 
   interface Props {
     source: VideoSource;
     name?: string;
     poster?: string;
+    allowFileMedia?: boolean;
+    canOpenFile?: () => boolean;
   }
 
-  let { source, name = m.chat_videoBlock_fromAgent_label(), poster }: Props = $props();
+  let {
+    source,
+    name = m.chat_videoBlock_fromAgent_label(),
+    poster,
+    allowFileMedia = true,
+    canOpenFile,
+  }: Props = $props();
   let lightboxOpen = $state(false);
   let frameReady = $state(false);
   let frameUnavailable = $state(false);
@@ -21,9 +31,13 @@
   const videoUrl = $derived(
     source.kind === 'inline' ? `data:${source.mimeType};base64,${source.data}` : source.url,
   );
+  function canUseMedia(url: string) {
+    return canLoadMediaUrl(url, allowFileMedia && canOpenFile?.() !== false);
+  }
+  const blocked = $derived(!canUseMedia(videoUrl));
   const workspaceFile = $derived(parseWorkspaceFileImageUrl(videoUrl));
   const safePoster = $derived.by(() => {
-    if (!poster) return undefined;
+    if (!poster || !canUseMedia(poster)) return undefined;
     if (/^data:image\/(?:gif|jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(poster)) return poster;
     try {
       const url = new URL(poster);
@@ -44,25 +58,39 @@
 </script>
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-video>
-  {#if frameUnavailable}
-    <MediaUnavailable
-      {name}
-      reason={workspaceFile ? 'missing' : 'load-failed'}
-      path={workspaceFile?.path}
-      workspaceId={workspaceFile?.workspaceId}
-    />
+  {#if blocked}
+    <MediaUnavailable {name} reason="load-failed" />
+  {:else if frameUnavailable}
+    <div class="flex items-center gap-2">
+      <MediaUnavailable
+        {name}
+        reason="load-failed"
+        path={workspaceFile?.path}
+        workspaceId={workspaceFile?.workspaceId}
+      />
+      <VideoActionsMenu
+        {videoUrl}
+        videoName={name}
+        sourceKind={source.kind}
+        mimeType={source.mimeType}
+      />
+    </div>
   {:else}
     <div
       class="group relative aspect-video w-full max-h-40 max-w-2xl"
       style="width: min(100%, calc(10rem * 16 / 9));"
     >
-      <button
-        bind:this={triggerRef}
+      <Button
+        bind:ref={triggerRef}
         type="button"
+        variant="ghost"
+        size="default"
         class="relative block size-full cursor-pointer overflow-hidden rounded-lg border border-border bg-muted/40 p-0 shadow-(--elevation-raised) focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 forced-colors:border"
         aria-label={m.chat_videoBlock_play_ariaLabel({ name })}
         data-testid="chat-video-snapshot"
-        onclick={() => (lightboxOpen = true)}
+        onclick={() => {
+          if (canUseMedia(videoUrl)) lightboxOpen = true;
+        }}
       >
         <div
           class="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground"
@@ -100,7 +128,7 @@
             </svg>
           </span>
         </span>
-      </button>
+      </Button>
       <VideoActionsMenu
         {videoUrl}
         videoName={name}
@@ -112,7 +140,7 @@
   {/if}
 </div>
 
-{#if !frameUnavailable}
+{#if !frameUnavailable && !blocked}
   <VideoLightbox
     bind:open={lightboxOpen}
     {videoUrl}

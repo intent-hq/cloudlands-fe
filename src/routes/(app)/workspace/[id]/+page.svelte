@@ -7,6 +7,7 @@
     selectWorkspaceItems,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectActiveWorkspaceIds } from '$store/renderer/slices/tab-state/tab-state-selectors';
+  import { selectBrowserWorkspaceIds } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import RetainedWorkspaceSurfaces from './RetainedWorkspaceSurfaces.svelte';
   import WorkspaceSurface from './WorkspaceSurface.svelte';
 
@@ -16,6 +17,7 @@
   const workspace$ = selectWorkspaceById(workspaceIdStore);
   const workspaceItems$ = selectWorkspaceItems();
   const openWorkspaceIds$ = selectActiveWorkspaceIds();
+  const browserWorkspaceIds$ = selectBrowserWorkspaceIds();
 </script>
 
 <svelte:head>
@@ -29,6 +31,7 @@
 <RetainedWorkspaceSurfaces
   activeWorkspaceId={workspaceId}
   openWorkspaceIds={$openWorkspaceIds$}
+  browserWorkspaceIds={$browserWorkspaceIds$}
   workspaceEntityIds={$workspaceItems$.map((workspace) => workspace.id)}
 >
   {#snippet children(retainedWorkspaceId: string, active: boolean)}

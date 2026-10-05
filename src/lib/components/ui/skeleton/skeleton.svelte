@@ -12,9 +12,36 @@
 <div
   bind:this={ref}
   data-slot="skeleton"
-  class={cn(
-    'animate-pulse rounded-(--radius-small) bg-muted motion-reduce:animate-none',
-    className,
-  )}
+  class={cn('skeleton-shimmer rounded-(--radius-small) bg-(--skeleton)', className)}
   {...restProps}
 ></div>
+
+<style>
+  .skeleton-shimmer {
+    --skeleton: color-mix(in srgb, hsl(var(--muted)) 75%, hsl(var(--background)));
+    background-image: linear-gradient(
+      90deg,
+      transparent 25%,
+      color-mix(in oklab, hsl(var(--background)) 40%, transparent) 50%,
+      transparent 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer calc(var(--spring-moderate) * 10) linear infinite;
+  }
+
+  @keyframes skeleton-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  @container style(--motion-reduced: 1) {
+    .skeleton-shimmer {
+      animation: none;
+      background-image: none;
+    }
+  }
+</style>

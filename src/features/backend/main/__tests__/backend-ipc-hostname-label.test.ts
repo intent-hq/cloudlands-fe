@@ -1,8 +1,8 @@
 /**
  * T14 — label a remote connection by its hostname on open.
  *
- * When `openBackendWindow` connects to a remote, it reuses the live client's
- * `host.status` capability probe (the same call the heartbeat issues) to read
+ * When `openBackendWindow` connects to a remote, it issues a `host.status`
+ * request on the live client (the same call the heartbeat issues) to read
  * the remote machine's hostname, persists it on the connection record, and
  * re-broadcasts the list so the menu can upgrade `host:port` to
  * `hostname (host:port)`. The capture is fire-and-forget: it must never block
@@ -20,6 +20,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // `byHost` lets a test give each backend its own (possibly deferred) answer,
 // keyed by the client config's `host` — for exercising a SLOW backend whose
 // probe resolves only after later operations (serialization regression below).
+const systemStatus = vi.hoisted(() => ({ value: {} as unknown }));
+
 const hostStatus = vi.hoisted(() => ({
   value: {} as unknown,
   byHost: new Map<string, () => Promise<unknown>>(),
@@ -32,6 +34,7 @@ const fakeClients = vi.hoisted(
   () =>
     [] as Array<{
       getConfig(): unknown;
+      request: ReturnType<typeof vi.fn>;
       opts: { onHelloResult?: (result: unknown) => void };
     }>,
 );
@@ -61,6 +64,15 @@ vi.mock('../json-rpc-client', () => {
     start(): void {}
     dispose(): void {}
     request = vi.fn(async (method: string) => {
+      if (method === 'principal.me')
+        return {
+          id: 'prn_7',
+          login: 'octocat',
+          displayName: null,
+          avatarUrl: null,
+          isAdministrator: false,
+        };
+      if (method === 'system.status') return systemStatus.value;
       if (method !== 'host.status') return {};
       const host = (this.config as { host?: string } | null)?.host;
       const deferred = host !== undefined ? hostStatus.byHost.get(host) : undefined;
@@ -77,6 +89,12 @@ vi.mock('../json-rpc-client', () => {
     }
     getReconnectAttempts(): number {
       return 0;
+    }
+    isConnectionLimited(): boolean {
+      return false;
+    }
+    getConnectionLimitRetryAfterMs(): number | null {
+      return null;
     }
   }
   return { JsonRpcClient: FakeJsonRpcClient };
@@ -128,6 +146,47 @@ vi.mock('../connections-store', () => ({
   setHosts: store.setHosts,
 }));
 
+// Guest sessions (multiplayer): a joined host resolves through this store
+// instead of the connections registry, and its hostname capture persists to
+// it. Empty by default; the guest test below seeds one record.
+const guestStore = vi.hoisted(() => ({
+  findById: vi.fn(),
+  getDecryptedToken: vi.fn(),
+  setHostname: vi.fn(),
+}));
+vi.mock('../guest-sessions-store', () => ({
+  list: vi.fn(async () => []),
+  findById: guestStore.findById,
+  forget: vi.fn(async () => true),
+  leaveWorkspace: vi.fn(async () => true),
+  setWorkspaces: vi.fn(async () => false),
+  getDecryptedToken: guestStore.getDecryptedToken,
+  setHostname: guestStore.setHostname,
+  setTcAddress: vi.fn(async () => false),
+  setHosts: vi.fn(async () => false),
+  setPrincipal: vi.fn(async () => true),
+  createInvitedSyncAdapter: vi.fn(() => ({})),
+  onGuestSessionsMutated: () => () => {},
+  onGuestCredentialReplaced: () => () => {},
+  onGuestSessionRemovedBySync: () => () => {},
+}));
+
+const GUEST = {
+  id: 'guest-1',
+  label: 'tc.example.ts.net',
+  host: 'tc.example.ts.net',
+  hosts: ['tc.example.ts.net'],
+  port: 8443,
+  fingerprint: 'EE:FF:00:11',
+  tcAddress: 'tc.example.ts.net',
+  hostname: null,
+  principalId: 'prn_7',
+  login: 'octocat',
+  tokenEncrypted: true,
+  workspaces: [{ id: 'ws-guest', title: 'Guest project' }],
+  updatedAt: 1,
+};
+
 const REMOTE = {
   id: 'remote-1',
   label: '10.0.0.5:8443',
@@ -166,6 +225,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
   hostStatus.value = {};
+  systemStatus.value = {};
   hostStatus.byHost.clear();
   fakeClients.length = 0;
   store.getActiveId.mockResolvedValue('local');
@@ -177,6 +237,9 @@ beforeEach(() => {
   store.getDetectHosts.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
   store.setDetectedDeviceKind.mockResolvedValue(false);
+  guestStore.findById.mockResolvedValue(null);
+  guestStore.getDecryptedToken.mockResolvedValue(null);
+  guestStore.setHostname.mockResolvedValue(true);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
 
@@ -278,6 +341,123 @@ describe('openBackendWindow hostname labeling', () => {
 
     await expect(mod.openBackendWindow('remote-1')).resolves.toEqual({ id: 'remote-1' });
   });
+
+  it('captures a guest host’s pretty hostname through guest-safe system.status and broadcasts it', async () => {
+    systemStatus.value = {
+      hostname: 'studio.local',
+      prettyHostname: 'Clement’s Mac Studio',
+      host: { os: 'macos', arch: 'aarch64', locality: 'remote' },
+    };
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const send = installWindow();
+    const mod = await loadModule();
+
+    await mod.openBackendWindow(GUEST.id);
+    fakeClients.at(-1)?.opts.onHelloResult?.({ server: {} });
+
+    await vi.waitFor(() =>
+      expect(guestStore.setHostname).toHaveBeenCalledWith(
+        GUEST.id,
+        'Clement’s Mac Studio',
+        expect.any(Function),
+      ),
+    );
+    expect(
+      fakeClients
+        .at(-1)
+        ?.request.mock.calls.some(
+          ([method, params]) => method === 'system.status' && params === undefined,
+        ),
+    ).toBe(true);
+    expect(
+      fakeClients.at(-1)?.request.mock.calls.some(([method]) => method === 'host.status'),
+    ).toBe(false);
+    expect(
+      vi.mocked(app.emit).mock.calls.some(([event]) => event === 'guest-sessions-changed'),
+    ).toBe(true);
+    // The guest record — not the paired-connection registry — is the write target.
+    expect(store.setHostname).not.toHaveBeenCalled();
+    expect(store.setDetectedDeviceKind).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
+    );
+  });
+});
+
+describe('guest hostname connection lifetime', () => {
+  async function openGuest() {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const mod = await loadModule();
+    await mod.openBackendWindow(GUEST.id);
+    const client = fakeClients.at(-1)!;
+    client.opts.onHelloResult?.({ server: {} });
+    return { mod, client };
+  }
+
+  it('uses hostname when pretty name is blank and refreshes on reopen', async () => {
+    systemStatus.value = { hostname: 'studio.local', prettyHostname: '  ' };
+    const { mod } = await openGuest();
+    await vi.waitFor(() =>
+      expect(guestStore.setHostname).toHaveBeenCalledWith(
+        GUEST.id,
+        'studio.local',
+        expect.any(Function),
+      ),
+    );
+    mod.disconnectBackendClient(GUEST.id);
+    systemStatus.value = { hostname: 'studio.local', prettyHostname: 'Renamed Studio' };
+    await mod.openBackendWindow(GUEST.id);
+    fakeClients.at(-1)!.opts.onHelloResult?.({ server: {} });
+    await vi.waitFor(() =>
+      expect(guestStore.setHostname).toHaveBeenLastCalledWith(
+        GUEST.id,
+        'Renamed Studio',
+        expect.any(Function),
+      ),
+    );
+  });
+
+  for (const replacement of ['reconnect', 'reopen'] as const) {
+    it(`ignores a delayed guest name from before ${replacement}`, async () => {
+      let resolveOld!: (value: unknown) => void;
+      systemStatus.value = new Promise((resolve) => {
+        resolveOld = resolve;
+      });
+      const { mod, client } = await openGuest();
+      await vi.waitFor(() =>
+        expect(
+          client.request.mock.calls.filter(([method]) => method === 'system.status').length,
+        ).toBeGreaterThanOrEqual(2),
+      );
+      systemStatus.value = { hostname: 'current.local', prettyHostname: 'Current Studio' };
+      if (replacement === 'reopen') {
+        mod.disconnectBackendClient(GUEST.id);
+        await mod.openBackendWindow(GUEST.id);
+      }
+      fakeClients.at(-1)!.opts.onHelloResult?.({ server: {} });
+      await vi.waitFor(() =>
+        expect(guestStore.setHostname).toHaveBeenCalledWith(
+          GUEST.id,
+          'Current Studio',
+          expect.any(Function),
+        ),
+      );
+      resolveOld({ hostname: 'stale.local', prettyHostname: 'Stale Studio' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(guestStore.setHostname.mock.calls.map(([, name]) => name)).toEqual(['Current Studio']);
+    });
+  }
+
+  it('keeps the saved fallback when status has no name', async () => {
+    const { client } = await openGuest();
+    await vi.waitFor(() =>
+      expect(client.request.mock.calls.some(([method]) => method === 'system.status')).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(guestStore.setHostname).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -311,21 +491,19 @@ describe('openBackendWindow serialization (monorepo#2221)', () => {
     const mod = await loadModule();
     mod.__setBackendWindowHooksForTesting({ openOrFocus });
 
-    // Open A: its inline `host.status` probe parks on the slow answer, so the
-    // queued open-to-B makes no progress while A's operation is in flight.
+    // Open A then B. A's slow `host.status` only parks its fire-and-forget
+    // hostname capture — neither window waits on it, and the serialized
+    // operations still open in request order.
     const openA = mod.openBackendWindow('remote-1');
     const openB = mod.openBackendWindow('remote-2');
-    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(1));
-    expect(openOrFocus).not.toHaveBeenCalled();
-
-    slowAResolvers[0]({ hostname: 'alpha.local' });
     await expect(openA).resolves.toEqual({ id: 'remote-1' });
     await expect(openB).resolves.toEqual({ id: 'remote-2' });
     expect(openOrFocus.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'remote-2']);
-    // The fire-and-forget capture issued its own (second) host.status against
-    // A's slow deferred; answer it so the label persists.
-    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(2));
-    slowAResolvers[1]({ hostname: 'alpha.local' });
+
+    // A's capture is still pending on the slow deferred; answer it so the
+    // label persists.
+    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(1));
+    slowAResolvers[0]({ hostname: 'alpha.local' });
 
     // Each backend's capture labels its own record.
     await vi.waitFor(() => {
@@ -427,13 +605,12 @@ describe('reconnect hello hostname refresh', () => {
 
 describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
   it('discards a host.status result that arrives after the client was disposed', async () => {
-    // A's inline open probe answers immediately; the fire-and-forget capture's
-    // second `host.status` stays pending until the test resolves it.
+    // The fire-and-forget capture's `host.status` stays pending until the test
+    // resolves it.
     let probeCount = 0;
     let resolveSlowCapture!: (value: unknown) => void;
     hostStatus.byHost.set('10.0.0.5', () => {
       probeCount += 1;
-      if (probeCount === 1) return Promise.resolve({});
       return new Promise((r) => (resolveSlowCapture = r));
     });
 
@@ -443,7 +620,7 @@ describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
     // Open A (its capture stays pending on the slow probe), then dispose A's
     // client — e.g. its last window was closed — before the probe resolves.
     await mod.openBackendWindow('remote-1');
-    await vi.waitFor(() => expect(probeCount).toBe(2));
+    await vi.waitFor(() => expect(probeCount).toBe(1));
     mod.disconnectBackendClient('remote-1');
 
     const broadcastsBeforeLateResult = send.mock.calls.filter(

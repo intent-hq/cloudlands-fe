@@ -72,6 +72,38 @@ describe('BrowserTabType panel layout routing', () => {
     );
   });
 
+  // intent-hq/intent#5710: an address-bar alias resolution persists the typed
+  // alias as the tab's requested URL so a restart re-resolves it instead of
+  // restoring the ephemeral tunnel forward.
+  it('persists the requested alias alongside the resolved tunnel URL', async () => {
+    render(BrowserTabType, {
+      props: {
+        tab: {
+          id: 'browser-tab',
+          type: 'browser',
+          title: 'Browser',
+          closable: true,
+          browserUrl: 'https://initial.example/',
+        },
+        workspaceId: 'workspace-1',
+        layoutId: 'workspace-1',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Navigate via alias' }));
+
+    expect(dispatch).toHaveBeenCalledWith(
+      updateTabBrowserUrl(
+        'workspace-1',
+        'browser-tab',
+        'http://127.0.0.1:41234/',
+        'http://daemon.localhost:3000',
+      ),
+    );
+  });
+
   // URL-bar autofocus only when the tab is active AND its panel is focused —
   // a focus-less reveal (restoreHiddenTab focus:false + setActiveTab) must not
   // steal keyboard focus from the conversation input.

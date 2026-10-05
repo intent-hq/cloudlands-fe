@@ -1,15 +1,17 @@
 import {
   selectIsProviderAuthenticationError,
   selectNormalizedProviderId,
-  selectProviderCatalogEntryOrDefault,
+  selectResolvedProviderCatalogEntry,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
 
 export type ProviderLoadError = {
   providerId: string;
   providerName: string;
   message: string;
+  details: string;
   displayText: string;
   hint?: string;
 };
@@ -21,7 +23,7 @@ function getErrorMessage(error: unknown): string {
 }
 
 function stripProviderPrefix(message: string, providerId: string, providerName: string): string {
-  const command = selectProviderCatalogEntryOrDefault.select(appStore.state, providerId)?.command;
+  const command = selectResolvedProviderCatalogEntry.select(appStore.state, providerId)?.command;
   const prefixes = [providerName, providerId, command].filter(Boolean);
   const trimmed = message.trim();
 
@@ -37,7 +39,8 @@ function stripProviderPrefix(message: string, providerId: string, providerName: 
 
 function getProviderErrorHint(providerId: string, message: string): string | undefined {
   const state = appStore.state;
-  const entry = selectProviderCatalogEntryOrDefault.select(state, providerId);
+  if (selectIsHostMember.select(state)) return undefined;
+  const entry = selectResolvedProviderCatalogEntry.select(state, providerId);
   const lowerMessage = message.toLowerCase();
 
   if (selectIsProviderAuthenticationError.select(state, providerId, message)) {
@@ -68,15 +71,22 @@ function getProviderErrorHint(providerId: string, message: string): string | und
 export function formatProviderLoadError(providerId: string, error: unknown): ProviderLoadError {
   const state = appStore.state;
   const normalizedId = selectNormalizedProviderId.select(state, providerId);
-  const entry = selectProviderCatalogEntryOrDefault.select(state, normalizedId);
+  const entry = selectResolvedProviderCatalogEntry.select(state, normalizedId);
   const providerName = entry?.displayName || normalizedId;
-  const message = stripProviderPrefix(getErrorMessage(error), normalizedId, providerName);
+  const details = getErrorMessage(error);
+  const stripped = stripProviderPrefix(details, normalizedId, providerName);
+  // Diagnostics belong in the reading dialog, not in a clipped picker row.
+  const message =
+    stripped.length > 160 || /[\r\n]/.test(stripped)
+      ? m.chat_modelPicker_loadFailed_label()
+      : stripped;
 
   return {
     providerId: normalizedId,
     providerName,
     message,
+    details,
     displayText: `${providerName}: ${message}`,
-    hint: getProviderErrorHint(normalizedId, message),
+    hint: getProviderErrorHint(normalizedId, stripped),
   };
 }

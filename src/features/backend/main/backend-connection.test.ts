@@ -1,3 +1,4 @@
+import { TC_ADDRESS } from '../../../test/fixtures/tc-address.fixture';
 /**
  * Unit tests for the connection-target resolver and the loopback WebSocket
  * transport (framing adapter + integration with the shared JSON-RPC client).
@@ -7,8 +8,9 @@
  * so the adapter's newline framing + event-push path exercise the same code
  * a live daemon would.
  */
-import type { ChildProcess } from 'node:child_process';
+import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
+import dns from 'node:dns';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import https from 'node:https';
@@ -27,13 +29,19 @@ import {
   AuthRejectedError,
   candidateWssHosts,
   captureFingerprint,
+  CONNECTION_LIMIT_RETRY_DEFAULT_MS,
+  CONNECTION_LIMIT_RETRY_MAX_MS,
+  CONNECTION_LIMIT_RETRY_MIN_MS,
+  ConnectionLimitError,
   createBackendSocket,
   defaultSocketPath,
   describeBackendConfig,
   normalizeFingerprint,
+  parseRetryAfterMs,
   PinMismatchError,
   raceDuplexSockets,
   resolveBackendConfig,
+  testWssConnection,
   TUNNEL_RACE_HOST,
   tunnelRaceAttempt,
   WebSocketDuplex,
@@ -42,7 +50,10 @@ import type { HostCertMismatch, RaceConnectInfo } from './backend-connection';
 import { resolveSocketPath } from './intentd-sidecar';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
+import { inspectPersonalCredential, invitedRole } from './invited-principal';
+import { readPinnedVersion } from './intentd-version-pin';
 import { createTunneledSocket, TUNNEL_CONNECT_TIMEOUT_MS } from './tailcat-tunnel';
+import * as tailcatTunnel from './tailcat-tunnel';
 
 // `ws` is aliased to a browser stub in `vitest.config.ts`; use createRequire to
 // load the real Node implementation (same pattern as `ssh-manager.ts`).
@@ -638,6 +649,8 @@ class FakeWssDaemon {
   secureConnections = 0;
   /** Decrypted application bytes received across all TLS sessions. */
   decryptedBytes = 0;
+  readonly sockets = new Set<net.Socket>();
+  upgradeGate: Promise<void> | undefined;
   handler: (req: {
     id?: number | string;
     method: string;
@@ -650,13 +663,23 @@ class FakeWssDaemon {
   async start(): Promise<void> {
     this.fingerprint = new crypto.X509Certificate(WSS_CERT_PEM).fingerprint256;
     this.server = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+    this.server.on('connection', (socket) => {
+      this.sockets.add(socket);
+      socket.once('close', () => this.sockets.delete(socket));
+    });
     this.server.on('secureConnection', (socket) => {
       this.secureConnections += 1;
       socket.on('data', (chunk: Buffer) => {
         this.decryptedBytes += chunk.length;
       });
     });
-    this.wss = new WebSocketServer({ server: this.server });
+    this.wss = new WebSocketServer({
+      server: this.server,
+      verifyClient: (_info, done) => {
+        if (this.upgradeGate) void this.upgradeGate.then(() => done(true));
+        else done(true);
+      },
+    });
     this.wss.on('connection', (socket, req) => {
       this.lastAuthHeader = req.headers.authorization;
       this.lastUpgradeUrl = req.url;
@@ -720,6 +743,114 @@ describe('WSS pinned transport (fingerprint + bearer token)', () => {
     expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
     client.dispose();
   });
+
+  it.each([
+    ['owner', true, { hostMembership: 1 }, null],
+    ['member', false, { hostMembership: 1 }, 'member'],
+    ['guest', false, { hostMembership: 1 }, 'guest'],
+    ['legacy owner', true, {}, null],
+    ['legacy collaborator', false, {}, 'guest'],
+  ])(
+    'classifies %s from authenticated identity replies over pinned WSS',
+    async (role, administrator, capabilities, expectedRole) => {
+      const requests: unknown[] = [];
+      daemon.handler = (req) => {
+        requests.push(req);
+        return {
+          result:
+            req.method === 'client.hello'
+              ? { server: { capabilities } }
+              : {
+                  id: 'person',
+                  login: null,
+                  displayName: null,
+                  avatarUrl: null,
+                  isAdministrator: administrator,
+                  ...(role.startsWith('legacy')
+                    ? {}
+                    : { hostRole: role, hostMembershipRevision: 1 }),
+                },
+        };
+      };
+      const snapshot = await inspectPersonalCredential({
+        host: daemon.host,
+        hosts: [daemon.host],
+        port: daemon.port,
+        fingerprint: daemon.fingerprint,
+        token: TOKEN,
+        tcAddress: null,
+      });
+      expect(requests).toEqual([
+        { jsonrpc: '2.0', id: 1, method: 'client.hello' },
+        { jsonrpc: '2.0', id: 2, method: 'principal.me' },
+      ]);
+      expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+      expect(new URL(daemon.lastUpgradeUrl!, 'https://localhost').pathname).toBe('/ws');
+      expect(snapshot.principal.isAdministrator).toBe(administrator);
+      expect(invitedRole(snapshot)).toBe(expectedRole);
+    },
+  );
+
+  it('rejects the intentd 0.9.12 hello before sending an unsupported identity request', async () => {
+    const requests: unknown[] = [];
+    daemon.handler = (request) => {
+      requests.push(request);
+      return {
+        result: {
+          clientId: 'test-client',
+          protocolVersion: '9.4',
+          server: {
+            locality: 'remote',
+            hasDisplay: false,
+            osArch: 'linux/x86_64',
+            version: '0.9.12',
+            protocolVersion: '9.4',
+            capabilities: { liveState: true },
+          },
+        },
+      };
+    };
+    const error = await inspectPersonalCredential({
+      host: daemon.host,
+      hosts: [daemon.host],
+      port: daemon.port,
+      fingerprint: daemon.fingerprint,
+      token: TOKEN,
+      tcAddress: null,
+    }).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('0.9.12');
+    const pin = readPinnedVersion();
+    expect(pin).not.toBeNull();
+    expect((error as Error).message).toContain(pin!);
+    expect(requests).toEqual([{ jsonrpc: '2.0', id: 1, method: 'client.hello' }]);
+  });
+
+  it.each(['client.hello', 'principal.me'])(
+    'identifies unavailable %s over the real WSS transport',
+    async (missingMethod) => {
+      const requests: string[] = [];
+      daemon.handler = (req) => {
+        requests.push(req.method);
+        return req.method === missingMethod
+          ? { error: { code: -32601, message: 'Method not found' } }
+          : { result: { server: { capabilities: {} } } };
+      };
+      await expect(
+        inspectPersonalCredential({
+          host: daemon.host,
+          hosts: [daemon.host],
+          port: daemon.port,
+          fingerprint: daemon.fingerprint,
+          token: TOKEN,
+          tcAddress: null,
+        }),
+      ).rejects.toThrow(missingMethod);
+      expect(requests).toEqual(
+        missingMethod === 'client.hello' ? ['client.hello'] : ['client.hello', 'principal.me'],
+      );
+    },
+  );
 
   it('pins a case/separator-variant fingerprint (normalization)', async () => {
     daemon.handler = () => ({ result: 'ok' });
@@ -905,6 +1036,8 @@ class RejectingWssDaemon {
   port = 0;
   fingerprint = '';
   statusCode = 401;
+  /** `Retry-After` header value sent with the rejection (503 cap refusals), if any. */
+  retryAfter: string | null = null;
   /** Number of upgrade attempts observed (for reconnect-halt assertions). */
   upgradeAttempts = 0;
   lastAuthHeader: string | undefined;
@@ -917,8 +1050,9 @@ class RejectingWssDaemon {
       this.upgradeAttempts += 1;
       this.lastAuthHeader = req.headers.authorization;
       this.lastUpgradeUrl = req.url;
+      const retryAfter = this.retryAfter === null ? '' : `Retry-After: ${this.retryAfter}\r\n`;
       socket.write(
-        `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+        `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\n${retryAfter}Content-Length: 0\r\n\r\n`,
       );
       socket.destroy();
     });
@@ -930,6 +1064,42 @@ class RejectingWssDaemon {
     await new Promise<void>((res) => this.server.close(() => res()));
   }
 }
+
+// Multiplayer guest caps (intent-hq/intentd#1917): the 503 cap refusal carries
+// `Retry-After: <delta-seconds>`. Only that form is honored, clamped to
+// [5, 300] s; anything else falls back to the default slow cadence.
+describe('parseRetryAfterMs', () => {
+  it('honors a delta-seconds Retry-After within the clamp bounds', () => {
+    expect(parseRetryAfterMs('45')).toBe(45_000);
+    expect(parseRetryAfterMs(' 45 ')).toBe(45_000);
+    expect(parseRetryAfterMs(['45', '90'])).toBe(45_000);
+  });
+
+  it('falls back to the default cadence when absent or unparseable', () => {
+    expect(parseRetryAfterMs(undefined)).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('soon')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('-5')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('1.5')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    // HTTP-date form is not honored here.
+    expect(parseRetryAfterMs('Wed, 21 Oct 2026 07:28:00 GMT')).toBe(
+      CONNECTION_LIMIT_RETRY_DEFAULT_MS,
+    );
+  });
+
+  it('clamps out-of-range values into [5, 300] seconds', () => {
+    expect(parseRetryAfterMs('0')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('1')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('5')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('300')).toBe(CONNECTION_LIMIT_RETRY_MAX_MS);
+    expect(parseRetryAfterMs('3600')).toBe(CONNECTION_LIMIT_RETRY_MAX_MS);
+  });
+
+  it('defaults a ConnectionLimitError built without a value to the default cadence', () => {
+    expect(new ConnectionLimitError().retryAfterMs).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(new ConnectionLimitError(60_000).retryAfterMs).toBe(60_000);
+  });
+});
 
 describe('WSS auth rejection (401/403 upgrade responses)', () => {
   let daemon: RejectingWssDaemon;
@@ -995,6 +1165,45 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
     expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
     expect(errors.some((e) => /unexpected server response: 500/i.test(e.message))).toBe(true);
     client.dispose();
+  });
+
+  // Multiplayer guest caps (intent-hq/intentd#1917): the daemon refuses the
+  // upgrade with 503 when its guest connection cap is spent. Transient, so it
+  // is neither an auth rejection (which stops retrying) nor a generic
+  // transport error (which hides the reason).
+  it('surfaces a 503 upgrade rejection as a ConnectionLimitError and flags the client limited', async () => {
+    daemon.statusCode = 503;
+    const client = makeClient();
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(ConnectionLimitError);
+    expect(errors.some((e) => e instanceof ConnectionLimitError)).toBe(true);
+    expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
+    expect(errors.some((e) => e instanceof PinMismatchError)).toBe(false);
+    expect(client.getStatus()).toBe('disconnected');
+    expect(client.isConnectionLimited()).toBe(true);
+    // No Retry-After on the wire → the default slow cadence.
+    expect(client.getConnectionLimitRetryAfterMs()).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    client.dispose();
+  });
+
+  it('carries the 503 Retry-After (delta-seconds) on the ConnectionLimitError', async () => {
+    daemon.statusCode = 503;
+    daemon.retryAfter = '45';
+    try {
+      const client = makeClient();
+      const errors: Error[] = [];
+      client.on('error', (e) => errors.push(e));
+      await expect(client.request('system.status')).rejects.toBeInstanceOf(ConnectionLimitError);
+      const refusal = errors.find(
+        (e): e is ConnectionLimitError => e instanceof ConnectionLimitError,
+      );
+      expect(refusal?.retryAfterMs).toBe(45_000);
+      expect(client.getConnectionLimitRetryAfterMs()).toBe(45_000);
+      client.dispose();
+    } finally {
+      daemon.retryAfter = null;
+    }
   });
 
   it('classifies a 401 from a cert that fails the pin as PinMismatchError, not auth rejection', async () => {
@@ -1130,6 +1339,16 @@ describe('normalizeFingerprint', () => {
 });
 
 describe('candidateWssHosts', () => {
+  it('keeps Tailcat addresses out of DNS while retaining ordinary tc-prefixed hosts', () => {
+    expect(
+      candidateWssHosts({
+        transport: 'wss',
+        host: TC_ADDRESS,
+        hosts: [TC_ADDRESS, 'tcp-server.local', 'tc-printer', '192.168.1.10'],
+      }),
+    ).toEqual(['tcp-server.local', 'tc-printer', '192.168.1.10']);
+  });
+
   it('keeps the primary host first and deduplicates the extras', () => {
     expect(
       candidateWssHosts({
@@ -1280,6 +1499,41 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     a.emit('error', new Error('ECONNREFUSED a'));
     b.emit('error', new Error('ECONNREFUSED b'));
     expect((await failed).message).toBe('ECONNREFUSED b');
+  });
+
+  it('preserves an authentication rejection when another route fails later', async () => {
+    const a = new FakeCandidate();
+    const b = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'a', create: () => a },
+      { host: 'b', create: () => b },
+    ]);
+    const failed = new Promise<Error>((resolve) => facade.once('error', resolve));
+    a.emit('error', new AuthRejectedError(401));
+    b.emit('error', new Error('ECONNREFUSED'));
+    expect(await failed).toBeInstanceOf(AuthRejectedError);
+    expect(a.destroyed).toBe(true);
+    expect(b.destroyed).toBe(true);
+  });
+
+  it('preserves an authentication rejection when remaining routes time out', async () => {
+    vi.useFakeTimers();
+    try {
+      const rejected = new FakeCandidate();
+      const stalled = new FakeCandidate();
+      const facade = raceDuplexSockets([
+        { host: 'rejected', create: () => rejected },
+        { host: 'stalled', create: () => stalled },
+      ]);
+      const failed = new Promise<Error>((resolve) => facade.once('error', resolve));
+      rejected.emit('error', new AuthRejectedError(403));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(await failed).toMatchObject({ statusCode: 403 });
+      expect(stalled.destroyed).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('continues past a pin mismatch — a later good candidate still wins (iOS model)', async () => {
@@ -1450,6 +1704,56 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     expect(a.destroyedByRace).toBe(true);
   });
 
+  // Multiplayer guest caps (intent-hq/intentd#1917): the client keys its slow
+  // retry cadence on the typed 503 refusal, so a later generic failure (or the
+  // race timeout) on another candidate must not downgrade it.
+  it('keeps a ConnectionLimitError when a later candidate fails generically', async () => {
+    const capped = new FakeCandidate();
+    const refused = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'capped', create: () => capped },
+      { host: 'refused', create: () => refused },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError(45_000));
+    refused.emit('error', new Error('ECONNREFUSED'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(ConnectionLimitError);
+    // The daemon's Retry-After rides along with the retained refusal.
+    expect((error as ConnectionLimitError).retryAfterMs).toBe(45_000);
+  });
+
+  it('keeps a ConnectionLimitError when the remaining candidate times out', async () => {
+    const capped = new FakeCandidate();
+    const hanging = new FakeCandidate();
+    const facade = raceDuplexSockets(
+      [
+        { host: 'capped', create: () => capped },
+        { host: 'hanging', create: () => hanging },
+      ],
+      { timeoutMs: 50 },
+    );
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError(120_000));
+    const error = await failed;
+    expect(error).toBeInstanceOf(ConnectionLimitError);
+    expect((error as ConnectionLimitError).retryAfterMs).toBe(120_000);
+    expect(hanging.destroyedByRace).toBe(true);
+  });
+
+  it('still prefers a pin mismatch over a ConnectionLimitError', async () => {
+    const capped = new FakeCandidate();
+    const foreign = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'capped', create: () => capped },
+      { host: 'foreign', create: () => foreign },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError());
+    foreign.emit('error', new PinMismatchError('AA', 'BB'));
+    expect(await failed).toBeInstanceOf(PinMismatchError);
+  });
+
   it('fails when every attempt factory throws synchronously', async () => {
     const facade = raceDuplexSockets([
       {
@@ -1488,7 +1792,11 @@ describe('tunnelRaceAttempt (tailcat tunnel candidate)', () => {
     // tmp never find resources/tailcat.
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
     try {
-      expect(tunnelRaceAttempt({ ...wssConfig, tcAddress: 'tc.example.ts.net' })).toBeNull();
+      expect(tunnelRaceAttempt({ ...wssConfig, tcAddress: TC_ADDRESS })).toBeNull();
+      // A tunnel-only record must fail locally, not resolve the blob as DNS.
+      expect(() => createBackendSocket({ ...wssConfig, host: TC_ADDRESS })).toThrow(
+        'tailcat binary unavailable',
+      );
     } finally {
       spy.mockRestore();
     }
@@ -1498,7 +1806,7 @@ describe('tunnelRaceAttempt (tailcat tunnel candidate)', () => {
     // Any existing file satisfies the TAILCAT_BIN existence probe; the
     // attempt is not dialed in this test.
     vi.stubEnv('TAILCAT_BIN', __filename);
-    const attempt = tunnelRaceAttempt({ ...wssConfig, tcAddress: 'tc.example.ts.net' });
+    const attempt = tunnelRaceAttempt({ ...wssConfig, tcAddress: TC_ADDRESS });
     expect(attempt).not.toBeNull();
     expect(attempt!.host).toBe(TUNNEL_RACE_HOST);
     expect(attempt!.via).toBe('tunnel');
@@ -1521,7 +1829,7 @@ describe('tunnel candidate connect bound in the wss race', () => {
     const refused = new FakeCandidate();
     const hangingInner = new FakeCandidate();
     const tunnel = createTunneledSocket({
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       remotePort: 5181,
       binaryPath: '/fake/tailcat',
       spawn: () => new EventEmitter() as unknown as ChildProcess,
@@ -1569,7 +1877,7 @@ describe('tunnel candidate connect bound in the wss race', () => {
         port: refusedPort,
         token: 'c'.repeat(64),
         fingerprint: 'AA:BB',
-        tcAddress: 'tc.example.ts.net',
+        tcAddress: TC_ADDRESS,
       });
       try {
         const failed = new Promise<Error>((res) => socket.once('error', (e: Error) => res(e)));
@@ -1586,33 +1894,34 @@ describe('tunnel candidate connect bound in the wss race', () => {
   );
 });
 
+/**
+ * Fake tailcat child: instead of dialing the tc mesh, relays its stdio to
+ * the FakeWssDaemon's TLS port — the same pipe topology the real client
+ * binary provides, so the forwarder-loopback capture path runs end to end.
+ */
+class FakeRelayChild extends EventEmitter {
+  stdin = new PassThrough();
+  stdout = new PassThrough();
+  stderr = new PassThrough();
+  killed = false;
+  constructor(remotePort?: number) {
+    super();
+    if (remotePort === undefined) return;
+    const socket = net.connect(remotePort, '127.0.0.1');
+    this.stdin.pipe(socket);
+    socket.pipe(this.stdout);
+    this.once('exit', () => socket.destroy());
+  }
+  kill(): boolean {
+    this.killed = true;
+    this.emit('exit', 0);
+    return true;
+  }
+}
+
 describe('captureFingerprint through the tailcat tunnel (tc-address host)', () => {
   let daemon: FakeWssDaemon;
   const TOKEN = 'c'.repeat(64);
-
-  /**
-   * Fake tailcat child: instead of dialing the tc mesh, relays its stdio to
-   * the FakeWssDaemon's TLS port — the same pipe topology the real client
-   * binary provides, so the forwarder-loopback capture path runs end to end.
-   */
-  class FakeRelayChild extends EventEmitter {
-    stdin = new PassThrough();
-    stdout = new PassThrough();
-    stderr = new PassThrough();
-    killed = false;
-    constructor(remotePort: number) {
-      super();
-      const socket = net.connect(remotePort, '127.0.0.1');
-      this.stdin.pipe(socket);
-      socket.pipe(this.stdout);
-      this.once('exit', () => socket.destroy());
-    }
-    kill(): boolean {
-      this.killed = true;
-      this.emit('exit', 0);
-      return true;
-    }
-  }
 
   beforeAll(async () => {
     daemon = new FakeWssDaemon();
@@ -1627,11 +1936,271 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
     vi.unstubAllEnvs();
   });
 
+  async function withSavedTailcatRelay(
+    tcAddress: string | undefined,
+    packageScope: 'configured' | 'module parent',
+    verify: (fixture: {
+      connect: (fingerprint?: string) => Duplex;
+      argv: () => unknown;
+      dnsHosts: () => unknown[];
+      childCount: () => number;
+    }) => Promise<void>,
+  ): Promise<void> {
+    // The global Vitest temp guard removes its root even after failure. Keep
+    // these owned diagnostics outside it so an unconfirmed child keeps its
+    // original executable/argv files, without weakening that global guard.
+    const evidenceRoot = path.resolve(
+      process.env.INTENT_TAILCAT_FIXTURE_EVIDENCE_DIR ?? '.cache/tailcat-fixtures',
+    );
+    fs.mkdirSync(evidenceRoot, { recursive: true });
+    const tmpDir = fs.mkdtempSync(path.join(evidenceRoot, 'tailcat-reconnect-'));
+    const relayDir = packageScope === 'module parent' ? path.join(tmpDir, 'relay') : tmpDir;
+    const script = path.join(relayDir, 'tailcat');
+    const argsFile = path.join(relayDir, 'args.jsonl');
+    const receiptPath = `${tmpDir}.json`;
+    const failures: unknown[] = [];
+    const sockets: Duplex[] = [];
+    const children: Array<{
+      child: ChildProcess;
+      closed: Promise<void>;
+      receipt: Record<string, unknown>;
+    }> = [];
+    let closeConfirmed = false;
+    let removed = false;
+    let restoreTunnel: (() => void) | undefined;
+    let restoreLookup: (() => void) | undefined;
+    try {
+      if (packageScope === 'module parent') {
+        fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"type":"module"}\n');
+        fs.mkdirSync(relayDir);
+      }
+      // An extensionless executable inherits package scope from its directory.
+      // Keep the original relay bytes CommonJS even inside this ESM repository.
+      fs.writeFileSync(path.join(relayDir, 'package.json'), '{"type":"commonjs"}\n');
+      fs.writeFileSync(
+        script,
+        `#!${process.execPath}
+const fs = require('node:fs');
+const net = require('node:net');
+fs.appendFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+const socket = net.connect(Number(process.argv[3]), '127.0.0.1');
+process.stdin.pipe(socket).pipe(process.stdout);
+socket.on('error', () => process.exit(1));
+`,
+        { mode: 0o755 },
+      );
+      vi.stubEnv('TAILCAT_BIN', script);
+      const lookup = vi.spyOn(dns, 'lookup');
+      restoreLookup = () => lookup.mockRestore();
+      const create = tailcatTunnel.createTunneledSocket;
+      const tunnelSpy = vi
+        .spyOn(tailcatTunnel, 'createTunneledSocket')
+        .mockImplementation((options) =>
+          create({
+            ...options,
+            // Observe real processes; keep the executable, argv, pipe topology
+            // and production connect deadline unchanged.
+            spawn: (command, args, spawnOptions) => {
+              const started = Date.now();
+              const child = nodeSpawn(command, args, spawnOptions);
+              const receipt: Record<string, unknown> = {
+                pid: child.pid,
+                args,
+                stdoutBytes: 0,
+                stderr: '',
+              };
+              const closed = new Promise<void>((resolve) => {
+                child.once('close', () => {
+                  receipt.closeMs = Date.now() - started;
+                  resolve();
+                });
+              });
+              children.push({ child, closed, receipt });
+              child.stdout.on('data', (chunk: Buffer) => {
+                receipt.stdoutBytes = Number(receipt.stdoutBytes) + chunk.length;
+              });
+              child.stderr.on('data', (chunk: Buffer) => {
+                receipt.stderr = (String(receipt.stderr) + chunk.toString('utf8')).slice(0, 4096);
+              });
+              child.once('spawn', () => {
+                receipt.spawnMs = Date.now() - started;
+              });
+              child.once('error', (error) => {
+                receipt.error = error.message;
+              });
+              child.once('exit', (code, signal) => {
+                Object.assign(receipt, { code, signal, exitMs: Date.now() - started });
+              });
+              return child;
+            },
+          }),
+        );
+      restoreTunnel = () => tunnelSpy.mockRestore();
+      await verify({
+        connect(fingerprint = daemon.fingerprint) {
+          const socket = createBackendSocket({
+            transport: 'wss',
+            host: TC_ADDRESS,
+            port: daemon.port,
+            token: TOKEN,
+            fingerprint,
+            tcAddress,
+          });
+          sockets.push(socket);
+          return socket;
+        },
+        argv: () =>
+          fs
+            .readFileSync(argsFile, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line)),
+        dnsHosts: () => lookup.mock.calls.map(([host]) => host),
+        childCount: () => children.length,
+      });
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      for (const socket of sockets) {
+        try {
+          socket.destroy();
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        // Observe production teardown, including its TERM/KILL grace. Never
+        // add a test-owned kill or adopt a child to turn failure into success.
+        await Promise.race([
+          Promise.all(children.map(({ closed }) => closed)),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`Tailcat child close unconfirmed; retained ${tmpDir}`)),
+              3000,
+            );
+          }),
+        ]);
+        expect(
+          children.every(({ child }) => child.exitCode !== null || child.signalCode !== null),
+        ).toBe(true);
+        closeConfirmed = true;
+      } catch (error) {
+        failures.push(error);
+      } finally {
+        clearTimeout(timer);
+        // Restoration cannot depend on diagnostic reads, serialization or log
+        // output succeeding. Preserve each independent failure in the report.
+        for (const restore of [restoreTunnel, restoreLookup]) {
+          try {
+            restore?.();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+      }
+      try {
+        const receipt = JSON.stringify({
+          platform: process.platform,
+          arch: process.arch,
+          node: process.version,
+          execPath: process.execPath,
+          explicitAddress: tcAddress !== undefined,
+          packageScope,
+          relayDir,
+          tmpDir,
+          closeConfirmed,
+          children: children.map(({ receipt }) => receipt),
+          argv: fs.existsSync(argsFile) ? fs.readFileSync(argsFile, 'utf8') : null,
+        });
+        fs.writeFileSync(receiptPath, receipt);
+        console.info('Tailcat reconnect fixture receipt', receipt);
+      } catch (error) {
+        failures.push(error);
+      }
+      if (closeConfirmed) {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+          removed = true;
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        `Tailcat fixture failed; ${removed ? 'closed fixture removed' : `fixture retained at ${tmpDir}`}; receipt target ${receiptPath}`,
+      );
+    }
+  }
+
+  describe.each(['configured', 'module parent'] as const)(
+    'saved relay package scope: %s',
+    (packageScope) => {
+      it.skipIf(process.platform === 'win32').each([undefined, TC_ADDRESS])(
+        'reopens a saved Tailcat host without DNS and preserves spawn bytes (tcAddress: %s)',
+        async (tcAddress) => {
+          await withSavedTailcatRelay(tcAddress, packageScope, async (fixture) => {
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const socket = fixture.connect();
+              try {
+                await new Promise<void>((resolve, reject) => {
+                  socket.once('connect', resolve);
+                  socket.once('error', reject);
+                });
+              } finally {
+                socket.destroy();
+              }
+            }
+            expect(fixture.argv()).toEqual([
+              [TC_ADDRESS, String(daemon.port)],
+              [TC_ADDRESS, String(daemon.port)],
+            ]);
+            expect(fixture.dnsHosts()).toEqual(['127.0.0.1', '127.0.0.1']);
+            expect(fixture.childCount()).toBe(2);
+          });
+        },
+      );
+
+      it.skipIf(process.platform === 'win32').each([undefined, TC_ADDRESS])(
+        'rejects a wrong pin through a real saved Tailcat executable before sending token bytes (tcAddress: %s)',
+        async (tcAddress) => {
+          await withSavedTailcatRelay(tcAddress, packageScope, async (fixture) => {
+            const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+            daemon.lastAuthHeader = 'sentinel-not-overwritten';
+            daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
+            const before = daemon.decryptedBytes;
+            const socket = fixture.connect(wrong);
+            try {
+              await expect(
+                new Promise<void>((resolve, reject) => {
+                  socket.once('connect', resolve);
+                  socket.once('error', reject);
+                }),
+              ).rejects.toBeInstanceOf(PinMismatchError);
+            } finally {
+              socket.destroy();
+            }
+            // Same observation window as the existing direct/TOFU pin controls.
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            expect(daemon.decryptedBytes).toBe(before);
+            expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
+            expect(daemon.lastUpgradeUrl).toBe('sentinel-not-overwritten');
+            expect(fixture.argv()).toEqual([[TC_ADDRESS, String(daemon.port)]]);
+            expect(fixture.dnsHosts()).toEqual(['127.0.0.1']);
+            expect(fixture.childCount()).toBe(1);
+          });
+        },
+      );
+    },
+  );
+
   it('fails structured (connect-failed) when the tailcat binary is unavailable', async () => {
     vi.stubEnv('TAILCAT_BIN', path.join(os.tmpdir(), 'definitely-missing-tailcat'));
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
     try {
-      const result = await captureFingerprint({ host: 'tc-key-abc', port: daemon.port });
+      const result = await captureFingerprint({ host: TC_ADDRESS, port: daemon.port });
       expect(result).toEqual({
         ok: false,
         code: 'connect-failed',
@@ -1642,13 +2211,13 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
     }
   });
 
-  it('captures via the loopback forwarder, lowercases the dialed tc address, and closes the tunnel', async () => {
+  it('captures via the loopback forwarder, preserves the dialed tc address, and closes the tunnel', async () => {
     vi.stubEnv('TAILCAT_BIN', __filename);
     const children: FakeRelayChild[] = [];
     const spawnArgs: string[][] = [];
     const result = await captureFingerprint(
-      // Hand-typed uppercase form: the dial must normalize it.
-      { host: '  TC-KEY-ABC  ', port: daemon.port, token: TOKEN },
+      // Trim paste whitespace without changing the case-sensitive payload.
+      { host: `  ${TC_ADDRESS}  `, port: daemon.port, token: TOKEN },
       {
         tailcatSpawn: (_command, args) => {
           spawnArgs.push(args);
@@ -1664,9 +2233,9 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
       connected: true,
       tokenValid: true,
     });
-    // The forwarder spawned exactly one relay with the normalized address and
+    // The forwarder spawned exactly one relay with the exact address and
     // the daemon's port, and the finally-block teardown killed it.
-    expect(spawnArgs).toEqual([['tc-key-abc', String(daemon.port)]]);
+    expect(spawnArgs).toEqual([[TC_ADDRESS, String(daemon.port)]]);
     expect(children).toHaveLength(1);
     expect(children[0].killed).toBe(true);
   });
@@ -1677,7 +2246,7 @@ describe('captureFingerprint through the tailcat tunnel (tc-address host)', () =
     const before = daemon.decryptedBytes;
     const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
     const result = await captureFingerprint(
-      { host: 'tc-key-abc', port: daemon.port, token: TOKEN, expectedFingerprint: wrong },
+      { host: TC_ADDRESS, port: daemon.port, token: TOKEN, expectedFingerprint: wrong },
       {
         tailcatSpawn: () => new FakeRelayChild(daemon.port) as unknown as ChildProcess,
       },
@@ -1750,5 +2319,248 @@ describe('multi-host wss connect through JsonRpcClient (#1746)', () => {
     await expect(client.request('system.status')).rejects.toBeInstanceOf(PinMismatchError);
     expect(errors.some((e) => e instanceof PinMismatchError)).toBe(true);
     client.dispose();
+  });
+});
+
+describe('testWssConnection saved-route probes', () => {
+  let daemon: FakeWssDaemon;
+  const TOKEN = 'saved-route-test-token';
+
+  beforeAll(async () => {
+    daemon = new FakeWssDaemon();
+    await daemon.start();
+  });
+
+  afterAll(async () => {
+    await daemon.stop();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    daemon.upgradeGate = undefined;
+    daemon.handler = () => ({ result: null });
+  });
+
+  function config() {
+    return {
+      transport: 'wss' as const,
+      host: daemon.host,
+      port: daemon.port,
+      token: TOKEN,
+      fingerprint: daemon.fingerprint,
+    };
+  }
+
+  function relay(port: number | null = daemon.port) {
+    const children: FakeRelayChild[] = [];
+    const tunnels: Duplex[] = [];
+    const spawnArgs: string[][] = [];
+    let didSpawn!: () => void;
+    const spawned = new Promise<void>((resolve) => {
+      didSpawn = resolve;
+    });
+    const create = tailcatTunnel.createTunneledSocket;
+    vi.spyOn(tailcatTunnel, 'resolveTailcatBinaryPath').mockReturnValue(__filename);
+    vi.spyOn(tailcatTunnel, 'createTunneledSocket').mockImplementation((options) => {
+      const tunnel = create({
+        ...options,
+        spawn: (_command, args) => {
+          spawnArgs.push(args);
+          const child = new FakeRelayChild(port ?? undefined);
+          children.push(child);
+          didSpawn();
+          return child as unknown as ChildProcess;
+        },
+      });
+      tunnels.push(tunnel);
+      return tunnel;
+    });
+    return { children, tunnels, spawnArgs, spawned };
+  }
+
+  it('succeeds through one deduplicated alternate while the primary stalls, then closes both', async () => {
+    let accepted!: () => void;
+    daemon.upgradeGate = new Promise<void>((resolve) => {
+      accepted = resolve;
+    });
+    const sockets = new Set<net.Socket>();
+    const stalled = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.resume();
+      socket.once('close', () => sockets.delete(socket));
+      accepted();
+    });
+    await new Promise<void>((resolve) => stalled.listen(daemon.port, '127.0.0.2', resolve));
+    const handshakes = daemon.secureConnections;
+    const request = vi.fn(() => ({ result: null }));
+    daemon.handler = request;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await testWssConnection({
+        ...config(),
+        host: '127.0.0.2',
+        hosts: ['127.0.0.2', daemon.host, `  ${daemon.host}  `, ''],
+      });
+      // No clock advancement: success cannot wait for the stalled primary's deadline.
+      expect(vi.getTimerCount()).toBe(0);
+      expect(daemon.secureConnections - handshakes).toBe(1);
+      expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+      expect(new URL(daemon.lastUpgradeUrl!, 'https://localhost').searchParams.get('token')).toBe(
+        TOKEN,
+      );
+      expect(request).not.toHaveBeenCalled();
+      vi.useRealTimers();
+      await vi.waitFor(() => {
+        expect(sockets.size).toBe(0);
+        expect(daemon.sockets.size).toBe(0);
+      });
+    } finally {
+      vi.useRealTimers();
+      accepted();
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => stalled.close(() => resolve()));
+    }
+  });
+
+  it.each([undefined, TC_ADDRESS])(
+    'succeeds directly without an available tunnel (%s)',
+    async (tcAddress) => {
+      vi.spyOn(tailcatTunnel, 'resolveTailcatBinaryPath').mockReturnValue(null);
+      await expect(testWssConnection({ ...config(), tcAddress })).resolves.toBeUndefined();
+      await vi.waitFor(() => expect(daemon.sockets.size).toBe(0));
+    },
+  );
+
+  it('fails locally for a tunnel-only device when Tailcat is unavailable', async () => {
+    vi.spyOn(tailcatTunnel, 'resolveTailcatBinaryPath').mockReturnValue(null);
+    const lookup = vi.spyOn(dns, 'lookup');
+    await expect(testWssConnection({ ...config(), host: TC_ADDRESS })).rejects.toThrow(
+      'tailcat binary unavailable',
+    );
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('succeeds through the saved Tailcat route when the primary refuses and closes its relay', async () => {
+    const tunnel = relay();
+    await expect(
+      testWssConnection({ ...config(), host: '127.0.0.2', tcAddress: TC_ADDRESS }),
+    ).resolves.toBeUndefined();
+    expect(tunnel.spawnArgs).toEqual([[TC_ADDRESS, String(daemon.port)]]);
+    expect(tunnel.children).toHaveLength(1);
+    expect(tunnel.children[0].killed).toBe(true);
+    expect(tunnel.tunnels[0].destroyed).toBe(true);
+    expect(daemon.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+    await vi.waitFor(() => expect(daemon.sockets.size).toBe(0));
+  });
+
+  it('kills an already-started stalled Tailcat relay when the direct route succeeds', async () => {
+    const tunnel = relay(null);
+    daemon.upgradeGate = tunnel.spawned;
+    await expect(
+      testWssConnection({ ...config(), tcAddress: TC_ADDRESS }),
+    ).resolves.toBeUndefined();
+    expect(tunnel.children).toHaveLength(1);
+    expect(tunnel.children[0].killed).toBe(true);
+    expect(tunnel.tunnels[0].destroyed).toBe(true);
+    await vi.waitFor(() => expect(daemon.sockets.size).toBe(0));
+  });
+
+  it.each(['direct', 'tunnel'])(
+    'never sends credentials to a mismatching %s certificate',
+    async (route) => {
+      const tunnel = route === 'tunnel' ? relay() : undefined;
+      const bytes = daemon.decryptedBytes;
+      const header = daemon.lastAuthHeader;
+      const wrongPin = 'FF:'.repeat(31) + 'FF';
+      await expect(
+        testWssConnection({
+          ...config(),
+          host: route === 'tunnel' ? TC_ADDRESS : daemon.host,
+          fingerprint: wrongPin,
+        }),
+      ).rejects.toMatchObject({ expected: wrongPin, actual: daemon.fingerprint });
+      if (tunnel) {
+        expect(tunnel.children[0].killed).toBe(true);
+        expect(tunnel.tunnels[0].destroyed).toBe(true);
+      }
+      await vi.waitFor(() => expect(daemon.sockets.size).toBe(0));
+      expect(daemon.decryptedBytes).toBe(bytes);
+      expect(daemon.lastAuthHeader).toBe(header);
+    },
+  );
+
+  it.each([401, 403])(
+    'requires a successful authenticated upgrade (%s rejection)',
+    async (statusCode) => {
+      const rejecting = new RejectingWssDaemon();
+      rejecting.statusCode = statusCode;
+      await rejecting.start();
+      const tunnel = relay(rejecting.port);
+      try {
+        await expect(
+          testWssConnection({
+            ...config(),
+            port: rejecting.port,
+            tcAddress: TC_ADDRESS,
+          }),
+        ).rejects.toMatchObject({ name: 'AuthRejectedError', statusCode });
+        expect(rejecting.lastAuthHeader).toBe(`Bearer ${TOKEN}`);
+        expect(tunnel.children[0].killed).toBe(true);
+        expect(tunnel.tunnels[0].destroyed).toBe(true);
+      } finally {
+        await rejecting.stop();
+      }
+    },
+  );
+
+  it.each([[], ['127.0.0.2']])(
+    'bounds failed direct routes with one deadline (%j)',
+    async (hosts) => {
+      let accepted!: () => void;
+      const connected = new Promise<void>((resolve) => {
+        accepted = resolve;
+      });
+      const sockets = new Set<net.Socket>();
+      const stalled = net.createServer((socket) => {
+        sockets.add(socket);
+        socket.resume();
+        socket.once('close', () => sockets.delete(socket));
+        accepted();
+      });
+      await new Promise<void>((resolve) => stalled.listen(0, '127.0.0.1', resolve));
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const outcome = testWssConnection({
+          ...config(),
+          port: (stalled.address() as AddressInfo).port,
+          hosts,
+        }).catch((error: unknown) => error);
+        await connected;
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(await outcome).toMatchObject({ code: 'ETIMEDOUT' });
+        expect(vi.getTimerCount()).toBe(0);
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(sockets.size).toBe(0));
+      } finally {
+        vi.useRealTimers();
+        for (const socket of sockets) socket.destroy();
+        await new Promise<void>((resolve) => stalled.close(() => resolve()));
+      }
+    },
+  );
+
+  it('closes a stalled Tailcat relay on its bounded timeout', async () => {
+    const tunnel = relay(null);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const outcome = testWssConnection({ ...config(), host: TC_ADDRESS }).catch(
+      (error: unknown) => error,
+    );
+    await tunnel.spawned;
+    await vi.advanceTimersByTimeAsync(TUNNEL_CONNECT_TIMEOUT_MS);
+    expect(await outcome).toMatchObject({ code: 'ETIMEDOUT' });
+    expect(tunnel.children[0].killed).toBe(true);
+    expect(tunnel.tunnels[0].destroyed).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

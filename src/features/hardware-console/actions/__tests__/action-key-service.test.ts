@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
 import {
@@ -804,6 +804,18 @@ describe('persistence key on the daemon bag', () => {
         'switch-window-layouts',
         'push-to-talk',
         'cycle-in-progress-agents',
+        'cycle-unread-agents',
+      ],
+    ],
+    [
+      'pre-close-tab (ACT09 switch-window-layouts) defaults',
+      [
+        'new-workspace',
+        'new-agent',
+        'see-spec',
+        'switch-window-layouts',
+        'push-to-talk',
+        'cycle-open-windows',
         'cycle-unread-agents',
       ],
     ],

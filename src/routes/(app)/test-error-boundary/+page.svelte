@@ -51,7 +51,7 @@
       <!-- Section 1: Basic Error Boundary -->
       <div class="space-y-4">
         <div class="flex items-center gap-2 mb-6">
-          <Fa icon={faCheckCircle} class="w-6 h-6 text-primary" />
+          <Fa icon={faCheckCircle} class="w-6 h-6 text-primary-ink" />
           <h2 class="text-2xl font-semibold text-foreground">Basic Error Boundary</h2>
         </div>
 

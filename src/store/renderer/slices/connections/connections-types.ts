@@ -10,6 +10,13 @@
  */
 
 import type {
+  AddConnectionParams,
+  CaptureFingerprintParams,
+  ConnectionValidationBlockedResult,
+  RotateConnectionSecretParams,
+  SelfPublishedStateResult,
+  TestConnectionParams,
+  UpdateConnectionParams,
   ConnectionRecord,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
@@ -17,7 +24,7 @@ import type {
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
 } from '$shared/types/connections';
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
 export type {
   AddConnectionParams,
@@ -51,6 +58,49 @@ export type {
  *   - `error`      → the last operation failed (see `error`).
  */
 type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
+
+/** Secrets occur only in intent payloads, never in retained workflow state. */
+export type ConnectionWorkflowIntent =
+  | { kind: 'capture'; params: CaptureFingerprintParams }
+  | { kind: 'connect'; params: AddConnectionParams; enableSync: boolean }
+  | {
+      kind: 'save';
+      params: UpdateConnectionParams;
+      secret?: RotateConnectionSecretParams;
+      enableSync: boolean;
+    }
+  | { kind: 'test'; params: TestConnectionParams }
+  | { kind: 'open'; id: string; recovery?: 'settings' }
+  | { kind: 'forget' | 'updateBackend'; id: string }
+  | { kind: 'localIcon'; params: UpdateConnectionParams };
+
+export type ConnectionWorkflowOutcome =
+  | { kind: 'captured'; fingerprint: string }
+  | { kind: 'captureRejected'; statusCode?: number }
+  | { kind: 'done' }
+  | { kind: 'tested' }
+  | { kind: 'secretUnavailable' }
+  | {
+      kind: 'blocked';
+      operation: 'update' | 'secret' | 'test';
+      result: ConnectionValidationBlockedResult;
+    }
+  | { kind: 'error'; message: string }
+  | { kind: 'syncError'; message: string }
+  | { kind: 'cancelled' };
+
+export interface ConnectionWorkflow {
+  id: string;
+  requestId: string;
+  targetId: string | null;
+  kind: ConnectionWorkflowIntent['kind'];
+  phase: 'running' | 'secret' | 'sync' | 'settled';
+  secretReplaced: boolean;
+  outcome: ConnectionWorkflowOutcome | null;
+}
+
+export type SelfPublicationOperation =
+  'load' | 'publish' | 'autoPublish' | 'autoUnpublish' | 'refresh';
 
 /**
  * Connections slice state.
@@ -86,6 +136,16 @@ export interface ConnectionsState {
   status: ConnectionOpStatus;
   /** Error message from the last failed add/open operation, or null. */
   error: string | null;
+  /**
+   * One entry per open operation currently in flight, keyed by backend id (a
+   * multiset — a repeat open of the same id adds a second entry). Opens run
+   * concurrently (main serializes the underlying work), so each is tracked
+   * for per-row UI feedback. `status` alone is not the busy signal: a failed
+   * open sets it to `error` while other opens may still be tracked here. Gate
+   * busy UI on `selectIsConnecting` (`status === 'connecting'` OR this list is
+   * non-empty), never on `status` by itself.
+   */
+  openingIds: string[];
   /**
    * Last cert-mismatch push (`connections:cert-mismatch`), or null. A pinned
    * cert changed on (re)connect — the UI surfaces a blocking failure modal
@@ -133,4 +193,10 @@ export interface ConnectionsState {
    * refreshed live by the `connections:sync-status-changed` push.
    */
   keychainSync: KeychainSyncStateResult | null;
+  keychainLoadError: boolean;
+  keychainSaveError: boolean;
+  keychainWritesPending: number;
+  workflows: Collection<ConnectionWorkflow, 'id'>;
+  selfPublication: SelfPublishedStateResult | null;
+  selfPublicationBusy: boolean;
 }

@@ -18,7 +18,7 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
       props: {
         x: 10,
         y: 10,
-        items: [{ label: 'Rename', onClick: () => {} }],
+        items: [{ id: 'rename', label: 'Rename', onClick: () => {} }],
         onClickOutside,
       },
     });
@@ -37,7 +37,7 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
       props: {
         x: 10,
         y: 10,
-        items: [{ label: 'Rename', onClick: () => {} }],
+        items: [{ id: 'rename', label: 'Rename', onClick: () => {} }],
         onClickOutside,
       },
     });
@@ -56,5 +56,41 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
     expect(onClickOutside).not.toHaveBeenCalled();
     // No layer left on the stack — the event must not be consumed
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('moves keyboard focus through the shared menu rows', async () => {
+    render(SidebarContextMenu, {
+      props: {
+        x: 10,
+        y: 10,
+        items: [
+          { id: 'rename', label: 'Rename', onClick: () => {} },
+          { id: 'archive', label: 'Archive', onClick: () => {} },
+        ],
+      },
+    });
+
+    const rename = await screen.findByRole('menuitem', { name: 'Rename' });
+    const archive = screen.getByRole('menuitem', { name: 'Archive' });
+    rename.focus();
+    await fireEvent.keyDown(rename, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement).toBe(archive));
+    await fireEvent.keyDown(archive, { key: 'Home' });
+    await waitFor(() => expect(document.activeElement).toBe(rename));
+  });
+  it('keeps menu actions responsive after the pointer enters the menu', async () => {
+    const onClick = vi.fn();
+    render(SidebarContextMenu, {
+      props: {
+        x: 10,
+        y: 10,
+        items: [{ id: 'rename', label: 'Rename', onClick }],
+      },
+    });
+    const menu = await screen.findByRole('menu');
+    const rename = screen.getByRole('menuitem', { name: 'Rename' });
+    await fireEvent.pointerMove(menu, { clientX: 12, clientY: 12 });
+    await fireEvent.click(rename);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

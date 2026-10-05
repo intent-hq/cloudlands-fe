@@ -3,10 +3,12 @@
  */
 
 import { debugConfig } from '$lib/config/debug';
-import { cubicOut } from 'svelte/easing';
-import { slide } from 'svelte/transition';
-import type { TransitionConfig } from 'svelte/transition';
-import type { SlideParams, ScaleParams } from 'svelte/transition';
+import { slide, type ImmediateMotionConfig, type SpringTierName } from '$lib/motion';
+
+interface LegacySlideParams {
+  axis?: 'x' | 'y';
+  duration?: number;
+}
 
 /**
  * Slide transition that degrades to a no-op when the node has no layout box.
@@ -18,20 +20,15 @@ import type { SlideParams, ScaleParams } from 'svelte/transition';
  * height: NaNpx". Skipping the animation is safe: a node without a layout box is
  * not visible, so there is nothing to animate.
  */
-export function safeSlide(node: Element, params: SlideParams = {}): TransitionConfig {
+export function safeSlide(node: Element, params: LegacySlideParams = {}): ImmediateMotionConfig {
   const dimension = (params.axis ?? 'y') === 'y' ? 'height' : 'width';
   const value = parseFloat(getComputedStyle(node)[dimension]);
   if (!Number.isFinite(value)) {
     return { duration: 0 };
   }
-  return slide(node, params);
-}
-
-/**
- * Get animation duration from debug config
- */
-function getAnimationDuration(): number {
-  return debugConfig.get('animationDuration') || 300;
+  const duration = params.duration ?? 160;
+  const tier: SpringTierName = duration <= 80 ? 'fast' : duration <= 160 ? 'moderate' : 'slow';
+  return slide(node, { axis: params.axis, tier }, { direction: 'in' }) as ImmediateMotionConfig;
 }
 
 /**
@@ -39,20 +36,4 @@ function getAnimationDuration(): number {
  */
 export function areAnimationsEnabled(): boolean {
   return debugConfig.get('enableComponentTransitions');
-}
-
-/**
- * Scale transition with debug config
- */
-export function scaleConfig(start = 0.95, delay = 0): ScaleParams {
-  if (!areAnimationsEnabled()) {
-    return { duration: 0 };
-  }
-
-  return {
-    delay,
-    duration: getAnimationDuration(),
-    start,
-    easing: cubicOut,
-  };
 }

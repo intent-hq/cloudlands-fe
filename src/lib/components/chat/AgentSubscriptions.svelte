@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * AgentSubscriptions Component
    *
@@ -10,8 +12,8 @@
    * agent-subscription-ui read saga). No IPC listeners or polling live in
    * this component; short panel-focus retries are owned and cancelled here.
    */
-  import { fade } from 'svelte/transition';
-  import { safeSlide } from '$lib/utils/animations';
+  import { crispOut, springIn } from '$lib/motion';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import {
@@ -24,34 +26,56 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import { uniqueAgentIds } from './delegation-ordering';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { selectAgentSessionsById } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentHistoryMessages,
+    selectAgentSessionsById,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import AgentAvatarStack, {
     type AgentAvatarStackItem,
   } from '$features/agent/components/agent-avatar/AgentAvatarStack.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
-  import type { AgentSession } from '$shared/types';
+  import type { AgentSession, WorkspaceTask } from '$shared/types';
+  import {
+    selectWorkspaceTasks,
+    selectWorkspaceTasksInitialized,
+    selectWorkspaceTasksState,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import {
+    acquireWorkspaceTasksDemand,
+    releaseWorkspaceTasksDemand,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import type { TaskProgressItem } from './workspace-task-fallback';
+  import {
+    createAgentTaskProgressDeriver,
+    type AgentTaskProgressInput,
+  } from './agent-task-progress-derivation';
+  import { retainedChatTranscriptsSet } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 
   import {
     selectAgentSubscriptions,
+    selectAgentSubscriptionLane,
     selectAgentSubscriptionStatuses,
     selectDelegationGroups,
     selectWokenUpInfo,
     selectWaitingState,
     selectSubscriptionSnapshotStatus,
   } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
+  import { requestSubscriptionFetch } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
   import {
-    cancelAgentSubscriptionsRequested,
-    requestSubscriptionFetch,
-  } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-  import { stopAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+    agentMutationUiConsumed,
+    agentMutationUiReleased,
+    agentMutationUiRequested,
+  } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
   import type { DelegationGroupStatus } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-types';
   import {
     safeSubscriptionRowTransition,
@@ -60,7 +84,7 @@
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_CHEVRON_CLASS,
     SUBSCRIPTION_CHEVRON_SIZE_CLASS,
-    SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS,
+    SUBSCRIPTION_DISCLOSURE_ROW_CLASS,
     SUBSCRIPTION_ICON_CLASS,
     SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
     SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
@@ -68,12 +92,15 @@
     SUBSCRIPTION_LEADING_CONTENT_CLASS,
     SUBSCRIPTION_ROW_GEOMETRY_CLASS,
     SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS,
+    SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
   } from './subscription-disclosure';
   import { store as appStore } from '$store/renderer/store';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { navigateToRoute } from '$lib/utils/navigation.client';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
     getFinishedAgentsExpanded,
@@ -101,12 +128,19 @@
     compact?: boolean;
     embedded?: boolean;
     visible?: boolean;
+    /** Whether the owning chat and surrounding disclosure are displayed. */
+    isActive?: boolean;
     count?: number;
     participantAgentIds?: string[];
     participantAvatarItems?: AgentAvatarStackItem[];
     /** Static rows for daemon-free catalog and visual-test previews. */
     isolatedPreview?: {
-      agents: Array<{ id: string; name: string; finished?: boolean }>;
+      agents: Array<{
+        id: string;
+        name: string;
+        finished?: boolean;
+        taskProgress?: TaskProgressItem[];
+      }>;
       initiallyExpanded?: boolean;
     };
     /** Promote the cohort disclosure to the sole header in an agent-only parent card. */
@@ -117,6 +151,7 @@
     workspaceId,
     agentId,
     compact = false,
+    isActive = true,
     embedded = false,
     visible = $bindable(false),
     count = $bindable(0),
@@ -135,6 +170,18 @@
   // when workspaceId or agentId changes.
   const workspaceIdStore = createPropStore(() => workspaceId);
   const agentIdStore = createPropStore(() => agentId);
+  const mutationConsumerId = crypto.randomUUID();
+  const mutation$ = selectAgentMutationUi(workspaceIdStore, mutationConsumerId);
+  $effect(() => {
+    const wsId = workspaceId;
+    void agentId;
+    return () => appStore.dispatch(agentMutationUiReleased(wsId, mutationConsumerId));
+  });
+  $effect(() => {
+    const outcome = $mutation$;
+    if (!outcome || outcome.workspaceId !== workspaceId || outcome.status === 'pending') return;
+    appStore.dispatch(agentMutationUiConsumed(workspaceId, mutationConsumerId, outcome.requestId));
+  });
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   $effect(() => {
     workspaceIdStore.set(workspaceId);
@@ -153,13 +200,14 @@
     const nextKey = `${workspaceId}::${agentId}`;
     if (nextKey === lastFetchKey) return;
     lastFetchKey = nextKey;
-    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId)));
+    untrack(() => appStore.dispatch(requestSubscriptionFetch(workspaceId, agentId, true)));
   });
 
   const workspaceById = selectWorkspaceById(workspaceIdStore);
   const resolvedWorkspace = $derived($workspaceById ?? null);
 
   const subs$ = selectAgentSubscriptions(workspaceIdStore, agentIdStore);
+  const subscriptionLane$ = selectAgentSubscriptionLane(workspaceIdStore, agentIdStore);
   const groups$ = selectDelegationGroups(workspaceIdStore, agentIdStore);
   const agentStatuses$ = selectAgentSubscriptionStatuses(workspaceIdStore, agentIdStore);
   const wokenUpInfo$ = selectWokenUpInfo(workspaceIdStore, agentIdStore);
@@ -181,6 +229,7 @@
     agentId: string;
     agentName?: string;
     fixtureFinished?: boolean;
+    fixtureTaskProgress?: TaskProgressItem[];
     cancelSubscriptionId?: string;
     cancelGroupId?: string;
   }
@@ -195,6 +244,7 @@
         agentId: agent.id,
         agentName: agent.name,
         fixtureFinished: agent.finished,
+        fixtureTaskProgress: agent.taskProgress,
       }));
     }
     const rows: WaitingAgentRow[] = [];
@@ -315,10 +365,8 @@
     // Terminal states
     if (finishedAgentIdSet.has(agentId)) return 4;
 
-    const status = String(session.status).toLowerCase();
-
     // Active work
-    if (status === 'responding' || status === 'active' || status === 'processing') return 2;
+    if (isSessionRunning(session)) return 2;
 
     // Idle/waiting
     return 3;
@@ -352,6 +400,41 @@
         const bTimestamp = timestampMillis(agentSessionsById[b.agentId]?.updatedAt);
         return bTimestamp - aTimestamp || a.agentId.localeCompare(b.agentId);
       });
+  });
+  const deriveTaskProgressByAgentId = createAgentTaskProgressDeriver();
+  let taskStateReference: object | undefined;
+  let stableWorkspaceTasks: readonly WorkspaceTask[] = [];
+  const taskProgressByAgentId = $derived.by(() => {
+    if (isolatedPreview) {
+      deriveTaskProgressByAgentId([]);
+      return Object.fromEntries(
+        waitingAgentRows.map((row) => [row.agentId, row.fixtureTaskProgress ?? []]),
+      );
+    }
+    const state = rendererState;
+    if (!state.workspaceTasks) return deriveTaskProgressByAgentId([]);
+    const sessionsById = selectAgentSessionsById.select(state);
+    const initialized = selectWorkspaceTasksInitialized.select(state, workspaceId);
+    const nextTaskStateReference = selectWorkspaceTasksState.select(state, workspaceId);
+    if (nextTaskStateReference !== taskStateReference) {
+      taskStateReference = nextTaskStateReference;
+      stableWorkspaceTasks = selectWorkspaceTasks.select(state, workspaceId);
+    }
+    const derivationInputs: AgentTaskProgressInput[] = [];
+    for (const row of waitingAgentRows) {
+      const session = sessionsById[row.agentId];
+      if (!session) continue;
+      derivationInputs.push({
+        agentId: row.agentId,
+        initialized,
+        tasks: stableWorkspaceTasks,
+        session,
+        historyMessages: selectAgentHistoryMessages.select(state, row.agentId),
+        liveMessages: session.messages,
+        snapshotMeta: selectTranscriptSnapshotMeta.select(state, row.agentId),
+      });
+    }
+    return deriveTaskProgressByAgentId(derivationInputs);
   });
   const shouldGroupWaitingAgents = $derived(
     forceWaitingHeader || waitingAgentRows.length > WAITING_AGENT_DISCLOSURE_THRESHOLD,
@@ -431,6 +514,44 @@
     finishedAgentsExpanded = getFinishedAgentsExpanded(workspaceId, agentId);
   });
 
+  const retainedTranscriptRows = $derived.by(() => {
+    if (shouldGroupWaitingAgents && waitingAgentsCollapsed) return [];
+    if (shouldGroupFinishedAgents && finishedAgentsExpanded) {
+      return [...ungroupedAgentRows, ...finishedAgentRows];
+    }
+    return ungroupedAgentRows;
+  });
+  const hasDisplayedTaskConsumers = $derived(retainedTranscriptRows.length > 0);
+  $effect(() => {
+    if (isolatedPreview || !isActive || !workspaceId || !hasDisplayedTaskConsumers) return;
+    const currentWorkspaceId = workspaceId;
+    const demandId = crypto.randomUUID();
+    untrack(() => appStore.dispatch(acquireWorkspaceTasksDemand(currentWorkspaceId, demandId)));
+    return () => appStore.dispatch(releaseWorkspaceTasksDemand(currentWorkspaceId, demandId));
+  });
+  let retainedTranscriptWorkspaceId: string | null = null;
+  let retainedTranscriptKey = '';
+  $effect(() => {
+    const nextWorkspaceId = isolatedPreview || !workspaceId ? null : workspaceId;
+    const agentIds = nextWorkspaceId ? retainedTranscriptRows.map((row) => row.agentId) : [];
+    const nextKey = nextWorkspaceId ? `${nextWorkspaceId}\u001e${agentIds.join('\u001f')}` : '';
+    if (nextKey === retainedTranscriptKey) return;
+    const previousWorkspaceId = retainedTranscriptWorkspaceId;
+    retainedTranscriptWorkspaceId = nextWorkspaceId;
+    retainedTranscriptKey = nextKey;
+    untrack(() => {
+      if (nextWorkspaceId) {
+        appStore.dispatch(retainedChatTranscriptsSet(componentId, nextWorkspaceId, agentIds));
+      } else if (previousWorkspaceId) {
+        appStore.dispatch(retainedChatTranscriptsSet(componentId, previousWorkspaceId, []));
+      }
+    });
+  });
+  onDestroy(() => {
+    if (!retainedTranscriptWorkspaceId) return;
+    appStore.dispatch(retainedChatTranscriptsSet(componentId, retainedTranscriptWorkspaceId, []));
+  });
+
   function toggleWaitingAgentsCollapsed() {
     waitingAgentsCollapsed = !waitingAgentsCollapsed;
     if (!isolatedPreview) setWaitingAgentsExpanded(workspaceId, agentId, !waitingAgentsCollapsed);
@@ -444,27 +565,33 @@
   const showSubscriptionRow = $derived(isCompleted || waitingAgentRows.length > 0);
 
   $effect(() => {
-    visible = showSubscriptionRow || !!$wokenUpInfo$ || $snapshotStatus$ !== 'ready';
-    count = activeAgentRows.length;
-    participantAgentIds = activeAgentRows.map((row) => row.agentId);
+    visible = isolatedPreview
+      ? showSubscriptionRow || !!$wokenUpInfo$
+      : $subscriptionLane$.visible || $snapshotStatus$ !== 'ready';
+    count = isolatedPreview ? activeAgentRows.length : $subscriptionLane$.count;
+    participantAgentIds = isolatedPreview
+      ? activeAgentRows.map((row) => row.agentId)
+      : $subscriptionLane$.participantAgentIds;
     participantAvatarItems = getHeaderStackItems(activeAgentRows);
   });
 
   // ── Button handlers ──────────────────────────────────────────────────
-  // All wire calls route through the mutation middleware (no IPC in the
+  // All wire calls route through the mutation saga (no IPC in the
   // component); the daemon's `agent:subscriptions-changed` event drives the
   // footer refetch, so no handler mutates the local subscription list.
 
   /** One-shot row stop: cancel that agent's in-flight stream (`agent.stop`). */
-  async function stopWatchedAgent(watchedAgentId: string) {
+  function stopWatchedAgent(watchedAgentId: string) {
     if (!workspaceId) return;
-    try {
-      const action = stopAgentSessionRequested(workspaceId, watchedAgentId);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch (error) {
-      logger.error('Failed to stop watched agent', { watchedAgentId, error });
-    }
+    appStore.dispatch(
+      agentMutationUiRequested(
+        workspaceId,
+        mutationConsumerId,
+        crypto.randomUUID(),
+        watchedAgentId,
+        { kind: 'stop' },
+      ),
+    );
   }
 
   /**
@@ -473,7 +600,7 @@
    * merged single-agent group cancel the whole group (`{ groupId }`) instead,
    * so the daemon removes the group plus its grouped watches together.
    */
-  async function cancelWatch(row: WaitingAgentRow) {
+  function cancelWatch(row: WaitingAgentRow) {
     if (!workspaceId || !agentId) return;
     const scope = row.cancelSubscriptionId
       ? { subscriptionId: row.cancelSubscriptionId }
@@ -486,13 +613,12 @@
       logger.warn('No watch found to cancel', { watchedAgentId: row.agentId });
       return;
     }
-    try {
-      const action = cancelAgentSubscriptionsRequested(workspaceId, agentId, scope);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch (error) {
-      logger.error('Failed to cancel watch', { watchedAgentId: row.agentId, error });
-    }
+    appStore.dispatch(
+      agentMutationUiRequested(workspaceId, mutationConsumerId, crypto.randomUUID(), agentId, {
+        kind: 'cancelSubscriptions',
+        ...scope,
+      }),
+    );
   }
 
   function handleActionKeydown(event: KeyboardEvent, action: () => void) {
@@ -514,6 +640,17 @@
     watchedAgentFocusOwner = null;
   }
 
+  onMount(() => {
+    // A later user action supersedes the focus requested when opening a watch.
+    // Capture runs before a new watch's handler schedules its own requests.
+    window.addEventListener('pointerdown', clearWatchedAgentFocusTimers, true);
+    window.addEventListener('keydown', clearWatchedAgentFocusTimers, true);
+    return () => {
+      window.removeEventListener('pointerdown', clearWatchedAgentFocusTimers, true);
+      window.removeEventListener('keydown', clearWatchedAgentFocusTimers, true);
+    };
+  });
+
   function focusWatchedAgentPanel(watchedAgentId: string) {
     clearWatchedAgentFocusTimers();
     const owner = { workspaceId, parentAgentId: agentId, watchedAgentId };
@@ -527,6 +664,17 @@
           agentId !== owner.parentAgentId ||
           selectCurrentWorkspaceTabId.select(appStore.state) !== owner.workspaceId
         ) {
+          return;
+        }
+        // These are automatic reveal retries, not a new user focus request.
+        // Preserve a Find field, composer, or other editable control the user
+        // has focused since opening the watched agent (intent-hq/intent#6395).
+        const activeElement = document.activeElement;
+        if (
+          activeElement instanceof HTMLElement &&
+          activeElement.closest('input, textarea, select, [contenteditable="true"]')
+        ) {
+          clearWatchedAgentFocusTimers();
           return;
         }
         dispatchWindowEvent('panel:focus-content', {
@@ -558,7 +706,7 @@
     clearWatchedAgentFocusTimers();
   });
 
-  function openWatchedAgent(_event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
+  function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
     if (isolatedPreview) return;
     if (!workspaceId) return;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
@@ -567,7 +715,13 @@
         logger.warn('Failed to switch workspace for watched agent', { watchedAgentId, error });
       });
     }
-    appStore.dispatch(openAgentTabRequested(workspaceId, { agentId: watchedAgentId }));
+    appStore.dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: watchedAgentId,
+        sourcePanelId: findSourcePanelId(event.currentTarget),
+        openInAdjacentPanel: isCmdClickModifier({ event }),
+      }),
+    );
     focusWatchedAgentPanel(watchedAgentId);
   }
 </script>
@@ -577,6 +731,7 @@
   <div
     class="group/watch w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
     data-agent-id={watchedAgentId}
+    data-agent-task-action-reveal
     data-subscription-motion-row={finished ? 'finished' : 'waiting'}
     transition:safeSubscriptionRowTransition
   >
@@ -591,6 +746,9 @@
             title={m.chat_agentSubscriptions_stopAgent_tooltip()}
             class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
             data-testid="one-shot-stop"
+            disabled={$mutation$?.status === 'pending' &&
+              $mutation$.operation.kind === 'stop' &&
+              $mutation$.agentId === watchedAgentId}
             onclick={(e) => {
               e.stopPropagation();
               void stopWatchedAgent(watchedAgentId);
@@ -607,6 +765,9 @@
           title={m.chat_agentSubscriptions_cancelWatch_tooltip()}
           class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-ghost opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover/watch:opacity-100 group-focus-within/watch:opacity-100"
           data-testid="one-shot-cancel"
+          disabled={$mutation$?.status === 'pending' &&
+            $mutation$.operation.kind === 'cancelSubscriptions' &&
+            $mutation$.agentId === agentId}
           onclick={(e) => {
             e.stopPropagation();
             void cancelWatch(row);
@@ -621,6 +782,8 @@
       agentName={row.agentName}
       workspace={resolvedWorkspace}
       isCompleted={finished}
+      taskProgress={taskProgressByAgentId[watchedAgentId] ?? []}
+      taskProgressPresentation="checklist"
       headerActions={oneShotActions}
       inline
       inlineRowClass={SUBSCRIPTION_ROW_GEOMETRY_CLASS}
@@ -634,17 +797,28 @@
 {#if $wokenUpInfo$ && !showSubscriptionRow}
   <!-- Standalone woken-up indicator: shown only when no subscription row is active -->
   <div
-    class="flex items-end gap-2 px-3 py-2 text-subtle font-family-child {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+    class="font-family-child {SUBSCRIPTION_DISCLOSURE_ROW_CLASS}"
     data-compact={compact}
-    transition:safeSlide={{ axis: 'y', duration: 200 }}
+    transition:safeDisclosureTransition={{ tier: 'moderate' }}
   >
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root delayDuration={0}>
-        <Tooltip.Trigger>
-          <div class="shrink-0 flex items-center gap-2 pt-1.5 pb-0.5 text-subtle">
-            <Fa icon={faBolt} size={14} class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}" />
-            <span>{m.chat_agentSubscriptions_wokenUp_label()}</span>
-            <span class="text-subtle">
+        <Tooltip.Trigger class="ml-auto">
+          <div
+            class="ml-auto min-w-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}"
+            data-testid="standalone-woken-up-pill"
+          >
+            <span class={SUBSCRIPTION_LEADING_COLUMN_CLASS}>
+              <Fa
+                icon={faBolt}
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+              />
+            </span>
+            <span class="shrink-0 whitespace-nowrap"
+              >{m.chat_agentSubscriptions_wokenUp_label()}</span
+            >
+            <span class="min-w-0 truncate whitespace-nowrap">
               {$wokenUpInfo$.eventCount === 1
                 ? m.chat_agentSubscriptions_eventCount_one({
                     count: formatInteger($wokenUpInfo$.eventCount),
@@ -676,9 +850,7 @@
     role={$snapshotStatus$ === 'failed' ? 'alert' : 'status'}
   >
     {#if $snapshotStatus$ === 'loading'}
-      <span
-        class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"
-      ></span>
+      <span aria-hidden="true" class="shrink-0"><IntentMarkLoader size={12} /></span>
       <span>{m.chat_chatMessage_loading_label()}</span>
     {:else}
       <span>{m.chat_streamingStatus_responseFailed_label()}</span>
@@ -696,32 +868,58 @@
     onfocusin={rememberFocusedRowControl}
   >
     {#if isCompleted || $wokenUpInfo$}
-      <!-- Slim status row: transitional "Completed" state and/or "Woken up" pill -->
-      <div
-        class="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden px-3 pt-1.5 pb-1 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
-      >
+      <!-- Slim status row: transitional "Completed" state and/or "Woken up" indicator -->
+      <div class={SUBSCRIPTION_DISCLOSURE_ROW_CLASS}>
         {#if isCompleted}
           <span
-            class="shrink-0 flex items-center gap-2 whitespace-nowrap text-muted-foreground"
-            transition:fade={{ duration: 200 }}
+            class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
+            in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+            out:crispOut={{ tier: 'moderate' }}
           >
-            <Fa icon={faCircleCheck} size={14} class="h-3.5! w-3.5! shrink-0" />
+            <Fa
+              icon={faCircleCheck}
+              size={16}
+              class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+            />
+          </span>
+          <span
+            class="shrink-0 whitespace-nowrap"
+            in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+            out:crispOut={{ tier: 'moderate' }}
+          >
             {m.chat_agentSubscriptions_completed_label()}
           </span>
         {/if}
         {#if $wokenUpInfo$}
+          {#if !isCompleted}
+            <span
+              class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
+              in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+              out:crispOut={{ tier: 'moderate' }}
+            >
+              <Fa
+                icon={faBolt}
+                size={16}
+                class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+              />
+            </span>
+          {/if}
           <Tooltip.Provider delayDuration={0}>
             <Tooltip.Root delayDuration={0}>
-              <Tooltip.Trigger>
+              <Tooltip.Trigger class="ml-auto">
                 <span
-                  class="inline-flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
-                  transition:fade={{ duration: 200 }}
+                  class="ml-auto inline-flex min-w-0 items-center gap-1 truncate whitespace-nowrap {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+                  data-testid="status-woken-up-pill"
+                  in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+                  out:crispOut={{ tier: 'moderate' }}
                 >
-                  <Fa
-                    icon={faBolt}
-                    size={14}
-                    class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
-                  />
+                  {#if isCompleted}
+                    <Fa
+                      icon={faBolt}
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
+                    />
+                  {/if}
                   {m.chat_agentSubscriptions_wokenUp_label()}
                 </span>
               </Tooltip.Trigger>
@@ -752,14 +950,15 @@
       <div
         class="w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
         data-testid="one-shot-watches"
-        transition:safeSlide={{ duration: 150 }}
+        transition:safeDisclosureTransition={{ tier: 'fast' }}
       >
         {#if shouldGroupWaitingAgents}
           <!-- Section header: compact waiting summary and disclosure for large lists. -->
           <div class="w-full min-w-0 max-w-full" data-testid="one-shot-header">
-            <button
+            <Button
               type="button"
-              class="relative flex w-full min-w-0 max-w-full cursor-pointer items-center gap-0 overflow-hidden rounded border-none bg-transparent text-left font-[inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+              variant="plain"
+              class="relative cursor-pointer rounded bg-transparent text-left font-[inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_DISCLOSURE_ROW_CLASS}"
               data-testid="one-shot-summary-toggle"
               data-subscription-row="agent-watch"
               aria-label={summaryHeading}
@@ -767,7 +966,7 @@
               aria-controls={waitingAgentListId}
               onclick={toggleWaitingAgentsCollapsed}
             >
-              <span class="w-max shrink-0 {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
+              <span class="min-w-0 shrink {SUBSCRIPTION_LEADING_CONTENT_CLASS}">
                 <span
                   class={SUBSCRIPTION_LEADING_COLUMN_CLASS}
                   data-testid="one-shot-leading-column"
@@ -775,19 +974,19 @@
                   {#if hasActiveAgentRows}
                     <Fa
                       icon={faHourglass}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {:else}
                     <Fa
                       icon={faCircleCheck}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   {/if}
                 </span>
                 <span
-                  class="whitespace-nowrap text-muted-foreground"
+                  class="min-w-0 truncate whitespace-nowrap text-muted-foreground"
                   data-testid="one-shot-summary-title"
                 >
                   {summaryHeading}
@@ -804,7 +1003,7 @@
                   <span class="min-w-0 flex-1" aria-hidden="true"></span>
                 {/if}
                 <span
-                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                  class="h-6 w-6 justify-center {SUBSCRIPTION_TRAILING_CONTROLS_CLASS}"
                   data-testid="one-shot-collapse-toggle"
                 >
                   <Fa
@@ -816,7 +1015,7 @@
                   />
                 </span>
               </span>
-            </button>
+            </Button>
           </div>
         {/if}
 
@@ -839,9 +1038,10 @@
                 class="w-full min-w-0 max-w-full overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
                 data-testid="finished-agent-group"
               >
-                <button
+                <Button
                   type="button"
-                  class="w-full min-w-0 max-w-full cursor-pointer items-center! overflow-hidden text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_LEADING_CONTENT_CLASS} {SUBSCRIPTION_FINISHED_ROW_GEOMETRY_CLASS} {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
+                  variant="plain"
+                  class="cursor-pointer text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring {SUBSCRIPTION_DISCLOSURE_ROW_CLASS}"
                   data-testid="finished-agent-summary"
                   data-subscription-row="grouped-summary"
                   aria-expanded={finishedAgentsExpanded}
@@ -855,8 +1055,8 @@
                   >
                     <Fa
                       icon={faCircleCheck}
-                      size={14}
-                      class="h-3.5! w-3.5! shrink-0 {SUBSCRIPTION_ICON_CLASS}"
+                      size={16}
+                      class="{CHAT_OPERATIONAL_ICON_CLASS} {SUBSCRIPTION_ICON_CLASS}"
                     />
                   </span>
                   <span
@@ -868,7 +1068,7 @@
                     })}
                   </span>
                   <span
-                    class="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                    class="h-6 w-6 justify-center {SUBSCRIPTION_TRAILING_CONTROLS_CLASS}"
                     data-testid="finished-agent-chevron"
                   >
                     <Fa
@@ -879,7 +1079,7 @@
                         : 'rotate-90'}"
                     />
                   </span>
-                </button>
+                </Button>
                 {#if finishedAgentsExpanded}
                   <div
                     id={finishedAgentListId}
@@ -900,3 +1100,17 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  @media (hover: hover) and (pointer: fine) {
+    [data-agent-task-action-reveal] :global([data-row-task-action]) {
+      opacity: 0;
+    }
+
+    [data-agent-task-action-reveal]:hover :global([data-row-task-action]),
+    [data-agent-task-action-reveal]:focus-within :global([data-row-task-action]),
+    [data-agent-task-action-reveal] :global([data-row-task-action][aria-expanded='true']) {
+      opacity: 1;
+    }
+  }
+</style>

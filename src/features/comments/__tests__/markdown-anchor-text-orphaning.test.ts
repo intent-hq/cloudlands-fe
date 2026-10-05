@@ -76,6 +76,7 @@ function makeComment(overrides: Partial<CommentV2> & { id: string }): CommentV2 
     createdAt: now,
     updatedAt: now,
     noteId: 'test-note',
+    workspaceId: 'test-workspace',
     anchor: { type: 'range', startId: `${ROOT_ID}:start`, endId: `${ROOT_ID}:end` },
     anchorText: MARKDOWN_ANCHOR_TEXT,
     ...overrides,

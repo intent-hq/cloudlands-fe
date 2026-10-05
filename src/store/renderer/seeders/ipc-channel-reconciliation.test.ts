@@ -200,14 +200,14 @@ function extractSagaCallChannelArgument(
 }
 const LITERAL_RE = /^['"`]([^'"`$]+)['"`]$/;
 const CHANNELS_CONST_RE = /^([A-Z][A-Z0-9_]*_CHANNELS)\.([A-Z0-9_]+)$/;
-const REGISTRY_REF_RE = /^IPC_CHANNELS\.([A-Z0-9_]+)\.([A-Z0-9_]+)$/;
-/** Group-alias local declarations, e.g. `const BACKEND = IPC_CHANNELS.BACKEND`. */
+const REGISTRY_REF_RE = /^IPC_CHANNELS\.([A-Z0-9_]+(?:\.[A-Z0-9_]+)*)\.([A-Z0-9_]+)$/;
+/** Group aliases may name nested groups, e.g. `IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE`. */
 const GROUP_ALIAS_DECL_RE =
-  /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*IPC_CHANNELS\.([A-Z0-9_]+)\b/g;
+  /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*IPC_CHANNELS\.([A-Z0-9_]+(?:\.[A-Z0-9_]+)*)\b/g;
 /** `ALIAS.KEY` argument shape, resolved through the file's group aliases. */
 const ALIAS_REF_RE = /^([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Z0-9_]+)$/;
 
-/** Map per-file group-alias locals (alias name → IPC_CHANNELS group name). */
+/** Map per-file group-alias locals (alias name → complete IPC_CHANNELS group path). */
 function collectGroupAliases(source: string): Map<string, string> {
   const aliases = new Map<string, string>();
   for (const decl of source.matchAll(GROUP_ALIAS_DECL_RE)) aliases.set(decl[1], decl[2]);
@@ -232,9 +232,11 @@ function* walkRendererSources(dir: string): Generator<string> {
 }
 
 function resolveRegistryChannel(group: string, key: string): string | undefined {
-  const groupObject = (IPC_CHANNELS as Record<string, unknown>)[group];
-  if (!groupObject || typeof groupObject !== 'object') return undefined;
-  const value = (groupObject as Record<string, unknown>)[key];
+  let value: unknown = IPC_CHANNELS;
+  for (const segment of [...group.split('.'), key]) {
+    if (!value || typeof value !== 'object') return undefined;
+    value = (value as Record<string, unknown>)[segment];
+  }
   return typeof value === 'string' ? value : undefined;
 }
 
@@ -360,6 +362,50 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     expect(invoked.has('window:set-theme')).toBe(true);
     expect(invoked.has('workspace:update-settings')).toBe(true);
     expect([...invoked.keys()].some((channel) => registered.has(channel))).toBe(true);
+  });
+
+  it('finds all resource invokes through nested registry references and group aliases', () => {
+    const aliases = collectGroupAliases(
+      'const channels = IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE;',
+    );
+    for (const key of ['CAPTURE', 'DETAIL', 'RELEASE'] as const) {
+      const channel = IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE[key];
+      for (const argument of [
+        'channels.' + key,
+        'IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE.' + key,
+      ]) {
+        expect(resolveChannelArgument(argument, aliases)).toEqual({
+          channel,
+          unresolvedConstant: false,
+        });
+      }
+      expect(invoked.get(channel)).toEqual([
+        expect.stringMatching(/^lib\/client\/live\/repository-resource-transport\.ts:\d+$/),
+      ]);
+    }
+  });
+
+  it.each([
+    'channels.MISSING',
+    'IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE.MISSING',
+    'IPC_CHANNELS.MISSING.CAPTURE',
+    'IPC_CHANNELS.BACKEND.MISSING.CAPTURE',
+    'IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE',
+    'IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE.CAPTURE.MISSING',
+    'missingGroup.CAPTURE',
+    'backend.REPOSITORY_RESOURCE',
+  ])('keeps missing groups, members and non-string leaves unresolved: %s', (argument) => {
+    const aliases = collectGroupAliases(
+      [
+        'const channels = IPC_CHANNELS.BACKEND.REPOSITORY_RESOURCE;',
+        'const missingGroup = IPC_CHANNELS.MISSING;',
+        'const backend = IPC_CHANNELS.BACKEND;',
+      ].join('\n'),
+    );
+    expect(resolveChannelArgument(argument, aliases)).toEqual({
+      channel: undefined,
+      unresolvedConstant: true,
+    });
   });
 
   it('resolves every constant-style channel reference', () => {
@@ -503,6 +549,12 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:request',
   'backend:subscribe',
   'backend:unsubscribe',
+  // Resource details capture the original real preload bridge. Without it,
+  // capture rejects before IPC; the mock client independently reports unavailable.
+  // Mock bridging would bypass the original-connection admission and retirement.
+  'backend:repository-resource:capture',
+  'backend:repository-resource:detail',
+  'backend:repository-resource:release',
   // Console-owner status query (#1928): main-process-owned state (which
   // window is the last-focused non-HUD window) invoked directly on the real
   // preload bridge (console-owner-status.ts guards on its presence; without

@@ -7,7 +7,7 @@
  * the stored workspace so consumers get one uniform list.
  */
 import { store } from '../../store';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { GitRootRow } from '$features/git-roots/git-roots-service';
 import type { PullRequestInfo, PullRequestStatus, Workspace } from '$shared/types';
 import { selectWorkspaceById } from '../workspace/workspace-selectors';

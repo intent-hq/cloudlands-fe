@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -5,15 +6,21 @@
  * repos (client-side filtered) plus deduped global search results, rendered
  * under the `github.com/ owner/repo` input. Covers rendering, dedupe,
  * keyboard selection, the emitted pick detail, and the signed-out state.
+ * Also covers the trigger's GitHub owner avatar (GitHub picks only).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
   const readable = <T>(getter: () => T) => ({
     subscribe(run: (v: T) => void) {
       run(getter());
-      return () => {};
+      const notify = () => run(getter());
+      listeners.add(notify);
+      return () => {
+        listeners.delete(notify);
+      };
     },
   });
   const selector = <T>(getter: () => T) => {
@@ -22,6 +29,8 @@ const mocks = vi.hoisted(() => {
   };
   return {
     selector,
+    state: {} as Record<string, unknown>,
+    listeners,
     dispatch: vi.fn(),
     isAuthenticated: true,
     reposLoaded: true,
@@ -42,7 +51,16 @@ const mocks = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => mocks.state,
+    dispatch: (action) => {
+      mocks.dispatch(action);
+      if (action.type === 'wi/recent') {
+        mocks.recentRepos = action.payload;
+        for (const notify of mocks.listeners) notify();
+      }
+    },
+  });
 });
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-slice', () => ({
@@ -77,6 +95,8 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerDismissedRecentRepoKeys: mocks.selector(() => ({})),
+  selectWorkspaceInitializerHydrated: mocks.selector(() => true),
   selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
   selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.recentRepos),
   selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
@@ -136,9 +156,7 @@ warmImport(() => import('./mocks/MockComponent.svelte'));
 // The dropdown content is portalled to <body>, so suggestions are queried globally.
 const suggestions = () =>
   Array.from(
-    document.body.querySelectorAll<HTMLButtonElement>(
-      '#repo-selector-github-suggestions button[role="option"]',
-    ),
+    document.body.querySelectorAll<HTMLButtonElement>('[role="listbox"] button[role="option"]'),
   );
 
 const rowText = (button: HTMLButtonElement) => button.textContent?.replace(/\s+/g, ' ').trim();
@@ -152,6 +170,10 @@ async function openGithubTab(props: Record<string, unknown> = {}) {
   const input = screen.getByPlaceholderText('owner/repo') as HTMLInputElement;
   return { ...rendered, input };
 }
+
+beforeEach(() => {
+  mocks.state = withLegacyPrincipal({});
+});
 
 describe('RepoSelector "Pick a repo" autocomplete', () => {
   beforeEach(() => {
@@ -296,6 +318,20 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeFalsy());
   });
 
+  it('does not navigate or accept suggestions during IME composition', async () => {
+    const onchange = vi.fn();
+    const { input } = await openGithubTab({ onchange });
+    await waitFor(() => expect(suggestions()).toHaveLength(2));
+    await fireEvent.keyDown(input, { key: 'ArrowDown', isComposing: true });
+    expect(input.getAttribute('aria-activedescendant')).toBeNull();
+    await fireEvent.input(input, { target: { value: 'someone/elsewhere' } });
+    await fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(onchange).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onchange.mock.calls[0][0].detail.path).toBe('someone/elsewhere');
+  });
+
   it('Enter on free text that is not a valid owner/repo neither commits nor closes', async () => {
     const onchange = vi.fn();
     const { input } = await openGithubTab({ onchange });
@@ -368,6 +404,21 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'githubRepos/load' });
   });
 
+  it('a member browses host repositories without initializing or replacing repository accounts', async () => {
+    const state = withLegacyPrincipal({});
+    state.principal.snapshot!.capabilities.hostMembership = true;
+    state.principal.snapshot!.principal.hostRole = 'member';
+    state.principal.snapshot!.principal.isAdministrator = false;
+    mocks.state = state;
+    mocks.isAuthenticated = false;
+    mocks.reposLoaded = false;
+    await openGithubTab();
+    expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'githubRepos/load' });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith({ type: 'githubAuth/initialize' });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith({ type: 'githubAuth/start' });
+    expect(screen.queryByText('Sign in with GitHub to see repository suggestions')).toBeNull();
+  });
+
   it('signed out: shows the connect hint, dispatches no repo load or search, and still confirms typed input', async () => {
     mocks.isAuthenticated = false;
     const onchange = vi.fn();
@@ -384,5 +435,79 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
 
     await fireEvent.keyDown(input, { key: 'Enter' });
     expect(onchange.mock.calls[0][0].detail.path).toBe('someone/elsewhere');
+  });
+});
+
+describe('RepoSelector trigger avatar', () => {
+  beforeEach(() => {
+    mocks.isAuthenticated = true;
+    mocks.reposLoaded = true;
+    mocks.reposError = null;
+    mocks.repos = [
+      { id: 'octo/alpha', owner: 'octo', name: 'alpha' },
+      { id: 'octo/beta', owner: 'octo', name: 'beta' },
+    ];
+    mocks.searchResults = [];
+    mocks.searchLastQuery = '';
+    mocks.recentRepos = [];
+  });
+
+  afterEach(() => {
+    cleanup();
+    mocks.dispatch.mockReset();
+  });
+
+  const triggerAvatar = (container: HTMLElement) =>
+    container.querySelector('button')!.querySelector<HTMLImageElement>('img');
+
+  it('shows the avatar again for the next owner after the previous image failed', async () => {
+    const { container, rerender } = render(RepoSelector, { props: { value: 'octo/alpha' } });
+
+    const failed = triggerAvatar(container)!;
+    expect(failed.src).toContain('/octo.png');
+    await fireEvent.error(failed);
+    expect(triggerAvatar(container)).toBeNull();
+
+    await rerender({ value: 'other/beta' });
+
+    const next = triggerAvatar(container)!;
+    expect(next).not.toBe(failed);
+    expect(next.src).toContain('/other.png');
+    await fireEvent.load(next);
+    expect(triggerAvatar(container)).toBe(next);
+  });
+
+  it('renders the avatar for a restored full GitHub URL value', async () => {
+    const { container } = render(RepoSelector, {
+      props: { value: 'https://github.com/intent-hq/intent', displayValue: 'intent-hq/intent' },
+    });
+
+    expect(triggerAvatar(container)!.src).toContain('/intent-hq.png');
+  });
+
+  it('keeps the avatar decorative so the owner is announced once', () => {
+    const { container } = render(RepoSelector, { props: { value: 'intent-hq/intent' } });
+
+    const trigger = container.querySelector('button')!;
+    expect(triggerAvatar(container)!.getAttribute('aria-hidden')).toBe('true');
+    expect(
+      within(container).getByRole('button', { name: 'Select a repository: intent-hq/intent' }),
+    ).toBe(trigger);
+  });
+
+  it('drops a confirmed pick when the value prop moves to another repo', async () => {
+    const { container, rerender } = await openGithubTab({ onchange: vi.fn() });
+    await waitFor(() => expect(suggestions().length).toBe(2));
+    await fireEvent.click(suggestions()[1]);
+    await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeFalsy());
+    expect(triggerAvatar(container)!.src).toContain('/octo.png');
+
+    await rerender({ value: 'https://github.com/octo/beta' });
+    expect(triggerAvatar(container)!.src).toContain('/octo.png');
+    expect(container.querySelector('button')!.textContent).toContain('octo/beta');
+
+    await rerender({ value: 'other/gamma' });
+    expect(triggerAvatar(container)!.src).toContain('/other.png');
+    expect(container.querySelector('button')!.textContent).toContain('other/gamma');
   });
 });

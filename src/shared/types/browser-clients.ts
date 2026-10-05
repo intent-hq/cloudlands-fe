@@ -1,3 +1,4 @@
+import type { PrincipalSnapshot, HostRole } from './principal';
 /**
  * REV-2 browser-client routing wire shapes (PROTOCOL §5.17 `client.list`,
  * `workspace.getBrowserClient` / `workspace.setBrowserClient`, and the
@@ -16,6 +17,12 @@ type ClientCapabilities = Record<string, unknown> & { browserExec?: boolean };
  * `prettyHostname ?? hostname ?? name`.
  */
 export interface LiveClient {
+  principalId?: string;
+  hostRole?: HostRole;
+  login?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  identity?: PrincipalSnapshot['principal']['identity'];
   clientId: string;
   name?: string;
   capabilities: ClientCapabilities;
@@ -74,11 +81,19 @@ export interface BrowserTabInput {
   ownerAgentName?: string | null;
   visibility?: BrowserTabVisibility;
   emulatedSize?: BrowserTabSize | null;
+  /**
+   * Layout fact (§5.9): not hidden AND the active tab of its panel in the
+   * workspace's saved layout. Process-local on the daemon — absent until the
+   * host reports it, so the host sends it on every report (intent#4835).
+   */
+  displayed?: boolean | null;
 }
 
 /**
  * Daemon tab-registry row (`browser.upsertTab` result, `browser:tab-*`
  * payload). A cleared optional field is omitted — never `null` — on output.
+ * `displayed` is omitted (not a default `false`) while the host has never
+ * reported it, including after a daemon restart until connect-time sync.
  */
 export interface BrowserTab {
   tabId: string;
@@ -91,6 +106,7 @@ export interface BrowserTab {
   ownerAgentName?: string;
   visibility: BrowserTabVisibility;
   emulatedSize?: BrowserTabSize;
+  displayed?: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,3 +1,5 @@
+// @verify-changed-triggers: ../ChatPanel.svelte
+
 import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -8,7 +10,7 @@ describe('ChatPanel store import boundaries', () => {
   it('reads collection-backed terminal data through selectors, not collection utils', () => {
     const source = fs.readFileSync(CHAT_PANEL_FILE, 'utf-8');
 
-    expect(source).not.toContain('@augmentcode/themis/utils/collections/collection-utils');
+    expect(source).not.toContain('@themislib/themis/utils/collections/collection-utils');
     expect(source).toContain('selectWorkspaceSetupTerminal');
   });
 

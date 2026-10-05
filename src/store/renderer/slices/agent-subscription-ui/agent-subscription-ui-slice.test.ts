@@ -10,6 +10,7 @@ import {
   resetSubscriptionUI,
   removeWatchedAgent,
   subscriptionSnapshotFetchFailed,
+  subscriptionSnapshotFetchStarted,
 } from './agent-subscription-ui-slice';
 import { markAgentAsViewed } from '../unread-tracking/unread-tracking-slice';
 import {
@@ -19,6 +20,7 @@ import {
   selectWokenUpInfo,
   selectCompletionStatus,
   selectSubscriptionSnapshotStatus,
+  selectAgentSubscriptionLane,
 } from './agent-subscription-ui-selectors';
 import type {
   AgentSubscriptionUIState,
@@ -138,7 +140,20 @@ describe('agentSubscriptionUIReducer', () => {
     });
   });
 
-  describe('markAgentAsViewed', () => {
+  describe('subscriptionSnapshotFetchStarted', () => {
+    it('keeps a completed prefetch ready when ChatPanel later marks the agent viewed', () => {
+      const ready = agentSubscriptionUIReducer(
+        initialState,
+        setSubscriptionSnapshot(WS, AGENT, {
+          subscriptions: [],
+          delegationGroups: [],
+          agentStatuses: {},
+          waitingState: 'idle',
+        }),
+      );
+      expect(agentSubscriptionUIReducer(ready, markAgentAsViewed(AGENT))).toBe(ready);
+    });
+
     it('marks the cached entry loading for its independent view-time refresh', () => {
       let state = agentSubscriptionUIReducer(
         initialState,
@@ -149,7 +164,7 @@ describe('agentSubscriptionUIReducer', () => {
           waitingState: 'waiting',
         }),
       );
-      state = agentSubscriptionUIReducer(state, markAgentAsViewed(AGENT));
+      state = agentSubscriptionUIReducer(state, subscriptionSnapshotFetchStarted(WS, AGENT));
       const entry = state.entries[makeKey(WS, AGENT)];
       expect(entry.snapshotStatus).toBe('loading');
       // Cached data is retained while the row reports loading.
@@ -162,7 +177,7 @@ describe('agentSubscriptionUIReducer', () => {
         initialState,
         subscriptionSnapshotFetchFailed(WS, AGENT),
       );
-      state = agentSubscriptionUIReducer(state, markAgentAsViewed(AGENT));
+      state = agentSubscriptionUIReducer(state, subscriptionSnapshotFetchStarted(WS, AGENT));
       expect(state.entries[makeKey(WS, AGENT)].snapshotStatus).toBe('loading');
       state = agentSubscriptionUIReducer(
         state,
@@ -181,7 +196,10 @@ describe('agentSubscriptionUIReducer', () => {
         initialState,
         subscriptionSnapshotFetchFailed(WS, 'agent-other'),
       );
-      const afterView = agentSubscriptionUIReducer(latched, markAgentAsViewed(AGENT));
+      const afterView = agentSubscriptionUIReducer(
+        latched,
+        subscriptionSnapshotFetchStarted(WS, AGENT),
+      );
       expect(afterView).toBe(latched);
       expect(afterView.entries[makeKey(WS, 'agent-other')].snapshotStatus).toBe('failed');
     });
@@ -524,6 +542,22 @@ describe('agentSubscriptionUI selectors', () => {
     );
     expect(selectSubscriptionSnapshotStatus.select(stateWith(ready), WS, AGENT)).toBe('ready');
   });
+
+  it.each(['loading', 'failed'] as const)(
+    'keeps an empty agent lane visible while its snapshot is %s',
+    (snapshotStatus) => {
+      const key = makeKey(WS, AGENT);
+      const slice: AgentSubscriptionUIState = {
+        entries: { [key]: { ...emptyEntry, snapshotStatus } },
+      };
+
+      expect(selectAgentSubscriptionLane.select(stateWith(slice), WS, AGENT)).toEqual({
+        visible: true,
+        count: 0,
+        participantAgentIds: [],
+      });
+    },
+  );
 
   it('selectWaitingState returns completed when set', () => {
     const key = makeKey(WS, AGENT);

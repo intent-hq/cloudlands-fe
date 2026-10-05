@@ -25,6 +25,7 @@
   import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
   import type { Workspace } from '$shared/types';
   import { toPromptToken } from '$lib/services/mentions/format';
+  import { memberMentionLabel } from '$lib/utils/member-mention-token';
   import { noteUrl } from '$shared/constants/intent-links';
   import { createIntentLink } from '$lib/utils/tiptap-link-extension';
   import { Slice, Fragment } from '@tiptap/pm/model';
@@ -129,6 +130,7 @@
 
   interface Props {
     value?: string;
+    ariaLabel?: string;
     placeholder?: string;
     class?: string;
     disabled?: boolean;
@@ -156,12 +158,14 @@
     skills?: readonly SkillInfo[];
     skillsLoading?: boolean;
     skillsError?: string | null;
+    onSkillsRetry?: () => void;
     minHeight?: number;
     maxHeight?: number;
   }
 
   let {
     value = '',
+    ariaLabel = m.chat_richInput_editor_ariaLabel(),
     placeholder = m.chat_richInput_askAnything_placeholder(),
     disabled = false,
     editableWhileDisabled = false,
@@ -186,6 +190,7 @@
     skills = [],
     skillsLoading = false,
     skillsError = null,
+    onSkillsRetry,
     minHeight = 80,
     maxHeight = 300,
   }: Props = $props();
@@ -203,6 +208,10 @@
   let hoverPreview: any = null;
   let hoverPreviewContainer: HTMLDivElement | null = null;
   let isClearing = false;
+  $effect(() => {
+    if (editor) editor.view.dom.setAttribute('aria-label', ariaLabel);
+  });
+
   let editorFocused = $state(false);
   let slashContext = $state<SlashCommandContext | null>(null);
   let dismissedSlashContext = $state<string | null>(null);
@@ -341,7 +350,29 @@
     if (inputLocked) return false;
     if (editor && editor.view) {
       try {
-        editor.chain().focus().run();
+        if (editor.view.hasFocus()) return true;
+        const focusEditor = editor;
+        const focusOwner = document.activeElement;
+        // Tiptap's focus command queues an unguarded animation frame. Apply
+        // focus here instead so a newer Find/editor interaction wins even
+        // when it happens after the parent's reveal check (#6395).
+        requestAnimationFrame(() => {
+          if (editor !== focusEditor || focusEditor.isDestroyed || inputLocked) return;
+          // Native caret movement can precede ProseMirror's selectionchange.
+          // Re-focusing an editor the user already entered would restore stale selection.
+          if (focusEditor.view.hasFocus()) return;
+          const activeElement = document.activeElement;
+          if (
+            activeElement !== focusOwner &&
+            activeElement instanceof HTMLElement &&
+            activeElement.closest('input, textarea, select, [contenteditable="true"]') &&
+            !focusEditor.view.dom.contains(activeElement)
+          ) {
+            return;
+          }
+          focusEditor.view.focus();
+          focusEditor.commands.scrollIntoView();
+        });
         if (typeof editor.view.hasFocus === 'function') {
           return editor.view.hasFocus();
         }
@@ -751,7 +782,7 @@
               return /^https?:\/\//.test(url) || url.startsWith('intent://');
             },
             HTMLAttributes: {
-              class: 'text-primary underline',
+              class: 'text-primary-ink underline',
             },
           }),
           Placeholder.configure({
@@ -789,7 +820,7 @@
                   class: 'mention-chip',
                   tabindex: '0',
                 },
-                label, // Display without @ prefix for cleaner appearance
+                node.attrs.type === 'member' ? memberMentionLabel(label) : label,
               ];
             },
             // Ensure mentions serialize to canonical @-tokens when extracting text
@@ -857,6 +888,16 @@
             });
           }
         },
+        onTransaction: ({ transaction }) => {
+          // Removing a chip does not emit mouseout. Include silent content updates
+          // so its preview cannot survive a clear or describe a replacement chip.
+          if (transaction.docChanged && hoverPreview && hoverPreviewContainer) {
+            unmount(hoverPreview);
+            hoverPreviewContainer.remove();
+            hoverPreview = null;
+            hoverPreviewContainer = null;
+          }
+        },
         onUpdate: ({ editor, transaction }) => {
           // Don't call onUpdate if this is an external update (from $effect) or if we're clearing
           if (transaction.getMeta('external-update') || isClearing) {
@@ -903,6 +944,9 @@
         editorProps: {
           attributes: {
             class: `tiptap-editor ${editorClassName}`,
+            role: 'textbox',
+            'aria-multiline': 'true',
+            'aria-label': ariaLabel,
             autocomplete: 'off',
             spellcheck: 'false',
             autocorrect: 'off',
@@ -1280,6 +1324,7 @@
           personality: '🎭',
           command: '⌘',
           terminal: '💻',
+          member: '👤',
         };
 
         hoverPreview = mount(MentionHoverPreview, {
@@ -1360,6 +1405,8 @@
     if (!target.hasAttribute('data-mention')) return;
 
     const type = target.getAttribute('data-type');
+    // A person is an inline reference, not a file or a navigable context attachment.
+    if (type === 'member') return;
     const id = target.getAttribute('data-id');
     const uri = target.getAttribute('data-uri');
     const meta = JSON.parse(target.getAttribute('data-meta') || '{}');
@@ -1573,7 +1620,6 @@
     if (!editorElement) return;
 
     editorElement.setAttribute('aria-haspopup', 'listbox');
-    editorElement.setAttribute('aria-expanded', String(slashMenuOpen));
     if (slashMenuOpen && slashActiveOptionId) {
       editorElement.setAttribute('aria-controls', slashListboxId);
       editorElement.setAttribute('aria-activedescendant', slashActiveOptionId);
@@ -1595,7 +1641,7 @@
         trapFocus={false}
         onOpenAutoFocus={preserveEditorFocus}
         onCloseAutoFocus={preserveEditorFocus}
-        class="z-(--layer-popover) w-72 max-w-full outline-none"
+        class="z-(--layer-popover) w-72 max-w-full"
         data-testid="slash-skill-menu"
       >
         <SlashSkillSuggestionList
@@ -1604,6 +1650,7 @@
           items={filteredSkills}
           loading={skillsLoading}
           error={skillsError}
+          onRetry={onSkillsRetry}
           onSelect={selectSlashSkill}
           onDismiss={dismissSlashMenu}
           onActiveOptionChange={(optionId) => (slashActiveOptionId = optionId)}
@@ -1638,7 +1685,7 @@
   .tiptap-container :global(.tiptap-editor) {
     min-height: var(--tt-min-height, 80px);
     height: 100%;
-    padding: 0.5rem 1rem 1rem;
+    padding: 0.25rem 1rem 0.5rem;
     outline: none;
     font-family: var(--font-ui);
     font-size: var(--text-body-size);
@@ -1683,7 +1730,7 @@
     -webkit-user-select: none;
     white-space: nowrap;
     vertical-align: baseline;
-    transition: opacity var(--motion-fast);
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
   }
 
   .tiptap-container :global(.prompt-trailing-hint[data-state='ready']) {
@@ -1733,7 +1780,7 @@
     font-size: var(--text-caption-size);
     line-height: var(--text-caption-line-height);
     white-space: nowrap;
-    animation: prompt-trailing-tooltip-in var(--motion-fast) var(--ease-emphasized-out);
+    animation: prompt-trailing-tooltip-in var(--spring-fast) var(--spring-fast-ease);
   }
 
   :global(.prompt-trailing-hint-tooltip[data-side='top']) {
@@ -1745,17 +1792,13 @@
   }
 
   .tiptap-container :global(.prompt-trailing-hint[data-state='enhanced']) {
-    animation: prompt-enhanced 260ms ease-out both;
+    animation: prompt-enhanced var(--spring-slow) var(--spring-slow-ease) both;
   }
 
   @keyframes prompt-enhanced {
     0% {
       opacity: 0.15;
       transform: translateY(2px) scale(0.98);
-    }
-    55% {
-      opacity: 0.75;
-      transform: translateY(0) scale(1.03);
     }
     100% {
       opacity: 0.4;
@@ -1772,7 +1815,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .tiptap-container :global(.prompt-trailing-hint[data-state='enhanced']) {
       animation: none;
     }

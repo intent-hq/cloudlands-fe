@@ -1,3 +1,4 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Live agents domain backed by the intentd daemon.
  *
@@ -11,12 +12,22 @@ import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-erro
 import { AgentStatus, isContentBlock } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
-import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import type {
+  AgentDelegatedCounts,
+  AgentDelegatedParentCounts,
+  AgentMessage,
+  AgentScopeCounts,
+  AgentSession,
+  ContentBlock,
+} from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
   AgentCreateRequest,
   AgentDeleteResult,
+  AgentListOptions,
+  AgentListResult,
+  AgentRetireResult,
   AgentsClient,
   FileBlock,
   ImageBlock,
@@ -29,6 +40,7 @@ import type {
   UserMessageIndexResult,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { isForbiddenErrorResponse } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   mutationErrorMessage,
@@ -63,7 +75,7 @@ function rememberAgentWorkspace(agentId: string, workspaceId: string): void {
 }
 
 /** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
-function normalizeAgent(raw: Record<string, unknown>): AgentSession {
+export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   const now = new Date().toISOString();
   const id = String(raw.id ?? '');
   const acpSessionId = raw.acpSessionId ? String(raw.acpSessionId) : null;
@@ -82,12 +94,25 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
     createdAt: String(raw.createdAt ?? now),
     updatedAt: String(raw.updatedAt ?? now),
   } as AgentSession;
-  // `retiredAt` (§5.5 soft retire, v7.5) is presence-detected on the wire:
+  // `retiredAt` (§5.5 soft retire) is presence-detected on the wire:
   // set on retired rows, omitted (never null) on active ones. Pure presence
   // pass-through — assign only when a non-empty string is present; a
   // divergent shape (null, empty string) is not healed away client-side.
   if (typeof raw.retiredAt === 'string' && raw.retiredAt.length > 0) {
     session.retiredAt = raw.retiredAt;
+  }
+  // `parentAgentId` (§5.5 row scope — the daemon's bin partition key) is
+  // presence-detected the same way: set on delegated rows, omitted on
+  // top-level ones. Both the list and detail projections serve it.
+  if (typeof raw.parentAgentId === 'string' && raw.parentAgentId.length > 0) {
+    session.parentAgentId = AgentId(raw.parentAgentId);
+  }
+  // Canonical booleans override stale metadata, including a persisted false.
+  if (typeof raw.isBackground === 'boolean') {
+    session.metadata = { ...session.metadata, isBackground: raw.isBackground };
+    if (session.agentMetadata) {
+      session.agentMetadata = { ...session.agentMetadata, isBackground: raw.isBackground };
+    }
   }
   // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
   // path — list/get reads, new-message pushes, and the agent:updated marker
@@ -96,37 +121,127 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   return session;
 }
 
+/**
+ * `scopeCounts` (§5.5 row scope) is presence-detected: a daemon that supports
+ * `scope` serves the full `{ topLevel, delegated, background }` triple on every
+ * response; an older daemon omits it (and ignored the `scope` param). Only the
+ * documented shape is accepted — a partial or non-numeric object reads as
+ * absent rather than being healed into zeros.
+ */
+function readScopeCounts(value: unknown): AgentScopeCounts | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { topLevel, delegated, background } = value as Record<string, unknown>;
+  if (
+    typeof topLevel !== 'number' ||
+    typeof delegated !== 'number' ||
+    typeof background !== 'number'
+  ) {
+    return undefined;
+  }
+  return { topLevel, delegated, background };
+}
+
+/**
+ * `delegatedCounts` (§5.5) is presence-detected the same way: a daemon that
+ * serves it carries `{ running, byParent }` on every response, with `byParent`
+ * always an object (possibly empty). Only the documented shape is accepted —
+ * a missing `byParent`, a non-numeric `running`, or a malformed entry reads
+ * as absent rather than being healed. `orphaned` is presence-detected inside
+ * it: carried verbatim when the daemon serves the `{ total, running }` pair,
+ * left absent (never defaulted) on a daemon predating it; a malformed
+ * `orphaned` reads the whole field as absent like any other malformed entry.
+ */
+function readDelegatedCounts(value: unknown): AgentDelegatedCounts | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { running, byParent, orphaned } = value as Record<string, unknown>;
+  if (typeof running !== 'number') return undefined;
+  if (!byParent || typeof byParent !== 'object' || Array.isArray(byParent)) return undefined;
+  const parents: Record<string, AgentDelegatedParentCounts> = {};
+  for (const [parentAgentId, entry] of Object.entries(byParent as Record<string, unknown>)) {
+    const parentCounts = readParentCounts(entry);
+    if (!parentCounts) return undefined;
+    parents[parentAgentId] = parentCounts;
+  }
+  if (orphaned === undefined) return { running, byParent: parents };
+  const orphanedCounts = readParentCounts(orphaned);
+  if (!orphanedCounts) return undefined;
+  return { running, byParent: parents, orphaned: orphanedCounts };
+}
+
+function readParentCounts(entry: unknown): AgentDelegatedParentCounts | undefined {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const { total, running } = entry as Record<string, unknown>;
+  if (typeof total !== 'number' || typeof running !== 'number') return undefined;
+  return { total, running };
+}
+
 export class LiveAgentsClient implements AgentsClient {
-  async list(workspaceId: string, options?: { retiredOnly?: boolean }): Promise<AgentSession[]> {
+  private retirementCapabilityRequest: { generation: number; promise: Promise<boolean> } | null =
+    null;
+
+  supportsRetirement(connectionGeneration = 0): Promise<boolean> {
+    if (this.retirementCapabilityRequest?.generation !== connectionGeneration) {
+      const promise = backendRequest<{
+        server?: { capabilities?: { agentRetire?: number } };
+      }>('client.hello', {})
+        .then((result) => result?.server?.capabilities?.agentRetire === 1)
+        .catch(() => false)
+        .finally(() => {
+          if (this.retirementCapabilityRequest?.promise === promise)
+            this.retirementCapabilityRequest = null;
+        });
+      this.retirementCapabilityRequest = { generation: connectionGeneration, promise };
+    }
+    return this.retirementCapabilityRequest.promise;
+  }
+
+  async list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]> {
     const { agents } = await this.listWithMeta(workspaceId, options);
     return agents;
   }
 
-  async listWithMeta(
-    workspaceId: string,
-    options?: { retiredOnly?: boolean },
-  ): Promise<{ agents: AgentSession[]; retiredCount: number }> {
-    // `retiredOnly` (§5.5 soft retire, v8.2) rides the wire only when true —
+  async listWithMeta(workspaceId: string, options?: AgentListOptions): Promise<AgentListResult> {
+    // `retiredOnly` (§5.5 soft retire) rides the wire only when true —
     // the daemon treats absent and `false` identically, so the default read
     // carries no flags (retired rows excluded daemon-side) even for an
-    // explicit `retiredOnly: false` caller. `retiredCount` (v8.2) is served on
-    // every read variant; the FE assumes an 8.2+ daemon and defaults to 0 only
-    // if the field is somehow absent.
+    // explicit `retiredOnly: false` caller. `scope` (§5.5 row scope) rides
+    // only when it names a bin — `all` is the default read and stays off the
+    // wire. `retiredCount` is served on every read variant; the FE assumes a
+    // daemon that serves it and defaults to 0 only if the field is somehow
+    // absent. `scopeCounts` is deliberately NOT defaulted: its absence is the
+    // old-daemon signal the hydration saga branches on.
     const params: Record<string, unknown> = { workspaceId };
     if (options?.retiredOnly) params.retiredOnly = true;
-    const result = await backendRequest<{ agents?: unknown[]; retiredCount?: number }>(
-      'agent.list',
-      params,
-    );
+    if (options?.scope && options.scope !== 'all') params.scope = options.scope;
+    // `parentAgentId` narrows a delegated read to one parent's direct children
+    // and rides only when supplied (the daemon rejects it on any other scope).
+    if (options?.parentAgentId) params.parentAgentId = options.parentAgentId;
+    // `orphanedOnly` narrows a delegated read to the orphaned rows and rides
+    // only when true (the daemon rejects it on any other scope or with
+    // `parentAgentId`; older daemons ignore it).
+    if (options?.orphanedOnly) params.orphanedOnly = true;
+    const result = await backendRequest<{
+      agents?: unknown[];
+      retiredCount?: number;
+      scopeCounts?: unknown;
+      delegatedCounts?: unknown;
+    }>('agent.list', params);
     const agents = Array.isArray(result?.agents) ? result.agents : [];
+    const scopeCounts = readScopeCounts(result?.scopeCounts);
+    const delegatedCounts = readDelegatedCounts(result?.delegatedCounts);
     return {
       agents: agents.map((a) => normalizeAgent(a as Record<string, unknown>)),
       retiredCount: typeof result?.retiredCount === 'number' ? result.retiredCount : 0,
+      ...(scopeCounts ? { scopeCounts } : {}),
+      ...(delegatedCounts ? { delegatedCounts } : {}),
     };
   }
 
-  async get(agentId: string): Promise<AgentSession | null> {
-    const result = await backendRequest<{ agent?: unknown } | unknown>('agent.get', { agentId });
+  async get(agentId: string, workspaceId?: string): Promise<AgentSession | null> {
+    const result = await backendRequest<{ agent?: unknown } | unknown>('agent.get', {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
     const raw =
       result && typeof result === 'object' && 'agent' in result
         ? (result as { agent?: unknown }).agent
@@ -148,7 +263,7 @@ export class LiveAgentsClient implements AgentsClient {
   // 0-based ordinal from the OLDEST message — out-of-range clamps daemon-side,
   // and daemons predating the param reject it with -32602 (the scrollback saga
   // handles the fallback). Every read opts into the §5.5 slim projection
-  // (`projection: "slim"`, additive within v7.1): oversized tool/image block
+  // (`projection: "slim"`, additive `agent.getConversation` param): oversized tool/image block
   // bodies arrive as bounded previews with `*Truncated`/`*Bytes` flags so a
   // large transcript never produces multi-MB frames (an older daemon ignores
   // the unknown param and serves full blocks — same additive convention as
@@ -156,10 +271,11 @@ export class LiveAgentsClient implements AgentsClient {
   // agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 50,
+    limit = CHAT_PAGE_SIZE,
     pageToken?: string,
     aroundMessageId?: string,
     aroundIndex?: number,
+    workspaceId?: string,
   ): Promise<{
     messages: AgentMessage[];
     truncated: boolean;
@@ -179,6 +295,7 @@ export class LiveAgentsClient implements AgentsClient {
     for (;;) {
       const params: Record<string, unknown> = {
         agentId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
         limit: requestLimit,
         projection: 'slim',
       };
@@ -212,7 +329,7 @@ export class LiveAgentsClient implements AgentsClient {
     };
   }
 
-  // One FULL content block by id (`agent.getMessageBlock`, §5.5, v7.2) — the
+  // One FULL content block by id (`agent.getMessageBlock`, §5.5) — the
   // on-demand counterpart of the slim projection: fetches the complete body
   // of a `*Truncated` slim block. The daemon returns `{ block }`; a missing
   // or malformed envelope rejects (callers rely on a real block or an error,
@@ -221,11 +338,13 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string,
     messageId: string,
     blockId: string,
+    workspaceId?: string,
   ): Promise<ContentBlock> {
     const result = await backendRequest<{ block?: unknown }>('agent.getMessageBlock', {
       agentId,
       messageId,
       blockId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
     });
     const block = result?.block;
     if (!isContentBlock(block)) {
@@ -236,7 +355,7 @@ export class LiveAgentsClient implements AgentsClient {
     return block;
   }
 
-  // Full user-message index (`agent.listUserMessages`, §5.5, v7.3): every
+  // Full user-message index (`agent.listUserMessages`, §5.5): every
   // user-role row as a lightweight `{ id, preview, createdAt, metadata? }`
   // item, oldest→newest, deliberately unpaged. `previewChars` only rides
   // along when supplied so the daemon default (300) applies otherwise.
@@ -244,8 +363,15 @@ export class LiveAgentsClient implements AgentsClient {
   // can silently degrade to its tail-derived items: -32601 (older daemon
   // lacking the method) is marked `unsupported: true`; any other failure
   // keeps `unsupported: false`.
-  async listUserMessages(agentId: string, previewChars?: number): Promise<UserMessageIndexResult> {
-    const params: Record<string, unknown> = { agentId };
+  async listUserMessages(
+    agentId: string,
+    previewChars?: number,
+    workspaceId?: string,
+  ): Promise<UserMessageIndexResult> {
+    const params: Record<string, unknown> = {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    };
     if (previewChars !== undefined) params.previewChars = previewChars;
     try {
       const result = await backendRequest<{ items?: unknown[]; total?: unknown } | undefined>(
@@ -303,7 +429,12 @@ export class LiveAgentsClient implements AgentsClient {
     };
     if (request.model !== undefined) params.model = request.model;
     if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
-    if (request.specialist !== undefined && request.specialist !== null) {
+    if (request.rememberSpecialist !== undefined)
+      params.rememberSpecialist = request.rememberSpecialist;
+    if (
+      request.specialist !== undefined &&
+      (request.specialist !== null || request.rememberSpecialist)
+    ) {
       params.specialistId = request.specialist;
     }
     if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
@@ -341,8 +472,8 @@ export class LiveAgentsClient implements AgentsClient {
     }
     return normalizeAgent(raw as Record<string, unknown>);
   }
-  async send(agentId: string, message: string): Promise<MutationResult> {
-    const workspaceId = await this.resolveAgentWorkspaceId(agentId);
+  async send(agentId: string, message: string, workspaceId?: string): Promise<MutationResult> {
+    workspaceId ??= (await this.resolveAgentWorkspaceId(agentId)) ?? undefined;
     if (!workspaceId) {
       return { success: false, error: `Unknown workspace for agent ${agentId}` };
     }
@@ -387,8 +518,11 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string,
     message: string,
     options?: {
+      workspaceId?: string;
+      messageId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
+      messageMetadata?: Record<string, unknown>;
     },
   ): Promise<MutationResult> {
     // `agent.queueMessage` returns `{ success, queuedMessage, turnId }`
@@ -396,15 +530,23 @@ export class LiveAgentsClient implements AgentsClient {
     // render the queue position / id without an extra `agent.getQueue`
     // round-trip, plus the entry's turn-correlation id (monorepo#1057 —
     // top-level `turnId` preferred, `queuedMessage.turnId` as the fallback).
-    // Optional `imageBlocks` / `fileBlocks` only ride along when supplied so
-    // the daemon sees an omitted param otherwise.
+    // Optional `imageBlocks` / `fileBlocks` / `messageMetadata` only ride
+    // along when supplied so the daemon sees an omitted param otherwise.
     try {
-      const params: Record<string, unknown> = { agentId, content: message };
+      const params: Record<string, unknown> = {
+        agentId,
+        content: message,
+        ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
+      };
+      if (options?.messageId !== undefined) params.messageId = options.messageId;
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
       if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
+      if (options?.messageMetadata !== undefined) params.messageMetadata = options.messageMetadata;
       const result = await backendRequest<
-        { queuedMessage?: QueuedMessage; turnId?: unknown } | undefined
+        | { success?: boolean; error?: string; queuedMessage?: QueuedMessage; turnId?: unknown }
+        | undefined
       >('agent.queueMessage', params);
+      if (result?.success === false) return { success: false, error: result.error };
       const queuedMessage = result?.queuedMessage;
       const turnId =
         typeof result?.turnId === 'string'
@@ -417,6 +559,17 @@ export class LiveAgentsClient implements AgentsClient {
       if (turnId !== undefined) mutation.turnId = turnId;
       return mutation;
     } catch (error) {
+      // Correlated callers retain recoverable content in their catch path and
+      // reconcile before retrying. Only request/method/parameter validation or
+      // access refusal proves rejection; a generic server error can follow enqueue.
+      const rpcCode =
+        error && typeof error === 'object' ? (error as { rpcCode?: unknown }).rpcCode : undefined;
+      const rejected =
+        rpcCode === -32600 ||
+        rpcCode === -32601 ||
+        rpcCode === -32602 ||
+        isForbiddenErrorResponse(error);
+      if (options?.messageId !== undefined && !rejected) throw error;
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
@@ -425,6 +578,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string,
     content: string,
     editing?: boolean,
+    workspaceId?: string,
   ): Promise<MutationResult> {
     // `agent.editQueuedMessage` (§5.5) returns `{ success, queuedMessage }`
     // like `agent.queueMessage`; surface `queuedMessage` so callers can render
@@ -432,7 +586,12 @@ export class LiveAgentsClient implements AgentsClient {
     // edit — daemon drain skips held entries — and is only forwarded when the
     // caller supplied it so older daemons see an omitted param.
     try {
-      const params: Record<string, unknown> = { agentId, messageId, content };
+      const params: Record<string, unknown> = {
+        agentId,
+        messageId,
+        content,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
+      };
       if (editing !== undefined) params.editing = editing;
       const result = await backendRequest<{ queuedMessage?: QueuedMessage } | undefined>(
         'agent.editQueuedMessage',
@@ -454,21 +613,29 @@ export class LiveAgentsClient implements AgentsClient {
     // a missing entry (already drained/removed) rejects with -32602, folded
     // into `{ success: false, error }` — callers surface it non-destructively
     // (the entry is gone; nothing to roll back). The delivered arm carries
-    // `turnId` (the entry's preserved turn-correlation id — this path emits
-    // NO `agent:queue:processing` event, the RPC response replaces it, §5.5),
+    // `turnId` (the entry's preserved turn-correlation id). The processing event
+    // carries the authoritative consumed entries; this response remains a legacy
+    // promotion fallback (§5.5),
     // surfaced on the MutationResult (monorepo#1057).
     try {
-      const result = await backendRequest<{ turnId?: unknown } | undefined>(
-        'agent.sendQueuedMessageNow',
-        {
-          agentId: params.agentId,
-          workspaceId: params.workspaceId,
-          messageId: params.messageId,
-        },
-      );
-      return typeof result?.turnId === 'string'
-        ? { success: true, turnId: result.turnId }
-        : { success: true };
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        queuedMessage?: QueuedMessage;
+        turnId?: string;
+      }>('agent.sendQueuedMessageNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageId: params.messageId,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(result.queuedMessage ? { queuedMessage: result.queuedMessage } : {}),
+        ...(!result.queued && result.turnId ? { turnId: result.turnId } : {}),
+      };
     } catch (error) {
       // Same error shaping as `runMutation` (which this method bypassed to
       // extract `turnId`): fold JSON-RPC "Internal error" + `data.detail`
@@ -476,16 +643,51 @@ export class LiveAgentsClient implements AgentsClient {
       return { success: false, error: mutationErrorMessage(error) };
     }
   }
-  async getQueue(agentId: string): Promise<QueuedMessage[]> {
+  async sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
+  }): Promise<MutationResult> {
+    try {
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        messageIds: string[];
+        turnId?: string;
+      }>('agent.sendQueuedMessagesNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageIds: params.messageIds,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        messageIds: result.messageIds,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(!result.queued && !result.quarantined && result.turnId
+          ? { turnId: result.turnId }
+          : {}),
+      };
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+  async getQueue(agentId: string, workspaceId?: string): Promise<QueuedMessage[]> {
     // `agent.getQueue` (§5.5/§6.6) returns `{ success, queue }`; hand the
     // daemon's queue array through verbatim (incl. optional `messageMetadata`).
     // Errors propagate as rejections, like the other reads.
     const result = await backendRequest<{ queue?: QueuedMessage[] }>('agent.getQueue', {
       agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
     });
     return Array.isArray(result?.queue) ? result.queue : [];
   }
-  async removeQueued(agentId: string, messageId: string): Promise<MutationResult> {
+  async removeQueued(
+    agentId: string,
+    messageId: string,
+    workspaceId?: string,
+  ): Promise<MutationResult> {
     // `agent.removeQueuedMessage` is **idempotent** on the daemon (§5.5): the
     // BE returns `{ success: true }` whether or not the messageId existed in
     // the persisted queue. `runMutation` folds the daemon body into a uniform
@@ -494,13 +696,20 @@ export class LiveAgentsClient implements AgentsClient {
     // chat-send-service) must treat both branches as "already removed" and
     // never roll the optimistic delete back, since the BE may have already
     // self-drained or the FE's seeded queue may diverge after a daemon restart.
-    return runMutation('agent.removeQueuedMessage', { agentId, messageId });
+    return runMutation('agent.removeQueuedMessage', {
+      agentId,
+      messageId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
   }
-  async stop(agentId: string): Promise<MutationResult> {
+  async stop(agentId: string, workspaceId?: string): Promise<MutationResult> {
     // `agent.stop` (§5.5) takes `{ agentId }` and acks `{ success: true }`.
     // The daemon cancels the in-flight stream and emits the terminal
     // `agent:stream:end` (§7), which converges the FE streaming state.
-    return runMutation('agent.stop', { agentId });
+    return runMutation('agent.stop', {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    });
   }
   async cancelSubscriptions(params: {
     agentId: string;
@@ -599,26 +808,70 @@ export class LiveAgentsClient implements AgentsClient {
       changes: { reasoningEffort: params.reasoningEffort },
     });
   }
+  async setNotificationsMuted(params: {
+    agentId: string;
+    workspaceId: string;
+    notificationsMuted: boolean;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) partial writer; `notificationsMuted` rides the
+    // `changes` object as a boolean (the daemon rejects anything else with
+    // -32602). The daemon persists the flag and emits `agent:updated`, whose
+    // AgentLite push re-derives `hasUnread` through `normalizeAgent`.
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { notificationsMuted: params.notificationsMuted },
+    });
+  }
+  async setBackground(params: {
+    agentId: string;
+    workspaceId: string;
+    isBackground: boolean;
+  }): Promise<MutationResult> {
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { isBackground: params.isBackground },
+    });
+  }
   async updateSpecialist(params: {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult> {
     const changes: Record<string, unknown> = { specialist: params.specialist };
+    if (params.rememberSpecialist !== undefined)
+      changes.rememberSpecialist = params.rememberSpecialist;
     if (params.model !== undefined) changes.model = params.model;
     if (params.systemPrompt !== undefined) changes.systemPrompt = params.systemPrompt;
-    return runMutation('agent.update', {
-      agentId: params.agentId,
-      workspaceId: params.workspaceId,
-      changes,
-    });
+    const request = { agentId: params.agentId, workspaceId: params.workspaceId, changes };
+    try {
+      await backendRequest('agent.update', request);
+      return { success: true };
+    } catch (error) {
+      // Older daemons reject unknown change keys before applying any fields.
+      // Retry only that refusal; all validation/storage failures keep rollback.
+      if (
+        params.rememberSpecialist !== undefined &&
+        (error as { rpcCode?: number })?.rpcCode === -32602 &&
+        mutationErrorMessage(error).includes(
+          'agent.update: unknown field `rememberSpecialist` in `changes`',
+        )
+      ) {
+        const legacyChanges = { ...changes };
+        delete legacyChanges.rememberSpecialist;
+        return runMutation('agent.update', { ...request, changes: legacyChanges });
+      }
+      return { success: false, error: mutationErrorMessage(error) };
+    }
   }
   async rename(
     agentId: string,
     name: string,
-    _workspaceId?: string,
+    workspaceId?: string,
     options?: { skipIfExplicitlySet?: boolean },
   ): Promise<MutationResult> {
     // `agent.rename` (§5.5) takes `{ agentId, name }` (name non-empty) and
@@ -627,30 +880,38 @@ export class LiveAgentsClient implements AgentsClient {
     // The optional `skipIfExplicitlySet` guard only rides along when a caller
     // opts in (automated renames such as the chief first-message rename); a
     // user-initiated rename omits it — a user rename always wins. workspaceId
-    // is not part of the wire contract, so the seam's optional third argument
-    // (kept for AgentsClient contract parity) stays off the wire.
-    const params: Record<string, unknown> = { agentId, name };
+    // carries the captured origin when the caller supplied it.
+    const params: Record<string, unknown> = {
+      agentId,
+      name,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    };
     if (options?.skipIfExplicitlySet === true) params.skipIfExplicitlySet = true;
     return runMutation('agent.rename', params);
   }
   async delete(
     agentId: string,
-    _workspaceId?: string,
+    workspaceId?: string,
     options?: { undoDelayMs?: number },
   ): Promise<AgentDeleteResult> {
     // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;
-    // the daemon resolves the workspace itself (agent_delete_op only consumes
-    // agent_id) and is idempotent, so we forward just `{ agentId }` and rely on
+    // the daemon preserves direct omission and is idempotent. We retain
+    // supplied workspace routing context and rely on
     // the emitted `agent:deleted` event to reconcile the list. With
     // `undoDelayMs > 0` the daemon registers the delete grace window and
     // returns `{ success, scheduled, deleteAt }` — surfaced verbatim so the
     // caller can render the daemon-owned deadline. Without it, the immediate
-    // delete request is byte-identical to pre-6.7.
+    // delete request is byte-identical to the shape sent before the
+    // `undoDelayMs` grace window existed.
     const undoDelayMs = options?.undoDelayMs;
     try {
       const result = await backendRequest<{ scheduled?: unknown; deleteAt?: unknown }>(
         'agent.delete',
-        undoDelayMs && undoDelayMs > 0 ? { agentId, undoDelayMs } : { agentId },
+        {
+          agentId,
+          ...(workspaceId !== undefined ? { workspaceId } : {}),
+          ...(undoDelayMs && undoDelayMs > 0 ? { undoDelayMs } : {}),
+        },
       );
       const scheduled = result?.scheduled === true;
       const deleteAt = typeof result?.deleteAt === 'string' ? result.deleteAt : undefined;
@@ -658,31 +919,48 @@ export class LiveAgentsClient implements AgentsClient {
         ? { success: true, scheduled: true, deleteAt }
         : { success: true };
     } catch (error) {
-      return { success: false, error: mutationErrorMessage(error) };
+      return isForbiddenErrorResponse(error)
+        ? { success: false, forbidden: true, error: mutationErrorMessage(error) }
+        : { success: false, error: mutationErrorMessage(error) };
     }
   }
-  async cancelDelete(agentId: string): Promise<AgentCancelDeleteResult> {
+  async cancelDelete(agentId: string, workspaceId?: string): Promise<AgentCancelDeleteResult> {
     // `agent.cancelDelete` (§5.5, delete grace window). `{ cancelled: false }`
     // is a race-safe non-error: the deletion already committed or was never
     // scheduled — surfaced so the caller can show "could not undo" instead of
     // resurrecting the agent. workspaceId is optional on the wire; the daemon
-    // resolves it, so the seam forwards just `{ agentId }`.
+    // resolves it for direct callers; workspace callers retain their origin.
     try {
       const result = await backendRequest<{ cancelled?: unknown }>('agent.cancelDelete', {
         agentId,
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
       });
       return { success: true, cancelled: result?.cancelled === true };
     } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
   }
+  async retire(agentId: string, workspaceId?: string): Promise<AgentRetireResult> {
+    const params: { agentId: string; workspaceId?: string } = { agentId };
+    if (workspaceId !== undefined) params.workspaceId = workspaceId;
+    try {
+      return await backendRequest<Extract<AgentRetireResult, { success: true }>>(
+        'agent.retire',
+        params,
+      );
+    } catch (error) {
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
   async restore(agentId: string, workspaceId?: string): Promise<MutationResult> {
-    // `agent.restore` (§5.5 soft retire, v7.5) clears `retiredAt` and emits
+    // `agent.restore` (§5.5 soft retire) clears `retiredAt` and emits
     // `agent:restored`, which reconciles the list. Idempotent — restoring an
     // active agent succeeds. `workspaceId` is optional on the wire; it only
     // rides along when the caller supplied it.
-    const params: Record<string, unknown> = { agentId };
-    if (workspaceId !== undefined) params.workspaceId = workspaceId;
+    const params: Record<string, unknown> = {
+      agentId,
+      ...(workspaceId !== undefined ? { workspaceId } : {}),
+    };
     return runMutation('agent.restore', params);
   }
   async retry(
@@ -731,6 +1009,7 @@ export class LiveAgentsClient implements AgentsClient {
   async respondPermission(
     requestId: string,
     outcome: PermissionOutcome,
+    workspaceId?: string,
   ): Promise<RespondPermissionResult> {
     // `agent.respondPermission` (PROTOCOL §8) forwards the caller's outcome to
     // the blocked provider and emits `agent:permission:resolved` so any other
@@ -741,7 +1020,7 @@ export class LiveAgentsClient implements AgentsClient {
     try {
       const result = await backendRequest<{ resolved?: unknown } | undefined>(
         'agent.respondPermission',
-        { requestId, outcome },
+        { requestId, outcome, ...(workspaceId !== undefined ? { workspaceId } : {}) },
       );
       const resolved = typeof result?.resolved === 'boolean' ? result.resolved : undefined;
       return resolved !== undefined ? { success: true, resolved } : { success: true };
@@ -844,7 +1123,7 @@ export class LiveAgentsClient implements AgentsClient {
     return createDeltaSubscription<AgentSession>({
       channel: {
         subscribeMethod: 'agent.subscribe',
-        unsubscribeMethod: 'agent.unsubscribe',
+        unsubscribeMethod: 'events.unsubscribe',
         dynamic: {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),

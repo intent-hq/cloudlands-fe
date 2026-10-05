@@ -5,7 +5,7 @@
  * through the `AppClient` terminals seam (the live client owns the base64
  * framing, asserted in live-terminals-client.test.ts).
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE AppClient seam: no daemon IPC ever fires. Each test asserts the seam
 // call the bridge makes and how it maps the result back to the legacy
@@ -15,6 +15,7 @@ vi.mock('$lib/client', () => ({
     terminals: {
       create: vi.fn(),
       write: vi.fn(),
+      kill: vi.fn(),
       subscribeEvents: vi.fn(),
     },
   },
@@ -32,12 +33,18 @@ describe('terminals-scripts-seeder terminal bridges', () => {
     await import('./terminals-scripts-seeder');
   });
 
+  beforeEach(() => {
+    terminals.write.mockResolvedValue({ success: true });
+    terminals.kill.mockResolvedValue({ success: true });
+    terminals.subscribeEvents.mockReturnValue(() => {});
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
   });
 
   describe('terminal:createWithCommand → terminal.create (§5.13)', () => {
-    it('creates a PTY running the command and returns {ok, terminalId} with the daemon id', async () => {
+    it('creates a login shell, submits the command as input, and returns the daemon id', async () => {
       terminals.create.mockResolvedValueOnce({ success: true, id: 'term-42' });
       terminals.subscribeEvents.mockReturnValueOnce(() => {});
 
@@ -51,6 +58,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
         command: 'pnpm test',
         cwd: '/repo',
         title: 'Command: pnpm test',
+        interactive: true,
       });
       offCreated();
 
@@ -59,8 +67,8 @@ describe('terminals-scripts-seeder terminal bridges', () => {
         cols: 80,
         rows: 24,
         cwd: '/repo',
-        command: 'pnpm test',
       });
+      expect(terminals.write).toHaveBeenCalledExactlyOnceWith('term-42', 'pnpm test\r', 'ws-1');
       expect(response).toEqual({ ok: true, terminalId: 'term-42' });
       // PanelLayout listens for `terminal:created` and reloads the workspace's
       // terminal list from the daemon.
@@ -88,9 +96,18 @@ describe('terminals-scripts-seeder terminal bridges', () => {
         command: 'false',
       });
 
+      expect(terminals.create).toHaveBeenCalledWith({
+        workspaceId: 'ws-1',
+        cols: 80,
+        rows: 24,
+        command: 'false',
+      });
+      expect(terminals.write).not.toHaveBeenCalled();
+
       expect(terminals.subscribeEvents).toHaveBeenCalledWith(
         'term-9',
         expect.objectContaining({ onExit: expect.any(Function) }),
+        'ws-1',
       );
       handlers?.onExit?.({ terminalId: 'term-9', exitCode: 1 });
       offExit();
@@ -125,6 +142,49 @@ describe('terminals-scripts-seeder terminal bridges', () => {
       expect(response.ok).toBe(false);
       expect(terminals.create).not.toHaveBeenCalled();
     });
+
+    it('pastes a command without executing when pasteOnly is requested', async () => {
+      terminals.create.mockResolvedValueOnce({ success: true, id: 'paste-terminal' });
+      await mockInvoke('terminal:createWithCommand', {
+        workspaceId: '__root__',
+        command: 'claude auth login',
+        pasteOnly: true,
+      });
+      expect(terminals.write).toHaveBeenCalledExactlyOnceWith(
+        'paste-terminal',
+        'claude auth login',
+        '__root__',
+      );
+    });
+
+    it.each(['failure', 'rejection'])(
+      'cleans up the hidden terminal after a write %s',
+      async (failure) => {
+        terminals.create.mockResolvedValueOnce({ success: true, id: 'failed-terminal' });
+        if (failure === 'failure') {
+          terminals.write.mockResolvedValueOnce({ success: false, error: 'write failed' });
+        } else {
+          terminals.write.mockRejectedValueOnce(new Error('write failed'));
+        }
+        const unsubscribe = vi.fn();
+        terminals.subscribeEvents.mockReturnValueOnce(unsubscribe);
+        const created = vi.fn();
+        const offCreated = addMockIpcListener('terminal:created', created);
+        try {
+          const response = await mockInvoke('terminal:createWithCommand', {
+            workspaceId: '__root__',
+            command: 'claude auth login',
+            interactive: true,
+          });
+          expect(response).toEqual({ ok: false, error: 'write failed' });
+          expect(created).not.toHaveBeenCalled();
+          expect(unsubscribe).toHaveBeenCalledOnce();
+          expect(terminals.kill).toHaveBeenCalledExactlyOnceWith('failed-terminal', '__root__');
+        } finally {
+          offCreated();
+        }
+      },
+    );
   });
 
   describe('terminal:professional:write → terminal.write (§5.13)', () => {
@@ -136,7 +196,7 @@ describe('terminals-scripts-seeder terminal bridges', () => {
         data: 'brew install rtk\n',
       });
 
-      expect(terminals.write).toHaveBeenCalledWith('term-42', 'brew install rtk\n');
+      expect(terminals.write).toHaveBeenCalledWith('term-42', 'brew install rtk\n', undefined);
       expect(response).toEqual({ success: true });
     });
 

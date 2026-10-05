@@ -1,9 +1,6 @@
+import { safeDisclosureTransition } from '../disclosure-motion';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  safeSubscriptionRowTransition,
-  SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
-  SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
-} from '../subscription-disclosure';
+import { safeSubscriptionRowTransition } from '../subscription-disclosure';
 
 function rowStyle(): CSSStyleDeclaration {
   return {
@@ -52,14 +49,6 @@ describe('safeSubscriptionRowTransition', () => {
     expect(node.style.transform).toBe('');
   });
 
-  it('uses inset separators that do not add to settled row or list height', () => {
-    expect(SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS).toContain('before:absolute');
-    expect(SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS).toContain('before:h-px');
-    expect(SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS).toContain('first:before:hidden');
-    expect(SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS).not.toMatch(/\bborder-/);
-    expect(SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS).not.toMatch(/\bborder-/);
-  });
-
   it('is immediate under reduced motion and safe without a measured box', () => {
     vi.stubGlobal(
       'matchMedia',
@@ -76,5 +65,30 @@ describe('safeSubscriptionRowTransition', () => {
       height: 'auto',
     } as CSSStyleDeclaration);
     expect(safeSubscriptionRowTransition(document.createElement('div'))).toEqual({ duration: 0 });
+  });
+});
+
+describe('queue disclosure outro', () => {
+  it('retains a measurable intermediate box and collapses height, spacing and opacity to zero', () => {
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      ...rowStyle(),
+      paddingTop: '4px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const node = document.createElement('div');
+    const config = safeDisclosureTransition(node, { tier: 'moderate' }, { direction: 'out' });
+    expect(config.duration).toBeGreaterThan(0);
+    config.tick?.(1, 0);
+    expect(node.style.height).toBe('36px');
+    config.tick?.(0.5, 0.5);
+    expect(node.style.height).toBe('18px');
+    expect(node.style.paddingTop).toBe('2px');
+    config.tick?.(0, 1);
+    expect(node.style.height).toBe('0px');
+    expect(node.style.paddingTop).toBe('0px');
+    expect(node.style.opacity).toBe('0');
   });
 });

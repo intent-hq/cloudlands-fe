@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
+import type { InviteProgressAction } from '../shared/ipc/invite-progress';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
 import {
@@ -73,6 +74,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:user-message:sent',
   // Agent session stats (PROTOCOL §5.24)
   'agent:session-stats-changed',
+  // Hub checkpoint events
+  'hub:checkpoint',
   // Git events
   'git:commit',
   'git:push',
@@ -194,6 +197,8 @@ export const WorkspaceCreateSchema = z.object({
       // not send one. Kept optional for legacy callers only.
       agentId: z.string().optional(),
       name: z.string().optional(),
+      nameExplicitlySet: z.boolean().optional(),
+      rememberSpecialist: z.boolean().optional(),
       model: z.string().optional(),
       provider: z.string().optional(), // Provider ID (e.g., 'auggie', 'claude-code', 'codex')
       prompt: z.string().optional(),
@@ -580,17 +585,6 @@ export const EventsUnsubscribeSchema = z.object({
   subscriptionId: z.string().min(1, 'Subscription ID is required'),
 });
 
-export const EventsGetLastEventSchema = z.object({
-  // Mirrors `EventsEmitSchema.event.type`: drift-resistant union pulled from
-  // `WorkspaceEventType`. Reserved-but-unused types (e.g. `file:created`) are
-  // still accepted as query inputs and simply return `null` if no such event
-  // has ever been recorded.
-  type: z.enum(WORKSPACE_EVENT_TYPE_LITERALS),
-  workspaceId: WorkspaceIdSchema.optional(),
-});
-
-export const EventsGetStatisticsSchema = z.object({});
-
 export const SystemWriteClipboardSchema = z.object({
   text: z.string(),
 });
@@ -650,6 +644,7 @@ export const TerminalCreateWithCommandSchema = z.object({
    * Defaults to `false` (existing auto-run behavior).
    */
   pasteOnly: z.boolean().optional(),
+  interactive: z.boolean().optional(),
 });
 
 export const AgentContextUpdateSchema = z.object({
@@ -810,6 +805,13 @@ export const XcodeOpenSchema = z.union([
 ]);
 
 // USER_MCP_CHANNELS schemas
+export const UserMcpAuthenticateSchema = z.object({
+  serverId: z.string().min(1, 'Server ID is required'),
+  // Advisory only: the handler resolves the OAuth URL from the daemon record
+  // by `serverId` and rejects a renderer URL that disagrees with it.
+  url: z.string().url('A valid MCP server URL is required').optional(),
+});
+
 export const UserMcpCheckAuthSchema = z.object({
   url: z.string().min(1, 'URL is required'),
   name: z.string().optional(), // Server name for OAuth token lookup
@@ -1087,6 +1089,38 @@ export const VoiceTranscribeLocalSchema = z.object({
 
 export const ConnectionsListSchema = EmptySchema;
 
+/** `guest-sessions:list`: no params; the result never carries a token. */
+export const GuestSessionsListSchema = EmptySchema;
+
+/** `guest-sessions:leave`: the guest session id to revoke on the host and forget locally. */
+export const GuestSessionsLeaveSchema = z.object({
+  id: z.string().min(1, 'Guest session id is required'),
+});
+
+/** `guest-sessions:leave-workspace`: leave one workspace on a joined host and drop it locally. */
+export const GuestSessionsLeaveWorkspaceSchema = z.object({
+  id: z.string().min(1, 'Guest session id is required'),
+  workspaceId: z.string().min(1, 'Workspace id is required'),
+});
+
+/**
+ * `presence:report`: one window's focus set + typing target (multiplayer w5),
+ * merged per backend in main into a single `presence.update`.
+ */
+export const PresenceReportSchema = z.object({
+  focus: z.array(
+    z.object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      agentId: z.string().min(1).optional(),
+      noteId: z.string().min(1).optional(),
+    }),
+  ),
+  typing: z
+    .object({ agentId: z.string().min(1, 'Agent id is required') })
+    .nullable()
+    .optional(),
+});
+
 export const ConnectionsCaptureFingerprintSchema = z.object({
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
@@ -1186,4 +1220,54 @@ export const QuitConfirmationAckSchema = z.object({
 export const QuitConfirmationResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
   proceed: z.boolean(),
+});
+
+// ============================================================================
+// Invite Consent Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite GitHub identity
+// prompt. The payload contract (all four channels) is documented in
+// `src/shared/ipc/invite-consent.ts`.
+// ============================================================================
+
+export const InviteConsentAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteConsentResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  action: z.enum(['open', 'cancel']),
+});
+
+// ============================================================================
+// Invite Progress Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite progress dialog.
+// The payload contract (all five channels) is documented in
+// `src/shared/ipc/invite-progress.ts`.
+// ============================================================================
+
+export const InviteProgressAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteProgressResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  action: z.enum(['cancel', 'retry'] as const satisfies readonly InviteProgressAction[]),
+});
+
+// ============================================================================
+// Invite Notice Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite failure /
+// plaintext-credential notice. The payload contract (all four channels) is
+// documented in `src/shared/ipc/invite-notice.ts`.
+// ============================================================================
+
+export const InviteNoticeAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteNoticeResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
 });

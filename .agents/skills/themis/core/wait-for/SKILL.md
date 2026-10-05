@@ -1,10 +1,8 @@
 ---
 name: core/wait-for
 description: >-
-  Concise agent rules for waitFor(selector, argsTuple, predicate, timeoutMs?).
-  Use when a saga must pause until a named selector reaches a predicate. It
-  checks the current value first, subscribes through createChannelFromSelector,
-  returns true on match and false on timeout, and closes the channel in finally.
+  Use waitFor when a saga must pause until a named selector matches a
+  predicate, optionally with a timeout.
 type: sub-skill
 requires:
   - core
@@ -17,13 +15,13 @@ triggers:
 ---
 # waitFor — agent implementation rules
 
-Use this skill for one-shot saga waits on selector state. Keep conceptual/API prose and examples in `@augmentcode/themis/docs/WAITFOR.md`; this skill should stay concise and operational.
+Use this skill for one-shot saga waits on selector state. Keep conceptual/API prose and examples in `@themislib/themis/docs/WAITFOR.md`; this skill should stay concise and operational.
 
 ## Canonical references
 
-- Human guide: `@augmentcode/themis/docs/WAITFOR.md`
-- Public API: `waitFor` from `@augmentcode/themis/saga`.
-- Channel helpers: `@augmentcode/themis/utils/sagas/selector-channel-effects` or aggregate `@augmentcode/themis/saga`.
+- Human guide: `@themislib/themis/docs/WAITFOR.md`
+- Public API: `waitFor` from `@themislib/themis/saga`.
+- Channel helpers: `@themislib/themis/utils/sagas/selector-channel-effects` or aggregate `@themislib/themis/saga`.
 - Related skills: `core/sagas`, `core/selector-channels`, `core/testing`, plus the selected Store family selector skill for family-specific selector authoring.
 
 ## Use when
@@ -55,7 +53,7 @@ Use this skill for one-shot saga waits on selector state. Keep conceptual/API pr
 
 ## Implementation cues
 
-- Import from `@augmentcode/themis/saga` unless an existing app-local barrel already re-exports it.
+- Import from `@themislib/themis/saga` unless an existing app-local barrel already re-exports it.
 - For boolean readiness, predicate on the desired final value rather than assuming truthiness.
 - For status transitions, include the terminal states in the predicate and branch after `waitFor` if different terminal outcomes matter.
 - For timeout paths, dispatch or return an explicit timeout outcome before continuing with state-dependent work.
@@ -67,7 +65,7 @@ Use this skill for one-shot saga waits on selector state. Keep conceptual/API pr
 
 ```ts
 import { put } from "typed-redux-saga";
-import { waitFor } from "@augmentcode/themis/saga";
+import { waitFor } from "@themislib/themis/saga";
 
 function* loadWhenReady() {
   const ready = yield* waitFor(selectIsReady, [], (value) => value === true, 5_000);
@@ -82,7 +80,7 @@ function* loadWhenReady() {
 ### 2. Pass selector arguments as the required args tuple
 
 ```ts
-import { waitFor } from "@augmentcode/themis/saga";
+import { waitFor } from "@themislib/themis/saga";
 
 function* processItem(itemId: string) {
   const ready = yield* waitFor(selectItemStatus, [itemId], (status) => status === "ready", 10_000);
@@ -96,7 +94,7 @@ unless that object is a stable, intentional selector key reused across calls.
 ### 3. Guard previous-value comparisons on the immediate check
 
 ```ts
-import { waitFor } from "@augmentcode/themis/saga";
+import { waitFor } from "@themislib/themis/saga";
 
 function* waitForReconnect() {
   const reconnected = yield* waitFor(
@@ -113,7 +111,7 @@ function* waitForReconnect() {
 
 ```ts
 import { put } from "typed-redux-saga";
-import { waitFor } from "@augmentcode/themis/saga";
+import { waitFor } from "@themislib/themis/saga";
 
 function* waitForUpload(uploadId: string) {
   const finished = yield* waitFor(selectUploadPhase, [uploadId], (phase) => phase === "done" || phase === "failed", 60_000);
@@ -127,7 +125,7 @@ function* waitForUpload(uploadId: string) {
 
 ```ts
 import { call, put } from "typed-redux-saga";
-import { waitFor } from "@augmentcode/themis/saga";
+import { waitFor } from "@themislib/themis/saga";
 
 function* publishAfterAuthWorker(action: ReturnType<typeof publishDocument>) {
   const authenticated = yield* waitFor(selectAuthReady, [], Boolean, 5_000);
@@ -172,7 +170,7 @@ function* publishAfterRealStatusChange(documentId: string) {
 
 ## See also
 
-- `@augmentcode/themis/docs/WAITFOR.md` — full signature, behavior walkthrough, and examples.
-- `@augmentcode/themis/docs/SAGAS.md` — selector-channel and saga orchestration context.
+- `@themislib/themis/docs/WAITFOR.md` — full signature, behavior walkthrough, and examples.
+- `@themislib/themis/docs/SAGAS.md` — selector-channel and saga orchestration context.
 - `core/selector-channels` — continuous selector watchers.
 - Selected Store family selector lifecycle skill — selector call modes.

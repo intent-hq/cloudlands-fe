@@ -13,94 +13,560 @@
  * @playwright/experimental-ct-core's own dependency tree so the runner
  * version always matches the CT transform version, then forwards all CLI
  * args to `playwright test -c playwright-ct.config.ts`.
+ *
+ * Local CT bundle builds need the same 8 GB heap cap as CI's build step;
+ * Node's default heap can run out while Vite bundles the component registry.
+ * Apply the heap default unless the caller already chose a heap cap: an unset
+ * NODE_OPTIONS gets the flag, a pre-set one without a heap flag (e.g. a
+ * host-injected `--require` such as Datadog's dd-trace; see
+ * intent-hq/intent#4565) keeps its options with the flag appended, and one that
+ * already carries --max-old-space-size or --max-old-space-size-percentage (or
+ * their V8 underscore aliases) is left untouched.
+ * CI keeps its per-step limits: 8 GB for building, 4 GB for cached test runs,
+ * so the larger build allowance does not leak into its long-lived test phase.
+ * Playwright rebuilds in-process when sources change between dependency
+ * population and begin(), so concurrent edits during a cold build can exceed
+ * the cap; this is upstream behavior, not a launcher concern. When the child
+ * still dies with SIGABRT / exit 134 (V8's heap-exhaustion signature; stderr is
+ * inherited, so the OOM text itself cannot be matched) the launcher prints a
+ * one-shot hint naming the heap flag in effect and how to raise it, so the
+ * failure is not misread as a test regression.
+ *
+ * It also owns the HTML-report policy (intent-hq/intent#4652): Playwright's
+ * html reporter defaults to `open: 'on-failure'`, which keeps the process
+ * alive serving the report on :9323 after a failing run, so chained
+ * automation (verify:changed, saved scripts, CI) never sees the exit status.
+ * The launcher pins `PLAYWRIGHT_HTML_OPEN=never` unless the caller opts in
+ * from an interactive terminal (see `usage()`).
+ *
+ * Test runs hold the same host-wide `ct-<CT_PORT>` lock `verify:changed` uses
+ * (intent-hq/intent#4964): the CT runtime reuses any endpoint already
+ * listening on its port, so an unlocked second run from another worktree
+ * would test against that tree's component registry and then fail with
+ * ECONNREFUSED when the first run exits.
+ *
+ * Before a test run it also provisions the gitignored Paraglide bundle
+ * (src/shared/paraglide) through the same stale-aware `ensureI18nFresh`
+ * step `verify:changed` and `test:unit` run: the bundle compiles only while it
+ * is missing or its recorded input hash no longer matches messages/*.json, so
+ * a fresh worktree's first CT run builds without a manual generate:i18n. The
+ * CI helpers and `--help` skip the preflight.
  */
-import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { spawn, spawnSync } from 'node:child_process';
+import { readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ensureI18nFresh } from './check-deps-fresh.mjs';
+import { CT_BROWSER, resolveCtAlignedPlaywrightCli, resolveCtBrowser } from './ct-browser.mjs';
+import { nonFontPackagesFromDryRun } from './playwright-os-deps-lib.mjs';
+import {
+  acquireVerificationLock,
+  ctLockKey,
+  ctPort,
+  defaultLockPath,
+  HELD_LOCK_ENV,
+  lockTimeout,
+} from './verification-lock.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function resolveCtAlignedPlaywrightCli() {
-  // Walk the dependency tree: repo root -> ct-svelte -> ct-core -> playwright.
-  // Each hop uses createRequire from the previous package's own location, so
-  // pnpm's nested resolutions are honored without hardcoding .pnpm paths.
-  const rootRequire = createRequire(path.join(repoRoot, 'package.json'));
-  const ctSveltePkgJson = rootRequire.resolve('@playwright/experimental-ct-svelte/package.json');
-  const ctSvelteRequire = createRequire(ctSveltePkgJson);
-  // ct-core's package.json is not an exported subpath; resolve its main entry
-  // and require from there instead.
-  const ctCoreEntry = ctSvelteRequire.resolve('@playwright/experimental-ct-core');
-  const ctCoreRequire = createRequire(ctCoreEntry);
-  // Unlike ct-core, playwright does export its ./package.json subpath.
-  const playwrightPkgJsonPath = ctCoreRequire.resolve('playwright/package.json');
-  const packageDir = path.dirname(playwrightPkgJsonPath);
+export const CT_HTML_REPORT_ENV = 'CT_HTML_REPORT';
+export const OPEN_REPORT_FLAG = '--open-report';
+export const PRINT_OS_DEPS_FLAG = '--print-os-deps';
 
-  const pkg = JSON.parse(readFileSync(playwrightPkgJsonPath, 'utf8'));
-  const binRel = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin?.playwright;
-  if (!binRel) {
-    throw new Error(`playwright bin entry not found in ${playwrightPkgJsonPath}`);
-  }
-  const cliPath = path.join(packageDir, binRel);
-  if (!existsSync(cliPath)) {
-    throw new Error(`playwright CLI not found at ${cliPath}`);
-  }
-  return { cliPath, version: pkg.version };
+/** `CT_HTML_REPORT` values → Playwright html reporter `open` modes. */
+const CT_HTML_REPORT_MODES = {
+  open: 'always',
+  always: 'always',
+  'on-failure': 'on-failure',
+  never: 'never',
+};
+
+export function usage() {
+  return [
+    'Usage: pnpm run test:ct [-- <playwright test args>]',
+    '',
+    'Runs Playwright component tests with the CT-aligned playwright CLI.',
+    'All arguments are forwarded to `playwright test -c playwright-ct.config.ts`.',
+    'Tests that pass only on retry fail the run; retries and reports are preserved.',
+    '',
+    'Launcher options:',
+    `  ${OPEN_REPORT_FLAG}     Serve the HTML report after the run (same as ${CT_HTML_REPORT_ENV}=open).`,
+    '  --help, -h        Show this help.',
+    '',
+    'Environment:',
+    '  CT_PORT           Component server port (default 3100). The port keys the component',
+    '                    server, the host-wide ct-<CT_PORT> lock verify:changed uses, and the',
+    '                    playwright/.cache-<CT_PORT> bundle cache (bare playwright/.cache when',
+    '                    unset or blank), so runs on distinct ports never share a server or a',
+    '                    bundle — even within one worktree; use a free port to run concurrently.',
+    '  VERIFY_CHANGED_LOCK_TIMEOUT_MS',
+    '                    How long to wait for that lock (default 240000, capped at 300000).',
+    `  ${CT_HTML_REPORT_ENV}=open|always|on-failure|never`,
+    '                    HTML report viewing policy. Default: never — the run exits with',
+    "                    Playwright's status as soon as tests finish; the report is still",
+    '                    written to playwright-report/ (view it with `pnpm exec playwright',
+    '                    show-report`). Opt-in values only take effect on an interactive',
+    '                    terminal; automated (non-TTY) runs never block on the report.',
+    '  CT_NODE_ARGS      Space-separated Node flags (default: empty; no shell quoting).',
+    '  CT_ALLOW_CORE=1   Allow CT runs with core dumps in the package root.',
+    '  PLAYWRIGHT_HTML_OPEN',
+    `                    When set, respected verbatim (overrides ${CT_HTML_REPORT_ENV}).`,
+    '',
+    'CI helpers:',
+    '  --print-playwright-version   Print the CT-aligned playwright version.',
+    '  --print-browser-plan        Print the pinned supplier, install/cache paths and identity as JSON.',
+    '  --install-browsers [...]     Install Chromium with the pinned browser supplier CLI.',
+    `  ${PRINT_OS_DEPS_FLAG} [...]        Print missing non-font OS packages from the pinned supplier`,
+    '                               `playwright install-deps --dry-run`, space-separated on',
+    '                               one line (fonts-*/xfonts-* dropped; intent-hq/intent#4723).',
+  ].join('\n');
 }
 
-let cli;
-try {
-  cli = resolveCtAlignedPlaywrightCli();
-} catch (error) {
-  console.error(
-    '[run-ct-tests] Failed to resolve the playwright CLI from ' +
-      "@playwright/experimental-ct-core's dependency tree. Did `pnpm install` run?\n" +
-      `[run-ct-tests] ${error instanceof Error ? error.message : error}`,
+/**
+ * Run the pinned supplier's `playwright install-deps --dry-run <browsers...>` and
+ * return the missing non-font packages. The dry run simulates apt and returns
+ * 1 for missing dependencies (including fonts), 0 when ready; the parse is strict (see
+ * playwright-os-deps-lib.mjs) and throws on anything unexpected, so CI fails
+ * loudly instead of provisioning a partial package list. `spawnSyncImpl` is
+ * injectable for tests.
+ */
+export function collectNonFontOsDeps({
+  cliPath,
+  browsers,
+  cwd = repoRoot,
+  spawnSyncImpl = spawnSync,
+}) {
+  const dryRun = spawnSyncImpl(
+    process.execPath,
+    [cliPath, 'install-deps', '--dry-run', ...browsers],
+    {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'inherit'],
+    },
   );
-  process.exit(1);
+  if (dryRun.error || ![0, 1].includes(dryRun.status)) {
+    throw new Error(
+      `install-deps --dry-run failed: ${dryRun.error?.message ?? `exit ${dryRun.status}`}`,
+    );
+  }
+  return {
+    dryRun: dryRun.stdout,
+    packages: nonFontPackagesFromDryRun(dryRun.stdout, dryRun.status),
+  };
 }
 
-// pnpm forwards a literal `--` separator (`pnpm run test:ct -- --list`); drop it.
-const forwarded = process.argv.slice(2);
-if (forwarded[0] === '--') forwarded.shift();
-
-// CI helpers: browsers must match the CT-aligned runner version (not the
-// repo's top-level playwright), so version printing (for cache keys) and
-// browser installation go through this launcher too.
-let args;
-if (forwarded[0] === '--print-playwright-version') {
-  process.stdout.write(`${cli.version}\n`);
-  process.exit(0);
-} else if (forwarded[0] === '--install-browsers') {
-  args = ['install', ...forwarded.slice(1)];
-} else {
-  args = ['test', '-c', 'playwright-ct.config.ts', ...forwarded];
+/**
+ * Split the launcher's own flags from the args forwarded to `playwright test`.
+ * pnpm forwards a literal `--` separator (`pnpm run test:ct -- --list`); drop it.
+ */
+export function parseLauncherArgs(argv) {
+  const forwarded = [...argv];
+  if (forwarded[0] === '--') forwarded.shift();
+  const help = forwarded[0] === '--help' || forwarded[0] === '-h';
+  let openReport = false;
+  const rest = forwarded.filter((arg) => {
+    if (arg === OPEN_REPORT_FLAG) {
+      openReport = true;
+      return false;
+    }
+    return true;
+  });
+  return { forwarded: rest, openReport, help };
 }
-console.error(`[run-ct-tests] using playwright@${cli.version} (${cli.cliPath})`);
 
-// Playwright's default transform cache is host-wide. Persistent CI runners
-// can reuse incomplete component metadata from another checkout, which leaves
-// valid Svelte hosts out of the generated component registry. Keep the cache
-// project-local while preserving an explicit override.
-const transformCacheDir =
-  process.env.PWTEST_CACHE_DIR?.trim() ||
-  path.join(repoRoot, 'node_modules', '.cache', 'playwright-transform');
+/**
+ * Decide the html reporter `open` mode for this run.
+ *
+ * Returns `{ open, notice? }` where `open` is the value to export as
+ * `PLAYWRIGHT_HTML_OPEN`, or `null` when the caller already set that variable
+ * and it must be left untouched. Opt-in (flag or CT_HTML_REPORT) is honored
+ * only on an interactive terminal: a non-TTY run (CI, verify:changed, saved
+ * scripts) always gets `never`, so the process exits when the tests do.
+ */
+export function resolveHtmlReportOpen({ env, isTTY, openReport = false }) {
+  if (env.PLAYWRIGHT_HTML_OPEN?.trim()) return { open: null };
+  const raw = env[CT_HTML_REPORT_ENV]?.trim();
+  let requested = openReport ? 'always' : 'never';
+  let notice;
+  if (raw) {
+    const mapped = Object.hasOwn(CT_HTML_REPORT_MODES, raw) ? CT_HTML_REPORT_MODES[raw] : undefined;
+    if (mapped) {
+      requested = openReport ? 'always' : mapped;
+    } else {
+      notice =
+        `[run-ct-tests] ignoring ${CT_HTML_REPORT_ENV}=${raw}; ` +
+        `valid values: ${Object.keys(CT_HTML_REPORT_MODES).join(', ')}`;
+    }
+  }
+  if (requested !== 'never' && !isTTY) {
+    return {
+      open: 'never',
+      notice:
+        '[run-ct-tests] stdout is not a TTY; not serving the HTML report ' +
+        '(set PLAYWRIGHT_HTML_OPEN explicitly to force it)',
+    };
+  }
+  return notice ? { open: requested, notice } : { open: requested };
+}
 
-const child = spawn(process.execPath, [cli.cliPath, ...args], {
-  cwd: repoRoot,
-  stdio: 'inherit',
-  env: { ...process.env, PWTEST_CACHE_DIR: transformCacheDir },
-});
-child.on('error', (error) => {
-  console.error(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
-  process.exit(1);
-});
-child.on('exit', (code, signal) => {
+/** Map a child `exit` event to this process's exit code. */
+export function exitCodeFromChild(code, signal) {
   if (signal) {
     const signalNumber = os.constants.signals[signal];
-    process.exit(signalNumber ? 128 + signalNumber : 1);
+    return signalNumber ? 128 + signalNumber : 1;
   }
-  process.exit(code ?? 1);
-});
+  return code ?? 1;
+}
+
+/**
+ * Provision the Paraglide bundle for a test run (see the header). Resolves to
+ * true when the run may proceed; a stale bundle that could not be compiled or
+ * a thrown error is reported through `printError` and ends the run via
+ * `exit(1)`. `ensureI18n` / `exit` / `printError` are injectable for tests.
+ */
+export async function preflightI18n({
+  root = repoRoot,
+  ensureI18n = ensureI18nFresh,
+  exit = (code) => process.exit(code),
+  printError = console.error,
+} = {}) {
+  try {
+    const i18n = await ensureI18n(root);
+    if (i18n.ok) return true;
+    printError(`[run-ct-tests] ${i18n.reason}`);
+  } catch (error) {
+    printError(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+  }
+  exit(1);
+  return false;
+}
+
+/**
+ * Take the host-wide `ct-<CT_PORT>` lock for a test run and resolve to its
+ * release function. When `verify:changed` already holds the lock for this port
+ * it exports `HELD_LOCK_ENV`; the nested run then skips acquisition instead of
+ * waiting on its own parent. `acquireLock` / `lockPath` are injectable for tests.
+ */
+export async function acquireCtPortLock({
+  env = process.env,
+  cwd = repoRoot,
+  acquireLock = acquireVerificationLock,
+  lockPath = defaultLockPath,
+  log = (message) => console.error(message),
+} = {}) {
+  const lockKey = ctLockKey(env);
+  if (env[HELD_LOCK_ENV] === lockKey) return () => {};
+  const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
+  log(`[run-ct-tests] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
+  return acquireLock({ lockPath: lockPath(lockKey), timeoutMs, cwd });
+}
+
+/**
+ * Spawn the playwright CLI and propagate its exit status through `exit`.
+ * `spawnImpl` / `exit` are injectable for tests.
+ */
+export function runPlaywright({
+  cliPath,
+  args,
+  cwd = repoRoot,
+  env = process.env,
+  spawnImpl = spawn,
+  exit = (code) => process.exit(code),
+  printError = console.error,
+}) {
+  const flags = env.CT_NODE_ARGS?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const child = spawnImpl(process.execPath, [...flags, cliPath, ...args], {
+    cwd,
+    stdio: 'inherit',
+    env,
+  });
+  child.on('error', (error) => {
+    printError(`[run-ct-tests] failed to spawn playwright: ${error.message}`);
+    exit(1);
+  });
+  child.on('exit', (code, signal) => {
+    if (code === null && signal) printError(`playwright died with ${signal}`);
+    const hint = heapExhaustionHint({ code, signal, env });
+    if (hint) printError(hint);
+    exit(exitCodeFromChild(code, signal));
+  });
+  return child;
+}
+
+/**
+ * Heuristic hint for a child that exited with SIGABRT / 134. Names the heap
+ * flag actually in effect for the child — `--max-old-space-size-percentage`
+ * overrides `--max-old-space-size` wherever either is set, and within a kind a
+ * `CT_NODE_ARGS` flag overrides NODE_OPTIONS (CLI flags win), else the
+ * launcher default — printing only that token: hosts carry unrelated
+ * `--require` paths in NODE_OPTIONS that must not be echoed. Returns null for
+ * any other exit.
+ */
+export function heapExhaustionHint({ code, signal, env }) {
+  if (signal !== 'SIGABRT' && code !== 134) return null;
+  const effective = effectiveHeapFlag(env);
+  const source = effective?.source ?? 'launcher default';
+  const flag = effective?.token ?? CT_HEAP_FLAG;
+  const how = signal === 'SIGABRT' ? 'SIGABRT' : `exit code ${code}`;
+  // Raise the cap where it was set, with the flag kind that is in effect: a
+  // percentage retry always wins, and a CT_NODE_ARGS retry beats NODE_OPTIONS.
+  const raiseVia = source === 'CT_NODE_ARGS' ? 'CT_NODE_ARGS' : 'NODE_OPTIONS';
+  const raised =
+    effective?.kind === 'percentage'
+      ? `--max-old-space-size-percentage=${Math.min(100, 2 * Number(effective.value) || 50)}`
+      : '--max-old-space-size=16384';
+  return [
+    `[run-ct-tests] playwright exited with ${how}. This usually means V8 ran out of heap while`,
+    'Vite bundled the component registry; look for "Ineffective mark-compacts near heap limit"',
+    'or "JavaScript heap out of memory" above.',
+    `[run-ct-tests] heap flag in effect for the child: ${flag} (${source}). To raise it, run e.g.`,
+    `  ${raiseVia}=${raised} pnpm run test:ct -- <args>`,
+    '[run-ct-tests] this is a tooling/memory failure, not evidence of a test regression.',
+  ].join('\n');
+}
+
+/** How long a signalled Playwright child gets to tear down before SIGKILL. */
+export const CHILD_SHUTDOWN_GRACE_MS = 10_000;
+
+/**
+ * Forward SIGINT/SIGTERM to the child and keep the launcher alive until the
+ * child has actually exited: the `ct-<port>` lock is released from the child's
+ * exit event, and Playwright's shutdown is asynchronous, so exiting on the
+ * signal itself would hand the lock to a contender while the old component
+ * server is still listening on the port. A repeated signal, or a child still
+ * running after `graceMs`, escalates to SIGKILL.
+ */
+export function forwardSignalsToChild({
+  child,
+  proc = process,
+  signals = ['SIGINT', 'SIGTERM'],
+  graceMs = CHILD_SHUTDOWN_GRACE_MS,
+  log = (message) => console.error(message),
+}) {
+  let forwarded = null;
+  let graceTimer = null;
+  const clear = () => {
+    if (graceTimer) clearTimeout(graceTimer);
+    for (const signal of signals) proc.off(signal, onSignal);
+  };
+  const onSignal = (signal) => {
+    if (forwarded) {
+      child.kill('SIGKILL');
+      return;
+    }
+    forwarded = signal;
+    log(`[run-ct-tests] ${signal}: waiting for playwright to shut down`);
+    child.kill(signal);
+    graceTimer = setTimeout(() => child.kill('SIGKILL'), graceMs);
+    graceTimer.unref?.();
+  };
+  for (const signal of signals) proc.on(signal, onSignal);
+  child.once('exit', clear);
+  child.once('error', clear);
+  return clear;
+}
+
+export { resolveCtAlignedPlaywrightCli } from './ct-browser.mjs';
+
+/** Heap cap applied to the Playwright child unless the caller chose one. */
+const CT_HEAP_FLAG = '--max-old-space-size=8192';
+// Both heap caps accept the V8 underscore alias (`--max_old_space_size=`, as
+// scripts/vite-build.mjs also honours). The percentage flag is Node's own and
+// also takes its value as the next token; the absolute flag is a V8
+// pass-through that only accepts `=N`.
+const HEAP_FLAG_RE =
+  /^--max[-_]old[-_]space[-_]size(?<percentage>[-_]percentage)?(?:=(?<value>.*))?$/;
+
+/**
+ * Every heap-cap flag in a space-separated option string (NODE_OPTIONS or CLI
+ * args; double-quoted tokens are unwrapped), in order, as
+ * `{ kind: 'size' | 'percentage', token, value }` where `token` is the flag as
+ * written. The single recognizer for the launcher default and the hint.
+ */
+function parseHeapFlags(options) {
+  const tokens = (options?.trim().split(/\s+/) ?? [])
+    .map((token) => token.replaceAll('"', ''))
+    .filter(Boolean);
+  const flags = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const match = HEAP_FLAG_RE.exec(tokens[i]);
+    if (!match) continue;
+    const kind = match.groups.percentage ? 'percentage' : 'size';
+    let { value } = match.groups;
+    let token = tokens[i];
+    if (value === undefined) {
+      if (kind !== 'percentage' || i + 1 >= tokens.length) continue;
+      value = tokens[++i];
+      token = `${token} ${value}`;
+    }
+    flags.push({ kind, token, value });
+  }
+  return flags;
+}
+
+/**
+ * The heap cap in effect for the child among the caller's settings, with its
+ * `source`, or null: a percentage flag overrides an absolute one wherever
+ * either is set, within a kind a CT_NODE_ARGS flag overrides NODE_OPTIONS (CLI
+ * flags win), and Node applies the last of repeated flags.
+ */
+function effectiveHeapFlag(env) {
+  const flags = [
+    ...parseHeapFlags(env.CT_NODE_ARGS).map((flag) => ({ ...flag, source: 'CT_NODE_ARGS' })),
+    ...parseHeapFlags(env.NODE_OPTIONS).map((flag) => ({ ...flag, source: 'NODE_OPTIONS' })),
+  ];
+  for (const kind of ['percentage', 'size']) {
+    for (const source of ['CT_NODE_ARGS', 'NODE_OPTIONS']) {
+      const flag = flags.filter((f) => f.kind === kind && f.source === source).at(-1);
+      if (flag) return flag;
+    }
+  }
+  return null;
+}
+
+/**
+ * Build the child environment: project-local transform cache, the heap
+ * default described in the header, plus the HTML-report policy from
+ * `resolveHtmlReportOpen`.
+ */
+export function buildChildEnv({ env = process.env, isTTY, openReport = false, root = repoRoot }) {
+  // Playwright's default transform cache is host-wide. Persistent CI runners
+  // can reuse incomplete component metadata from another checkout, which leaves
+  // valid Svelte hosts out of the generated component registry. Keep the cache
+  // project-local while preserving an explicit override.
+  const transformCacheDir =
+    env.PWTEST_CACHE_DIR?.trim() ||
+    path.join(root, 'node_modules', '.cache', 'playwright-transform');
+  const childEnv = { ...env, PWTEST_CACHE_DIR: transformCacheDir };
+  const nodeOptions = env.NODE_OPTIONS?.trim();
+  if (!nodeOptions) childEnv.NODE_OPTIONS = CT_HEAP_FLAG;
+  else if (parseHeapFlags(nodeOptions).length === 0) {
+    childEnv.NODE_OPTIONS = `${env.NODE_OPTIONS} ${CT_HEAP_FLAG}`;
+  }
+  const { open, notice } = resolveHtmlReportOpen({ env, isTTY, openReport });
+  if (open) childEnv.PLAYWRIGHT_HTML_OPEN = open;
+  return { env: childEnv, notice };
+}
+
+/** Refuse core dumps before the CT source scanner can read them. */
+export function assertNoCoreDumps({ root = repoRoot, env = process.env } = {}) {
+  if (env.CT_ALLOW_CORE === '1') return;
+  const dumps = readdirSync(root)
+    .filter((name) => /^core(?:\.[0-9]+)?$/.test(name))
+    .flatMap((name) => {
+      const stat = statSync(path.join(root, name));
+      return stat.isFile() ? [`${name} (${stat.size} bytes)`] : [];
+    });
+  if (dumps.length) {
+    throw new Error(
+      `Refusing CT run: core dumps in ${root}: ${dumps.join(', ')}. ` +
+        'Move or remove them before running CT, or set CT_ALLOW_CORE=1 to override.',
+    );
+  }
+}
+
+async function main(argv) {
+  const { forwarded, openReport, help } = parseLauncherArgs(argv);
+  if (help) {
+    process.stdout.write(`${usage()}\n`);
+    process.exit(0);
+  }
+
+  try {
+    assertNoCoreDumps();
+  } catch (error) {
+    console.error(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
+  }
+
+  let cli;
+  try {
+    cli = resolveCtAlignedPlaywrightCli();
+  } catch (error) {
+    console.error(
+      '[run-ct-tests] Failed to resolve the playwright CLI from ' +
+        "@playwright/experimental-ct-core's dependency tree. Did `pnpm install` run?\n" +
+        `[run-ct-tests] ${error instanceof Error ? error.message : error}`,
+    );
+    process.exit(1);
+  }
+
+  // The test runner stays CT-aligned. Only browser provisioning uses the newer
+  // supplier. Cache keys and dependency markers come from this same plan.
+  let args;
+  let launchCliPath = cli.cliPath;
+  if (forwarded[0] === '--print-playwright-version') {
+    process.stdout.write(`${cli.version}\n`);
+    process.exit(0);
+  } else if (forwarded[0] === '--print-browser-plan') {
+    process.stdout.write(`${JSON.stringify(resolveCtBrowser({ requireInstalled: false }))}\n`);
+    process.exit(0);
+  } else if (forwarded[0] === PRINT_OS_DEPS_FLAG) {
+    try {
+      const { dryRun, packages } = collectNonFontOsDeps({
+        cliPath: resolveCtBrowser({ requireInstalled: false }).osDeps.cliPath,
+        browsers: ['chromium'],
+      });
+      console.error(`[run-ct-tests] install-deps --dry-run: ${dryRun.trim()}`);
+      process.stdout.write(`${packages.join(' ')}\n`);
+      process.exit(0);
+    } catch (error) {
+      console.error(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+      process.exit(1);
+    }
+  } else if (forwarded[0] === '--install-browsers') {
+    const plan = resolveCtBrowser({ requireInstalled: false });
+    launchCliPath = plan.install.cliPath;
+    const options = forwarded.slice(1).filter((arg) => arg !== 'chromium');
+    if (options.some((arg) => !['--with-deps', '--dry-run', '--force'].includes(arg))) {
+      throw new Error(
+        'CT installs pinned Chromium only; supported options: --with-deps, --dry-run, --force',
+      );
+    }
+    args = [...plan.install.args, ...options];
+  } else {
+    args = ['test', '-c', 'playwright-ct.config.ts', ...forwarded];
+    // Local runs (including both verify:changed CT paths) use the same strict
+    // flaky-result policy as CI, without changing retries or their evidence.
+    if (!forwarded.includes('--fail-on-flaky-tests')) args.splice(1, 0, '--fail-on-flaky-tests');
+  }
+  console.error(
+    `[run-ct-tests] CT runner ${cli.version}; browser supplier ${CT_BROWSER.supplierVersion}; Chromium ${CT_BROWSER.chromiumVersion} revision ${CT_BROWSER.revision}; CLI ${launchCliPath}`,
+  );
+
+  const { env, notice } = buildChildEnv({ isTTY: Boolean(process.stdout.isTTY), openReport });
+  if (notice) console.error(notice);
+
+  let releaseLock = () => {};
+  if (args[0] === 'test') {
+    if (!(await preflightI18n())) return;
+    try {
+      releaseLock = await acquireCtPortLock();
+    } catch (error) {
+      console.error(
+        `[run-ct-tests] ${error instanceof Error ? error.message : error}\n` +
+          `[run-ct-tests] another CT run owns port ${ctPort()}; wait for it to finish or ` +
+          'set a free CT_PORT (two worktrees must not share one component server)',
+      );
+      process.exit(1);
+    }
+  }
+
+  const exit = (code) => {
+    releaseLock();
+    process.exit(code);
+  };
+  const child = runPlaywright({ cliPath: launchCliPath, args, env, exit });
+  forwardSignalsToChild({ child });
+}
+
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isDirectRun) {
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(`[run-ct-tests] ${error instanceof Error ? error.message : error}`);
+    process.exitCode = 1;
+  });
+}

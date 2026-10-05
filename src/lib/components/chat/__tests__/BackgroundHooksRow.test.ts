@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * BackgroundHooksRow rendering: "Running Hooks:" label after the bolt icon,
- * pointer-cursor chips, hover-card timing durations (next-run-in, elapsed,
+ * BackgroundHooksRow rendering: hook status after the hourglass icon,
+ * pointer-cursor chips, inline-detail timing durations (next-run-in,
  * expires-in — monorepo#1756), and the "View script" affordances (hover-card
  * link + dropdown item) that open the canonical hook-script panel.
  */
@@ -93,7 +93,7 @@ describe('BackgroundHooksRow', () => {
     vi.useRealTimers();
   });
 
-  it('renders a rounded semantic card with the Phosphor hourglass icon', () => {
+  it('labels the hook card with its title', () => {
     hooksState.hooks = [makeHook()];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
@@ -101,76 +101,24 @@ describe('BackgroundHooksRow', () => {
     expect(row).toBeTruthy();
     const summary = screen.getByTestId('background-hook-summary');
     const card = screen.getByTestId('background-hook-card');
-    const icon = screen.getByTestId('background-hook-icon').querySelector('svg');
     expect(summary.textContent).toContain('ci-watch');
-    expect(card.tagName).toBe('SECTION');
-    expect(card.className).toContain('mx-2');
-    expect(card.className).toContain('my-2');
-    expect(card.className).toContain('rounded-lg');
-    expect(card.className).toContain('border');
-    expect(card.className).toContain('border-border');
-    expect(card.className).toContain('bg-card');
-    expect(card.className).toContain('shadow-sm');
     expect(card.getAttribute('aria-labelledby')).toBe('background-hook-title-hook-1');
-    expect(document.getElementById('background-hook-title-hook-1')?.className).toContain(
-      'font-medium',
-    );
-    expect(icon?.getAttribute('data-icon')).toBe('hourglass-medium');
-    expect(icon?.getAttribute('width')).toBe('16');
-    expect(icon?.getAttribute('height')).toBe('16');
   });
 
-  it('renders embedded hooks as full-width flat rows with one shared divider', () => {
-    hooksState.hooks = [makeHook(), makeHook({ hookId: 'hook-2', name: 'release-watch' })];
-    render(BackgroundHooksRow, {
-      props: { workspaceId: 'ws-1', agentId: 'agent-1', embedded: true },
-    });
-
-    const row = screen.getByTestId('background-hooks-row');
-    expect(row.className).not.toContain('divide-y');
-    for (const card of screen.getAllByTestId('background-hook-card')) {
-      expect(card.className).toContain('background-hook-card--embedded');
-      expect(card.className).toContain('m-0');
-      expect(card.className).toContain('w-full');
-      expect(card.className).toContain('rounded-none');
-      expect(card.className).toContain('bg-transparent');
-      expect(card.className).toContain('shadow-none');
-      expect(card.className).not.toContain('rounded-lg');
-      expect(card.className).not.toContain('border-border');
-      expect(card.className).not.toContain('bg-card');
-      expect(card.className).not.toContain('shadow-sm');
-    }
-    for (const title of document.querySelectorAll('[id^="background-hook-title-"]')) {
-      expect(title.className).toContain('font-normal');
-      expect(title.className).not.toContain('font-medium');
-    }
-  });
-
-  it('gives hook chips a pointer cursor', () => {
-    hooksState.hooks = [makeHook()];
+  it('renders scheduled state and countdown as one sentence fragment', () => {
+    hooksState.hooks = [makeHook({ nextRunAt: '2026-07-31T10:12:56Z' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const chip = screen.getByTestId('background-hook-chip');
-    expect(chip.className).toContain('cursor-pointer');
+    const fragment = screen.getByTestId('background-hook-state');
+    expect(fragment.textContent).toBe('scheduled in 9m');
+    expect(screen.queryByTestId('background-hook-next-run')).toBeNull();
   });
 
-  it('caps the restored disclosure summary so long names ellipsize, not overflow', () => {
-    hooksState.hooks = [
-      makeHook({ name: 'a-very-long-hook-name-that-would-overflow-a-narrow-row' }),
-    ];
+  it('renders running alone because the wire does not expose a current-run start time', () => {
+    hooksState.hooks = [makeHook({ state: 'running', lastRunAt: '2026-07-31T09:00:00Z' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
-    const row = screen.getByTestId('background-hooks-row');
-    const summary = screen.getByTestId('background-hook-summary');
-    const label = summary.querySelector('.truncate') as HTMLElement;
-    expect(row.className).toContain('min-w-0');
-    expect(row.className).toContain('max-w-full');
-    expect(summary.className).toContain('min-w-0');
-    expect(summary.className).toContain('max-w-full');
-    expect(summary.className).toContain('overflow-hidden');
-    expect(label).toBeTruthy();
-    expect(label.className).toContain('min-w-0');
-    expect(label.className).toContain('flex-1');
+    expect(screen.getByTestId('background-hook-state').textContent).toBe('running');
   });
 
   it('renders nothing when the agent has no active hooks', () => {
@@ -280,18 +228,14 @@ describe('BackgroundHooksRow', () => {
     ['scheduled', true],
     ['running', false],
     ['running', true],
-  ] as const)('keeps the %s hourglass static when embedded is %s', (state, embedded) => {
+  ] as const)('shows %s state when embedded is %s', (state, embedded) => {
     hooksState.hooks = [makeHook({ state })];
     render(BackgroundHooksRow, {
       props: { workspaceId: 'ws-1', agentId: 'agent-1', embedded },
     });
 
-    const icon = screen.getByTestId('background-hook-icon').querySelector('svg');
-    expect(icon?.getAttribute('class')?.trim()).toBe('h-4 w-4');
-    expect(icon?.classList.contains('animate-spin')).toBe(false);
-    expect(icon?.classList.contains('motion-reduce:animate-none')).toBe(false);
     expect(screen.getByTestId('background-hook-summary').textContent).toContain(
-      state === 'running' ? 'Running' : 'Scheduled',
+      state === 'running' ? 'running' : 'scheduled in 3m',
     );
   });
 
@@ -338,13 +282,13 @@ describe('BackgroundHooksRow', () => {
     expect(hoverCard.textContent).not.toContain('04:00:00 AM');
   });
 
-  it('hover card shows a minutes-and-seconds expires-in duration when not whole minutes', async () => {
+  it('inline details show only the largest salient expires-in unit', async () => {
     hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T10:12:30Z' })];
     render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     await fireEvent.click(screen.getByTestId('background-hook-summary'));
     const hoverCard = screen.getByTestId('background-hook-details');
-    expect(hoverCard.textContent).toContain('Expires 9m 30s');
+    expect(hoverCard.textContent).toContain('Expires 9m');
   });
 
   it('omits the TTL line when expiresAt is missing (legacy hook)', async () => {
@@ -385,30 +329,34 @@ describe('BackgroundHooksRow', () => {
       vi.setSystemTime(new Date(nowIso));
     }
 
-    it('ticks the summary countdown and the Next run / TTL lines every second', async () => {
+    it('ticks sub-minute summary, Next run, and TTL countdowns every second', async () => {
       useTickingFakeTimers();
-      hooksState.hooks = [makeHook({ expiresAt: '2026-07-31T10:12:30Z' })];
+      hooksState.hooks = [
+        makeHook({
+          nextRunAt: '2026-07-31T10:03:12Z',
+          expiresAt: '2026-07-31T10:03:30Z',
+        }),
+      ];
       render(BackgroundHooksRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
       const summary = screen.getByTestId('background-hook-summary');
-      // Lookbehind keeps this from matching "13m"/"23m".
-      expect(summary.textContent).toMatch(/(?<![0-9])3m/);
+      expect(summary.textContent).toContain('scheduled in 12s');
       await fireEvent.click(summary);
       const details = screen.getByTestId('background-hook-details');
-      expect(details.textContent).toContain('Next run 3m');
-      expect(details.textContent).toContain('Expires 9m 30s');
+      expect(details.textContent).toContain('Next run 12s');
+      expect(details.textContent).toContain('Expires 30s');
 
       vi.advanceTimersByTime(1000);
       await tick();
-      expect(summary.textContent).toContain('2m 59s');
-      expect(details.textContent).toContain('Next run 2m 59s');
-      expect(details.textContent).toContain('Expires 9m 29s');
+      expect(summary.textContent).toContain('scheduled in 11s');
+      expect(details.textContent).toContain('Next run 11s');
+      expect(details.textContent).toContain('Expires 29s');
 
       vi.advanceTimersByTime(1000);
       await tick();
-      expect(summary.textContent).toContain('2m 58s');
-      expect(details.textContent).toContain('Next run 2m 58s');
-      expect(details.textContent).toContain('Expires 9m 28s');
+      expect(summary.textContent).toContain('scheduled in 10s');
+      expect(details.textContent).toContain('Next run 10s');
+      expect(details.textContent).toContain('Expires 28s');
     });
 
     it('clamps the countdown at 0s once the target time passes', async () => {

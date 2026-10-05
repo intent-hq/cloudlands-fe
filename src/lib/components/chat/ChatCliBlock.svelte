@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faTerminal, faCopy, faCheck } from '@fortawesome/free-solid-svg-icons';
+  import { faTerminal } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
 
   interface Props {
     command: string;
@@ -11,29 +11,14 @@
 
   let { command }: Props = $props();
 
-  let copied = $state(false);
-  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
-
   async function copyCommand() {
     try {
       await navigator.clipboard.writeText(command);
-      copied = true;
-      if (copyTimeout) {
-        clearTimeout(copyTimeout);
-      }
-      copyTimeout = setTimeout(() => {
-        copied = false;
-      }, 2000);
-    } catch {
-      toast.error(m.chat_cliBlock_copyFailed_error());
+    } catch (error) {
+      notify.error(m.chat_cliBlock_copyFailed_error());
+      throw error;
     }
   }
-
-  onDestroy(() => {
-    if (copyTimeout) {
-      clearTimeout(copyTimeout);
-    }
-  });
 </script>
 
 <div
@@ -43,20 +28,11 @@
   <code class="type-code min-w-0 flex-1 truncate bg-transparent p-0 text-foreground">
     {command}
   </code>
-  <button
-    type="button"
-    class="flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-50 transition-[background-color,color,opacity] hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 {copied
-      ? 'opacity-100'
-      : ''}"
-    onclick={copyCommand}
-    title={copied ? m.chat_cliBlock_copied_tooltip() : m.chat_cliBlock_copy_tooltip()}
-    aria-label={m.chat_cliBlock_copy_ariaLabel()}
+  <CopyButton
+    copy={copyCommand}
+    label={m.chat_cliBlock_copy_tooltip()}
+    copiedLabel={m.chat_cliBlock_copied_tooltip()}
+    class="size-7 shrink-0 text-muted-foreground opacity-50 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
     data-testid="chat-cli-copy"
-  >
-    {#if copied}
-      <Fa icon={faCheck} size="sm" class="text-success" />
-    {:else}
-      <Fa icon={faCopy} size="sm" />
-    {/if}
-  </button>
+  />
 </div>

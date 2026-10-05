@@ -30,6 +30,9 @@ src/lib/utils/__tests__/message-render-corpus/harvested/
 src/lib/utils/__tests__/message-render-corpus/goldens/
 src/lib/utils/__tests__/message-render-corpus/manifest.json
 
+# Exact canonical bytes; hashes and source provenance are required by unit CI.
+tests/fixtures/backend-keychain/v1/
+
 # Documentation archives
 docs-archive-*/
 

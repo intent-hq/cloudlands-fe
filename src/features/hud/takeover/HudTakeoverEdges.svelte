@@ -191,7 +191,7 @@
 
   /* Reduced motion: the layer shows immediately (global override can't
      reach into this component's scoped animation). */
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .ov-map-edges {
       animation: none;
     }

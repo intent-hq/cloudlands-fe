@@ -1,4 +1,4 @@
-import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 
 import { type Workspace } from '$shared/types';
 import { store } from '../../store';
@@ -9,18 +9,25 @@ export const selectIsDragging = store.createSelector((state) => {
   return state.tabState.isDragging;
 });
 
-export const selectScrollPosition = store.createSelector(
-  (state, tabId: string): number | undefined => {
-    return state.tabState.scrollPositions[tabId];
-  },
-);
-
 export const selectAllScrollPositions = store.createSelector((state) => {
   return state.tabState.scrollPositions;
 });
 
 export const selectCurrentWorkspaceTabId = store.createSelector((state) => {
   return state.tabState.currentTabId;
+});
+
+/** Actual panel webview mounts, including retained inactive tabs. */
+export const selectMountedBrowserTabLeases = store.createSelector((state) => {
+  return state.tabState.mountedBrowserTabLeases;
+});
+
+export const selectBrowserTabRecoveryRequests = store.createSelector((state) => {
+  return state.tabState.browserTabRecoveryRequests;
+});
+
+export const selectBrowserTabNavigations = store.createSelector((state) => {
+  return state.tabState.browserTabNavigations;
 });
 
 /**

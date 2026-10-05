@@ -1,3 +1,5 @@
+// @verify-changed-triggers: src/**/*.{js,svelte,ts,tsx}
+
 import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { parse } from 'svelte/compiler';

@@ -26,6 +26,7 @@
     result?: any;
     adjacentOperationalRow?: boolean;
     /** Called on expand — the parent dispatches lazy block hydration (§5.5). */
+    saved?: { expanded?: boolean };
     onExpand?: () => void;
   }
 
@@ -34,6 +35,7 @@
     toolState = 'completed',
     result = null,
     adjacentOperationalRow = false,
+    saved,
     onExpand,
   }: Props = $props();
 
@@ -43,7 +45,8 @@
       : null,
   );
 
-  let expanded = $state(false);
+  // svelte-ignore state_referenced_locally -- retained state seeds this disposable row.
+  let expanded = $state(saved?.expanded ?? false);
   const detailsId = $derived(`context-engine-details-${toolUse.id}`);
 
   // Determine the source type (codebase vs commit history)
@@ -97,6 +100,7 @@
   function toggleExpanded() {
     if (!isExpandable) return;
     expanded = !expanded;
+    if (saved) saved.expanded = expanded;
     // Expanding a slim-truncated row triggers the on-demand full-block fetch
     // (no-op for under-budget rows: the parent's truncated id list is empty).
     if (expanded) onExpand?.();
@@ -270,7 +274,7 @@
   {#if toolState !== 'error' && snippetCount > 0}
     <div class="py-2">
       <!-- <div class="flex items-center gap-2 mb-2">
-          <span class="text-xs text-muted-foreground uppercase tracking-wide">Retrieved</span>
+          <span class="text-xs text-muted-foreground ">Retrieved</span>
           <span class="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
             {snippetCount} {snippetCount === 1 ? 'file' : 'files'}
           </span>
@@ -283,7 +287,7 @@
           <div class="transition-colors">
             <!-- File header -->
             <div class="flex items-center gap-1.5 py-1">
-              <!-- <Fa icon={faFile} size="xs" class="text-primary/60" /> -->
+              <!-- <Fa icon={faFile} size="xs" class="text-primary-ink/60" /> -->
               <span class="type-caption text-subtle">{fileName}</span>
               {#if snippet.lineStart}
                 <span class="type-caption text-subtle">:{snippet.lineStart}</span>
@@ -305,7 +309,7 @@
         {/each}
 
         {#if snippetCount > 6}
-          <div class="text-center text-xs text-subtle py-1.5 border-t border-border mt-1">
+          <div class="mt-1 border-t border-border py-1.5 text-left text-xs text-subtle">
             {snippetCount - 6 === 1
               ? m.chat_contextEngine_moreFiles_one({
                   count: formatInteger(snippetCount - 6),

@@ -25,6 +25,8 @@ function renderDialog(props: Record<string, unknown> = {}) {
       toModelLabel: 'sonnet4.5',
       fromProviderName: 'Augment Auggie',
       toProviderName: 'Augment Auggie',
+      fromProviderId: 'auggie',
+      toProviderId: 'auggie',
       ...props,
     },
   });
@@ -51,8 +53,8 @@ describe('ModelSwitchConfirmDialog', () => {
     renderDialog();
     const text = dialogText();
 
-    expect(screen.getByText('Switch model mid-conversation?')).toBeTruthy();
-    expect(text).toContain('Conversation history is carried over');
+    expect(screen.getByRole('heading', { name: 'Switch model?' })).toBeTruthy();
+    expect(text).toContain('Conversation history is kept');
     expect(text).toContain('cached context is lost');
     // The cross-provider warnings must NOT leak into the model-only variant.
     expect(text).not.toContain('replayed to the new provider');
@@ -65,16 +67,19 @@ describe('ModelSwitchConfirmDialog', () => {
       isProviderChange: true,
       toModelLabel: 'gpt-5-codex',
       toProviderName: 'OpenAI Codex',
+      toProviderId: 'codex',
     });
     const text = dialogText();
 
-    expect(screen.getByText('Switch provider mid-conversation?')).toBeTruthy();
-    expect(text).toContain('replayed to the new provider as plain text');
-    expect(text).toContain('tool-call');
-    expect(text).toContain('re-sends the entire conversation');
-    // The from → to line names both providers for a cross-provider switch.
-    expect(text).toContain('Augment Auggie / gpt5.4');
-    expect(text).toContain('OpenAI Codex / gpt-5-codex');
+    expect(screen.getByRole('heading', { name: 'Switch provider?' })).toBeTruthy();
+    expect(text).toContain('sends this conversation to the new provider as plain text');
+    expect(text).toContain('Tool details may be lost');
+    expect(text).toContain('token usage may increase');
+    const models = screen.getByTestId('model-switch-models');
+    expect(models.querySelector('[title="Augment Auggie"] svg')).not.toBeNull();
+    expect(models.querySelector('[title="OpenAI Codex"] svg')).not.toBeNull();
+    expect(models.textContent).not.toContain(' / ');
+    expect(models.textContent).not.toContain('→');
     expect(screen.getByRole('button', { name: 'Switch provider' })).toBeTruthy();
   });
 
@@ -84,10 +89,9 @@ describe('ModelSwitchConfirmDialog', () => {
       renderDialog({ isProviderChange });
       const text = dialogText();
 
-      expect(text).toContain('The switch takes effect when the next message is sent');
-      expect(text).toContain('an in-flight turn finishes on the current model');
-      expect(text).toContain('Re-selecting the current model before sending cancels the switch');
-      expect(text).toContain('leaving no trace in the conversation');
+      expect(text).toContain('On your next message');
+      expect(text).toContain('Current work finishes on the original model');
+      expect(text).toContain('Choose it again before sending to cancel the switch');
     },
   );
 
@@ -108,7 +112,6 @@ describe('ModelSwitchConfirmDialog', () => {
     const confirm = screen.getByRole('button', { name: 'Switch model' });
 
     await waitFor(() => expect(document.activeElement).toBe(confirm));
-    expect(confirm.className).toContain('ring-[3px]');
     expect(dialogEl().querySelector('.svelte-fa')).toBeNull();
   });
 

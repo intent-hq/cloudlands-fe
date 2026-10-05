@@ -1,4 +1,6 @@
-import { call, fork, put, takeEvery } from 'typed-redux-saga';
+import { buffers, channel } from 'redux-saga';
+import { call, fork, put, take, takeEvery } from 'typed-redux-saga';
+import { agentRulesSaga } from './agent-rules-saga';
 
 import { isElectron } from '$lib/electron-bridge';
 import { applyLanguagePreference } from '$lib/i18n/locale';
@@ -21,8 +23,13 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
+  selectLabsSettingsVisible,
+  selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
+  selectLabsRemoteAgentsEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
+  selectReduceMotionOnBattery,
   selectShowArchived,
   selectShowReasoningBlocks,
   selectShellTransparencyEnabled,
@@ -44,8 +51,13 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsSettingsVisible,
+  setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   setLanguagePreference,
   setNoteFontStyle,
+  setReduceMotionOnBattery,
   setShowArchived,
   setShowReasoningBlocks,
   setShellTransparencyEnabled,
@@ -55,6 +67,11 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsSettingsVisibility,
+  toggleLabsMultiplayer,
+  toggleLabsGitLab,
+  toggleLabsRemoteAgents,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
@@ -71,6 +88,11 @@ const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSe
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
+const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
+const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
+const LABS_MULTIPLAYER_STORAGE_KEY = 'labs:multiplayerEnabled';
+const LABS_GITLAB_STORAGE_KEY = 'labs:gitlabEnabled';
+const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -168,6 +190,37 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof shellTransparencyEnabled === 'boolean') {
     yield* put(setShellTransparencyEnabled(shellTransparencyEnabled));
+  }
+
+  const reduceMotionOnBattery = yield* getLocalStorageJSON<boolean>(
+    REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
+  );
+  if (typeof reduceMotionOnBattery === 'boolean') {
+    yield* put(setReduceMotionOnBattery(reduceMotionOnBattery));
+  }
+
+  const labsSettingsVisible = yield* getLocalStorageJSON<boolean>(
+    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
+  );
+  if (typeof labsSettingsVisible === 'boolean') {
+    yield* put(setLabsSettingsVisible(labsSettingsVisible));
+  }
+
+  const labsMultiplayerEnabled = yield* getLocalStorageJSON<boolean>(LABS_MULTIPLAYER_STORAGE_KEY);
+  if (typeof labsMultiplayerEnabled === 'boolean') {
+    yield* put(setLabsMultiplayerEnabled(labsMultiplayerEnabled));
+  }
+
+  const labsGitLabEnabled = yield* getLocalStorageJSON<boolean>(LABS_GITLAB_STORAGE_KEY);
+  if (typeof labsGitLabEnabled === 'boolean') {
+    yield* put(setLabsGitLabEnabled(labsGitLabEnabled));
+  }
+
+  const labsRemoteAgentsEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_REMOTE_AGENTS_STORAGE_KEY,
+  );
+  if (typeof labsRemoteAgentsEnabled === 'boolean') {
+    yield* put(setLabsRemoteAgentsEnabled(labsRemoteAgentsEnabled));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -270,6 +323,38 @@ function* persistShellTransparencyWorker() {
   );
 }
 
+function* persistReduceMotionOnBatteryWorker() {
+  yield* setLocalStorageJSON(
+    REDUCE_MOTION_ON_BATTERY_STORAGE_KEY,
+    yield* selectReduceMotionOnBattery.effect(),
+  );
+}
+
+function* persistLabsSettingsVisibilityWorker() {
+  yield* setLocalStorageJSON(
+    LABS_SETTINGS_VISIBLE_STORAGE_KEY,
+    yield* selectLabsSettingsVisible.effect(),
+  );
+}
+
+function* persistLabsMultiplayerWorker() {
+  yield* setLocalStorageJSON(
+    LABS_MULTIPLAYER_STORAGE_KEY,
+    yield* selectLabsMultiplayerEnabled.effect(),
+  );
+}
+
+function* persistLabsGitLabWorker() {
+  yield* setLocalStorageJSON(LABS_GITLAB_STORAGE_KEY, yield* selectLabsGitLabEnabled.effect());
+}
+
+function* persistLabsRemoteAgentsWorker() {
+  yield* setLocalStorageJSON(
+    LABS_REMOTE_AGENTS_STORAGE_KEY,
+    yield* selectLabsRemoteAgentsEnabled.effect(),
+  );
+}
+
 function* persistAgentFontWorker() {
   yield* setLocalStorageJSON(AGENT_STORAGE_KEY, {
     fontStyle: yield* selectAgentFontStyle.effect(),
@@ -304,12 +389,31 @@ async function syncLanguagePreference(preference: string): Promise<void> {
   }
 }
 
-export function* persistLanguagePreferenceWorker(action: ReturnType<typeof setLanguagePreference>) {
+function* persistLocalLanguagePreference(action: ReturnType<typeof setLanguagePreference>) {
   const [preference] = action.payload;
   yield* call(applyLanguagePreference, preference);
   const storedPreference = yield* selectLanguagePreference.effect();
   yield* setLocalStorageJSON(LANGUAGE_PREFERENCE_STORAGE_KEY, storedPreference);
+  return storedPreference;
+}
+
+export function* persistLanguagePreferenceWorker(action: ReturnType<typeof setLanguagePreference>) {
+  const storedPreference = yield* call(persistLocalLanguagePreference, action);
   yield* call(syncLanguagePreference, storedPreference);
+}
+
+function* watchLanguagePreferenceWrites() {
+  const queue = channel<string>(buffers.sliding(1));
+  try {
+    yield* takeEvery(setLanguagePreference, function* (action) {
+      // Apply the renderer locale immediately, even while main's previous IPC is pending.
+      const preference = yield* call(persistLocalLanguagePreference, action);
+      yield* put(queue, preference);
+    });
+    while (true) yield* call(syncLanguagePreference, yield* take(queue));
+  } finally {
+    queue.close();
+  }
 }
 
 function* persistGithubLinkDefaultActionWorker() {
@@ -343,6 +447,23 @@ function* watchUserPreferenceWrites() {
     [setShellTransparencyEnabled, toggleShellTransparency],
     persistShellTransparencyWorker,
   );
+  yield* takeEvery(
+    [setReduceMotionOnBattery, toggleReduceMotionOnBattery],
+    persistReduceMotionOnBatteryWorker,
+  );
+  yield* takeEvery(
+    [setLabsSettingsVisible, toggleLabsSettingsVisibility],
+    persistLabsSettingsVisibilityWorker,
+  );
+  yield* takeEvery(
+    [setLabsMultiplayerEnabled, toggleLabsMultiplayer],
+    persistLabsMultiplayerWorker,
+  );
+  yield* takeEvery([setLabsGitLabEnabled, toggleLabsGitLab], persistLabsGitLabWorker);
+  yield* takeEvery(
+    [setLabsRemoteAgentsEnabled, toggleLabsRemoteAgents],
+    persistLabsRemoteAgentsWorker,
+  );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
   yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);
@@ -350,7 +471,7 @@ function* watchUserPreferenceWrites() {
     [saveActivityLogPreset, deleteActivityLogPreset],
     persistActivityLogPresetsWorker,
   );
-  yield* takeEvery(setLanguagePreference, persistLanguagePreferenceWorker);
+  yield* fork(watchLanguagePreferenceWrites);
   yield* takeEvery(setGithubLinkDefaultAction, persistGithubLinkDefaultActionWorker);
   yield* takeEvery(
     [setShortcutOverride, resetShortcutOverride, resetAllShortcutOverrides],
@@ -358,8 +479,9 @@ function* watchUserPreferenceWrites() {
   );
 }
 
-/** Unregistered until the S20 middleware cutover. */
+/** Canonical root-owned preference persistence and rules-editor orchestration. */
 export function* userPreferencesPersistenceSaga() {
+  yield* fork(agentRulesSaga);
   yield* fork(watchUserPreferenceWrites);
   yield* fork(hydrateUserPreferencesWorker);
   yield* fork(watchBackendForProviderSetup);

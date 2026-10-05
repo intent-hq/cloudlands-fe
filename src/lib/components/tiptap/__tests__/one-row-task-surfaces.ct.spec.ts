@@ -1,5 +1,17 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import OneRowTaskSurfaceHarness from './OneRowTaskSurfaceHarness.svelte';
+
+function expectNoRowOutline(style: { outlineStyle: string }) {
+  // Chromium can report a nonzero outline-width even when no outline is painted.
+  expect(style.outlineStyle, 'Task rows must not paint an outline').toBe('none');
+}
+
+test('withholds task assignment until the fixture caller is admitted', async ({ mount }) => {
+  const component = await mount(OneRowTaskSurfaceHarness, { props: { admittedOwner: false } });
+  await expect(component.locator('[data-task-item-row]')).toHaveCount(10);
+  await expect(component.locator('[data-task-row-assign]')).toHaveCount(0);
+  await expect(component.getByRole('button', { name: 'Waiting unassigned task' })).toBeVisible();
+});
 
 for (const zoom of [1, 2]) {
   for (const theme of ['light', 'dark'] as const) {
@@ -58,8 +70,7 @@ for (const zoom of [1, 2]) {
         expect(row.borderWidths).toEqual(['0px', '0px', '0px', '0px']);
         expect(row.paddingLeft).toBe('0px');
         expect(row.paddingRight).toBe('0px');
-        expect(row.outlineStyle).toBe('none');
-        expect(row.outlineWidth).toBe('0px');
+        expectNoRowOutline(row);
         expect(row.boxShadow).toBe('none');
       }
 
@@ -111,6 +122,7 @@ for (const zoom of [1, 2]) {
               style.borderBottomWidth,
               style.borderLeftWidth,
             ],
+            outlineStyle: style.outlineStyle,
             outlineWidth: style.outlineWidth,
             boxShadow: style.boxShadow,
           };
@@ -118,11 +130,11 @@ for (const zoom of [1, 2]) {
       ]);
       expect(selectedStyle).not.toBe('rgba(0, 0, 0, 0)');
       expect(selectedRowStyle.borderWidths).toEqual(['0px', '0px', '0px', '0px']);
-      expect(selectedRowStyle.outlineWidth).toBe('0px');
+      expectNoRowOutline(selectedRowStyle);
       expect(selectedRowStyle.boxShadow).toBe('none');
 
       const longRow = rows.filter({ hasText: 'A very long assigned task title' });
-      const longTitle = longRow.locator('[data-task-row-title]');
+      const longTitle = longRow.locator('[data-task-row-title] [data-slot="button-label"]');
       const agentControl = longRow.locator('[data-task-agent-indicator]');
       await expect(longTitle).toHaveCSS('text-overflow', 'ellipsis');
       expect(await longTitle.evaluate((node) => node.scrollWidth > node.clientWidth)).toBeTruthy();
@@ -183,6 +195,21 @@ test('keeps status, title, assign, and agent controls keyboard accessible', asyn
         boxShadow: style.boxShadow,
       };
     });
-    expect(rowFocus).toEqual({ outlineStyle: 'none', outlineWidth: '0px', boxShadow: 'none' });
+    expectNoRowOutline(rowFocus);
+    expect(rowFocus.boxShadow).toBe('none');
   }
+});
+
+test('the task row outline contract rejects a visible outline', async ({ mount }) => {
+  const component = await mount(OneRowTaskSurfaceHarness);
+  const row = component.locator('[data-task-item-row]').first();
+  await expect(row).toBeVisible();
+  const outlined = await row.evaluate((node) => {
+    (node as HTMLElement).style.outline = '3px solid currentColor';
+    const style = getComputedStyle(node);
+    return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth };
+  });
+  expect(outlined.outlineStyle).toBe('solid');
+  expect(parseFloat(outlined.outlineWidth)).toBeGreaterThan(0);
+  expect(() => expectNoRowOutline(outlined)).toThrow();
 });

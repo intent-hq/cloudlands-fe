@@ -18,6 +18,7 @@
     undoProposal,
   } from './proposal-action-handlers';
   import {
+    clearProposalDraft,
     loadProposalDraft,
     saveProposalDraft,
     type ProposalCardDraft,
@@ -77,6 +78,13 @@
     pendingDraft = null;
   }
 
+  function discardDraft(): void {
+    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
+    draftSaveTimer = null;
+    pendingDraft = null;
+    clearProposalDraft(agentId, proposalId);
+  }
+
   function handleDraftChange(draft: ProposalCardDraft): void {
     pendingDraft = draft;
     if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
@@ -111,6 +119,15 @@
     });
   });
 
+  // A resolution converging from the daemon (`proposalResolutions` via
+  // `agent:updated`, e.g. another client or the agent's own applyProposal)
+  // never passes through the local apply/dismiss handlers that clear the
+  // stored draft, so retire the edited fields here for either source.
+  $effect(() => {
+    if (!isApplied && !isDismissed) return;
+    discardDraft();
+  });
+
   onMount(() => {
     initialDraft = loadProposalDraft(agentId, proposalId);
     initialDraftLoaded = true;
@@ -128,7 +145,10 @@
           {initialDraft}
           onDraftChange={handleDraftChange}
           onApply={(detail) => applyProposal(agentId, detail)}
-          onDiscard={() => (confirmingDismiss = true)}
+          onDiscard={() =>
+            proposal.kind === 'workspace-transfer'
+              ? handleConfirmDismiss()
+              : (confirmingDismiss = true)}
           onUndo={undoProposal}
         />
       {/if}

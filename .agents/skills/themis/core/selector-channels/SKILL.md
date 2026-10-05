@@ -1,11 +1,9 @@
 ---
 name: core/selector-channels
 description: >-
-  Concise agent rules for reacting to selector value changes from sagas. Use
-  takeLatestFromSelector, takeEveryFromSelector, or takeLeadingFromSelector for
-  continuous watchers; use createChannelFromSelector only for custom race,
-  conditional, or timeout flows and close it in finally. For conceptual examples,
-  link to @augmentcode/themis/docs/SAGAS.md.
+  Use takeLatestFromSelector, takeEveryFromSelector, or takeLeadingFromSelector
+  for saga reactions to selector changes. Reserve createChannelFromSelector
+  for custom race/condition/timeout flows; close raw channels in finally.
 type: sub-skill
 requires:
   - core
@@ -18,12 +16,12 @@ triggers:
 ---
 # Selector Channels — agent implementation rules
 
-Use this skill when a saga should react to selector value changes instead of action dispatches. Keep detailed examples in `@augmentcode/themis/docs/SAGAS.md`; this skill is for quick implementation decisions and guardrails.
+Use this skill when a saga should react to selector value changes instead of action dispatches. Keep detailed examples in `@themislib/themis/docs/SAGAS.md`; this skill is for quick implementation decisions and guardrails.
 
 ## Canonical references
 
-- Human guide: `@augmentcode/themis/docs/SAGAS.md#selector-channel-effects`
-- Public API: `@augmentcode/themis/utils/sagas/selector-channel-effects` or aggregate `@augmentcode/themis/saga`.
+- Human guide: `@themislib/themis/docs/SAGAS.md#selector-channel-effects`
+- Public API: `@themislib/themis/utils/sagas/selector-channel-effects` or aggregate `@themislib/themis/saga`.
 - Related skills: `core/sagas`, `core/wait-for`, `core/channel-effects`, plus the selected Store family selector lifecycle skill when direct selector call modes matter.
 
 ## Choose the helper
@@ -76,7 +74,7 @@ Use this skill when a saga should react to selector value changes instead of act
 
 ```ts
 import { put } from "typed-redux-saga";
-import { takeLatestFromSelector } from "@augmentcode/themis/saga";
+import { takeLatestFromSelector } from "@themislib/themis/saga";
 
 function* watchCurrentItem() {
   yield* takeLatestFromSelector(selectCurrentItemId, function* ({ payload: itemId }) {
@@ -89,7 +87,7 @@ function* watchCurrentItem() {
 
 ```ts
 import { call } from "typed-redux-saga";
-import { takeEveryFromSelector } from "@augmentcode/themis/saga";
+import { takeEveryFromSelector } from "@themislib/themis/saga";
 
 function* watchTodo(todoId: string) {
   yield* takeEveryFromSelector(selectTodoById, [todoId], function* ({ payload: todo }) {
@@ -105,7 +103,7 @@ construct that object once and reuse the stable reference.
 ### 3. Use takeLeadingFromSelector when in-flight work should ignore new values
 
 ```ts
-import { takeLeadingFromSelector } from "@augmentcode/themis/saga";
+import { takeLeadingFromSelector } from "@themislib/themis/saga";
 
 function* watchCheckoutReadiness() {
   yield* takeLeadingFromSelector(selectCheckoutReady, function* ({ payload: ready }) {
@@ -118,7 +116,7 @@ function* watchCheckoutReadiness() {
 
 ```ts
 import { put } from "typed-redux-saga";
-import { takeEveryFromSelector } from "@augmentcode/themis/saga";
+import { takeEveryFromSelector } from "@themislib/themis/saga";
 
 function* watchConnectionStatus() {
   yield* takeEveryFromSelector(selectConnectionStatus, function* ({ payload, prevPayload }) {
@@ -133,7 +131,7 @@ function* watchConnectionStatus() {
 
 ```ts
 import { call, delay, race, take } from "typed-redux-saga";
-import { createChannelFromSelector } from "@augmentcode/themis/saga";
+import { createChannelFromSelector } from "@themislib/themis/saga";
 
 function* waitForFirstReadyItem(itemId: string) {
   const channel = yield* createChannelFromSelector(selectTodoById, itemId);
@@ -177,7 +175,7 @@ function* watchTodoGood(todoId: string) {
 
 ## See also
 
-- `@augmentcode/themis/docs/SAGAS.md` — full selector-channel examples and saga context.
+- `@themislib/themis/docs/SAGAS.md` — full selector-channel examples and saga context.
 - `core/wait-for` — one-shot selector waits.
 - `core/channel-effects` — generic `EventChannel` consumers.
 - Selected Store family selector lifecycle skill — selector initialization and call modes.

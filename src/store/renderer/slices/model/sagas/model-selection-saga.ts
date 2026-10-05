@@ -1,9 +1,13 @@
-import { buffers } from 'redux-saga';
-import { actionChannel, all, call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
+import { backgroundSettingsWriteLock } from '../../background-agent-settings/sagas/background-settings-write-lock';
+import { selectBgSettings } from '../../background-agent-settings/background-agent-settings-selectors';
+import { waitFor } from '@themislib/themis/saga';
+import { readSettingsSnapshot } from '../../settings-events/sagas/read-settings-snapshot';
+import { modelSettingsChanges } from '../model-settings-changes';
+import { buffers, channel, type Channel } from 'redux-saga';
+import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
-import type { SettingsUpdateResult } from '$lib/client/app-client';
-import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
+import type { AppSettingChange } from '$lib/client/app-client';
 import { createLogger } from '$lib/utils/client-logger';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import {
@@ -11,19 +15,10 @@ import {
   selectProviderCatalogLoaded,
 } from '../../provider-catalog/provider-catalog-selectors';
 import { selectActiveProviderId } from '../../provider-settings/provider-settings-selectors';
-import {
-  activeProviderPersistRejected,
-  setAtomicDefaultModel,
-} from '../../provider-settings/provider-settings-slice';
-import { selectProviderModels } from '../model-selectors';
-import {
-  providerModelsPersistRejected,
-  reloadModelsForProvider,
-  selectModel,
-  setDefaultReasoningEffort,
-  setSelectedModel,
-} from '../model-slice';
-import { settingsChangesReceived } from '../../settings-events/settings-events-slice';
+import { setAtomicDefaultModel } from '../../provider-settings/provider-settings-slice';
+import { selectModelSelectionState } from '../model-selectors';
+import { selectModel, setDefaultReasoningEffort } from '../model-slice';
+import { settingsFieldsRefreshRequested } from '../../settings-events/settings-events-slice';
 
 const logger = createLogger('ModelSelectionSaga');
 
@@ -37,149 +32,69 @@ export function* handleSelectModel(action: ReturnType<typeof selectModel>) {
   const { providerId: legacyPrefix, modelId: model } = splitLegacyCompoundId(rawModel);
   const providerId = explicitProviderId || legacyPrefix || activeProviderId;
 
-  let shouldReload = false;
   if (providerId && providerId !== activeProviderId) {
     const provider = yield* selectProviderCatalogEntry.effect(providerId);
     const catalogLoaded = yield* selectProviderCatalogLoaded.effect();
-    // Before the catalog hydrates (fresh install, onboarding racing the boot
-    // reads — intent-hq/monorepo#1924) the pick's provider is adopted
-    // optimistically, mirroring the model slice's pre-hydration handling
-    // (`validatedDefaultProviderId`): the picker only offers real providers,
-    // and the mirrored id is re-validated at `providerCatalogLoaded`. Once
-    // the catalog is loaded, unknown providers are still rejected.
-    if (provider || !catalogLoaded) {
-      shouldReload = true;
-    } else {
+    // Before the catalog hydrates, let the daemon validate the pick.
+    if (!provider && catalogLoaded) {
       logger.warn('Ignoring model selection for unknown provider', { model, providerId });
       return;
     }
   }
 
-  // Land the provider/model switch BEFORE requesting a reload:
-  // `reloadModelsWorker` reads `selectActiveProviderId` at the start of its
-  // run, so if the reload were requested first it would fetch the PREVIOUS
-  // provider's catalog and leave the newly picked provider without models
-  // until another reload happened to fire.
+  // The provider owner validates the quick-action bundle and queues the atomic write.
   yield* put(setAtomicDefaultModel({ providerId, model }));
-  if (shouldReload) {
-    yield* put(reloadModelsForProvider());
-  }
 }
 
-/**
- * Retry backoff for a failed `model.providerDefaults` write. During onboarding
- * on a fresh install the daemon connection may still be cycling (sidecar
- * download/start), so a fire-and-forget write would silently drop the user's
- * pick (intent-hq/monorepo#1924). The last delay repeats until the write lands
- * or a newer pick supersedes it.
- */
-export const PROVIDER_DEFAULTS_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
-
-type PersistenceResult = 'persisted' | 'rejected' | 'retry';
-
-/**
- * Persist the session's picks to `model.providerDefaults` (PROTOCOL §5.12).
- * The payload is the current provider map with EVERY pick made this session
- * (`sessionPicks`, newest per provider) overlaid using the same normalization
- * the reducer applies. Overlaying only the latest action would not be enough:
- * `model.providerDefaults` is one shared map across providers, so when picks
- * for providers A and then B queue behind an in-flight write and a stale
- * hydration echo resets the map in between, a B-only overlay would spread the
- * stale map and silently drop A's pick. Returns the write outcome so a
- * structured daemon rejection is not retried and its session overlay can be
- * retired before the next valid pick.
- */
+/** Send each queued intent; only daemon receipts change displayed settings. */
 export function* persistSelectedModelsWorker(
-  sessionPicks: Record<string, string>,
+  picks: Record<string, string>,
   atomicProviderId?: string,
+  connection?: string | null,
+  waitForBackground = false,
 ) {
-  const providerModels = yield* selectProviderModels.effect();
-  // Store values and session picks are bare model ids keyed by provider —
-  // persisted as-is; the daemon rejects compound ids on the wire (-32602).
-  const value = { ...providerModels };
-  for (const [providerId, model] of Object.entries(sessionPicks)) {
-    value[providerId] = splitLegacyCompoundId(model).modelId;
+  const admittedConnection =
+    connection === undefined
+      ? (yield* selectModelSelectionState.effect()).selectionConnection
+      : connection;
+  if (waitForBackground) {
+    // Do not hold the lock while its existing owner drains admitted edits.
+    // Success or failure releases this wait; a backend change cancels it.
+    yield* race({
+      drained: waitFor(selectBgSettings, [], (settings) => !settings.persistencePending),
+      changed: waitFor(
+        selectModelSelectionState,
+        [],
+        (selection) => selection.selectionConnection !== admittedConnection,
+      ),
+    });
   }
+  if (admittedConnection !== (yield* selectModelSelectionState.effect()).selectionConnection)
+    return false;
+  yield* take(backgroundSettingsWriteLock);
+  let changes: AppSettingChange[] = [];
   try {
-    const changes = atomicProviderId
-      ? [
-          { path: 'model.defaultProvider', value: atomicProviderId },
-          { path: 'model.providerDefaults', value },
-        ]
-      : [{ path: 'model.providerDefaults', value }];
-    const updateSnapshot = appClient.settings.updateSnapshot?.bind(appClient.settings);
-    const hasRevisionClient = updateSnapshot !== undefined;
-    const result: SettingsUpdateResult = updateSnapshot
-      ? yield* call(updateSnapshot, changes)
-      : {
-          applied: yield* call([appClient.settings, appClient.settings.update], changes),
-          revision: 0,
-        };
-    if (atomicProviderId && hasRevisionClient && result.applied.length !== 2) {
-      yield* put(providerModelsPersistRejected({ ...sessionPicks }));
-      yield* put(activeProviderPersistRejected(atomicProviderId));
-      return 'rejected' satisfies PersistenceResult;
-    }
-    if (hasRevisionClient) yield* put(settingsChangesReceived(result.applied, result.revision));
-    return 'persisted' satisfies PersistenceResult;
+    if (admittedConnection !== (yield* selectModelSelectionState.effect()).selectionConnection)
+      return false;
+    const snapshot = yield* call(readSettingsSnapshot);
+    if (admittedConnection !== (yield* selectModelSelectionState.effect()).selectionConnection)
+      return false;
+    if (!snapshot.settings.length) throw new Error('Settings snapshot was empty');
+    changes = modelSettingsChanges(snapshot.settings, picks, atomicProviderId);
+    yield* call([appClient.settings, appClient.settings.update], changes);
+    return admittedConnection === (yield* selectModelSelectionState.effect()).selectionConnection;
   } catch (error) {
-    if (isDaemonErrorResponse(error)) {
-      logger.warn('Daemon rejected model.providerDefaults write', { error });
-      yield* put(providerModelsPersistRejected({ ...sessionPicks }));
-      if (atomicProviderId) yield* put(activeProviderPersistRejected(atomicProviderId));
-      return 'rejected' satisfies PersistenceResult;
-    }
-    logger.error('Failed to persist model.providerDefaults', { error });
-    return 'retry' satisfies PersistenceResult;
-  }
-}
-
-function* watchSelectedModelPersistence() {
-  const channel = yield* actionChannel(
-    [setAtomicDefaultModel, setSelectedModel],
-    buffers.sliding(1),
-  );
-  // Newest pick per provider made this session. Session-scoped on purpose:
-  // an entry only exists for a provider the user explicitly picked here, and
-  // re-overlaying it on every write keeps the user's in-session intent from
-  // being displaced by stale snapshot echoes (intent-hq/monorepo#1924).
-  const sessionPicks: Record<string, string> = {};
-  try {
-    let action = yield* take(channel);
-    let attempt = 0;
-    while (true) {
-      const { providerId, model } = action.payload[0];
-      sessionPicks[providerId] = model;
-      const result = yield* call(
-        persistSelectedModelsWorker,
-        sessionPicks,
-        action.type === setAtomicDefaultModel.type ? providerId : undefined,
+    logger.error('Failed to persist default model settings', { error });
+    if (changes.length)
+      yield* put(
+        settingsFieldsRefreshRequested(
+          changes.map(({ path }) => path),
+          admittedConnection,
+        ),
       );
-      if (result !== 'retry') {
-        if (result === 'rejected') {
-          for (const rejectedProviderId of Object.keys(sessionPicks)) {
-            delete sessionPicks[rejectedProviderId];
-          }
-        }
-        action = yield* take(channel);
-        attempt = 0;
-        continue;
-      }
-      // Failed write: back off and retry the SAME picks, unless a newer pick
-      // arrives first — it joins the overlay and supersedes the backoff.
-      const delayMs =
-        PROVIDER_DEFAULTS_RETRY_DELAYS_MS[
-          Math.min(attempt, PROVIDER_DEFAULTS_RETRY_DELAYS_MS.length - 1)
-        ];
-      attempt += 1;
-      const { next } = yield* race({ next: take(channel), retry: delay(delayMs) });
-      if (next) {
-        action = next;
-        attempt = 0;
-      }
-    }
+    return false;
   } finally {
-    channel.close();
+    yield* put(backgroundSettingsWriteLock, true);
   }
 }
 
@@ -192,7 +107,13 @@ function* watchSelectedModelPersistence() {
  * (not a store snapshot read at worker time), so an interleaved hydration
  * echo of an older value can never displace a newer queued pick.
  */
-export function* persistDefaultReasoningEffortWorker(effort: string) {
+export function* persistDefaultReasoningEffortWorker(effort: string, connection?: string | null) {
+  const admittedConnection =
+    connection === undefined
+      ? (yield* selectModelSelectionState.effect()).selectionConnection
+      : connection;
+  if (admittedConnection !== (yield* selectModelSelectionState.effect()).selectionConnection)
+    return;
   try {
     yield* call(
       [appClient.settings, appClient.settings.update],
@@ -200,22 +121,45 @@ export function* persistDefaultReasoningEffortWorker(effort: string) {
     );
   } catch (error) {
     logger.error('Failed to persist model.defaultReasoningEffort', { error });
+    yield* put(
+      settingsFieldsRefreshRequested(['model.defaultReasoningEffort'], admittedConnection),
+    );
+  }
+}
+
+type EffortUpdate = { effort: string; connection: string | null };
+
+function* queueEffort(
+  updates: Channel<EffortUpdate>,
+  action: ReturnType<typeof setDefaultReasoningEffort>,
+) {
+  yield* put(updates, {
+    effort: action.payload[0],
+    connection: (yield* selectModelSelectionState.effect()).selectionConnection,
+  });
+}
+
+function* persistEffortQueue(updates: Channel<EffortUpdate>) {
+  while (true) {
+    const { effort, connection } = yield* take(updates);
+    yield* call(persistDefaultReasoningEffortWorker, effort, connection);
   }
 }
 
 function* watchDefaultReasoningEffortPersistence() {
-  const channel = yield* actionChannel(setDefaultReasoningEffort, buffers.sliding(1));
+  const updates = channel<EffortUpdate>(buffers.expanding());
   try {
-    while (true) {
-      const action = yield* take(channel);
-      yield* call(persistDefaultReasoningEffortWorker, action.payload[0]);
-    }
+    yield* all([
+      call(persistEffortQueue, updates),
+      takeEvery(setDefaultReasoningEffort, queueEffort, updates),
+    ]);
   } finally {
-    channel.close();
+    updates.close();
   }
 }
 
 export function* modelSelectionSaga() {
   yield* takeEvery(selectModel, handleSelectModel);
-  yield* all([call(watchSelectedModelPersistence), call(watchDefaultReasoningEffortPersistence)]);
+  // Atomic defaults share providerSettingsSaga's ordered default-provider queue.
+  yield* call(watchDefaultReasoningEffortPersistence);
 }

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import EventWakeupAvatarHost from './EventWakeupAvatarHost.svelte';
 
 test('keeps named standard wake-up avatars optically centered at every required geometry', async ({

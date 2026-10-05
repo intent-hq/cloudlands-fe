@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: clock-driven time text with no interactive DOM -->
+
 <script lang="ts">
   import {
     createReactiveRelativeTime,

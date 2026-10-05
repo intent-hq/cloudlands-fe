@@ -55,7 +55,6 @@ export const LOGGING_CONFIG: LoggingConfig = {
     AgentStateService: LogLevel.INFO,
 
     // Activity and events - keep at INFO for debugging event flow
-    ActivityLog: LogLevel.INFO,
     EventsClient: LogLevel.INFO,
     EventSystem: LogLevel.INFO,
 
@@ -65,7 +64,6 @@ export const LOGGING_CONFIG: LoggingConfig = {
 
     // UI components - reduce noise
     LineChangesMainState: LogLevel.WARN,
-    CodeChangesPanel: LogLevel.WARN,
 
     // IPC handlers - reduce startup noise (set DEBUG=true to see setup messages)
     // WorkspaceIPC is kept at INFO level because it contains critical initialization logs

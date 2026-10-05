@@ -1,11 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, test } from '@playwright/experimental-ct-svelte';
-import { recordCdpLifecycle } from '../../../test/ct-cdp-lifecycle-recorder';
+import { expect, test } from '../../../test/ct-test';
 import DeferredThemeRealSurfaceHost from './DeferredThemeRealSurfaceHost.svelte';
 
 test.setTimeout(60_000);
-recordCdpLifecycle(test);
 test.afterEach(async ({ page }) => {
   await page.locator('#root').evaluate(async (root) => {
     if (root.childElementCount > 0) await window.playwrightUnmount(root);
@@ -80,11 +78,22 @@ for (const mode of preferences) {
           animations: 'disabled',
         });
         await modelButton.focus();
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Shift+Tab');
+        await expect(modelButton).toBeFocused();
         const focusStyle = await modelButton.evaluate((element) => {
           const style = getComputedStyle(element);
-          return { borderColor: style.borderColor, boxShadow: style.boxShadow };
+          return {
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth,
+            outlineOffset: style.outlineOffset,
+          };
         });
-        expect(focusStyle.boxShadow).not.toBe('none');
+        expect(focusStyle).toEqual({
+          outlineStyle: 'solid',
+          outlineWidth: '1px',
+          outlineOffset: '2px',
+        });
         await page.screenshot({
           path: path.join(artifactDirectory, `${id}-model-focus.png`),
           fullPage: true,

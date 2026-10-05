@@ -17,6 +17,7 @@ import {
   AGENT_VIEWPORT_MIN_PX,
   DEFAULT_AGENT_VIEWPORT,
   embeddedBrowserCdp,
+  type CaptureErrorCode,
 } from './embedded-browser-cdp-service';
 import { browserCapture } from './browser-capture-service';
 import type { SnapshotOptions, SessionOptions, CaptureStepOptions } from './browser-capture-types';
@@ -39,6 +40,29 @@ const logger = new Logger('BrowserActionExecutor');
  * as a generic transport timeout instead of a structured result.
  */
 const CAPTURE_MOUNT_TIMEOUT_MS = 10_000;
+
+/**
+ * How long (ms) a capture op waits for a mounted guest that is still loading
+ * (or mid-navigation) to settle before answering `still-loading`
+ * (intent-hq/intent#4835). Clamped to the request deadline like every other
+ * capture stage.
+ */
+const CAPTURE_LOAD_SETTLE_TIMEOUT_MS = 5_000;
+
+/**
+ * Timeout for one capture stage: its own cap, clamped to the time left until
+ * the request `deadline` (epoch ms; never negative). Without a deadline the
+ * cap applies unchanged.
+ */
+function stageBudgetMs(capMs: number, deadline?: number): number {
+  return deadline === undefined ? capMs : Math.max(0, Math.min(capMs, deadline - Date.now()));
+}
+
+/** Structured cause carried by a capture-stage error thrown by the CDP service. */
+function captureErrorCode(error: unknown): CaptureErrorCode | undefined {
+  const code = (error as { errorCode?: unknown } | null)?.errorCode;
+  return code === 'not-painting' || code === 'deadline-exhausted' ? code : undefined;
+}
 
 // ============================================================================
 // Action Schemas
@@ -151,6 +175,16 @@ const GetSummaryActionSchema = z
   .object({
     action: z.literal('getSummary'),
     captureId: z.string(),
+  })
+  .strict();
+
+const ReadCaptureActionSchema = z
+  .object({
+    action: z.literal('readCapture'),
+    captureId: z.string().min(1).max(512),
+    artifact: z.enum(['console.jsonl', 'network.jsonl', 'summary.json', 'session.json']),
+    offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    maxBytes: z.number().int().min(1).max(65536).optional(),
   })
   .strict();
 
@@ -276,6 +310,7 @@ const BrowserActionSchema = z.discriminatedUnion('action', [
   EndSessionActionSchema,
   ResetTabActionSchema,
   GetSummaryActionSchema,
+  ReadCaptureActionSchema,
   OpenTabActionSchema,
   ClaimTabActionSchema,
   ResizeTabActionSchema,
@@ -373,18 +408,39 @@ async function readTabDisplayed(
  * `warning` to merge into the success result when the tab was mounted on
  * demand for a not-visible workspace, or a structured `failure` result when
  * the mount is impossible (workspace open nowhere, tab gone, or the webview
- * never registered).
+ * never registered). `registryUrl` echoes the tab list's URL when the tab
+ * was mounted on demand, so the caller can detect a guest that moved away.
+ *
+ * The registration wait is clamped to the request `deadline` (#4835).
  */
 async function ensureCaptureTabMounted(
   actionName: string,
   tabId: string | undefined,
   workspaceId: string | undefined,
-): Promise<{ failure?: ActionResult; warning?: string }> {
+  deadline?: number,
+): Promise<{ failure?: ActionResult; warning?: string; registryUrl?: string }> {
   if (!tabId || !workspaceId || embeddedBrowserCdp.isTabMounted(tabId)) return {};
+
+  const exhaustedBeforeMount = (): { failure: ActionResult } => ({
+    failure: {
+      action: actionName,
+      success: false,
+      errorCode: 'deadline-exhausted',
+      // i18n-ignore (agent-facing protocol error, not user-facing)
+      error: `Cannot run '${actionName}' on tab ${tabId}: the request deadline was exhausted before the tab's webview could be mounted. Retry the capture.`,
+    },
+  });
+  if (stageBudgetMs(CAPTURE_MOUNT_TIMEOUT_MS, deadline) <= 0) return exhaustedBeforeMount();
 
   let listed: Awaited<ReturnType<typeof embeddedBrowserCdp.listAllTabs>>;
   try {
-    listed = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    // Listing alone only hydrates layouts. An explicit navigation also asks
+    // the host to replace a dead guest; passive listing/capture must not
+    // repeatedly reopen a page that closed itself.
+    listed =
+      actionName === 'navigate'
+        ? await embeddedBrowserCdp.listAllTabs(workspaceId, tabId)
+        : await embeddedBrowserCdp.listAllTabs(workspaceId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
@@ -424,18 +480,29 @@ async function ensureCaptureTabMounted(
   }
 
   // The tab-list request hydrated the layout; the offscreen host mounts the
-  // tab and its registerTab settles this bounded wait (never rejects).
-  const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, CAPTURE_MOUNT_TIMEOUT_MS);
+  // tab and its registerTab settles this bounded wait (never rejects). The
+  // wait is the mount cap or the request budget remaining now — after the
+  // listing round-trip, not before it — whichever is less.
+  const mountBudgetMs = stageBudgetMs(CAPTURE_MOUNT_TIMEOUT_MS, deadline);
+  if (mountBudgetMs <= 0) return exhaustedBeforeMount();
+  const mounted = await embeddedBrowserCdp.waitForTabRegistration(tabId, mountBudgetMs);
   if (!mounted) {
     const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
+    const deadlineBound = mountBudgetMs < CAPTURE_MOUNT_TIMEOUT_MS;
     return {
       failure: {
         action: actionName,
         success: false,
-        ...(notVisible ? { errorCode: 'workspace-not-visible' as const } : {}),
-        error: notVisible
-          ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget (workspace ${workspaceId} is not visible in the app and the offscreen mount did not complete). Retry shortly, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
-          : `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget. Use { action: "focusTab", tabId: "${tabId}" } to mount it, or { action: "listTabs" } to verify the tab still exists.`, // i18n-ignore (agent-facing protocol error, not user-facing)
+        ...(deadlineBound
+          ? { errorCode: 'deadline-exhausted' as const }
+          : notVisible
+            ? { errorCode: 'workspace-not-visible' as const }
+            : {}),
+        error: deadlineBound
+          ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the ${mountBudgetMs}ms left of the request deadline. Retry the capture, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+          : notVisible
+            ? `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget (workspace ${workspaceId} is not visible in the app and the offscreen mount did not complete). Retry shortly, or use { action: "listTabs" } to verify the tab still exists.` // i18n-ignore (agent-facing protocol error, not user-facing)
+            : `Cannot run '${actionName}' on tab ${tabId}: the tab's webview did not mount within the wait budget. Use { action: "focusTab", tabId: "${tabId}" } to mount it, or { action: "listTabs" } to verify the tab still exists.`, // i18n-ignore (agent-facing protocol error, not user-facing)
       },
     };
   }
@@ -443,7 +510,67 @@ async function ensureCaptureTabMounted(
   // standard not-visible caveat so the caller knows the capture ran against
   // an offscreen webview (a hidden tab in a displayed workspace mounts with
   // no warning).
-  return { ...workspaceNotVisibleWarning(workspaceId) };
+  const registryUrl = listed.tabs.find((t) => t.tabId === tabId)?.url;
+  return {
+    ...workspaceNotVisibleWarning(workspaceId),
+    ...(registryUrl ? { registryUrl } : {}),
+  };
+}
+
+/** Whether two URLs name different origins; false when either does not parse. */
+function originMoved(registryUrl: string, guestUrl: string): boolean {
+  try {
+    return new URL(registryUrl).origin !== new URL(guestUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Settle the capture target's guest before a capture op runs
+ * (intent-hq/intent#4835). A request that lands while the guest is loading
+ * (offscreen mount just fired dom-ready, or a navigation is in flight) waits
+ * a bounded time for the load to finish; if it is still loading, or the
+ * guest now shows a different origin than the tab list recorded, the op
+ * answers with a structured `still-loading` / `navigated-away` failure
+ * instead of falling through to the paint timeout or capturing the wrong
+ * page. Returns `{}` when the target is unknown or not mounted — the capture
+ * op then fails with its own descriptive error.
+ */
+async function ensureCaptureGuestSettled(
+  actionName: string,
+  tabId: string | undefined,
+  registryUrl: string | undefined,
+  deadline?: number,
+): Promise<{ failure?: ActionResult }> {
+  const targetTabId = tabId ?? embeddedBrowserCdp.getFirstTab()?.tabId;
+  if (!targetTabId) return {};
+  const settleBudgetMs = stageBudgetMs(CAPTURE_LOAD_SETTLE_TIMEOUT_MS, deadline);
+  const guest = await embeddedBrowserCdp.waitForTabLoad(targetTabId, settleBudgetMs);
+  if (!guest) return {};
+  if (guest.loading) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        errorCode: 'still-loading',
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${targetTabId}: the page (${guest.url || 'about:blank'}) is still loading after waiting ${settleBudgetMs}ms. Retry shortly, or use { action: "snapshot", tabId: "${targetTabId}", waitFor: { networkIdle: 500 } } to wait for the load to settle.`,
+      },
+    };
+  }
+  if (registryUrl && guest.url && originMoved(registryUrl, guest.url)) {
+    return {
+      failure: {
+        action: actionName,
+        success: false,
+        errorCode: 'navigated-away',
+        // i18n-ignore (agent-facing protocol error, not user-facing)
+        error: `Cannot run '${actionName}' on tab ${targetTabId}: the tab now shows ${guest.url}, not the ${registryUrl} the tab list recorded — the guest navigated away. Use { action: "navigate", tabId: "${targetTabId}", url: "${registryUrl}" } to return to it, or { action: "listTabs" } to re-check the tab.`,
+      },
+    };
+  }
+  return {};
 }
 
 /**
@@ -483,11 +610,20 @@ interface ActionResult {
   /** Successful result with a caveat (e.g. listTabs answered from a stale cache). */
   warning?: string;
   /**
-   * Structured error code: ownership errors (monorepo#2857), or a capture op
+   * Structured error code: ownership errors (monorepo#2857), a capture op
    * whose target tab could not be mounted because its workspace is not
-   * visible in the app (monorepo#4103).
+   * visible in the app (monorepo#4103), or a capture op that answered
+   * truthfully within the request deadline (intent-hq/intent#4835): the
+   * guest was still loading or had navigated to another origin, the tab is
+   * not painting, or the deadline ran out at a named stage.
    */
-  errorCode?: 'not-owner' | 'already-claimed' | 'workspace-not-visible';
+  errorCode?:
+    | 'not-owner'
+    | 'already-claimed'
+    | 'workspace-not-visible'
+    | 'still-loading'
+    | 'navigated-away'
+    | CaptureErrorCode;
   /** Owning agent for ownership errors; null when the tab is unowned. */
   ownerAgentId?: string | null;
   /** Owning agent's display name for ownership errors, when resolvable. */
@@ -526,58 +662,80 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
 ]);
 
 /**
- * Per-`executeActions` memo of the `agent.list` owner-name lookup, keyed by
- * workspace and single-flight (a shared in-flight promise), so a multi-action
- * batch costs at most one round-trip instead of one per action.
+ * Per-`executeActions` memo of the owner display-name lookup, keyed by agent
+ * id and single-flight per id (a shared in-flight promise), so a batch with N
+ * distinct owners costs at most N `agent.get` point reads — never a
+ * whole-workspace `agent.list` frame (intent#5531).
  */
-type OwnerNameCache = Map<string, Promise<Map<string, string>>>;
+type OwnerNameCache = Map<string, Promise<string | undefined>>;
 
 /**
- * Best-effort bulk owner display-name lookup via the daemon's `agent.list`
- * (PROTOCOL.md §5.5) — one request resolves every owner in a tab list.
- * Dynamic import (mirroring browser-exec-reverse) avoids a static
- * main-process dependency cycle and keeps the executor unit-testable; any
- * failure resolves an empty map — callers still carry the owner ids.
+ * Dynamic import of the backend client (mirroring browser-exec-reverse)
+ * avoids a static main-process dependency cycle and keeps the executor
+ * unit-testable. Memoized so the concurrent per-owner reads of one tab list
+ * share a single module load instead of racing separate `import()` calls.
  */
-async function resolveAgentDisplayNames(
-  workspaceId?: string,
-  cache?: OwnerNameCache,
-): Promise<Map<string, string>> {
-  if (!workspaceId) return new Map();
-  const cached = cache?.get(workspaceId);
-  if (cached) return cached;
-  const pending = fetchAgentDisplayNames(workspaceId);
-  cache?.set(workspaceId, pending);
-  return pending;
-}
-
-async function fetchAgentDisplayNames(workspaceId: string): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  try {
-    const { getBackendClient } = await import('../../backend/main/backend.ipc');
-    const result = (await getBackendClient().request('agent.list', { workspaceId })) as
-      { agents?: Array<{ id?: string; name?: string }> } | undefined;
-    for (const agent of result?.agents ?? []) {
-      if (typeof agent.id === 'string' && typeof agent.name === 'string' && agent.name.length > 0) {
-        names.set(agent.id, agent.name);
-      }
-    }
-  } catch {
-    // best-effort — fall through with whatever resolved
-  }
-  return names;
+type BackendIpcModule = typeof import('../../backend/main/backend.ipc');
+let backendIpcModule: Promise<BackendIpcModule> | undefined;
+function loadBackendIpc(): Promise<BackendIpcModule> {
+  backendIpcModule ??= import('../../backend/main/backend.ipc').catch((error: unknown) => {
+    backendIpcModule = undefined;
+    throw error;
+  });
+  return backendIpcModule;
 }
 
 /**
- * Best-effort owner display-name lookup for a single agent, so ownership
- * errors can name the owner.
+ * Best-effort owner display-name lookup for a single agent via the daemon's
+ * `agent.get` (PROTOCOL.md §5.5), so ownership errors can name the owner.
+ * Any failure resolves `undefined` — callers still carry the owner id.
  */
 async function resolveAgentDisplayName(
   agentId: string,
   workspaceId?: string,
   cache?: OwnerNameCache,
 ): Promise<string | undefined> {
-  return (await resolveAgentDisplayNames(workspaceId, cache)).get(agentId);
+  if (!workspaceId) return undefined;
+  const cached = cache?.get(agentId);
+  if (cached) return cached;
+  const pending = fetchAgentDisplayName(agentId, workspaceId);
+  cache?.set(agentId, pending);
+  return pending;
+}
+
+async function fetchAgentDisplayName(
+  agentId: string,
+  workspaceId: string,
+): Promise<string | undefined> {
+  try {
+    const { getBackendClient } = await loadBackendIpc();
+    const result = (await getBackendClient().request('agent.get', { agentId, workspaceId })) as
+      { agent?: { name?: unknown } } | undefined;
+    const name = result?.agent?.name;
+    return typeof name === 'string' && name.length > 0 ? name : undefined;
+  } catch {
+    // best-effort — the owner keeps its id
+    return undefined;
+  }
+}
+
+/**
+ * Best-effort owner display names for a set of owner ids — one memoized
+ * `agent.get` per distinct id; owners that fail to resolve are absent.
+ */
+async function resolveAgentDisplayNames(
+  agentIds: Iterable<string>,
+  workspaceId?: string,
+  cache?: OwnerNameCache,
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  await Promise.all(
+    [...new Set(agentIds)].map(async (agentId) => {
+      const name = await resolveAgentDisplayName(agentId, workspaceId, cache);
+      if (name !== undefined) names.set(agentId, name);
+    }),
+  );
+  return names;
 }
 
 /**
@@ -618,7 +776,8 @@ async function notOwnerResult(
  * Agent callers (agentId present) are ownership-enforced: tab-manipulating
  * actions on tabs the agent does not own fail with a structured `not-owner`
  * error. Calls without agentId are the user and are unrestricted
- * (monorepo#2857).
+ * (monorepo#2857). `deadline` (epoch ms) bounds every capture stage to the
+ * remaining request budget (#4835).
  */
 async function executeAction(
   action: BrowserAction,
@@ -640,6 +799,7 @@ async function executeAction(
   getLoopbackContext?: () => LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
   ownerNameCache?: OwnerNameCache,
+  deadline?: number,
 ): Promise<ActionResult> {
   const tabId = ('tabId' in action ? action.tabId : undefined) || defaultTabId;
 
@@ -659,6 +819,12 @@ async function executeAction(
   }
 
   try {
+    if ('sessionId' in action)
+      browserCapture.assertSessionOwner(
+        action.sessionId,
+        requireWorkspaceId(workspaceId, action.action),
+        agentId,
+      );
     switch (action.action) {
       case 'listTabs': {
         const scope = action.scope ?? 'all';
@@ -682,11 +848,14 @@ async function executeAction(
               : tabs;
         // Owner display info + effective sizing per §5.9: ownerAgentId is
         // nullable (null = unowned), fit user tabs are native, and fixed or
-        // owned tabs are emulated. One bulk agent.list resolves every owner's
-        // display name; best-effort — unresolvable owners keep their id.
-        const ownerNames = scoped.some((t) => t.ownerAgentId)
-          ? await resolveAgentDisplayNames(workspaceId, ownerNameCache)
-          : new Map<string, string>();
+        // owned tabs are emulated. One memoized agent.get per distinct owner
+        // resolves the display names; best-effort — unresolvable owners keep
+        // their id.
+        const ownerNames = await resolveAgentDisplayNames(
+          scoped.flatMap((t) => (t.ownerAgentId ? [t.ownerAgentId] : [])),
+          workspaceId,
+          ownerNameCache,
+        );
         const result = scoped.map(({ emulatedSize, viewport, hidden, active, ...tab }) => {
           const ownerAgentId = tab.ownerAgentId ?? null;
           const ownerAgentName = ownerAgentId ? ownerNames.get(ownerAgentId) : undefined;
@@ -808,9 +977,16 @@ async function executeAction(
       }
 
       case 'getAccessibilityTree': {
-        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
         if (mount.failure) return mount.failure;
-        const result = await embeddedBrowserCdp.getAccessibilityTree(tabId);
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          tabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
+        const result = await embeddedBrowserCdp.getAccessibilityTree(tabId, { deadline });
         return {
           action: 'getAccessibilityTree',
           success: true,
@@ -820,9 +996,16 @@ async function executeAction(
       }
 
       case 'screenshot': {
-        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
         if (mount.failure) return mount.failure;
-        const result = await embeddedBrowserCdp.screenshot(tabId);
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          tabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
+        const result = await embeddedBrowserCdp.screenshot(tabId, { deadline });
         return {
           action: 'screenshot',
           success: true,
@@ -832,9 +1015,16 @@ async function executeAction(
       }
 
       case 'evaluate': {
-        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId);
+        const mount = await ensureCaptureTabMounted(action.action, tabId, workspaceId, deadline);
         if (mount.failure) return mount.failure;
-        const result = await embeddedBrowserCdp.evaluate(tabId, action.expression);
+        const guest = await ensureCaptureGuestSettled(
+          action.action,
+          tabId,
+          mount.registryUrl,
+          deadline,
+        );
+        if (guest.failure) return guest.failure;
+        const result = await embeddedBrowserCdp.evaluate(tabId, action.expression, { deadline });
         return {
           action: 'evaluate',
           success: true,
@@ -859,6 +1049,7 @@ async function executeAction(
       case 'startSession': {
         const captureWorkspaceId = requireWorkspaceId(workspaceId, action.action);
         const options: SessionOptions = {
+          ownerAgentId: agentId,
           workspaceId: captureWorkspaceId,
           tabId,
           name: action.name,
@@ -928,10 +1119,23 @@ async function executeAction(
         return { action: 'resetTab', success: true, result };
       }
 
+      case 'readCapture': {
+        const result = await browserCapture.readCapture(
+          requireWorkspaceId(workspaceId, action.action),
+          action.captureId,
+          action.artifact,
+          agentId,
+          action.offset,
+          action.maxBytes,
+        );
+        return { action: 'readCapture', success: true, result };
+      }
+
       case 'getSummary': {
         const result = await browserCapture.getSummary(
           requireWorkspaceId(workspaceId, action.action),
           action.captureId,
+          agentId,
         );
         return { action: 'getSummary', success: true, result };
       }
@@ -1527,9 +1731,11 @@ async function executeAction(
     }
   } catch (error) {
     logger.error('Action execution failed', { action: action.action, error });
+    const errorCode = captureErrorCode(error);
     return {
       action: action.action,
       success: false,
+      ...(errorCode ? { errorCode } : {}),
       // i18n-ignore (agent-facing protocol error, not user-facing)
       error: error instanceof Error ? error.message : 'Unknown error',
     };
@@ -1550,6 +1756,10 @@ async function executeAction(
  * @param getTunnelProvider - Injectable tunnel seam for the probe-failure
  *   fallback; when absent (non-Electron contexts) an unreachable rewritten
  *   remote origin keeps failing with the explanatory probe error
+ * @param deadline - Absolute epoch-ms instant by which the whole batch must
+ *   have answered (the reverse-request deadline minus transport margin,
+ *   intent-hq/intent#4835); every capture stage is clamped to what remains.
+ *   Absent for callers without a transport deadline (renderer IPC).
  */
 export async function executeActions(
   input: unknown,
@@ -1569,6 +1779,7 @@ export async function executeActions(
   workspaceId?: string,
   getLoopbackContext?: () => LoopbackRewriteContext,
   getTunnelProvider?: () => TunnelProvider | null,
+  deadline?: number,
 ): Promise<ExecutionResult> {
   // Validate input against schema
   const parseResult = ActionSequenceSchema.safeParse(input);
@@ -1584,8 +1795,9 @@ export async function executeActions(
 
   const { actions, tabId: defaultTabId } = parseResult.data;
   const results: ActionResult[] = [];
-  // Owner display names are resolved at most once per batch — a multi-action
-  // sequence (e.g. N openTabs) shares one agent.list round-trip.
+  // Owner display names are resolved at most once per owner id per batch — a
+  // multi-action sequence (e.g. N openTabs by one agent) shares one agent.get
+  // round-trip per distinct owner (intent#5531).
   const ownerNameCache: OwnerNameCache = new Map();
 
   for (const action of actions) {
@@ -1598,6 +1810,7 @@ export async function executeActions(
       getLoopbackContext,
       getTunnelProvider,
       ownerNameCache,
+      deadline,
     );
     results.push(result);
 

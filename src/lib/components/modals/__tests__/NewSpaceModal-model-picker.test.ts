@@ -1,6 +1,8 @@
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -15,36 +17,44 @@ const mocks = vi.hoisted(() => {
     description: index === 11 ? 'Last model' : `Model ${index + 1}`,
     effortLevels: index === 5 ? ['low', 'medium', 'high'] : undefined,
   }));
-  return { readable, models, dispatch: vi.fn(), onClose: vi.fn() };
+  return {
+    readable,
+    models,
+    availableProviderIds: ['auggie'],
+    codexModels: [{ value: 'codex-model', label: 'Codex model', effortLevels: ['low', 'high'] }],
+    dispatch: vi.fn(),
+    onClose: vi.fn(),
+    create: vi.fn(),
+    configuredModels: {} as Record<string, string>,
+    selectedModel: undefined as string | undefined,
+    defaultReasoningEffort: '',
+    specialist: {
+      id: 'spec-writer',
+      name: 'Coordinator',
+      description: '',
+      source: 'user',
+      resolvedModel: 'gpt5.5',
+      resolvedProvider: 'auggie',
+      model: undefined as string | undefined,
+      defaultModel: undefined as string | undefined,
+      reasoningEffort: undefined as string | undefined,
+      resolvedReasoningEffort: undefined as string | undefined,
+    },
+  };
 });
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } =
-    await import('$store/renderer/utils/test-helpers/store-mock');
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
-    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const { MOCK_PROVIDER_CATALOG } =
-    await import('../../../../test/fixtures/provider-catalog.fixture');
-  const providerCatalog = providerCatalogReducer(
-    initialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-  );
-  return createAppStoreMockModule({
-    state: () => ({
-      providerCatalog,
-      providerSettings: { enabledProviders: { auggie: true } },
-      model: { defaultProviderId: 'auggie' },
-      providerModels: { byProviderId: {}, clearEpoch: 0 },
-      hardwareConsole: { pttRecording: false, voiceTranscribing: false },
-    }),
-    dispatch: mocks.dispatch,
-  });
-});
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(null),
+  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
   // A remembered orchestration choice: the modal opens in team mode so the
   // team card's picker is live from the start.
@@ -56,13 +66,16 @@ vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-sele
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),
-  selectModelFetchProviderIds: () => mocks.readable(['auggie']),
+  selectEnabledProviders: () => mocks.readable({}),
+  selectModelFetchProviderIds: () => mocks.readable(mocks.availableProviderIds),
   selectIsProviderModelAccessAllowed: () => mocks.readable(true),
-  selectAvailableEnabledProviderIds: () => mocks.readable(['auggie']),
+  selectAvailableEnabledProviderIds: () => mocks.readable(mocks.availableProviderIds),
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
-  selectSelectedModel: () => mocks.readable(undefined),
+  selectSelectedModel: () => mocks.readable(mocks.selectedModel),
+  selectDefaultReasoningEffort: () => mocks.readable(mocks.defaultReasoningEffort),
+  selectProviderModels: () => mocks.readable(mocks.configuredModels),
   selectAvailableModels: () => mocks.readable(mocks.models),
   selectAvailableModelsProviderId: () => mocks.readable('auggie'),
   selectModelFallbackInfo: () => mocks.readable(null),
@@ -83,7 +96,9 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
 
 vi.mock('$store/renderer/slices/model/model-utils', () => ({
   getModelsForProvider: vi.fn(async () => mocks.models),
-  getModelsForProviderForLoadingState: vi.fn(async () => ({ models: mocks.models })),
+  getModelsForProviderForLoadingState: vi.fn(async (providerId: string) => ({
+    models: providerId === 'codex' ? mocks.codexModels : mocks.models,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/agent-availability/agent-availability-selectors', () => ({
@@ -105,13 +120,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
 });
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
-  selectSpecialists: Object.assign(
-    () =>
-      mocks.readable([
-        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'gpt5.5' },
-      ]),
-    { select: () => [] },
-  ),
+  selectSpecialists: Object.assign(() => mocks.readable([mocks.specialist]), {
+    select: () => [mocks.specialist],
+  }),
   selectCustomSpecialistsLoaded: () => mocks.readable(true),
   selectFileSpecialistsLoaded: () => mocks.readable(true),
   selectUserOverrides: () => mocks.readable({ modelOverrides: {} }),
@@ -143,16 +154,16 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
 }));
 vi.mock('$features/providers/provider-availability.client', () => ({
   getProviderAvailability: vi.fn(async () => ({
-    providers: { auggie: { available: true } },
+    providers: Object.fromEntries(
+      mocks.availableProviderIds.map((id) => [id, { available: true }]),
+    ),
   })),
 }));
 
 vi.mock('$lib/client', () => ({
   appClient: {
     specialists: {
-      list: vi.fn(async () => [
-        { id: 'spec-writer', name: 'Coordinator', description: '', resolvedModel: 'gpt5.5' },
-      ]),
+      list: vi.fn(async () => [mocks.specialist]),
     },
     git: { pull: vi.fn(async () => ({ success: true })) },
   },
@@ -162,8 +173,8 @@ vi.mock('$features/agent/agent.client', () => ({
 }));
 vi.mock('$features/agent/browser', () => ({}));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), info: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({
@@ -193,7 +204,7 @@ vi.mock('$lib/utils/workspace-validation', () => ({
   validateRepoPath: vi.fn(async () => ({ valid: true })),
 }));
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { create: vi.fn(), update: vi.fn() },
+  workspaceClient: { create: mocks.create, update: vi.fn() },
 }));
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn(async (channel: string) =>
@@ -250,7 +261,14 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import NewSpaceModal from '../NewSpaceModal.svelte';
+import CompactWorkspaceInitializer from '../../workspace/CompactWorkspaceInitializer.svelte';
 import { setCompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+import { store as appStore } from '$store/renderer/store';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
+import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 
 function persistedStates() {
   return mocks.dispatch.mock.calls
@@ -267,6 +285,12 @@ function pickerTrigger(card: HTMLElement) {
   const trigger = card.querySelector('button[aria-haspopup="listbox"]');
   expect(trigger).toBeTruthy();
   return trigger as HTMLButtonElement;
+}
+
+function dropdownContent(listbox: HTMLElement) {
+  const content = listbox.closest('[data-slot="dropdown-content"]');
+  expect(content).toBeTruthy();
+  return content as HTMLElement;
 }
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -289,15 +313,106 @@ function stubGeometry(dialog: HTMLElement, trigger: HTMLButtonElement, triggerRe
   trigger.parentElement!.getBoundingClientRect = vi.fn(() => triggerRect);
 }
 
+let disposeStore: () => void;
+let cancelCatalog: () => void;
+
 describe('NewSpaceModal model-picker composition', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    mocks.availableProviderIds = ['auggie'];
+    mocks.configuredModels = {};
+    mocks.selectedModel = undefined;
+    mocks.defaultReasoningEffort = '';
+    mocks.specialist = {
+      id: 'spec-writer',
+      name: 'Coordinator',
+      description: '',
+      source: 'user',
+      resolvedModel: 'gpt5.5',
+      resolvedProvider: 'auggie',
+      model: undefined,
+      defaultModel: undefined,
+      reasoningEffort: undefined,
+      resolvedReasoningEffort: undefined,
+    };
+    mocks.create.mockResolvedValue({ ok: false, error: 'Fixture stops after request capture' });
+    disposeStore = appStore.init();
+    admitLegacyPrincipal();
+    appStore.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+    appStore.dispatch(hydrateDefaultProvider('auggie'));
+    appStore.dispatch(loadEnabledProvidersFromStorage({ auggie: true }));
+    const dispatch = appStore.dispatch.bind(appStore);
+    vi.spyOn(appStore, 'dispatch').mockImplementation((action) => {
+      mocks.dispatch(action);
+      return dispatch(action);
+    });
+    cancelCatalog = appStore.runSaga(modelReloadSaga);
   });
 
   afterEach(() => {
     cleanup();
+    cancelCatalog();
     sessionStorage.clear();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    disposeStore();
+  });
+
+  it.each(['team', 'single'] as const)(
+    'preserves a bare non-default provider model and effort in %s mode',
+    async (mode) => {
+      mocks.availableProviderIds = ['auggie', 'codex'];
+      render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+      const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+      const card = modeCard(mode === 'team' ? /Agent orchestration/i : /Single agent/i);
+      if (mode === 'single') await fireEvent.click(card);
+      await fireEvent.click(pickerTrigger(card));
+      await fireEvent.click(await within(dialog).findByRole('tab', { name: /Codex/ }));
+      await fireEvent.click(
+        await within(dialog).findByRole('option', { name: 'Codex model', exact: true }),
+      );
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          selectedProvider: 'codex',
+          selectedModel: 'codex-model',
+          modelWasOverridden: true,
+          isTeamMode: mode === 'team',
+        }),
+      );
+      expect(pickerTrigger(card).getAttribute('aria-expanded')).toBe('true');
+      const effort = await within(dialog).findByTestId('effort-picker-trigger');
+      await fireEvent.click(effort);
+      const levels = document.getElementById(effort.getAttribute('aria-controls')!)!;
+      await fireEvent.pointerUp(within(levels).getByRole('option', { name: 'High' }), {
+        pointerType: 'mouse',
+      });
+      await waitFor(() =>
+        expect(persistedStates().at(-1)).toMatchObject({
+          selectedProvider: 'codex',
+          selectedModel: 'codex-model',
+          selectedReasoningEffort: 'high',
+        }),
+      );
+      expect(mocks.onClose).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not let initializer timers override modal focus, while inline prompts still autofocus', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    const modal = render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
+    await tick();
+    const modalPrompt = screen.getByTestId('mock-rich-textarea');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(focus.mock.contexts).not.toContain(modalPrompt);
+    modal.unmount();
+
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await tick();
+    const inlinePrompt = screen.getByTestId('mock-rich-textarea');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(focus.mock.contexts).toContain(inlinePrompt);
   });
 
   it('selects models in both modes without bubbling, closing, or losing persisted state', async () => {
@@ -310,10 +425,11 @@ describe('NewSpaceModal model-picker composition', () => {
     stubGeometry(dialog, teamTrigger, rect(140, 520, 150, 28));
     await fireEvent.click(teamTrigger);
     const teamListbox = await within(dialog).findByRole('listbox');
+    const teamContent = dropdownContent(teamListbox);
     expect(dialog.contains(teamListbox)).toBe(true);
-    expect(teamListbox.dataset.side).toBe('top');
-    expect(teamListbox.style.maxHeight).toBe('360px');
-    expect(parseFloat(teamListbox.style.maxWidth)).toBeLessThanOrEqual(824);
+    expect(teamContent.dataset.side).toBe('top');
+    expect(teamContent.style.maxHeight).toBe('360px');
+    expect(parseFloat(teamContent.style.maxWidth)).toBeLessThanOrEqual(824);
     expect(
       await within(teamListbox).findByRole('option', { name: /^GPT 5\.1 Model 1/ }),
     ).toBeTruthy();
@@ -332,13 +448,14 @@ describe('NewSpaceModal model-picker composition', () => {
       });
     });
 
-    await fireEvent.click(pickerTrigger(team));
+    expect(pickerTrigger(team).getAttribute('aria-expanded')).toBe('true');
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     await fireEvent.click(reasoningTrigger);
-    const reasoningPopup = document.getElementById(
+    const reasoningListbox = document.getElementById(
       reasoningTrigger.getAttribute('aria-controls')!,
     )!;
-    const reasoningListbox = within(reasoningPopup).getByRole('listbox');
+    expect(reasoningListbox.getAttribute('role')).toBe('listbox');
+    expect(reasoningListbox.getAttribute('tabindex')).toBe('-1');
     await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'High' }), {
       pointerType: 'mouse',
     });
@@ -371,8 +488,9 @@ describe('NewSpaceModal model-picker composition', () => {
     stubGeometry(dialog, singleTrigger, rect(600, 120, 150, 28));
     await fireEvent.click(singleTrigger);
     const singleListbox = await within(dialog).findByRole('listbox');
-    expect(singleListbox.dataset.side).toBe('bottom');
-    expect(singleListbox.style.maxHeight).toBe('360px');
+    const singleContent = dropdownContent(singleListbox);
+    expect(singleContent.dataset.side).toBe('bottom');
+    expect(singleContent.style.maxHeight).toBe('360px');
     await fireEvent.click(
       await within(singleListbox).findByRole('option', { name: /GPT 5\.5/ }, { timeout: 5000 }),
     );
@@ -396,6 +514,115 @@ describe('NewSpaceModal model-picker composition', () => {
     expect(mocks.onClose).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      name: 'explicit model with specialist effort',
+      explicitModel: true,
+      foreignPin: false,
+      otherDefaultProvider: false,
+    },
+    {
+      name: 'foreign specialist pin falling through to Settings',
+      explicitModel: false,
+      foreignPin: true,
+      otherDefaultProvider: false,
+    },
+    {
+      name: 'selected provider Settings outside the default provider',
+      explicitModel: false,
+      foreignPin: false,
+      otherDefaultProvider: true,
+    },
+  ])(
+    'persists and submits Auto after displaying $name',
+    async ({ explicitModel, foreignPin, otherDefaultProvider }) => {
+      mocks.specialist.resolvedModel = 'gpt5.6';
+      if (explicitModel) {
+        mocks.specialist.reasoningEffort = 'high';
+        mocks.specialist.resolvedReasoningEffort = 'high';
+      } else {
+        mocks.configuredModels = { auggie: 'gpt5.6' };
+        mocks.selectedModel = 'gpt5.6';
+        mocks.defaultReasoningEffort = 'high';
+        if (foreignPin) {
+          mocks.specialist.model = 'foreign-model';
+          mocks.specialist.defaultModel = 'foreign-model';
+        }
+        if (otherDefaultProvider) appStore.dispatch(hydrateDefaultProvider('codex'));
+      }
+      const view = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+      const team = modeCard(/Agent orchestration/i);
+      await waitFor(() =>
+        expect(within(pickerTrigger(team)).getByLabelText('GPT 5.6 · High')).toBeTruthy(),
+      );
+
+      if (explicitModel) {
+        await fireEvent.click(pickerTrigger(team));
+        const modelListbox = await screen.findByRole('listbox');
+        await fireEvent.click(within(modelListbox).getByRole('option', { name: /GPT 5\.6/ }));
+        await waitFor(() => {
+          expect(persistedStates().at(-1)).toMatchObject({
+            selectedModel: 'gpt5.6',
+            modelWasOverridden: true,
+          });
+          expect(within(pickerTrigger(team)).getByLabelText('GPT 5.6 · High')).toBeTruthy();
+        });
+      }
+
+      if (!explicitModel) await fireEvent.click(pickerTrigger(team));
+      const reasoningTrigger = await screen.findByTestId('effort-picker-trigger');
+      await fireEvent.click(reasoningTrigger);
+      const reasoningListbox = document.getElementById(
+        reasoningTrigger.getAttribute('aria-controls')!,
+      )!;
+      await fireEvent.pointerUp(within(reasoningListbox).getByRole('option', { name: 'Auto' }), {
+        pointerType: 'mouse',
+      });
+      await waitFor(() => {
+        expect(persistedStates().at(-1)).toMatchObject({
+          selectedReasoningEffort: '',
+          selectedProvider: 'auggie',
+        });
+        expect(within(pickerTrigger(team)).queryByLabelText('GPT 5.6 · High')).toBeNull();
+      });
+      await fireEvent.click(pickerTrigger(team));
+
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({
+          repoPath: '/tmp/test-repo',
+          branch: 'main',
+          prompt: 'Clear inherited effort',
+          autoCreate: true,
+        }),
+      );
+      await view.component.applyPrefill();
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+      expect(mocks.create.mock.calls[0][0].initialAgent).toEqual({
+        name: 'Coordinator',
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
+        model: explicitModel ? 'gpt5.6' : undefined,
+        provider: 'auggie',
+        specialist: 'spec-writer',
+        reasoningEffort: '',
+        behaviorPrompt: undefined,
+        prompt: 'Clear inherited effort',
+        agentType: 'workspace',
+        contextReferences: undefined,
+        imageBlocks: undefined,
+        metadata: {
+          source: 'compact-initializer',
+          isInitialAgent: true,
+          specialist: 'spec-writer',
+          provider: 'auggie',
+          workMode: 'team',
+          createdAt: expect.any(String),
+        },
+      });
+    },
+  );
+
   it('keeps keyboard and dismissal behavior inside the open dialog', async () => {
     render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
     const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
@@ -410,7 +637,7 @@ describe('NewSpaceModal model-picker composition', () => {
     await waitFor(() => expect(trigger.textContent).toContain('GPT 5.6'));
     expect(team.getAttribute('aria-pressed')).toBe('true');
 
-    await fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
     expect(await within(dialog).findByRole('listbox')).toBeTruthy();
     await fireEvent.mouseDown(document.body);
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
@@ -438,7 +665,7 @@ describe('NewSpaceModal model-picker composition', () => {
     );
     await waitFor(() => expect(modelTrigger.textContent).toContain('GPT 5.6'));
 
-    await fireEvent.click(modelTrigger);
+    expect(modelTrigger.getAttribute('aria-expanded')).toBe('true');
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
     reasoningTrigger.focus();
     await fireEvent.keyDown(reasoningTrigger, { key: 'Enter' });
@@ -493,13 +720,15 @@ describe('NewSpaceModal model-picker composition', () => {
       trigger.focus();
       await fireEvent.click(trigger);
       const listbox = await within(dialog).findByRole('listbox');
-      expect(listbox.dataset.side).toBe('top');
-      expect(parseFloat(listbox.style.maxHeight)).toBeLessThanOrEqual(306);
-      expect(parseFloat(listbox.style.maxWidth)).toBeLessThanOrEqual(472);
-      const scroller = listbox.querySelector('[data-scroll-container]') as HTMLElement;
-      expect(scroller.className).toContain('overflow-y-auto');
+      const content = dropdownContent(listbox);
+      expect(content.dataset.side).toBe('top');
+      expect(parseFloat(content.style.maxHeight)).toBeLessThanOrEqual(306);
+      expect(parseFloat(content.style.maxWidth)).toBeLessThanOrEqual(472);
+      expect(listbox.className).toContain('overflow-y-auto');
 
-      const search = within(listbox).getByRole('searchbox', { name: 'Search options' });
+      const search = within(content).getByRole('searchbox', { name: 'Search options' });
+      expect(search.getAttribute('aria-controls')).toBe(listbox.id);
+      expect(listbox.contains(search)).toBe(false);
       await within(listbox).findByRole('option', { name: /^GPT 5\.12 Last model/ });
       await fireEvent.keyDown(search, { key: 'End' });
       expect(
@@ -512,4 +741,28 @@ describe('NewSpaceModal model-picker composition', () => {
       view.unmount();
     }
   });
+});
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const providers =
+    await import('$store/renderer/slices/provider-settings/provider-settings-selectors');
+  const models = await import('$store/renderer/slices/model/model-selectors');
+  const catalog =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-selectors');
+  const specialists = await import('$store/renderer/slices/specialists/specialists-selectors');
+  const availability =
+    await import('$store/renderer/slices/agent-availability/agent-availability-selectors');
+  return {
+    selectWorkspaceCatalogEpoch: () => mocks.readable(0),
+    selectContextProviderEntries: catalog.selectProviderCatalogEntries,
+    selectContextDefaultProvider: providers.selectActiveProviderId,
+    selectContextSelectedModel: models.selectSelectedModel,
+    selectContextEnabledProviders: providers.selectEnabledProviders,
+    selectContextAvailableProviderIds: providers.selectAvailableEnabledProviderIds,
+    selectContextModelProviderIds: providers.selectModelFetchProviderIds,
+    selectContextReadinessLoaded: availability.selectHasCheckedOnce,
+    selectContextProviderWarnings: models.selectAllProviderWarnings,
+    selectContextProviderStaleFlags: models.selectAllProviderStaleFlags,
+    selectContextSpecialists: specialists.selectSpecialists,
+  };
 });

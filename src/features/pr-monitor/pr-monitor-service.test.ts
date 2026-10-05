@@ -1,6 +1,5 @@
 /**
- * PR-monitor service wire contract + event folding (PROTOCOL §6.9 / §6.5,
- * v6.1).
+ * PR-monitor service wire contract + event folding (PROTOCOL §6.9 / §6.5).
  *
  * FAKE transport only: the backend-transport seam is mocked. Asserts the
  * exact `prMonitor.list` / `prMonitor.cancel` / `prMonitor.flush` request
@@ -245,7 +244,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     resolveSubscribe?.({ subscriptionId: 'ws-sub-7' });
     await flush();
     dispose();
-    expect(mockedUnsubscribe).toHaveBeenCalledWith('ws-sub-7');
+    expect(mockedUnsubscribe).toHaveBeenCalledWith('ws-sub-7', 'ws-1');
   });
 
   it('re-lists after the ack when the seed settled before the subscription window opened (event-gap race)', async () => {
@@ -341,7 +340,7 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     expect(seen.at(-1)).toEqual([]);
 
     dispose();
-    expect(mockedUnsubscribe).toHaveBeenCalledWith('ws-sub-7');
+    expect(mockedUnsubscribe).toHaveBeenCalledWith('ws-sub-7', 'ws-1');
   });
 
   it('ignores foreign-workspace and foreign-subscription events', async () => {

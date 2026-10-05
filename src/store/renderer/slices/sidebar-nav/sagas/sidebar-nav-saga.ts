@@ -15,6 +15,7 @@ import {
   selectAllSpacesViewMode,
   selectChiefActiveAgentId,
   selectCollapsedStatusGroupIds,
+  selectCollapsedRepoGroupKeys,
   selectCombinedPanelSplit,
   selectIsChiefCollapsed,
   selectIsCardPinned,
@@ -31,6 +32,7 @@ import {
   CHIEF_ACTIVE_AGENT_ID_KEY,
   CHIEF_COLLAPSED_KEY,
   COLLAPSED_STATUS_GROUPS_KEY,
+  COLLAPSED_REPO_GROUPS_KEY,
   COMBINED_PANEL_SPLIT_KEY,
   closeAll,
   closeHoverCards,
@@ -59,6 +61,7 @@ import {
   togglePanel,
   togglePinWorkspace,
   toggleStatusGroupCollapsed,
+  toggleRepoGroupCollapsed,
   toggleWorkspaceCollapsedNote,
   VIEW_MODE_KEY,
   WORKSPACE_COLLAPSED_NOTES_PREFIX,
@@ -168,6 +171,13 @@ function* hydrateSidebarNavState(): SagaGenerator<void> {
       data.collapsedStatusGroupIds = collapsedStatusGroups;
     }
 
+    const collapsedRepoGroups = stringArray(
+      yield* call(getLocalStorageJSON<unknown>, COLLAPSED_REPO_GROUPS_KEY),
+    );
+    if (collapsedRepoGroups !== undefined) {
+      data.collapsedRepoGroupKeys = collapsedRepoGroups;
+    }
+
     const chiefCollapsed = yield* call(getLocalStorageJSON<unknown>, CHIEF_COLLAPSED_KEY);
     if (typeof chiefCollapsed === 'boolean') data.isChiefCollapsed = chiefCollapsed;
 
@@ -248,6 +258,18 @@ function* persistCollapsedStatusGroups(): SagaGenerator<void> {
       setLocalStorageJSON,
       COLLAPSED_STATUS_GROUPS_KEY,
       yield* selectCollapsedStatusGroupIds.effect(),
+    );
+  } catch {
+    // Storage failures are non-fatal and must not terminate the watcher.
+  }
+}
+
+function* persistCollapsedRepoGroups(): SagaGenerator<void> {
+  try {
+    yield* call(
+      setLocalStorageJSON,
+      COLLAPSED_REPO_GROUPS_KEY,
+      yield* selectCollapsedRepoGroupKeys.effect(),
     );
   } catch {
     // Storage failures are non-fatal and must not terminate the watcher.
@@ -428,6 +450,7 @@ export function* sidebarNavSaga(): SagaGenerator<void> {
   yield* takeEvery(setAllSpacesViewMode, persistViewMode);
   yield* takeEvery(setShowArchivedWorkspaces, persistShowArchivedWorkspaces);
   yield* takeEvery(toggleStatusGroupCollapsed, persistCollapsedStatusGroups);
+  yield* takeEvery(toggleRepoGroupCollapsed, persistCollapsedRepoGroups);
   yield* takeEvery([setChiefCollapsed, toggleChiefCollapsed], persistChiefCollapsed);
   yield* takeEvery(setPanelWidth, persistPanelWidth);
   yield* takeEvery(setCombinedPanelSplit, persistCombinedPanelSplit);

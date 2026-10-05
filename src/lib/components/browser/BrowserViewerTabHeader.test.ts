@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 import BrowserViewerTabHeader from './BrowserViewerTabHeader.svelte';
@@ -11,8 +11,13 @@ const navButtons = () => [
   screen.getByRole('button', { name: m.browser_embedded_goForward_ariaLabel() }),
   screen.getByRole('button', { name: m.browser_embedded_refresh_ariaLabel() }),
   screen.getByRole('button', { name: m.browser_embedded_editAddress_ariaLabel() }),
-  screen.getByRole('button', { name: m.browser_embedded_close_ariaLabel() }),
 ];
+
+const toolbarCloseButton = () => {
+  const toolbar = document.querySelector<HTMLElement>('[data-browser-toolbar]');
+  if (!toolbar) throw new Error('browser toolbar was not rendered');
+  return within(toolbar).queryByRole('button', { name: /close/i });
+};
 
 describe('BrowserViewerTabHeader', () => {
   afterEach(cleanup);
@@ -123,27 +128,25 @@ describe('BrowserViewerTabHeader', () => {
     ).toBe(true);
   });
 
-  it('routes history and refresh controls, and close as a non-forced close', async () => {
+  it('routes history and refresh controls', async () => {
     const handlers = {
       onGoBack: vi.fn(),
       onGoForward: vi.fn(),
       onRefresh: vi.fn(),
-      onClose: vi.fn(),
     };
     render(BrowserViewerTabHeader, {
       props: { url: 'https://intentapp.dev/docs', host: online, ...handlers },
     });
-    const [back, forward, refresh, , close] = navButtons();
+    const [back, forward, refresh] = navButtons();
 
     await fireEvent.click(back);
     await fireEvent.click(forward);
     await fireEvent.click(refresh);
-    await fireEvent.click(close);
 
     expect(handlers.onGoBack).toHaveBeenCalledTimes(1);
     expect(handlers.onGoForward).toHaveBeenCalledTimes(1);
     expect(handlers.onRefresh).toHaveBeenCalledTimes(1);
-    expect(handlers.onClose).toHaveBeenCalledWith({ force: false });
+    expect(toolbarCloseButton()).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
   });
 
@@ -179,6 +182,7 @@ describe('BrowserViewerTabHeader', () => {
 
     const banner = screen.getByRole('status');
     expect(banner.textContent).toContain('travel-air');
+    expect(toolbarCloseButton()).toBeNull();
     await fireEvent.click(
       screen.getByRole('button', { name: m.browser_viewer_forceClose_label() }),
     );

@@ -1,3 +1,5 @@
+import { projectLatestCommentAuthor } from '$features/comments/comment-attribution';
+import type { CommentAttribution } from '$shared/types/comment.types';
 /**
  * Tool Result Parser
  *
@@ -109,6 +111,9 @@ export interface ParsedToolResult {
     status: string;
     commentCount: number;
     latestAuthor?: string;
+    latestAuthorType?: 'user' | 'agent';
+    latestAuthorPrincipalId?: string;
+    latestAuthorIdentity?: CommentAttribution['authorIdentity'];
     lastActivity?: string;
   }>;
   totalComments?: number;
@@ -198,34 +203,6 @@ export interface ParsedToolResult {
   lineCount?: number;
   truncated?: boolean;
   error?: string;
-}
-
-/**
- * Represents a parsed task in task diff displays
- */
-export interface ParsedTask {
-  uuid: string;
-  name: string;
-  state: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETE' | 'CANCELLED';
-  description?: string;
-}
-
-/**
- * Counts of task changes by category
- */
-export interface TaskDiffCounts {
-  created: number;
-  updated: number;
-  deleted: number;
-}
-
-/**
- * Task changes grouped by category for diff rendering
- */
-export interface TaskDiffSections {
-  created: ParsedTask[];
-  updated: ParsedTask[];
-  deleted: ParsedTask[];
 }
 
 // Language detection from file extension
@@ -1870,12 +1847,18 @@ function parseCommentListResult(
             latestCommentAuthor?: string;
             lastActivity?: string;
           };
+          const latest = projectLatestCommentAuthor(t);
           return {
             threadId: thread.threadId,
             targetedText: thread.targetedText || undefined,
             status: thread.status || 'open',
             commentCount: thread.commentCount || 1,
-            latestAuthor: thread.latestCommentAuthor || undefined,
+            latestAuthor: latest.author || undefined,
+            ...(latest.authorType ? { latestAuthorType: latest.authorType } : {}),
+            ...(latest.authorPrincipalId
+              ? { latestAuthorPrincipalId: latest.authorPrincipalId }
+              : {}),
+            ...(latest.authorIdentity ? { latestAuthorIdentity: latest.authorIdentity } : {}),
             lastActivity: thread.lastActivity || undefined,
           };
         });

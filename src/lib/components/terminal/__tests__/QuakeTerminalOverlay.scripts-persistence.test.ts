@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 /**
  * Regression tests for intent-hq/monorepo#1330 (scripts variant).
  *
@@ -11,7 +12,7 @@
  * scriptsReducer and assert the scripts state survives unmount and switches.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { ScriptWithState } from '$features/scripts/types';
@@ -113,8 +114,8 @@ vi.mock('$features/scripts/scripts.client', () => ({
     update: vi.fn(),
   },
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: vi.fn(), clearTerminal: vi.fn() },
@@ -127,6 +128,9 @@ import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { store as appStore } from '$store/renderer/store';
 import {
   setScriptsData,
+  setActiveScriptsData,
+  setScriptListState,
+  updateRuntimeState,
   setScriptsInitialized,
   appendScriptOutput,
 } from '$store/renderer/slices/scripts/scripts-slice';
@@ -245,5 +249,29 @@ describe('QuakeTerminalOverlay scripts persistence (monorepo#1330)', () => {
 
     await (component as any).handleScriptAction('start', 'script-1');
     expect(scriptsClient.start).toHaveBeenCalledWith(WS_B, 'script-1');
+  });
+  it('keeps the same output viewer and buffer mounted when another client archives the selected command', async () => {
+    seedWorkspace(WS_A, 'script-a');
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    const viewer = container.querySelector('[data-testid="mock-script-output-viewer"]');
+    appStore.dispatch(setScriptListState(WS_A, false, undefined, true));
+    appStore.dispatch(setActiveScriptsData(WS_A, []));
+    appStore.dispatch(updateRuntimeState(WS_A, 'script-a', { status: 'exited', exitCode: 2 }));
+    await tick();
+    expect(container.querySelector('[data-testid="mock-script-output-viewer"]')).toBe(viewer);
+    expect((globalThis as Record<string, unknown>).__quakeScriptViewerMounts).toEqual([
+      { workspaceId: WS_A, scriptId: 'script-a' },
+    ]);
+    expect(wsState(WS_A).outputBuffers['script-a'].chunks).toHaveLength(1);
+  });
+
+  it('keeps selected output accessible without cleanup controls on a lifecycle daemon', async () => {
+    seedWorkspace(WS_A, 'script-a');
+    appStore.dispatch(setScriptListState(WS_A, false, undefined, true));
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
+    await tick();
+    expect(container.querySelector('[data-testid="mock-script-output-viewer"]')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /History and cleanup/ })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

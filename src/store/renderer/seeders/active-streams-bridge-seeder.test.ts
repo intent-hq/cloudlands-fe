@@ -96,7 +96,18 @@ describe('Active Streams Bridge Seeder', () => {
     expect(result.data).toEqual([]);
   });
 
-  it('returns { success: false, data: [] } when the compatibility fallback also fails', async () => {
+  it('never requests workspace.list or agent.list when agent.listActive fails with -32601 (serves the last known snapshot)', async () => {
+    backend.onRequest('agent.listActive', () => ({
+      streams: [{ agentId: 'agent-y', sessionId: 'agent-y', workspaceId: 'ws8', startTime: 7 }],
+    }));
+
+    const { invoke } = await import('$shared/generated/ipc-client');
+    const first = await invoke<{ success: boolean; data?: unknown }>('agent:get-active-streams');
+    expect(first.success).toBe(true);
+    expect(first.data).toEqual([
+      { agentId: 'agent-y', sessionId: 'agent-y', workspaceId: 'ws8', startTime: 7 },
+    ]);
+
     backend.onRequest('agent.listActive', () => {
       throw new BackendError({
         code: 'METHOD_NOT_FOUND',
@@ -105,45 +116,18 @@ describe('Active Streams Bridge Seeder', () => {
       });
     });
     backend.onRequest('workspace.list', () => {
-      throw new Error('Daemon connection failed');
+      throw new Error('should never fan out on method-not-found');
+    });
+    backend.onRequest('agent.list', () => {
+      throw new Error('should never fan out on method-not-found');
     });
 
-    const { invoke } = await import('$shared/generated/ipc-client');
-    const result = await invoke<{ success: boolean; error?: string; data?: unknown }>(
-      'agent:get-active-streams',
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Daemon connection failed');
-    expect(result.data).toEqual([]);
-  });
-
-  it('falls back to the legacy fan-out when agent.listActive is unavailable', async () => {
-    backend.onRequest('agent.listActive', () => {
-      throw new BackendError({
-        code: 'METHOD_NOT_FOUND',
-        message: 'method not found',
-        rpcCode: -32601,
-      });
-    });
-    backend.onRequest('workspace.list', () => ({
-      workspaces: [{ id: 'ws1' }],
-    }));
-
-    backend.onRequest('agent.list', () => ({
-      agents: [
-        { id: 'agent-1', isStreaming: true, updatedAt: 'invalid-date' },
-        { id: 'agent-2', isResponding: true, updatedAt: undefined },
-      ],
-    }));
-
-    const { invoke } = await import('$shared/generated/ipc-client');
-    const result = await invoke<{ success: boolean; data?: unknown }>('agent:get-active-streams');
-
-    expect(result.success).toBe(true);
-    const streams = result.data as Array<{ agentId: string; startTime: number }>;
-    expect(streams).toHaveLength(2);
-    expect(streams.every((s) => s.startTime === 0)).toBe(true);
+    const second = await invoke<{ success: boolean; data?: unknown }>('agent:get-active-streams');
+    expect(second).toEqual(first);
+    expect(backend.requests.map(({ method }) => method)).toEqual([
+      'agent.listActive',
+      'agent.listActive',
+    ]);
   });
 
   it('serves the last known snapshot on a transient agent.listActive failure without fanning out', async () => {
@@ -163,30 +147,6 @@ describe('Active Streams Bridge Seeder', () => {
     });
     backend.onRequest('workspace.list', () => {
       throw new Error('should not fan out on a transient failure');
-    });
-
-    const second = await invoke<{ success: boolean; data?: unknown }>('agent:get-active-streams');
-    expect(second).toEqual(first);
-    expect(backend.requests.some(({ method }) => method === 'workspace.list')).toBe(false);
-  });
-
-  it('does not fan out on a message-only "method not found" error lacking a real code', async () => {
-    backend.onRequest('agent.listActive', () => ({
-      streams: [{ agentId: 'agent-z', sessionId: 'agent-z', workspaceId: 'ws9', startTime: 42 }],
-    }));
-
-    const { invoke } = await import('$shared/generated/ipc-client');
-    const first = await invoke<{ success: boolean; data?: unknown }>('agent:get-active-streams');
-    expect(first.success).toBe(true);
-
-    // Structured internal error whose message happens to mention "method not
-    // found" but carries no METHOD_NOT_FOUND code/rpcCode — must not trigger
-    // the legacy fan-out.
-    backend.onRequest('agent.listActive', () => {
-      throw new Error('internal error: could not resolve method not found in registry');
-    });
-    backend.onRequest('workspace.list', () => {
-      throw new Error('should not fan out on a non-code failure');
     });
 
     const second = await invoke<{ success: boolean; data?: unknown }>('agent:get-active-streams');

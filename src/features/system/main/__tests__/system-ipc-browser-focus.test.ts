@@ -41,7 +41,12 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 
 vi.mock('$lib/electron-bridge', () => ({ isElectron: () => true }));
 
-import { isFocusedWindowBrowserActive, setupSystemIPC } from '../system.ipc';
+import {
+  getFocusedWindowWorkspaceId,
+  getWorkspaceIdForWindow,
+  isFocusedWindowBrowserActive,
+  setupSystemIPC,
+} from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
 import { handleMenuZoom } from '../../../../main/menu-zoom';
 import { sendWorkspaceCommand } from '../../../../main/menu-workspace-command';
@@ -86,6 +91,34 @@ describe('WINDOW_CHANNELS.SET_BROWSER_FOCUSED ownership', () => {
     await handle(event, { browserFocused: false, focusOwnerId: 'current-panel' });
 
     expect(isFocusedWindowBrowserActive()).toBe(false);
+  });
+});
+
+describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
+  const window = { id: 915 };
+  const event = { sender: {} };
+
+  beforeEach(() => {
+    electronMocks.handle.mockReset();
+    electronMocks.fromWebContents.mockReturnValue(window);
+    electronMocks.getFocusedWindow.mockReturnValue(window);
+    setupSystemIPC();
+  });
+
+  it('keeps the last-known workspace for diagnostics after the window leaves it', async () => {
+    const handle = handlerFor(WINDOW_CHANNELS.SET_IN_WORKSPACE);
+    await handle(event, { inWorkspace: true, workspaceId: 'ws-diag' });
+    expect(getFocusedWindowWorkspaceId()).toBe('ws-diag');
+    expect(getWorkspaceIdForWindow(window.id)).toBe('ws-diag');
+
+    await handle(event, { inWorkspace: false });
+
+    expect(getFocusedWindowWorkspaceId()).toBeUndefined();
+    expect(getWorkspaceIdForWindow(window.id)).toBe('ws-diag');
+  });
+
+  it('returns undefined for a window that never reported a workspace', () => {
+    expect(getWorkspaceIdForWindow(4242)).toBeUndefined();
   });
 });
 

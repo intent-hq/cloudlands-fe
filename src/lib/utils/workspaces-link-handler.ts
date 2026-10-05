@@ -13,7 +13,7 @@
  * This reserves the URL slot for future use.
  */
 
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { noteUrl } from '$shared/constants/intent-links';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -181,8 +181,11 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
 
     if (resourceType === 'file') {
       const lineFragment = /^#L\d+(?:-\d+|C\d+)?$/.test(urlObj.hash) ? urlObj.hash : '';
-      const parsedFilePath = parseFilePathLineSuffix(resourceId + lineFragment);
-      resourceId = parsedFilePath.path;
+      // Parse location syntax before decoding: %23L42 and %3A17 belong to the
+      // filename, even when followed by a separate unescaped line location.
+      const encodedPath = rawSegments.slice(workspaceId ? 2 : 1).join('/');
+      const parsedFilePath = parseFilePathLineSuffix(encodedPath + lineFragment);
+      resourceId = decodeFilePathSegments(parsedFilePath.path.split('/'));
       line = parsedFilePath.line;
 
       // Reject traversal-looking or absolute paths (e.g. "..", encoded slashes)
@@ -296,7 +299,7 @@ export async function handleIntentLink(
   const info = parseIntentLink(url);
 
   if (!info.valid) {
-    toast.error(m.ui_linkHandler_invalidLink_title(), {
+    notify.error(m.ui_linkHandler_invalidLink_title(), {
       description: info.error || m.ui_linkHandler_invalidLink_description(),
     });
     return true;
@@ -322,17 +325,17 @@ export async function handleIntentLink(
         break;
       }
       default:
-        toast.error(m.ui_linkHandler_unsupportedLink_title(), {
+        notify.error(m.ui_linkHandler_unsupportedLink_title(), {
           description: m.ui_linkHandler_unsupportedLink_description({ type: info.type }),
         });
     }
   } catch (error) {
     if (error instanceof NotFoundError) {
-      toast.error(m.ui_linkHandler_notFound_title(), {
+      notify.error(m.ui_linkHandler_notFound_title(), {
         description: error.message,
       });
     } else {
-      toast.error(m.ui_linkHandler_navigationFailed_title(), {
+      notify.error(m.ui_linkHandler_navigationFailed_title(), {
         description: error instanceof Error ? error.message : m.ui_linkHandler_unknownError_label(),
       });
     }
@@ -461,6 +464,7 @@ async function navigateToFile(
 
     appStore.dispatch(
       openWorkspaceFile(info.workspaceId, info.resourceId, {
+        filePathIsLiteral: true,
         ...(info.line !== undefined ? { line: info.line } : {}),
         openInAdjacentPanel: isCrossWorkspace ? false : (options.openInAdjacentPanel ?? false),
         sourcePanelId: isCrossWorkspace ? undefined : options.sourcePanelId,
@@ -476,6 +480,7 @@ async function navigateToFile(
 
   appStore.dispatch(
     openWorkspaceFile(sourceWorkspaceId, info.resourceId, {
+      filePathIsLiteral: true,
       ...(info.line !== undefined ? { line: info.line } : {}),
       openInAdjacentPanel: options.openInAdjacentPanel ?? false,
       sourcePanelId: options.sourcePanelId,

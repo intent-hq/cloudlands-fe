@@ -1,7 +1,8 @@
 # Redux Store — Agent Directives
 
 > Architecture update — the renderer uses the published Themis runtime.
-> `@augmentcode/themis@0.1.1` is the canonical Store implementation. Themis
+> The `@themislib/themis` version declared in `package.json` is the canonical
+> Store implementation. Themis
 > owns its saga middleware and initializes it during `Store.init()`; do not add
 > another saga middleware. `store.runSaga(sagaFn)` starts an app-owned saga and
 > returns its cancellation handler. Business side effects belong to root-owned
@@ -11,7 +12,7 @@ Use these rules when creating or editing code in `src/store/renderer/` so Redux 
 
 ## Source of Truth
 
-- The published `@augmentcode/themis@0.1.1` exports and installed Themis skills are the source of truth for the store API surface.
+- The published exports of the `@themislib/themis` version declared in `package.json` and installed Themis skills are the source of truth for the store API surface.
 - This file is a repository-local companion checklist for `src/store/renderer/`. Keep it concise.
 - If this file conflicts with the installed Themis runtime, follow the runtime and report the instruction drift instead of extending local guidance.
 
@@ -37,25 +38,25 @@ Use these rules when creating or editing code in `src/store/renderer/` so Redux 
 - If entities need ID-based lookup, store them as `Collection<T, K>`, not `T[]`.
 - Do not use `.find()`, `.findIndex()`, or `.some()` over entity arrays in reducers/selectors when `getItem()` can do O(1) lookup.
 - Use `getItem(collection, id)` for lookup and `getItems(collection)` when you need the ordered list.
-- In slice files, import Themis collection helpers from `@augmentcode/themis/utils/collections/collection-utils`.
+- In slice files, import Themis collection helpers from `@themislib/themis/utils/collections/collection-utils`.
 
 ```ts
 import {
   createCollection,
   getItem,
   getItems,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 ```
 
-- Reference: Themis export `@augmentcode/themis/utils/collections/collection-utils`.
+- Reference: Themis export `@themislib/themis/utils/collections/collection-utils`.
 
 ## 4. Use Existing Utilities (Don't Reinvent)
 
 - `createWorkspaceScopedHelpers(emptyState)` from `../../utils/workspace-scoped` — standard `byWorkspaceId` get/set/clear helpers.
-- `createBooleanPreference({ sliceName, field, ... })` from `@augmentcode/themis/utils/store/boolean-preference` — generates consistent boolean set/toggle actions and reducer wiring.
+- `createBooleanPreference({ sliceName, field, ... })` from `@themislib/themis/utils/store/boolean-preference` — generates consistent boolean set/toggle actions and reducer wiring.
 - `takeEveryFromElectronChannel` / `takeEveryFromWindowEvent` from `../../../utils/ipc-channel` in saga files — standard IPC and window listener loops with cleanup.
 - `getLocalStorageJSON` / `setLocalStorageJSON` from `../../../utils/safe-local-storage-saga` in saga files — safe persistence helpers for sagas.
-- `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `@augmentcode/themis/utils/collections/collection-utils` — immutable collection CRUD and lookup.
+- `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `@themislib/themis/utils/collections/collection-utils` — immutable collection CRUD and lookup.
 - If a prompt says `getAllItems`, use `getItems` here; `getItems` is the real helper in this codebase.
 
 ## 5. Selector Lifecycle Rules
@@ -91,11 +92,11 @@ explicit-ID and selector responsibilities.
 ## 7. Action Naming
 
 - Always namespace action types as `"sliceName/actionName"`.
-- Use `createAction` from `@augmentcode/themis/utils/store/create-action` in renderer slice files.
+- Use `createAction` from `@themislib/themis/utils/store/create-action` in renderer slice files.
 - For multiple arguments, use tuple types instead of untyped arrays or object payloads by default.
 
 ```ts
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction } from '@themislib/themis/utils/store/create-action';
 export const setEnabled = createAction<[wsId: string, value: boolean]>('example/setEnabled');
 ```
 
@@ -110,7 +111,8 @@ export const setEnabled = createAction<[wsId: string, value: boolean]>('example/
 - If a slice exists only to define saga trigger actions and has no meaningful state, do not register a reducer for it in `src/store/renderer/reducer.ts`.
 - A saga can exist without a reducer entry in the state tree.
 - Keep the action creators and saga registration, but omit the empty reducer.
-- Current examples: `agent-events`, `git-events`, `settings-events`.
+- Current examples: `agent-events`, `git-events`.
+- `settings-events` is stateful: its `settingsEvents` reducer is registered for transient, mount-scoped settings forms and correlated request outcomes.
 
 ## 10. Workspace-Scoped State Pattern
 

@@ -6,21 +6,6 @@
  */
 
 // ============================================================================
-// Node Dimensions
-// ============================================================================
-
-/**
- * Visual card dimensions for edge endpoint calculations.
- * These should match the actual rendered card sizes.
- */
-export const CARD_DIMENSIONS = {
-  agent: { width: 232, height: 72 },
-  file: { width: 120, height: 47 },
-  note: { width: 120, height: 47 },
-  task: { width: 120, height: 47 },
-} as const;
-
-// ============================================================================
 // Tool Names for File/Note Detection
 // ============================================================================
 
@@ -70,73 +55,3 @@ export const DELEGATION_TOOLS = new Set(['delegate_task', 'create_sub_agent', 'c
 
 /** Duration in milliseconds for an edge to be considered "active" */
 export const ACTIVE_EDGE_WINDOW_MS = 5000;
-
-// ============================================================================
-// Edge Animation Configuration
-// ============================================================================
-
-/** Configuration for edge pulse animation */
-export const EDGE_ANIMATION = {
-  /** Base duration in seconds (scaled by path length) */
-  baseDuration: 1,
-  /** Pixels per second for animation speed calculation */
-  speedFactor: 150,
-  /** Minimum animation duration in seconds */
-  minDuration: 1,
-} as const;
-
-// ============================================================================
-// Edge Styling
-// ============================================================================
-
-/** Edge visual styles by type */
-export const EDGE_STYLES = {
-  delegation: {
-    stroke: 'var(--color-muted)',
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.85,
-  },
-  'file-read': {
-    stroke: 'var(--color-muted)',
-    strokeWidth: 1.5,
-    strokeDasharray: '6,4',
-    opacity: 0.6,
-  },
-  'note-read': {
-    stroke: 'var(--color-muted)',
-    strokeWidth: 1.5,
-    strokeDasharray: '6,4',
-    opacity: 0.6,
-  },
-  'file-write': {
-    stroke: 'rgb(59, 130, 246)',
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.9,
-  },
-  'note-write': {
-    stroke: 'rgb(59, 130, 246)',
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.9,
-  },
-  'task-create': {
-    stroke: 'rgb(139, 92, 246)',
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.9,
-  },
-  'task-update': {
-    stroke: 'rgb(139, 92, 246)',
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.9,
-  },
-  default: {
-    stroke: 'var(--color-border)',
-    strokeWidth: 1.5,
-    strokeDasharray: 'none',
-    opacity: 0.5,
-  },
-} as const;

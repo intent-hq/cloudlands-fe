@@ -1,4 +1,5 @@
-import { toast } from 'svelte-sonner';
+import { applyWorkspaceTransferProposal } from './workspace-transfer-proposal';
+import { notify } from '$lib/components/patterns/notify';
 import {
   call,
   delay,
@@ -57,15 +58,31 @@ const PROPOSAL_LIFECYCLE_PERSIST_DEBOUNCE_MS = 300;
 function isProposalApplyResult(value: unknown): value is ProposalApplyResult {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const candidate = value as Partial<ProposalApplyResult>;
-  return candidate.workspaceId === undefined || typeof candidate.workspaceId === 'string';
+  const transfer = candidate.transfer;
+  return (
+    (candidate.workspaceId === undefined || typeof candidate.workspaceId === 'string') &&
+    (transfer === undefined ||
+      (!!transfer &&
+        typeof transfer === 'object' &&
+        [
+          'workspaceId',
+          'sourceWorkspacePath',
+          'sourceConnectionId',
+          'destinationConnectionId',
+        ].every((key) => typeof transfer[key as keyof typeof transfer] === 'string') &&
+        (transfer.phase === 'transferring' || transfer.phase === 'imported')))
+  );
 }
 
 function isPersistedLifecycleEntry(value: unknown): value is ProposalLifecycleEntry {
   const candidate = value as Partial<ProposalLifecycleEntry>;
   return (
     !!candidate &&
-    (candidate.status === 'applied' || candidate.status === 'dismissed') &&
-    typeof candidate.completedAt === 'number' &&
+    (candidate.status === 'applied' ||
+      candidate.status === 'dismissed' ||
+      ((candidate.status === 'applying' || candidate.status === 'failed') &&
+        !!candidate.result?.transfer)) &&
+    (typeof candidate.completedAt === 'number' || typeof candidate.startedAt === 'number') &&
     (candidate.startedAt === undefined || typeof candidate.startedAt === 'number') &&
     (candidate.lastAction === undefined ||
       candidate.lastAction === 'apply' ||
@@ -82,7 +99,16 @@ export function validateProposalLifecycleEntries(
   if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return {};
   const validEntries: Record<string, ProposalLifecycleEntry> = {};
   for (const [key, entry] of Object.entries(entries as Record<string, unknown>)) {
-    if (key && isPersistedLifecycleEntry(entry)) validEntries[key] = entry;
+    if (key && isPersistedLifecycleEntry(entry))
+      validEntries[key] =
+        entry.status === 'applying'
+          ? {
+              ...entry,
+              status: 'failed',
+              error: m.chat_transfer_interrupted_error(),
+              lastAction: 'apply',
+            }
+          : entry;
   }
   return validEntries;
 }
@@ -139,6 +165,12 @@ export function* handleApplyProposal(
     if (!canApply(entry)) return;
 
     yield* put(proposalApplyStarted({ proposalId, startedAt }));
+    if (kind === 'workspace-transfer') {
+      yield* call(applyWorkspaceTransferProposal, proposalId, detail, entry?.result);
+      yield* put(proposalApplySucceeded({ proposalId, completedAt: Date.now() }));
+      yield* call(persistProposalLifecycleSaga);
+      return;
+    }
     if (kind === 'settings-change') {
       const { reverseChanges } = yield* call(applySettingsProposalWork, detail);
       const completedAt = Date.now();
@@ -160,7 +192,7 @@ export function* handleApplyProposal(
     const completedAt = Date.now();
     const message = serializeError(error);
     yield* put(proposalFailed({ proposalId, error: message, completedAt, lastAction: 'apply' }));
-    yield* call(toast.error, m.chat_proposalLifecycle_applyFailed_label(), {
+    yield* call(notify.error, m.chat_proposalLifecycle_applyFailed_label(), {
       description: message,
     });
   } finally {
@@ -206,7 +238,7 @@ export function* handleUndoProposal(
     const completedAt = Date.now();
     const message = serializeError(error);
     yield* put(proposalFailed({ proposalId, error: message, completedAt, lastAction: 'undo' }));
-    yield* call(toast.error, m.chat_proposalLifecycle_undoFailed_label(), {
+    yield* call(notify.error, m.chat_proposalLifecycle_undoFailed_label(), {
       description: message,
     });
   } finally {
@@ -224,10 +256,14 @@ export function* hydrateProposalLifecycleSaga(): SagaGenerator<void> {
 export function* persistProposalLifecycleSaga(): SagaGenerator<void> {
   const entries = yield* selectProposalLifecycleMap.effect();
   const prunedEntries = pruneAppliedProposalLifecycleEntries(entries, Date.now());
+  let completedCount = 0;
   const cappedEntries = Object.fromEntries(
     Object.entries(prunedEntries)
       .sort(([, a], [, b]) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
-      .slice(0, PROPOSAL_LIFECYCLE_MAX_PERSISTED_ENTRIES),
+      .filter(([, entry]) => {
+        if (entry.status !== 'applied' && entry.status !== 'dismissed') return true;
+        return completedCount++ < PROPOSAL_LIFECYCLE_MAX_PERSISTED_ENTRIES;
+      }),
   );
   yield* call(setLocalStorageJSON, PROPOSAL_LIFECYCLE_STORAGE_KEY, { entries: cappedEntries });
 }

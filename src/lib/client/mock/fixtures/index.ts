@@ -244,6 +244,11 @@ export const mockUserPreferences: UserPreferencesState = {
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
+  reduceMotionOnBattery: false,
+  labsMultiplayerEnabled: false,
+  labsGitLabEnabled: false,
+  labsRemoteAgentsEnabled: false,
+  labsSettingsVisible: false,
   agentFontStyle: 'sans',
   noteFontStyle: 'sans',
   codeFontFamily: 'JetBrains Mono',
@@ -253,6 +258,11 @@ export const mockUserPreferences: UserPreferencesState = {
   soundPath: '',
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
+  notificationVolumeEditId: 0,
+  pendingNotificationVolumeEditId: null,
+  notificationVolumeHydrationEpoch: 0,
+  notificationVolumeConfirmedRevision: -1,
+  deferredNotificationVolume: null,
   activityLogPresets: [],
   languagePreference: 'system',
   githubLinkDefaultAction: 'show-choices',
@@ -277,6 +287,8 @@ export const mockMcpServers: McpServerConfig[] = [
 
 /** Background-agent model assignments for the background-agent settings panel. */
 export const mockBackgroundAgentSettings: BackgroundAgentSettingsState = {
+  defaultReasoningEffort: '',
+  typeReasoningEffortOverrides: {},
   defaultModel: 'mock-model',
   typeOverrides: { commit: 'mock-model', pr: 'mock-model', review: '', fast: '' },
   providerSettings: {},
@@ -306,6 +318,21 @@ export const mockGitHubPullRequest: GitHubPullRequestDetails = {
   updatedAt: '2026-01-02T14:00:00.000Z',
   url: 'https://github.com/acme/web-app/pull/42',
   headRef: 'feat/dark-mode-toggle',
+  baseRef: 'main',
+};
+
+/** A merge-queued PR for the GitHub link hover card (`github.pulls.get` mock, PR #45). */
+export const mockGitHubPullRequestQueued: GitHubPullRequestDetails = {
+  owner: 'acme',
+  repo: 'web-app',
+  number: 45,
+  title: 'Persist sidebar width across sessions',
+  state: 'queued',
+  author: 'octocat',
+  createdAt: '2026-01-03T09:00:00.000Z',
+  updatedAt: '2026-01-03T15:30:00.000Z',
+  url: 'https://github.com/acme/web-app/pull/45',
+  headRef: 'feat/persist-sidebar-width',
   baseRef: 'main',
 };
 

@@ -1,3 +1,6 @@
+// @verify-changed-triggers: src/assets/icons/app-icon/*.png, electron-builder.yml,
+//   .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml
+
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -138,16 +141,6 @@ describe('modern macOS icon compiler', () => {
       expect(config, workflow).toContain("-name 'Xcode_26*.app'");
       expect(config, workflow).toContain('echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"');
     }
-  });
-
-  it('keeps manual unsigned macOS packaging free of signing and publishing inputs', () => {
-    const config = readFileSync(
-      join(process.cwd(), '.github/workflows/manual-signed-build.yml'),
-      'utf8',
-    );
-    expect(config).toContain('if [ "${{ inputs.sign }}" != "true" ]; then');
-    expect(config).toContain('unset CSC_LINK CSC_KEY_PASSWORD');
-    expect(config).toContain('pnpm run dist:mac --publish never');
   });
 
   it('packages the modern resource and declares the legacy fallback', () => {

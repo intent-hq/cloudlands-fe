@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from '@augmentcode/themis/types';
+import type { StoreMiddleware } from '@themislib/themis/types';
 
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { createStoreGuardMiddleware } from '../../store/utils/store-guard-middleware';
@@ -6,6 +6,7 @@ import {
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
 } from './constants';
+import { createActionRingBufferMiddleware } from './middlewares/action-ring-buffer';
 import { createBatchingMiddleware } from './middlewares/batch';
 import { createReferenceChangeDetectorMiddleware } from './middlewares/state-reference-checks';
 import { createStructuredCloneCheckerMiddleware } from './middlewares/structured-clone-checker';
@@ -17,6 +18,7 @@ function buildMiddleware(): StoreMiddleware[] {
   const baseMiddleware: StoreMiddleware[] = [
     createStoreGuardMiddleware('renderer'),
     createBatchingMiddleware([]),
+    createActionRingBufferMiddleware(),
   ];
   const debugMiddleware: StoreMiddleware[] = [];
 

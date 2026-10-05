@@ -3,7 +3,7 @@
    * DividerPanel - An expandable panel that appears below a DividerButton
    * Connects visually to the button above with matching border styling
    */
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import type { Snippet } from 'svelte';
 
   interface Props {
@@ -44,7 +44,7 @@
   <div
     bind:this={panelRef}
     class="relative z-10 basis-full w-[calc(100%_+_2.44rem)] min-w-[calc(100%_+_2.4rem)] px-5 pl-6.5 transform translate-y-[-1.44rem] pt-7 pb-6 ml-[-20px] bg-background border-y border-x border-border space-y-2 origin-top"
-    transition:slide={{ duration: 150 }}
+    transition:slide={{ tier: 'moderate' }}
   >
     {#if children}
       {@render children()}

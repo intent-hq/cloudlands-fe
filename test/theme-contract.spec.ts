@@ -69,7 +69,8 @@ const DEFAULT_NEUTRAL_RGB = {
     foreground: 'rgb(0, 0, 0)',
     card: 'rgb(255, 255, 255)',
     'card-foreground': 'rgb(0, 0, 0)',
-    popover: 'rgb(236, 236, 234)',
+    // Batch 18-F (4593049e): popovers match the card surface.
+    popover: 'rgb(255, 255, 255)',
     'popover-foreground': 'rgb(0, 0, 0)',
     secondary: 'rgb(229, 229, 229)',
     'secondary-foreground': 'rgb(0, 0, 0)',
@@ -91,7 +92,8 @@ const DEFAULT_NEUTRAL_RGB = {
     foreground: 'rgb(255, 255, 255)',
     card: 'rgb(26, 26, 26)',
     'card-foreground': 'rgb(255, 255, 255)',
-    popover: 'rgb(38, 38, 38)',
+    // Batch 18-F (4593049e): popovers match the card surface.
+    popover: 'rgb(26, 26, 26)',
     'popover-foreground': 'rgb(255, 255, 255)',
     secondary: 'rgb(38, 38, 38)',
     'secondary-foreground': 'rgb(225, 223, 222)',
@@ -719,18 +721,22 @@ test('browser resolves the semantic hatch and compact foundation geometry in bot
         smallRadius: style.getPropertyValue('--radius-small').trim(),
         mediumRadius: style.getPropertyValue('--radius-medium').trim(),
         largeRadius: style.getPropertyValue('--radius-large').trim(),
+        rowRadius: style.getPropertyValue('--radius-row').trim(),
+        pillRadius: style.getPropertyValue('--radius-pill').trim(),
       };
     }, className);
-    expect(foundations.hatch).toContain('repeating-linear-gradient');
-    expect(foundations.hatch).toMatch(/hsl\(/g);
+    // Wave 9 foundations cleanup (388bffff) retired the unused surface hatch token.
+    expect(foundations.hatch).toBe('');
     expect(foundations).toMatchObject({
       compactControl: '1.75rem',
       smallControl: '1.75rem',
       mediumControl: '2rem',
       largeControl: '2.25rem',
-      smallRadius: '5px',
-      mediumRadius: '7px',
-      largeRadius: '9px',
+      smallRadius: '8px',
+      mediumRadius: '8px',
+      largeRadius: '8px',
+      rowRadius: '8px',
+      pillRadius: '8px',
     });
   }
 });
@@ -778,7 +784,7 @@ test('standalone foundations contact sheet stays readable across required modes'
       <div class="grid">
         <section><h2>Color roles</h2><div class="swatches"><div class="swatch background">Canvas</div><div class="swatch card">Raised</div><div class="swatch primary">Primary</div><div class="swatch accent">Selection</div><div class="swatch muted">Muted</div><div class="swatch info">Info</div><div class="swatch success">Success</div><div class="swatch sidebar">Chrome</div></div></section>
         <section><h2>Typography</h2><div class="samples"><div class="display">Editorial hierarchy</div><div>Readable body copy stays regular and compact.</div><div class="label">Medium label · sentence case</div><code>const role = 'semantic';</code></div></section>
-        <section><h2>Geometry & elevation</h2><div class="geometry"><span class="control small">28px</span><span class="control medium">32px</span><span class="control large">36px</span></div></section>
+        <section><h2>Geometry & elevation</h2><div class="geometry"><span class="control small">28px</span><span class="control medium">36px</span><span class="control large">36px</span></div></section>
         <section><h2>Hatched surface</h2><div class="hatch" data-hatch></div></section>
         <section><h2>Motion & layers</h2><div class="motion" data-motion></div></section>
       </div>
@@ -821,7 +827,8 @@ test('standalone foundations contact sheet stays readable across required modes'
       headingCssHeight: document.querySelector('h1')!.getBoundingClientRect().height,
     }));
     expect(evidence.overflow, name).toBeLessThanOrEqual(0);
-    expect(evidence.hatch, name).toContain('repeating-linear-gradient');
+    // Wave 9 foundations cleanup (388bffff): retired hatches paint no background image.
+    expect(evidence.hatch, name).toBe('none');
     expect(evidence.viewportWidth, name).toBe(width);
     if (reducedMotion === 'reduce') {
       expect(['0.01ms', '1e-05s'], name).toContain(evidence.transition);

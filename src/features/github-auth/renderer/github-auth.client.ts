@@ -1,10 +1,13 @@
 import { invoke } from '$lib/electron-bridge';
 import { GITHUB_AUTH_CHANNELS } from '../constants';
 import type {
+  CancelAuthOptions,
   GitHubAuthState,
   GitHubAuthStatus,
   GithubRepo,
   GitHubUser,
+  GithubUserSearchHit,
+  StartAuthOptions,
   StartAuthResult,
 } from '../types';
 
@@ -12,9 +15,12 @@ export const githubAuthClient = {
   /**
    * Check if user is authenticated with GitHub via the daemon
    */
-  async isAuthenticated(): Promise<boolean> {
+  async isAuthenticated(workspaceId?: string): Promise<boolean> {
     try {
-      return await invoke<boolean>(GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED);
+      return await invoke<boolean>(
+        GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return false;
     }
@@ -23,19 +29,25 @@ export const githubAuthClient = {
   /**
    * Get GitHub user info (may be null if not available from daemon API)
    */
-  async getUser(): Promise<GitHubUser | null> {
+  async getUser(workspaceId?: string): Promise<GitHubUser | null> {
     try {
-      return await invoke<GitHubUser | null>(GITHUB_AUTH_CHANNELS.GET_USER);
+      return await invoke<GitHubUser | null>(
+        GITHUB_AUTH_CHANNELS.GET_USER,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return null;
     }
   },
 
   /**
-   * Start GitHub authentication - opens OAuth URL in browser
+   * Start GitHub authentication - opens OAuth URL in browser.
+   * `reconnect: true` forces a fresh device flow on an existing connection.
    */
-  async startAuth(): Promise<StartAuthResult> {
-    return await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH);
+  async startAuth(options?: StartAuthOptions): Promise<StartAuthResult> {
+    return options
+      ? await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH, options)
+      : await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH);
   },
 
   /**
@@ -51,11 +63,14 @@ export const githubAuthClient = {
   },
 
   /**
-   * Cancel ongoing authentication (daemon-side `github.cancelAuth`).
+   * Cancel ongoing authentication (daemon-side `github.cancelAuth`), scoped
+   * to the flow `startAuth` returned when `options.flowId` is known.
    * Returns the seam envelope so callers only clear UI state on success.
    */
-  async cancelAuth(): Promise<{ success: boolean; error?: string }> {
-    return invoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH);
+  async cancelAuth(options?: CancelAuthOptions): Promise<{ success: boolean; error?: string }> {
+    return options
+      ? invoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, options)
+      : invoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH);
   },
 
   /**
@@ -69,9 +84,12 @@ export const githubAuthClient = {
   /**
    * Get full authentication state for UI
    */
-  async getAuthState(): Promise<GitHubAuthState> {
+  async getAuthState(workspaceId?: string): Promise<GitHubAuthState> {
     try {
-      return await invoke<GitHubAuthState>(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE);
+      return await invoke<GitHubAuthState>(
+        GITHUB_AUTH_CHANNELS.GET_AUTH_STATE,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return {
         isAuthenticated: false,
@@ -84,9 +102,12 @@ export const githubAuthClient = {
   /**
    * Get GitHub status from daemon API
    */
-  async getStatus(): Promise<GitHubAuthStatus> {
+  async getStatus(workspaceId?: string): Promise<GitHubAuthStatus> {
     try {
-      return await invoke<GitHubAuthStatus>(GITHUB_AUTH_CHANNELS.GET_STATUS);
+      return await invoke<GitHubAuthStatus>(
+        GITHUB_AUTH_CHANNELS.GET_STATUS,
+        ...(workspaceId === undefined ? [] : [{ workspaceId }]),
+      );
     } catch {
       return {
         isConfigured: false,
@@ -100,19 +121,13 @@ export const githubAuthClient = {
   /**
    * List GitHub repositories for the authenticated user
    */
-  async listRepos(page?: number): Promise<GithubRepo[]> {
-    try {
-      const result = await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
-        GITHUB_AUTH_CHANNELS.LIST_REPOS,
-        { page },
-      );
-      if (result.success && result.data) {
-        return result.data;
-      }
-      return [];
-    } catch {
-      return [];
-    }
+  async listRepos(page?: number, workspaceId?: string): Promise<GithubRepo[]> {
+    const result = await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
+      GITHUB_AUTH_CHANNELS.LIST_REPOS,
+      { page, ...(workspaceId === undefined ? {} : { workspaceId }) },
+    );
+    if (!result.success) throw new Error(result.error || 'Repository discovery failed'); // i18n-ignore (wire-error fallback)
+    return result.data ?? [];
   },
 
   /**
@@ -123,11 +138,30 @@ export const githubAuthClient = {
    */
   async searchRepos(
     query: string,
+    workspaceId?: string,
   ): Promise<{ success: boolean; data?: GithubRepo[]; error?: string }> {
     try {
       return await invoke<{ success: boolean; data?: GithubRepo[]; error?: string }>(
         GITHUB_AUTH_CHANNELS.SEARCH_REPOS,
-        { query },
+        { query, ...(workspaceId === undefined ? {} : { workspaceId }) },
+      );
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  /**
+   * Login-prefix GitHub user search (`github.users.search`, §5.27) for the
+   * Share dialog's pin typeahead. Same envelope contract as `searchRepos`.
+   */
+  async searchUsers(
+    query: string,
+    workspaceId?: string,
+  ): Promise<{ success: boolean; data?: GithubUserSearchHit[]; error?: string }> {
+    try {
+      return await invoke<{ success: boolean; data?: GithubUserSearchHit[]; error?: string }>(
+        GITHUB_AUTH_CHANNELS.SEARCH_USERS,
+        { query, ...(workspaceId === undefined ? {} : { workspaceId }) },
       );
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };

@@ -1,11 +1,12 @@
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 /**
  * MCP Settings Slice
  *
  * Actions and reducer for MCP server management.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -60,17 +61,17 @@ export const setError = createAction<[error: string | null]>('mcpSettings/setErr
 export const setEnabled = createAction<[enabled: boolean]>('mcpSettings/setEnabled');
 
 /** Set a server's status */
-export const setServerStatus = createAction<[name: string, status: McpServerStatus]>(
+export const setServerStatus = createAction<[key: string, status: McpServerStatus]>(
   'mcpSettings/setServerStatus',
 );
 
 /** Set server error message */
-export const setServerErrorMessage = createAction<[name: string, message: string]>(
+export const setServerErrorMessage = createAction<[key: string, message: string]>(
   'mcpSettings/setServerErrorMessage',
 );
 
 /** Clear a server's error message */
-export const clearServerErrorMessage = createAction<[name: string]>(
+export const clearServerErrorMessage = createAction<[key: string]>(
   'mcpSettings/clearServerErrorMessage',
 );
 
@@ -83,12 +84,10 @@ export const setDisabledServers = createAction<[disabled: Record<string, true>]>
 );
 
 /** Toggle a server's disabled state */
-export const toggleServerDisabled = createAction<[name: string]>(
-  'mcpSettings/toggleServerDisabled',
-);
+export const toggleServerDisabled = createAction<[key: string]>('mcpSettings/toggleServerDisabled');
 
 /** Remove a server from local state */
-export const removeServerFromState = createAction<[name: string]>(
+export const removeServerFromState = createAction<[key: string]>(
   'mcpSettings/removeServerFromState',
 );
 
@@ -99,7 +98,7 @@ export const bulkSetServerStatus = createAction<[statusMap: Record<string, McpSe
 
 /** Set one server's daemon-confirmed per-workspace disabled state */
 export const setWorkspaceMcpServerDisabled = createAction<
-  [workspaceId: string, serverName: string, disabled: boolean]
+  [workspaceId: string, serverKey: string, disabled: boolean]
 >('mcpSettings/setWorkspaceMcpServerDisabled');
 
 /** Replace a workspace's disabled-server map from the daemon's scoped list */
@@ -117,7 +116,7 @@ export const setWorkspaceDisabledMcpServers = createAction<
  * by the saga via `setWorkspaceMcpServerDisabled` once the daemon confirms.
  */
 export const toggleWorkspaceMcpServer = createAction<
-  [workspaceId: string, serverName: string, enabled: boolean]
+  [workspaceId: string, serverKey: string, enabled: boolean]
 >('mcpSettings/toggleWorkspaceMcpServer');
 
 /** Trigger: hydrate a workspace's disabled-server map from the daemon's scoped list */
@@ -132,16 +131,16 @@ export const loadServers = createAction('mcpSettings/loadServers');
 export const toggleEnabled = createAction('mcpSettings/toggleEnabled');
 
 /** Trigger: toggle a server's disabled state and persist */
-export const toggleServer = createAction<[name: string]>('mcpSettings/toggleServer');
+export const toggleServer = createAction<[key: string]>('mcpSettings/toggleServer');
 
 /** Trigger: add a new server */
 export const addServer = createAction<[config: McpServerConfig]>('mcpSettings/addServer');
 
 /** Trigger: remove a server */
-export const removeServer = createAction<[name: string]>('mcpSettings/removeServer');
+export const removeServer = createAction<[key: string]>('mcpSettings/removeServer');
 
 /** Trigger: update a server (remove + add) */
-export const updateServer = createAction<[name: string, config: McpServerConfig]>(
+export const updateServer = createAction<[key: string, config: McpServerConfig]>(
   'mcpSettings/updateServer',
 );
 
@@ -154,7 +153,10 @@ export const importFromJsonCompleted = createAction<[count: number]>(
 );
 
 /** Trigger: retry/restart a stopped or errored server */
-export const restartServer = createAction<[name: string]>('mcpSettings/restartServer');
+export const restartServer = createAction<[key: string]>('mcpSettings/restartServer');
+
+/** Trigger: run interactive OAuth for a saved hosted server */
+export const authenticateServer = createAction<[key: string]>('mcpSettings/authenticateServer');
 
 /** Trigger: replace the whole server set from the advanced JSON editor */
 export const saveAdvancedJson = createAction<[jsonString: string]>('mcpSettings/saveAdvancedJson');
@@ -170,10 +172,44 @@ export const setAdvancedSaveStatus = createAction<
 
 export const mcpSettingsReducer = createReducer<McpSettingsState>(initialState);
 
-mcpSettingsReducer.with(setServers, (state, { payload: [servers] }) => ({
-  ...state,
-  servers,
-}));
+mcpSettingsReducer.with(setServers, (state, { payload: [servers] }) => {
+  // A newly saved legacy entry gains an ID; move its metadata to that key.
+  const assigned = servers.flatMap((server) => {
+    if (!server.id) return [];
+    const previous = state.servers.filter((candidate) => candidate.name === server.name);
+    return previous.length === 1 && previous[0].id === undefined
+      ? [[server.name, server.id] as const]
+      : [];
+  });
+  const rekey = <T>(map: Record<string, T>): Record<string, T> => {
+    if (assigned.length === 0) return map;
+    const next = { ...map };
+    for (const [name, id] of assigned) {
+      if (Object.hasOwn(next, name)) {
+        next[id] = next[name];
+        delete next[name];
+      }
+    }
+    return next;
+  };
+  return {
+    ...state,
+    servers,
+    statusMap: rekey(state.statusMap),
+    errorMessages: rekey(state.errorMessages),
+    toolsMap: rekey(state.toolsMap),
+    disabledServers: rekey(state.disabledServers),
+    byWorkspaceId:
+      assigned.length === 0
+        ? state.byWorkspaceId
+        : Object.fromEntries(
+            Object.entries(state.byWorkspaceId).map(([id, workspace]) => [
+              id,
+              { disabledServers: rekey(workspace.disabledServers) },
+            ]),
+          ),
+  };
+});
 mcpSettingsReducer.with(setLoading, (state, { payload: [loading] }) => ({
   ...state,
   loading,
@@ -224,7 +260,7 @@ mcpSettingsReducer.with(removeServerFromState, (state, { payload: [name] }) => {
   const { [name]: _d, ...restDisabled } = state.disabledServers;
   return {
     ...state,
-    servers: state.servers.filter((s) => s.name !== name),
+    servers: state.servers.filter((s) => getMcpServerKey(s) !== name),
     statusMap: restStatus,
     toolsMap: restTools,
     errorMessages: restErrors,
@@ -246,15 +282,15 @@ mcpSettingsReducer.with(setAdvancedSaveStatus, (state, { payload: [status, error
 }));
 mcpSettingsReducer.with(
   setWorkspaceMcpServerDisabled,
-  (state, { payload: [workspaceId, serverName, disabled] }) => {
+  (state, { payload: [workspaceId, serverKey, disabled] }) => {
     if (!workspaceId) return state;
     const wsState = getWorkspaceState(state, workspaceId);
-    const currentlyDisabled = serverName in wsState.disabledServers;
+    const currentlyDisabled = serverKey in wsState.disabledServers;
     if (disabled === currentlyDisabled) return state;
 
     const disabledServers = disabled
-      ? { ...wsState.disabledServers, [serverName]: true as const }
-      : omitKey(wsState.disabledServers, serverName);
+      ? { ...wsState.disabledServers, [serverKey]: true as const }
+      : omitKey(wsState.disabledServers, serverKey);
 
     return setWorkspaceState(state, workspaceId, { disabledServers });
   },

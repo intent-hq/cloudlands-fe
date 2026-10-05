@@ -14,6 +14,8 @@
     removeContextItem,
   } from '$store/renderer/slices/context/context-slice';
   import { selectTopLevelContextItems } from '$store/renderer/slices/context/context-selectors';
+  import { selectWorkspaceContextAttachments } from '$store/renderer/slices/context/context-selectors';
+  import ContextAttachmentsSection from '$features/context/components/ContextAttachmentsSection.svelte';
   import { v4 as uuidv4 } from 'uuid';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import {
@@ -93,6 +95,7 @@
 
   // Get context items that aren't linked to any note
   const topLevelItems$ = selectTopLevelContextItems(workspaceIdStore);
+  const contextAttachments$ = selectWorkspaceContextAttachments(workspaceIdStore);
   const filteredNotes = $derived(filterContextNotes(notes, searchQuery));
   const filteredTopLevelItems = $derived(filterContextItems($topLevelItems$, searchQuery));
   const hasActiveSearch = $derived(Boolean(searchQuery.trim()));
@@ -291,7 +294,7 @@
   onSelect={handlePickerSelect}
 />
 
-<div class="flex flex-col h-full {className ?? ''}">
+<div class="-mx-2 flex flex-col h-full {className ?? ''}">
   <!-- Add Context Section -->
   {#if showAddSection}
     <div bind:this={addContextAnchor} class="mb-1.5">
@@ -359,6 +362,7 @@
 
       <!-- Skills Section -->
       <SkillsSection {workspaceId} />
+      <ContextAttachmentsSection {workspaceId} attachments={$contextAttachments$} />
     {/if}
   </div>
 </div>

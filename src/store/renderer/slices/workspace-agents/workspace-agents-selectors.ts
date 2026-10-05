@@ -1,8 +1,28 @@
 import { store } from '../../store';
 import type { AgentId, AgentSession } from '$shared/types';
+import { classifyAgentScope } from '$shared/utils/agent-scope';
 import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+
+export const selectAgentCreationOutcome = store.createSelector(
+  (state, consumerId: string, workspaceId: string, resourceId: string) => {
+    const outcomes = state.workspaceAgents.creationOutcomes;
+    const outcome = outcomes ? getItem(outcomes, consumerId) : undefined;
+    return outcome?.workspaceId === workspaceId && outcome.resourceId === resourceId
+      ? outcome
+      : undefined;
+  },
+);
+
+export const selectAgentRetirementSupported = store.createSelector((state) => {
+  const support = state.workspaceAgents.retirementSupport;
+  return (
+    support?.connectionGeneration === state.daemonHealth.connectionGeneration &&
+    support?.supported === true
+  );
+});
 
 function getWorkspaceAgentState(state: StoreState, wsId: string) {
   return state.workspaceAgents.byWorkspaceId[wsId] ?? emptyWorkspaceAgentState;
@@ -58,12 +78,12 @@ export const selectForegroundWorkspaceAgents = store.createSelector((state, wsId
   return result;
 });
 
-/** True when any foreground (top-level) agent session has unread messages. */
+/** True when any non-retired foreground (top-level) agent session has unread messages. */
 export const selectWorkspaceHasUnreadForegroundAgents = store.createSelector(
   (state, wsId: string): boolean => {
     return selectForegroundWorkspaceAgents
       .select(state, wsId)
-      .some((agent) => agent.hasUnread === true);
+      .some((agent) => !agent.retiredAt && agent.hasUnread === true);
   },
 );
 
@@ -75,7 +95,7 @@ export const selectIsLoadingAgents = store.createSelector((state, wsId: string) 
   return getWorkspaceAgentState(state, wsId).isLoadingAgents;
 });
 
-/** Daemon-served retired-row count (§5.5 soft retire, v8.2) for the Retired bin toggle. */
+/** Daemon-served retired-row count (§5.5 soft retire) for the Retired bin toggle. */
 export const selectRetiredCount = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).retiredCount;
 });
@@ -88,6 +108,106 @@ export const selectRetiredAgentsLoaded = store.createSelector((state, wsId: stri
 /** True while the on-demand retired-only read is in flight. */
 export const selectIsLoadingRetiredAgents = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).isLoadingRetiredAgents;
+});
+
+/**
+ * Daemon-served per-bin counts (`scopeCounts`, §5.5 row scope) for the
+ * Delegated / Background bin toggles; `null` when the daemon served none
+ * (old daemon — the all-rows read, no lazy bins).
+ */
+export const selectScopeCounts = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).scopeCounts;
+});
+
+/**
+ * Bumped each time a hydration read installs an authoritative count baseline
+ * (`setScopeCounts`); a deferred count adjustment captured under an older
+ * generation is stale and must be dropped.
+ */
+export const selectScopeCountsGeneration = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).scopeCountsGeneration;
+});
+
+/** True once the on-demand `scope: "delegated"` read has hydrated the delegated rows. */
+export const selectDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).delegatedAgentsLoaded;
+});
+
+/** True while the on-demand delegated read is in flight. */
+export const selectIsLoadingDelegatedAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingDelegatedAgents;
+});
+
+/**
+ * Daemon-served per-parent delegated counts (`delegatedCounts`, §5.5) for the
+ * collapsed per-parent delegated groups; `null` when the daemon served none.
+ */
+export const selectDelegatedCounts = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).delegatedCounts;
+});
+
+/**
+ * True once one parent's direct children are hydrated — by the per-parent
+ * read (`scope: "delegated"` + `parentAgentId`) or by the whole-bin read,
+ * which covers every parent.
+ */
+export const selectDelegatedParentLoaded = store.createSelector(
+  (state, wsId: string, parentAgentId: string) => {
+    const workspaceState = getWorkspaceAgentState(state, wsId);
+    return (
+      workspaceState.delegatedAgentsLoaded ||
+      workspaceState.loadedDelegatedParentIds[parentAgentId] === true
+    );
+  },
+);
+
+/** True while that parent's per-parent delegated read is in flight. */
+export const selectIsLoadingDelegatedParent = store.createSelector(
+  (state, wsId: string, parentAgentId: string) => {
+    return getWorkspaceAgentState(state, wsId).loadingDelegatedParentIds[parentAgentId] === true;
+  },
+);
+
+/** The parents whose per-parent delegated read has landed (not the whole-bin flag). */
+export const selectLoadedDelegatedParentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).loadedDelegatedParentIds;
+});
+
+/** The parents whose per-parent delegated read is in flight. */
+export const selectLoadingDelegatedParentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).loadingDelegatedParentIds;
+});
+
+/**
+ * True once the orphan-only delegated read (`scope: "delegated"` +
+ * `orphanedOnly: true`) has landed — the raw flag, not the whole-bin one;
+ * readers that only need "are the orphans hydrated" check
+ * `selectDelegatedAgentsLoaded` first.
+ */
+export const selectOrphanedDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).orphanedDelegatedAgentsLoaded;
+});
+
+/** The rows the latest orphan-only read served (the Delegated bin's membership). */
+export const selectOrphanedDelegatedAgentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).orphanedDelegatedAgentIds;
+});
+
+/** True while the on-demand orphan-only delegated read is in flight. */
+export const selectIsLoadingOrphanedDelegatedAgents = store.createSelector(
+  (state, wsId: string) => {
+    return getWorkspaceAgentState(state, wsId).isLoadingOrphanedDelegatedAgents;
+  },
+);
+
+/** True once the on-demand `scope: "background"` read has hydrated the background rows. */
+export const selectBackgroundAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).backgroundAgentsLoaded;
+});
+
+/** True while the on-demand background read is in flight. */
+export const selectIsLoadingBackgroundAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingBackgroundAgents;
 });
 
 function byCreatedOrder(left: AgentSession, right: AgentSession): number {
@@ -151,6 +271,10 @@ export function resolveEmptyLayoutAgent(
       );
     if (initialAgent) return initialAgent;
   }
+  // The primary candidate must be a top-level row (shared `agent-scope` bin —
+  // neither delegated nor background). Forked sessions (`parentSessionId`) are
+  // excluded as a separate rule: a fork is not delegated, but it is a
+  // continuation of another session rather than the workspace's own primary.
   const orderedPrimaryAgents = agents
     .filter(
       (agent) =>
@@ -161,10 +285,8 @@ export function resolveEmptyLayoutAgent(
         agent.isInitialAgent !== true &&
         agent.metadata?.isInitialAgent !== true &&
         agent.agentMetadata?.isInitialAgent !== true &&
-        agent.isBackground !== true &&
-        agent.metadata?.isBackground !== true &&
-        !agent.parentSessionId &&
-        typeof agent.metadata?.createdByAgentId !== 'string',
+        classifyAgentScope(agent) === 'topLevel' &&
+        !agent.parentSessionId,
     )
     .sort(byCreatedOrder);
   let newestAgent: AgentSession | null = null;

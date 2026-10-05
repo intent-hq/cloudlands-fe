@@ -1,16 +1,39 @@
-import { call, delay, put, race, take, takeEvery } from 'typed-redux-saga';
+import {
+  call,
+  cancelled,
+  delay,
+  put,
+  race,
+  take,
+  takeEvery,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import type { MutationResult } from '$lib/client/app-client';
 import { createLogger } from '$lib/utils/client-logger';
 import { stripWorkspacePrefix } from '$lib/utils/file-utils';
+import { isAbsolutePath } from '$lib/utils/path-utils';
+import { deleteWithUndo } from '$lib/utils/reversible-actions';
+import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { m } from '$shared/paraglide/messages.js';
+import { store as appStore } from '../../../store';
+import { queueFileMutation } from '../../../utils/worktree-mutation-queue';
 import { createFileRequested } from '../../app-layout/app-layout-slice';
-import { selectFileExplorerState } from '../../file-explorer/file-explorer-selectors';
+import {
+  selectEffectiveFileExplorerWorkspacePath,
+  selectFileExplorerState,
+} from '../../file-explorer/file-explorer-selectors';
 import { refreshDirectoryRequested } from '../../file-explorer/file-explorer-slice';
+import { closeTab, closeTabsByType } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { openWorkspaceFile } from '../../workspace-navigation/workspace-navigation-slice';
 import { selectFileContentEntry } from '../files-selectors';
 import {
+  deleteFileRequested,
+  deleteFileWithUndoRequested,
+  restoreFileContentRequested,
+  removeFileContentEntry,
   saveFileContentFailed,
   saveFileContentRequested,
   saveFileContentSucceeded,
@@ -19,7 +42,19 @@ import {
 
 const logger = createLogger('FilesWriteSaga');
 export const FILE_CONTENT_SAVE_DEBOUNCE_MS = 1500;
-const pendingFileSaves = new Map<string, Promise<void>>();
+function* serializeFileMutation<T>(
+  workspaceId: string,
+  path: string,
+  run: (relativePath: string) => Promise<T>,
+): SagaGenerator<T> {
+  // Tabs/cache entries retain their caller-facing paths. Only the transport and
+  // queue identity use the workspace-relative resource, for every mutation kind.
+  const workspacePath = isAbsolutePath(path)
+    ? yield* selectEffectiveFileExplorerWorkspacePath.effect(workspaceId)
+    : '';
+  const relativePath = stripWorkspacePrefix(path, workspacePath);
+  return yield* call(() => queueFileMutation(workspaceId, relativePath, () => run(relativePath)));
+}
 
 type SaveRequest = {
   workspaceId: string;
@@ -27,7 +62,6 @@ type SaveRequest = {
   absolutePath: string;
   content: string;
 };
-type SaveAction = ReturnType<typeof saveFileContentRequested>;
 type ObservedAction = { type: string; payload?: unknown };
 
 function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolean {
@@ -38,23 +72,37 @@ function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolea
   );
 }
 
-function isSaveFor(action: ObservedAction, workspaceId: string, path: string): boolean {
-  return (
-    action.type === saveFileContentRequested.type &&
-    Array.isArray(action.payload) &&
-    action.payload[0] === workspaceId &&
-    action.payload[1] === path
-  );
+function isSaveFor(
+  action: ObservedAction,
+  workspaceId: string,
+  path: string,
+  absolutePath: string,
+): boolean {
+  if (
+    ![
+      saveFileContentRequested.type,
+      deleteFileRequested.type,
+      deleteFileWithUndoRequested.type,
+    ].includes(action.type) ||
+    !Array.isArray(action.payload) ||
+    action.payload[0] !== workspaceId
+  )
+    return false;
+  const requestAbsolutePath =
+    action.type === saveFileContentRequested.type
+      ? action.payload[2]
+      : action.payload[2]?.absolutePath;
+  return action.payload[1] === path || requestAbsolutePath === absolutePath;
 }
 
 function* saveFileContentWorker(request: SaveRequest) {
   const { workspaceId, path, content } = request;
   try {
-    const result: Awaited<ReturnType<typeof appClient.files.write>> = yield* call(
-      [appClient.files, appClient.files.write],
+    const result = yield* call(
+      serializeFileMutation<MutationResult>,
       workspaceId,
       path,
-      content,
+      (relativePath: string) => appClient.files.write(workspaceId, relativePath, content),
     );
     if (result.success) {
       yield* put(saveFileContentSucceeded(workspaceId, path, content));
@@ -82,11 +130,11 @@ function* createFileWorker(workspaceId: string, folderPath: string, fileName: st
     return;
   }
   try {
-    const result: Awaited<ReturnType<typeof appClient.files.write>> = yield* call(
-      [appClient.files, appClient.files.write],
+    const result = yield* call(
+      serializeFileMutation<MutationResult>,
       workspaceId,
       relativePath,
-      '',
+      (mutationPath: string) => appClient.files.write(workspaceId, mutationPath, ''),
     );
     if (!result.success) return;
     yield* put(refreshDirectoryRequested(workspaceId, absoluteFilePath));
@@ -105,52 +153,161 @@ function* createFileActionWorker(action: ReturnType<typeof createFileRequested>)
   });
 }
 
+function* waitForManualFileEdit(workspaceId: string, path: string) {
+  while (true) {
+    const edit = yield* take(updateFileContent);
+    if (
+      edit.payload[0] === workspaceId &&
+      edit.payload[1] === path &&
+      edit.payload[3]?.autoSave === false
+    )
+      return;
+  }
+}
+
 function* updateFileContentWorker(action: ReturnType<typeof updateFileContent>) {
+  if (action.payload[3]?.autoSave === false) return;
   const [workspaceId, path] = action.payload;
   const entry = yield* selectFileContentEntry.effect(workspaceId, path);
   if (!entry?.absolutePath) return;
+  const absolutePath = entry.absolutePath;
   const { elapsed } = yield* race({
     elapsed: delay(FILE_CONTENT_SAVE_DEBOUNCE_MS, true),
-    directSave: take((save: ObservedAction) => isSaveFor(save, workspaceId, path)),
+    directSave: take((save: ObservedAction) => isSaveFor(save, workspaceId, path, absolutePath)),
+    manualEdit: call(waitForManualFileEdit, workspaceId, path),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
   if (!elapsed) return;
   const latestEntry = yield* selectFileContentEntry.effect(workspaceId, path);
-  if (!latestEntry?.absolutePath || latestEntry.localContent === null) return;
+  if (
+    !latestEntry?.absolutePath ||
+    latestEntry.localContent === null ||
+    latestEntry.localContent === latestEntry.originalContent
+  )
+    return;
   yield* put(
     saveFileContentRequested(workspaceId, path, latestEntry.absolutePath, latestEntry.localContent),
   );
 }
 
-function* saveFileContentActionWorker(action: SaveAction) {
+function* saveFileContentActionWorker(action: ReturnType<typeof saveFileContentRequested>) {
   const [workspaceId, path, absolutePath, content] = action.payload;
-  const key = JSON.stringify([workspaceId, path]);
-  const previousSave = pendingFileSaves.get(key);
-  let completeSave!: () => void;
-  const currentSave = new Promise<void>((resolve) => {
-    completeSave = resolve;
+  yield* race({
+    save: call(saveFileContentWorker, { workspaceId, path, absolutePath, content }),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
-  pendingFileSaves.set(key, currentSave);
+}
 
+function* deleteFileWorker(action: ReturnType<typeof deleteFileRequested>) {
+  const [workspaceId, path, options] = action.payload;
   try {
-    if (previousSave) {
-      const { ready } = yield* race({
-        ready: call(() => previousSave.then(() => true)),
-        cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
-      });
-      if (!ready) return;
+    const { content, relativePath } = yield* call(
+      serializeFileMutation<{ content: string; relativePath: string }>,
+      workspaceId,
+      path,
+      async (relativePath: string) => {
+        // Preserve tree deletion's best-effort disk snapshot and editor deletion's draft snapshot.
+        const savedContent =
+          options.content ??
+          (await appClient.files.read(workspaceId, relativePath).catch(() => null))?.localContent ??
+          '';
+        const result = await appClient.files.delete(workspaceId, relativePath);
+        if (!result.success)
+          throw new Error(result.error ?? m.fileExplorer_tree_deleteFailed_error());
+        return { content: savedContent, relativePath };
+      },
+    );
+    // Clear both tree and panel aliases before closing tabs: an absolute-path
+    // draft must not survive a relative delete and flush from tab teardown.
+    for (const alias of new Set([path, relativePath, options.absolutePath])) {
+      yield* put(removeFileContentEntry(workspaceId, alias));
     }
-    yield* race({
-      save: call(saveFileContentWorker, { workspaceId, path, absolutePath, content }),
-      cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
-    });
+    if (options.tabId) yield* put(closeTab(workspaceId, options.tabId));
+    else {
+      yield* put(closeTabsByType(workspaceId, 'file', 'filePath', path));
+      if (options.absolutePath !== path)
+        yield* put(closeTabsByType(workspaceId, 'file', 'filePath', options.absolutePath));
+    }
+    yield* call(() =>
+      dispatchWindowEvent('file:changed', {
+        workspaceId,
+        type: 'delete',
+        filePath: options.absolutePath,
+      }),
+    );
+    yield* put(action.success(content));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
   } finally {
-    completeSave();
-    if (pendingFileSaves.get(key) === currentSave) pendingFileSaves.delete(key);
+    if (yield* cancelled())
+      yield* put(action.failure(new Error(m.ui_reversibleActions_cancelled_message())));
   }
 }
 
+function* deleteFileActionWorker(action: ReturnType<typeof deleteFileRequested>) {
+  yield* race({
+    deletion: call(deleteFileWorker, action),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, action.payload[0])),
+  });
+}
+
+function* restoreFileWorker(action: ReturnType<typeof restoreFileContentRequested>) {
+  const [workspaceId, path, absolutePath, content] = action.payload;
+  try {
+    const result = yield* call(
+      serializeFileMutation<MutationResult>,
+      workspaceId,
+      path,
+      (relativePath: string) => appClient.files.write(workspaceId, relativePath, content),
+    );
+    if (!result.success) throw new Error(result.error ?? m.fileExplorer_layout_saveFailed_error());
+    yield* put(saveFileContentSucceeded(workspaceId, path, content));
+    yield* call(() =>
+      dispatchWindowEvent('file:changed', {
+        workspaceId,
+        type: 'create',
+        filePath: absolutePath,
+      }),
+    );
+    yield* put(action.success());
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  } finally {
+    if (yield* cancelled())
+      yield* put(action.failure(new Error(m.ui_reversibleActions_cancelled_message())));
+  }
+}
+
+function* restoreFileActionWorker(action: ReturnType<typeof restoreFileContentRequested>) {
+  yield* race({
+    restoration: call(restoreFileWorker, action),
+    cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, action.payload[0])),
+  });
+}
+
+function* deleteFileWithUndoWorker(action: ReturnType<typeof deleteFileWithUndoRequested>) {
+  const [workspaceId, path, options] = action.payload;
+  let content = '';
+  yield* call(
+    deleteWithUndo,
+    `"${path.split('/').pop()}"`,
+    async () => {
+      const request = deleteFileRequested(workspaceId, path, options);
+      appStore.dispatch(request);
+      content = await request.promise;
+    },
+    async () => {
+      const request = restoreFileContentRequested(workspaceId, path, options.absolutePath, content);
+      appStore.dispatch(request);
+      await request.promise;
+    },
+  );
+}
+
 export function* filesWriteSaga() {
+  yield* takeEvery(deleteFileWithUndoRequested, deleteFileWithUndoWorker);
+  yield* takeEvery(deleteFileRequested, deleteFileActionWorker);
+  yield* takeEvery(restoreFileContentRequested, restoreFileActionWorker);
   yield* takeEvery(createFileRequested, createFileActionWorker);
   yield* takeEvery(updateFileContent, updateFileContentWorker);
   yield* takeEvery(saveFileContentRequested, saveFileContentActionWorker);

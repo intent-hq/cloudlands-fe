@@ -8,10 +8,13 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { warmImport } from '../../../test/warm-import';
 
 vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
+
+warmImport(() => import('./CertMismatchModal.svelte'));
 
 const event = {
   id: 'r1',
@@ -46,7 +49,7 @@ describe('CertMismatchModal', () => {
     await fireEvent.click(screen.getByText('Forget & re-pair'));
     expect(onForget).toHaveBeenCalledWith('r1');
 
-    await fireEvent.click(screen.getByText('Dismiss'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 });

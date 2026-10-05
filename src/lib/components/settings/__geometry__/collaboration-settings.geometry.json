@@ -1,0 +1,85 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "member": {
+    "390": {
+      "probes": {},
+      "root": {
+        "height": 868,
+        "width": 390
+      }
+    },
+    "1100": {
+      "probes": {},
+      "root": {
+        "height": 748,
+        "width": 1100
+      }
+    }
+  },
+  "mixed-sharing": {
+    "390": {
+      "probes": {},
+      "root": {
+        "height": 1762,
+        "width": 390
+      }
+    },
+    "1100": {
+      "probes": {},
+      "root": {
+        "height": 1420,
+        "width": 1100
+      }
+    }
+  },
+  "owner-empty": {
+    "390": {
+      "probes": {},
+      "root": {
+        "height": 1088,
+        "width": 390
+      }
+    },
+    "1100": {
+      "probes": {},
+      "root": {
+        "height": 890,
+        "width": 1100
+      }
+    }
+  },
+  "owner-populated": {
+    "390": {
+      "probes": {},
+      "root": {
+        "height": 1412,
+        "width": 390
+      }
+    },
+    "1100": {
+      "probes": {},
+      "root": {
+        "height": 1144,
+        "width": 1100
+      }
+    }
+  },
+  "unknown": {
+    "390": {
+      "probes": {},
+      "root": {
+        "height": 618,
+        "width": 390
+      }
+    },
+    "1100": {
+      "probes": {},
+      "root": {
+        "height": 516,
+        "width": 1100
+      }
+    }
+  }
+}

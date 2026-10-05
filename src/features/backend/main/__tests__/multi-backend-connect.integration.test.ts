@@ -18,7 +18,7 @@
  * terminal output/exit, script state, `agent:idle`, and `settings:changed`
  * still drive the app on the current client.
  *
- * FE-only: no daemon/protocol involvement. See PROTOCOL.md §1.1–2.3 for the
+ * FE-only: no daemon/protocol involvement. See PROTOCOL.md §1.1–§2.3 for the
  * daemon-side wire contract this rides on (WSS + self-signed-cert fingerprint +
  * bearer token), and the monorepo's docs/fe/MULTI_BACKEND_CONNECT.md for the FE
  * architecture.
@@ -33,6 +33,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { warmImport } from '../../../../test/warm-import';
 
 // ---------------------------------------------------------------------------
 // Electron: temp userData + reversible safeStorage + inspectable ipcMain /
@@ -62,6 +63,10 @@ const electronState = vi.hoisted(() => ({
 /** Steerable per-method RPC responder for the fake client (tests override). */
 const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
+  ownerIdentityAvailable: true,
+  hello: null as unknown,
+  identityMethods: [] as string[],
+  identityFailure: null as { method: string; code: number } | null,
 }));
 
 vi.mock('electron', () => ({
@@ -127,7 +132,20 @@ vi.mock('../json-rpc-client', () => {
     }
     start(): void {}
     dispose(): void {}
-    request = vi.fn(async (method: string) => rpc.handler(method));
+    request = vi.fn(async (method: string) => {
+      if (rpc.identityFailure?.method === method) {
+        const { JsonRpcError } = await import('../json-rpc-errors');
+        throw new JsonRpcError({ code: rpc.identityFailure.code, message: 'Method not found' });
+      }
+      if (method === 'client.hello' || method === 'principal.me') rpc.identityMethods.push(method);
+      // Controlled legacy-owner wire responses exercise the real import classifier.
+      if (method === 'client.hello') return rpc.hello ?? { server: { capabilities: {} } };
+      if (method === 'principal.me')
+        return rpc.ownerIdentityAvailable
+          ? { id: 'owner', login: null, displayName: null, avatarUrl: null, isAdministrator: true }
+          : {};
+      return rpc.handler(method);
+    });
     registerMethod(): () => void {
       return () => {};
     }
@@ -142,6 +160,12 @@ vi.mock('../json-rpc-client', () => {
     }
     getReconnectAttempts(): number {
       return 0;
+    }
+    isConnectionLimited(): boolean {
+      return false;
+    }
+    getConnectionLimitRetryAfterMs(): number | null {
+      return null;
     }
   }
   return { JsonRpcClient: FakeJsonRpcClient };
@@ -181,6 +205,10 @@ vi.mock('../backend-connection', async (importActual) => {
 // NOTE: `../connections-store` is intentionally NOT mocked — this suite drives
 // the real persistence layer against the temp userData dir above.
 
+// Compile the IPC graph in setup so the first journey's timeout measures behavior.
+// beforeEach still resets module state and creates an independent real store.
+warmImport(() => import('../backend.ipc'));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -191,7 +219,7 @@ const REMOTE_INPUT = {
   port: 8443,
   token: 'secret-token',
 };
-const FINGERPRINT = 'AA:BB:CC:DD';
+const FINGERPRINT = Array(32).fill('AB').join(':');
 
 /** Add a live renderer-window double; returns its `send` spy. */
 function openWindow(backendId = 'local'): ReturnType<typeof vi.fn> {
@@ -256,6 +284,10 @@ beforeEach(async () => {
   electronState.handlers = new Map();
   electronState.decryptShouldFail = false;
   rpc.handler = async () => ({});
+  rpc.ownerIdentityAvailable = true;
+  rpc.hello = null;
+  rpc.identityMethods = [];
+  rpc.identityFailure = null;
   vi.resetModules();
   vi.clearAllMocks();
   mockCaptureFingerprint.mockResolvedValue({
@@ -277,6 +309,57 @@ afterEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('multi-backend connect — end-to-end journey', () => {
+  it('rejects the old backend before principal.me and writes neither connection registry', async () => {
+    rpc.hello = {
+      server: { version: '0.9.12', protocolVersion: '9.4', capabilities: { liveState: true } },
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const error = await invoke('connections:add', {
+      ...REMOTE_INPUT,
+      fingerprint: FINGERPRINT,
+    }).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('0.9.12');
+    expect((error as Error).message).toContain('0.1.0');
+    expect(rpc.identityMethods).toEqual(['client.hello']);
+    expect(await fs.readdir(tmpDir)).not.toContain('backend-connections.json');
+    expect(await fs.readdir(tmpDir)).not.toContain('guest-sessions.json');
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it.each(['client.hello', 'principal.me'])(
+    'names missing %s and preserves the real registry on failed re-pair',
+    async (method) => {
+      const { mod, openOrFocus } = await loadModule();
+      mod.registerBackendHandlers();
+      await invoke('connections:add', { ...REMOTE_INPUT, fingerprint: FINGERPRINT });
+      const before = await fs.readFile(path.join(tmpDir, 'backend-connections.json'), 'utf8');
+      rpc.identityFailure = { method, code: -32601 };
+      await expect(
+        invoke('connections:add', {
+          ...REMOTE_INPUT,
+          token: 'replacement-secret',
+          fingerprint: FINGERPRINT,
+        }),
+      ).rejects.toThrow(method);
+      expect(await fs.readFile(path.join(tmpDir, 'backend-connections.json'), 'utf8')).toBe(before);
+      expect(openOrFocus).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses an unclassified credential before writing the real owner registry', async () => {
+    rpc.ownerIdentityAvailable = false;
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    await expect(
+      invoke('connections:add', { ...REMOTE_INPUT, fingerprint: FINGERPRINT }),
+    ).rejects.toThrow('Personal credential identity unavailable');
+    const store = await import('../connections-store');
+    expect((await store.list()).filter((record) => !record.isLocal)).toEqual([]);
+    expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
   it('opens a remote window without destroying the local window or client', async () => {
     const { mod, openOrFocus } = await loadModule();
     mod.registerBackendHandlers();

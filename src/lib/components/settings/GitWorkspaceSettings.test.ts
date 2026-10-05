@@ -6,6 +6,19 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import GitWorkspaceSettings from './GitWorkspaceSettings.svelte';
 import { warmImport } from '../../../test/warm-import';
 import { m } from '$shared/paraglide/messages.js';
+import { store } from '$store/renderer/store';
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+
+let stop: () => void;
+beforeEach(() => {
+  store.init();
+  stop = store.runSaga(settingsFormSaga);
+});
+afterEach(() => {
+  cleanup();
+  stop();
+  store.dispose();
+});
 
 // Mock appClient - use vi.hoisted to avoid hoisting issues
 const mocks = vi.hoisted(() => ({
@@ -31,13 +44,14 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.mockDispatch },
-}));
-
-vi.mock('$store/renderer/slices/workspace-settings/workspace-settings-slice', () => ({
-  refreshAutoCommitSettings: () => ({ type: 'workspaceSettings/refreshAutoCommitSettings' }),
-}));
+beforeEach(() => {
+  const dispatch = store.dispatch.bind(store);
+  vi.spyOn(store, 'dispatch').mockImplementation((action) => {
+    mocks.mockDispatch(action);
+    return dispatch(action);
+  });
+});
+afterEach(() => vi.restoreAllMocks());
 
 vi.mock('$lib/directory-picker-service', () => ({
   pickDirectory: mocks.pickDirectory,
@@ -76,6 +90,20 @@ warmImport(() => import('../ui/__tests__/mocks/Fa.svelte'));
 warmImport(
   () => import('$features/onboarding/messages/__tests__/mocks/MockDirectoryPickerModal.svelte'),
 );
+
+describe('GitWorkspaceSettings — description examples', () => {
+  afterEach(cleanup);
+
+  it('renders the SSH key path and branch-prefix examples', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    mocks.mockCapabilities.mockResolvedValue({});
+
+    render(GitWorkspaceSettings);
+
+    await waitFor(() => expect(screen.getByText('~/.ssh/id_ed25519')).toBeTruthy());
+    expect(screen.getByText('feature/')).toBeTruthy();
+  });
+});
 
 describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
   beforeEach(() => {
@@ -203,10 +231,8 @@ describe('GitWorkspaceSettings — CoW isolation toggle', () => {
 
     render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('checkbox', { name: COW_LABEL }) as HTMLInputElement,
-    );
-    expect(toggle.checked).toBe(false);
+    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
   });
 
   it('associates the CoW description with its toggle', async () => {
@@ -288,10 +314,8 @@ describe('GitWorkspaceSettings — resetToDefaults', () => {
 
     const { component } = render(GitWorkspaceSettings);
 
-    const toggle = await waitFor(
-      () => screen.getByRole('checkbox', { name: COW_LABEL }) as HTMLInputElement,
-    );
-    expect(toggle.checked).toBe(true);
+    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
 
     component.resetToDefaults();
 
@@ -299,7 +323,7 @@ describe('GitWorkspaceSettings — resetToDefaults', () => {
       expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
         { path: 'workspace.cowIsolation', value: false },
       ]);
-      expect(toggle.checked).toBe(false);
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
   });
 });
@@ -325,7 +349,7 @@ describe('GitWorkspaceSettings — default shell select', () => {
     mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
     render(GitWorkspaceSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
     expect(trigger.textContent).toContain(m.settings_gitWorkspace_shell_autoDetect());
   });
 
@@ -333,15 +357,15 @@ describe('GitWorkspaceSettings — default shell select', () => {
     mocks.mockSettingsList.mockResolvedValue(withShell('/opt/homebrew/bin/nu'));
     render(GitWorkspaceSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
-    expect(trigger.textContent).toContain('/opt/homebrew/bin/nu');
+    const trigger = await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
+    await waitFor(() => expect(trigger.textContent).toContain('/opt/homebrew/bin/nu'));
   });
 
   it('persists a selection via settings.update with the exact payload', async () => {
     mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
     render(GitWorkspaceSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    const trigger = await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
@@ -355,11 +379,35 @@ describe('GitWorkspaceSettings — default shell select', () => {
     });
   });
 
+  it('opens from the field label without a premature write and restores keyboard focus', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    render(GitWorkspaceSettings);
+    const trigger = await screen.findByRole('combobox', SHELL_TRIGGER);
+    const label = screen.getByText(m.settings_gitWorkspace_defaultShell_label(), {
+      selector: 'label',
+    });
+    await fireEvent.click(label, { detail: 1 });
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    await fireEvent.keyDown(trigger, { key: 'Escape' });
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
+    expect(document.activeElement).toBe(trigger);
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledExactlyOnceWith([
+        { path: 'workspace.defaultShell', value: '/bin/zsh' },
+      ]),
+    );
+  });
+
   it('resetToDefaults persists the auto shell value', async () => {
     mocks.mockSettingsList.mockResolvedValue(withShell('/bin/zsh'));
     const { component } = render(GitWorkspaceSettings);
 
-    await waitFor(() => screen.getByRole('button', SHELL_TRIGGER));
+    await waitFor(() => screen.getByRole('combobox', SHELL_TRIGGER));
 
     component.resetToDefaults();
 
@@ -431,6 +479,7 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     const clearWorktrees = within(worktreesInput.parentElement!).getByRole('button', {
       name: 'Clear path and restore default',
     });
+    await waitFor(() => expect((clearWorktrees as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(clearWorktrees);
 
     await waitFor(() => {
@@ -468,6 +517,7 @@ describe('GitWorkspaceSettings — path picker fields (PathSettingField)', () =>
     const clearSsh = within(sshKeyInput.parentElement!).getByRole('button', {
       name: 'Clear path and restore default',
     });
+    await waitFor(() => expect((clearSsh as HTMLButtonElement).disabled).toBe(false));
     await fireEvent.click(clearSsh);
 
     await waitFor(() => {

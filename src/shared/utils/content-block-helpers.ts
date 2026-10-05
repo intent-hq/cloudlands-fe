@@ -91,8 +91,7 @@ export function getContentBlockFingerprint(block: ContentBlock): string | null {
     return `audio:${block.mimeType ?? ''}:${data.length}:${sampledPayloadHash(data)}:${block.transcript ?? ''}`;
   }
   if (block.type === 'file') {
-    const data = block.data ?? '';
-    return `file:${block.mimeType ?? ''}:${block.fileName ?? ''}:${data.length}:${sampledPayloadHash(data)}`;
+    return `file:${block.mimeType ?? ''}:${block.fileName ?? ''}:${block.attachmentId ?? ''}`;
   }
   return getIdBackedContentBlockKey(block) ?? null;
 }

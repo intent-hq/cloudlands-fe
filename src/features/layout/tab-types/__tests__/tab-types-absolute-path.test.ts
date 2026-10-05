@@ -119,6 +119,7 @@ vi.mock('$store/renderer/slices/git-roots/git-roots-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  selectGitRead: createMockSelector(() => undefined),
   emptySecondaryRootState: {
     status: null,
     commits: [],
@@ -190,6 +191,8 @@ vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', () => ({
+  gitReadRequested: (...args: unknown[]) => ({ type: 'git/readRequested', payload: args }),
+  releaseGitRead: (...args: unknown[]) => ({ type: 'git/releaseRead', payload: args }),
   loadGitStatus: (...args: unknown[]) => ({ type: 'git/loadGitStatus', payload: args }),
   loadSecondaryRootGit: (...args: unknown[]) => ({
     type: 'git/loadSecondaryRoot',
@@ -231,8 +234,8 @@ vi.mock('$features/git/git-write-service', () => ({
   discardFiles: vi.fn(async () => ({ success: true })),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('$features/file-tracking/change-converters', () => ({
@@ -261,7 +264,7 @@ vi.mock('svelte-fa', async () => {
 });
 
 import MockTabTypeHeaderHarness from './mocks/MockTabTypeHeaderHarness.svelte';
-import { stageFiles, unstageFiles, discardFiles } from '$features/git/git-write-service';
+import { gitWriteRequested } from '$store/renderer/slices/git/git-write-slice';
 import ActivityChangesTabType from '../ActivityChangesTabType.svelte';
 import DiffTabType from '../DiffTabType.svelte';
 import LocalChangesTabType from '../LocalChangesTabType.svelte';
@@ -410,6 +413,37 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       expect(screen.queryByTestId('unstage-hunk')).toBeNull();
     });
 
+    it('keeps the supplied secondary-root change over a primary store match with the same trailing path', async () => {
+      // The primary store only knows the primary root; its suffix match on
+      // `src/root.ts` must not replace the root-scoped change for the tab.
+      mockReduxState.ftChanges = [
+        { ...makeTrackedChange('src/root.ts', 'staged'), file: '/repo/src/root.ts' },
+      ];
+      render(MockTabTypeHeaderHarness, {
+        props: {
+          component: DiffTabType,
+          tab: {
+            id: 'tab-diff-root',
+            type: 'diff',
+            title: 'root.ts',
+            closable: true,
+            diffPath: '/repo/packages/sub/src/root.ts',
+            data: {
+              gitRootId: 'root-9',
+              gitRootPath: '/repo/packages/sub',
+              change: {
+                ...makeTrackedChange('src/root.ts', 'unstaged'),
+                file: '/repo/packages/sub/src/root.ts',
+              },
+            },
+          },
+          workspaceId: 'ws-1',
+        },
+      });
+      const viewer = await screen.findByTestId('tracked-change-diff-viewer');
+      expect(viewer.getAttribute('data-file')).toBe('/repo/packages/sub/src/root.ts');
+    });
+
     it('still joins relative paths under the workspace root', async () => {
       renderDiff('src/x.ts');
       const openButton = await findOpenComboButton();
@@ -427,28 +461,27 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
     it.each([
       ['unstaged', 'stage-hunk'],
       ['staged', 'unstage-hunk'],
-    ])(
-      'dispatches one broad refresh after a successful %s hunk mutation',
-      async (stage, testId) => {
-        mockReduxState.ftChanges = [makeTrackedChange('src/x.ts', stage)];
-        renderDiff('src/x.ts');
+    ])('captures the workspace and patch in the %s hunk intent', async (stage, testId) => {
+      mockReduxState.ftChanges = [makeTrackedChange('src/x.ts', stage)];
+      renderDiff('src/x.ts');
 
-        await fireEvent.click(await screen.findByTestId(testId));
-        await vi.waitFor(() => {
-          expect(
-            dispatchMock.mock.calls
-              .map(([action]) => action)
-              .filter(
-                (action: any) =>
-                  action.type === 'git/loadGitStatus' || action.type === 'changes/refreshRequested',
-              ),
-          ).toEqual([
-            { type: 'git/loadGitStatus', payload: ['ws-1', true] },
-            { type: 'changes/refreshRequested', payload: ['ws-1', true] },
-          ]);
-        });
-      },
-    );
+      await fireEvent.click(await screen.findByTestId(testId));
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: gitWriteRequested.type,
+          payload: [
+            'ws-1',
+            expect.any(String),
+            {
+              kind: stage === 'unstaged' ? 'stageHunk' : 'unstageHunk',
+              filePath: 'src/x.ts',
+              hunkPatch: '@@ patch',
+              source: 'diff',
+            },
+          ],
+        }),
+      );
+    });
   });
 
   describe('LocalChangesTabType', () => {
@@ -495,6 +528,38 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       ]);
     });
 
+    it('rebinds local changes to the new workspace without changing an already dispatched write', async () => {
+      const view = renderLocalChanges('src/a.ts', 'src/b.ts', 'src/c.ts');
+      await screen.findByTestId('chat-changes-panel');
+      await fireEvent.click(screen.getAllByTestId('stage-button')[0]);
+      const first = dispatchMock.mock.calls
+        .map(([action]) => action as ReturnType<typeof gitWriteRequested>)
+        .find((action) => action.type === gitWriteRequested.type)!;
+      mockReduxState.workspace = { id: 'ws-2', worktreePath: '/other', repositoryPath: '/other' };
+      mockReduxState.ftChanges = [makeTrackedChange('different.ts', 'unstaged')];
+      mockReduxState.ftCommits = [];
+      await view.rerender({ workspaceId: 'ws-2' });
+      await vi.waitFor(async () =>
+        expect(await findChangePaths()).toEqual(['/other/different.ts']),
+      );
+      await fireEvent.click(screen.getAllByTestId('stage-button')[0]);
+      expect(first.payload).toEqual([
+        'ws-1',
+        expect.any(String),
+        { kind: 'stage', paths: ['src/a.ts'], source: 'localChanges' },
+      ]);
+      expect(dispatchMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          type: gitWriteRequested.type,
+          payload: [
+            'ws-2',
+            expect.any(String),
+            { kind: 'stage', paths: ['different.ts'], source: 'localChanges' },
+          ],
+        }),
+      );
+    });
+
     it('passes UNC in-root paths through at all three join sites', async () => {
       setUncWorkspace();
       renderLocalChanges(
@@ -520,13 +585,40 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       const [revertButton] = screen.getAllByTestId('revert-button');
 
       await fireEvent.click(stageButton);
-      expect(stageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: gitWriteRequested.type,
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'stage', paths: ['src/a.ts'], source: 'localChanges' },
+          ],
+        }),
+      );
 
       await fireEvent.click(unstageButton);
-      expect(unstageFiles).toHaveBeenCalledWith('ws-1', ['src/b.ts']);
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: gitWriteRequested.type,
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'unstage', paths: ['src/b.ts'], source: 'localChanges' },
+          ],
+        }),
+      );
 
       await fireEvent.click(revertButton);
-      expect(discardFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: gitWriteRequested.type,
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'discard', paths: ['src/a.ts'], source: 'localChanges' },
+          ],
+        }),
+      );
     });
 
     it('sends repo-relative paths on the wire for forward-slash Windows absolutes', async () => {
@@ -537,7 +629,16 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
       const [stageButton] = screen.getAllByTestId('stage-button');
 
       await fireEvent.click(stageButton);
-      expect(stageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
+      expect(dispatchMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: gitWriteRequested.type,
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'stage', paths: ['src/a.ts'], source: 'localChanges' },
+          ],
+        }),
+      );
     });
 
     it('loads secondary-root paths and forwards the read-only root scope', async () => {
@@ -635,6 +736,107 @@ describe('tab-type absolute path joins (intent-hq/monorepo#1567)', () => {
   });
 
   describe('ChangesTabType', () => {
+    it('releases the old request and captures new root/workspace identity for the same hash', async () => {
+      const tab = {
+        id: 'tab-changes',
+        type: 'changes',
+        title: 'Changes',
+        closable: true,
+        data: { commitHash: 'same-hash', gitRootId: 'root-a' },
+      };
+      const view = render(ChangesTabType, {
+        props: { tab, workspaceId: 'ws-1', isActive: true },
+      });
+      await vi.waitFor(() =>
+        expect(dispatchMock).toHaveBeenCalledWith({
+          type: 'git/readRequested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            expect.any(String),
+            {
+              kind: 'commitDetails',
+              commitHash: 'same-hash',
+              gitRootId: 'root-a',
+            },
+          ],
+        }),
+      );
+      const first = dispatchMock.mock.calls
+        .map(([action]) => action as any)
+        .find((action) => action.type === 'git/readRequested');
+      await view.rerender({
+        tab: { ...tab, data: { ...tab.data, gitRootId: 'root-b' } },
+        workspaceId: 'ws-2',
+      });
+      await vi.waitFor(() =>
+        expect(dispatchMock).toHaveBeenCalledWith({
+          type: 'git/readRequested',
+          payload: [
+            'ws-2',
+            first.payload[1],
+            expect.any(String),
+            {
+              kind: 'commitDetails',
+              commitHash: 'same-hash',
+              gitRootId: 'root-b',
+            },
+          ],
+        }),
+      );
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'git/releaseRead',
+        payload: first.payload.slice(0, 3),
+      });
+      const requests = dispatchMock.mock.calls
+        .map(([action]) => action as any)
+        .filter((action) => action.type === 'git/readRequested');
+      expect(requests[1].payload[2]).not.toBe(first.payload[2]);
+      view.unmount();
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: 'git/releaseRead',
+        payload: requests[1].payload.slice(0, 3),
+      });
+    });
+
+    it('does not reuse primary-root commit files for a secondary root with the same hash', async () => {
+      mockReduxState.ftCommits = [
+        {
+          hash: 'same-hash',
+          files: [{ path: 'primary-only.ts', additions: 1, deletions: 0 }],
+        },
+      ];
+      render(ChangesTabType, {
+        props: {
+          tab: {
+            id: 'tab-root',
+            type: 'changes',
+            title: 'Changes',
+            closable: true,
+            data: { commitHash: 'same-hash', gitRootId: 'root-b' },
+          },
+          workspaceId: 'ws-1',
+          isActive: true,
+        },
+      });
+      await vi.waitFor(() =>
+        expect(dispatchMock).toHaveBeenCalledWith({
+          type: 'git/readRequested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            expect.any(String),
+            {
+              kind: 'commitDetails',
+              commitHash: 'same-hash',
+              gitRootId: 'root-b',
+            },
+          ],
+        }),
+      );
+      expect(screen.queryByTestId('chat-change')).toBeNull();
+    });
+
     function renderChanges(commitFilePath: string) {
       mockReduxState.ftCommits = [
         {

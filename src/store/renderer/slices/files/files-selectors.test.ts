@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { FileContentEntry, FilesState } from './files-types';
 import { filesReducer, loadFileContentSucceeded, updateFileContent } from './files-slice';
 import {

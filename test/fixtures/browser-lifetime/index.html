@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Isolated browser lifetime fixture</title>
+  </head>
+  <body>
+    <div id="fixture"></div>
+    <script>
+      window.process = { env: { NODE_ENV: 'test' } };
+    </script>
+    <script type="module">
+      import '../../../src/app.css';
+      import { mount } from 'svelte';
+      import Harness from './Harness.svelte';
+      import {
+        emitMockIpcEvent,
+        registerMockIpcHandler,
+      } from '../../../src/shared/ipc-mock-router';
+      for (const channel of ['browser:list-tabs-request', 'browser:tab-navigated']) {
+        window.electronAPI.on(channel, (payload) => emitMockIpcEvent(channel, payload));
+      }
+      registerMockIpcHandler('browser:list-tabs-response', (payload) =>
+        window.electronAPI.invoke('browser:list-tabs-response', payload),
+      );
+      mount(Harness, { target: document.getElementById('fixture') });
+    </script>
+  </body>
+</html>

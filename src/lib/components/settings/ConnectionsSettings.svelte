@@ -1,15 +1,19 @@
 <script lang="ts">
+  import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectGitLabAuthIsConfigured } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { initializeGitLabAuth } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import { initializeLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
   import { initializeSentryAuth } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
-  import { faGithub } from '@fortawesome/free-brands-svg-icons';
+  import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import Fa from 'svelte-fa';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import GitHubAuthConnection from './GitHubAuthConnection.svelte';
+  import GitLabAuthConnection from './GitLabAuthConnection.svelte';
   import LinearAuthConnection from './LinearAuthConnection.svelte';
   import SentryAuthConnection from './SentryAuthConnection.svelte';
 
@@ -17,11 +21,18 @@
   let isLoading = $state(true);
 
   // Integration metadata for skeleton rendering (names are brand names — not translated)
+  const gitlabEnabled$ = selectLabsGitLabEnabled();
+  const gitlabConfigured$ = selectGitLabAuthIsConfigured();
   const integrations = [
     {
       icon: 'github',
       name: 'GitHub',
       description: m.settings_connections_github_description(),
+    },
+    {
+      icon: 'gitlab',
+      name: 'GitLab',
+      description: m.settings_connections_gitlab_description(),
     },
     {
       icon: 'linear',
@@ -34,6 +45,7 @@
   onMount(() => {
     // Initialize all stores in parallel
     appStore.dispatch(initializeGitHubAuth());
+    appStore.dispatch(initializeGitLabAuth());
     appStore.dispatch(initializeLinearAuth());
     appStore.dispatch(initializeSentryAuth());
     isLoading = false;
@@ -42,32 +54,34 @@
 
 {#if isLoading}
   <!-- Skeleton loading state - shows structure with known info -->
-  <div class="space-y-6">
-    {#each integrations as integration}
-      <div class="flex items-start justify-between gap-4">
-        <div class="space-y-1">
-          <div class="flex items-center gap-2">
-            {#if integration.icon === 'github'}
-              <Fa icon={faGithub} class="w-4 h-4 text-ghost" />
-            {:else if integration.icon === 'linear'}
-              <LinearIcon size={14} class="text-ghost" />
-            {:else if integration.icon === 'sentry'}
-              <SentryIcon size={17} class="text-ghost" />
-            {/if}
-            <span class="text-sm text-foreground">{integration.name}</span>
-            <!-- Status skeleton -->
-            <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
-          </div>
-          <p class="text-xs text-subtle pl-6">{integration.description}</p>
+  <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+    {#each integrations.filter((item) => item.icon !== 'gitlab' || $gitlabEnabled$ || $gitlabConfigured$) as integration}
+      <div class="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-3">
+        <div class="first-line-icon type-body w-4 text-ghost">
+          {#if integration.icon === 'github'}
+            <Fa icon={faGithub} class="size-4" />
+          {:else if integration.icon === 'gitlab'}
+            <Fa icon={faGitlab} class="size-4" />
+          {:else if integration.icon === 'linear'}
+            <LinearIcon size={16} />
+          {:else if integration.icon === 'sentry'}
+            <SentryIcon size={16} />
+          {/if}
+        </div>
+        <div class="flex min-w-0 items-center gap-3">
+          <span class="type-body font-medium text-foreground">{integration.name}</span>
+          <div class="h-3 w-16 animate-pulse rounded bg-muted/50"></div>
         </div>
         <!-- Action button skeleton -->
-        <div class="h-4 w-14 bg-muted/50 rounded animate-pulse"></div>
+        <div class="mt-1 h-4 w-14 animate-pulse rounded bg-muted/50"></div>
+        <p class="type-body col-start-2 text-muted-foreground">{integration.description}</p>
       </div>
     {/each}
   </div>
 {:else}
-  <div class="space-y-6">
+  <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
     <GitHubAuthConnection />
+    <GitLabAuthConnection />
     <LinearAuthConnection />
     <SentryAuthConnection />
   </div>

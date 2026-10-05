@@ -6,7 +6,7 @@
  * set. Non-image files are the caller's responsibility — pass only
  * `image/*` files here.
  */
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger } from '$lib/i18n/format';
@@ -105,13 +105,13 @@ export async function imageFilesToContextItems(
       });
     } catch (error) {
       logger.error('Failed to add image to context', { fileName: file.name, error });
-      toast.error(m.chat_richInput_addImageFailed_error({ name: file.name }));
+      notify.error(m.chat_richInput_addImageFailed_error({ name: file.name }));
     }
   }
 
   if (items.length > 0) {
     logger.debug(`Added ${items.length} image(s) to context`);
-    toast.success(
+    notify.success(
       items.length === 1
         ? m.chat_richInput_addedImages_toast_one()
         : m.chat_richInput_addedImages_toast_many({ count: formatInteger(items.length) }),
@@ -119,7 +119,7 @@ export async function imageFilesToContextItems(
   }
 
   if (oversizedFiles.length > 0) {
-    toast.error(m.chat_richInput_filesTooLarge_error({ names: oversizedFiles.join(', ') }));
+    notify.error(m.chat_richInput_filesTooLarge_error({ names: oversizedFiles.join(', ') }));
   }
 
   return items;

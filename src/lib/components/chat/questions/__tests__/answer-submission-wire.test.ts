@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 /**
  * Agent Q&A answer-submission wire tests (spec "Wire contract"):
  *
@@ -36,14 +37,22 @@ import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-s
 import {
   bulkUpsertSessions,
   clearAllSessions,
+  agentSessionRetryLastMessageRequested,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
-import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  sendMessage,
+  chatQueueProcessingReceived,
+  chatSendFailed,
+  chatReset,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
 import QuestionWizard from '../QuestionWizard.svelte';
 import {
   buildAnswerMessageMetadata,
   flattenAnswersToMessage,
+  getAnsweredQuestionsMessageIds,
   type QuestionAnswer,
 } from '../answer-message';
 import { derivePendingQuestions } from '../pending-questions';
@@ -195,6 +204,7 @@ const daemonPendingAgent = {
 function workspace(): Workspace {
   return {
     id: WS,
+    myRole: 'owner',
     title: 'intent',
     branch: 'main',
     status: 'active',
@@ -222,8 +232,10 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     stopAgentMutationSaga?.();
     stopChatSendSaga = undefined;
     stopAgentMutationSaga = undefined;
+    appStore.dispose();
   });
   beforeEach(() => {
+    admitLegacyPrincipal();
     backendRequestMock.mockReset();
     backendRequestMock.mockImplementation(async (method: string) => {
       if (method === 'agent.get') return { agent: daemonPendingAgent };
@@ -252,6 +264,93 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
   });
   afterEach(() => {
     appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+  });
+
+  it('retries a merged queued turn with both question-answer contributions on the wire', async () => {
+    const first = buildAnswerMessageMetadata('question-one');
+    const second = buildAnswerMessageMetadata('question-two');
+    const canonicalMetadata = {
+      ...first,
+      fromPrincipalId: 'principal-owner',
+      mergedMessageMetadata: [first, second],
+    };
+    const merged = {
+      id: 'merged-answer',
+      turnId: 'merged-answer',
+      position: 0,
+      queuedAt: '2026-10-02T00:00:00Z',
+      content: 'Q: Storage\nA: Keychain\n\nQ: Scope\nA: Desktop',
+      messageMetadata: canonicalMetadata,
+    };
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.queueMessage')
+        return { success: true, turnId: merged.id, queuedMessage: merged };
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage')
+        return { success: true, queued: false, messageId: 'retried-answer' };
+      return {};
+    });
+    const session = appStore.state.agentSessions.byAgentId[AGENT];
+    appStore.dispatch(
+      bulkUpsertSessions([
+        { ...session, isStreaming: true, isProcessing: true, isResponding: true },
+      ]),
+    );
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: 'Q: Scope\nA: Desktop', messageMetadata: second }),
+    );
+    await vi.waitFor(
+      () => {
+        expect(
+          appStore.state.chatState.byAgentId[AGENT]?.queuedRetryRecords[merged.id]?.record.text,
+        ).toBe(merged.content);
+      },
+      { timeout: 15000, interval: 50 },
+    );
+    expect(
+      backendRequestMock.mock.calls.find(([method]) => method === 'agent.queueMessage'),
+    ).toEqual([
+      'agent.queueMessage',
+      { agentId: AGENT, workspaceId: WS, content: 'Q: Scope\nA: Desktop', messageMetadata: second },
+    ]);
+    // The real processing/failure reducers promote the queued record used by Try again.
+    appStore.dispatch(chatQueueProcessingReceived(AGENT, merged.turnId));
+    appStore.dispatch(replaceAgentQueue(AGENT, [], WS));
+    appStore.dispatch(
+      bulkUpsertSessions([
+        { ...session, isStreaming: false, isProcessing: false, isResponding: false },
+      ]),
+    );
+    appStore.dispatch(chatSendFailed(AGENT, 'provider failed', merged.turnId));
+    await appStore.dispatch(agentSessionRetryLastMessageRequested(AGENT, WS));
+    const retryCall = backendRequestMock.mock.calls.find(
+      ([method]) => method === 'agent.sendMessage',
+    );
+    expect(retryCall).toEqual([
+      'agent.sendMessage',
+      {
+        agentId: AGENT,
+        workspaceId: WS,
+        content: merged.content,
+        model: 'opus4.7',
+        contextReferences: undefined,
+        imageBlocks: undefined,
+        fileBlocks: undefined,
+        noteIds: undefined,
+        stdinContext: undefined,
+        priority: undefined,
+        assistantMessageId: expect.any(String),
+        userAppMessageId: expect.any(String),
+        assistantAppMessageId: expect.any(String),
+        messageMetadata: canonicalMetadata,
+      },
+    ]);
+    expect(getAnsweredQuestionsMessageIds({ metadata: retryCall![1].messageMetadata })).toEqual([
+      'question-one',
+      'question-two',
+    ]);
+    expect(appStore.state.chatState.byAgentId[AGENT].error).toBeNull();
   });
 
   it('sends ONE flattened plain-text user message tagged with the answer metadata', async () => {
@@ -282,13 +381,13 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
 
     // Q1 single-select: advances on selection.
     await fireEvent.click(screen.getByText('OS keychain'));
-    // Q2 multi-select: toggle two options, add an (Other) reply, Next.
+    // Q2 multi-select: toggle two options, add an (Other) reply, Continue.
     await fireEvent.click(screen.getByText('Desktop app'));
     await fireEvent.click(screen.getByText('CLI'));
-    await fireEvent.input(screen.getByPlaceholderText('Or type your own answer…'), {
+    await fireEvent.input(screen.getAllByPlaceholderText('Or type your own answer…').at(-1)!, {
       target: { value: 'and the docs site' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     // Q3 final single-select: one option click completes and sends immediately.
     await fireEvent.click(screen.getByText('Force re-login'));
 
@@ -328,6 +427,86 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
     expect(backendRequestMock.mock.calls.filter((c) => c[0] === 'agent.sendMessage')).toHaveLength(
       1,
     );
+  }, 30000);
+
+  it('queues the tagged answer via agent.queueMessage while the agent is responding', async () => {
+    // The asking turn ended and the daemon wrote the marker, but a later
+    // turn is now active: the ordinary send path routes to the queue, and
+    // the answer tag must ride the agent.queueMessage params (§5.5) so the
+    // daemon resolves the set when the entry drains.
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.queueMessage') {
+        return {
+          success: true,
+          turnId: 'turn-queued',
+          queuedMessage: {
+            id: 'qm-1',
+            content: `Q: ${SINGLE.question}\nA: OS keychain`,
+            queuedAt: '2026-07-03T14:36:00.000Z',
+            position: 0,
+            messageMetadata: buildAnswerMessageMetadata('msg-a1'),
+          },
+        };
+      }
+      return {};
+    });
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: null,
+          workspaceId: WS,
+          name: 'Coordinator',
+          status: AgentStatus.Active,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+          messages: [assistantMessage([questionBlock(SINGLE)])],
+          metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          createdAt: '2026-07-03T14:35:35.924Z',
+          updatedAt: '2026-07-03T14:35:35.924Z',
+        } as unknown as AgentSession,
+      ]),
+    );
+    const pending = derivePendingQuestions(
+      [assistantMessage([questionBlock(SINGLE)])],
+      true,
+      false,
+      'msg-a1',
+    );
+    expect(pending).not.toBeNull();
+
+    render(QuestionWizard, {
+      props: {
+        questions: pending!.questions,
+        onComplete: (answers: QuestionAnswer[]) => {
+          appStore.dispatch(
+            sendMessage(AGENT, {
+              wsId: WS,
+              text: flattenAnswersToMessage(answers),
+              messageMetadata: buildAnswerMessageMetadata(pending!.messageId),
+            }),
+          );
+        },
+      },
+    });
+    await fireEvent.click(screen.getByText('OS keychain'));
+
+    await vi.waitFor(
+      () => {
+        expect(backendRequestMock.mock.calls.map((c) => c[0])).toContain('agent.queueMessage');
+      },
+      { timeout: 15000, interval: 50 },
+    );
+
+    const queueCall = backendRequestMock.mock.calls.find((c) => c[0] === 'agent.queueMessage')!;
+    expect(queueCall[1]).toEqual({
+      workspaceId: WS,
+      agentId: AGENT,
+      content: `Q: ${SINGLE.question}\nA: OS keychain`,
+      messageMetadata: { type: 'question_answers', answeredQuestionsMessageId: 'msg-a1' },
+    });
+    expect(backendRequestMock.mock.calls.map((c) => c[0])).not.toContain('agent.sendMessage');
   }, 30000);
 });
 

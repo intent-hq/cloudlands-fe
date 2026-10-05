@@ -12,6 +12,7 @@ import { LiveAppClient } from './live/live-app-client';
 export * from './app-client';
 export { MockAppClient } from './mock/mock-app-client';
 export { LiveAppClient } from './live/live-app-client';
+export { localMachineClient } from './live/local-machine-client';
 
 /** The single boundary the renderer uses to reach "the backend". */
 export const appClient: AppClient = new LiveAppClient();

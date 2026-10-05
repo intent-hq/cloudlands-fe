@@ -41,7 +41,7 @@ describe('safeSlide', () => {
   it('returns a real slide transition when the node is laid out', () => {
     const node = makeNode({ height: '100px' });
     const config = safeSlide(node, { axis: 'y', duration: 200 });
-    expect(config.duration).toBe(200);
+    expect(config.duration).toBe(240);
     expect(config.css).toBeTypeOf('function');
     const css = config.css!(0.5, 0.5);
     expect(css).toContain('height:');
@@ -57,7 +57,7 @@ describe('safeSlide', () => {
 
   it('checks width for axis: "x"', () => {
     const laidOut = makeNode({ width: '200px' });
-    expect(safeSlide(laidOut, { axis: 'x', duration: 150 }).duration).toBe(150);
+    expect(safeSlide(laidOut, { axis: 'x', duration: 150 }).duration).toBe(160);
 
     vi.restoreAllMocks();
     const notLaidOut = makeNode({ width: 'auto' });

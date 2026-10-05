@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TunnelForbiddenError } from '../../backend/main/tunnel-manager';
 import { resolveBrowserUrl } from '../main/loopback-url-resolver';
 
 const remoteContext = { daemonIsRemote: true, daemonHost: '10.0.0.5' };
@@ -190,6 +191,21 @@ describe('resolveBrowserUrl', () => {
     expect(result.url).toBe('http://10.0.0.5:8080/page');
     expect(result.tunneled).toBeUndefined();
     expect(result.error).toContain('not reachable');
+    expect(result.forbidden).toBeUndefined();
+  });
+
+  it('classifies an owner-only tunnel refusal as forbidden (collaborator, multiplayer w3)', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    forwardPort.mockRejectedValue(new TunnelForbiddenError());
+    const result = await resolveBrowserUrl(
+      'http://daemon.localhost:8080/page',
+      remoteContext,
+      tunnelProvider,
+    );
+    expect(result.url).toBe('http://10.0.0.5:8080/page');
+    expect(result.tunneled).toBeUndefined();
+    expect(result.forbidden).toBe(true);
+    expect(result.error).toContain('cannot be forwarded');
   });
 
   it('degrades to the error result when the tunnel provider getter throws', async () => {

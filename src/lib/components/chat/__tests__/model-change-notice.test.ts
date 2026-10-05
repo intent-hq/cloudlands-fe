@@ -5,8 +5,9 @@
  * metadata).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { formatModelChangeLabel, getModelChangeNotice } from '../model-change-notice';
+import { formatProviderRehomedLabel } from '../rehome-notice';
 
 let mockStoreState: Record<string, unknown> = {};
 
@@ -163,4 +164,40 @@ describe('getModelChangeNotice', () => {
       toProvider: 'codex',
     });
   });
+});
+
+it('uses learned names in both transcript notice formats before workspace catalogs arrive', () => {
+  mockStoreState = {
+    providerModels: {
+      learnedNames: { codex: { 'org/model:v2': 'Remembered model' } },
+      byProviderId: {},
+    },
+  };
+  expect(
+    formatModelChangeLabel(
+      { from: 'org/model:v2', to: 'never-seen', fromProvider: 'codex', toProvider: 'codex' },
+      FALLBACK,
+      'cold-workspace',
+    ),
+  ).toContain('Remembered model (codex / org/model:v2)');
+  expect(
+    formatModelChangeLabel(
+      { from: 'org/model:v2', to: 'never-seen', fromProvider: 'codex', toProvider: 'codex' },
+      FALLBACK,
+      'cold-workspace',
+    ),
+  ).toContain('never-seen');
+  expect(
+    formatProviderRehomedLabel(
+      {
+        reason: 'provider_disabled',
+        from: 'org/model:v2',
+        to: null,
+        fromProvider: 'codex',
+        toProvider: 'auggie',
+      },
+      FALLBACK,
+      'cold-workspace',
+    ),
+  ).toContain('Remembered model');
 });

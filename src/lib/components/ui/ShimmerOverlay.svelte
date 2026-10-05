@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: decorative text shimmer with no interactive DOM; covered by __tests__/shimmer-overlay.ct.spec.ts -->
+
 <script lang="ts">
   /**
    * ShimmerOverlay — A reusable shimmer effect for text content.
@@ -81,6 +83,21 @@
     }
     100% {
       background-position: -200% 0;
+    }
+  }
+
+  @container style(--motion-reduced: 1) {
+    .shimmer-text {
+      animation: none;
+      background: none;
+      -webkit-text-fill-color: currentColor;
+      transform: none;
+    }
+
+    .shimmer-overlay {
+      animation: none;
+      opacity: 0;
+      transform: none;
     }
   }
 </style>

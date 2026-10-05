@@ -23,6 +23,39 @@ warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('../DeleteWarningDialog.svelte'));
 
 describe('DeleteWarningDialog', () => {
+  it.each(['delete', 'archive'] as const)(
+    'does not claim to stop work for an inactive %s warning',
+    async (mode) => {
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+      const onDeleteAnyway = vi.fn();
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          mode,
+          openPrs: [{ number: 418, title: 'Pending review', status: 'Open', url: '' }],
+          onDeleteAnyway,
+        },
+      });
+      expect(
+        screen.getByRole('heading', {
+          name:
+            mode === 'delete'
+              ? m.modals_deleteWarning_inactive_title()
+              : m.modals_archiveWarning_inactive_title(),
+        }),
+      ).toBeTruthy();
+      expect(screen.queryByText(/stop running work/i)).toBeNull();
+      expect(screen.getByText('Pending review')).toBeTruthy();
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: mode === 'delete' ? m.menu_delete() : m.workspace_card_archive_label(),
+          exact: true,
+        }),
+      );
+      expect(onDeleteAnyway).toHaveBeenCalledOnce();
+    },
+  );
+
   beforeEach(() => {
     openExternalUrlMock.mockClear();
   });
@@ -34,7 +67,10 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: ['Agent One', 'Agent Two'],
+        agents: [
+          { id: 'one', name: 'Agent One', state: 'running' },
+          { id: 'two', name: 'Agent Two', specialist: 'verifier', state: 'running' },
+        ],
         onDeleteAnyway,
       },
     });
@@ -48,7 +84,8 @@ describe('DeleteWarningDialog', () => {
 
     const deleteButton = screen.getByRole('button', { name: 'Stop work and delete' });
     await waitFor(() => expect(document.activeElement).toBe(deleteButton));
-    expect(deleteButton.className).toContain('ring-[3px]');
+    expect(deleteButton.className).toContain('focus-visible:outline');
+    expect(deleteButton.className).toContain('focus-visible:-outline-offset-1');
     expect(screen.getByRole('dialog').querySelector('.svelte-fa')).toBeNull();
 
     await fireEvent.click(deleteButton);
@@ -62,7 +99,7 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: ['Agent One'],
+        agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
         hookNames: ['ci-watch', 'pr-watch'],
       },
     });
@@ -79,7 +116,7 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: [],
+        agents: [],
         hookNames: ['ci-watch'],
       },
     });
@@ -94,7 +131,7 @@ describe('DeleteWarningDialog', () => {
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: [],
+        agents: [],
         hookNames: [],
         openPrs: [],
       },
@@ -105,7 +142,7 @@ describe('DeleteWarningDialog', () => {
     expect(screen.queryByRole('link')).toBeNull();
   });
 
-  it('lists open PRs with status badges and a conflict indicator', async () => {
+  it('lists PRs without status badges but preserves the conflict warning', async () => {
     const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 
     render(DeleteWarningDialog, {
@@ -132,8 +169,8 @@ describe('DeleteWarningDialog', () => {
     expect(screen.getByText(m.modals_deleteWarning_openPrs_many({ count: '2' }))).toBeTruthy();
     expect(screen.getByRole('link', { name: '#12 Add feature' })).toBeTruthy();
     expect(screen.getByRole('link', { name: '#13 Draft feature' })).toBeTruthy();
-    expect(screen.getAllByText(m.workspace_prSection_statusOpen_label())).toHaveLength(1);
-    expect(screen.getAllByText(m.workspace_prSection_statusDraft_label())).toHaveLength(1);
+    expect(screen.queryByText(m.workspace_prSection_statusOpen_label())).toBeNull();
+    expect(screen.queryByText(m.workspace_prSection_statusDraft_label())).toBeNull();
     expect(screen.getAllByText(m.modals_deleteWarning_prMergeConflicts_label())).toHaveLength(1);
   });
 
@@ -180,7 +217,7 @@ describe('DeleteWarningDialog', () => {
     });
 
     expect(screen.queryByRole('link')).toBeNull();
-    const item = screen.getByText('#9 No url yet');
+    const item = screen.getByText('No url yet');
     await fireEvent.click(item);
 
     expect(openExternalUrlMock).not.toHaveBeenCalled();
@@ -206,7 +243,7 @@ describe('DeleteWarningDialog', () => {
 
     expect(screen.getByText(m.modals_deleteWarning_openPrs_one({ count: '1' }))).toBeTruthy();
     expect(screen.getByRole('link', { name: '#42 Pending work' })).toBeTruthy();
-    expect(screen.getByText(m.workspace_prSection_statusDraft_label())).toBeTruthy();
+    expect(screen.queryByText(m.workspace_prSection_statusDraft_label())).toBeNull();
     expect(screen.queryByText(m.modals_deleteWarning_prMergeConflicts_label())).toBeNull();
   });
 
@@ -218,7 +255,7 @@ describe('DeleteWarningDialog', () => {
       props: {
         open: true,
         mode: 'archive' as const,
-        agentNames: ['Agent One'],
+        agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
         hookNames: ['ci-watch'],
         onDeleteAnyway,
       },
@@ -280,7 +317,11 @@ describe('DeleteWarningDialog', () => {
       const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 
       render(DeleteWarningDialog, {
-        props: { open: true, agentNames: ['Agent One'], localChanges: null },
+        props: {
+          open: true,
+          agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
+          localChanges: null,
+        },
       });
 
       expect(screen.getByText('Agent One')).toBeTruthy();
@@ -294,11 +335,7 @@ describe('DeleteWarningDialog', () => {
         props: { open: true, localChanges: warning([primary({ unpushedCount: 3 })]) },
       });
 
-      expect(screen.getByText(m.modals_deleteWarning_localChanges_description())).toBeTruthy();
-      expect(screen.getByText('feat/x')).toBeTruthy();
-      expect(
-        screen.getByText(m.modals_deleteWarning_localChanges_unpushed_many({ count: '3' })),
-      ).toBeTruthy();
+      expect(screen.getByText(/3 unpushed commits.*feat\/x/)).toBeTruthy();
       expect(
         screen.queryByText(m.modals_deleteWarning_localChanges_uncommitted_label()),
       ).toBeNull();
@@ -311,10 +348,7 @@ describe('DeleteWarningDialog', () => {
         props: { open: true, localChanges: warning([primary({ uncommittedCount: 2 })]) },
       });
 
-      expect(screen.getByText('feat/x')).toBeTruthy();
-      expect(
-        screen.getByText(m.modals_deleteWarning_localChanges_uncommitted_label()),
-      ).toBeTruthy();
+      expect(screen.getByText(/uncommitted changes.*feat\/x/i)).toBeTruthy();
       expect(screen.queryByText(/unpushed commit/)).toBeNull();
     });
 
@@ -331,24 +365,8 @@ describe('DeleteWarningDialog', () => {
         },
       });
 
-      expect(screen.getByText('feat/x')).toBeTruthy();
-      expect(
-        screen.getByText(
-          m.modals_deleteWarning_localChanges_secondaryRoot_label({
-            name: 'lib',
-            branch: 'main',
-          }),
-        ),
-      ).toBeTruthy();
-      expect(
-        screen.getByText(m.modals_deleteWarning_localChanges_unpushed_one({ count: '1' })),
-      ).toBeTruthy();
-      expect(
-        screen.getByText(m.modals_deleteWarning_localChanges_unpushed_many({ count: '2' })),
-      ).toBeTruthy();
-      expect(
-        screen.getAllByText(m.modals_deleteWarning_localChanges_uncommitted_label()),
-      ).toHaveLength(1);
+      expect(screen.getByText(/1 unpushed commit.*feat\/x/)).toBeTruthy();
+      expect(screen.getByText(/2 unpushed commits.*local changes.*lib.*main/)).toBeTruthy();
     });
 
     it('skips roots the daemon could not read', async () => {
@@ -364,7 +382,7 @@ describe('DeleteWarningDialog', () => {
         },
       });
 
-      expect(screen.getByText('feat/x')).toBeTruthy();
+      expect(screen.getByText(/1 unpushed commit.*feat\/x/)).toBeTruthy();
       expect(screen.queryByText(/broken/)).toBeNull();
       expect(screen.queryByText(/not a git repository/)).toBeNull();
     });
@@ -380,28 +398,160 @@ describe('DeleteWarningDialog', () => {
         },
       });
 
-      expect(screen.getByText(m.modals_archiveWarning_localChanges_description())).toBeTruthy();
-      expect(screen.queryByText(m.modals_deleteWarning_localChanges_description())).toBeNull();
+      expect(screen.getByRole('button', { name: 'Archive', exact: true })).toBeTruthy();
+      expect(screen.queryByText(/feat\/x.*will be lost/)).toBeNull();
       unmount();
 
       render(DeleteWarningDialog, {
         props: { open: true, localChanges: warning([primary({ uncommittedCount: 1 })]) },
       });
 
-      expect(screen.getByText(m.modals_deleteWarning_localChanges_description())).toBeTruthy();
-      expect(screen.queryByText(m.modals_archiveWarning_localChanges_description())).toBeNull();
+      expect(screen.getByText(/feat\/x.*will be lost/)).toBeTruthy();
+      expect(screen.queryByText(/feat\/x.*remain on disk/)).toBeNull();
     });
   });
 
-  it('cancels the dialog when Escape is pressed inside the dialog', async () => {
+  describe('guests', () => {
+    it('renders no guests section and the ordinary copy when there are no guests', async () => {
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
+          guests: { collaboratorCount: 0, openInviteCount: 0 },
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_deleteWarning_title() }),
+      ).toBeTruthy();
+      expect(screen.queryByText(m.modals_deleteWarning_guests_description())).toBeNull();
+      expect(screen.queryByText(m.modals_deleteWarning_permanent_guests_description())).toBeNull();
+    });
+
+    it('lists collaborators and open invites beside active work and keeps the stop-work copy', async () => {
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
+          guests: { collaboratorCount: 2, openInviteCount: 1 },
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_deleteWarning_title() }),
+      ).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_guests_description())).toBeTruthy();
+      expect(
+        screen.getByText(m.modals_deleteWarning_guests_collaborators_many({ count: '2' })),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(m.modals_deleteWarning_guests_openInvites_one({ count: '1' })),
+      ).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_description())).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_permanent_guests_description())).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: m.modals_deleteWarning_confirm_label() }),
+      ).toBeTruthy();
+    });
+
+    it('uses the guests-only delete copy when guests are the only reason for the dialog', async () => {
+      const onDeleteAnyway = vi.fn();
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          guests: { collaboratorCount: 1, openInviteCount: 0 },
+          onDeleteAnyway,
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_deleteWarning_guestsOnly_title() }),
+      ).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_guestsOnly_description())).toBeTruthy();
+      expect(screen.queryByText(m.modals_deleteWarning_description())).toBeNull();
+      expect(
+        screen.getByText(m.modals_deleteWarning_guests_collaborators_one({ count: '1' })),
+      ).toBeTruthy();
+      expect(screen.queryByText(/open invite/)).toBeNull();
+      expect(screen.getByText(m.modals_deleteWarning_permanent_guests_description())).toBeTruthy();
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.modals_deleteWarning_guestsOnly_confirm_label() }),
+      );
+
+      expect(onDeleteAnyway).toHaveBeenCalledOnce();
+    });
+
+    it('adds the re-invite note in archive mode alongside active work', async () => {
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          mode: 'archive' as const,
+          hookNames: ['ci-watch'],
+          guests: { collaboratorCount: 0, openInviteCount: 3 },
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_archiveWarning_title() }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(m.modals_deleteWarning_guests_openInvites_many({ count: '3' })),
+      ).toBeTruthy();
+      expect(screen.queryByText(/collaborator/)).toBeNull();
+      expect(screen.getByText(m.modals_archiveWarning_description())).toBeTruthy();
+      expect(screen.getByText(m.modals_archiveWarning_note_guests_description())).toBeTruthy();
+      expect(screen.queryByText(m.modals_deleteWarning_permanent_guests_description())).toBeNull();
+    });
+
+    it('uses the guests-only archive copy and only the re-invite note when guests alone gate the archive', async () => {
+      const onDeleteAnyway = vi.fn();
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          mode: 'archive' as const,
+          guests: { collaboratorCount: 2, openInviteCount: 0 },
+          onDeleteAnyway,
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_archiveWarning_guestsOnly_title() }),
+      ).toBeTruthy();
+      expect(screen.getByText(m.modals_archiveWarning_guestsOnly_description())).toBeTruthy();
+      expect(screen.queryByText(m.modals_archiveWarning_description())).toBeNull();
+      expect(screen.getByText(m.modals_archiveWarning_note_guests_description())).toBeTruthy();
+      expect(screen.queryByText(/stopped agents and cancelled hooks/)).toBeNull();
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.modals_archiveWarning_guestsOnly_confirm_label() }),
+      );
+
+      expect(onDeleteAnyway).toHaveBeenCalledOnce();
+    });
+  });
+
+  it.each(['Escape', 'Cancel', 'close'])('cancels without deleting via %s', async (action) => {
     const onCancel = vi.fn();
+    const onDeleteAnyway = vi.fn();
     const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 
     render(DeleteWarningDialog, {
       props: {
         open: true,
-        agentNames: ['Agent One'],
+        agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
         onCancel,
+        onDeleteAnyway,
       },
     });
 
@@ -409,9 +559,18 @@ describe('DeleteWarningDialog', () => {
       name: m.modals_deleteWarning_title(),
     });
 
-    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    if (action === 'Escape') {
+      await fireEvent.keyDown(dialog, { key: 'Escape' });
+    } else {
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: action === 'Cancel' ? 'Cancel' : 'Close delete warning dialog',
+        }),
+      );
+    }
 
     expect(onCancel).toHaveBeenCalledOnce();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onDeleteAnyway).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

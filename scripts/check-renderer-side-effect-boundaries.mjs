@@ -6,6 +6,7 @@ import ts from 'typescript';
 const APPROVED_MIDDLEWARE = new Map([
   ['src/store/utils/store-guard-middleware.ts', 'createStoreGuardMiddleware'],
   ['src/store/renderer/middlewares/batch.ts', 'createBatchingMiddleware'],
+  ['src/store/renderer/middlewares/action-ring-buffer.ts', 'createActionRingBufferMiddleware'],
   [
     'src/store/renderer/middlewares/state-reference-checks.ts',
     'createReferenceChangeDetectorMiddleware',
@@ -27,8 +28,12 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   ['src/store/renderer/seeders/file-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   ['src/store/renderer/seeders/git-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
+  ['src/store/renderer/seeders/guest-sessions-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
   ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 16 }],
-  ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 26 }],
+  ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 33 }],
+  ['src/store/renderer/seeders/invite-consent-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  ['src/store/renderer/seeders/invite-notice-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  ['src/store/renderer/seeders/invite-progress-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   [
     'src/store/renderer/seeders/language-preference-bridge-seeder.ts',
     { registerMockIpcHandler: 1 },
@@ -39,6 +44,8 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/notification-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/panel-layout-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/pi-mcp-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
+  ['src/store/renderer/seeders/power-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  ['src/store/renderer/seeders/presence-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/provider-status-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
   ['src/store/renderer/seeders/quit-confirmation-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/release-notes-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
@@ -48,8 +55,9 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/shell-reveal-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/terminals-scripts-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/user-activity-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  ['src/store/renderer/seeders/user-mcp-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/voice-local-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
-  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
+  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 7 }],
   [
     'src/store/renderer/seeders/workspace-summaries-bridge-seeder.ts',
     { registerMockIpcHandler: 2 },
@@ -121,10 +129,10 @@ export function findRendererSideEffectBoundaryViolations(files) {
     return moduleCandidates(fromPath, specifier).find((candidate) => sources.has(candidate));
   };
   const directOrigin = (fromPath, specifier, exportedName) => {
-    if (specifier === '@augmentcode/themis/types' && exportedName === 'StoreMiddleware') {
+    if (specifier === '@themislib/themis/types' && exportedName === 'StoreMiddleware') {
       return 'StoreMiddleware';
     }
-    if (specifier === '@augmentcode/themis/svelte-store' && exportedName === 'Store') {
+    if (specifier === '@themislib/themis/svelte-store' && exportedName === 'Store') {
       return 'Store';
     }
     const isRouter =
@@ -353,10 +361,10 @@ export function findRendererSideEffectBoundaryViolations(files) {
         }
       } else if (bindings && ts.isNamespaceImport(bindings)) {
         namespaceImports.set(bindings.name.text, specifier);
-        if (specifier === '@augmentcode/themis/types') {
+        if (specifier === '@themislib/themis/types') {
           storeMiddlewareNamespaces.add(bindings.name.text);
         }
-        if (specifier === '@augmentcode/themis/svelte-store') {
+        if (specifier === '@themislib/themis/svelte-store') {
           storeConstructorNamespaces.add(bindings.name.text);
         }
       }
@@ -514,7 +522,7 @@ export function findRendererSideEffectBoundaryViolations(files) {
           .some((name, i) => name !== expected[i])
       ) {
         violations.push(
-          `${filePath}: registry must contain exactly the four approved middleware factories`,
+          `${filePath}: registry must contain exactly the ${expected.length} approved middleware factories`,
         );
       }
     }

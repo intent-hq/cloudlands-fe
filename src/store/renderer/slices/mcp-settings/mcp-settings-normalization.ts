@@ -1,3 +1,4 @@
+import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 import type { McpServerConfig, McpServerStatus } from './mcp-settings-types';
 
 const MCP_SERVER_STATUSES: readonly McpServerStatus[] = [
@@ -81,7 +82,7 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
   const entries = Object.entries(value).filter(
     (entry): entry is [string, string] => typeof entry[1] === 'string',
   );
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  return Object.fromEntries(entries);
 }
 
 function normalizeMcpAuthType(value: unknown): McpServerConfig['authType'] | undefined {
@@ -111,6 +112,8 @@ export function mapDaemonMcpState(state: unknown): McpServerStatus | null {
       return 'stopped';
     case 'error':
       return 'error';
+    case 'auth_required':
+      return 'auth_required';
     default:
       return null;
   }
@@ -138,6 +141,8 @@ function normalizeMcpServerConfig(value: unknown, fallbackName?: string): McpSer
       : 'http';
 
   const config: McpServerConfig = { name, type };
+  const id = optionalString(value.id);
+  if (id) config.id = id;
   const command = optionalString(value.command);
   const url = optionalString(value.url);
   const args = stringArray(value.args);
@@ -155,7 +160,7 @@ function normalizeMcpServerConfig(value: unknown, fallbackName?: string): McpSer
   return config;
 }
 
-export function normalizeMcpServersPayload(data: unknown): McpServerConfig[] {
+function readMcpServersPayload(data: unknown): McpServerConfig[] {
   if (Array.isArray(data)) {
     return data.flatMap((item) => normalizeMcpServerConfig(item) ?? []);
   }
@@ -169,4 +174,37 @@ export function normalizeMcpServersPayload(data: unknown): McpServerConfig[] {
   return Object.entries(serverMap).flatMap(
     ([name, config]) => normalizeMcpServerConfig(config, name) ?? [],
   );
+}
+
+/** Reject ambiguous identities before any save can mutate daemon state. */
+export function validateMcpServerIdentities(servers: McpServerConfig[]): void {
+  const keys = new Set<string>();
+  const byName = new Map<string, McpServerConfig>();
+  for (const server of servers) {
+    const key = getMcpServerKey(server);
+    if (keys.has(key)) throw new Error(`Duplicate MCP server identity: ${key}`);
+    keys.add(key);
+    const sameName = byName.get(server.name);
+    if (sameName && (!sameName.id || !server.id)) {
+      throw new Error(`Duplicate MCP server name requires distinct IDs: ${server.name}`);
+    }
+    byName.set(server.name, server);
+  }
+}
+
+export function normalizeMcpServersPayload(data: unknown): McpServerConfig[] {
+  const servers = readMcpServersPayload(data);
+  validateMcpServerIdentities(servers);
+  return servers;
+}
+
+export function copyServerForState(source: McpServerConfig): McpServerConfig {
+  const server: McpServerConfig = { name: source.name, type: source.type };
+  if (source.id !== undefined) server.id = source.id;
+  if (source.command !== undefined) server.command = source.command;
+  if (source.args !== undefined) server.args = [...source.args];
+  if (source.url !== undefined) server.url = source.url;
+  if (source.authType !== undefined) server.authType = source.authType;
+  if (source.disabled !== undefined) server.disabled = source.disabled;
+  return server;
 }

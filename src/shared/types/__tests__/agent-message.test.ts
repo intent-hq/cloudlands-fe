@@ -127,6 +127,46 @@ describe('AgentMessage Type Consolidation', () => {
       expect(normalized.contentBlocks).toEqual([{ type: 'text', text: 'Test' }]);
     });
 
+    it('should retain the serve-time author projection on a user row (intent-hq/intentd#1869)', () => {
+      const author = {
+        principalId: 'principal-guest',
+        login: 'guest',
+        displayName: 'Guest User',
+        avatarUrl: 'https://avatars.example/guest.png',
+      };
+      const normalized = normalizeAgentMessage({
+        id: 'user-msg-1',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'hi' }],
+        timestamp: new Date().toISOString(),
+        author,
+        metadata: { fromPrincipalId: 'principal-guest' },
+      });
+      expect(normalized.author).toEqual(author);
+      expect(normalized.metadata?.fromPrincipalId).toBe('principal-guest');
+    });
+
+    it('preserves portable, explicit-null and absent author states without changing content or provenance', () => {
+      const contentBlocks = [{ type: 'text', text: '  imported content\n' }];
+      const metadata = {
+        humanAuthor: { sourcePrincipalId: 'same-local-string' },
+        originalMetadata: ['inert'],
+      };
+      const row = {
+        id: 'portable',
+        role: 'user',
+        timestamp: '2026-01-01T00:00:00Z',
+        contentBlocks,
+        metadata,
+      };
+      const author = { principalId: null, login: null, displayName: null, avatarUrl: null };
+      expect(normalizeAgentMessage({ ...row, author }).author).toEqual(author);
+      expect(normalizeAgentMessage({ ...row, author: null })).toHaveProperty('author', null);
+      expect(normalizeAgentMessage(row)).not.toHaveProperty('author');
+      expect(normalizeAgentMessage({ ...row, author }).contentBlocks).toBe(contentBlocks);
+      expect(normalizeAgentMessage({ ...row, author }).metadata).toBe(metadata);
+    });
+
     it('should throw on AgentMessage missing the canonical `id` field', () => {
       expect(() =>
         normalizeAgentMessage({

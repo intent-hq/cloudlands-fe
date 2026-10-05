@@ -7,8 +7,15 @@
     faClipboard,
     faSquare,
     faCircleExclamation,
+    faUser,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import {
+    memberMentionLabel,
+    memberMentionSubtitle,
+    parseMemberMention,
+  } from '$lib/utils/member-mention-token';
+  import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
@@ -18,13 +25,15 @@
   import RulesInspector from './RulesInspector.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
+  import EffortChangeNotice from './EffortChangeNotice.svelte';
   import DiscussionRequestNotice from './DiscussionRequestNotice.svelte';
   import BlockerReportNotice from './BlockerReportNotice.svelte';
   import TurnFailureNotice from './TurnFailureNotice.svelte';
   import { getModelChangeNotice } from './model-change-notice';
+  import { getEffortChangeNotice } from './effort-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import type { ContextItem } from './input/context-api';
   import type { FileBlock, ImageBlock } from '$lib/client/app-client';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -48,14 +57,21 @@
     resolveFinishReasonNotice,
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
   import { onBackendReconnected } from '$lib/client/live/backend-transport';
-  import { isImageBlock } from '$shared/types/content-block.guards';
+  import { isFileBlock, isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
+  import { getCollaboratorSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
+  import {
+    getHumanMessageAuthor,
+    getMessageAuthorLabel,
+    getMessageAuthorTooltip,
+  } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -65,15 +81,19 @@
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
+    SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
   } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
   import AutoUnarchivedNotice from './AutoUnarchivedNotice.svelte';
   import { getAutoUnarchivedNotice } from './auto-unarchived-notice';
+  import ProviderRehomedNotice from './ProviderRehomedNotice.svelte';
+  import { getProviderRehomedNotice } from './rehome-notice';
   import ChatOperationalRow from './ChatOperationalRow.svelte';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
+  import { canOpenAgentPath } from './agent-path-actions';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
@@ -106,7 +126,7 @@
   }
 
   function openChatFile(path: string, event?: MouseEvent, line?: number) {
-    if (readOnly) return;
+    if (readOnly || !canOpenAgentPath(appStore.state, agentId)) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event, line)));
@@ -165,6 +185,7 @@
     | {
         type: 'mention';
         mentionType: string;
+        description?: string;
         label: string;
         id: string;
         identifier?: string;
@@ -194,6 +215,11 @@
     /** Workspace for SimpleRichInput in edit mode */
     workspace?: Workspace | null;
     /**
+     * The viewer's own principal (`presence.ownPrincipalId`): their own rows
+     * render no author identity. `null` = not yet known, every author shown.
+     */
+    ownPrincipalId?: string | null;
+    /**
      * Called when user wants to edit and resend the message. `blocks`
      * carries the attachment content blocks restored/edited in the edit
      * strip (PROTOCOL §5.5) so edit/regenerate never drops attachments.
@@ -215,6 +241,7 @@
     onRegisterRef?: (element: HTMLDivElement) => void;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Keeps an edited virtualized turn materialized until edit mode closes. */
     onEditStateChange?: (isEditing: boolean) => void;
     isSticky?: boolean;
@@ -245,6 +272,7 @@
     hideToolCalls = false,
     sessionMetadata,
     workspace = null,
+    ownPrincipalId = null,
     onEditSubmit,
     editModel,
     onRegenerate,
@@ -253,6 +281,7 @@
     onCopy,
     onRegisterRef,
     onScrollToPrevious,
+    previousMessageLoading = false,
     onEditStateChange,
     isSticky = false,
     onStickyClick,
@@ -272,7 +301,7 @@
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock) for user-message attached images: the slim
   // projection may serve them as write-time thumbnails (dataTruncated /
   // dataIsThumbnail), so the lightbox fetches the original on demand.
@@ -310,11 +339,15 @@
   );
   // Daemon-persisted model-change transcript row (metadata type "model_changed")
   let modelChangeNotice = $derived(getModelChangeNotice(message));
+  let effortChangeNotice = $derived(getEffortChangeNotice(message));
 
   let questionsDismissedNotice = $derived(getQuestionsDismissedNotice(message));
 
   // Daemon-persisted auto-unarchive transcript row (metadata type "auto_unarchived")
   let autoUnarchivedNotice = $derived(getAutoUnarchivedNotice(message));
+
+  // Daemon-persisted provider re-home transcript row (metadata type "provider_rehomed")
+  let providerRehomedNotice = $derived(getProviderRehomedNotice(message));
 
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
   let attentionNotice = $derived(getAttentionNotice(message));
@@ -383,11 +416,6 @@
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
   let isAgentMessageExpanded = $state(false);
-  let agentMessagePreview = $derived(
-    message
-      ? (role === 'user' ? getPresentedUserMessageText(message) : extractAllContent(message)).trim()
-      : '',
-  );
   let agentMessageBodyId = $derived(`agent-message-body-${message?.id ?? 'pending'}`);
 
   // Queued-delivery info for messages drained from the pending queue
@@ -400,14 +428,48 @@
   let automatedWakePresentation = $derived(
     role === 'user' ? getAutomatedWakePresentation(message) : null,
   );
-  let hookWakeAttribution = $derived(
-    automatedWakePresentation?.kind === 'hook' ? automatedWakePresentation.attribution : null,
-  );
-  let prMonitorWakeAttribution = $derived(
-    automatedWakePresentation?.kind === 'pr' ? automatedWakePresentation.attribution : null,
-  );
   let isAutomatedWakeExpanded = $state(false);
   let automatedWakeBodyId = $derived(`automated-wake-body-${message?.id ?? 'pending'}`);
+
+  // Human author identity (multiplayer w2): shown only once the workspace has
+  // more than one member, on plain human rows — agent-to-agent sends and
+  // automated wakes carry their own sender header. Reads the daemon's
+  // serve-time `author` projection verbatim; single-member workspaces, the
+  // viewer's own local rows and rows without the projection render unchanged.
+  // Portable human snapshots remain visible without current membership.
+  //
+  // A row whose content starts with the daemon's collaborator sender preamble
+  // (exact match against the text rebuilt from the same projection) always
+  // shows the sender chip with its matched historical provenance. The preamble is
+  // display-stripped; guest roles remain visible while member chips show identity only.
+  // The workspace owner's own rows never qualify (the daemon prepends the
+  // preamble for collaborators only), so an owner-typed lookalike line stays.
+  let collaboratorSender = $derived(
+    role === 'user' && !agentAttribution && !automatedWakePresentation
+      ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
+      : null,
+  );
+  const projectedHumanAuthor = $derived(getHumanMessageAuthor(message, ownPrincipalId));
+  let humanAuthor = $derived(
+    collaboratorSender
+      ? collaboratorSender.author
+      : role === 'user' &&
+          ((workspace?.memberCount ?? 0) >= 2 || projectedHumanAuthor?.principalId === null) &&
+          !agentAttribution &&
+          !automatedWakePresentation
+        ? projectedHumanAuthor
+        : null,
+  );
+  let humanAuthorLabel = $derived(humanAuthor ? getMessageAuthorLabel(humanAuthor) : null);
+  const humanAuthorRoleLabel = $derived(
+    humanAuthor?.principalId &&
+      workspace?.ownerPrincipalId &&
+      humanAuthor.principalId === workspace.ownerPrincipalId
+      ? m.workspace_share_role_owner_label()
+      : collaboratorSender?.role === 'guest'
+        ? m.chat_chatMessage_collaboratorRole_label()
+        : null,
+  );
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -558,7 +620,21 @@
       const fullMatch = match.fullMatch; // e.g., "@context[linear|AU-123|Title]" or "@note/spec"
       const captured = match.captured; // e.g., "context[linear|AU-123|Title]" or "note/spec"
 
-      if (captured.startsWith('context[')) {
+      if (captured.startsWith('member[')) {
+        const member = parseMemberMention(fullMatch);
+        if (member) {
+          segments.push({
+            type: 'mention',
+            mentionType: 'member',
+            label: memberMentionLabel(member.label),
+            description: memberMentionSubtitle(member),
+            id: member.id,
+            icon: faUser,
+          });
+        } else {
+          segments.push({ type: 'text', content: fullMatch });
+        }
+      } else if (captured.startsWith('context[')) {
         // Context mention: @context[provider|identifier|title] or @context[base64JSON]
         const inner = captured.slice(8, -1); // Remove "context[" and "]"
 
@@ -827,7 +903,8 @@
       $hydratedBlocks$,
     ).filter(
       (block: any) =>
-        block.type === 'image' && ((block.data && block.mimeType) || block.attachmentId),
+        block.type === 'image' &&
+        ((block.data && block.mimeType) || block.attachmentId || block.dataTruncated === true),
     );
   });
 
@@ -898,7 +975,7 @@
     blockId: string;
     openerElement: HTMLButtonElement;
     index: number;
-    thumbnailBlock: ContentBlock & { data: string; mimeType: string };
+    thumbnailBlock: ContentBlock;
   } | null>(null);
 
   function isAttachmentHydrationLoading(blockId: string | undefined): boolean {
@@ -929,9 +1006,9 @@
       lightboxOpen = true;
       return;
     }
-    if (!isImageBlock(imageBlock)) return;
     const hydrationMessageId = message?.id ?? messageId;
     if (imageBlock.dataTruncated === true && agentId && hydrationMessageId && imageBlock.id) {
+      if (pendingLightboxHydration?.blockId === imageBlock.id) return;
       pendingLightboxHydration = {
         blockId: imageBlock.id,
         openerElement,
@@ -941,6 +1018,7 @@
       appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id));
       return;
     }
+    if (!isImageBlock(imageBlock) || !imageBlock.data) return;
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
@@ -984,6 +1062,9 @@
       );
     }
     pendingLightboxHydration = null;
+    // Legacy slim images have no thumbnail to fall back to. Keep the tile
+    // actionable for retry rather than opening an empty data URL on failure.
+    if (!isImageBlock(block) || !block.data) return;
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
@@ -992,19 +1073,17 @@
     lightboxOpen = true;
   });
 
-  // Extract file blocks from contentBlocks — both the legacy inline-data
-  // variant (data + mimeType) and attachment-reference blocks (attachmentId,
-  // no bytes; PROTOCOL §5.5 v6.12).
+  // Extract attachment-reference file blocks from contentBlocks (attachmentId,
+  // no bytes; PROTOCOL §5.5). A file block without an attachmentId is served
+  // as text by the daemon (`degrade_inline_file_blocks`) and never renders as a chip.
   const fileBlocks = $derived.by(() => {
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
-    return message.contentBlocks.filter(
-      (block: any) => block.type === 'file' && (block.data || block.attachmentId) && block.fileName,
-    );
+    return message.contentBlocks.filter(isFileBlock);
   });
 
-  // Secondary text for a file chip: size and/or mime from the block's inline
+  // Secondary text for a file chip: size and/or mime from the block's
   // metadata; empty string when neither is present.
   function fileChipSecondaryText(block: ContentBlock): string {
     const parts: string[] = [];
@@ -1025,24 +1104,12 @@
     appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName ?? ''));
   }
 
-  // Download a legacy inline-data file block via a data URL.
-  function downloadInlineFileBlock(block: ContentBlock, index: number) {
-    if (readOnly) return;
-    const dataUrl = `data:${block.mimeType || 'application/octet-stream'};base64,${block.data}`;
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = block.fileName || `file-${index}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
     const rawText =
       automatedWakePresentation?.bodyText ??
       (role === 'user' && message
-        ? getPresentedUserMessageText(message)
+        ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
         : extractTextFromMessage());
     if (role === 'user') {
       const parsed = parseContextFromMessage(rawText);
@@ -1128,7 +1195,7 @@
 
     // Extract text and tool blocks from contentBlocks
     if (role === 'user' && message) {
-      const presentedText = getPresentedUserMessageText(message);
+      const presentedText = getPresentedUserMessageText(message, workspace?.ownerPrincipalId);
       if (presentedText.trim()) parts.push(presentedText);
     }
     if (message?.contentBlocks && Array.isArray(message.contentBlocks)) {
@@ -1207,7 +1274,9 @@
   function handleStartEdit() {
     // Presentation-only delivery notes stay out of edit/retry text while the
     // canonical stored content remains unchanged.
-    const rawText = message ? getPresentedUserMessageText(message) : getMessageText();
+    const rawText = message
+      ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
+      : getMessageText();
     const parsed = parseStoredMessage(rawText);
     editValue = parsed.userMessage;
 
@@ -1242,7 +1311,7 @@
             imageData: block.data,
             imageMimeType: block.mimeType,
           });
-        } else if (block.type === 'file' && block.attachmentId && block.fileName) {
+        } else if (isFileBlock(block)) {
           // Attachment-reference block: restore as a placed-attachment item
           // (UUID + metadata only) so the re-send builds the same reference.
           contextItemsForEdit.push({
@@ -1253,15 +1322,6 @@
             attachmentId: block.attachmentId,
             attachmentMimeType: block.mimeType,
             attachmentSize: block.size,
-          });
-        } else if (block.type === 'file' && block.data && block.fileName) {
-          contextItemsForEdit.push({
-            id: `file-${message.id}-${index}`,
-            type: 'file',
-            label: block.fileName,
-            description: block.mimeType || m.chat_shared_file_fallback(),
-            fileData: block.data,
-            fileMimeType: block.mimeType,
           });
         }
       });
@@ -1397,18 +1457,29 @@
     notice={modelChangeNotice}
     fallbackText={extractAllContent(message) || undefined}
   />
+{:else if effortChangeNotice}
+  <EffortChangeNotice
+    notice={effortChangeNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
 {:else if questionsDismissedNotice}
   <QuestionsDismissedNotice title={extractAllContent(message) || undefined} />
 {:else if autoUnarchivedNotice}
   <!-- Daemon-persisted auto-unarchive notice row - centered inline divider -->
   <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
+{:else if providerRehomedNotice}
+  <!-- Daemon-persisted provider re-home notice row - centered inline divider -->
+  <ProviderRehomedNotice
+    notice={providerRehomedNotice}
+    fallbackText={extractAllContent(message) || undefined}
+  />
 {:else if questionOnlyTurn && !shouldShowStoppedIndicator && !finishReasonNoticeLabel}
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
     bind:this={messageElement}
-    class="group group/message transition-transform duration-200 ease-out {role === 'user'
+    class="{role === 'user'
       ? 'user-message'
-      : 'relative assistant-message'}"
+      : 'relative assistant-message'} group group/message transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
     data-message-id={ownsMessageIdentity ? message?.id : undefined}
     data-message-role={ownsMessageIdentity ? role : undefined}
     inert={readOnly}
@@ -1416,7 +1487,7 @@
     {#if role === 'user'}
       {#if isEditing}
         <!-- Edit mode - use SimpleRichInput for rich editing experience -->
-        <div class="rounded-xs" transition:safeSlide={{ axis: 'y', duration: 200 }}>
+        <div class="rounded-xs" transition:safeDisclosureTransition={{ tier: 'moderate' }}>
           <SimpleRichInput
             bind:value={editValue}
             bind:contextItems={editContextItems}
@@ -1441,32 +1512,31 @@
             ? 'automated-wake-card'
             : undefined}
           class="{agentAttribution
-            ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+            ? `relative ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
-          !hookWakeAttribution &&
-          !prMonitorWakeAttribution
+          !automatedWakePresentation
             ? 'cursor-pointer'
             : 'cursor-default'}"
           ondblclick={() =>
-            onEditSubmit &&
-            !agentAttribution &&
-            !hookWakeAttribution &&
-            !prMonitorWakeAttribution &&
-            handleStartEdit()}
+            onEditSubmit && !agentAttribution && !automatedWakePresentation && handleStartEdit()}
         >
           <!-- Actions -->
-          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded}
+          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded || (automatedWakePresentation && isAutomatedWakeExpanded && queueInfo)}
             <MessageActions
               role="user"
               onCopy={handleCopy}
               requestId={backendSessionId ?? undefined}
               {onScrollToPrevious}
+              {previousMessageLoading}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
-              class="absolute right-1 z-10 {agentAttribution ? 'bottom-1' : 'top-1'}"
+              {queueInfo}
+              class="absolute right-1 z-10 {agentAttribution || automatedWakePresentation
+                ? 'bottom-1'
+                : 'top-1'}"
             />
           {/if}
 
@@ -1474,7 +1544,6 @@
           {#if agentAttribution}
             <AgentMessageAttributionHeader
               attribution={agentAttribution}
-              preview={agentMessagePreview}
               expanded={isAgentMessageExpanded}
               controlsId={agentMessageBodyId}
               ontoggle={() => (isAgentMessageExpanded = !isAgentMessageExpanded)}
@@ -1489,6 +1558,58 @@
             />
           {/if}
 
+          <!-- Human author identity in multi-member workspaces, and the
+               historical member or guest sender chip on preamble-carrying rows -->
+          {#if humanAuthor && !isSticky}
+            <div
+              class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
+              data-testid="user-message-author"
+              data-principal-id={humanAuthor.principalId}
+              data-sender-role={collaboratorSender?.role === 'member'
+                ? 'member'
+                : collaboratorSender
+                  ? 'collaborator'
+                  : undefined}
+              aria-label={collaboratorSender?.role === 'guest'
+                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                  })
+                : humanAuthorRoleLabel
+                  ? m.workspace_share_member_identityRole_label({
+                      handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                      role: humanAuthorRoleLabel,
+                    })
+                  : m.chat_chatMessage_author_ariaLabel({
+                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                    })}
+            >
+              <Tooltip content={getMessageAuthorTooltip(humanAuthor)} class="shrink-0">
+                <span
+                  role="img"
+                  aria-label={humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}
+                >
+                  <PrincipalAvatar
+                    avatarUrl={humanAuthor.avatarUrl}
+                    label={humanAuthor.displayName?.trim() || humanAuthor.login?.trim() || ''}
+                    size={16}
+                    class="font-medium leading-none text-muted-foreground"
+                    referrerpolicy="no-referrer"
+                    testid="user-message-author-avatar"
+                  />
+                </span>
+              </Tooltip>
+              <span class="truncate" data-testid="user-message-author-name"
+                >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
+              >
+              {#if humanAuthorRoleLabel}
+                <span aria-hidden="true" class="shrink-0">·</span>
+                <span class="shrink-0" data-testid="user-message-author-role"
+                  >{humanAuthorRoleLabel}</span
+                >
+              {/if}
+            </div>
+          {/if}
+
           {#if (!agentAttribution || isAgentMessageExpanded) && (!automatedWakePresentation || isAutomatedWakeExpanded)}
             <div
               id={agentAttribution
@@ -1497,7 +1618,7 @@
                   ? automatedWakeBodyId
                   : undefined}
               class={agentAttribution || automatedWakePresentation
-                ? 'w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2'
+                ? `w-full min-w-0 max-w-full overflow-hidden border-t border-border ${automatedWakePresentation ? SUBSCRIPTION_WAKE_BODY_PADDING_CLASS : 'px-3 py-2'}`
                 : 'contents'}
               data-testid={agentAttribution
                 ? 'agent-message-expanded-body'
@@ -1506,15 +1627,10 @@
                   : undefined}
               transition:safeSubscriptionSlide
             >
-              <!-- Queued-delivery notice for messages drained from the pending queue -->
-              {#if queueInfo}
-                <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
-              {/if}
-
               <div
                 class="type-body select-text text-pretty {agentAttribution ||
                 automatedWakePresentation
-                  ? 'font-medium! text-foreground'
+                  ? 'font-medium text-foreground'
                   : USER_MESSAGE_TEXT_CLASS} {agentAttribution
                   ? ''
                   : isSticky
@@ -1522,10 +1638,7 @@
                     : automatedWakePresentation
                       ? 'max-w-full [overflow-wrap:anywhere]'
                       : 'line-clamp-6'} {isSticky ||
-                (onEditSubmit &&
-                  !agentAttribution &&
-                  !hookWakeAttribution &&
-                  !prMonitorWakeAttribution)
+                (onEditSubmit && !agentAttribution && !automatedWakePresentation)
                   ? 'cursor-pointer'
                   : 'cursor-text'}"
                 data-expanded={agentAttribution
@@ -1540,132 +1653,151 @@
                     onStickyClick();
                     return;
                   }
-                  if (
-                    onEditSubmit &&
-                    !agentAttribution &&
-                    !hookWakeAttribution &&
-                    !prMonitorWakeAttribution
-                  ) {
+                  if (onEditSubmit && !agentAttribution && !automatedWakePresentation) {
                     e.preventDefault();
                     e.stopPropagation();
                     handleStartEdit();
                   }
                 }}
               >
-                <!-- Context pills from metadata (e.g., PR references, Linear issues) -->
-                {#each parsedMessage.pills as pill, i (`${pill.type}-${pill.label}-${i}`)}
-                  {@const isClickable = !!(
-                    pill.path ||
-                    pill.noteId ||
-                    pill.url ||
-                    pill.type === 'spec'
-                  )}
-                  <button
-                    type="button"
-                    class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                    title={pill.content || pill.path || pill.noteId || pill.label}
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      handlePillClick(pill, e);
-                    }}
-                    disabled={!isClickable}
-                  >
-                    <Fa icon={pill.icon} size="12" class="opacity-50" />
-                    <span class="truncate font-medium" style="max-width: 180px;" title={pill.label}
-                      >{pill.label}</span
-                    >
-                  </button>
-                {/each}
-                <!-- Render text with inline @mentions as chips -->
-                {#each parsedMessage.segments as segment, i (i)}
-                  {#if segment.type === 'text'}
-                    <span class="whitespace-pre-wrap"
-                      >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
-                            href={part.url}
-                            class="cursor-pointer break-all underline underline-offset-2 hover:opacity-80"
-                            title={part.url}
-                            onclick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const wsId = getOwningWorkspaceId();
-                              handleLink(part.url, {
-                                workspaceId: wsId ? WorkspaceId(wsId) : undefined,
-                                event: e,
-                              });
-                            }}>{part.url}</a
-                          >{:else}{part.content}{/if}{/each}</span
-                    >
-                  {:else if segment.type === 'mention'}
-                    {@const isContextProvider = ['linear', 'github', 'sentry', 'browser'].includes(
-                      segment.mentionType,
-                    )}
+                {#if automatedWakePresentation?.kind === 'script'}
+                  <span class="whitespace-pre-wrap">{automatedWakePresentation.bodyText}</span>
+                  {#if automatedWakePresentation.attribution.matchedLine !== undefined}
+                    <p class="type-caption text-muted-foreground">
+                      {m.chat_scriptMonitor_untrusted_description()}
+                    </p>
+                    <pre class="whitespace-pre-wrap break-all font-mono">{automatedWakePresentation
+                        .attribution.matchedLine}</pre>
+                  {/if}
+                {:else}
+                  <!-- Context pills from metadata (e.g., PR references, Linear issues) -->
+                  {#each parsedMessage.pills as pill, i (`${pill.type}-${pill.label}-${i}`)}
                     {@const isClickable = !!(
-                      segment.path ||
-                      segment.noteId ||
-                      segment.mentionType === 'spec' ||
-                      segment.url
+                      pill.path ||
+                      pill.noteId ||
+                      pill.url ||
+                      pill.type === 'spec'
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                      title={segment.path ||
-                        segment.noteId ||
-                        (segment.identifier
-                          ? `${segment.identifier}: ${segment.label}`
-                          : segment.label)}
+                      title={pill.content || pill.path || pill.noteId || pill.label}
                       onclick={(e) => {
                         e.stopPropagation();
-                        if (segment.url) {
-                          const wsId = getOwningWorkspaceId();
-                          if (wsId) {
-                            handleLink(segment.url, {
-                              workspaceId: WorkspaceId(wsId),
-                              event: e,
-                            });
-                          }
-                        } else if (segment.path) {
-                          openChatFile(segment.path, e, segment.line);
-                        } else if (segment.noteId) {
-                          if (segment.mentionType === 'spec') {
-                            openChatNote('spec', e);
-                          } else {
-                            openChatNote(segment.noteId, e);
-                          }
-                        }
+                        handlePillClick(pill, e);
                       }}
                       disabled={!isClickable}
                     >
-                      {#if isContextProvider}
-                        <ProviderIcon
-                          provider={segment.mentionType as ContextProvider}
-                          size={12}
-                          class="shrink-0 opacity-30"
-                        />
-                      {:else}
-                        <Fa icon={segment.icon} size="12" class="opacity-30" />
-                      {/if}
-                      {#if segment.identifier}
-                        <span class="text-subtle shrink-0">{segment.identifier}</span>
-                      {/if}
-                      <span class="truncate" style="max-width: 180px;" title={segment.label}
-                        >{segment.label}</span
+                      <Fa icon={pill.icon} size="12" class="opacity-50" />
+                      <span
+                        class="truncate font-medium"
+                        style="max-width: 180px;"
+                        title={pill.label}>{pill.label}</span
                       >
-                    </button>
-                  {/if}
-                {/each}
+                    </Button>
+                  {/each}
+                  <!-- Render text with inline @mentions as chips -->
+                  {#each parsedMessage.segments as segment, i (i)}
+                    {#if segment.type === 'text'}
+                      <span class="whitespace-pre-wrap"
+                        >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
+                              href={part.url}
+                              class="cursor-pointer break-all underline underline-offset-2 hover:opacity-80"
+                              title={part.url}
+                              onclick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const wsId = getOwningWorkspaceId();
+                                handleLink(part.url, {
+                                  workspaceId: wsId ? WorkspaceId(wsId) : undefined,
+                                  event: e,
+                                });
+                              }}>{part.url}</a
+                            >{:else}{part.content}{/if}{/each}</span
+                      >
+                    {:else if segment.type === 'mention'}
+                      {@const isContextProvider = [
+                        'linear',
+                        'github',
+                        'sentry',
+                        'browser',
+                      ].includes(segment.mentionType)}
+                      {@const isClickable = !!(
+                        segment.path ||
+                        segment.noteId ||
+                        segment.mentionType === 'spec' ||
+                        segment.url
+                      )}
+                      <Button
+                        type="button"
+                        variant="plain"
+                        class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                        title={segment.description ||
+                          segment.path ||
+                          segment.noteId ||
+                          (segment.identifier
+                            ? `${segment.identifier}: ${segment.label}`
+                            : segment.label)}
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          if (segment.url) {
+                            const wsId = getOwningWorkspaceId();
+                            if (wsId) {
+                              handleLink(segment.url, {
+                                workspaceId: WorkspaceId(wsId),
+                                event: e,
+                              });
+                            }
+                          } else if (segment.path) {
+                            openChatFile(segment.path, e, segment.line);
+                          } else if (segment.noteId) {
+                            if (segment.mentionType === 'spec') {
+                              openChatNote('spec', e);
+                            } else {
+                              openChatNote(segment.noteId, e);
+                            }
+                          }
+                        }}
+                        disabled={!isClickable}
+                      >
+                        {#if isContextProvider}
+                          <ProviderIcon
+                            provider={segment.mentionType as ContextProvider}
+                            size={12}
+                            class="shrink-0 opacity-30"
+                          />
+                        {:else}
+                          <Fa icon={segment.icon} size="12" class="opacity-30" />
+                        {/if}
+                        {#if segment.identifier}
+                          <span class="text-subtle shrink-0">{segment.identifier}</span>
+                        {/if}
+                        <span class="truncate" style="max-width: 180px;" title={segment.label}
+                          >{segment.label}</span
+                        >
+                      </Button>
+                    {/if}
+                  {/each}
+                {/if}
               </div>
               <!-- Attached images -->
               {#if imageBlocks.length > 0 && !isSticky}
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each imageBlocks as imageBlock, i (i)}
                     {@const src = imageBlockSrc(imageBlock)}
-                    <button
+                    <Button
                       type="button"
-                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
-                      class:animate-pulse={isAttachmentHydrationLoading(imageBlock.id)}
+                      variant="plain"
+                      wrapContent={false}
+                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 rounded {isAttachmentHydrationLoading(
+                        imageBlock.id,
+                      )
+                        ? 'animate-pulse'
+                        : ''}"
                       aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
                       onclick={(e) => {
-                        openImageLightbox(imageBlock, e.currentTarget, i);
+                        openImageLightbox(imageBlock, e.currentTarget as HTMLButtonElement, i);
                       }}
                       onkeydown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1696,39 +1828,33 @@
                           data-testid="chat-message-image-placeholder"
                         ></div>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
 
               <!-- Attached files: attachment-reference chips open the file in a
-               tab (resolved by attachmentId); legacy inline-data chips keep
-               the data-URL download behavior. -->
+               tab (resolved by attachmentId). -->
               {#if fileBlocks.length > 0 && !isSticky}
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each fileBlocks as fileBlock, i (i)}
                     {@const secondary = fileChipSecondaryText(fileBlock)}
-                    <button
+                    <Button
                       type="button"
+                      variant="plain"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onclick={() => {
-                        if (fileBlock.attachmentId) {
-                          openAttachmentReference(fileBlock);
-                        } else {
-                          downloadInlineFileBlock(fileBlock, i);
-                        }
-                      }}
-                      title={fileBlock.attachmentId
-                        ? m.chat_chatMessage_openAttachment_title({ name: `${fileBlock.fileName}` })
-                        : m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
+                      onclick={() => openAttachmentReference(fileBlock)}
+                      title={m.chat_chatMessage_openAttachment_title({
+                        name: `${fileBlock.fileName}`,
+                      })}
                     >
                       <Fa icon={faFile} class="w-3 h-3" />
                       <span class="truncate" style="max-width: 150px;">{fileBlock.fileName}</span>
                       {#if secondary}
-                        <span class="opacity-60 shrink-0">{secondary}</span>
+                        <span class="shrink-0">{secondary}</span>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
@@ -1749,7 +1875,8 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <div class="type-body text-pretty text-foreground">
+      <!-- Reserve toolbar height only for rendered prose, never empty or tool-only rows. -->
+      <div class="type-body has-[[data-assistant-prose]]:min-h-8 text-pretty text-foreground">
         <StreamingMessageContent
           content={combinedContent}
           {isStreaming}
@@ -1801,6 +1928,8 @@
           <MessageActions
             role="assistant"
             {onRegenerate}
+            {onScrollToPrevious}
+            {previousMessageLoading}
             {onFork}
             {onVote}
             onCopy={handleCopy}

@@ -11,7 +11,7 @@
  */
 
 import { store } from '../../store';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
 import { sumHudUsageTotals, type HudFeedEntry } from './hud-slice';
 import {
@@ -47,6 +47,12 @@ import {
   type AgentPreview,
 } from '../agent-session/agent-session-selectors';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+import {
+  classifyAgentScope,
+  isBackgroundAgentSession,
+  type AgentScopeInputs,
+  type AgentScopeMetadata,
+} from '$shared/utils/agent-scope';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
 import { classifyTool } from '$lib/utils/tool-classifier';
@@ -369,7 +375,7 @@ function sinceMs(item: HudAttentionItem): number {
  * from the exact inputs the ATTN counter uses — the daemon's step-0
  * `needs_attention` gating, intentd#825, mirrored per-agent for ALL signals
  * including `failed` per the spec decision: delegated (`parentAgentId`,
- * §5.1 v2.9) and background agents never raise rows) plus workspaces whose
+ * §5.1) and background agents never raise rows) plus workspaces whose
  * live `workspace:attention-changed` flag is raised (the hud slice mirrors
  * the event stream; the wire attention enum is only
  * `none | unread | review_required` (§9.9) — question/blocker/discussion
@@ -392,9 +398,10 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
       const { bucket, attentionKind, hasQuestion } = agent;
       if (bucket !== 'needs-attention' && bucket !== 'failed') continue;
       // Same per-agent gating as `selectHudAttnCount`: only a top-level
-      // non-background agent raises a row — sub-agent/background signals are
-      // the coordinator's business, never the user's call to action.
-      if (!agent.topLevel || agent.isBackground) continue;
+      // non-background, non-muted agent raises a row — sub-agent/background
+      // signals are the coordinator's business, never the user's call to
+      // action, and a muted agent (§5.5 `notificationsMuted`) never alerts.
+      if (!agent.topLevel || agent.isBackground || isMutedAgent(state, agent.id)) continue;
       // Raising signal + detail text: the agent's outstanding §7.1 question
       // block (most actionable — the user can answer it verbatim), else the
       // §5.5 attention-request kind/reason from the tracked session; attention
@@ -485,7 +492,7 @@ export interface HudCardAgent {
    * events.
    */
   line: string | null;
-  /** Delegating agent's id (`parentAgentId`, PROTOCOL §5.1 v2.9); null on roots. */
+  /** Delegating agent's id (`parentAgentId`, PROTOCOL §5.1); null on roots. */
   parentAgentId: string | null;
   /** Delegation-tree depth (0 for roots; wire flat order when no parentage). */
   depth: number;
@@ -495,9 +502,15 @@ export interface HudCardAgent {
    */
   treePrefix: string;
   /**
-   * True for delegation-tree roots: no summary `parentAgentId` (§5.1 v2.9)
-   * and no session `metadata.createdByAgentId` fallback (§5.5). Gates the
-   * workspace-level NEEDS INPUT / BLOCKED derivation.
+   * The shared classifier's `topLevel` bin (`classifyAgentScope`, PROTOCOL
+   * §5.5 row scope): a FOREGROUND agent with no parent reference — no summary
+   * `parentAgentId` (§5.1) and no session `parentAgentId` /
+   * `metadata.createdByAgentId` / `agentMetadata.createdByAgentId` (§5.5).
+   * Background roots land in the
+   * `background` bin, so they report false here. A parent reference equal
+   * to the agent's own id is dropped before classification (HUD-side
+   * self-reference guard). Gates the workspace-level NEEDS INPUT / BLOCKED
+   * derivation.
    */
   topLevel: boolean;
   /**
@@ -505,8 +518,8 @@ export interface HudCardAgent {
    * (intent-hq/intent#3789 — served before any session hydration, so a
    * summary-only failed background agent never transiently passes the
    * top-level gating in `selectHudAttentionItems` / `selectHudAttnCount`),
-   * else the tracked session's `isBackground` / `metadata.isBackground`
-   * (§5.5) for pre-#3789 daemons.
+   * else the tracked session's `isBackground` / `metadata.isBackground` /
+   * `agentMetadata.isBackground` (§5.5) for pre-#3789 daemons.
    */
   isBackground: boolean;
   /**
@@ -639,10 +652,12 @@ const ATTENTION_CARD_STATES: ReadonlySet<HudCardStateKey> = new Set<HudCardState
  * the strip on the attention reason (a generic localized "awaiting your
  * input" line) — the workspace status text must never mask pending attention.
  *
- * A `failed` card always gets a `failed` snippet: the first failed-bucket
- * agent's §5.5 `stopReason` (read from the tracked session) is the error the
- * user needs, and when no stopReason is known the empty text renders a
- * generic failed line — never the workspace status message.
+ * A `failed` card always gets a `failed` snippet: the first unmuted
+ * failed-bucket agent's §5.5 `stopReason` (read from the tracked session) is
+ * the error the user needs — a muted agent (§5.5 `notificationsMuted`) never
+ * alerts, so it never supplies the snippet — and when no stopReason is known
+ * the empty text renders a generic failed line — never the workspace status
+ * message.
  */
 function cardAttentionSnippet(
   state: StoreState,
@@ -650,7 +665,9 @@ function cardAttentionSnippet(
   agents: HudCardAgent[],
 ): HudCardAttentionSnippet | null {
   if (stateKey === 'failed') {
-    const failed = agents.find((agent) => agent.bucket === 'failed');
+    const failed = agents.find(
+      (agent) => agent.bucket === 'failed' && !isMutedAgent(state, agent.id),
+    );
     const stopReason = failed ? state.agentSessions?.byAgentId[failed.id]?.stopReason : null;
     return {
       kind: 'failed',
@@ -658,7 +675,9 @@ function cardAttentionSnippet(
     };
   }
   if (stateKey !== 'wait' && stateKey !== 'blocked') return null;
-  const gated = agents.filter((agent) => agent.topLevel && !agent.isBackground);
+  const gated = agents.filter(
+    (agent) => agent.topLevel && !agent.isBackground && !isMutedAgent(state, agent.id),
+  );
   for (const agent of gated) {
     if (!agent.hasQuestion) continue;
     const question = state.hud.questionsByAgentId[agent.id];
@@ -724,7 +743,7 @@ function siblingOrderComparator(
 
 /**
  * Depth-first delegation-tree order over the summary agents: each parent
- * followed by its children (`parentAgentId`, PROTOCOL §5.1 v2.9), with roots
+ * followed by its children (`parentAgentId`, PROTOCOL §5.1), with roots
  * and every sibling group ordered by `compare` — a child never moves above
  * its parent. Agents with no / unknown / self parent are roots (flat
  * fallback when parentage is absent); parent cycles degrade to flat roots
@@ -832,7 +851,9 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
     (session.isWaitingForOtherAgents === true ||
       (Array.isArray(session.waitingForAgentIds) && session.waitingForAgentIds.length > 0) ||
       (Array.isArray(session.waitingOnHooks) && session.waitingOnHooks.length > 0) ||
-      (Array.isArray(session.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0));
+      (Array.isArray(session.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0) ||
+      (Array.isArray(session.waitingOnScriptMonitors) &&
+        session.waitingOnScriptMonitors.length > 0));
   // STAB-125 turn-liveness (§5.5, additive AgentLite field — structural read,
   // same convention as chat-read-service): `turnInFlight: true` is the
   // daemon's authoritative "an active worker is draining a turn NOW" signal,
@@ -898,32 +919,47 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
 }
 
 /**
- * Top-level check for the workspace-state gating: the summary's
- * `parentAgentId` (§5.1 v2.9) when present, else the tracked session's
- * `metadata.createdByAgentId` (§5.5) — no parent reference anywhere = root.
- * Unlike the tree ordering, a dangling parent still marks the agent as a
- * child (delegated agents must not flip the workspace banner even when
- * their parent left the summary).
+ * The shared `agent-scope` inputs for a HUD agent, so the workspace-state
+ * gating bins a row exactly like every other FE consumer: the §5.1 summary
+ * row's `parentAgentId` / additive `isBackground` (intent-hq/intent#3789;
+ * available before session hydration) merged with the tracked §5.5
+ * session's `parentAgentId` (the fallback when the summary row lacks one —
+ * a stale or field-less summary must not promote a delegated agent to
+ * top-level), `isBackground` and both metadata locations. HUD-side
+ * pre-normalization: a parent reference equal to the agent's own id is
+ * dropped before classification, so a (malformed) self-referencing row
+ * falls through to the other parent fields and otherwise classifies as
+ * top-level. No parent-existence check — unlike the tree ordering, a
+ * dangling parent still marks the agent as a child (delegated agents must
+ * not flip the workspace banner even when their parent left the summary).
  */
-function isTopLevelAgent(info: WorkspaceAgentInfo, metadata: Record<string, unknown>): boolean {
-  if (typeof info.parentAgentId === 'string' && info.parentAgentId !== info.id) return false;
-  const createdBy = metadata.createdByAgentId;
-  return !(typeof createdBy === 'string' && createdBy.length > 0 && createdBy !== info.id);
+function hudAgentScopeInputs(
+  info: WorkspaceAgentInfo,
+  session: AgentScopeInputs | undefined,
+): AgentScopeInputs {
+  const notSelf = (parent: unknown): string | null =>
+    typeof parent === 'string' && parent !== info.id ? parent : null;
+  const scopeMetadata = (metadata: AgentScopeMetadata | null | undefined): AgentScopeMetadata => ({
+    isBackground: metadata?.isBackground,
+    createdByAgentId: notSelf(metadata?.createdByAgentId),
+  });
+  return {
+    parentAgentId: notSelf(info.parentAgentId) ?? notSelf(session?.parentAgentId),
+    isBackground: info.isBackground ?? session?.isBackground,
+    metadata: scopeMetadata(session?.metadata),
+    agentMetadata: scopeMetadata(session?.agentMetadata),
+  };
 }
 
 /**
- * Background-ness: the §5.1 summary row's additive `isBackground`
- * (intent-hq/intent#3789; available before session hydration), else the
- * tracked session's `isBackground` / `metadata.isBackground` (§5.5).
+ * Per-agent notification mute (§5.5 AgentLite `notificationsMuted`, read
+ * from the tracked session — the §5.1 summary row does not carry it). A
+ * muted agent never raises an ATTENTION row, counter, or card snippet; the
+ * workspace-level buckets follow the daemon rollup, which already excludes
+ * muted sessions.
  */
-function isBackgroundAgent(
-  info: WorkspaceAgentInfo,
-  session: { isBackground?: boolean } | undefined,
-  metadata: Record<string, unknown>,
-): boolean {
-  return (
-    info.isBackground === true || session?.isBackground === true || metadata.isBackground === true
-  );
+function isMutedAgent(state: StoreState, agentId: string): boolean {
+  return state.agentSessions?.byAgentId[agentId]?.notificationsMuted === true;
 }
 
 /**
@@ -971,7 +1007,7 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
   const tree = orderAgentTree(infos, siblingOrderComparator(bucketById));
   return tree.map(({ info, depth, parentAgentId }) => {
     const session = state.agentSessions?.byAgentId[info.id];
-    const metadata = (session?.metadata ?? {}) as Record<string, unknown>;
+    const scope = hudAgentScopeInputs(info, session);
     const { bucket, attentionKind, hasQuestion } =
       bucketById.get(info.id) ?? agentBucketOf(state, info);
     const waitingForAgentIds = Array.isArray(session?.waitingForAgentIds)
@@ -988,15 +1024,17 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
       parentAgentId,
       depth,
       treePrefix: '',
-      topLevel: isTopLevelAgent(info, metadata),
-      isBackground: isBackgroundAgent(info, session, metadata),
+      topLevel: classifyAgentScope(scope) === 'topLevel',
+      isBackground: isBackgroundAgentSession(scope),
       attentionKind,
       hasQuestion,
       isWaitingForAgents:
         session?.isWaitingForOtherAgents === true ||
         waitingForAgentIds.length > 0 ||
         (Array.isArray(session?.waitingOnHooks) && session.waitingOnHooks.length > 0) ||
-        (Array.isArray(session?.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0),
+        (Array.isArray(session?.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0) ||
+        (Array.isArray(session?.waitingOnScriptMonitors) &&
+          session.waitingOnScriptMonitors.length > 0),
       waitingForAgentIds,
     };
   });
@@ -1119,9 +1157,8 @@ function isCurrentUserRelevantTabAgent(
   const session = state.agentSessions?.byAgentId[info.id];
   if (!session || String(session.workspaceId) !== workspaceId || session.pendingDeleteAt)
     return false;
-  const metadata = (session.metadata ?? {}) as Record<string, unknown>;
-  if (!isTopLevelAgent(info, metadata)) return false;
-  return !isBackgroundAgent(info, session, metadata);
+  if (classifyAgentScope(hudAgentScopeInputs(info, session)) !== 'topLevel') return false;
+  return !isMutedAgent(state, info.id);
 }
 
 /** Actionable tab axes derived from the same live inputs as the HUD. */
@@ -1205,7 +1242,7 @@ export const selectWorkspaceTabStatuses = store.createSelector(
  * or with a pending attention request / outstanding question (the daemon's
  * step-0 `needs_attention` gating, intentd#825, mirrored per-agent for ALL
  * signals — failed included, per the spec decision; delegated
- * (`parentAgentId`, §5.1 v2.9 — the parentage signal main's #573 uses to
+ * (`parentAgentId`, §5.1 — the parentage signal main's #573 uses to
  * skip toasts) and background agents never count, so a failed sub-agent is
  * the coordinator's business, not a user call to action). Each raised
  * workspace-level attention flag adds one (it renders NEEDS ATTENTION with
@@ -1233,6 +1270,7 @@ export const selectHudAttnCount = store.createSelector((state): number => {
       if (
         agent.topLevel &&
         !agent.isBackground &&
+        !isMutedAgent(state, agent.id) &&
         (agent.bucket === 'failed' || agent.attentionKind !== null || agent.hasQuestion)
       ) {
         count += 1;

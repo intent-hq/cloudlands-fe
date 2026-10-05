@@ -6,28 +6,40 @@
    * Self-contained component with inline rendering
    * that can be independently tweaked for settings-specific needs.
    */
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { onMount } from 'svelte';
-  import { invoke, shell } from '$lib/electron-bridge';
-  import { appClient } from '$lib/client';
+  import { shell } from '$lib/electron-bridge';
   import {
+    selectFastModeSupportedProviders,
+    selectProviderFastModeValues,
     selectActiveProviderId,
     selectEnabledProviders,
+    selectProviderPaths,
+    selectProviderSettingsSessionRequests,
+    selectPiAdapter,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { selectProviderInUseReasons } from '$store/renderer/slices/provider-settings/provider-in-use-selectors';
   import {
+    setProviderFastMode,
     setActiveProvider,
     setProviderEnabled,
+    providerSettingsSessionOpened,
+    providerSettingsSessionClosed,
+    providerPathsRequested,
+    piAdapterInstallRequested,
   } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-  import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
   import {
     checkAllProvidersRequested,
     checkSingleProviderRequested,
-    ensureProvidersChecked,
+    providerAvailabilityPanelOpened,
+    providerAvailabilityPanelClosed,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import {
     selectNpxStatus,
     selectProviderLoadingMap,
     selectProviderStatusMap,
+    selectProviderHiddenIds,
+    selectProviderDiscoveryError,
   } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
   import {
@@ -35,41 +47,46 @@
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectIsProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
-  import { createLogger } from '$lib/utils/client-logger';
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
-  import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
     faArrowsRotate,
     faBan,
     faCheck,
-    faCircleNotch,
     faDownload,
-    faEllipsisVertical,
     faFolder,
     faStar,
     faTerminal,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
-  import GrokLogo from '../ui/GrokLogo.svelte';
-  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import {
+    Button,
+    CopyButton,
+    GrokLogo,
+    IntentMarkLoader,
+    Menu,
+  } from '$lib/components/patterns/settings/custom-controls';
   import AuggieLogo from '../AuggieLogo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
-  import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
-  import Button from '../ui/button/button.svelte';
-  import DropdownMenu from '../ui/dropdown-menu.svelte';
   import { store as appStore } from '$store/renderer/store';
   import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
   import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
   const antigravitySetupPolicy$ = selectAntigravitySetupPolicy();
+  let antigravityConnectOpen = $state(false);
 
-  const logger = createLogger('ProviderSelector');
+  const fastModeProviders$ = selectFastModeSupportedProviders();
+  const fastModeValues$ = selectProviderFastModeValues();
+  const sessionId = crypto.randomUUID();
+  const requests$ = selectProviderSettingsSessionRequests(sessionId);
+  const paths$ = selectProviderPaths();
+  const piAdapter$ = selectPiAdapter();
+  const hiddenProviders$ = selectProviderHiddenIds();
+  const discoveryError$ = selectProviderDiscoveryError();
   const activeProviderId = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
   const providerInUseReasons$ = selectProviderInUseReasons();
@@ -80,32 +97,25 @@
   const providerLoadingMap$ = selectProviderLoadingMap();
   const npxStatus$ = selectNpxStatus();
 
-  // Aggregated availability — read only for the daemon's hidden-provider
-  // verdict; per-provider status comes from the slice above.
-  let providerAvailability: ProviderAvailabilityResult | null = $state(null);
-  let checkError: string | null = $state(null);
-
-  // MCP state
-  let setupInProgress = $state<Record<string, boolean>>({});
-  let piMcpAdapterInstalled: boolean | null = $state(null);
-  let piMcpAdapterLoading = $state(false);
-  let piMcpAdapterChecked = $state(false);
-
-  // Track if we're waiting to check provider availability on focus
-
-  // Loading state for "Start using" / select buttons
-  let selectingProviderId = $state<string | null>(null);
-
-  // Provider path configuration state
-  // Configured paths (user-set overrides)
-  let providerPaths = $state<Record<string, string>>({});
-  // Resolved paths (daemon auto-detected)
-  let resolvedPaths = $state<Record<string, string>>({});
-  // Secondary-binary resolved paths for dual-binary providers (unsloth CLI)
-  let secondaryResolvedPaths = $state<Record<string, string>>({});
-  // Pinned npx package spec for npx-only providers (claude-code, pi), whose
-  // resolved path is the npx binary rather than the adapter itself.
-  let npxPackages = $state<Record<string, string>>({});
+  const checkError = $derived($discoveryError$);
+  const setupInProgress = $derived({
+    pi: $requests$.some(
+      (request) => request.resource === 'pi-adapter' && request.status === 'pending',
+    ),
+  });
+  const piMcpAdapterInstalled = $derived($piAdapter$.installed);
+  let selectingRequest = $state<{ id: string; providerId: string } | null>(null);
+  const selectingProviderId = $derived(
+    $requests$.some(
+      (request) => request.id === selectingRequest?.id && request.status === 'pending',
+    )
+      ? selectingRequest?.providerId
+      : null,
+  );
+  const providerPaths = $derived($paths$.configured);
+  const resolvedPaths = $derived($paths$.resolved);
+  const secondaryResolvedPaths = $derived($paths$.secondary);
+  const npxPackages = $derived($paths$.npxPackages);
   // Path dropdowns are controlled from each provider's overflow menu.
   let pathConfigOpen = $state<Record<string, boolean>>({});
 
@@ -158,7 +168,7 @@
   // Rendered immediately from the catalog; the daemon's hiddenProviders
   // verdict refines the catalog's own `visible` flag once it arrives.
   const orderedCatalogEntries = $derived.by(() =>
-    orderProviderEntries($catalogEntries$, providerAvailability?.hiddenProviders),
+    orderProviderEntries($catalogEntries$, $hiddenProviders$),
   );
 
   // Provider options for display - dynamically generated from the catalog
@@ -187,7 +197,7 @@
     groupProviderEntries(providerOptions, {
       isProviderEnabled,
       availabilityByProviderId: $providerStatusMap$,
-      hiddenProviderIds: providerAvailability?.hiddenProviders,
+      hiddenProviderIds: $hiddenProviders$,
       activeProviderId: $activeProviderId,
     }),
   );
@@ -197,21 +207,6 @@
     { id: 'discovered', providers: groupedProviderOptions.discovered },
     { id: 'supported', providers: groupedProviderOptions.supported },
   ]);
-
-  const piProviderAvailable = $derived.by(() => {
-    return providerOptions.find((provider) => provider.id === 'pi')?.available ?? false;
-  });
-
-  $effect(() => {
-    if (!piProviderAvailable) {
-      piMcpAdapterInstalled = null;
-      piMcpAdapterChecked = false;
-      return;
-    }
-
-    if (piMcpAdapterChecked || piMcpAdapterLoading) return;
-    void loadPiMcpAdapterStatus();
-  });
 
   function isProviderReadyForUse(providerId: string): boolean {
     if (!getProviderAvailable(providerId)) return false;
@@ -223,6 +218,21 @@
     // Reactive via $enabledProviders$; catalog metadata read via selector.
     void $enabledProviders$;
     return selectIsProviderEnabled.select(appStore.state, providerId);
+  }
+
+  function handleToggleFastMode(providerId: string, event: Event) {
+    // Keep Redux as the only checked state: local checkbox mutation can hide a
+    // fast rejection, and cached binding values can coalesce rapid activations.
+    event.preventDefault();
+    const enabled = selectProviderFastModeValues.select(appStore.state)[providerId] ?? false;
+    appStore.dispatch(setProviderFastMode(providerId, !enabled));
+  }
+
+  function handleSelectCodexServiceTier(enabled: boolean, event: Event) {
+    // Keep selection tied to the confirmed/optimistic Redux value, including failed saves.
+    event.preventDefault();
+    const current = selectProviderFastModeValues.select(appStore.state).codex ?? false;
+    if (current !== enabled) appStore.dispatch(setProviderFastMode('codex', enabled));
   }
 
   function canManageProviderEnablement(providerId: string): boolean {
@@ -239,7 +249,7 @@
     if (!enabled) {
       const reason = $providerInUseReasons$[providerId];
       if (reason) {
-        toast.error(
+        notify.error(
           m.settings_providers_cannotDisable({
             name: selectProviderDisplayName.select(appStore.state, providerId),
           }),
@@ -248,226 +258,53 @@
         return;
       }
     }
-    appStore.dispatch(setProviderEnabled({ providerId, enabled }));
+    appStore.dispatch(
+      setProviderEnabled({ providerId, enabled }, { id: crypto.randomUUID(), sessionId }),
+    );
   }
 
   onMount(() => {
-    // Populate the shared availability status map (agent-availability slice)
-    // for consumers gated on it (e.g. ModelPicker) even when onboarding's
-    // AgentGrid never mounted. Ensure-once + middleware coalescing make this
-    // a no-op when a check already ran or is in flight; the local
-    // checkProviderAvailability below feeds this component's own card UI.
-    appStore.dispatch(ensureProvidersChecked());
-    checkProviderAvailability();
-    loadProviderPaths();
-
-    // Focus/visibility listener to silently recheck provider availability
-    // when the app returns to focus — the user may have finished the manual
-    // install/login in their terminal.
-    const handleFocus = () => {
-      silentRefreshProviderAvailability();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') return;
-      silentRefreshProviderAvailability();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
+    appStore.dispatch(providerSettingsSessionOpened(sessionId));
+    appStore.dispatch(providerAvailabilityPanelOpened(sessionId));
+    appStore.dispatch(providerPathsRequested());
     return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      appStore.dispatch(providerAvailabilityPanelClosed(sessionId));
+      appStore.dispatch(providerSettingsSessionClosed(sessionId));
     };
   });
 
-  /** Load configured and resolved paths for all providers */
-  async function loadProviderPaths() {
-    try {
-      // Load configured path overrides from the daemon settings catalog
-      // (providers.paths, PROTOCOL §5.12) — the same seam ProviderPathConfig
-      // writes to. The legacy settings:getAll bulk read is not bridged.
-      const entry = await appClient.settings.get('providers.paths');
-      const configured =
-        entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
-          ? (entry.value as Record<string, unknown>)
-          : {};
-      const configuredPaths: Record<string, string> = {};
-      for (const [providerId, value] of Object.entries(configured)) {
-        if (typeof value === 'string') {
-          configuredPaths[providerId] = value;
-        }
-      }
-      providerPaths = configuredPaths;
-
-      // Load daemon-resolved paths for all providers (host.providerDiscovery)
-      const pathsResult = await invoke<{
-        success: boolean;
-        data?: {
-          paths: Record<string, string | null>;
-          secondaryPaths: Record<string, string | null>;
-          npxPackages?: Record<string, string>;
-        };
-      }>(PROVIDERS_CHANNELS.GET_PATHS);
-      if (pathsResult?.success && pathsResult.data) {
-        const resolved: Record<string, string> = {};
-        for (const [providerId, path] of Object.entries(pathsResult.data.paths)) {
-          if (path) resolved[providerId] = path;
-        }
-        resolvedPaths = resolved;
-        const secondary: Record<string, string> = {};
-        for (const [providerId, path] of Object.entries(pathsResult.data.secondaryPaths ?? {})) {
-          if (path) secondary[providerId] = path;
-        }
-        secondaryResolvedPaths = secondary;
-        npxPackages = pathsResult.data.npxPackages ?? {};
-      }
-    } catch (err) {
-      logger.error('Failed to load provider paths', { error: err });
-    }
-  }
-
-  /** Handle path change from ProviderPathConfig */
-  function handlePathChange(providerId: string, newPath: string) {
-    providerPaths = { ...providerPaths, [providerId]: newPath };
-    // Refresh provider availability after path change
-    checkProviderAvailability(true, true);
-  }
-
-  /**
-   * Kick off the loading tracks concurrently.
-   * Each track updates its own state slice and unblocks its own UI section.
-   * `rerunProbes` re-fans-out the per-provider checks (explicit refresh:
-   * path change, retry); on mount `ensureProvidersChecked` already covers it.
-   */
-  async function checkProviderAvailability(refreshModels = false, rerunProbes = false) {
-    checkError = null;
-    if (rerunProbes) {
-      appStore.dispatch(checkAllProvidersRequested());
-    }
-    await loadProviderAvailability(refreshModels);
-  }
-
-  /** Silent recheck — updates data without showing loading spinners */
-  async function silentRefreshProviderAvailability() {
-    // Re-run the per-provider fan-out; rows keep their last status while the
-    // fresh probes land, so no per-row pending indicator reappears.
-    appStore.dispatch(checkAllProvidersRequested());
-    try {
-      const providerResult = await invoke<{
-        success: boolean;
-        data?: ProviderAvailabilityResult;
-        error?: string;
-      }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
-
-      if (providerResult.success && providerResult.data) {
-        providerAvailability = providerResult.data;
-      }
-    } catch (err) {
-      logger.error('Silent provider refresh failed', { error: err });
-    }
-  }
-
-  /**
-   * The aggregated call, kept only for the daemon's hidden-provider verdict
-   * (and the model refresh). Rows no longer wait on it — they render from the
-   * catalog and fill in from the shared per-provider slice.
-   */
-  async function loadProviderAvailability(refreshModels = false) {
-    try {
-      const providerResult = await invoke<{
-        success: boolean;
-        data?: ProviderAvailabilityResult;
-        error?: string;
-      }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
-
-      if (!providerResult.success) {
-        checkError = providerResult.error || m.settings_providers_checkError();
-        return;
-      }
-      providerAvailability = providerResult.data || null;
-
-      if (refreshModels) {
-        appStore.dispatch(reloadModelsForProvider());
-      }
-    } catch (err) {
-      logger.error('Failed to check provider availability', { error: err });
-      checkError = err instanceof Error ? err.message : m.settings_providers_unknownError();
-    }
-  }
-
-  async function loadPiMcpAdapterStatus() {
-    piMcpAdapterLoading = true;
-    try {
-      piMcpAdapterInstalled = await checkPiMcpAdapterInstalled();
-    } catch (err) {
-      logger.warn('Failed to check Pi MCP adapter status', { error: err });
-      piMcpAdapterInstalled = null;
-    } finally {
-      piMcpAdapterChecked = true;
-      piMcpAdapterLoading = false;
-    }
-  }
-
-  async function handleInstallPiMcpAdapter() {
-    setupInProgress = { ...setupInProgress, pi: true };
-    try {
-      const result = await installPiMcpAdapter();
-      if (result?.success) {
-        await loadPiMcpAdapterStatus();
-        toast.success(m.settings_providers_piAdapterInstalled());
-      } else {
-        toast.error(m.settings_providers_piAdapterInstallFailed(), {
-          description: result?.error || m.settings_providers_unknownError(),
-        });
-      }
-    } catch (err) {
-      logger.error('Failed to install pi-mcp-adapter', err);
-      toast.error(m.settings_providers_piAdapterInstallFailed(), {
-        description: err instanceof Error ? err.message : m.settings_providers_unknownError(),
-      });
-    } finally {
-      setupInProgress = { ...setupInProgress, pi: false };
-    }
+  function handleInstallPiMcpAdapter() {
+    appStore.dispatch(piAdapterInstallRequested({ id: crypto.randomUUID(), sessionId }));
   }
 
   function openDocs(url: string) {
     shell.open(url);
   }
 
-  async function handleSelectProvider(providerId: string) {
-    selectingProviderId = providerId;
-    const previousProviderId = $activeProviderId;
-    try {
-      logger.info('Selecting provider:', {
-        from: previousProviderId,
-        to: providerId,
-      });
-      appStore.dispatch(setActiveProvider(providerId));
-      appStore.dispatch(reloadModelsForProvider());
-      toast.success(
-        m.settings_providers_switchedTo({
-          name: selectProviderDisplayName.select(appStore.state, providerId),
-        }),
-      );
-    } finally {
-      selectingProviderId = null;
-    }
+  let pathAnchors = $state<Record<string, HTMLButtonElement | HTMLAnchorElement | null>>({});
+
+  function handleSelectProvider(providerId: string) {
+    const id = crypto.randomUUID();
+    selectingRequest = { id, providerId };
+    appStore.dispatch(setActiveProvider(providerId, { id, sessionId }));
   }
 </script>
 
 <div class="flex flex-col gap-6">
   {#if checkError}
-    <div class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4">
-      <p class="text-sm text-danger">{checkError}</p>
-      <button
+    <div
+      data-slot="settings-section-body"
+      class="flex items-center justify-between gap-4 rounded-xl bg-card px-6 py-4"
+    >
+      <p class="type-body text-danger">{checkError}</p>
+      <Button
+        variant="ghost"
         type="button"
-        class="text-primary hover:text-primary/80 cursor-pointer transition-colors text-xs font-medium"
-        onclick={() => checkProviderAvailability(true, true)}
+        class="text-primary-ink hover:text-primary-ink/80 cursor-pointer transition-colors type-body font-medium"
+        onclick={() => appStore.dispatch(checkAllProvidersRequested(true))}
       >
         {m.settings_providers_tryAgain()}
-      </button>
+      </Button>
     </div>
   {/if}
 
@@ -476,7 +313,7 @@
       <div>
         <h2
           id={`provider-group-${group.id}`}
-          class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3"
+          class="type-caption font-medium text-muted-foreground mb-3"
         >
           {#if group.id === 'enabled'}
             {m.settings_providers_groupEnabled_label()}
@@ -536,22 +373,22 @@
                 : hasNpmOld
                   ? m.settings_providers_npmTooOld()
                   : provider.warning}
-            <div class="px-6 py-4">
+            <div data-slot="settings-section-body" class="px-6 py-4">
               <div class="flex items-start justify-between gap-4">
                 <div class="space-y-1">
                   <div class="flex items-center gap-2 h-7">
                     {@render providerIcon(provider.id)}
                     <span
-                      class="text-sm {provider.available || provider.statusPending
+                      class="type-body {provider.available || provider.statusPending
                         ? 'text-foreground'
-                        : 'text-muted-foreground opacity-60'}"
+                        : 'text-muted-foreground'}"
                     >
                       {provider.name}
                     </span>
                   </div>
                 </div>
 
-                <div class="flex min-h-7 shrink-0 items-center gap-2 text-xs">
+                <div class="flex min-h-7 shrink-0 items-center gap-2 type-caption">
                   {#if provider.statusPending}
                     <!-- This row's own probe has not settled yet; the rest of the
                      row is already rendered from the catalog. -->
@@ -562,13 +399,11 @@
                   {:else}
                     {#if isActive}
                       {#if provider.available}
-                        <span class="rounded-full bg-muted px-2 py-0.5 text-xs text-subtle">
+                        <span class="rounded-full bg-muted px-2 py-0.5 type-caption text-subtle">
                           {m.settings_providers_default()}
                         </span>
                       {:else}
-                        <span
-                          class="text-xs text-yellow-600 dark:text-yellow-500 flex items-center gap-1"
-                        >
+                        <span class="type-caption text-warning-ink flex items-center gap-1">
                           <Fa icon={faTriangleExclamation} class="w-2.5 h-2.5" />
                           {m.settings_providers_defaultUnavailable_label()}
                         </span>
@@ -591,7 +426,7 @@
                       role="img"
                       aria-label={warningLabel}
                       title={warningLabel}
-                      class="flex size-4 items-center justify-center text-yellow-600 dark:text-yellow-500"
+                      class="flex size-4 items-center justify-center text-warning-ink"
                     >
                       <Fa icon={faTriangleExclamation} class="size-3.5" />
                     </span>
@@ -605,184 +440,281 @@
                     {#if pathConfigOpen[provider.id]}
                       <div class="absolute right-0 top-0">
                         <ProviderPathConfig
+                          anchor={pathAnchors[provider.id]}
                           providerId={provider.id}
                           providerName={provider.name}
                           cliCommand={provider.id === 'unsloth' ? 'unsloth' : provider.command}
                           configuredPath={providerPaths[provider.id]}
                           resolvedPath={provider.id === 'unsloth'
-                            ? secondaryResolvedPaths[provider.id]
-                            : resolvedPaths[provider.id]}
+                            ? (secondaryResolvedPaths[provider.id] ?? undefined)
+                            : (resolvedPaths[provider.id] ?? undefined)}
                           runtimeCliCommand={provider.id === 'unsloth'
                             ? provider.command
                             : undefined}
                           runtimeResolvedPath={provider.id === 'unsloth'
-                            ? resolvedPaths[provider.id]
+                            ? (resolvedPaths[provider.id] ?? undefined)
                             : undefined}
                           npxPackage={npxPackages[provider.id]}
                           isInstalled={provider.available}
-                          onPathChange={(path) => handlePathChange(provider.id, path)}
                           bind:open={pathConfigOpen[provider.id]}
                         />
                       </div>
                     {/if}
 
-                    <DropdownMenu align="end" contentClass="p-0!">
-                      {#snippet trigger({ props })}
-                        <Button
-                          {...props}
-                          variant="ghost-light"
-                          size="icon-xs"
-                          aria-label={m.settings_providers_actionsFor_ariaLabel({
-                            name: provider.name,
-                          })}
+                    <Menu.Root>
+                      <Menu.Trigger>
+                        {#snippet child({ props })}
+                          <Button
+                            {...props}
+                            bind:ref={pathAnchors[provider.id]}
+                            variant="ghost-light"
+                            size="icon-xs"
+                            aria-label={m.settings_providers_actionsFor_ariaLabel({
+                              name: provider.name,
+                            })}
+                          >
+                            <KebabIcon class="size-3.5" />
+                          </Button>
+                        {/snippet}
+                      </Menu.Trigger>
+                      <Menu.Content
+                        align="end"
+                        aria-label={m.settings_providers_actionsFor_ariaLabel({
+                          name: provider.name,
+                        })}
+                        onCloseAutoFocus={(event) => {
+                          if (
+                            pathConfigOpen[provider.id] ||
+                            (provider.id === 'antigravity' && antigravityConnectOpen)
+                          ) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
+                        <div
+                          class={hasWarning ||
+                          needsLogin ||
+                          ($fastModeProviders$.includes(provider.id) && provider.id !== 'codex')
+                            ? 'w-64'
+                            : 'w-44'}
                         >
-                          <Fa icon={faEllipsisVertical} />
-                        </Button>
-                      {/snippet}
-
-                      {#snippet content({ close }: { close: () => void })}
-                        <div class={hasWarning || needsLogin ? 'w-64 py-1' : 'w-44 py-1'}>
+                          {#if $fastModeProviders$.includes(provider.id)}
+                            {#if provider.id === 'codex'}
+                              <Menu.Sub>
+                                <Menu.SubTrigger
+                                  >{m.settings_providers_serviceTier_label()}</Menu.SubTrigger
+                                >
+                                <Menu.SubContent class="w-64">
+                                  <Menu.RadioGroup
+                                    value={$fastModeValues$.codex ? 'fast' : 'standard'}
+                                    aria-label={m.settings_providers_serviceTier_label()}
+                                  >
+                                    <Menu.RadioItem
+                                      value="standard"
+                                      onSelect={(event) =>
+                                        handleSelectCodexServiceTier(false, event)}
+                                      aria-describedby="fast-mode-description-codex"
+                                    >
+                                      {m.settings_providers_serviceTierStandard_label()}
+                                    </Menu.RadioItem>
+                                    <Menu.RadioItem
+                                      value="fast"
+                                      onSelect={(event) =>
+                                        handleSelectCodexServiceTier(true, event)}
+                                      aria-describedby="fast-mode-description-codex"
+                                    >
+                                      {m.settings_providers_serviceTierFast_label()}
+                                    </Menu.RadioItem>
+                                    <Menu.RadioItem
+                                      value="ultra-fast"
+                                      disabled
+                                      aria-describedby="ultra-fast-description-codex"
+                                    >
+                                      {m.settings_providers_serviceTierUltraFast_label()}
+                                    </Menu.RadioItem>
+                                  </Menu.RadioGroup>
+                                  <Menu.Separator />
+                                  <p
+                                    id="fast-mode-description-codex"
+                                    class="px-2 py-1.5 type-caption text-muted-foreground"
+                                  >
+                                    {m.settings_providers_fastMode_description()}
+                                  </p>
+                                  <p
+                                    id="ultra-fast-description-codex"
+                                    class="px-2 py-1.5 type-caption text-muted-foreground"
+                                  >
+                                    {m.settings_providers_serviceTierUltraFast_description()}
+                                  </p>
+                                </Menu.SubContent>
+                              </Menu.Sub>
+                            {:else}
+                              <Menu.CheckboxItem
+                                checked={$fastModeValues$[provider.id] ?? false}
+                                onSelect={(event) => handleToggleFastMode(provider.id, event)}
+                                aria-describedby={`fast-mode-description-${provider.id}`}
+                              >
+                                {m.settings_providers_fastMode_label()}
+                              </Menu.CheckboxItem>
+                              <p
+                                id={`fast-mode-description-${provider.id}`}
+                                class="px-2 py-1.5 type-caption text-muted-foreground"
+                              >
+                                {m.settings_providers_fastMode_description()}
+                              </p>
+                            {/if}
+                            <Menu.Separator />
+                          {/if}
+                          {#if provider.id === 'antigravity'}
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
+                                antigravityConnectOpen = true;
+                              }}
+                            >
+                              <span class="size-4 shrink-0" aria-hidden="true"></span>
+                              {m.antigravity_setup_connect_label()}
+                            </Menu.Item>
+                          {/if}
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
                               {#if hasPiAdapterWarning}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_piAdapterNeeded()}
                                 </p>
-                                <button
-                                  type="button"
-                                  role="menuitem"
+                                <Menu.Item
                                   disabled={setupInProgress.pi}
-                                  class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                                  onclick={() => void handleInstallPiMcpAdapter()}
+                                  class="cursor-pointer text-foreground"
+                                  onSelect={() => void handleInstallPiMcpAdapter()}
                                 >
-                                  {#if setupInProgress.pi}
-                                    <Fa
-                                      icon={faCircleNotch}
-                                      class="size-3.5 animate-spin text-muted-foreground"
-                                    />
-                                    {m.settings_providers_installing()}
-                                  {:else}
-                                    <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
-                                    {m.settings_providers_install()}
-                                  {/if}
-                                </button>
+                                  <span class="flex size-4 shrink-0 items-center justify-center">
+                                    {#if setupInProgress.pi}
+                                      <IntentMarkLoader size={14} class="text-muted-foreground" />
+                                    {:else}
+                                      <Fa
+                                        icon={faDownload}
+                                        class="size-3.5 text-muted-foreground"
+                                      />
+                                    {/if}
+                                  </span>
+                                  {setupInProgress.pi
+                                    ? m.settings_providers_installing()
+                                    : m.settings_providers_install()}
+                                </Menu.Item>
                               {/if}
 
                               {#if hasNodeMissing}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_requiresNodejs()}
                                 </p>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                                  onclick={() => {
+                                <Menu.Item
+                                  class="cursor-pointer text-foreground"
+                                  onSelect={() => {
                                     void shell.open('https://nodejs.org');
-                                    close();
                                   }}
                                 >
+                                  <span class="size-4 shrink-0" aria-hidden="true"></span>
                                   {m.settings_providers_installFromNodejs()}
-                                </button>
+                                </Menu.Item>
                               {/if}
 
                               {#if hasNpmOld}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {m.settings_providers_npmTooOld()}
                                 </p>
                               {/if}
 
                               {#if hasProviderWarning}
-                                <p class="px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-500">
+                                <p class="px-2 py-1.5 type-body text-warning-ink">
                                   {provider.warning}
                                 </p>
                                 {#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                                    onclick={() => {
+                                  <Menu.Item
+                                    class="cursor-pointer text-foreground"
+                                    onSelect={() => {
                                       void shell.open('https://nodejs.org');
-                                      close();
                                     }}
                                   >
+                                    <span class="size-4 shrink-0" aria-hidden="true"></span>
                                     {m.settings_providers_installFromNodejs()}
-                                  </button>
+                                  </Menu.Item>
                                 {/if}
                               {/if}
                             </div>
                           {/if}
 
                           {#if provider.available && provider.authenticated === true}
-                            <div
-                              role="menuitem"
-                              aria-disabled="true"
-                              class="flex items-center gap-1.5 px-3 py-1.5 text-sm text-subtle"
+                            <p
+                              role="status"
+                              class="flex items-center gap-2 px-2 py-1.5 type-caption text-subtle"
                             >
-                              <Fa icon={faCheck} class="w-2.5 h-2.5 text-green-500" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faCheck} class="size-3 text-green-500" />
+                              </span>
                               {m.settings_providers_loggedInStatus()}
-                            </div>
+                            </p>
                           {/if}
 
-                          <button
-                            type="button"
-                            role="menuitem"
-                            class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                            onclick={() => {
-                              close();
+                          <Menu.Item
+                            class="cursor-pointer text-foreground"
+                            onSelect={() => {
                               pathConfigOpen = { [provider.id]: true };
                             }}
                           >
-                            <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                            <span class="flex size-4 shrink-0 items-center justify-center">
+                              <Fa icon={faFolder} class="size-3.5 text-muted-foreground" />
+                            </span>
                             {m.settings_providerPath_setCustomPath_label()}
-                          </button>
+                          </Menu.Item>
 
                           {#if canSetDefault}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            <Menu.Separator />
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={selectingProviderId !== null}
-                              onclick={() => {
+                              onSelect={() => {
                                 void handleSelectProvider(provider.id);
-                                close();
                               }}
                             >
-                              <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faStar} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {selectingProviderId === provider.id
                                 ? m.settings_providers_switching()
                                 : m.settings_providers_setAsDefault()}
-                            </button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canDisable}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            {#if !canSetDefault}<Menu.Separator />{/if}
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={!!inUseReason}
                               title={inUseReason ?? undefined}
-                              onclick={() => {
+                              onSelect={() => {
                                 handleToggleProvider(provider.id, false);
-                                close();
                               }}
                             >
-                              <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faBan} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {m.settings_providers_disable()}
-                            </button>
+                            </Menu.Item>
                           {/if}
 
                           {#if needsLogin}
+                            <Menu.Separator />
                             {#if provider.loginCommandHint}
                               <!-- Actionable login guidance: the catalog's login
                                    command with copy-to-clipboard; docs link stays
                                    as the secondary action below. -->
-                              <div data-testid="provider-login-hint" class="px-3 py-1.5">
-                                <p class="text-xs text-muted-foreground">
+                              <div data-testid="provider-login-hint" class="px-2 py-1.5">
+                                <p class="type-body text-muted-foreground">
                                   {m.settings_providers_runToLogIn_label()}
                                 </p>
                                 <div class="mt-1 flex items-center gap-1">
                                   <code
-                                    class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                                    class="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono type-caption text-foreground"
                                     >{provider.loginCommandHint}</code
                                   >
                                   <CopyButton
@@ -793,67 +725,64 @@
                               </div>
                             {/if}
                             {#if provider.id === 'claude-code'}
-                              <p class="px-3 py-1.5 text-xs text-muted-foreground">
+                              <p class="px-2 py-1.5 type-body text-muted-foreground">
                                 {m.settings_providers_claudeDesktopNote_label()}
                               </p>
                             {/if}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
                               disabled={$providerLoadingMap$[provider.id]}
-                              onclick={() => {
+                              onSelect={() => {
                                 appStore.dispatch(checkSingleProviderRequested(provider.id));
-                                close();
                               }}
                             >
-                              <span
-                                class="inline-block {$providerLoadingMap$[provider.id]
-                                  ? 'animate-spin'
-                                  : ''}"
-                              >
-                                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                {#if $providerLoadingMap$[provider.id]}
+                                  <IntentMarkLoader size={14} class="text-muted-foreground" />
+                                {:else}
+                                  <Fa
+                                    icon={faArrowsRotate}
+                                    class="size-3.5 text-muted-foreground"
+                                  />
+                                {/if}
                               </span>
                               {m.settings_providers_recheck_label()}
-                            </button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canLogIn}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                              onclick={() => {
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
                                 openDocs(provider.loginDocsUrl!);
-                                close();
                               }}
                             >
+                              <span class="size-4 shrink-0" aria-hidden="true"></span>
                               {m.settings_providers_logIn()}
-                            </button>
+                            </Menu.Item>
                           {/if}
 
                           {#if canInstall}
-                            <button
-                              type="button"
-                              role="menuitem"
-                              class="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/50"
-                              onclick={() => {
+                            <Menu.Item
+                              class="cursor-pointer text-foreground"
+                              onSelect={() => {
                                 openDocs(provider.docsUrl);
-                                close();
                               }}
                             >
-                              <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                              <span class="flex size-4 shrink-0 items-center justify-center">
+                                <Fa icon={faDownload} class="size-3.5 text-muted-foreground" />
+                              </span>
                               {m.settings_providers_install()}
-                            </button>
+                            </Menu.Item>
                           {/if}
                         </div>
-                      {/snippet}
-                    </DropdownMenu>
+                      </Menu.Content>
+                    </Menu.Root>
                   </div>
                 </div>
               </div>
               {#if provider.id === 'antigravity'}
-                <AntigravityConnect ready={isReady} />
+                <AntigravityConnect bind:open={antigravityConnectOpen} />
               {/if}
             </div>
           {/each}
@@ -933,7 +862,7 @@
       <GrokLogo class="size-5" size={20} />
     {:else if providerId === 'unsloth'}
       <!-- Unsloth's brand mark is the sloth emoji (per their brand guidelines) -->
-      <span class="size-5 inline-flex items-center justify-center leading-none text-lg">🦥</span>
+      <span class="size-5 inline-flex items-center justify-center leading-none type-title">🦥</span>
     {:else if providerId === 'cortex'}
       <svg
         class="size-5"

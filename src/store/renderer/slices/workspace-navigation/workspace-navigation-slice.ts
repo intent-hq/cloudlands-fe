@@ -2,8 +2,8 @@ import type { ReviewStatus } from '$lib/components/code-review/types';
 import type { WorkspaceEvent } from '$features/events/types';
 import type { TrackedChange } from '$features/file-tracking/types';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -88,7 +88,7 @@ interface WorkspaceNavigationHistoryEntry {
   chatChangesIsAggregate?: boolean;
   commitHash?: string;
   commitMessage?: string;
-  /** Secondary git root scoping the commit changeset (multi git root tracking, v6.15). */
+  /** Secondary git root scoping the commit changeset (multi git root tracking). */
   gitRootId?: string;
   result?: string | null;
   agentId?: string | null;
@@ -117,7 +117,7 @@ export interface WorkspaceNavigationMainPanelState {
   scrollToLine?: number;
   commitHash?: string;
   commitMessage?: string;
-  /** Secondary git root scoping the commit changeset (multi git root tracking, v6.15). */
+  /** Secondary git root scoping the commit changeset (multi git root tracking). */
   gitRootId?: string;
   branchBaseRef?: string;
   branchBaseCommitSha?: string;
@@ -346,7 +346,15 @@ export const openWorkspaceFile = createAction<
   [
     wsId: string,
     filePath: string,
-    options?: { line?: number; openInAdjacentPanel?: boolean; sourcePanelId?: string },
+    options?: {
+      line?: number;
+      gitRootId?: string;
+      gitRootPath?: string;
+      /** Preserve a parsed path verbatim; omitted/false retains legacy line-suffix parsing. */
+      filePathIsLiteral?: boolean;
+      openInAdjacentPanel?: boolean;
+      sourcePanelId?: string;
+    },
   ]
 >('workspaceNavigation/openWorkspaceFile');
 

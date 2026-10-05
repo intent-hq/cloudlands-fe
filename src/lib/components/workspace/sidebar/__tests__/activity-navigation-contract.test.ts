@@ -1,3 +1,6 @@
+// @verify-changed-triggers: ../ActivityLogPreview.svelte, ../../MultiSelectTabbedSidebar.svelte,
+//   ../../../chat/ChatPanel.svelte, ../../../chat/ToolCall.svelte, src/app.css
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -14,7 +17,7 @@ describe('activity navigation contract', () => {
     // The global focus rules live inside `@layer base` (indented one level) so
     // Tailwind utilities can override them; see input.test.ts for the layering test.
     expect(appCss).toContain(':focus:not(:focus-visible) {\n    outline: none;');
-    expect(appCss).toContain(':focus-visible {\n    outline: 2px solid hsl(var(--ring));');
+    expect(appCss).toContain(':focus-visible {\n    outline: 1px solid hsl(var(--focus-ring));');
     expect(appCss).toContain('outline-offset: 2px;');
     expect(appCss).not.toMatch(/(^|\n)\s*:focus\s*\{[^}]*outline:\s*none;/);
     expect(preview).toContain('rounded-md outline-none');

@@ -3,8 +3,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     selectDefaultReasoningEffort,
-    selectModelDisplayName,
-    selectModelEffortLevels,
+    selectModelCatalogEntry,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
   import { setDefaultReasoningEffort } from '$store/renderer/slices/model/model-slice';
@@ -22,6 +21,13 @@
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingsControlContext,
+  } from '$lib/components/patterns/settings';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
   import {
     buildResetToInheritPayloads,
     hasExplicitModelPin,
@@ -69,23 +75,34 @@
       getCurrentWorkspacePath,
     );
     for (const payload of saves) {
-      appStore.dispatch(saveFileSpecialist(payload));
+      appStore.dispatch(
+        saveFileSpecialist({
+          ...payload,
+          ...(payload.scope === 'project' ? { workspaceId: routeWorkspaceId ?? undefined } : {}),
+        }),
+      );
     }
     for (const ref of deletes) {
-      appStore.dispatch(deleteFileSpecialistAction(ref));
+      appStore.dispatch(
+        deleteFileSpecialistAction({
+          ...ref,
+          ...(ref.scope === 'project' ? { workspaceId: routeWorkspaceId ?? undefined } : {}),
+        }),
+      );
     }
   }
 
-  function handleModelChange(compoundModelId: string) {
+  function handleModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     if (!compoundModelId) return;
     const split = splitLegacyCompoundId(compoundModelId);
-    const providerId = split.providerId ?? $defaultProviderId$;
-    const modelId = split.modelId;
+    const providerId = pick?.providerId ?? split.providerId ?? $defaultProviderId$;
+    const modelId = pick?.modelId ?? split.modelId;
     const currentEffort = $defaultReasoningEffort$;
-    const isKnownModel =
-      selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;
-    const supportedEfforts = selectModelEffortLevels.select(appStore.state, compoundModelId);
-    if (currentEffort && isKnownModel && !supportedEfforts?.includes(currentEffort)) {
+    const metadata = selectModelCatalogEntry.select(appStore.state, providerId, modelId);
+    if (currentEffort && metadata && !metadata.effortLevels?.includes(currentEffort)) {
       appStore.dispatch(setDefaultReasoningEffort(''));
     }
     // Do NOT dispatch setActiveProvider/reloadModelsForProvider here: the
@@ -99,32 +116,56 @@
     // `model.defaultProvider` write from provider-settings-saga against that
     // atomic write, corrupting the persisted default (monorepo#4102-recurrence).
   }
+
+  const schema = $derived(
+    defineSettings({
+      sections: [
+        {
+          id: 'default-agent-model-section',
+          title: m.settings_section_defaults(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'default-agent-model',
+              label: m.settings_aiBehavior_defaultModel_label(),
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div data-testid={testId} class="flex min-w-0 flex-wrap items-center gap-3">
-  <span class="text-sm font-medium text-foreground shrink-0">
-    {m.settings_aiBehavior_defaultModel_label()}
-  </span>
-  <ModelPicker
-    selectedModel={$selectedModel$}
-    onModelChange={handleModelChange}
-    showDefaultOption={false}
-    variant="default"
-    size="sm"
-    updateGlobalDefault
-    showReasoning
-    reasoningEffort={$defaultReasoningEffort$ || null}
-    onReasoningChange={(effort) => {
-      appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
-    }}
+{#snippet defaultModelControl(_: SettingsControlContext)}
+  <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
+    {#if anySpecialistHasExplicitModel}
+      <Button type="button" variant="link" size="sm" onclick={resetAllSpecialistsToInherit}>
+        {m.settings_aiBehavior_resetAllSpecialists()}
+      </Button>
+    {/if}
+    <ModelPicker
+      selectedModel={$selectedModel$}
+      onModelChange={handleModelChange}
+      showDefaultOption={false}
+      variant="outline"
+      showProviderWarningNotice
+      noticeClass="mt-2"
+      size="sm"
+      updateGlobalDefault
+      showReasoning
+      reasoningEffort={$defaultReasoningEffort$ || null}
+      onReasoningChange={(effort) => {
+        appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
+      }}
+    />
+  </div>
+{/snippet}
+
+<div data-testid={testId}>
+  <SettingsForm
+    {schema}
+    embedded
+    compact={false}
+    custom={defineSettingsCustomControls({ 'default-agent-model': defaultModelControl })}
   />
-  {#if anySpecialistHasExplicitModel}
-    <button
-      type="button"
-      onclick={resetAllSpecialistsToInherit}
-      class="ml-auto text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-    >
-      {m.settings_aiBehavior_resetAllSpecialists()}
-    </button>
-  {/if}
 </div>

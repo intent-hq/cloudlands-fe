@@ -16,7 +16,7 @@
   import Fa from 'svelte-fa';
   import Button from '$lib/components/ui/button/button.svelte';
   import { faXmark, faWandMagicSparkles, faPlay } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
 
@@ -24,9 +24,18 @@
     selectScriptById,
     selectScriptRuntime,
     selectScriptOutput,
+    selectScriptRetainedOutput,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
+  import {
+    selectWorkspaceActionContext,
+    selectHidesAgentLifecycleActions,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    removeScript,
+    scriptOutputRequested,
+    scriptOutputReleased,
+  } from '$store/renderer/slices/scripts/scripts-slice';
   import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
   import { disposeXtermAfterViewportSync } from '$features/terminal/utils/xterm-lifecycle';
@@ -46,6 +55,8 @@
 
   const workspaceIdStore = writable('');
   const scriptIdStore = writable('');
+  const viewerIdStore = writable('');
+  let retainedExpanded = $state(false);
   $effect(() => workspaceIdStore.set(workspaceId));
   $effect(() => scriptIdStore.set(scriptId));
 
@@ -63,9 +74,34 @@
   const script$ = selectScriptById(workspaceIdStore, scriptIdStore);
   const runtime$ = selectScriptRuntime(workspaceIdStore, scriptIdStore);
   const output$ = selectScriptOutput(workspaceIdStore, scriptIdStore);
+  const retainedOutput$ = selectScriptRetainedOutput(
+    workspaceIdStore,
+    scriptIdStore,
+    viewerIdStore,
+  );
+  // "Ask AI to Fix" creates an agent (`agent.create`), refused (-32003) for a
+  // collaborator connection: the affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   // Canonical code-font preference: used to construct the read-only xterm
   // and to update its font option later without disposing/replaying output.
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
+  const outputAuthority = selectWorkspaceActionContext(workspaceIdStore);
+  // The request follows admitted connection, runtime and viewer lifetimes. It
+  // never starts/restores the script, and cleanup fences late snapshots.
+  $effect(() => {
+    const wsId = workspaceId;
+    const id = scriptId;
+    const authority = $outputAuthority;
+    const runtime = $runtime$;
+    if (!authority || !wsId || !id) return;
+    void runtime.status;
+    void runtime.startedAt;
+    const viewerId = crypto.randomUUID();
+    viewerIdStore.set(viewerId);
+    retainedExpanded = untrack(() => $output$.chunks.length === 0);
+    appStore.dispatch(scriptOutputRequested(wsId, id, viewerId));
+    return () => appStore.dispatch(scriptOutputReleased(wsId, id, viewerId));
+  });
 
   // Stream position already written to xterm: buffer.dropped + chunk index.
   let writtenChunkCount = $state(0);
@@ -204,7 +240,8 @@
     const buffer = $output$; // tracked — triggers effect on new output
     const written = untrack(() => writtenChunkCount); // NOT tracked — avoids cycle
     const total = buffer.dropped + buffer.chunks.length;
-    if (!xterm || total <= written) return;
+    if (!xterm) return;
+    if (total <= written) return;
 
     // Write only chunks not yet rendered, verbatim — no injected newlines.
     const startIndex = Math.max(written - buffer.dropped, 0);
@@ -246,12 +283,15 @@
 
   async function handleAskAgent(): Promise<void> {
     if (!workspaceId) {
-      toast.error(m.terminal_scriptOutput_noWorkspace_error());
+      notify.error(m.terminal_scriptOutput_noWorkspace_error());
       return;
     }
 
     const buffer = selectScriptOutput.select(appStore.state, workspaceId, scriptId);
-    const lastLines = scriptOutputTailText(buffer, 100);
+    const lastLines =
+      buffer.chunks.length > 0
+        ? scriptOutputTailText(buffer, 100)
+        : ($retainedOutput$?.text ?? '').split('\n').slice(-100).join('\n');
     const exitCode = $runtime$.exitCode;
     const failedText =
       exitCode !== null && exitCode !== 0 ? ` failed with exit code ${exitCode}` : '';
@@ -278,7 +318,7 @@
         ),
       );
     } catch {
-      toast.error(m.workspace_modals_createAgentFailed_error());
+      notify.error(m.workspace_modals_createAgentFailed_error());
     }
   }
 
@@ -327,15 +367,44 @@
           >{m.terminal_scriptOutput_buildFailed_label({ exitCode: $runtime$.exitCode ?? 0 })}</span
         >
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        class="h-7 text-xs bg-background border border-border text-danger"
-        onclick={handleAskAgent}
-      >
-        <Fa icon={faWandMagicSparkles} size="sm" class="mr-1.5" />
-        {m.terminal_scriptOutput_askAiToFix_label()}
-      </Button>
+      {#if !$hidesAgentLifecycleActions$}
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-7 text-xs bg-background border border-border text-danger"
+          onclick={handleAskAgent}
+        >
+          <Fa icon={faWandMagicSparkles} size="sm" class="mr-1.5" />
+          {m.terminal_scriptOutput_askAiToFix_label()}
+        </Button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if $retainedOutput$}
+    <details class="retained-output border-b border-border" bind:open={retainedExpanded}>
+      <summary class="cursor-pointer px-3 py-2 text-xs text-muted-foreground">
+        {m.terminal_scriptOutput_retained_label()}
+      </summary>
+      <p class="px-3 pb-2 text-xs text-muted-foreground">
+        {m.terminal_scriptOutput_retained_description()}
+      </p>
+      {#if $retainedOutput$.status === 'available'}
+        <pre
+          class="retained-text px-3 pb-3 text-xs"
+          style:font-family={$codeFontFamilyCSS}>{$retainedOutput$.text}</pre>
+      {:else}
+        <p class="px-3 pb-3 text-xs text-muted-foreground" role="status">
+          {$retainedOutput$.status === 'loading'
+            ? m.terminal_scriptOutput_retainedLoading_label()
+            : m.terminal_scriptOutput_retainedUnavailable_label()}
+        </p>
+      {/if}
+    </details>
+  {/if}
+  {#if $output$.chunks.length > 0 && $retainedOutput$}
+    <div class="px-3 py-1 text-xs text-muted-foreground">
+      {m.terminal_scriptOutput_live_label()}
     </div>
   {/if}
 
@@ -370,6 +439,18 @@
 </div>
 
 <style>
+  .retained-output {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow: auto;
+    max-height: 60%;
+  }
+  .retained-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 0;
+  }
+
   .script-output-viewer {
     display: flex;
     flex-direction: column;

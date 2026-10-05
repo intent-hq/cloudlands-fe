@@ -12,6 +12,7 @@
  */
 import type { AgentMessage } from '$shared/types';
 import { extractAllContent } from '$shared/types';
+import type { AgentAttentionRequest } from '$shared/utils/agent-attention';
 
 type AttentionNoticeKind = 'discussion-request' | 'blocker-report' | 'turn-failure';
 
@@ -44,4 +45,35 @@ export function getAttentionNotice(
     kind: kind as AttentionNoticeKind,
     reason: extractAllContent(message as AgentMessage),
   };
+}
+
+function timestampIdentity(value: string | Date): string | null {
+  const milliseconds = value instanceof Date ? value.getTime() : Date.parse(value);
+  if (!Number.isFinite(milliseconds)) return null;
+  if (value instanceof Date) return `${milliseconds}:`;
+  const parts = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d+))?(?:Z|[+-]\d{2}:\d{2})$/i.exec(
+    value,
+  );
+  if (!parts) return null;
+  // Date.parse truncates fractional precision beyond milliseconds.
+  const remainder = (parts[1] ?? '').slice(3).replace(/0+$/, '');
+  return `${milliseconds}:${remainder}`;
+}
+
+export function hasMatchingAttentionNotice(
+  messages: readonly AgentMessage[],
+  request: AgentAttentionRequest | null,
+): boolean {
+  if (!request?.timestamp) return false;
+  const timestamp = timestampIdentity(request.timestamp);
+  if (timestamp === null) return false;
+  const kind = request.kind === 'blocker' ? 'blocker-report' : 'discussion-request';
+
+  // The daemon uses the same saved_at for the pending request and its notice.
+  return messages.some((message) => {
+    const messageTimestamp = timestampIdentity(message.timestamp);
+    if (messageTimestamp !== timestamp) return false;
+    const notice = getAttentionNotice(message);
+    return notice?.kind === kind && notice.reason === (request.reason ?? '');
+  });
 }

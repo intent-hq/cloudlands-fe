@@ -14,8 +14,9 @@
 
 import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import type { AgentMessage } from './agent-message';
+import type { AgentMessage, MessageAuthor, SubmissionCorrelation } from './agent-message';
 import { AgentStatus } from './agent.types';
+import type { AgentNodeFields } from './agent-node';
 import type { AgentMetadata } from '../types';
 
 /**
@@ -34,7 +35,9 @@ export interface QueuedMessageContextItem {
  * A message queued to be sent to an agent.
  * Stored in backend to survive workspace switches.
  */
-export interface QueuedMessage {
+export interface QueuedMessage extends SubmissionCorrelation {
+  /** Exact full-snapshot permission to predict same-principal append, not mutation authority. */
+  mergeEligible?: boolean;
   /** Unique identifier for this queued message */
   id: string;
   /**
@@ -68,6 +71,11 @@ export interface QueuedMessage {
    * and skips it during queue drain. Only included in responses when true.
    */
   editing?: boolean;
+  /** Original active edit identity when a held entry was absorbed into this survivor. */
+  editingMessageId?: string;
+  /** Server hold marker; readiness resumes at holdUntil. */
+  holdKind?: string;
+  holdUntil?: string;
   /**
    * Optional terminal-failure requeue marker (STAB-112). When true, this message
    * was requeued after a terminal provider failure and should be visually distinguished
@@ -81,9 +89,20 @@ export interface QueuedMessage {
    * eventTypes, events? }` so the UI can render them as system notifications
    * instead of raw `[WORKSPACE EVENTS]` text. Agent-to-agent messages carry
    * `{ type: 'agent_message', fromAgentId, fromAgentName? }` so the UI can
-   * render sender attribution.
+   * render sender attribution. User-typed entries carry the daemon's
+   * `fromPrincipalId` principal stamp (intent-hq/intentd#1869).
    */
   messageMetadata?: Record<string, unknown>;
+  /**
+   * Serve-time projection of the principal that enqueued the entry
+   * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
+   * stamp, or a portable human snapshot with principalId:null and no local
+   * admission. Portable display does not change queue edit/send authority.
+   * Authoritative when present: `null` means the principal row is
+   * gone (no author, no fallback). Absent on older daemons, where the queue
+   * surface falls back to the projections the transcript already carries.
+   */
+  author?: MessageAuthor | null;
 }
 
 /**
@@ -110,6 +129,58 @@ export interface SessionStats {
 }
 
 /**
+ * `agent.list` row scope (§5.5 row scope, intent-hq/intent#5383). The three
+ * bins partition the workspace's NON-retired sessions: `topLevel` = no parent
+ * and foreground (the rows the sidebar lists by default), `delegated` = any
+ * parented row (a background CHILD is delegated, not background),
+ * `background` = unparented background agents. `all` is the default read.
+ */
+export type AgentListScope = 'all' | 'topLevel' | 'delegated' | 'background';
+
+/** One of the three `agent.list` bins (the non-default scopes). */
+export type AgentListBin = Exclude<AgentListScope, 'all'>;
+
+/**
+ * Per-bin counts of the workspace's non-retired sessions, served as
+ * `scopeCounts` on every `agent.list` response by daemons that support
+ * `scope`. Absent on older daemons (which also ignore `scope`).
+ */
+export interface AgentScopeCounts {
+  topLevel: number;
+  delegated: number;
+  background: number;
+}
+
+/** One parent's direct non-retired children: `total` rows, `running` of them mid-turn. */
+export interface AgentDelegatedParentCounts {
+  total: number;
+  running: number;
+}
+
+/**
+ * Per-parent counts of the workspace's non-retired DELEGATED sessions, served
+ * as `delegatedCounts` on every `agent.list` response (§5.5). `running` is the
+ * workspace-wide running delegated count (persisted status `pending` /
+ * `active` / legacy `Processing`); `byParent` keys are raw `parentAgentId`
+ * values — a parent with no non-retired children has NO entry, and a key may
+ * name a parent outside this workspace (cross-workspace delegation). Invariant
+ * daemon-side: `Σ byParent[*].total === scopeCounts.delegated`. Absent on
+ * older daemons.
+ *
+ * `orphaned` counts the delegated rows whose parent is NOT a non-retired
+ * session of the same workspace (parent deleted, retired, or absent); a child
+ * of an orphan is not itself an orphan. Presence-detected: a daemon that
+ * serves it does so on every response (`{ total: 0, running: 0 }` when none,
+ * `total ≤ scopeCounts.delegated`); a daemon predating it omits the field and
+ * ignores the `orphanedOnly` list param, so it is never defaulted here.
+ */
+export interface AgentDelegatedCounts {
+  running: number;
+  byParent: Record<string, AgentDelegatedParentCounts>;
+  orphaned?: AgentDelegatedParentCounts;
+}
+
+/**
  * Canonical AgentSession interface
  *
  * Represents a runtime session for an agent within a workspace.
@@ -118,7 +189,7 @@ export interface SessionStats {
  * MIGRATION NOTE: The old `sessionId` field has been renamed to `backendSessionId`
  * for clarity. Use `backendSessionId` for new code.
  */
-export interface AgentSession {
+export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
   /** The agent's unique identifier */
   id: AgentId;
@@ -133,6 +204,15 @@ export interface AgentSession {
 
   /** Workspace this agent belongs to */
   workspaceId: WorkspaceId;
+
+  /**
+   * Daemon parent linkage (§5.5 `AgentLite.parentAgentId`): the agent that
+   * spawned this one via `agent.delegate` / `ws.agent.create`. The daemon
+   * partitions the `agent.list` bins by this field, so it is the primary
+   * delegated-row marker; `metadata.createdByAgentId` is the older fallback.
+   * Omitted (never `null`) on top-level rows.
+   */
+  parentAgentId?: AgentId;
 
   /** Optional thread ID for conversation threading */
   threadId?: string;
@@ -224,6 +304,14 @@ export interface AgentSession {
   /** True if this is a background agent */
   isBackground?: boolean;
 
+  /**
+   * Daemon-owned per-agent notification mute (`notificationsMuted`, §5.5
+   * AgentLite). Set via `agent.update { changes: { notificationsMuted } }`
+   * and converged through `agent:updated`. A muted agent never derives
+   * `hasUnread` (see `deriveAgentHasUnread`).
+   */
+  notificationsMuted?: boolean;
+
   /** Current turn number for this session */
   currentTurnNumber?: number;
 
@@ -236,8 +324,9 @@ export interface AgentSession {
    * counts as unread). See `deriveAgentHasUnread` and
    * intent-hq/monorepo#1597. Always `false` for daemons that omit
    * `lastMessageId`, for background agents (`isBackground` /
-   * `metadata.isBackground`), and for delegated child agents
-   * (`metadata.createdByAgentId` set).
+   * `metadata.isBackground`), for delegated child agents
+   * (`metadata.createdByAgentId` set), and for muted agents
+   * (`notificationsMuted`).
    */
   hasUnread?: boolean;
 
@@ -245,15 +334,15 @@ export interface AgentSession {
   lastViewedAt?: Date | string;
 
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.5 delete grace
-   *  window, v6.7+). Present only while an `agent.delete { undoDelayMs > 0 }`
+   *  window). Present only while an `agent.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `agent.cancelDelete` and dropped by a
    *  daemon restart (the session survives). Rows carrying it are hidden from
    *  the FE agent list. */
   pendingDeleteAt?: string;
 
-  /** ISO timestamp of a soft retirement (PROTOCOL §5.5 soft retire, v7.5).
+  /** ISO timestamp of a soft retirement (PROTOCOL §5.5 soft retire, `agent.retire`).
    *  Presence-detected: served on `agent.get`/`agent.getSession` always and on
-   *  `agent.list` rows on retired-row reads (`retiredOnly: true`, v8.2 — the
+   *  `agent.list` rows on retired-row reads (`retiredOnly: true` — the
    *  FE seam's sole path to retired rows; `includeRetired` remains on the wire
    *  for other clients but is not exposed here); omitted on active rows, never
    *  `null`. A retired session is inert daemon-side (sends, queueing, watches,
@@ -364,7 +453,7 @@ export interface AgentSession {
   waitingForAgentIds?: string[];
 
   /**
-   * Idle-visibility for hook-owning agents (PROTOCOL.md §5.5, within v3.1,
+   * Idle-visibility for hook-owning agents (PROTOCOL §5.5 `AgentLite`,
    * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
    * background hooks (§5.40), omitted when empty (absent, never `[]`) — so
    * a parent or client can tell a hook-waiting idle agent from a stalled
@@ -373,6 +462,14 @@ export interface AgentSession {
    */
   waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
 
+  /** Active script-run watches (§5.8a), omitted by the daemon when empty. */
+  waitingOnScriptMonitors?: Array<{
+    monitorId: string;
+    scriptId: string;
+    runId: string;
+    scriptName: string;
+    expiresAt: string;
+  }>;
   /**
    * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
    * companion for centralized PR monitoring (§5.42): light metadata for the
@@ -386,21 +483,6 @@ export interface AgentSession {
     prNumber: number;
     title?: string;
   }>;
-
-  /**
-   * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).
-   * Set when the agent is queued for admission (a process slot or memory
-   * headroom), cleared when resumed or transitions to normal running state.
-   * `reason` names the constraint the spawn queued under
-   * (intent-hq/intentd#1196); an absent wire `reason` (older daemons) is
-   * normalized to `'slots'` at the events bridge.
-   */
-  processQueueHint?: {
-    waiting: boolean;
-    used: number;
-    cap: number;
-    reason: 'slots' | 'memory-budget';
-  };
 
   /** Canonical stop/finish reason from the latest terminal stream/status event */
   stopReason?: string | null;
@@ -536,7 +618,8 @@ export function isPendingAgentSession(
 /**
  * Resolve the provider for an agent session, with fallback chain.
  * Checks top-level `provider`, then `metadata.provider`, then `config.provider`.
- * Filters out the legacy 'acp' value (protocol name, not a real provider).
+ * Explicit identities, including historical aliases, are preserved verbatim.
+ * Renderer consumers resolve aliases against the daemon's provider catalog.
  * Falls back to inferring provider from the model ID if available —
  * `defaultProviderId` (the settings-derived effective default provider)
  * attributes bare model ids.
@@ -546,10 +629,9 @@ export function getAgentProvider(
   defaultProviderId: string,
 ): string | undefined {
   const explicit =
-    session.provider ?? session.metadata?.provider ?? (session as any).config?.provider;
+    session.provider || session.metadata?.provider || (session as any).config?.provider;
 
-  // 'acp' is the protocol name, not a provider ID -- treat it as unset
-  if (explicit && explicit !== 'acp') {
+  if (explicit) {
     return explicit;
   }
 

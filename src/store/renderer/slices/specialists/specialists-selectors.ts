@@ -1,9 +1,15 @@
+import { emptySpecialistCreation } from './specialist-creation-types';
+import type { SpecialistImportDiagnostic } from '$lib/client/app-client';
+import {
+  selectEffectiveDefaultProviderId,
+  selectNormalizedProviderId,
+} from '../provider-catalog/provider-catalog-selectors';
 import { store } from '../../store';
 import {
   getItem,
   getItems,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import {
   SPECIALISTS,
   GITHUB_DEPENDENT_SPECIALIST_IDS,
@@ -51,7 +57,13 @@ export const selectSpecialistsFolderPath = store.createSelector(
  * chosen (e.g. task Run). `''` when unset.
  */
 export const selectDefaultSpecialistId = store.createSelector(
-  (state): string => state.specialists.defaultSpecialistId ?? '',
+  (state, workspaceId?: string): string => {
+    if (!workspaceId) return state.specialists.defaultSpecialistId ?? '';
+    const value = state.providerCatalog?.byWorkspaceId?.[workspaceId]?.settings.find(
+      (s) => s.path === 'specialists.default',
+    )?.value;
+    return typeof value === 'string' ? value : '';
+  },
 );
 export const selectProviderModelOverrides = store.createSelector(
   (state): Record<string, Record<string, string>> => state.specialists.providerModelOverrides,
@@ -126,84 +138,103 @@ export function filterModalPickableSpecialists(
 // Derived: merged specialists list
 // Priority: file (project > user) > bundled > hardcoded SPECIALISTS (last resort)
 // ============================================================================
-export const selectSpecialists = store.createSelector((state): Specialist[] => {
-  const fileSpecialists = getItems(state.specialists.fileSpecialists);
-  const bundledSpecialists = state.specialists.bundledSpecialists;
-  const seen = new Set<string>();
-  const result: Specialist[] = [];
-  // File-based specialists first (highest priority — includes project + user files)
-  for (const file of fileSpecialists) {
-    if (!seen.has(file.id) && selectIsSpecialistVisible.select(state, file.id)) {
-      seen.add(file.id);
-      result.push({
-        id: file.id,
-        name: file.name,
-        description: file.description,
-        codingAgent: file.codingAgent,
-        defaultModel: file.model || undefined,
-        defaultBehaviorPrompt: file.behaviorPrompt,
-        roleReminder: file.roleReminder,
-        source: file.source,
-        hidden: file.hidden,
-        resolvedModel: file.resolvedModel,
-        resolvedProvider: file.resolvedProvider,
-        modelOptions: file.modelOptions,
-        reasoningEffort: file.reasoningEffort,
-        role: file.role,
-        teamAgents: file.teamAgents,
-        icon: file.icon,
-      });
+export const selectSpecialists = store.createSelector(
+  (state, workspaceId?: string): Specialist[] => {
+    if (workspaceId)
+      return (state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists ?? []).map(
+        (def) => ({
+          ...def,
+          defaultModel: def.model,
+          defaultBehaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
+          defaultAgentType: def.agentType,
+        }),
+      );
+    const fileSpecialists = getItems(state.specialists.fileSpecialists);
+    const bundledSpecialists = state.specialists.bundledSpecialists;
+    const seen = new Set<string>();
+    const result: Specialist[] = [];
+    // File-based specialists first (highest priority — includes project + user files)
+    for (const file of fileSpecialists) {
+      if (!seen.has(file.id) && selectIsSpecialistVisible.select(state, file.id)) {
+        seen.add(file.id);
+        result.push({
+          id: file.id,
+          name: file.name,
+          description: file.description,
+          codingAgent: file.codingAgent,
+          defaultModel: file.model || undefined,
+          defaultBehaviorPrompt: file.behaviorPrompt,
+          roleReminder: file.roleReminder,
+          source: file.source,
+          importedFrom: file.importedFrom,
+          unsupportedFields: file.unsupportedFields,
+          requiredSkills: file.requiredSkills,
+          missingSkills: file.missingSkills,
+          hidden: file.hidden,
+          resolvedModel: file.resolvedModel,
+          resolvedProvider: file.resolvedProvider,
+          modelOptions: file.modelOptions,
+          reasoningEffort: file.reasoningEffort,
+          role: file.role,
+          teamAgents: file.teamAgents,
+          icon: file.icon,
+        });
+      }
     }
-  }
-  // Bundled specialists (skip if overridden by file)
-  for (const specialist of bundledSpecialists) {
-    if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
-      seen.add(specialist.id);
-      result.push(specialist);
-    }
-  }
-  // Wave 2: Electron-store custom specialists are no longer included.
-  // They should have been migrated to files on startup.
-  // Last resort fallback: hardcoded SPECIALISTS, only before any other
-  // source has produced specialists. Once file/daemon specialists loaded,
-  // the loaded set is authoritative — shipped specialists absent from it
-  // must not resurrect (daemon replacement mode).
-  if (fileSpecialists.length === 0 && bundledSpecialists.length === 0) {
-    for (const specialist of SPECIALISTS) {
+    // Bundled specialists (skip if overridden by file)
+    for (const specialist of bundledSpecialists) {
       if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
         seen.add(specialist.id);
         result.push(specialist);
       }
     }
-  }
+    // Wave 2: Electron-store custom specialists are no longer included.
+    // They should have been migrated to files on startup.
+    // Last resort fallback: hardcoded SPECIALISTS, only before any other
+    // source has produced specialists. Once file/daemon specialists loaded,
+    // the loaded set is authoritative — shipped specialists absent from it
+    // must not resurrect (daemon replacement mode).
+    if (
+      !state.specialists.bundledSpecialistsLoaded &&
+      fileSpecialists.length === 0 &&
+      bundledSpecialists.length === 0
+    ) {
+      for (const specialist of SPECIALISTS) {
+        if (!seen.has(specialist.id) && selectIsSpecialistVisible.select(state, specialist.id)) {
+          seen.add(specialist.id);
+          result.push(specialist);
+        }
+      }
+    }
 
-  // Stable sort: built-in specialists in catalog order first,
-  // then custom (user/project) specialists sorted alphabetically by name.
-  // This prevents the list from reordering when a specialist is re-saved.
-  const bundledOrder = new Map<string, number>();
-  // Seed from the catalog so file-only overrides retain their built-in position,
-  // then append any daemon-provided built-ins that are not in the catalog.
-  for (const s of SPECIALISTS) {
-    if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
-  }
-  for (const s of bundledSpecialists) {
-    if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
-  }
+    // Stable sort: built-in specialists in catalog order first,
+    // then custom (user/project) specialists sorted alphabetically by name.
+    // This prevents the list from reordering when a specialist is re-saved.
+    const bundledOrder = new Map<string, number>();
+    // Seed from the catalog so file-only overrides retain their built-in position,
+    // then append any daemon-provided built-ins that are not in the catalog.
+    for (const s of SPECIALISTS) {
+      if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
+    }
+    for (const s of bundledSpecialists) {
+      if (!bundledOrder.has(s.id)) bundledOrder.set(s.id, bundledOrder.size);
+    }
 
-  result.sort((a, b) => {
-    const aIsBuiltIn = bundledOrder.has(a.id);
-    const bIsBuiltIn = bundledOrder.has(b.id);
-    // Built-in specialists come first, in their original order
-    if (aIsBuiltIn && bIsBuiltIn)
-      return (bundledOrder.get(a.id) ?? 0) - (bundledOrder.get(b.id) ?? 0);
-    if (aIsBuiltIn && !bIsBuiltIn) return -1;
-    if (!aIsBuiltIn && bIsBuiltIn) return 1;
-    // Custom specialists sorted alphabetically by name
-    return a.name.localeCompare(b.name);
-  });
+    result.sort((a, b) => {
+      const aIsBuiltIn = bundledOrder.has(a.id);
+      const bIsBuiltIn = bundledOrder.has(b.id);
+      // Built-in specialists come first, in their original order
+      if (aIsBuiltIn && bIsBuiltIn)
+        return (bundledOrder.get(a.id) ?? 0) - (bundledOrder.get(b.id) ?? 0);
+      if (aIsBuiltIn && !bIsBuiltIn) return -1;
+      if (!aIsBuiltIn && bIsBuiltIn) return 1;
+      // Custom specialists sorted alphabetically by name
+      return a.name.localeCompare(b.name);
+    });
 
-  return result;
-});
+    return result;
+  },
+);
 /**
  * The specialist that powers the New Workspace modal's team-mode card: the
  * first `role: 'orchestrator'` entry ranked with bundled specialist ids before
@@ -260,6 +291,7 @@ export const selectSpecialistById = store.createSelector(
     // resolve during the async startup window, while specialists absent from
     // the loaded set must not resurrect (daemon replacement mode).
     if (
+      !state.specialists.bundledSpecialistsLoaded &&
       getItems(state.specialists.fileSpecialists).length === 0 &&
       state.specialists.bundledSpecialists.length === 0
     ) {
@@ -283,19 +315,21 @@ export const selectSpecialistName = store.createSelector(
   },
 );
 /** Get the effective model for a specialist (file override → daemon-resolved preview) */
-export const selectEffectiveModel = store.createSelector((state, specialistId: string): string => {
-  const specialists = selectSpecialists.select(state);
-  const specialist = specialists.find((s: Specialist) => s.id === specialistId);
-  if (!specialist) return '';
-  // Explicit frontmatter model wins, mirroring the daemon's model-first
-  // precedence (resolve_model, PROTOCOL §5.11). Otherwise surface the
-  // daemon-computed `resolvedModel` preview from the wire — no client-side
-  // tier/preference resolution. Empty string means "provider CLI default".
-  if (specialist.defaultModel) {
-    return specialist.defaultModel;
-  }
-  return specialist.resolvedModel ?? '';
-});
+export const selectEffectiveModel = store.createSelector(
+  (state, specialistId: string, workspaceId?: string): string => {
+    const specialists = selectSpecialists.select(state, workspaceId);
+    const specialist = specialists.find((s: Specialist) => s.id === specialistId);
+    if (!specialist) return '';
+    // Explicit frontmatter model wins, mirroring the daemon's model-first
+    // precedence (resolve_model, PROTOCOL §5.11). Otherwise surface the
+    // daemon-computed `resolvedModel` preview from the wire — no client-side
+    // tier/preference resolution. Empty string means "provider CLI default".
+    if (specialist.defaultModel) {
+      return specialist.defaultModel;
+    }
+    return specialist.resolvedModel ?? '';
+  },
+);
 
 /**
  * Get the explicit frontmatter model for a specialist, or undefined when the
@@ -303,8 +337,8 @@ export const selectEffectiveModel = store.createSelector((state, specialistId: s
  * `selectEffectiveModel`, which falls back to the daemon-resolved preview.
  */
 export const selectExplicitModel = store.createSelector(
-  (state, specialistId: string): string | undefined => {
-    const specialists = selectSpecialists.select(state);
+  (state, specialistId: string, workspaceId?: string): string | undefined => {
+    const specialists = selectSpecialists.select(state, workspaceId);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     return specialist?.defaultModel || undefined;
   },
@@ -316,8 +350,8 @@ export const selectExplicitModel = store.createSelector(
  * winning tier, PROTOCOL §5.11).
  */
 export const selectExplicitReasoningEffort = store.createSelector(
-  (state, specialistId: string): string | undefined => {
-    const specialists = selectSpecialists.select(state);
+  (state, specialistId: string, workspaceId?: string): string | undefined => {
+    const specialists = selectSpecialists.select(state, workspaceId);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     return specialist?.reasoningEffort || undefined;
   },
@@ -325,8 +359,8 @@ export const selectExplicitReasoningEffort = store.createSelector(
 
 /** Get the effective behavior prompt for a specialist (file override → bundled default) */
 export const selectEffectiveBehaviorPrompt = store.createSelector(
-  (state, specialistId: string): string => {
-    const specialists = selectSpecialists.select(state);
+  (state, specialistId: string, workspaceId?: string): string => {
+    const specialists = selectSpecialists.select(state, workspaceId);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     if (!specialist) return '';
     // Wave 2: File specialists already have the correct prompt baked in.
@@ -341,35 +375,80 @@ function isKnownBuiltIn(specialistId: string, bundledSpecialists: Specialist[]):
 }
 
 /** Check if a specialist is built-in (bundled or shipped in the catalog) */
-export const selectIsBuiltIn = store.createSelector((state, specialistId: string): boolean => {
-  return isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
-});
+export const selectIsBuiltIn = store.createSelector(
+  (state, specialistId: string, workspaceId?: string): boolean => {
+    if (workspaceId) {
+      const specialist = state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.find(
+        (s) => s.id === specialistId,
+      );
+      if (!specialist || specialist.importedFrom) return false;
+      return (
+        specialist.source === 'bundled' ||
+        (specialist.source === 'user' &&
+          isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists))
+      );
+    }
+    return isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
+  },
+);
 /** Check if a specialist is file-based */
-export const selectIsFileBased = store.createSelector((state, specialistId: string): boolean => {
-  return !!getItem(state.specialists.fileSpecialists, specialistId);
-});
+export const selectIsFileBased = store.createSelector(
+  (state, specialistId: string, workspaceId?: string): boolean => {
+    if (workspaceId) return !!selectGetFileSpecialist.select(state, specialistId, workspaceId);
+    return !!getItem(state.specialists.fileSpecialists, specialistId);
+  },
+);
 /**
  * Check if a built-in specialist has been overridden by a user file that
  * actually differs from the bundled defaults. A lingering override file that
  * is identical to the bundled definition (no model pin, all compared fields
  * equal) never reads as "Modified" (monorepo#1450).
  */
-export const selectHasOverrides = store.createSelector((state, specialistId: string): boolean => {
-  const isBuiltIn = isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
-  if (!isBuiltIn) return false;
-  const file = getItem(state.specialists.fileSpecialists, specialistId);
-  if (!file || file.source !== 'user') return false;
-  return !isRedundantBuiltInOverride(file, state.specialists.bundledSpecialists);
-});
+export const selectHasOverrides = store.createSelector(
+  (state, specialistId: string, workspaceId?: string): boolean => {
+    if (workspaceId) {
+      const def = selectGetFileSpecialist.select(state, specialistId, workspaceId);
+      if (!def || def.importedFrom || def.source === 'project') return false;
+      return (
+        isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists) &&
+        !isRedundantBuiltInOverride(def, state.specialists.bundledSpecialists)
+      );
+    }
+    const isBuiltIn = isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
+    if (!isBuiltIn) return false;
+    const file = getItem(state.specialists.fileSpecialists, specialistId);
+    if (!file || file.source !== 'user') return false;
+    return !isRedundantBuiltInOverride(file, state.specialists.bundledSpecialists);
+  },
+);
 /** Get a file specialist by ID */
 export const selectGetFileSpecialist = store.createSelector(
-  (state, specialistId: string): FileSpecialist | undefined => {
+  (state, specialistId: string, workspaceId?: string): FileSpecialist | undefined => {
+    if (workspaceId) {
+      const def = state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.find(
+        (s) => s.id === specialistId,
+      );
+      if (!def || def.source === 'bundled') return undefined;
+      return {
+        ...def,
+        source: def.source,
+        model: def.model ?? '',
+        behaviorPrompt: def.behaviorPrompt ?? def.prompt ?? '',
+        filePath: def.path ?? '',
+      };
+    }
     return getItem(state.specialists.fileSpecialists, specialistId);
   },
 );
 export const selectSpecialistSourceLabel = store.createSelector(
-  (state, specialistId: string): 'Project' | 'User' | 'Built-in' | null => {
-    const file = getItem(state.specialists.fileSpecialists, specialistId);
+  (state, specialistId: string, workspaceId?: string): 'Project' | 'User' | 'Built-in' | null => {
+    const file = selectGetFileSpecialist.select(state, specialistId, workspaceId);
+    if (workspaceId && !file)
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.some(
+        (s) => s.id === specialistId,
+      )
+        ? 'Built-in'
+        : null;
     if (file?.source === 'project') {
       return 'Project';
     }
@@ -384,7 +463,11 @@ export const selectSpecialistSourceLabel = store.createSelector(
 );
 /** Get the on-disk file path for a specialist */
 export const selectSpecialistFilePath = store.createSelector(
-  (state, specialistId: string): string | undefined => {
+  (state, specialistId: string, workspaceId?: string): string | undefined => {
+    if (workspaceId)
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.specialists.find(
+        (s) => s.id === specialistId,
+      )?.path;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (file) return file.filePath;
     const bundled = state.specialists.bundledSpecialists.find(
@@ -406,7 +489,18 @@ export const selectSpecialistFilePath = store.createSelector(
  * `selectIsActiveProviderAvailable` or check for `''` to surface a failure.
  */
 export const selectEffectiveCodingAgent = store.createSelector(
-  (state, specialistId: string): string => {
+  (state, specialistId: string, workspaceId?: string): string => {
+    if (workspaceId) {
+      const specialist = selectSpecialists
+        .select(state, workspaceId)
+        .find((s) => s.id === specialistId);
+      const explicit = specialist?.codingAgent || specialist?.resolvedProvider;
+      if (explicit) return selectNormalizedProviderId.select(state, explicit, workspaceId);
+      const provider = selectEffectiveDefaultProviderId.select(state, workspaceId);
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.readiness[provider]?.available
+        ? provider
+        : '';
+    }
     // Wave 2: File specialists already have the correct codingAgent baked in.
     // Check file specialist first, then fall back to bundled/hardcoded.
     const file = getItem(state.specialists.fileSpecialists, specialistId);
@@ -434,4 +528,23 @@ const selectResolvedDefaultCodingAgent = store.createSelector(
       ? selectActiveProviderId.select(state)
       : '';
   },
+);
+
+export const selectSpecialistImportDiagnostics = store.createSelector(
+  (state, workspaceId?: string): SpecialistImportDiagnostic[] => {
+    if (workspaceId)
+      return state.providerCatalog?.byWorkspaceId?.[workspaceId]?.importDiagnostics ?? [];
+    const diagnostics = state.specialists.importDiagnostics;
+    return diagnostics ? getItems(diagnostics) : [];
+  },
+);
+
+export const selectSpecialistCreation = store.createSelector(
+  (state, context: string) =>
+    state.specialists.creationByContext?.[context] ?? emptySpecialistCreation,
+);
+export const selectSpecialistCreationIds = store.createSelector((state) =>
+  Object.values(state.specialists.creationByContext ?? {}).flatMap((creation) =>
+    creation.specialistId ? [creation.specialistId] : [],
+  ),
 );

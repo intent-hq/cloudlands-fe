@@ -28,14 +28,16 @@ describe('ScrollArea', () => {
       '[data-slot="scroll-area-viewport"]',
     ) as HTMLElement;
     expect(viewport.getAttribute('tabindex')).toBe('0');
-    expect(viewport.className).toContain('focus-visible:ring-2');
-    expect(viewport.className).toContain('focus-visible:ring-inset');
-    expect(viewport.className).not.toContain('dark:');
     viewport.focus();
     await fireEvent.keyDown(viewport, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(viewport);
     expect(overflowArea.getAttribute('data-orientation')).toBe('both');
     expect(container.querySelector('[data-testid="long-scroll-content"]')).not.toBeNull();
+    const scrollbars = overflowArea.querySelectorAll('[data-slot="scroll-area-scrollbar"]');
+    expect(scrollbars).toHaveLength(2);
+    expect(Array.from(scrollbars).every((scrollbar) => scrollbar.hasAttribute('data-state'))).toBe(
+      true,
+    );
   });
 
   it('contains overflow at the root and preserves a no-overflow content state', () => {

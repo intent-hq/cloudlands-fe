@@ -8,7 +8,13 @@
  * boundary — IPC and store dispatch stay in this module.
  */
 import { createLogger } from '$lib/utils/client-logger';
+import { describeUrlForLog } from '$shared/utils/sanitize-credentials';
 import { updateTabBrowserUrl } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import {
+  consumeBrowserTabRecovery,
+  consumeBrowserTabNavigation,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
+import type { BrowserTabNavigation } from '$store/renderer/slices/tab-state/tab-state-types';
 import { store as appStore } from '$store/renderer/store';
 
 const logger = createLogger('OffscreenWebview');
@@ -25,6 +31,11 @@ export type OffscreenWebviewEntry = {
    * the guest's actual URL.
    */
   desiredUrl?: string;
+  /** Main navigation observations and explicit renderer replacement commands. */
+  navigation?: BrowserTabNavigation;
+  recoveryKey?: string;
+  recoveryRequestId?: string;
+  recoverGuest?: (tabId: string, requestId: string) => void;
 };
 
 type OffscreenWebviewElement = HTMLElement & {
@@ -38,6 +49,32 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   const webview = node as OffscreenWebviewElement;
   let current = entry;
   let domReady = false;
+  // DOM events can precede Svelte's propagation of our dispatched browserUrl.
+  // Track the guest's committed target independently of the last received prop
+  // so dom-ready (or an unrelated action update) cannot replay the stale URL.
+  let desiredUrl = entry.desiredUrl;
+  let initiatedDesiredUrl: string | undefined;
+  let handledNavigation: BrowserTabNavigation | undefined;
+  // A recovery boots on a neutral document. Do not reopen the self-closing
+  // page or persist about:blank while main waits to send the requested URL.
+  let awaitingNavigation = Boolean(entry.recoveryKey);
+
+  const recoverIfRequested = () => {
+    const requestId = current.recoveryRequestId;
+    if (!requestId) return;
+    try {
+      // An unset id means the guest is still attaching, not dead.
+      webview.getWebContentsId();
+      try {
+        webview.getURL?.();
+      } catch {
+        current.recoverGuest?.(current.tabId, requestId);
+      }
+    } catch {
+      // A fresh mount already satisfies the request once it reaches dom-ready.
+    }
+    appStore.dispatch(consumeBrowserTabRecovery(current.tabId, requestId));
+  };
 
   // The guest webContentsId last registered for CDP. dom-ready fires on
   // every top-level navigation AND when a reparented <webview> recreates
@@ -47,13 +84,27 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   let lastRegisteredWebContentsId: number | undefined;
 
   const syncDesiredUrl = () => {
-    const desired = current.desiredUrl;
-    if (!domReady || !desired) return;
+    const desired = desiredUrl;
+    const navigation = current.navigation;
+    if (navigation && navigation !== handledNavigation && navigation.url === desired) {
+      handledNavigation = navigation;
+      // An explicit replacement can retry the same saved URL after a failed
+      // main navigation. A notification only acknowledges an existing load.
+      initiatedDesiredUrl = navigation.kind === 'observed' ? desired : undefined;
+      appStore.dispatch(consumeBrowserTabNavigation(current.tabId, navigation));
+    }
+    if (!domReady || !desired || awaitingNavigation) return;
+    // getURL can still report the old document after main started navigating.
+    // Do not replay a started load through unrelated prop updates or failure.
+    // An explicit replacement, a different URL or a new guest can retry.
+    if (desired === initiatedDesiredUrl) return;
     try {
       // Equal URLs mean the change came from our own did-navigate sync (or
       // the guest is already there) — never reload in that case.
       if (webview.getURL?.() === desired) return;
-      webview.loadURL?.(desired)?.catch((err) => {
+      const pending = webview.loadURL?.(desired);
+      initiatedDesiredUrl = desired;
+      pending?.catch((err) => {
         logger.warn('Failed to navigate offscreen tab to updated browserUrl', {
           tabId: current.tabId,
           error: err,
@@ -74,6 +125,7 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
     try {
       const webContentsId = webview.getWebContentsId();
       if (webContentsId !== lastRegisteredWebContentsId) {
+        if (lastRegisteredWebContentsId !== undefined) initiatedDesiredUrl = undefined;
         lastRegisteredWebContentsId = webContentsId;
         logger.info('Registering offscreen browser tab for CDP', {
           tabId: entry.tabId,
@@ -106,7 +158,47 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
 
   const handleDidNavigate = (event: Event) => {
     const url = (event as Event & { url?: string }).url;
-    if (url) appStore.dispatch(updateTabBrowserUrl(current.workspaceId, current.tabId, url));
+    if (awaitingNavigation && url === 'about:blank') return;
+    if (url) {
+      awaitingNavigation = false;
+      desiredUrl = url;
+      appStore.dispatch(updateTabBrowserUrl(current.workspaceId, current.tabId, url));
+    }
+  };
+
+  const handleDidNavigateInPage = (event: Event) => {
+    // Unlike did-navigate, in-page events include iframes (intent#4767).
+    if (!(event as Event & { isMainFrame: boolean }).isMainFrame) return;
+    handleDidNavigate(event);
+  };
+
+  // The guest webContents is gone (e.g. the page called window.close()).
+  // The main-process registry drops its own mapping on the webContents
+  // `destroyed` hook (gated on webContentsId so a handed-off tab survives);
+  // here we release the renderer-side handle so a recreated guest's
+  // dom-ready registers again instead of being skipped by the id gate.
+  // Reparenting also fires `destroyed` for the old guest, possibly after
+  // the replacement is attached or ready; the event carries no guest id,
+  // so probe the guest the element holds NOW (webview methods throw
+  // synchronously when the cached guest id is unset or dead) and leave a
+  // live replacement alone — resetting domReady on it would stall
+  // syncDesiredUrl until its next navigation.
+  // The URL is reduced to origin + path: OAuth close pages carry codes and
+  // tokens in the query/fragment.
+  const handleDestroyed = () => {
+    try {
+      webview.getURL?.();
+      return;
+    } catch {
+      // The current guest is really gone.
+    }
+    logger.warn('Offscreen webview guest was destroyed', {
+      tabId: current.tabId,
+      url: describeUrlForLog(current.url),
+    });
+    domReady = false;
+    initiatedDesiredUrl = undefined;
+    lastRegisteredWebContentsId = undefined;
   };
 
   // NOT { once: true }: reparenting the <webview> makes Electron destroy
@@ -119,17 +211,25 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   webview.addEventListener('did-navigate', handleDidNavigate);
   // Hash/history navigation does not fire did-navigate; the visible
   // EmbeddedBrowser syncs it too, so mirror it here.
-  webview.addEventListener('did-navigate-in-page', handleDidNavigate);
+  webview.addEventListener('did-navigate-in-page', handleDidNavigateInPage);
+  webview.addEventListener('destroyed', handleDestroyed);
+  recoverIfRequested();
 
   return {
     update(next: OffscreenWebviewEntry) {
+      if (next.desiredUrl !== current.desiredUrl) {
+        desiredUrl = next.desiredUrl;
+        initiatedDesiredUrl = undefined;
+      }
       current = next;
+      recoverIfRequested();
       syncDesiredUrl();
     },
     destroy() {
       webview.removeEventListener('dom-ready', handleDomReady);
       webview.removeEventListener('did-navigate', handleDidNavigate);
-      webview.removeEventListener('did-navigate-in-page', handleDidNavigate);
+      webview.removeEventListener('did-navigate-in-page', handleDidNavigateInPage);
+      webview.removeEventListener('destroyed', handleDestroyed);
     },
   };
 }

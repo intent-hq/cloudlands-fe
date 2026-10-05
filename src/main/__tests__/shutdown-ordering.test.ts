@@ -14,6 +14,7 @@
  * electron app, IPC registration), so we parse the source with the
  * TypeScript compiler API and walk just the relevant function bodies.
  */
+// @verify-changed-triggers: ../index.ts, ../quit-confirmation.ts
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';

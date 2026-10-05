@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga } from 'redux-saga';
 
@@ -16,6 +17,14 @@ import { loadModelsOnBootWorker, modelBootSaga } from './model-boot-saga';
 
 const MODELS = [{ value: 'gpt-5', label: 'GPT-5', effortLevels: ['low', 'medium', 'high'] }];
 
+function workerContext(dispatch: ReturnType<typeof vi.fn>, getState: () => unknown) {
+  return {
+    dispatch,
+    getState,
+    context: { reduxStore: { getState, subscribe: () => () => {} } },
+  };
+}
+
 describe('loadModelsOnBootWorker', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -23,13 +32,13 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue(MODELS);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
+      workerContext(dispatch, () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } })),
       loadModelsOnBootWorker,
     ).toPromise();
 
     expect(loaded).toBe(true);
     expect(mocks.getProviderSettings).not.toHaveBeenCalled();
-    expect(mocks.list.mock.calls).toEqual([[]]);
+    expect(mocks.list.mock.calls).toEqual([['codex']]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: 'model/setAvailableModels', payload: [MODELS, 'codex'] },
       {
@@ -47,7 +56,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue(MODELS);
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: '' } }) },
+      workerContext(dispatch, () => withLegacyPrincipal({ model: { defaultProviderId: '' } })),
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -65,7 +74,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.getProviderSettings.mockResolvedValue(null);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: '' } }) },
+      workerContext(dispatch, () => withLegacyPrincipal({ model: { defaultProviderId: '' } })),
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -75,7 +84,7 @@ describe('loadModelsOnBootWorker', () => {
   });
 
   it('drops the response when the active provider changed while the list was in flight', async () => {
-    const current = { model: { defaultProviderId: '' } };
+    const current = withLegacyPrincipal({ model: { defaultProviderId: '' } });
     mocks.getProviderSettings.mockResolvedValue({
       activeProviderId: 'codex',
       enabledProviders: {},
@@ -86,7 +95,7 @@ describe('loadModelsOnBootWorker', () => {
     });
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => current },
+      workerContext(dispatch, () => current),
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -99,7 +108,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue([]);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
+      workerContext(dispatch, () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } })),
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -111,7 +120,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockRejectedValue(new Error('uds boom'));
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
+      workerContext(dispatch, () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } })),
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -147,7 +156,13 @@ describe('modelBootSaga', () => {
     runSaga(
       {
         dispatch: vi.fn(),
-        getState: () => ({ model: { defaultProviderId: 'codex' } }),
+        context: {
+          reduxStore: {
+            getState: () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } }),
+            subscribe: () => () => {},
+          },
+        },
+        getState: () => withLegacyPrincipal({ model: { defaultProviderId: 'codex' } }),
       },
       modelBootSaga,
     );

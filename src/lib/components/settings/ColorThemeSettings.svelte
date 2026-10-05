@@ -1,7 +1,10 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
-  import { FileInput } from '$lib/components/ui/file-input';
-  import * as ToggleGroup from '$lib/components/ui/toggle-group';
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import {
+    Button,
+    FileInput,
+    ToggleGroup,
+  } from '$lib/components/patterns/settings/custom-controls';
   import { stripJSONC } from '$lib/utils/vscode-theme-parser';
   import { themePresets } from '$lib/utils/theme-presets';
   import { m } from '$shared/paraglide/messages.js';
@@ -35,8 +38,8 @@
   const displayErrorMessage = $derived(errorMessage || $themeError || undefined);
 
   const defaultPreviewColors = {
-    dark: ['#1b1b22', '#f7f7f7', '#009960', '#009960'] as const,
-    light: ['#ffffff', '#171717', '#009960', '#009960'] as const,
+    dark: ['#1b1b22', '#f7f7f7', 'hsl(var(--primary))', 'hsl(var(--primary))'] as const,
+    light: ['#ffffff', '#171717', 'hsl(var(--primary))', 'hsl(var(--primary))'] as const,
   };
 
   function clearThemeErrorMessage() {
@@ -95,8 +98,7 @@
 </script>
 
 <div class="flex min-w-0 flex-col gap-4">
-  <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-    <p class="text-sm font-medium text-foreground">{m.settings_colorTheme_title()}</p>
+  <SettingsFieldRow id="color-theme-import" label={m.settings_colorTheme_title()}>
     <FileInput
       id="color-theme-file"
       label={m.settings_colorTheme_importButton()}
@@ -109,10 +111,11 @@
       variant="flat"
       class="w-full sm:w-auto sm:max-w-md"
     />
-  </div>
+  </SettingsFieldRow>
 
   <ToggleGroup.Root
     type="single"
+    axis="xy"
     value={activeChoice}
     onValueChange={handleThemeChoiceChange}
     aria-label={m.settings_colorTheme_title()}
@@ -151,9 +154,9 @@
 
   {#if isUserImported}
     <div class="flex min-w-0 items-center justify-between gap-3">
-      <p class="min-w-0 truncate text-xs text-muted-foreground">
+      <p class="min-w-0 truncate type-body text-muted-foreground">
         {m.settings_colorTheme_importedLabel()}
-        <span class="text-foreground font-medium">{$customThemeName}</span>
+        <span class="type-caption text-foreground font-medium">{$customThemeName}</span>
       </p>
       <Button variant="ghost" size="xs" onclick={selectDefault}>
         {m.settings_colorTheme_clearButton()}

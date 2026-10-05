@@ -19,7 +19,8 @@
     feedDotColor,
     feedKindLabel,
   } from './hud-right-column-labels';
-  import { HudSlide, watchReducedMotion } from './hud-slide.svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
+  import { HudSlide } from './hud-slide.svelte';
 
   /** Mock renders 11 feed rows. */
   const VISIBLE_ROWS = 11;
@@ -156,9 +157,7 @@
       600 10px Inter,
       system-ui,
       sans-serif;
-    letter-spacing: 0.18em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .hud-feed-rule {
     flex: 1;
@@ -279,7 +278,7 @@
       background: transparent;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-feed-live-dot,
     .hud-feed-row-hint-a,
     .hud-feed-row-hint-b {

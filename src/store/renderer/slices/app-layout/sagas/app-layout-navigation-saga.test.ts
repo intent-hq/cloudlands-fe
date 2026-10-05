@@ -3,13 +3,18 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
 import {
+  closeActiveTab,
   emptyWorkspaceState,
   openTabInRightmostColumn,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
 } from '../../panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
+import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import type { OpenAgentTabDetail } from '../app-layout-types';
 import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 import { appLayoutNavigationSaga } from './app-layout-navigation-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const settle = async () => {
   await Promise.resolve();
@@ -23,16 +28,21 @@ describe('appLayoutNavigationSaga', () => {
     expected: { type: string; payload: Record<string, unknown> };
   }> = [
     {
-      name: 'routes an ordinary source-context open to the rightmost column',
+      name: 'inserts an ordinary source-context open after its active pane',
       detail: { agentId: 'agent-1', sourcePanelId: 'panel-1' },
       expected: {
-        type: 'panelLayout/openTabInRightmostColumnRequested',
-        payload: { wsId: 'ws-1', force: true },
+        type: 'panelLayout/openTab',
+        payload: { wsId: 'ws-1', panelId: 'panel-1', force: true, insertAfterActiveTab: true },
       },
     },
     {
       name: 'routes a modifier open beside its source panel',
-      detail: { agentId: 'agent-1', sourcePanelId: 'panel-1', openInAdjacentPanel: true },
+      detail: {
+        agentId: 'agent-1',
+        sourcePanelId: 'panel-1',
+        openInAdjacentPanel: true,
+        openInNewColumn: true,
+      },
       expected: {
         type: 'panelLayout/openTabInAdjacentOrSplit',
         payload: { wsId: 'ws-1', sourcePanelId: 'panel-1', force: true },
@@ -65,6 +75,9 @@ describe('appLayoutNavigationSaga', () => {
         agentId: 'agent-1',
         panelLayoutId: 'layout-1',
         targetPanelId: 'working-panel',
+        sourcePanelId: 'source-panel',
+        openInAdjacentPanel: true,
+        openInNewColumn: true,
       },
       expected: {
         type: 'panelLayout/openTab',
@@ -238,7 +251,6 @@ describe('appLayoutNavigationSaga', () => {
       openAgentTabRequested('ws-1', {
         agentId: 'agent-2',
         panelLayoutId: 'ws-1',
-        sourcePanelId: 'left',
       }),
     );
     await settle();
@@ -266,6 +278,94 @@ describe('appLayoutNavigationSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  it.each(['middle', 'last'] as const)(
+    'inserts sub-agents after the %s source pane and closes back through nested openers',
+    async (position) => {
+      const channel = stdChannel();
+      const tabs = ['A', 'B', 'C'].map((id) => ({
+        id,
+        type: 'note' as const,
+        title: id,
+        noteId: id,
+        closable: true,
+      }));
+      const sourceTabId = position === 'middle' ? 'B' : 'C';
+      let layout: PanelLayoutSliceState = {
+        byWorkspaceId: {
+          'ws-1': {
+            ...emptyWorkspaceState,
+            root: {
+              type: 'split' as const,
+              direction: 'horizontal' as const,
+              children: [
+                { type: 'panel' as const, panelId: 'source' },
+                { type: 'panel' as const, panelId: 'other' },
+              ],
+              sizes: [50, 50],
+            },
+            panels: {
+              source: { id: 'source', tabs, activeTabId: sourceTabId },
+              other: {
+                id: 'other',
+                tabs: [{ ...tabs[0], id: 'other-tab', noteId: 'other' }],
+                activeTabId: 'other-tab',
+              },
+            },
+            focusedPanelId: 'other',
+            columnCount: 2 as const,
+          },
+        },
+      };
+      const dispatch = (action: any) => {
+        if (action.type === 'panelLayout/openTabInRightmostColumnRequested') {
+          const { wsId, tab, force, newTabId, timestamp } = action.payload;
+          action = openTabInRightmostColumn(wsId, tab, { force, newTabId }, timestamp);
+        }
+        layout = panelLayoutReducer(layout, action);
+      };
+      const task = runSaga(
+        {
+          channel,
+          dispatch,
+          getState: () => ({
+            agentSessions: { byAgentId: {} },
+            panelLayout: layout,
+          }),
+        },
+        appLayoutNavigationSaga,
+      );
+      const panel = () => layout.byWorkspaceId['ws-1'].panels.source;
+      const order = () => panel().tabs.map((tab) => tab.noteId ?? tab.agentId);
+      const open = async (agentId: string, extra: Partial<OpenAgentTabDetail> = {}) => {
+        channel.put(openAgentTabRequested('ws-1', { agentId, sourcePanelId: 'source', ...extra }));
+        await settle();
+      };
+      try {
+        await open('X');
+        expect(order()).toEqual(
+          position === 'middle' ? ['A', 'B', 'X', 'C'] : ['A', 'B', 'C', 'X'],
+        );
+        const xId = panel().activeTabId;
+        expect(layout.byWorkspaceId['ws-1'].focusedPanelId).toBe('source');
+        await open('Y');
+        expect(order()).toEqual(
+          position === 'middle' ? ['A', 'B', 'X', 'Y', 'C'] : ['A', 'B', 'C', 'X', 'Y'],
+        );
+        dispatch(closeActiveTab('ws-1', 'source'));
+        expect(panel().activeTabId).toBe(xId);
+        dispatch(closeActiveTab('ws-1', 'source'));
+        expect(panel().activeTabId).toBe(sourceTabId);
+        expect(order()).toEqual(['A', 'B', 'C']);
+        expect(layout.byWorkspaceId['ws-1'].panels.other.tabs.map((tab) => tab.id)).toEqual([
+          'other-tab',
+        ]);
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
 
   it('focuses the exact panel for a reused browser tab without legacy pin state', async () => {
     const channel = stdChannel();

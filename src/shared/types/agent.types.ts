@@ -12,6 +12,8 @@ export enum AgentStatus {
   // Current values
   Pending = 'pending',
   Active = 'active',
+  Halted = 'halted',
+  Resuming = 'resuming',
   // App-level runtime events (including Chief) can persist lowercase idle;
   // keep it valid so save/load round-trips do not repair or rewrite it.
   RuntimeIdle = 'idle',
@@ -143,6 +145,9 @@ export interface UnifiedAgentConfig {
    */
   nameExplicitlySet?: boolean;
 
+  /** Remember this successful manual specialist choice for the workspace. */
+  rememberSpecialist?: boolean;
+
   // Optional
   id?: string; // Allow passing in a pre-generated agent ID
   // Bare model id on new paths (see ModelTriple in $shared/types/model-triple);
@@ -215,6 +220,12 @@ export interface CreateAgentResult {
   success: boolean;
   agent?: AgentSession;
   error?: string;
+  /**
+   * The error the daemon transport threw, when creation failed on the wire.
+   * Kept typed (e.g. a `BackendError` carrying the JSON-RPC `rpcCode`) so
+   * callers can tell a `-32003` refusal apart from `error`'s flattened text.
+   */
+  cause?: unknown;
   agentId?: AgentId;
   sessionId?: AgentId;
 }

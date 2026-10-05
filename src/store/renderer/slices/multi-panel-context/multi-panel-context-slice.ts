@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   addItem,
   createCollection,
@@ -9,7 +9,7 @@ import {
   type Collection,
   updateItem,
   upsertItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import { deepEqual } from 'fast-equals';
 
 // ============================================================================
@@ -93,6 +93,7 @@ export const addSearchedItem = createAction<
     },
   ]
 >('multiPanelContext/addSearchedItem');
+export const clearChecked = createAction<[]>('multiPanelContext/clearChecked');
 
 // ============================================================================
 // Reducer
@@ -230,4 +231,30 @@ multiPanelContextReducer.with(addSearchedItem, (state, { payload: [item] }) => {
   };
 
   return { ...state, panels: addItem(state.panels, newItem) };
+});
+multiPanelContextReducer.with(clearChecked, (state) => {
+  const panels = getItems(state.panels);
+  const selections = getItems(state.selections);
+  const hasSearchPanels = panels.some((p) => p.panelId === 'search');
+  const hasCheckedPanels = panels.some((p) => p.checked);
+  const hasCheckedSelections = selections.some((s) => s.checked);
+  if (!hasSearchPanels && !hasCheckedPanels && !hasCheckedSelections) {
+    return state;
+  }
+
+  const nextPanels = panels
+    .filter((p) => p.panelId !== 'search')
+    .map((p) => (p.checked ? { ...p, checked: false } : p));
+  const nextSelections = selections.map((s) => (s.checked ? { ...s, checked: false } : s));
+
+  return {
+    ...state,
+    panels:
+      hasSearchPanels || hasCheckedPanels
+        ? createCollection<PanelContextItem, 'id'>('id', nextPanels)
+        : state.panels,
+    selections: hasCheckedSelections
+      ? createCollection<SelectionContextItem, 'id'>('id', nextSelections)
+      : state.selections,
+  };
 });

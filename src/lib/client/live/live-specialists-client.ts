@@ -1,10 +1,9 @@
 /**
  * Live specialists domain backed by the intentd daemon (PROTOCOL §5.11).
  *
- * `specialist.list` is global (no workspaceId) and returns the resolved
- * 3-tier view — project (`.intent/specialists/`) overrides user
- * (`~/.intent/specialists/`) overrides bundled — as `{ specialists:
- * SpecialistDef[] }`. The defs are surfaced verbatim; splitting bundled vs
+ * `specialist.list` returns the resolved user and bundled view. Optional
+ * workspaceId selects routing context. Project definitions require the explicit
+ * listCatalog includeProject option; ordinary list/subscriptions remain global. The defs are surfaced verbatim; splitting bundled vs
  * file-backed entries into their store slices happens in the seeder. Reads
  * fold transport failures to an empty list so the specialist picker falls
  * back to the hardcoded `SPECIALISTS` constant instead of breaking.
@@ -17,6 +16,7 @@
 import type {
   AppClient,
   SpecialistDef,
+  SpecialistCatalog,
   SpecialistsClient,
   SubscriptionHandler,
   Unsubscribe,
@@ -48,20 +48,50 @@ export class LiveSpecialistsClient implements SpecialistsClient {
    * transient failure keeps the last known-good view instead of wiping the
    * store (#610).
    */
-  private async fetchList(): Promise<SpecialistDef[]> {
-    const result = await backendRequest<{ specialists?: unknown[] }>('specialist.list');
-    return Array.isArray(result?.specialists) ? (result.specialists as SpecialistDef[]) : [];
+  async listCatalog(
+    provider?: string,
+    workspaceId?: string,
+    options?: { includeProject?: boolean },
+  ): Promise<SpecialistCatalog> {
+    // Preview context belongs to this request; global subscriptions keep
+    // using the daemon's default context rather than the last picker choice.
+    const result =
+      provider === undefined && workspaceId === undefined && !options?.includeProject
+        ? await backendRequest<SpecialistCatalog>('specialist.list')
+        : await backendRequest<SpecialistCatalog>('specialist.list', {
+            ...(provider ? { provider } : {}),
+            ...(workspaceId ? { workspaceId } : {}),
+            ...(options?.includeProject ? { includeProject: true } : {}),
+          });
+    return {
+      specialists: Array.isArray(result?.specialists) ? result.specialists : [],
+      importDiagnostics: result?.importDiagnostics,
+    };
   }
 
-  async list(): Promise<SpecialistDef[]> {
+  async list(provider?: string, workspaceId?: string): Promise<SpecialistDef[]> {
     try {
-      return await this.fetchList();
+      return (await this.listCatalog(provider, workspaceId)).specialists;
     } catch {
       return [];
     }
   }
 
   subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe {
+    return this.subscribeCatalogSnapshot(
+      (catalog) => handler(catalog.specialists),
+      () => handler([]),
+    );
+  }
+
+  subscribeCatalog(handler: SubscriptionHandler<SpecialistCatalog>): Unsubscribe {
+    return this.subscribeCatalogSnapshot(handler);
+  }
+
+  private subscribeCatalogSnapshot(
+    handler: SubscriptionHandler<SpecialistCatalog>,
+    onInitialFailure?: () => void,
+  ): Unsubscribe {
     // Subscribe to `specialists:changed` — emitted when the daemon detects a
     // create/modify/delete under a specialist tier it watches. The payload
     // carries `{ workspaceId }`, but `specialist.list` is global, so events
@@ -71,15 +101,19 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
     // Initial snapshot: emit the current resolved view.
-    void this.list().then((specialists) => {
-      if (!disposed) handler(specialists);
-    });
+    void this.listCatalog()
+      .then((catalog) => {
+        if (!disposed) handler(catalog);
+      })
+      .catch(() => {
+        if (!disposed) onInitialFailure?.();
+      });
 
     // Event/reconnect refetch: non-folding — on failure, log and skip the
     // emit so the store keeps its last known-good view (#610), matching
     // the specialists saga's authoritative refetch.
     const refetch = () => {
-      this.fetchList()
+      this.listCatalog()
         .then((specialists) => {
           if (!disposed) handler(specialists);
         })
@@ -92,7 +126,9 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     // subscriber disposed while registration was in flight, release the id
     // instead of leaking the daemon-side subscription.
     const doSubscribe = () =>
-      backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ['specialists:changed'] })
+      backendSubscribe<{ subscriptionId?: string }>({
+        eventTypes: ['specialists:changed', 'skills:changed'],
+      })
         .then((result) => {
           subscriptionId = result?.subscriptionId;
           if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
@@ -106,7 +142,7 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     // Listen for specialists:changed events and refetch the resolved view,
     // coalescing bursts into one `specialist.list` call.
     const removeNotificationListener = onBackendNotification((n) => {
-      if (n.method === 'specialists:changed' && !disposed) {
+      if ((n.method === 'specialists:changed' || n.method === 'skills:changed') && !disposed) {
         if (debounceTimer !== undefined) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           debounceTimer = undefined;
@@ -150,13 +186,21 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     spec: SpecialistDef,
     scope?: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<SpecialistDef> {
-    const params: { id: string; spec: SpecialistDef; scope?: string; workspacePath?: string } = {
+    const params: {
+      id: string;
+      spec: SpecialistDef;
+      scope?: string;
+      workspacePath?: string;
+      workspaceId?: string;
+    } = {
       id,
       spec,
     };
     if (scope) params.scope = scope;
     if (workspacePath) params.workspacePath = workspacePath;
+    if (scope === 'project' && workspaceId) params.workspaceId = workspaceId;
 
     const result = await backendRequest<{ specialist: SpecialistDef }>('specialist.create', params);
     return result.specialist;
@@ -167,13 +211,21 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     spec: SpecialistDef,
     scope: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<SpecialistDef> {
-    const params: { id: string; spec: SpecialistDef; scope: string; workspacePath?: string } = {
+    const params: {
+      id: string;
+      spec: SpecialistDef;
+      scope: string;
+      workspacePath?: string;
+      workspaceId?: string;
+    } = {
       id,
       spec,
       scope,
     };
     if (workspacePath) params.workspacePath = workspacePath;
+    if (scope === 'project' && workspaceId) params.workspaceId = workspaceId;
 
     const result = await backendRequest<{ specialist: SpecialistDef }>('specialist.edit', params);
     return result.specialist;
@@ -183,12 +235,14 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     id: string,
     scope: 'project' | 'user',
     workspacePath?: string,
+    workspaceId?: string,
   ): Promise<{ success: true }> {
-    const params: { id: string; scope: string; workspacePath?: string } = {
+    const params: { id: string; scope: string; workspacePath?: string; workspaceId?: string } = {
       id,
       scope,
     };
     if (workspacePath) params.workspacePath = workspacePath;
+    if (scope === 'project' && workspaceId) params.workspaceId = workspaceId;
 
     return await backendRequest<{ success: true }>('specialist.delete', params);
   }

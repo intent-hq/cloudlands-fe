@@ -23,7 +23,7 @@ function makeNote(task: TaskMetadata): Note {
 // Regression guard for the field-enumerating copy in copyTask: a newly added
 // TaskMetadata field is silently stripped unless explicitly carried over
 // (dependsOn/conflictsWith were dropped on the hydrate path this way after
-// fe#1038; unmetDependsOn is the v6.8 projection from monorepo#1979).
+// fe#1038; unmetDependsOn is the daemon projection from monorepo#1979).
 describe('toRuntimeNote — metadata.task relation fields', () => {
   it('preserves dependsOn, conflictsWith, and unmetDependsOn', () => {
     const runtime = toRuntimeNote(

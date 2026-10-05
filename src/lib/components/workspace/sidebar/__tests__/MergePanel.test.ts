@@ -46,6 +46,10 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectSidebarMergeWhenReady: mocks.selector(() => mocks.sidebarChanges.mergeWhenReady),
 }));
+vi.mock('$store/renderer/slices/accept-workflow/accept-workflow-selectors', () => ({
+  selectAcceptOperationPending: mocks.selector(() => false),
+  selectMergeOptions: mocks.selector(() => ({ squash: false, viaPR: false, pushAfter: false })),
+}));
 
 vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
   setSidebarMergeWhenReady: vi.fn((...args: unknown[]) => ({
@@ -103,10 +107,6 @@ vi.mock('$store/renderer/slices/background-agent-executor/background-agent-execu
   })),
 }));
 
-vi.mock('$store/renderer/slices/git/git-slice', () => ({
-  loadGitStatus: vi.fn((...args: unknown[]) => ({ type: 'git/loadStatus', payload: args })),
-}));
-
 vi.mock('$store/renderer/slices/pr-status/pr-status-slice', () => ({
   refreshPRStatusRequested: vi.fn((...args: unknown[]) => ({
     type: 'prStatus/refreshRequested',
@@ -129,8 +129,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), custom: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), custom: vi.fn() },
 }));
 
 vi.mock('$lib/components/workspace/initializer/BranchSelector.svelte', async () => {
@@ -180,9 +180,7 @@ function makeCommit(hash: string, message: string): CommitInfo {
 
 async function renderMerge(overrides: Partial<Record<string, unknown>> = {}) {
   const MergePanel = (await import('../MergePanel.svelte')).default;
-  const onMergeComplete = vi.fn();
   const onCommitMessageChange = vi.fn();
-  const onOpenRebaseTerminal = vi.fn();
   const defaults = {
     workspaceId: 'ws-1',
     hasOpenPR: false,
@@ -198,11 +196,9 @@ async function renderMerge(overrides: Partial<Record<string, unknown>> = {}) {
     repoType: 'github',
     commitMessage: '',
     onCommitMessageChange,
-    onMergeComplete,
-    onOpenRebaseTerminal,
   };
   const renderResult = render(MergePanel, { props: { ...defaults, ...overrides } });
-  return { ...renderResult, onMergeComplete, onCommitMessageChange, onOpenRebaseTerminal };
+  return { ...renderResult, onCommitMessageChange };
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -222,50 +218,36 @@ describe('MergePanel', () => {
     mocks.executorState.agentId = null;
   });
 
-  it('triggerMerge invokes AcceptChangesClient.execute with merge target branch and strategy', async () => {
-    const { component } = await renderMerge({ targetBranch: 'develop' });
-    await (
-      component as unknown as { triggerMerge: (opts?: { squash?: boolean }) => void }
-    ).triggerMerge({
-      squash: true,
-    });
-    await waitFor(() => expect(mockExecute).toHaveBeenCalled());
-    expect(mockExecute).toHaveBeenCalledWith(
-      'ws-1',
-      'merge',
-      expect.objectContaining({ targetBranch: 'develop', mergeStrategy: 'squash' }),
+  it('dispatches one merge intent with the requested workspace and choices', async () => {
+    const view = await renderMerge({ targetBranch: 'develop' });
+    await fireEvent.click(view.getByRole('button', { name: 'Merge', exact: true }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'acceptWorkflow/mergeToTrunkRequested',
+        payload: ['ws-1', expect.objectContaining({ targetBranch: 'develop', squash: false })],
+      }),
     );
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 
-  it('refreshes Git status before broad Changes data after a successful merge', async () => {
-    const { component } = await renderMerge({ targetBranch: 'develop' });
+  it('does not replay completion effects when remounted', async () => {
+    const first = await renderMerge();
+    first.unmount();
     mocks.dispatch.mockClear();
-
-    await (component as unknown as { triggerMerge: () => void }).triggerMerge();
-    await waitFor(() => expect(mockExecute).toHaveBeenCalled());
-
-    expect(
-      mocks.dispatch.mock.calls
-        .map(([action]) => action)
-        .filter(
-          (action) =>
-            action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-        ),
-    ).toEqual([
-      { type: 'git/loadStatus', payload: ['ws-1', true] },
-      { type: 'changes/refreshRequested', payload: ['ws-1'] },
-    ]);
+    await renderMerge();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 
-  it('getMergeOptions reflects viaPR and pushAfter defaults based on props', async () => {
-    const { component } = await renderMerge({ hasOpenPR: true, hasRemote: true });
-    await waitFor(() => {
-      const opts = (
-        component as unknown as { getMergeOptions: () => Record<string, boolean> }
-      ).getMergeOptions();
-      expect(opts.viaPR).toBe(true);
-      expect(opts.pushAfter).toBe(true);
-    });
+  it('routes PR-mode choices to canonical state instead of component-local flags', async () => {
+    const view = await renderMerge({ hasOpenPR: true, hasRemote: true });
+    await fireEvent.click(view.getByRole('button', { name: 'Via PR', exact: true }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'acceptWorkflow/setMergeOptions',
+        payload: ['ws-1', { viaPR: true }],
+      }),
+    );
   });
 
   it('dispatches setSidebarMergeWhenReady when stop-generating is clicked while generating a merge commit', async () => {

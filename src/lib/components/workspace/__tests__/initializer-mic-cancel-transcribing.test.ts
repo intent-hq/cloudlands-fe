@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -9,6 +10,11 @@
  */
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const admittedFixture = vi.hoisted(() => ({ state: {} as Record<string, unknown> }));
+beforeEach(() => {
+  admittedFixture.state = withLegacyPrincipal({});
+});
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -31,12 +37,18 @@ vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ hardwareConsole: mocks.hardwareConsole }),
+    state: () => ({ ...admittedFixture.state, hardwareConsole: mocks.hardwareConsole }),
     dispatch: mocks.dispatch,
   });
 });
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => null),
   selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),

@@ -101,7 +101,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     );
     // Confirming closes both the dialog and edit mode (the edit input exits
     // via a slide transition, so wait for its removal).
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('mock-rich-input')).toBeNull());
   });
 
@@ -153,7 +153,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     const onEditSubmit = vi.fn();
     await renderAndSave(onEditSubmit);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onEditSubmit).not.toHaveBeenCalled();
@@ -204,6 +204,47 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
         ],
       }),
     );
+  });
+
+  it('confirm from a message with a legacy inline file block sends only text + reference blocks, with no data key', async () => {
+    // Persisted before the daemon's `degrade_inline_file_blocks` pass existed:
+    // a file block carrying inline bytes and no
+    // attachmentId. It is text now — the edit forwards the attachment
+    // reference only, and no `data` key may appear anywhere in the payload.
+    const message: AgentMessage = {
+      id: 'msg-legacy',
+      role: 'user',
+      contentBlocks: [
+        { type: 'text', text: 'original text' },
+        { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'legacy.txt' },
+        { type: 'file', attachmentId: 'att-uuid-9', fileName: 'report.pdf', size: 4096 },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, { props: { message, onEditSubmit } });
+
+    // Rendered as text, never as a chip: only the reference chip exists.
+    expect(screen.getByText(/Attached file: legacy\.txt/)).toBeTruthy();
+    expect(screen.getAllByTestId('chat-message-file-chip')).toHaveLength(1);
+
+    await fireEvent.click(screen.getByText(/original text/));
+    await waitFor(() => expect(screen.getByTestId('mock-rich-input')).toBeTruthy());
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit & regenerate' }));
+
+    await waitFor(() => expect(onEditSubmit).toHaveBeenCalledTimes(1));
+    const [text, model, blocks] = onEditSubmit.mock.calls[0];
+    expect(text).toBe('original textAttached file: legacy.txt');
+    expect(model).toBeUndefined();
+    expect(blocks).toEqual({
+      fileBlocks: [
+        { type: 'file', attachmentId: 'att-uuid-9', fileName: 'report.pdf', size: 4096 },
+      ],
+    });
+    expect(JSON.stringify(blocks)).not.toContain('"data"');
+    expect(JSON.stringify(blocks)).not.toContain('aGVsbG8=');
   });
 
   it('confirm passes no blocks argument for a plain text message', async () => {
@@ -261,7 +302,7 @@ describe('ChatMessage attachment-reference thumbnails', () => {
     registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
       expect(payload).toEqual({
         method: 'file.getAttachmentInfo',
-        params: { attachmentId: 'att-thumb-1' },
+        params: { attachmentId: 'att-thumb-1', workspaceId: 'ws-thumb' },
       });
       return getAttachmentInfo();
     });
@@ -295,7 +336,7 @@ describe('ChatMessage attachment-reference thumbnails', () => {
     const statusHandlers: Array<(payload: unknown) => void> = (
       window.electronAPI as any
     )._getRegisteredHandlers(IPC_CHANNELS.BACKEND.STATUS);
-    statusHandlers.length = 0;
+    // Preserve the process-wide cache listener installed by earlier thumbnail reads.
     // Start from an empty module cache (the previous test re-cached the URL).
     evictAttachmentImageUrl('ws-thumb', 'att-thumb-1');
 
@@ -329,6 +370,28 @@ describe('ChatMessage attachment-reference thumbnails', () => {
 });
 
 describe('ChatMessage model-change notice row', () => {
+  it('updates effort notices without allowing edit or regeneration', async () => {
+    const onEditSubmit = vi.fn();
+    const message: AgentMessage = {
+      id: 'effort',
+      role: 'system',
+      timestamp: '2026-09-26T12:00:00Z',
+      contentBlocks: [{ type: 'text', text: 'Saved effort explanation' }],
+      metadata: { type: 'effort_changed', from: 'medium', to: 'high' },
+    };
+    const { rerender } = render(ChatMessage, { props: { message, onEditSubmit } });
+    expect(screen.getByRole('status').textContent).toContain('Medium');
+    expect(screen.getByRole('status').textContent).toContain('High');
+    await fireEvent.click(screen.getByRole('status'));
+    await fireEvent.dblClick(screen.getByRole('status'));
+    expect(screen.queryByTestId('mock-rich-input')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onEditSubmit).not.toHaveBeenCalled();
+
+    await rerender({ message: { ...message, metadata: { type: 'effort_changed' } } });
+    expect(screen.getByRole('status').textContent).toContain('Saved effort explanation');
+  });
+
   function modelChangedMessage(): AgentMessage {
     // Daemon-persisted notice row shape (PROTOCOL.md §5.5, agent.setModel).
     return {
@@ -428,5 +491,63 @@ describe('ChatMessage attention-request notice rows', () => {
     expect(container.querySelector('.interruption-notice')).toBeTruthy();
     expect(container.querySelector('.discussion-request-notice')).toBeNull();
     expect(container.querySelector('.blocker-report-notice')).toBeNull();
+  });
+});
+
+describe('exact member sender copy and edit presentation', () => {
+  it('copies and edits only the body through the real presentation boundary without changing stored content', async () => {
+    const header =
+      'Message from @same (Same Person), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+    const message: AgentMessage = {
+      ...userMessage(),
+      contentBlocks: [{ type: 'text', text: `${header}\n\nmember copy and edit body` }],
+      author: {
+        principalId: 'person-1',
+        login: 'same',
+        displayName: 'Same Person',
+        avatarUrl: null,
+        identity: { provider: 'gitlab', host: 'gitlab.example:8443', externalUserId: '42' },
+      },
+      metadata: { fromPrincipalId: 'person-1' },
+    };
+    const before = JSON.stringify(message);
+    const priorClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const onEditSubmit = vi.fn();
+    let unmount: (() => void) | undefined;
+    try {
+      ({ unmount } = render(ChatMessage, {
+        props: {
+          message,
+          onEditSubmit,
+          workspace: createMockWorkspace({ ownerPrincipalId: 'owner', memberCount: 1 }),
+        },
+      }));
+      await fireEvent.click(await screen.findByRole('button', { name: /^Copy message/ }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('member copy and edit body'));
+      await fireEvent.click(screen.getByText('member copy and edit body'));
+      await waitFor(() =>
+        expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+          'member copy and edit body',
+        ),
+      );
+      await fireEvent.click(screen.getByTestId('mock-input-submit'));
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+      expect(onEditSubmit).not.toHaveBeenCalled();
+      await fireEvent.click(screen.getByRole('button', { name: 'Edit & regenerate' }));
+      await waitFor(() =>
+        expect(onEditSubmit).toHaveBeenCalledWith(
+          'member copy and edit body',
+          undefined,
+          undefined,
+        ),
+      );
+      expect(JSON.stringify(message)).toBe(before);
+    } finally {
+      unmount?.();
+      if (priorClipboard) Object.defineProperty(navigator, 'clipboard', priorClipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
   });
 });

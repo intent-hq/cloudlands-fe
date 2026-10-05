@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createLogger } from '$lib/utils/client-logger';
+  import { confirm } from '$lib/components/patterns/confirm';
 
   const logger = createLogger('DebugPanel');
 
@@ -45,6 +46,7 @@
   let backendResumeError = $state<string | null>(null);
   let availableAgents = $state<Array<{ id: string; name: string; status: string }>>([]);
   let selectedAgentId = $state<string>('');
+  let agentsLoaded = $state(false);
 
   // Trigger label for the agent picker select
   const selectedAgentLabel = $derived.by(() => {
@@ -103,9 +105,15 @@
     }
   }
 
-  function handleReset() {
-    // i18n-ignore (dev-only debug UI)
-    if (confirm('Reset all debug flags to defaults?')) {
+  async function handleReset() {
+    if (
+      await confirm({
+        title: m.debug_panel_reset_title(),
+        description: m.debug_panel_reset_description(),
+        confirmLabel: m.debug_panel_reset_confirmLabel(),
+        destructive: true,
+      })
+    ) {
       debugConfig.reset();
       flags = debugConfig.getAll();
     }
@@ -224,11 +232,13 @@
 
   // Load available agents from the unified state store
   function loadAvailableAgents() {
+    agentsLoaded = true;
     const workspace = routeWorkspaceId
       ? selectWorkspaceById.select(appStore.state, routeWorkspaceId)
       : undefined;
     if (!workspace?.id) {
       availableAgents = [];
+      selectedAgentId = '';
       return;
     }
 
@@ -240,9 +250,9 @@
       status: s.status || 'unknown',
     }));
 
-    // Auto-select first agent if none selected
-    if (availableAgents.length > 0 && !selectedAgentId) {
-      selectedAgentId = availableAgents[0].id;
+    // Keep an existing selection only while that agent still exists.
+    if (!availableAgents.some((agent) => agent.id === selectedAgentId)) {
+      selectedAgentId = availableAgents[0]?.id ?? '';
     }
 
     logger.info('[Debug] Loaded agents for backend resume test', {
@@ -301,25 +311,26 @@
   <div
     class="fixed bottom-4 right-4 z-50 w-96 bg-background border border-border rounded-lg shadow-xl flex flex-col {isCollapsed
       ? 'max-h-[44px]'
-      : 'max-h-[400px]'} transition-all duration-200"
+      : 'max-h-[400px]'} transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
   >
     <!-- Content (shown when not collapsed) -->
     {#if !isCollapsed}
       <div class="overflow-y-auto flex-1 p-3 space-y-3">
         <!-- Creation Simulation -->
         <div class="space-y-2">
-          <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <h4 class="text-xs font-medium text-muted-foreground">
             <!-- i18n-ignore (dev-only debug UI) -->
             Workspace Creation
           </h4>
 
-          <button
+          <Button
             type="button"
-            class="w-full h-7 px-2 rounded-md text-xs font-medium {isSimulatingCreation
-              ? 'bg-danger hover:bg-danger/90 text-danger-background'
+            variant={isSimulatingCreation
+              ? 'destructive'
               : isOnCreationPage
-                ? 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                : 'bg-primary text-primary-foreground hover:bg-primary/90'} transition-colors flex items-center justify-center gap-1.5"
+                ? 'secondary'
+                : 'primary'}
+            class="w-full h-7 px-2 text-xs font-medium gap-1.5"
             onclick={() => {
               logger.info('[Debug] Button clicked!');
               toggleCreationSimulation();
@@ -334,7 +345,7 @@
               <!-- i18n-ignore (dev-only debug UI) -->
               <span>Simulate Creation</span>
             {/if}
-          </button>
+          </Button>
 
           <p class="text-xs text-subtle leading-tight">
             {#if isSimulatingCreation}
@@ -349,7 +360,7 @@
 
         <!-- Animation Settings -->
         <div class="space-y-2">
-          <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <h4 class="text-xs font-medium text-muted-foreground">
             <!-- i18n-ignore (dev-only debug UI) -->
             Animations
           </h4>
@@ -525,7 +536,10 @@
 
             {#if availableAgents.length > 0}
               <Select.Root bind:value={selectedAgentId}>
-                <Select.Trigger class="w-full h-8 px-2 text-sm py-1!">
+                <Select.Trigger
+                  class="w-full h-8 px-2 text-sm py-1!"
+                  aria-label={m.debug_resumeAgent_ariaLabel()}
+                >
                   <span class="truncate">{selectedAgentLabel}</span>
                 </Select.Trigger>
                 <Select.Content portal class="max-h-[300px]">
@@ -553,9 +567,11 @@
                 {/if}
               </Button>
             {:else}
-              <p class="text-xs text-subtle italic">
+              <p class="text-xs text-subtle italic" role="status">
                 <!-- i18n-ignore (dev-only debug UI) -->
-                Click "Load Agents" to see available agents
+                {agentsLoaded
+                  ? m.debug_resumeAgent_empty()
+                  : 'Click "Load Agents" to see available agents'}
               </p>
             {/if}
 
@@ -583,7 +599,7 @@
     {/if}
 
     <!-- Header (at bottom, always visible) -->
-    <button
+    <Button
       type="button"
       class="flex items-center justify-between px-3 py-2 border-t border-border bg-muted/50 shrink-0 hover:bg-muted/70 transition-colors cursor-pointer"
       onclick={() => (isCollapsed = !isCollapsed)}
@@ -599,29 +615,30 @@
       </div>
       <div class="flex items-center gap-1">
         <Button
-          size="sm"
+          size="icon-compact"
+          iconOnly
           variant="ghost"
           onclick={(e) => {
             e.stopPropagation();
             handleReset();
           }}
           title={m.settings_reset_button()}
-          class="h-7 w-7 p-0"
         >
           <Fa icon={faRotate} size="xs" />
         </Button>
         <Button
-          size="sm"
+          size="icon-compact"
+          iconOnly
           variant="ghost"
           onclick={(e) => {
             e.stopPropagation();
             handleClose();
           }}
-          class="h-7 w-7 p-0"
+          aria-label={m.debug_panel_close_ariaLabel()}
         >
           <Fa icon={faTimes} size="xs" />
         </Button>
       </div>
-    </button>
+    </Button>
   </div>
 {/if}

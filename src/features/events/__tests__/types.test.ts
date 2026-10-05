@@ -215,11 +215,11 @@ describe('event types', () => {
     });
 
     it('C6: IPC allow-list mirrors every WorkspaceEventType value', () => {
-      // The IPC `EventsEmitSchema` / `EventsGetLastEventSchema` enums are
-      // constructed from `WORKSPACE_EVENT_TYPE_LITERALS`. This snapshot test
-      // guards against drift: every runtime constant value must appear in the
-      // allow-list, so renderers / external clients cannot subscribe-or-emit
-      // a type the catalogue has forgotten about (Audit 2 C6).
+      // The IPC `EventsEmitSchema` enum is constructed from
+      // `WORKSPACE_EVENT_TYPE_LITERALS`. This snapshot test guards against
+      // drift: every runtime constant value must appear in the allow-list, so
+      // renderers / external clients cannot emit a type the catalogue has
+      // forgotten about (Audit 2 C6).
       const catalogueValues = new Set<string>(Object.values(WorkspaceEventType));
       const allowList = new Set<string>(WORKSPACE_EVENT_TYPE_LITERALS);
 

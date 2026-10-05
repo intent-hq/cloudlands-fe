@@ -990,7 +990,7 @@
         isActive={true}
       />
     {/if}
-    <div bind:this={container} class="w-full h-full"></div>
+    <div bind:this={container} class="native-scrollbars w-full h-full"></div>
     {#if placeholder && !value}
       <div class="placeholder-overlay">
         <span class="text-subtle text-sm italic">{placeholder}</span>
@@ -1080,7 +1080,7 @@
     color: #7c3aed !important;
   }
   :global(.light .monaco-editor .mtk10) {
-    color: #6b7280 !important;
+    color: hsl(var(--muted-foreground)) !important;
   }
   :global(.light .monaco-editor .mtk13) {
     color: #b45309 !important;

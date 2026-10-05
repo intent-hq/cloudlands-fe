@@ -4,6 +4,9 @@ import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
+import { store as appStore } from '$store/renderer/store';
+import { prWorkflowReducer } from '$store/renderer/slices/pr-workflow/pr-workflow-slice';
+import { acceptWorkflowReducer } from '$store/renderer/slices/accept-workflow/accept-workflow-slice';
 
 // Polyfill scrollIntoView for jsdom
 if (typeof Element.prototype.scrollIntoView !== 'function') {
@@ -202,11 +205,10 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
     (workspaceId: string) => createSelectorReadable(workspaceId, () => mockPostMergeState),
     { select: () => mockPostMergeState },
   ),
-  selectGitOperationFlags: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockGitOperationFlags),
-    { select: () => mockGitOperationFlags },
-  ),
-  selectSecondaryRootGitRoots: () => createReadable({}),
+  selectGitOperationFlags: createMockFtSelector(() => mockGitOperationFlags),
+  selectGitCommitDetailsFiles: createMockFtSelector(() => []),
+  selectAcceptChangesStatus: createMockFtSelector(() => mockPostMergeState),
+  selectSecondaryRootGitRoots: createMockFtSelector(() => mockSecondaryRoots),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', async (importOriginal) => ({
@@ -274,7 +276,7 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   },
 }));
 
-const mockDispatch = vi.fn();
+const mockDispatch = vi.hoisted(() => vi.fn());
 // Mutable mock store state — the real git-roots selectors read the gitRoots
 // slice off this (they tolerate a partial state via optional chaining).
 const { mockStoreState } = vi.hoisted(() => ({
@@ -290,7 +292,38 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
+const mockHostRole = vi.hoisted(() => ({ guest: false }));
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  // This presentation harness models an owner; real admission is covered by the native fixture.
+  selectCanAdministerHost: Object.assign(() => createReadable(!mockHostRole.guest), {
+    select: () => !mockHostRole.guest,
+  }),
+}));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActionContext: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(workspaceId, (id) => {
+        const row = mockWorkspaceStore.findById(id);
+        return mockHostRole.guest || row?.myRole === 'collaborator' || row?.canManage === false
+          ? null
+          : 'current-update-context';
+      }),
+    { select: () => null },
+  ),
+  selectWorkspaceListLoadedForBackend: Object.assign(() => createReadable(true), {
+    select: () => true,
+  }),
+  selectWorkspaceUpdateContext: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(workspaceId, (id) => {
+        const row = mockWorkspaceStore.findById(id);
+        return row?.myRole === 'collaborator' || row?.canManage === false
+          ? null
+          : 'current-update-context';
+      }),
+    { select: () => null },
+  ),
   selectWorkspaceById: Object.assign(
     (workspaceId: string) =>
       createSelectorReadable(workspaceId, (resolvedWorkspaceId) =>
@@ -303,6 +336,20 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: Object.assign((_workspaceId: any) => createReadable(null), {
     select: () => null,
   }),
+  // Settled owner window: the gate follows the seeded row's `myRole` alone.
+  selectIsWorkspaceCollaborator: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(
+        workspaceId,
+        (resolvedWorkspaceId) =>
+          mockHostRole.guest ||
+          mockWorkspaceStore.findById(resolvedWorkspaceId)?.myRole === 'collaborator',
+      ),
+    {
+      select: (_state: unknown, workspaceId: string) =>
+        mockWorkspaceStore.findById(workspaceId)?.myRole === 'collaborator',
+    },
+  ),
 }));
 
 const mockPostMergeState = {
@@ -325,6 +372,8 @@ const mockGitOperationFlags = {
   isRefreshingGitStatus: false,
   isResettingToTrunk: false,
 };
+
+let mockSecondaryRoots: Record<string, any> = {};
 
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({}));
 
@@ -632,7 +681,24 @@ function makeWorkspace(overrides: Record<string, any> = {}) {
 
 async function resetMocks() {
   vi.clearAllMocks();
-  mockStoreState.value = {};
+  mockStoreState.value = {
+    gitWrite: { byWorkspaceId: {} },
+    prWorkflow: prWorkflowReducer(undefined, { type: 'init' }),
+    acceptWorkflow: acceptWorkflowReducer(undefined, { type: 'init' }),
+  };
+  mockDispatch.mockImplementation((action) => {
+    const prWorkflow = prWorkflowReducer(mockStoreState.value.prWorkflow, action);
+    const acceptWorkflow = acceptWorkflowReducer(mockStoreState.value.acceptWorkflow, action);
+    if (
+      prWorkflow === mockStoreState.value.prWorkflow &&
+      acceptWorkflow === mockStoreState.value.acceptWorkflow
+    )
+      return action;
+    mockStoreState.value.prWorkflow = prWorkflow;
+    mockStoreState.value.acceptWorkflow = acceptWorkflow;
+    (appStore as unknown as { emitState(): void }).emitState();
+    return action;
+  });
   mockRootGetStatus.mockResolvedValue({ ok: true, data: {} });
   mockRootGetHistory.mockResolvedValue({ ok: true, data: { items: [] } });
   mockFileTrackingStore.loading = false;
@@ -649,6 +715,8 @@ async function resetMocks() {
   mockGitState.ahead = 0;
   mockGitState.behind = 0;
   mockGitState.status = null;
+  mockGitOperationFlags.isRefreshingGitStatus = false;
+  mockSecondaryRoots = {};
   mockWorkspaceStore.findById.mockReturnValue(undefined);
   mockSidebarChangesState.commitWhenReady = false;
   mockSidebarChangesState.createPRWhenReady = false;
@@ -699,6 +767,7 @@ async function renderPanel(props: Record<string, any> = {}) {
 // (intent-hq/monorepo#1406, intent-hq/monorepo#1464). After this,
 // renderPanel()'s import is a cache hit.
 warmImport(() => import('../SidebarChangesPanel.svelte'));
+warmImport(() => import('./mocks/ChangesHeaderHost.svelte'));
 
 describe('SidebarChangesPanel', () => {
   beforeEach(async () => {
@@ -727,7 +796,7 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
-    it('refreshes Git status before broad Changes data with the explicit workspace ID', async () => {
+    it('dispatches a refresh intent with the explicit workspace ID', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       const { container } = await renderPanel();
       const refresh = await waitFor(() => {
@@ -741,17 +810,76 @@ describe('SidebarChangesPanel', () => {
 
       await fireEvent.click(refresh);
 
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
+    });
+
+    it('routes header refresh through the primary intent and honors the busy flag', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      const Host = (await import('./mocks/ChangesHeaderHost.svelte')).default;
+      const { getByTestId, container } = render(Host);
+      const header = getByTestId('changes-test-header');
+      const button = await waitFor(() => {
+        const action = header.querySelector<HTMLButtonElement>('button');
+        expect(action).toBeTruthy();
+        return action!;
+      });
       expect(
-        mockDispatch.mock.calls
-          .map(([action]) => action)
-          .filter(
-            (action) =>
-              action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-          ),
-      ).toEqual([
-        { type: 'git/loadStatus', payload: ['ws-1', true] },
-        { type: 'changes/refreshRequested', payload: ['ws-1'] },
-      ]);
+        container.querySelector('.sidebar-changes-container [data-changes-refresh]'),
+      ).toBeNull();
+      mockDispatch.mockClear();
+      await fireEvent.click(button);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
+      mockGitOperationFlags.isRefreshingGitStatus = true;
+      flushFtSelectors();
+      await waitFor(() => expect(button.disabled).toBe(true));
+      mockDispatch.mockClear();
+      await fireEvent.click(button);
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+
+    it('keeps count-row activation separate from the header refresh flow', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      mockFileTrackingStore.unstagedChanges = [makeChange({ relativePath: 'src/sidebar.ts' })];
+      const Host = (await import('./mocks/ChangesHeaderHost.svelte')).default;
+      const { container } = render(Host);
+      const count = await waitFor(() => {
+        const button = container.querySelector<HTMLButtonElement>(
+          '[data-changes-summary-count] button',
+        );
+        expect(button).toBeTruthy();
+        return button!;
+      });
+      mockDispatch.mockClear();
+      const branch = container.querySelector<HTMLButtonElement>(
+        '[data-branch-field="working"] button',
+      )!;
+      expect(await fireEvent.keyDown(branch, { key: 'Enter' })).toBe(true);
+      expect(await fireEvent.keyDown(count, { key: 'Enter' })).toBe(true);
+      expect(await fireEvent.keyDown(count, { key: ' ' })).toBe(true);
+      expect(mockDispatch).not.toHaveBeenCalled();
+      await fireEvent.click(count);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'workspaceNavigation/openWorkspaceLocalChanges',
+        payload: ['ws-1'],
+      });
     });
 
     it('shows skeleton loading state when store has not loaded', async () => {
@@ -989,6 +1117,112 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
+    it('scoped guest-owner field controls do not expose host execution', async () => {
+      mockHostRole.guest = true;
+      try {
+        mockWorkspaceStore.findById.mockReturnValue(
+          makeWorkspace({ myRole: 'owner', canManage: true }),
+        );
+        const branch = await renderPanel();
+        await waitFor(() =>
+          expect(branch.container.querySelector('[data-testid="branch-selector"]')).not.toBeNull(),
+        );
+        await fireEvent.click(
+          branch.container.querySelector('[data-testid="branch-name-button"]')!,
+        );
+        expect(
+          branch.container.querySelector('[data-branch-field="working"] input'),
+        ).not.toBeNull();
+        branch.unmount();
+        mockFileTrackingStore.commits = [
+          makeCommit({ hash: 'guest-owned', message: 'Scoped commit', isPushed: false }),
+        ];
+        const timeline = await renderPanel();
+        const label = await waitFor(() => {
+          const element = Array.from(timeline.container.querySelectorAll('span')).find(
+            (x) => x.textContent?.trim() === 'Scoped commit',
+          );
+          expect(element).toBeDefined();
+          return element!;
+        });
+        await fireEvent.contextMenu(label);
+        await waitFor(() =>
+          expect(timeline.container.querySelector('[data-testid="mock-component"]')).not.toBeNull(),
+        );
+        expect(timeline.container.querySelector('[data-testid="commit-undo-button"]')).toBeNull();
+        expect(
+          timeline.container.querySelector('[data-testid="commit-undo-push-button"]'),
+        ).toBeNull();
+        await fireEvent.dblClick(label);
+        expect(timeline.container.querySelector('input.inline-edit-input')).toBeNull();
+      } finally {
+        mockHostRole.guest = false;
+      }
+    });
+
+    it('offers the trunk selector to the owner before the first push', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ myRole: 'owner' }));
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="branch-selector"]')).not.toBeNull();
+      });
+    });
+
+    it('keeps the trunk read-only for a collaborator even with no commits', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(
+        makeWorkspace({ myRole: 'collaborator', baseRef: 'main' }),
+      );
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(
+          container.querySelector<HTMLInputElement>('[data-branch-field="target"] input')?.value,
+        ).toBe('main');
+      });
+      expect(container.querySelector('[data-testid="branch-selector"]')).toBeNull();
+      expect(mockWorkspaceStore.update).not.toHaveBeenCalled();
+    });
+
+    it('does not replay the root-owned auto-commit when an owner remounts the panel', async () => {
+      const { backgroundGitActionsService } =
+        await import('$features/accept-changes/background-git-actions.service');
+      (backgroundGitActionsService.commit as Mock).mockClear();
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ myRole: 'owner' }));
+      mockAcceptChangesState.commitMessage = 'feat: auto';
+      mockSidebarChangesState.pendingAutoAction = { action: 'commit', workspaceId: 'ws-1' };
+
+      const first = await renderPanel();
+      first.unmount();
+      await renderPanel();
+
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+      ]);
+      expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
+      mockAcceptChangesState.commitMessage = '';
+    });
+
+    it('does not execute or consume a root-owned auto-commit in a collaborator panel', async () => {
+      const { backgroundGitActionsService } =
+        await import('$features/accept-changes/background-git-actions.service');
+      (backgroundGitActionsService.commit as Mock).mockClear();
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ myRole: 'collaborator' }));
+      mockAcceptChangesState.commitMessage = 'feat: auto';
+      mockSidebarChangesState.pendingAutoAction = { action: 'commit', workspaceId: 'ws-1' };
+
+      await renderPanel();
+
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'git/acceptChangesConsumerMounted',
+        payload: ['ws-1'],
+      });
+      expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
+      mockAcceptChangesState.commitMessage = '';
+    });
+
     it('renders truncation warning banner when changes are truncated', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.changesTruncated = true;
@@ -1121,7 +1355,7 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Interactions', () => {
-    it('stages via the git-write-service seam when stage action is invoked on unstaged file', async () => {
+    it('dispatches a stage intent when stage action is invoked on an unstaged file', async () => {
       const unstaged = [makeChange({ relativePath: 'src/foo.ts' })];
       mockFileTrackingStore.unstagedChanges = unstaged;
       mockFileTrackingStore.stagedChanges = [];
@@ -1137,10 +1371,19 @@ describe('SidebarChangesPanel', () => {
       const stageBtns = container.querySelectorAll('[data-testid="stage-btn"]');
       expect(stageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(stageBtns[0]);
-      expect(mockStageFiles).toHaveBeenCalledWith('ws-1', ['src/foo.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'stage', paths: ['src/foo.ts'], openDiff: true, source: 'sidebar' },
+          ],
+        }),
+      );
     });
 
-    it('unstages via the git-write-service seam when unstage action is invoked on staged file', async () => {
+    it('dispatches an unstage intent when unstage action is invoked on a staged file', async () => {
       const staged = [makeChange({ relativePath: 'src/foo.ts', stage: ChangeStage.Staged })];
       mockFileTrackingStore.unstagedChanges = [];
       mockFileTrackingStore.stagedChanges = staged;
@@ -1155,7 +1398,16 @@ describe('SidebarChangesPanel', () => {
       const unstageBtns = container.querySelectorAll('[data-testid="unstage-btn"]');
       expect(unstageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(unstageBtns[0]);
-      expect(mockUnstageFiles).toHaveBeenCalledWith('ws-1', ['src/foo.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'unstage', paths: ['src/foo.ts'], openDiff: true, source: 'sidebar' },
+          ],
+        }),
+      );
     });
 
     it('toggles commit drawer open and close', async () => {
@@ -1402,7 +1654,16 @@ describe('SidebarChangesPanel', () => {
       );
       expect(stageAllBtn).toBeDefined();
       await fireEvent.click(stageAllBtn!);
-      expect(mockStageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts', 'src/b.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'stage', paths: ['src/a.ts', 'src/b.ts'], source: 'sidebar' },
+          ],
+        }),
+      );
     });
 
     it('unstage all button unstages all staged files', async () => {
@@ -1428,7 +1689,16 @@ describe('SidebarChangesPanel', () => {
       );
       expect(unstageAllBtn).toBeDefined();
       await fireEvent.click(unstageAllBtn!);
-      expect(mockUnstageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts', 'src/b.ts']);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            { kind: 'unstage', paths: ['src/a.ts', 'src/b.ts'], source: 'sidebar' },
+          ],
+        }),
+      );
     });
 
     it('clicking a file dispatches workspace:open-diff event', async () => {
@@ -1666,8 +1936,8 @@ describe('SidebarChangesPanel', () => {
   // COMMIT GROUP REGRESSION TESTS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('Commit Group - store refresh after commit (regression)', () => {
-    it('calls loadGitStatus and file tracking refresh after successful group commit', async () => {
+  describe('Commit Group - root-owned mutation and refresh', () => {
+    it('dispatches a workspace-scoped group commit without component-owned writes or refreshes', async () => {
       // Set up AcceptChangesClient to return success
       const { AcceptChangesClient } =
         await import('$features/accept-changes/accept-changes.client');
@@ -1732,26 +2002,33 @@ describe('SidebarChangesPanel', () => {
 
       // Clear mocks to isolate assertions to this interaction
       mockDispatch.mockClear();
+      const { selectAllWorkspaceAgents } =
+        await import('$store/renderer/slices/workspace-agents/workspace-agents-selectors');
+      (selectAllWorkspaceAgents.select as Mock).mockReturnValueOnce([
+        { id: 'agent-1', name: 'Test Agent' },
+      ]);
 
       await fireEvent.click(commitBtn!);
 
-      // Wait for the async commit flow (enqueueGroupCommit → commitSingleGroup)
-      // to complete and verify stores are refreshed afterward
-      await waitFor(() => {
-        expect(mockDispatch).toHaveBeenCalled();
-      });
-
-      expect(
-        mockDispatch.mock.calls
-          .map(([action]) => action)
-          .filter(
-            (action) =>
-              action.type === 'git/loadStatus' || action.type === 'changes/refreshRequested',
-          ),
-      ).toEqual([
-        { type: 'git/loadStatus', payload: ['ws-1', true] },
-        { type: 'changes/refreshRequested', payload: ['ws-1'] },
-      ]);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'gitWrite/requested',
+          payload: [
+            'ws-1',
+            expect.any(String),
+            {
+              kind: 'partialCommit',
+              paths: ['src/foo.ts'],
+              section: 'unstaged',
+              message: 'Test Agent',
+              groupKey: 'unstaged:agent-1',
+              agentId: 'agent-1',
+              source: 'sidebar',
+            },
+          ],
+        }),
+      );
+      expect(AcceptChangesClient.execute).not.toHaveBeenCalled();
     });
   });
 
@@ -1759,7 +2036,8 @@ describe('SidebarChangesPanel', () => {
   // PR AUTO-DISCOVERY TESTS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('PR Auto-Discovery', () => {
+  // Discovery/auth/dedup behavior is exercised by accept-workflow-observer-saga.test.ts.
+  describe('PR discovery lifecycle handoff', () => {
     let refreshPRStatusRequestedMock: Mock;
 
     beforeEach(async () => {
@@ -1776,7 +2054,7 @@ describe('SidebarChangesPanel', () => {
       mockGitHubAuthIsAuthenticated.value = false;
     });
 
-    it('triggers PR discovery when workspace has pushed commits and no active PR', async () => {
+    it('hands a workspace with pushed commits to the root observer without a second discovery', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'abc123', message: 'pushed commit', isPushed: true }),
@@ -1784,28 +2062,32 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      await waitFor(() => {
-        expect(refreshPRStatusRequestedMock).toHaveBeenCalledWith('ws-1', false, false);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'git/acceptChangesConsumerMounted',
+        payload: ['ws-1'],
       });
+      expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
-    it('triggers initial PR discovery on remote branches even with no pushed commits', async () => {
-      // Workspaces on existing remote branches (e.g., PR review) should perform one
-      // initial PR discovery even when there are no local pushed commits, because the
-      // branch may already have a PR. hasRemote defaults to true in the component.
+    it('keeps a remote workspace observed across a panel remount without local discovery', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'abc123', message: 'local commit', isPushed: false }),
       ];
 
+      const first = await renderPanel();
+      first.unmount();
       await renderPanel();
 
-      await waitFor(() => {
-        expect(refreshPRStatusRequestedMock).toHaveBeenCalledWith('ws-1', false, false);
-      });
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-1'] },
+      ]);
+      expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
-    it('does not trigger PR discovery when GitHub is not authenticated', async () => {
+    it('registers the observer before authentication so the root can discover after auth', async () => {
       mockGitHubAuthIsAuthenticated.value = false;
 
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -1815,11 +2097,14 @@ describe('SidebarChangesPanel', () => {
 
       await renderPanel();
 
-      await new Promise((r) => setTimeout(r, 100));
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'git/acceptChangesConsumerMounted',
+        payload: ['ws-1'],
+      });
       expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
 
-    it('re-triggers PR discovery when workspace switches (resets tracked count)', async () => {
+    it('releases the old observer and acquires the new one when workspace switches', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.commits = [
         makeCommit({ hash: 'abc123', message: 'pushed commit', isPushed: true }),
@@ -1827,9 +2112,7 @@ describe('SidebarChangesPanel', () => {
 
       const { rerender } = await renderPanel();
 
-      await waitFor(() => {
-        expect(refreshPRStatusRequestedMock).toHaveBeenCalledTimes(1);
-      });
+      mockDispatch.mockClear();
 
       // Switch to a different workspace with pushed commits
       mockWorkspaceStore.findById.mockReturnValue(
@@ -1842,9 +2125,19 @@ describe('SidebarChangesPanel', () => {
 
       await rerender({ workspaceId: 'ws-2' });
 
-      await waitFor(() => {
-        expect(refreshPRStatusRequestedMock).toHaveBeenCalledTimes(2);
-      });
+      expect(
+        mockDispatch.mock.calls
+          .map(([action]) => action)
+          .filter(
+            (action) =>
+              action.type === 'git/acceptChangesConsumerMounted' ||
+              action.type === 'git/acceptChangesConsumerUnmounted',
+          ),
+      ).toEqual([
+        { type: 'git/acceptChangesConsumerUnmounted', payload: ['ws-1'] },
+        { type: 'git/acceptChangesConsumerMounted', payload: ['ws-2'] },
+      ]);
+      expect(refreshPRStatusRequestedMock).not.toHaveBeenCalled();
     });
   });
 
@@ -2164,8 +2457,9 @@ describe('SidebarChangesPanel', () => {
   describe('Git root dropdown', () => {
     async function seedGitRoots(roots: Array<Record<string, any>>) {
       const { createCollection } =
-        await import('@augmentcode/themis/utils/collections/collection-utils');
+        await import('@themislib/themis/utils/collections/collection-utils');
       mockStoreState.value = {
+        ...mockStoreState.value,
         gitRoots: {
           byWorkspaceId: {
             'ws-1': { gitRoots: createCollection('id', roots as any[]) },
@@ -2186,6 +2480,128 @@ describe('SidebarChangesPanel', () => {
         ...overrides,
       };
     }
+
+    it('moves the selected secondary refresh into the header and restores primary on return', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      await seedGitRoots([makeGitRoot({ registeredCommitSha: 'root-base' })]);
+      const Host = (await import('./mocks/ChangesHeaderHost.svelte')).default;
+      const { container, getByTestId } = render(Host);
+      const trigger = await waitFor(() => {
+        const button = container.querySelector<HTMLButtonElement>(
+          '[data-testid="git-root-selector"] button',
+        );
+        expect(button).toBeTruthy();
+        return button!;
+      });
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() =>
+        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeTruthy(),
+      );
+      const header = getByTestId('changes-test-header');
+      const refresh = await waitFor(() => {
+        const button = header.querySelector<HTMLButtonElement>('button');
+        expect(button).toBeTruthy();
+        return button!;
+      });
+      mockDispatch.mockClear();
+      await fireEvent.click(refresh);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'git/loadSecondaryRoot',
+        payload: ['ws-1', 'root-1', 'root-base', 30],
+      });
+      mockSecondaryRoots = {
+        'root-1': { loading: true, status: null, commits: [], commitFiles: {}, error: null },
+      };
+      flushFtSelectors();
+      await waitFor(() => expect(refresh.disabled).toBe(true));
+      mockDispatch.mockClear();
+      await fireEvent.click(refresh);
+      expect(mockDispatch).not.toHaveBeenCalled();
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() =>
+        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeNull(),
+      );
+      const primaryRefresh = header.querySelector<HTMLButtonElement>('button')!;
+      await fireEvent.click(primaryRefresh);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
+      expect(
+        mockDispatch.mock.calls.some(([action]) => action.type === 'git/loadSecondaryRoot'),
+      ).toBe(false);
+    });
+
+    it('opens repository details explicitly and keeps one demand while browsing exact roots', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      await seedGitRoots([makeGitRoot({ id: 'tools' })]);
+      const { selectRepositoryContextForDemand } =
+        await import('$store/renderer/slices/repository-context/repository-context-selectors');
+      const { summaryContext } =
+        await import('$features/accept-changes/components/repository-context-summary.preview-fixtures');
+      // This existing mocked sidebar harness verifies root prop wiring only.
+      // The feature suite exercises the real selector, Store, saga and client lifecycle.
+      const context = summaryContext('self-managed', 'ws-1');
+      const selected = vi.spyOn(selectRepositoryContextForDemand, 'select').mockReturnValue({
+        ...context,
+        status: 'ready',
+        unavailableReason: null,
+      });
+      const { container, getByRole, findByText, queryByText, unmount } = await renderPanel();
+      try {
+        const demands = () =>
+          mockDispatch.mock.calls
+            .map(([action]) => action)
+            .filter((action) => action.type === 'repositoryContext/demanded');
+        expect(demands()).toHaveLength(0);
+        await fireEvent.click(getByRole('button', { name: 'Repository details' }));
+        await findByText('feature/details');
+        expect(demands()).toHaveLength(1);
+        const original = demands()[0].payload;
+        expect(original[0]).toBe('ws-1');
+        expect(original[2]).toBeNull();
+        const trigger = container.querySelector<HTMLButtonElement>(
+          '[data-testid="git-root-selector"] button',
+        )!;
+        trigger.focus();
+        await fireEvent.keyDown(trigger, { key: 'Enter' });
+        await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+        await fireEvent.keyDown(trigger, { key: 'Enter' });
+        await waitFor(() =>
+          expect(
+            container.querySelector('[data-testid="secondary-root-changes-view"]'),
+          ).toBeTruthy(),
+        );
+        // The shared sidebar mock needs an explicit notification for readable args.
+        // Real Store argument reactivity is covered in the feature lifecycle suite.
+        const { store } = await import('$store/renderer/store');
+        (store as unknown as { emitState(): void }).emitState();
+        await findByText('tools/maintenance');
+        expect(queryByText('feature/details')).toBeNull();
+        expect(demands()).toHaveLength(1);
+        await fireEvent.click(getByRole('button', { name: 'Repository details' }));
+        expect(queryByText('tools/maintenance')).toBeNull();
+        expect(mockDispatch.mock.calls.map(([action]) => action)).toContainEqual({
+          type: 'repositoryContext/demandEnded',
+          payload: original,
+        });
+      } finally {
+        unmount();
+        selected.mockRestore();
+      }
+    });
 
     it('renders no dropdown when the workspace has no secondary roots', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
@@ -2348,10 +2764,8 @@ describe('SidebarChangesPanel', () => {
       expect(listText).not.toContain('Merge');
     });
 
-    it('leaves a pending auto-action queued while browsing a secondary root', async () => {
-      // While a secondary root is selected the primary body (PRSection /
-      // MergePanel refs) is unmounted — consuming the action there would
-      // silently drop an agent-triggered auto create-PR or merge.
+    it('does not consume or replay root-owned auto-actions when changing the viewed git root', async () => {
+      // Auto-actions are independent of the selected root and mounted child refs.
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       await seedGitRoots([makeGitRoot()]);
       mockRootGetStatus.mockResolvedValue({
@@ -2404,7 +2818,7 @@ describe('SidebarChangesPanel', () => {
         expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
       );
 
-      // Back to primary: the still-queued action is now consumed
+      // Returning to primary must not replay the root-owned action.
       trigger.focus();
       await fireEvent.keyDown(trigger, { key: 'Enter' });
       await waitFor(() => {
@@ -2416,11 +2830,337 @@ describe('SidebarChangesPanel', () => {
         expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeFalsy();
       });
 
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
+      );
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        expect.objectContaining({ asyncActionType: 'prWorkflow/requested' }),
+      );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MULTIPLAYER ROLE GATE — collaborator read-only view
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Collaborator read-only view', () => {
+    // A collaborator's Changes tab is strictly read-only: every mutating
+    // control below is hidden — those routed through an RPC the daemon refuses
+    // for a collaborator (`-32003 Forbidden`, transport `COLLABORATOR_METHODS`:
+    // accept-changes.*, github.*, workspace.setAutoCommit, host.exec, the
+    // protected `workspace.update` fields) and the worktree writes (git.stage /
+    // git.unstage / git.discard / git.pull / force git.push). Every read stays.
+    // The trunk selector is covered by the "trunk selector" tests above (it is
+    // offered only before the first push, which this fixture is past); pull and
+    // force push need their own git state and are covered below.
+    const OWNER_ONLY_TESTIDS = [
+      'auto-commit-toggle',
+      'group-commit-button',
+      'commit-export-divider',
+      'commit-push-button',
+      'commit-undo-button',
+      'commit-undo-push-button',
+      'pr-push-commits-button',
+      'pr-rebase-button',
+      'pr-refresh-button',
+      'stage-all-button',
+      'unstage-all-button',
+      'stage-btn',
+      'unstage-btn',
+      'revert-btn',
+    ];
+
+    async function seedBusyWorkspace(myRole: 'owner' | 'collaborator') {
+      const { groupFilesByAgent } =
+        await import('$lib/components/file-tracking/accept-changes/types');
+      (groupFilesByAgent as Mock).mockReturnValue([
+        {
+          agentId: 'agent-1',
+          agentName: 'Test Agent',
+          files: [
+            {
+              path: 'src/foo.ts',
+              additions: 5,
+              deletions: 2,
+              status: 'modified',
+              staged: false,
+              agent: { agentId: 'agent-1', agentName: 'Test Agent' },
+            },
+          ],
+        },
+      ]);
+      mockFileTrackingStore.unstagedChanges = [
+        makeChange({
+          relativePath: 'src/foo.ts',
+          attribution: {
+            timestamp: Date.now(),
+            agent: { agentId: 'agent-1' as any, agentName: 'Test Agent' },
+          },
+        }),
+      ];
+      mockFileTrackingStore.stagedChanges = [makeChange({ relativePath: 'src/staged.ts' })];
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'unpushed1', message: 'feat: unpushed work', isPushed: false }),
+        makeCommit({ hash: 'pushed1', message: 'fix: pushed work', isPushed: true }),
+      ];
+      mockGitState.ahead = 1;
+      mockPostMergeState.behindTrunk = 2;
+      mockPostMergeState.aheadOfTrunk = 1;
+      mockGitHubAuthIsAuthenticated.value = true;
+      mockWorkspaceStore.findById.mockReturnValue(
+        makeWorkspace({
+          myRole,
+          pullRequests: [
+            {
+              number: 7,
+              title: 'Shared PR',
+              url: 'https://github.com/testorg/testrepo/pull/7',
+              status: 'Open',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      );
+    }
+
+    afterEach(() => {
+      mockGitHubAuthIsAuthenticated.value = false;
+    });
+
+    it('offers every owner-only control to the owner', async () => {
+      await seedBusyWorkspace('owner');
+      const { container } = await renderPanel();
+
       await waitFor(() => {
-        expect(mockDispatch).toHaveBeenCalledWith(
-          expect.objectContaining({ type: 'changes/setPendingAutoAction' }),
-        );
+        expect(container.textContent).toContain('Shared PR');
+        expect(container.textContent).toContain('feat: unpushed work');
       });
+      for (const id of OWNER_ONLY_TESTIDS) {
+        expect(container.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
+      }
+    });
+
+    it('renders none of the owner-only controls for a collaborator while keeping the read view', async () => {
+      await seedBusyWorkspace('collaborator');
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        expect(container.textContent).toContain('Shared PR');
+        expect(container.textContent).toContain('feat: unpushed work');
+        expect(container.textContent).toContain('fix: pushed work');
+      });
+      for (const id of OWNER_ONLY_TESTIDS) {
+        expect(container.querySelector(`[data-testid="${id}"]`), id).toBeNull();
+      }
+      // Reads stay: the change list and the commit timeline.
+      expect(container.querySelectorAll('[data-testid="file-row"]').length).toBe(2);
+      expect(container.textContent).toContain('Pushed to remote');
+      // Unpushed work is not reported as synced just because the push
+      // affordance is hidden.
+      expect(container.textContent).not.toContain('Synced');
+      expect(mockWorkspaceStore.update).not.toHaveBeenCalled();
+    });
+
+    it('does not let a collaborator start a branch rename', async () => {
+      await seedBusyWorkspace('collaborator');
+      const { container } = await renderPanel();
+
+      const branchBtn = await waitFor(() => {
+        const btn = container.querySelector(
+          '[data-testid="branch-name-button"]',
+        ) as HTMLButtonElement | null;
+        expect(btn).not.toBeNull();
+        return btn!;
+      });
+      expect(branchBtn.textContent).toContain('feature/test');
+      await fireEvent.click(branchBtn);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(container.querySelector('input[type="text"]')).toBeNull();
+    });
+
+    it('keeps commit amend and the base-commit context menu owner-only', async () => {
+      const findCommitLabel = (container: HTMLElement) =>
+        Array.from(container.querySelectorAll('span')).find(
+          (el) => el.textContent?.trim() === 'feat: unpushed work',
+        ) as HTMLElement | undefined;
+
+      await seedBusyWorkspace('owner');
+      const owner = await renderPanel();
+      const ownerLabel = await waitFor(() => {
+        const el = findCommitLabel(owner.container);
+        expect(el).toBeTruthy();
+        return el!;
+      });
+      await fireEvent.contextMenu(ownerLabel);
+      await waitFor(() => {
+        expect(owner.container.querySelector('[data-testid="mock-component"]')).not.toBeNull();
+      });
+      await fireEvent.dblClick(ownerLabel);
+      await waitFor(() => {
+        expect(owner.container.querySelector('input.inline-edit-input')).not.toBeNull();
+      });
+      owner.unmount();
+
+      await seedBusyWorkspace('collaborator');
+      const { container } = await renderPanel();
+      const label = await waitFor(() => {
+        const el = findCommitLabel(container);
+        expect(el).toBeTruthy();
+        return el!;
+      });
+      const before = container.querySelectorAll('[data-testid="mock-component"]').length;
+      await fireEvent.contextMenu(label);
+      await fireEvent.dblClick(label);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(container.querySelectorAll('[data-testid="mock-component"]').length).toBe(before);
+      expect(container.querySelector('input.inline-edit-input')).toBeNull();
+    });
+
+    it('hides pull and force push from a collaborator while delegating refresh authorization', async () => {
+      const { refreshAcceptChangesStatus } =
+        await import('$store/renderer/slices/changes/changes-slice');
+      const clickRefresh = async (container: HTMLElement) => {
+        const btn = container.querySelector(
+          'button[title="Refresh git status"]',
+        ) as HTMLButtonElement | null;
+        expect(btn).not.toBeNull();
+        await fireEvent.click(btn!);
+        await new Promise((r) => setTimeout(r, 0));
+      };
+
+      // Open PR, everything pushed, behind the remote → pull.
+      const seedBehind = async (myRole: 'owner' | 'collaborator') => {
+        await seedBusyWorkspace(myRole);
+        mockFileTrackingStore.commits = [
+          makeCommit({ hash: 'pushed1', message: 'fix: pushed work', isPushed: true }),
+        ];
+        mockGitState.ahead = 0;
+        mockGitState.behind = 1;
+      };
+      await seedBehind('owner');
+      const owner = await renderPanel();
+      await waitFor(() => {
+        expect(owner.container.querySelector('[data-testid="pr-pull-button"]')).not.toBeNull();
+      });
+      (refreshAcceptChangesStatus as Mock).mockClear();
+      mockDispatch.mockClear();
+      await clickRefresh(owner.container);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
+      expect(refreshAcceptChangesStatus).not.toHaveBeenCalled();
+      owner.unmount();
+
+      await seedBehind('collaborator');
+      const guest = await renderPanel();
+      await waitFor(() => {
+        expect(guest.container.textContent).toContain('Shared PR');
+      });
+      expect(guest.container.querySelector('[data-testid="pr-pull-button"]')).toBeNull();
+      (refreshAcceptChangesStatus as Mock).mockClear();
+      mockDispatch.mockClear();
+      await clickRefresh(guest.container);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          asyncActionType: 'prWorkflow/requested',
+          payload: {
+            workspaceId: 'ws-1',
+            command: { kind: 'refresh' },
+            requestId: expect.any(String),
+          },
+        }),
+      );
+      expect(refreshAcceptChangesStatus).not.toHaveBeenCalled();
+      guest.unmount();
+
+      // Diverged from the remote → force push.
+      const seedDiverged = async (myRole: 'owner' | 'collaborator') => {
+        await seedBusyWorkspace(myRole);
+        mockGitState.behind = 1;
+        mockGitState.status = { diverged: true };
+      };
+      await seedDiverged('owner');
+      const ownerDiverged = await renderPanel();
+      await waitFor(() => {
+        expect(
+          ownerDiverged.container.querySelector('[data-testid="pr-force-push-button"]'),
+        ).not.toBeNull();
+      });
+      ownerDiverged.unmount();
+
+      await seedDiverged('collaborator');
+      const { container } = await renderPanel();
+      await waitFor(() => {
+        expect(container.textContent).toContain('Shared PR');
+      });
+      expect(container.querySelector('[data-testid="pr-force-push-button"]')).toBeNull();
+      expect(container.textContent).not.toContain('Force Push');
+    });
+
+    it('hides Create PR / Merge from a collaborator with committed work and no PR', async () => {
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'c1', message: 'feat: ready to ship', isPushed: false }),
+      ];
+      mockGitState.ahead = 1;
+
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ myRole: 'owner' }));
+      const owner = await renderPanel();
+      await waitFor(() => {
+        expect(owner.container.querySelector('[data-testid="pr-create-button"]')).not.toBeNull();
+        expect(owner.container.querySelector('[data-testid="pr-merge-button"]')).not.toBeNull();
+      });
+      owner.unmount();
+
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ myRole: 'collaborator' }));
+      const { container } = await renderPanel();
+      await waitFor(() => {
+        expect(container.textContent).toContain('feat: ready to ship');
+      });
+      expect(container.querySelector('[data-testid="pr-create-button"]')).toBeNull();
+      expect(container.querySelector('[data-testid="pr-merge-button"]')).toBeNull();
+      expect(container.textContent).not.toContain('Create PR');
+    });
+
+    it('hides the post-merge actions from a collaborator', async () => {
+      const merged = {
+        number: 3,
+        title: 'Landed PR',
+        url: 'https://github.com/testorg/testrepo/pull/3',
+        status: 'merged',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockFileTrackingStore.commits = [
+        makeCommit({ hash: 'm1', message: 'feat: landed', isPushed: true }),
+      ];
+      mockPostMergeState.isMergedToTrunk = true;
+
+      mockWorkspaceStore.findById.mockReturnValue(
+        makeWorkspace({ myRole: 'owner', pullRequests: [merged] }),
+      );
+      const owner = await renderPanel();
+      await waitFor(() => {
+        expect(owner.container.textContent).toContain('Reset');
+      });
+      owner.unmount();
+
+      mockWorkspaceStore.findById.mockReturnValue(
+        makeWorkspace({ myRole: 'collaborator', pullRequests: [merged] }),
+      );
+      const { container } = await renderPanel();
+      await waitFor(() => {
+        expect(container.textContent).toContain('Landed PR');
+      });
+      expect(container.textContent).not.toContain('Reset');
+      expect(container.textContent).not.toContain('Archive');
     });
   });
 });

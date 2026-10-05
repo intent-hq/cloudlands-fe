@@ -175,7 +175,8 @@
         {@const collapsedSpecialistId =
           agent.metadata?.specialist || agent.agentMetadata?.specialist}
         <div class="px-2 py-1">
-          <button
+          <Button
+            variant="ghost"
             class="w-full h-8 flex items-center justify-center rounded-md hover:bg-accent transition-colors"
             onclick={(e) => handleAgentClick(e, agent)}
             title={getAgentDisplayName(agent)}
@@ -189,7 +190,7 @@
                 ? collapsedSpecialistId
                 : null}
             />
-          </button>
+          </Button>
         </div>
       {/each}
     {/if}

@@ -3,13 +3,19 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  reconnect: undefined as undefined | (() => void),
   ownClientId: vi.fn(),
   getBrowserClient: vi.fn(),
   setBrowserClient: vi.fn(),
-  listTabs: vi.fn(),
   navigateTab: vi.fn(),
   closeTab: vi.fn(),
   toastError: vi.fn(),
+}));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  onBackendReconnected: (fn: () => void) => {
+    mocks.reconnect = fn;
+    return () => {};
+  },
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -19,18 +25,16 @@ vi.mock('$lib/client', () => ({
       setBrowserClient: mocks.setBrowserClient,
     },
     browser: {
-      listTabs: mocks.listTabs,
       navigateTab: mocks.navigateTab,
       closeTab: mocks.closeTab,
     },
   },
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 
 import type { LiveClient } from '$shared/types/browser-clients';
 import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { StoreAction } from '@augmentcode/themis/utils/store/create-action';
+import type { StoreAction } from '@themislib/themis/types';
 import type { StoreState } from '../../../types';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import { selectWorkspaceDrivingClient } from '../browser-clients-selectors';
@@ -46,7 +50,6 @@ import {
   browserTabClosed,
   closeBrowserTabRequested,
   fetchWorkspaceBrowserClientRequested,
-  fetchWorkspaceBrowserTabsRequested,
   hydrateBrowserClientsRequested,
   initialState,
   navigateBrowserTabRequested,
@@ -54,7 +57,6 @@ import {
   setWorkspaceBrowserClientRequested,
   workspaceBrowserClientReceived,
 } from '../browser-clients-slice';
-import { emptyWorkspaceBrowserClientsState } from '../browser-clients-types';
 import { browserClientsSaga } from './browser-clients-saga';
 
 const settle = async () => {
@@ -82,19 +84,7 @@ function start() {
   const state = { browserClients: initialState, workspaceLifecycle: lifecycleInitialState };
   const task = runSaga({ channel, dispatch, getState: () => state }, browserClientsSaga);
   const dispatched = () => dispatch.mock.calls.map(([action]) => action);
-  const setTabsRevision = (wsId: string, tabsRevision: number) => {
-    state.browserClients = {
-      ...state.browserClients,
-      byWorkspaceId: {
-        ...state.browserClients.byWorkspaceId,
-        [wsId]: {
-          ...(state.browserClients.byWorkspaceId[wsId] ?? emptyWorkspaceBrowserClientsState),
-          tabsRevision,
-        },
-      },
-    };
-  };
-  return { channel, task, dispatched, setTabsRevision };
+  return { channel, task, dispatched };
 }
 
 /** Saga wired to the real reducers, so lifecycle races are observed on state. */
@@ -113,15 +103,36 @@ function startWithReducer() {
     dispatch,
     task,
     entry: (wsId: string) => state.browserClients.byWorkspaceId[wsId],
-    /** The sidebar indicator's view for `wsId`, resolved from live state. */
+    /** The sidebar indicator's view for `wsId`, resolved from live state (with a browser tab open). */
     sidebar: (wsId: string) =>
-      resolveDrivingClientView(
-        selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
-      ),
+      resolveDrivingClientView({
+        ...selectWorkspaceDrivingClient.select(state as unknown as StoreState, wsId),
+        hasBrowserTabs: true,
+      }),
   };
 }
 
 describe('browserClientsSaga', () => {
+  it('keeps workspace client lists separate and discards replies from the old connection', async () => {
+    const oldA = deferred<LiveClient[]>();
+    mocks.list.mockImplementation((id: string) =>
+      id === 'A' ? oldA.promise : Promise.resolve([{ ...desk, clientId: 'B-client' }]),
+    );
+    const run = startWithReducer();
+    run.dispatch(refreshLiveClientsRequested('A'));
+    run.dispatch(refreshLiveClientsRequested('B'));
+    await settle();
+    expect(run.entry('B').liveClients?.ids).toEqual(['B-client']);
+    mocks.reconnect?.();
+    oldA.resolve([{ ...desk, clientId: 'old-A' }]);
+    await settle();
+    expect(run.entry('A')?.liveClients?.ids ?? []).toEqual([]);
+    expect(mocks.list).toHaveBeenCalledWith('A');
+    expect(mocks.list).toHaveBeenCalledWith('B');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.list.mockResolvedValue([desk]);
@@ -176,7 +187,7 @@ describe('browserClientsSaga', () => {
     expect(dispatched().filter((a) => a.type === 'browserClients/liveClientsReceived')).toEqual([]);
   });
 
-  it('hydrates once on the first workspace mount, then only reads that workspace browser client', async () => {
+  it('hydrates identity once and reads a separate client list for each workspace', async () => {
     const browserClient = { source: 'default', resolved: { clientId: 'cli-desk' } };
     mocks.getBrowserClient.mockResolvedValue(browserClient);
     const { dispatch, task, entry } = startWithReducer();
@@ -193,7 +204,7 @@ describe('browserClientsSaga', () => {
     task.cancel();
 
     expect(mocks.ownClientId).toHaveBeenCalledTimes(1);
-    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.list.mock.calls).toEqual([['ws-1'], ['ws-2']]);
     expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1'], ['ws-2']]);
     expect(entry('ws-2').browserClient).toEqual(browserClient);
   });
@@ -222,7 +233,7 @@ describe('browserClientsSaga', () => {
       await settle();
       task.cancel();
 
-      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.list).toHaveBeenCalledTimes(3);
       expect(mocks.getBrowserClient.mock.calls).toEqual([['ws-1']]);
     });
 
@@ -490,59 +501,6 @@ describe('browserClientsSaga', () => {
     ]);
   });
 
-  it('re-reads browser.listTabs when a browser:tab-* patch landed while the read was in flight', async () => {
-    const firstRead = deferred<unknown[]>();
-    const stale = [{ tabId: 'tab-stale' }];
-    const fresh = [{ tabId: 'tab-fresh' }];
-    mocks.listTabs.mockReturnValueOnce(firstRead.promise).mockResolvedValueOnce(fresh);
-    const { channel, task, dispatched, setTabsRevision } = start();
-
-    channel.put(fetchWorkspaceBrowserTabsRequested('ws-1'));
-    await settle();
-    expect(mocks.listTabs).toHaveBeenCalledTimes(1);
-
-    // A tab event patches the mirror (revision 0 → 1) before the snapshot lands.
-    setTabsRevision('ws-1', 1);
-    firstRead.resolve(stale);
-    await settle();
-    task.cancel();
-
-    expect(mocks.listTabs.mock.calls).toEqual([['ws-1'], ['ws-1']]);
-    expect(
-      dispatched().filter((a) => a.type === 'browserClients/workspaceBrowserTabsReceived'),
-    ).toEqual([
-      // Stamped with the stale revision: the reducer discards it.
-      { type: 'browserClients/workspaceBrowserTabsReceived', payload: ['ws-1', stale, 0] },
-      { type: 'browserClients/workspaceBrowserTabsReceived', payload: ['ws-1', fresh, 1] },
-    ]);
-  });
-
-  it('reads browser.listTabs per workspace and stores the listing', async () => {
-    const tabs = [
-      {
-        tabId: 'tab-1',
-        workspaceId: 'ws-1',
-        hostClientId: 'cli-desk',
-        url: 'https://a/',
-        visibility: 'visible',
-        createdAt: 't',
-        updatedAt: 't',
-        hostConnected: true,
-      },
-    ];
-    mocks.listTabs.mockResolvedValue(tabs);
-    const { channel, task, dispatched } = start();
-    channel.put(fetchWorkspaceBrowserTabsRequested('ws-1'));
-    await settle();
-    task.cancel();
-
-    expect(mocks.listTabs.mock.calls).toEqual([['ws-1']]);
-    expect(dispatched()).toContainEqual({
-      type: 'browserClients/workspaceBrowserTabsReceived',
-      payload: ['ws-1', tabs, 0],
-    });
-  });
-
   describe('viewer commands to a remote host (REV-2 Model 3)', () => {
     it('forwards a navigation as browser.navigateTab { tabId, url }, stores nothing from the envelope and resolves', async () => {
       mocks.navigateTab.mockResolvedValue({
@@ -617,16 +575,6 @@ describe('browserClientsSaga', () => {
 
   describe('workspace teardown while a per-workspace call is in flight', () => {
     const WS = 'ws-gone';
-    const listedTab = {
-      tabId: 'tab-1',
-      workspaceId: WS,
-      hostClientId: 'cli-desk',
-      url: 'https://a/',
-      visibility: 'visible',
-      createdAt: 't',
-      updatedAt: 't',
-      hostConnected: true,
-    };
     const pinned = {
       source: 'workspace',
       clientId: 'cli-desk',
@@ -635,11 +583,6 @@ describe('browserClientsSaga', () => {
     const unpinned = { source: 'default', resolved: null };
 
     const requests = {
-      listTabs: {
-        mock: () => mocks.listTabs,
-        request: () => fetchWorkspaceBrowserTabsRequested(WS),
-        reply: [listedTab],
-      },
       getBrowserClient: {
         mock: () => mocks.getBrowserClient,
         request: () => fetchWorkspaceBrowserClientRequested(WS),
@@ -677,33 +620,6 @@ describe('browserClientsSaga', () => {
 
       // The cleared entry is not recreated by the late reply.
       expect(entry(WS)).toBeUndefined();
-    });
-
-    it('a reply from before an unmount does not apply to the remounted workspace (listTabs)', async () => {
-      const first = deferred<unknown>();
-      const second = deferred<unknown>();
-      const fresh = [{ ...listedTab, tabId: 'tab-fresh' }];
-      mocks.listTabs.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-      const { dispatch, task, entry } = startWithReducer();
-
-      dispatch(fetchWorkspaceBrowserTabsRequested(WS));
-      await settle();
-      dispatch(workspaceUnmounted(WS));
-
-      // Remounted, but its own read is not in flight yet when the pre-unmount
-      // read lands: nothing supersedes it, and it is stamped with the same
-      // revision (0) a fresh mount starts at — it must still be discarded.
-      first.resolve([listedTab]);
-      await settle();
-      expect(entry(WS)).toBeUndefined();
-
-      dispatch(fetchWorkspaceBrowserTabsRequested(WS));
-      await settle();
-      expect(mocks.listTabs).toHaveBeenCalledTimes(2);
-      second.resolve(fresh);
-      await settle();
-      task.cancel();
-      expect(getItems(entry(WS)!.tabs)).toEqual(fresh);
     });
 
     it('a reply from before an unmount does not apply to the remounted workspace (getBrowserClient)', async () => {
@@ -791,4 +707,135 @@ describe('browserClientsSaga', () => {
       expect(mocks.getBrowserClient).toHaveBeenCalledTimes(2);
     });
   });
+});
+
+it('workspace routing regression: global invalidation cannot race a workspace list', async () => {
+  const old = deferred<LiveClient[]>();
+  mocks.list
+    .mockReset()
+    .mockReturnValueOnce(old.promise)
+    .mockResolvedValue([{ ...desk, clientId: 'current' }]);
+  mocks.ownClientId.mockResolvedValue('cli-desk');
+  mocks.getBrowserClient.mockResolvedValue({
+    source: 'default',
+    resolved: { clientId: 'cli-desk' },
+  });
+  const run = startWithReducer();
+  try {
+    run.dispatch(workspaceMounted('A'));
+    for (let i = 0; i < 20; i++) await settle();
+    run.dispatch(refreshLiveClientsRequested());
+    for (let i = 0; i < 20; i++) await settle();
+    expect(run.entry('A').liveClients?.ids).toEqual(['current']);
+    old.resolve([{ ...desk, clientId: 'stale' }]);
+    for (let i = 0; i < 20; i++) await settle();
+    expect(run.entry('A').liveClients?.ids).toEqual(['current']);
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+  }
+});
+
+it.each([
+  ['unmount', workspaceUnmounted],
+  ['delete', workspaceDeleted],
+  ['remove entity', removeWorkspaceEntity],
+])(
+  'workspace lifecycle regression: global refresh skips B after %s while waiting on A',
+  async (_label, cleanupAction) => {
+    mocks.list.mockReset().mockResolvedValue([desk]);
+    mocks.ownClientId.mockResolvedValue('cli-desk');
+    mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+    const run = startWithReducer();
+    try {
+      run.dispatch(workspaceMounted('A'));
+      run.dispatch(workspaceMounted('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      const blocked = deferred<LiveClient[]>();
+      mocks.list
+        .mockReset()
+        .mockImplementation((id: string) =>
+          id === 'A' ? blocked.promise : Promise.resolve([{ ...desk, clientId: 'resurrected-B' }]),
+        );
+      run.dispatch(refreshLiveClientsRequested());
+      for (let i = 0; i < 20; i++) await settle();
+      expect(mocks.list.mock.calls.map(([id]) => id)).toEqual(['A']);
+      run.dispatch(cleanupAction('B'));
+      expect(run.entry('B')).toBeUndefined();
+      blocked.resolve([desk]);
+      for (let i = 0; i < 20; i++) await settle();
+      expect(run.entry('B')).toBeUndefined();
+      expect(mocks.list.mock.calls.map(([id]) => id)).toEqual(['A']);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  },
+);
+
+it.each([workspaceUnmounted, workspaceDeleted, removeWorkspaceEntity])(
+  'global fan-out cannot take ownership from a remounted B (%s)',
+  async (cleanupAction) => {
+    mocks.list.mockReset().mockResolvedValue([desk]);
+    mocks.ownClientId.mockResolvedValue('cli-desk');
+    mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+    const run = startWithReducer();
+    try {
+      run.dispatch(workspaceMounted('A'));
+      run.dispatch(workspaceMounted('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      const blocked = deferred<LiveClient[]>();
+      let bReads = 0;
+      mocks.list
+        .mockReset()
+        .mockImplementation((id: string) =>
+          id === 'A'
+            ? blocked.promise
+            : Promise.resolve([
+                { ...desk, clientId: ++bReads === 1 ? 'remounted-B' : 'obsolete-fanout-B' },
+              ]),
+        );
+      run.dispatch(refreshLiveClientsRequested());
+      await settle();
+      run.dispatch(cleanupAction('B'));
+      run.dispatch(workspaceMounted('B'));
+      for (let i = 0; i < 20; i++) await settle();
+      expect(run.entry('B')?.liveClients.ids).toEqual(['remounted-B']);
+      blocked.resolve([desk]);
+      for (let i = 0; i < 20; i++) await settle();
+      expect(mocks.list.mock.calls.map(([id]) => id)).toEqual(['A', 'B']);
+      expect(run.entry('B')?.liveClients.ids).toEqual(['remounted-B']);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  },
+);
+
+it('reconnect abandons the queued targets of a blocked global client refresh', async () => {
+  mocks.list.mockReset().mockResolvedValue([desk]);
+  mocks.ownClientId.mockResolvedValue('cli-desk');
+  mocks.getBrowserClient.mockResolvedValue({ source: 'default', resolved: desk });
+  const run = startWithReducer();
+  try {
+    run.dispatch(workspaceMounted('A'));
+    run.dispatch(workspaceMounted('B'));
+    for (let i = 0; i < 20; i++) await settle();
+    const blocked = deferred<LiveClient[]>();
+    mocks.list
+      .mockReset()
+      .mockReturnValueOnce(blocked.promise)
+      .mockResolvedValue([{ ...desk, clientId: 'new-connection' }]);
+    run.dispatch(refreshLiveClientsRequested());
+    await settle();
+    mocks.reconnect?.();
+    blocked.resolve([{ ...desk, clientId: 'old-connection' }]);
+    for (let i = 0; i < 30; i++) await settle();
+    expect(mocks.list.mock.calls.map(([id]) => id)).toEqual(['A', 'A', 'B']);
+    expect(run.entry('A')?.liveClients.ids).toEqual(['new-connection']);
+    expect(run.entry('B')?.liveClients.ids).toEqual(['new-connection']);
+  } finally {
+    run.task.cancel();
+    await run.task.toPromise();
+  }
 });

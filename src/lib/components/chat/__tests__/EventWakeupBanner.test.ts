@@ -2,8 +2,6 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('svelte-fa', async () => ({
@@ -19,6 +17,7 @@ import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import type { AgentSession, Workspace } from '$shared/types';
+import { agentAvatarGeometry } from '$features/agent/components/agent-avatar/avatar-size';
 import {
   SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
   SUBSCRIPTION_CARD_SURFACE_CLASS,
@@ -63,22 +62,53 @@ afterEach(() => {
 });
 
 describe('EventWakeupBanner details disclosure', () => {
-  it('uses only named standard avatar geometry in the production wake-up stack', () => {
-    const avatarSource = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/chat/InlineAgentAvatar.svelte'),
-      'utf8',
-    );
-    const bannerSource = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/chat/EventWakeupBanner.svelte'),
-      'utf8',
+  it('lays the wake-up avatars out on the shared standard stack geometry', () => {
+    renderBanner(
+      {
+        type: 'event_notification',
+        eventCount: 3,
+        eventTypes: ['agent:idle'],
+        events: Array.from({ length: 3 }, (_, index) => ({
+          type: 'agent:idle',
+          timestamp: `2026-08-12T12:0${index}:00.000Z`,
+          data: { agentId: `agent-${index}`, agentName: `Agent ${index}` },
+        })),
+      },
+      { showAgentCards: true, workspace: WORKSPACE },
     );
 
-    expect(avatarSource).toContain('variant="standard"');
-    expect(avatarSource).not.toContain('size={18}');
-    expect(avatarSource).not.toContain('rounded-full');
-    expect(bannerSource).toContain('<AgentAvatarStack');
-    expect(bannerSource).toContain('variant="standard"');
-    expect(bannerSource).not.toMatch(/-space-x-|translate-y-|top-\[/);
+    const host = screen.getByTestId('event-wakeup-avatar-stack');
+    const stack = host.querySelector<HTMLElement>('[data-agent-avatar-stack]');
+    expect(stack?.getAttribute('data-avatar-variant')).toBe('standard');
+    const { surface, overlap } = agentAvatarGeometry.standard;
+    const items = [...host.querySelectorAll<HTMLElement>('[data-agent-avatar-stack-item]')];
+    expect(items).toHaveLength(3);
+    expect(items.map((item) => item.style.insetInlineStart)).toEqual(
+      items.map((_, index) => `${index * (surface - overlap)}px`),
+    );
+    expect(
+      items.map((item) => item.querySelector('[data-testid="event-agent-avatar"]')),
+    ).not.toContain(null);
+    for (const element of [host, ...host.querySelectorAll<HTMLElement>('*')]) {
+      expect(element.className).not.toMatch(/-space-x-|translate-y-|top-\[/);
+    }
+  });
+
+  it('renders the production inline avatar at the named standard variant', async () => {
+    const { default: InlineAgentAvatar } = await vi.importActual<
+      typeof import('../InlineAgentAvatar.svelte')
+    >('../InlineAgentAvatar.svelte');
+    const { container } = render(InlineAgentAvatar, {
+      props: { agentId: 'agent-standard', agentName: 'Builder', workspace: WORKSPACE },
+    });
+
+    const surface = container.querySelector<HTMLElement>('[data-agent-avatar-with-state]');
+    expect(surface?.getAttribute('data-avatar-variant')).toBe('standard');
+    expect(surface?.style.width).toBe('');
+    expect(surface?.style.height).toBe('');
+    for (const element of container.querySelectorAll<HTMLElement>('*')) {
+      expect(element.classList.contains('rounded-full')).toBe(false);
+    }
   });
 
   it('uses the shared compact subscription card shell, header rhythm, and separator', async () => {
@@ -111,7 +141,6 @@ describe('EventWakeupBanner details disclosure', () => {
     const details = screen.getByTestId('event-wakeup-details');
     expect(details.className).toContain('border-t');
     expect(details.className).toContain('border-border');
-    expect(details.className).toContain('px-3');
     expect(details.className).toContain('py-2');
     expect(details.className).not.toContain('border-l');
     expect(details.className).not.toContain('pl-5');

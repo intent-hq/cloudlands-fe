@@ -21,6 +21,26 @@ describe('formatNumber / formatInteger', () => {
   });
 });
 
+describe('formatCompactNumber', () => {
+  it('keeps the one-decimal default and supports whole-number output', () => {
+    expect(en.formatCompactNumber(1_234)).toBe('1.2K');
+    expect(en.formatCompactNumber(1_234, { maximumFractionDigits: 0 })).toBe('1K');
+    expect(en.formatCompactNumber(9_264_137, { maximumFractionDigits: 0 })).toBe('9M');
+  });
+
+  it('promotes rounded whole values at compact-unit boundaries', () => {
+    expect(en.formatCompactNumber(999_499, { maximumFractionDigits: 0 })).toBe('999K');
+    expect(en.formatCompactNumber(999_500, { maximumFractionDigits: 0 })).toBe('1M');
+    expect(en.formatCompactNumber(999_499_999, { maximumFractionDigits: 0 })).toBe('999M');
+    expect(en.formatCompactNumber(999_500_000, { maximumFractionDigits: 0 })).toBe('1B');
+  });
+
+  it('uses locale compact units and decimal separators', () => {
+    expect(de.formatCompactNumber(9_264_137)).toBe('9,3 Mio.');
+    expect(de.formatCompactNumber(9_264_137, { maximumFractionDigits: 0 })).toBe('9 Mio.');
+  });
+});
+
 describe('formatCurrency', () => {
   it('formats an ISO 4217 amount for the locale', () => {
     expect(en.formatCurrency(1.5, 'USD')).toBe('$1.50');
@@ -34,6 +54,13 @@ describe('formatCurrency', () => {
 
   it('follows the locale currency conventions', () => {
     expect(de.formatCurrency(1234.5, 'EUR')).toContain('1.234,50');
+  });
+
+  it('supports locale-aware whole-number currency output', () => {
+    expect(en.formatCurrency(1.5, 'USD', { fractionDigits: 0 })).toBe('$2');
+    expect(en.formatCurrency(0.4, 'USD', { fractionDigits: 0 })).toBe('$0');
+    expect(de.formatCurrency(1234.5, 'EUR', { fractionDigits: 0 })).toBe('1.235 €');
+    expect(en.formatCurrency(2.4, 'CREDITS', { fractionDigits: 0 })).toBe('2 CREDITS');
   });
 
   it('honours zero-decimal currency conventions for whole amounts', () => {
@@ -120,9 +147,20 @@ describe('formatRelativeTime', () => {
 });
 
 describe('formatCompactRelativeTime', () => {
+  it('shows seconds for positive sub-minute ages and now for zero or future ages', () => {
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 18_000), { now: NOW })).toBe(
+      '18s',
+    );
+    expect(en.formatCompactRelativeTime(NOW, { now: NOW })).toBe('now');
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() + 18_000), { now: NOW })).toBe(
+      'now',
+    );
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 60_000), { now: NOW })).toBe('1m');
+  });
+
   it('formats unit-only compact ages', () => {
     expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 30_000), { now: NOW })).toBe(
-      'now',
+      '30s',
     );
     expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 5 * 60_000), { now: NOW })).toBe(
       '5m',
@@ -183,6 +221,24 @@ describe('formatCompactDuration', () => {
 
   it('uses localized narrow units', () => {
     expect(de.formatCompactDuration(5 * 60_000)).toBe('5 Min.');
+  });
+});
+
+describe('formatSalientDuration', () => {
+  it('shows only the largest salient unit', () => {
+    expect(en.formatSalientDuration(9 * 60_000 + 56_000)).toBe('9m');
+    expect(en.formatSalientDuration(56_000)).toBe('56s');
+    expect(en.formatSalientDuration(3_600_000 + 5 * 60_000)).toBe('1h');
+    expect(en.formatSalientDuration(2 * 86_400_000 + 3 * 3_600_000)).toBe('2d');
+  });
+
+  it('rounds sub-minute values to the nearest second', () => {
+    expect(en.formatSalientDuration(56_600)).toBe('57s');
+  });
+
+  it('clamps negatives and rejects invalid input', () => {
+    expect(en.formatSalientDuration(-5_000)).toBe('0s');
+    expect(en.formatSalientDuration(Number.NaN)).toBe('');
   });
 });
 

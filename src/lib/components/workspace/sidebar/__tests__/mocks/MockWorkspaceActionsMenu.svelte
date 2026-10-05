@@ -12,12 +12,16 @@
     additionalActions = [],
     onClose,
     onArchive,
+    onDelete,
     showArchiveOption = false,
+    showDeleteOption = true,
   }: {
     additionalActions?: Action[];
     onClose?: () => void;
     onArchive?: () => void;
+    onDelete?: () => void;
     showArchiveOption?: boolean;
+    showDeleteOption?: boolean;
     [key: string]: unknown;
   } = $props();
 </script>
@@ -47,5 +51,17 @@
     }}
   >
     Archive Workspace
+  </button>
+{/if}
+
+{#if showDeleteOption && onDelete}
+  <button
+    type="button"
+    onclick={() => {
+      onDelete();
+      onClose?.();
+    }}
+  >
+    Delete Workspace…
   </button>
 {/if}

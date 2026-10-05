@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { faUserTie } from '@fortawesome/free-solid-svg-icons';
@@ -15,6 +16,8 @@
   import { getProposalId } from './proposal-id';
   import { m } from '$shared/paraglide/messages.js';
   import ProposalCardHeader from './ProposalCardHeader.svelte';
+
+  const originatingWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
   interface Props {
     proposal: SpecialistEditProposal;
@@ -104,7 +107,12 @@
   }
 
   function buildDetail(): ProposalActionDetail {
-    return { proposal, editedFields: {}, selectedBulkItemIds: [] };
+    return {
+      proposal,
+      editedFields: {},
+      selectedBulkItemIds: [],
+      ...(originatingWorkspaceId ? { workspaceId: originatingWorkspaceId } : {}),
+    };
   }
 
   function getStatusMessage(): string {
@@ -211,12 +219,7 @@
         <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
           >{m.chat_shared_discard_label()}</Button
         >
-        <Button
-          size="sm"
-          class="border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/80"
-          disabled={actionDisabled}
-          onclick={handleApply}
-        >
+        <Button variant="primary" size="sm" disabled={actionDisabled} onclick={handleApply}>
           {isApplying
             ? m.chat_shared_applying_label()
             : isFailed

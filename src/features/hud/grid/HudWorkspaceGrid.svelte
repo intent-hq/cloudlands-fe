@@ -11,20 +11,19 @@
    */
   import { onDestroy, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
-  import { scale } from 'svelte/transition';
-  import { cubicOut, quintOut } from 'svelte/easing';
+  import { scale } from '$lib/motion';
+  import { quintOut } from 'svelte/easing';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import {
     selectHudGridFilter,
     selectHudWorkspaceCards,
   } from '$store/renderer/slices/hud/hud-selectors';
-  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
   import HudWorkspaceCard from './HudWorkspaceCard.svelte';
   import { applyHudGridFilter } from './hud-grid-filter';
   import { createCardVisibilityGate } from './hud-card-visibility';
-  import { watchReducedMotion } from '../right-column/hud-slide.svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   let {
@@ -40,12 +39,9 @@
 
   const visibleCards = $derived(applyHudGridFilter($cards$, $filter$));
 
-  // Mock `flipRoster` timings: entering cards scale in (420ms), leaving cards
-  // scale out (260ms), the rest FLIP-slide into place (480ms, ~the mock's
-  // cubic-bezier(0.16,1,0.3,1)). Reduced motion snaps (0ms).
+  // The FLIP layout animation remains tied to the HUD mock; card entry and
+  // exit use the shared slow motion tier.
   const flipDuration = $derived(reducedMotion.current ? 0 : 480);
-  const enterDuration = $derived(reducedMotion.current ? 0 : 420);
-  const leaveDuration = $derived(reducedMotion.current ? 0 : 260);
 
   onMount(() => {
     const timer = setInterval(() => (nowMs = Date.now()), 1000);
@@ -55,20 +51,17 @@
     };
   });
 
-  // Request the per-workspace rollups the cards join in (task stats §5.4,
-  // token usage §5.23) once per workspace id; both triggers are
-  // dispatch-safely idempotent (ensure* no-ops when loaded/loading, the
-  // read-service coalesces in-flight token fetches).
+  // Task progress comes from daemon workspace summaries. Only token usage
+  // (§5.23) needs a per-workspace read; the read service coalesces it.
   const requested = new Set<string>();
   function requestRollups(workspaceId: string): void {
     if (requested.has(workspaceId)) return;
     requested.add(workspaceId);
-    appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
     appStore.dispatch(fetchWorkspaceTokenUsage(workspaceId));
   }
 
   // A card only asks for its rollups once it is on screen: on a ~130-workspace
-  // profile the eager fan-out was ~260 reads in one tick, of which the user
+  // profile an eager token-usage fan-out would read every workspace, while the user
   // could see a dozen. The gate is rooted at the grid's scroll container (the
   // element that actually clips the cards) — see `hud-card-visibility`.
   let gridEl = $state<HTMLDivElement | undefined>();
@@ -97,8 +90,8 @@
             data-testid="hud-ws-grid-slot"
             use:observeCard={card.workspaceId}
             animate:flip={{ duration: flipDuration, easing: quintOut }}
-            in:scale={{ duration: enterDuration, start: 0.86, easing: quintOut }}
-            out:scale={{ duration: leaveDuration, start: 0.88, easing: cubicOut }}
+            in:scale={{ tier: 'slow', distance: 0.14 }}
+            out:scale={{ tier: 'slow', distance: 0.12 }}
           >
             <HudWorkspaceCard {card} {nowMs} />
           </div>

@@ -189,8 +189,9 @@ export interface ConnectionRecord {
    */
   daemonVersion?: string | null;
   /**
-   * Whether the daemon reports self-update support (`updateSupported` from
-   * `system.status`), captured after connect and refreshed on every
+   * Whether the daemon reports the update capability used by this client
+   * (`exactUpdateSupported` for remotes, `updateSupported` for adopted local
+   * daemons, from `system.status`), captured after connect and refreshed on every
    * reconnect. `null`/absent = unknown (capture pending, or a daemon too old
    * to report the field) — the UI treats anything but `true` as "do not offer
    * the Update action". On the synthesized local entry it is populated only
@@ -449,19 +450,11 @@ export interface UpdateBackendParams {
 }
 
 /**
- * `connections:update-backend` result. Structured rather than thrown so the
- * renderer can toast a specific message per failure mode:
- *   - `ok: true`        → `system.requestUpdate` was accepted; the remote's
- *                          sitter will install the newer version and restart
- *                          the daemon (the FE reconnects automatically).
- *   - `'not-connected'` → no live pooled client for that id (saved but
- *                          disconnected remote, or the id is unknown).
- *   - `'unsupported'`   → the daemon rejected the method (JSON-RPC -32601:
- *                          too old to know `system.requestUpdate`) or the id
- *                          was the local entry (never updated this way).
- *   - `'failed'`        → the daemon returned a structured error (e.g. not
- *                          sitter-supervised, non-unix host); `message`
- *                          carries the daemon's error text.
+ * `connections:update-backend` result. Remotes settle only after confirming
+ * the main-owned bundled version; adopted local daemons retain the legacy
+ * channel-request acknowledgement. Failures are structured for renderer toasts.
+ * `unsupported` includes missing exact-update capability, unknown versions,
+ * newer remotes, and app-managed local sidecars. No channel fallback is made.
  */
 export type UpdateBackendResult =
   | { ok: true }

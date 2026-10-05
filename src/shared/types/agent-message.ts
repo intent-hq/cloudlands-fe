@@ -11,13 +11,15 @@
  * Supports both core messages (with full metadata) and provider messages (simplified).
  */
 
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { ContentBlock } from './content-block';
 import type { AgentId } from './branded-ids';
 
 /**
  * Message role type
  */
-export type MessageRole = 'user' | 'assistant' | 'system' | 'error';
+export const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system', 'error'] as const;
+export type MessageRole = (typeof MESSAGE_ROLES)[number];
 
 /**
  * Tool call information
@@ -49,9 +51,37 @@ export interface ToolResult {
 }
 
 /**
+ * Daemon-served human author snapshot. A nonempty principalId is local to
+ * this host; explicit null is portable historical display with no local
+ * authority. Nullable profiles and optional qualified identity belong to this
+ * author, never to the destination owner, current viewer or membership roster.
+ */
+export interface MessageAuthor {
+  principalId: string | null;
+  login: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  identity?: PrincipalIdentity;
+}
+
+/** Daemon-owned original source of a combined queue retry; never an ACL. */
+interface RecoverySource {
+  messageId: string;
+  submissionIds?: string[];
+  author: MessageAuthor | null;
+  origin: 'user' | 'automatic';
+}
+
+/** Additive submission-correlation v1 fields; recovery leaves replace flat aliases. */
+export interface SubmissionCorrelation {
+  submissionIds?: string[];
+  recoverySources?: RecoverySource[];
+}
+
+/**
  * Message metadata containing operational information
  */
-export interface MessageMetadata {
+export interface MessageMetadata extends SubmissionCorrelation {
   // Model information
   model?: string;
   usage?: {
@@ -95,6 +125,7 @@ export interface MessageMetadata {
     | 'daemon_shutdown'
     | 'agent_stopped'
     | 'system_suspend'
+    | 'node_link_lost'
     | (string & {});
   interruptedBy?: { kind: 'user' } | { kind: 'agent'; agentId?: string; name?: string };
 
@@ -118,11 +149,19 @@ export interface MessageMetadata {
   // single-message deliveries and on rows from older daemons. Batch entries
   // whose wait fell below the 5-second annotation threshold carry ONLY
   // `batchId` (no `queuedAt`/`waitedMs`), so the wait fields are optional.
+  // `queuedMessageId` names the queue entry (`QueuedMessage.id`) the row was
+  // drained from; absent on rows from older daemons.
   queueInfo?: {
     queuedAt?: string;
     waitedMs?: number;
     batchId?: string;
+    queuedMessageId?: string;
   };
+
+  // Daemon-stamped authoring principal on user-origin rows (PROTOCOL §5.5,
+  // intent-hq/intentd#1869). Overwrites any client-supplied value; stripped
+  // from non-user-origin rows. The resolved profile rides `AgentMessage.author`.
+  fromPrincipalId?: string;
 
   // Allow additional properties
   [key: string]: any;
@@ -165,6 +204,20 @@ export interface AgentMessage {
   // Streaming state
   isStreaming?: boolean;
   streamingComplete?: boolean;
+  // Renderer-local, never on the wire: the renderer wrote this row's terminal
+  // state without the §7.1 stream delivering it — the firehose placeholder on
+  // a covered agent (created on any firehose event with no in-flight row, so
+  // it may still be `isStreaming`), a firehose terminal on an existing row, or
+  // the close-time / retained-row `settleStreaming` normalize. Absent means
+  // daemon-canonical (or still streaming under the §7.1 stream). Cleared by
+  // construction when a §7.1 snapshot/delta replaces the row by id (transcript
+  // rows never carry it) and by dedup when a canonical row merges into it.
+  provisional?: true;
+
+  // Serve-time author projection on `user` rows (PROTOCOL §5.5,
+  // intent-hq/intentd#1869). Absent on non-user rows, on local-only optimistic
+  // rows before the daemon echo, and on rows from older daemons.
+  author?: MessageAuthor | null;
 
   // Metadata
   metadata?: MessageMetadata;

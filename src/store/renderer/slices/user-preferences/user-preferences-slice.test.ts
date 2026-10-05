@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentRulesContentChanged,
+  agentRulesEditorOpened,
+  agentRulesEditorClosed,
+  agentRulesLoaded,
+  agentRulesSaveStarted,
+  agentRulesSaved,
+  agentRulesFailed,
+  agentRulesErrorCleared,
+  agentRulesSaveStatusCleared,
+  undoAgentRulesChanges,
   cycleNoteFontStyle,
   deleteActivityLogPreset,
   hydrateActivityLogPresets,
+  hydrateNotificationVolume,
   hydrateShortcutOverrides,
   initialState,
+  notificationVolumeHydrationStarted,
+  notificationVolumeWriteSettled,
   resetNotificationSettings,
   resetAllShortcutOverrides,
   resetShortcutOverride,
@@ -14,11 +27,16 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
+  setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
   setLanguagePreference,
   setShowArchived,
   setSpellcheckEnabled,
+  setReduceMotionOnBattery,
   setShowReasoningBlocks,
   setShellTransparencyEnabled,
   setShortcutOverride,
@@ -33,12 +51,16 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsMultiplayer,
+  toggleLabsGitLab,
+  toggleLabsRemoteAgents,
+  toggleLabsSettingsVisibility,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
   setUpdateChannel,
   toggleSpellcheck,
-  type UserPreferencesState,
   userPreferencesReducer,
 } from './user-preferences-slice';
 import {
@@ -55,12 +77,17 @@ import {
   selectHasCompletedProviderSetup,
   selectIsAgentMonospace,
   selectIsNoteMonospace,
+  selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
+  selectLabsRemoteAgentsEnabled,
+  selectLabsSettingsVisible,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
   selectNotificationVolume,
   selectShowArchived,
+  selectReduceMotionOnBattery,
   selectShowReasoningBlocks,
   selectShellTransparencyEnabled,
   selectSoundEnabled,
@@ -68,9 +95,158 @@ import {
 } from './user-preferences-selectors';
 
 describe('userPreferencesReducer', () => {
+  describe('rules editor state', () => {
+    it('keeps the opening baseline and draft while recording acknowledged persistence', () => {
+      let state = userPreferencesReducer(initialState, agentRulesEditorOpened());
+      expect(state.agentRulesEditor).toMatchObject({ generation: 1, active: true, loading: true });
+      state = userPreferencesReducer(state, agentRulesLoaded(1, 'original'));
+      state = userPreferencesReducer(state, agentRulesContentChanged('\ndraft\n'));
+      state = userPreferencesReducer(state, agentRulesSaveStarted(1));
+      expect(state.agentRulesEditor.saveStatus).toBe('saving');
+      state = userPreferencesReducer(state, agentRulesSaved(1, 'draft'));
+      expect(state.agentRulesEditor).toMatchObject({
+        originalContent: 'original',
+        content: '\ndraft\n',
+        persistedContent: 'draft',
+        saveStatus: 'saved',
+      });
+      state = userPreferencesReducer(state, agentRulesSaveStatusCleared(1));
+      expect(state.agentRulesEditor.saveStatus).toBe('idle');
+      state = userPreferencesReducer(state, undoAgentRulesChanges());
+      expect(state.agentRulesEditor).toMatchObject({
+        content: 'original',
+        persistedContent: 'draft',
+      });
+      expect(userPreferencesReducer(state, undoAgentRulesChanges())).toBe(state);
+      expect(userPreferencesReducer(state, agentRulesContentChanged('original'))).toBe(state);
+    });
+
+    it('does not mark newer content saved when an older write completes', () => {
+      let state = userPreferencesReducer(initialState, agentRulesEditorOpened());
+      state = userPreferencesReducer(state, agentRulesLoaded(1, 'original'));
+      state = userPreferencesReducer(state, agentRulesContentChanged('latest'));
+      state = userPreferencesReducer(state, agentRulesSaved(1, 'older'));
+      expect(state.agentRulesEditor).toMatchObject({
+        content: 'latest',
+        persistedContent: 'older',
+        saveStatus: 'saving',
+      });
+      state = userPreferencesReducer(state, agentRulesFailed(1, 'rejected'));
+      expect(state.agentRulesEditor).toMatchObject({
+        content: 'latest',
+        errorMessage: 'rejected',
+        saveStatus: 'idle',
+        loading: false,
+      });
+      state = userPreferencesReducer(state, agentRulesErrorCleared(1));
+      expect(state.agentRulesEditor.errorMessage).toBeNull();
+      expect(userPreferencesReducer(state, agentRulesErrorCleared(1))).toBe(state);
+      expect(userPreferencesReducer(state, agentRulesSaveStatusCleared(1))).toBe(state);
+    });
+
+    it('ignores stale completions and repeated cleanup across close/reopen generations', () => {
+      let state = userPreferencesReducer(initialState, agentRulesEditorOpened());
+      state = userPreferencesReducer(state, agentRulesEditorClosed());
+      expect(state.agentRulesEditor).toMatchObject({
+        active: false,
+        loading: false,
+        saveStatus: 'idle',
+      });
+      expect(userPreferencesReducer(state, agentRulesEditorClosed())).toBe(state);
+      expect(userPreferencesReducer(state, agentRulesLoaded(1, 'stale'))).toBe(state);
+      expect(userPreferencesReducer(state, agentRulesContentChanged('closed'))).toBe(state);
+      state = userPreferencesReducer(state, agentRulesEditorOpened());
+      expect(state.agentRulesEditor.generation).toBe(2);
+      for (const action of [
+        agentRulesLoaded(1, 'stale'),
+        agentRulesSaved(1, 'stale'),
+        agentRulesFailed(1, 'stale'),
+        agentRulesSaveStarted(1),
+        agentRulesErrorCleared(1),
+        agentRulesSaveStatusCleared(1),
+      ])
+        expect(userPreferencesReducer(state, action)).toBe(state);
+      expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+    });
+  });
+
   it('should return initial state', () => {
     const state = userPreferencesReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  it.each([
+    [0.75, 0.75],
+    [0.5, 0.5],
+    [-1, 0],
+    [2, 1],
+  ])('hydrates notification volume %s with the existing clamp', (value, expected) => {
+    const state = userPreferencesReducer(initialState, hydrateNotificationVolume(value));
+    expect(state.volume).toBe(expected);
+    expect(state.enabled).toBe(true);
+    expect(state.soundEnabled).toBe(true);
+    expect(state.soundOnlyWhenUnfocused).toBe(true);
+  });
+
+  it('settles only the matching volume edit, including a repeated value', () => {
+    const first = userPreferencesReducer(initialState, setVolume(0.9));
+    const second = userPreferencesReducer(first, setVolume(0.4));
+    const latest = userPreferencesReducer(second, setVolume(0.9));
+    expect(userPreferencesReducer(latest, hydrateNotificationVolume(0.25)).volume).toBe(0.9);
+    expect(
+      userPreferencesReducer(
+        latest,
+        notificationVolumeWriteSettled(first.notificationVolumeEditId, 0, 11),
+      ),
+    ).toBe(latest);
+    const settled = userPreferencesReducer(
+      latest,
+      notificationVolumeWriteSettled(latest.notificationVolumeEditId, 0, 12),
+    );
+    expect(settled.pendingNotificationVolumeEditId).toBeNull();
+    expect(userPreferencesReducer(settled, hydrateNotificationVolume(0.75)).volume).toBe(0.75);
+  });
+
+  it('treats a local reset as a new pending volume edit', () => {
+    const edited = userPreferencesReducer(initialState, setVolume(0.9));
+    const reset = userPreferencesReducer(edited, resetNotificationSettings());
+    expect(reset.volume).toBe(0.5);
+    expect(reset.pendingNotificationVolumeEditId).toBe(edited.notificationVolumeEditId + 1);
+    expect(userPreferencesReducer(reset, hydrateNotificationVolume(0.9)).volume).toBe(0.5);
+  });
+
+  it.each([
+    [10, 11, 0.9],
+    [12, 11, 0.75],
+    [12, undefined, 0.75],
+    [undefined, 0, 0.75],
+  ])(
+    'reconciles deferred revision %s when a write settles at %s',
+    (incomingRevision, writeRevision, expected) => {
+      const edited = userPreferencesReducer(initialState, setVolume(0.9));
+      const hydrated = userPreferencesReducer(
+        edited,
+        hydrateNotificationVolume(0.75, incomingRevision),
+      );
+      expect(hydrated.volume).toBe(0.9);
+      expect(hydrated.deferredNotificationVolume?.value).toBe(0.75);
+      const settled = userPreferencesReducer(
+        hydrated,
+        notificationVolumeWriteSettled(1, 0, writeRevision),
+      );
+      expect(settled.volume).toBe(expected);
+      expect(settled.pendingNotificationVolumeEditId).toBeNull();
+      expect(settled.deferredNotificationVolume).toBeNull();
+    },
+  );
+
+  it('rejects snapshots older than a confirmed write, then resets revisions for a new stream', () => {
+    const edited = userPreferencesReducer(initialState, setVolume(0.9));
+    const settled = userPreferencesReducer(edited, notificationVolumeWriteSettled(1, 0, 11));
+    expect(userPreferencesReducer(settled, hydrateNotificationVolume(0.25, 10))).toBe(settled);
+    const reconnected = userPreferencesReducer(settled, notificationVolumeHydrationStarted());
+    expect(reconnected.notificationVolumeHydrationEpoch).toBe(1);
+    expect(userPreferencesReducer(reconnected, hydrateNotificationVolume(0.5, 0)).volume).toBe(0.5);
   });
 
   describe('shortcut overrides', () => {
@@ -166,7 +342,7 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('setZoomFactor', () => {
-    const state: UserPreferencesState = { ...initialState, zoomFactor: 1.0 };
+    const state = { ...initialState, zoomFactor: 1.0 };
 
     it('should set zoom factor', () => {
       expect(userPreferencesReducer(state, setZoomFactor(1.5)).zoomFactor).toBe(1.5);
@@ -368,9 +544,17 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('appearance preference actions', () => {
-    it('defaults both preferences to enabled', () => {
+    it('defaults aurora and shell transparency to enabled and reduceMotionOnBattery to disabled', () => {
       expect(initialState.chatAuroraEnabled).toBe(true);
       expect(initialState.shellTransparencyEnabled).toBe(true);
+      expect(initialState.reduceMotionOnBattery).toBe(false);
+    });
+
+    it('sets and toggles reduceMotionOnBattery', () => {
+      const enabled = userPreferencesReducer(initialState, setReduceMotionOnBattery(true));
+      const disabled = userPreferencesReducer(enabled, toggleReduceMotionOnBattery());
+      expect(enabled.reduceMotionOnBattery).toBe(true);
+      expect(disabled.reduceMotionOnBattery).toBe(false);
     });
 
     it('sets and toggles chatAuroraEnabled', () => {
@@ -385,6 +569,72 @@ describe('userPreferencesReducer', () => {
       const enabled = userPreferencesReducer(disabled, toggleShellTransparency());
       expect(disabled.shellTransparencyEnabled).toBe(false);
       expect(enabled.shellTransparencyEnabled).toBe(true);
+    });
+  });
+
+  describe('Labs Settings visibility', () => {
+    it('starts hidden and supports setting and toggling both directions', () => {
+      const fresh = userPreferencesReducer(undefined, { type: '@@INIT' });
+      expect(selectLabsSettingsVisible.select({ userPreferences: fresh } as any)).toBe(false);
+
+      const shown = userPreferencesReducer(fresh, setLabsSettingsVisible(true));
+      expect(selectLabsSettingsVisible.select({ userPreferences: shown } as any)).toBe(true);
+      expect(shown.labsGitLabEnabled).toBe(false);
+      const hidden = userPreferencesReducer(shown, setLabsSettingsVisible(false));
+      expect(hidden.labsSettingsVisible).toBe(false);
+      const toggled = userPreferencesReducer(hidden, toggleLabsSettingsVisibility());
+      expect(toggled.labsSettingsVisible).toBe(true);
+      expect(
+        userPreferencesReducer(toggled, toggleLabsSettingsVisibility()).labsSettingsVisible,
+      ).toBe(false);
+    });
+
+    it('preserves experiment values while showing and hiding Settings', () => {
+      const multiplayer = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const enabled = userPreferencesReducer(multiplayer, setLabsGitLabEnabled(true));
+      const shown = userPreferencesReducer(enabled, setLabsSettingsVisible(true));
+      const hidden = userPreferencesReducer(shown, toggleLabsSettingsVisibility());
+      expect(shown.labsMultiplayerEnabled).toBe(true);
+      expect(hidden.labsMultiplayerEnabled).toBe(true);
+      expect(shown.labsGitLabEnabled).toBe(true);
+      expect(hidden.labsGitLabEnabled).toBe(true);
+      expect(hidden).toEqual(enabled);
+    });
+  });
+
+  describe('labs preference actions', () => {
+    it('defaults the Multiplayer lab to disabled', () => {
+      expect(initialState.labsMultiplayerEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsMultiplayerEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsMultiplayer());
+      expect(enabled.labsMultiplayerEnabled).toBe(true);
+      expect(disabled.labsMultiplayerEnabled).toBe(false);
+    });
+  });
+
+  describe('labs preference actions', () => {
+    it('defaults the GitLab lab to disabled', () => {
+      expect(initialState.labsGitLabEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsGitLabEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsGitLabEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsGitLab());
+      expect(enabled.labsGitLabEnabled).toBe(true);
+      expect(disabled.labsGitLabEnabled).toBe(false);
+    });
+    it('defaults the RemoteAgents lab to disabled', () => {
+      expect(initialState.labsRemoteAgentsEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsRemoteAgentsEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsRemoteAgentsEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsRemoteAgents());
+      expect(enabled.labsRemoteAgentsEnabled).toBe(true);
+      expect(disabled.labsRemoteAgentsEnabled).toBe(false);
     });
   });
 
@@ -452,7 +702,7 @@ describe('userPreferencesReducer', () => {
       expect(selectShowReasoningBlocks.select({} as any)).toBe(false);
     });
 
-    it('selects appearance preferences with enabled fallbacks', () => {
+    it('selects appearance preferences with their default fallbacks', () => {
       expect(
         selectChatAuroraEnabled.select({
           userPreferences: { ...initialState, chatAuroraEnabled: false },
@@ -463,8 +713,69 @@ describe('userPreferencesReducer', () => {
           userPreferences: { ...initialState, shellTransparencyEnabled: false },
         } as any),
       ).toBe(false);
+      expect(
+        selectReduceMotionOnBattery.select({
+          userPreferences: { ...initialState, reduceMotionOnBattery: true },
+        } as any),
+      ).toBe(true);
       expect(selectChatAuroraEnabled.select({} as any)).toBe(true);
       expect(selectShellTransparencyEnabled.select({} as any)).toBe(true);
+      expect(selectReduceMotionOnBattery.select({} as any)).toBe(false);
+    });
+
+    it('selects labsMultiplayerEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsMultiplayerEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsMultiplayerEnabled.select({
+          userPreferences: { ...initialState, labsMultiplayerEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(false);
+    });
+    it('selects labsGitLabEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsGitLabEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsGitLabEnabled.select({
+          userPreferences: { ...initialState, labsGitLabEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsGitLabEnabled.select({} as any)).toBe(false);
+    });
+
+    it('selects labsRemoteAgentsEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsRemoteAgentsEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsRemoteAgentsEnabled.select({
+          userPreferences: { ...initialState, labsRemoteAgentsEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsRemoteAgentsEnabled.select({} as any)).toBe(false);
+    });
+
+    it.each([undefined, null, 'true', 'false', 1, 0, {}, []])(
+      'keeps remote entry points off for malformed state: %j',
+      (value) => {
+        expect(
+          selectLabsRemoteAgentsEnabled.select({
+            userPreferences: {
+              ...initialState,
+              labsRemoteAgentsEnabled: value,
+            },
+          } as any),
+        ).toBe(false);
+      },
+    );
+
+    it('reads the current remote opt-in after disabling, independently of Labs visibility', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsRemoteAgentsEnabled(true));
+      const hidden = userPreferencesReducer(enabled, setLabsSettingsVisible(false));
+      expect(selectLabsRemoteAgentsEnabled.select({ userPreferences: hidden } as any)).toBe(true);
+      const disabled = userPreferencesReducer(hidden, setLabsRemoteAgentsEnabled(false));
+      expect(selectLabsRemoteAgentsEnabled.select({ userPreferences: disabled } as any)).toBe(
+        false,
+      );
+      expect(disabled.labsMultiplayerEnabled).toBe(false);
+      expect(disabled.labsGitLabEnabled).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

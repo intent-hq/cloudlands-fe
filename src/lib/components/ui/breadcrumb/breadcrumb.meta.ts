@@ -23,6 +23,18 @@ export const breadcrumbMetadata = parseUiComponentMetadata({
     'Separator',
     'breadcrumbMetadata',
   ],
+  // Minimal composition from the breadcrumb-navigation default fixture.
+  usage: `<script lang="ts">
+  import * as Breadcrumb from '$lib/components/ui/breadcrumb';
+</script>
+
+<Breadcrumb.Root aria-label="Page path">
+  <Breadcrumb.List>
+    <Breadcrumb.Item><Breadcrumb.Link href="/sandbox">Catalog</Breadcrumb.Link></Breadcrumb.Item>
+    <Breadcrumb.Separator />
+    <Breadcrumb.Item><Breadcrumb.Page>Components</Breadcrumb.Page></Breadcrumb.Item>
+  </Breadcrumb.List>
+</Breadcrumb.Root>`,
   category: 'primitive',
   owner: '012-F2',
   callers: [

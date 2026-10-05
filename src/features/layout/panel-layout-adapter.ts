@@ -10,6 +10,8 @@
 
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
+import type { PanelCycleDirection } from './panel-cycle-navigation';
+import { resolvePaneColumnMove, resolvePaneVerticalMove } from './panel-pane-column-move';
 import {
   openTab,
   openTabInAdjacentOrSplit as openTabInAdjacentOrSplitAction,
@@ -18,12 +20,14 @@ import {
   closeActiveTab,
   closeTabsByType,
   closeTabsByAgentId,
+  reopenClosedPanelColumn,
   reopenClosedTab,
   setActiveTab,
   selectNextTab,
   selectPreviousTab,
   reorderTabs,
   moveTabToPanel,
+  moveActivePaneVertically as moveActivePaneVerticallyAction,
   moveTabToSplit,
   moveTabToSplitLevel,
   closeOtherTabs,
@@ -57,11 +61,13 @@ import {
   createGridLayout,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
+  selectPanelLayoutRoot,
   selectFocusedPanelId,
   selectPanels,
   selectAllTabs,
   selectPanelIds,
   selectPanel,
+  selectLastPanelClose,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import type {
   PanelTab,
@@ -172,6 +178,14 @@ export class PanelLayoutAdapter {
   reopenClosedTab(closedTabId?: string, targetPanelId?: string) {
     this.dispatch(reopenClosedTab(this.workspaceId, undefined, closedTabId, targetPanelId));
   }
+  reopenLastClosed() {
+    const lastPanelClose = selectLastPanelClose.select(this.state, this.workspaceId);
+    if (lastPanelClose?.kind === 'column') {
+      this.dispatch(reopenClosedPanelColumn(this.workspaceId));
+    } else if (lastPanelClose?.kind === 'tab') {
+      this.dispatch(reopenClosedTab(this.workspaceId));
+    }
+  }
   setActiveTab(tabId: string, panelId?: string) {
     this.dispatch(setActiveTab(this.workspaceId, tabId, panelId));
   }
@@ -186,6 +200,35 @@ export class PanelLayoutAdapter {
   }
   moveTabToPanel(tabId: string, fromPanelId: string, toPanelId: string, insertIndex?: number) {
     this.dispatch(moveTabToPanel(this.workspaceId, tabId, fromPanelId, toPanelId, insertIndex));
+  }
+  moveActivePaneToColumn(panelId: string, direction: PanelCycleDirection): boolean {
+    const move = resolvePaneColumnMove(
+      this.getPanelIds(),
+      this.getPanel(panelId),
+      direction,
+      selectPanelLayoutRoot.select(this.state, this.workspaceId),
+    );
+    if (!move) return false;
+    if (move.kind === 'neighbor') {
+      this.moveTabToPanel(move.tabId, panelId, move.targetPanelId);
+    } else {
+      this.moveTabToSplitLevel(move.tabId, panelId, [], move.position, 'horizontal');
+    }
+    return true;
+  }
+  canMoveActivePaneVertically(panelId: string, direction: 'up' | 'down'): boolean {
+    return (
+      resolvePaneVerticalMove(
+        selectPanelLayoutRoot.select(this.state, this.workspaceId),
+        this.getPanel(panelId),
+        direction,
+      ) !== null
+    );
+  }
+  moveActivePaneVertically(panelId: string, direction: 'up' | 'down'): boolean {
+    if (!this.canMoveActivePaneVertically(panelId, direction)) return false;
+    this.dispatch(moveActivePaneVerticallyAction(this.workspaceId, panelId, direction));
+    return true;
   }
   moveTabToSplit(
     tabId: string,

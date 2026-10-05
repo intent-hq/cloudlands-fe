@@ -1,98 +1,66 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
+import {
+  failOnConsoleErrors,
+  peekConsoleErrors,
+  takeConsoleErrors,
+} from '../../../../../test/ct-console-errors';
 import SimpleAgentPanelHeaderHost from './mocks/SimpleAgentPanelHeaderHost.svelte';
+import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte';
+
+failOnConsoleErrors(test);
+
+// Mount the lookup directly: web panel headers omit native editor commands.
+test('fails the console-error guard when the workspace:get mock is missing', async ({
+  mount,
+  page,
+}) => {
+  await mount(WorkspaceActionsMenu, {
+    props: { workspaceId: 'simple-agent-header-workspace', filePath: '.' },
+  });
+  await expect
+    .poll(() => peekConsoleErrors(page).some((text) => text.includes("channel 'workspace:get'")))
+    .toBe(true);
+  const errors = takeConsoleErrors(page);
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toContain('[WorkspaceActionsMenu] Failed to resolve path');
+});
 
 const names = {
   root: 'Root coordinator with a deliberately long current agent name',
   delegated: 'Layout verifier with a deliberately long current agent name',
 } as const;
 
-test('shows only the current agent identity across root, delegated, single, stacked, and width states', async ({
-  mount,
-}) => {
-  const component = await mount(SimpleAgentPanelHeaderHost);
-
-  for (const activeAgent of ['root', 'delegated'] as const) {
-    for (const stackCount of [1, 2] as const) {
-      for (const width of [240, 560]) {
-        await component.update({ props: { activeAgent, stackCount, width } });
-        const header = component.locator('[data-panel-tabless-header]');
-        const identity = header.locator('[data-panel-agent-header-identity]');
-        const currentName = names[activeAgent];
-        const otherName = names[activeAgent === 'root' ? 'delegated' : 'root'];
-
-        await expect(identity).toHaveCount(1);
-        const avatarSlot = identity.getByTestId('panel-header-agent-avatar-slot');
-        const avatar = avatarSlot.locator('svg[data-agent-avatar]');
-        await expect(avatar).toHaveCount(1);
-        await expect(avatar).toHaveAttribute('data-avatar-variant', 'emphasized');
-        await expect(avatar).toHaveAttribute('width', '24');
-        await expect(avatar).toHaveAttribute('height', '24');
-        await expect(avatarSlot.locator('[data-panel-agent-chat-glyph]')).toHaveCount(0);
-        await expect(avatarSlot.locator('[data-panel-agent-chat-text-glyph]')).toHaveCount(0);
-        const stateAvatar = identity.locator('[data-agent-avatar-with-state]');
-        await expect(stateAvatar).toHaveCount(1);
-        await expect(stateAvatar).toHaveAttribute('data-avatar-state', 'idle');
-        const geometry = await avatarSlot.evaluate((slot) => {
-          const avatar = slot.querySelector<SVGElement>('[data-agent-avatar]')!;
-          const slotRect = slot.getBoundingClientRect();
-          const avatarRect = avatar.getBoundingClientRect();
-          return {
-            slot: [slotRect.width, slotRect.height],
-            avatar: [avatarRect.width, avatarRect.height],
-          };
-        });
-        expect(geometry).toEqual({ slot: [24, 24], avatar: [24, 24] });
-        await expect(identity.getByRole('button', { name: currentName })).toHaveCount(1);
-        await expect(header).not.toContainText(otherName);
-        await expect(header.locator('[data-pane-stack]')).toHaveCount(0);
-        await expect(header.locator('[data-pane-stack-layer]')).toHaveCount(0);
-        await expect(header.locator('[data-pane-stack-position]')).toHaveCount(0);
-        await expect(header.locator('[data-pane-stack-overflow-trigger]')).toHaveCount(0);
-        await expect(header.locator('[data-panel-identity-back]')).toHaveCount(0);
-        await expect(header.locator('[data-panel-identity-forward]')).toHaveCount(0);
-        await expect(header.getByTestId('panel-actions-trigger')).toBeVisible();
-        await expect(header.getByTestId('panel-close-button')).toBeVisible();
-
-        const nameGeometry = await identity
-          .getByRole('button', { name: currentName })
-          .evaluate((element) => ({
-            clientWidth: element.clientWidth,
-            scrollWidth: element.scrollWidth,
-            overflow: getComputedStyle(element).overflow,
-            textOverflow: getComputedStyle(element).textOverflow,
-          }));
-        expect(nameGeometry.overflow).toBe('hidden');
-        expect(nameGeometry.textOverflow).toBe('ellipsis');
-        if (width === 240)
-          expect(nameGeometry.scrollWidth).toBeGreaterThan(nameGeometry.clientWidth);
-      }
-    }
-  }
-});
-
-test('keeps keyboard rename focus, cancel, and save behavior', async ({ mount, page }) => {
-  const component = await mount(SimpleAgentPanelHeaderHost, {
-    props: { activeAgent: 'delegated', stackCount: 2, width: 240 },
+for (const width of [190, 560]) {
+  test(`keeps selector and controls reachable at ${width}px`, async ({ mount, page }, testInfo) => {
+    const component = await mount(SimpleAgentPanelHeaderHost, {
+      props: { fullActions: true, stackCount: 2, width },
+    });
+    const header = component.locator('[data-panel-tabless-header]');
+    const selector = header.getByTestId('pane-stack-selector-trigger');
+    const controls = header.locator('[data-panel-header-actions]');
+    const geometry = await header.evaluate((element) => {
+      const header = element.getBoundingClientRect();
+      const identity = element
+        .querySelector('[data-panel-header-identity]')!
+        .getBoundingClientRect();
+      const actions = element.querySelector('[data-panel-header-actions]')!.getBoundingClientRect();
+      return {
+        contained: identity.left >= header.left && actions.right <= header.right,
+        noOverlap: identity.right <= actions.left,
+        overflow: element.scrollWidth > element.clientWidth,
+      };
+    });
+    expect(geometry).toEqual({ contained: true, noOverlap: true, overflow: false });
+    await selector.press('Enter');
+    await page.getByRole('menuitem', { name: names.delegated, exact: true }).click();
+    await expect(selector).toContainText(names.delegated);
+    await expect(selector).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(controls.getByTestId('panel-actions-trigger')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(controls.getByTestId('panel-close-button')).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(component).toHaveAttribute('data-close-count', '1');
+    await testInfo.attach('header', { body: await header.screenshot(), contentType: 'image/png' });
   });
-  const identity = component.locator('[data-panel-agent-header-identity]');
-  const nameButton = identity.getByRole('button', { name: names.delegated });
-
-  await nameButton.focus();
-  await page.keyboard.press('Enter');
-  const input = identity.locator('input[type="text"]');
-  await expect(input).toBeFocused();
-  await input.fill('Cancelled verifier rename');
-  await page.keyboard.press('Escape');
-  await expect(component).toHaveAttribute('data-last-rename', '');
-  await expect(identity.getByRole('button', { name: names.delegated })).toBeVisible();
-
-  await identity.getByRole('button', { name: names.delegated }).press('Enter');
-  await expect(input).toBeFocused();
-  await input.fill('Renamed delegated agent');
-  await page.keyboard.press('Enter');
-  await expect(component).toHaveAttribute(
-    'data-last-rename',
-    'delegated-tab:Renamed delegated agent',
-  );
-  await expect(identity.getByRole('button', { name: 'Renamed delegated agent' })).toBeVisible();
-});
+}

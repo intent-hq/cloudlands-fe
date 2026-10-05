@@ -12,6 +12,13 @@
   import { writable } from 'svelte/store';
   import EmbeddedBrowser from '$lib/components/browser/EmbeddedBrowser.svelte';
   import BrowserViewerTab from '$lib/components/browser/BrowserViewerTab.svelte';
+  import * as Menu from '$lib/components/ui/menu';
+  import { faRobot } from '@fortawesome/free-solid-svg-icons';
+  import { m } from '$shared/paraglide/messages.js';
+  import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import {
     BROWSER_VIEWPORT_CHANGE_EVENT,
     browserViewportAction,
@@ -52,13 +59,28 @@
     $pendingPanelReveal$?.tabId === tab.id && $pendingPanelReveal$.preserveFocus === true,
   );
 
-  // Owner agent display name for the toolbar chip (monorepo#2857).
+  // Owner agent display name for the panel header chip.
   const workspaceIdStore = writable(workspaceId);
   $effect(() => workspaceIdStore.set(workspaceId));
   const agents$ = selectAllWorkspaceAgents(workspaceIdStore);
   const ownerAgentName = $derived(
     tab.ownerAgentId ? resolveOwnerName(tab.ownerAgentId, $agents$, tab.ownerAgentName) : undefined,
   );
+  function openOwnerAgent(event: MouseEvent) {
+    if (!tab.ownerAgentId) return;
+    appStore.dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: tab.ownerAgentId,
+        sourcePanelId: findSourcePanelId(viewportActionNode ?? event.target),
+        openInAdjacentPanel: isCmdClickModifier({ event }),
+      }),
+    );
+  }
+  const headerContext = getPanelHeaderContext();
+  $effect(() => {
+    if (!headerContext || !isActive || !tab.ownerAgentId) return;
+    return headerContext.registerActions({ actions: connectedAgent });
+  });
   let viewportActionNode: HTMLDivElement | null = $state(null);
 
   // The live webview mounts only on the tab's host (REV-2 §5.45). A tab the
@@ -71,20 +93,29 @@
   );
   const hostClientIdStore = writable(untrack(() => tab.hostClientId ?? ''));
   $effect(() => hostClientIdStore.set(tab.hostClientId ?? ''));
-  const tabHost$ = selectBrowserTabHost(hostClientIdStore);
+  const tabHost$ = selectBrowserTabHost(hostClientIdStore, workspaceIdStore);
 </script>
 
+{#snippet connectedAgent()}
+  {#if tab.ownerAgentId}
+    <Menu.CommandItem
+      icon={faRobot}
+      label={m.browser_embedded_ownerChip_ariaLabel({ name: ownerAgentName ?? tab.ownerAgentId })}
+      onclick={openOwnerAgent}
+      data-browser-owner-chip={tab.ownerAgentId}
+    />
+  {/if}
+{/snippet}
+
 {#if !isHostedHere}
-  <div class="h-full" data-browser-tab-mirror={tab.hostClientId}>
+  <div bind:this={viewportActionNode} class="h-full" data-browser-tab-mirror={tab.hostClientId}>
     <BrowserViewerTab
       url={browserUrl}
       title={tab.title}
       host={$tabHost$}
       {isActive}
       onNavigate={(newUrl: string) => {
-        const action = navigateBrowserTabRequested(tab.id, newUrl);
-        appStore.dispatch(action);
-        return action.promise;
+        return appStore.dispatch(navigateBrowserTabRequested(tab.id, newUrl));
       }}
       onClose={({ force }) => {
         appStore.dispatch(closeBrowserTabRequested(tab.id, force));
@@ -109,16 +140,21 @@
       focusUrlBarOnMount={isActive && isPanelFocused && !isFocusPreservingReveal}
       isFocused={isPanelFocused}
       ownerAgentId={tab.ownerAgentId}
-      {ownerAgentName}
       viewport={tab.viewport ?? { mode: 'fit' }}
       onViewportChange={(viewport) => {
         viewportActionNode?.dispatchEvent(
           new CustomEvent(BROWSER_VIEWPORT_CHANGE_EVENT, { detail: viewport }),
         );
       }}
-      onNavigate={(newUrl: string) => {
-        // Update the tab's browserUrl so it stays in sync with actual location
-        appStore.dispatch(updateTabBrowserUrl(panelLayoutId, tab.id, newUrl));
+      onNavigate={(newUrl: string, requestedUrl?: string) => {
+        // Update the tab's browserUrl so it stays in sync with actual location.
+        // An address-bar alias resolution names its pre-rewrite URL so the tab
+        // restores by re-resolving it; other navigations keep the auto mode.
+        appStore.dispatch(
+          requestedUrl === undefined
+            ? updateTabBrowserUrl(panelLayoutId, tab.id, newUrl)
+            : updateTabBrowserUrl(panelLayoutId, tab.id, newUrl, requestedUrl),
+        );
         // Update context store item if this tab is linked to one
         if (tab.contextItemId) {
           appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { url: newUrl }));

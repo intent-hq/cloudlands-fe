@@ -67,6 +67,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
+  selectAgentQueueMessages: Object.assign(() => readable([]), { select: () => [] }),
+}));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => readable(0),
   selectPermissionRequests: () => readable([]),
@@ -74,8 +77,8 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectHudAgentHasPendingQuestion: () => readable(false),
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))

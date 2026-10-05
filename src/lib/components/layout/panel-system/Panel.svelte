@@ -24,6 +24,7 @@
   import {
     arePanelTabCachesEqual,
     getNextPanelTabCacheExpiryDelay,
+    initializePanelTabCache,
     MAX_CACHED_INACTIVE_TABS,
     PANEL_TAB_CACHE_TTL_MS,
     updatePanelTabCache,
@@ -74,6 +75,8 @@
     onPaneDropPreview?: (placement: PaneDropPlacement | null) => void;
     /** Idempotently finishes the active-pane drag before layout mutation. */
     onPaneDragFinish?: () => void;
+    onMovePaneUp?: () => void;
+    onMovePaneDown?: () => void;
     onMovePaneLeft?: () => void;
     onMovePaneRight?: () => void;
     onMoveLeft?: () => void;
@@ -117,6 +120,8 @@
     onTabMoveToPanel,
     onPaneDropPreview,
     onPaneDragFinish,
+    onMovePaneUp,
+    onMovePaneDown,
     onMovePaneLeft,
     onMovePaneRight,
     onMoveLeft,
@@ -193,14 +198,19 @@
   let panelRef = $state.raw<HTMLDivElement | null>(null);
 
   // Keep recently-visited tabs mounted for faster switching
-  // Tabs are kept for PANEL_TAB_CACHE_TTL_MS after switching away, then unmounted
+  // Non-browser tabs expire after PANEL_TAB_CACHE_TTL_MS; live browser pages persist.
   const tabCacheOptions = {
     ttlMs: PANEL_TAB_CACHE_TTL_MS,
     maxInactiveTabs: MAX_CACHED_INACTIVE_TABS,
   };
 
-  // Track which tabs should remain mounted (active + recently visited)
-  let cachedTabIds = $state<Map<string, number>>(new Map()); // tabId -> timestamp when last active
+  // Track which tabs should remain mounted (active + recently visited). Seed an
+  // initially active panel before its first render; later changes stay effect-driven.
+  let cachedTabIds = $state<Map<string, number>>(
+    untrack(() =>
+      initializePanelTabCache(active, panel.tabs, panel.activeTabId, Date.now(), tabCacheOptions),
+    ),
+  ); // tabId -> timestamp when last active
 
   function applyTabCacheUpdate(
     tabs = panel.tabs,
@@ -220,9 +230,23 @@
     }
   }
 
-  // Update cache when active tab or tab membership changes.
+  let lastActiveTabId: string | null | undefined;
+
+  // Update cache when active tab or tab membership changes. On deactivation,
+  // start the selected tab's inactivity window now, not at its activation time.
   $effect(() => {
-    if (active) applyTabCacheUpdate(panel.tabs, panel.activeTabId);
+    if (active) {
+      applyTabCacheUpdate(panel.tabs, panel.activeTabId);
+      lastActiveTabId = panel.activeTabId;
+    } else if (lastActiveTabId) {
+      const tabId = lastActiveTabId;
+      untrack(() => {
+        if (cachedTabIds.has(tabId)) {
+          cachedTabIds = new Map(cachedTabIds).set(tabId, Date.now());
+        }
+      });
+      lastActiveTabId = null;
+    }
   });
 
   // Clear focus before a tab switch or panel deactivation flips `inert` on a
@@ -242,20 +266,20 @@
     }
   });
 
-  // Enforce the TTL even when the active tab does not change again. Without
-  // this timer, inactive browser/editor/diff tabs can stay mounted forever.
+  // Retained browser workspaces still expire disposable content while hidden.
+  // Their selected tab is inactive too; only live browser pages bypass expiry.
   $effect(() => {
-    if (!active) return;
+    const cacheActiveTabId = active ? panel.activeTabId : null;
     const delay = getNextPanelTabCacheExpiryDelay(
       cachedTabIds,
-      panel.activeTabId,
+      cacheActiveTabId,
       Date.now(),
       PANEL_TAB_CACHE_TTL_MS,
       panel.tabs,
     );
     if (delay === null) return;
 
-    const timeout = setTimeout(() => applyTabCacheUpdate(panel.tabs, panel.activeTabId), delay);
+    const timeout = setTimeout(() => applyTabCacheUpdate(panel.tabs, cacheActiveTabId), delay);
     return () => clearTimeout(timeout);
   });
 
@@ -443,13 +467,14 @@
     class={cn(
       'panel group/panel relative flex flex-col h-full overflow-hidden rounded-(--panel-shell-radius) text-foreground',
     )}
-    class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}
-    class:bg-background={panel.pristine !== true || panel.tabs.length > 0}
+    class:bg-sidebar={panel.tabs.length === 0}
+    class:bg-background={panel.tabs.length > 0}
     class:contained
     data-panel-id={panelId}
     data-layout-id={layoutId}
     data-focused={isFocused}
     data-focus-border-visible={isFocused && showFocusBorder}
+    data-empty-panel-shell={panel.tabs.length === 0 ? 'true' : undefined}
     data-zoomed={isZoomed}
     data-pristine={panel.pristine === true}
     data-empty-panel-surface={panel.pristine === true && panel.tabs.length === 0
@@ -491,6 +516,8 @@
         {onTabReorder}
         {onTabMoveToPanel}
         {onPaneDragFinish}
+        {onMovePaneUp}
+        {onMovePaneDown}
         {onMovePaneLeft}
         {onMovePaneRight}
         {onMoveLeft}
@@ -518,7 +545,8 @@
     - Render active tab + recently visited tabs (cached for 30s)
     - Inactive tabs are hidden with CSS but remain mounted
     - This provides instant tab switching for recently used tabs
-    - After 30s of inactivity, tabs are unmounted to save memory
+    - After 30s of inactivity, non-browser tabs are unmounted to save memory
+    - Browser pages stay mounted until closed, including in inactive workspaces
 
     During tab drag operations, pointer-events are disabled to prevent:
     - Editors from showing paste cursors
@@ -531,7 +559,8 @@
           {@const isActive = active && tab.id === panel.activeTabId}
           <div
             class="tab-content-wrapper h-full w-full"
-            class:hidden={!isActive}
+            class:hidden={!isActive && tab.type !== 'browser'}
+            class:browser-background={!isActive && tab.type === 'browser'}
             data-tab-id={tab.id}
             aria-hidden={!isActive}
             inert={!isActive}
@@ -581,7 +610,7 @@
 
 <style>
   .panel {
-    --panel-shell-radius: var(--radius-large);
+    --panel-shell-radius: calc(var(--radius-large) * 1.5);
     position: relative;
     width: 100%;
     min-width: 0;
@@ -602,6 +631,10 @@
     .panel[data-focus-border-visible='true'] {
       border-color: Highlight;
     }
+  }
+
+  .panel[data-empty-panel-shell='true'] {
+    box-shadow: none;
   }
 
   .panel-content {
@@ -648,5 +681,14 @@
 
   .tab-content-wrapper.hidden {
     display: none;
+  }
+
+  /* Keep the original browser guest paintable without changing its viewport
+     or reparenting it. Nonbrowser editors retain display:none above. */
+  .tab-content-wrapper.browser-background {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 </style>

@@ -92,6 +92,41 @@ describe('LiveNotesClient mutations (fake transport)', () => {
     });
   });
 
+  // The daemon merges a full-content write against concurrent edits and echoes
+  // the merged text (`newContent`) plus, on newer daemons, the post-write
+  // `rev`; both surface on the MutationResult so the save path can apply them.
+  it("setContent surfaces the daemon's merged newContent and rev on the MutationResult", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      ok: true,
+      noteId: 'note-1',
+      title: 'T',
+      updatedAt: 'now',
+      newContent: 'merged text',
+      rev: 7,
+      convertedCount: 0,
+      createdTaskNoteIds: [],
+      createdTasks: [],
+      warnings: [],
+    });
+    const client = new LiveNotesClient();
+
+    expect(await client.setContent('note-1', 'mine', 6, 'ws-1')).toEqual({
+      success: true,
+      newContent: 'merged text',
+      noteRev: 7,
+    });
+  });
+
+  it('setContent surfaces newContent without a rev when the daemon omits it (older daemons)', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, noteId: 'note-1', newContent: 'merged text' });
+    const client = new LiveNotesClient();
+
+    expect(await client.setContent('note-1', 'mine', 6, 'ws-1')).toEqual({
+      success: true,
+      newContent: 'merged text',
+    });
+  });
+
   // Round-5 regression: note ids are not globally unique (every workspace has
   // a `spec` note) and the resolver cache is last-writer-wins across
   // workspaces, so a caller-supplied workspaceId must win over the cache â€”
@@ -801,7 +836,9 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL Â
     workspaceIds = ['ws-1'];
     fireWorkspaceSetEvent('workspace:deleted');
     await vi.waitFor(() => {
-      expect(requestsFor('note.unsubscribe')).toEqual([{ subscriptionId: 'chan-2' }]);
+      expect(requestsFor('note.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
+      ]);
     });
     const evicted = handler.mock.calls.at(-1)?.[0] as Array<{ id: string }>;
     expect(evicted.map((n) => n.id)).toEqual(['a']);
@@ -866,7 +903,9 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL Â
         { workspaceId: 'ws-1' },
         { workspaceId: 'ws-2' },
       ]);
-      expect(requestsFor('note.unsubscribe')).toEqual([{ subscriptionId: 'chan-4' }]);
+      expect(requestsFor('note.unsubscribe')).toEqual([
+        { subscriptionId: 'chan-4', workspaceId: 'ws-2' },
+      ]);
     });
 
     // The surviving ws-1 channel's recovery snapshot re-populates with only
@@ -886,8 +925,8 @@ describe('LiveNotesClient.subscribe typed per-workspace note channel (PROTOCOL Â
 
     unsubscribe();
     expect(requestsFor('note.unsubscribe')).toEqual([
-      { subscriptionId: 'chan-1' },
-      { subscriptionId: 'chan-2' },
+      { subscriptionId: 'chan-1', workspaceId: 'ws-1' },
+      { subscriptionId: 'chan-2', workspaceId: 'ws-2' },
     ]);
   });
 });

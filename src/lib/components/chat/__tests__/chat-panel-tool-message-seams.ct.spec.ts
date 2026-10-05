@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
@@ -20,6 +20,12 @@ for (const theme of ['light', 'dark'] as const) {
       ] as const;
 
       for (const [beforeId, afterId, owner] of pairs) {
+        await component
+          .getByTestId('chat-transcript-scroll-viewport')
+          .evaluate((node) => node.dispatchEvent(new WheelEvent('wheel', { deltaY: -20 })));
+        await component
+          .locator(`[data-message-id="${beforeId}"]`)
+          .evaluate((node) => node.scrollIntoView({ block: 'center' }));
         const before = row(beforeId);
         const after = row(afterId);
         await expect(before).toBeVisible();
@@ -79,6 +85,9 @@ for (const theme of ['light', 'dark'] as const) {
         );
       }
 
+      await component
+        .locator('[data-message-id="assistant-production-search"]')
+        .evaluate((node) => node.scrollIntoView({ block: 'center' }));
       const productionRows = [
         'assistant-production-search',
         'assistant-production-reopen',
@@ -150,8 +159,8 @@ for (const theme of ['light', 'dark'] as const) {
           eventToolHeight: eventTool.height,
         };
       });
-      expect(eventSpacing.beforeEvent).toBeCloseTo(32 * zoom, 1);
-      expect(eventSpacing.afterEvent).toBeCloseTo(32 * zoom, 1);
+      expect(eventSpacing.beforeEvent).toBeCloseTo(24 * zoom, 1);
+      expect(eventSpacing.afterEvent).toBeCloseTo(24 * zoom, 1);
       expect(eventSpacing.eventToolHeight).toBeCloseTo(28 * zoom, 1);
 
       const userSpacing = await component.evaluate((root) => {
@@ -163,7 +172,7 @@ for (const theme of ['light', 'dark'] as const) {
           .getBoundingClientRect();
         return userMessage.top - previousOperational.bottom;
       });
-      expect(userSpacing).toBeCloseTo(40 * zoom, 1);
+      expect(userSpacing).toBeCloseTo(24 * zoom, 1);
 
       const userBottomSpacing = await component.evaluate((root) => {
         const userMessage = root
@@ -176,7 +185,7 @@ for (const theme of ['light', 'dark'] as const) {
           .getBoundingClientRect();
         return assistantRow.top - userMessage.bottom;
       });
-      expect(userBottomSpacing).toBeCloseTo(28 * zoom, 1);
+      expect(userBottomSpacing).toBeCloseTo(24 * zoom, 1);
       await expect(
         component
           .getByTestId('chat-transcript-scroll-viewport')

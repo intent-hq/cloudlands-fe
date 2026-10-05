@@ -19,6 +19,7 @@
   stroke-width="16"
   stroke-linecap="round"
   stroke-linejoin="round"
+  data-owns-stroke=""
   class={className}
   {...rest}
 >

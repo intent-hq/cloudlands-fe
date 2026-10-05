@@ -1,28 +1,26 @@
 <script lang="ts">
-  /**
-   * AgentCard Component
-   *
-   * A compact card that shows an agent's avatar, name, status, and message preview.
-   * Uses subscription for real-time updates and displays line changes stats.
-   * Reads Redux-owned streaming state for real-time response updates.
-   */
+  /** Agent summary with Redux-owned streaming state and line changes. */
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import { toast } from 'svelte-sonner';
-  import { createLogger } from '$lib/utils/client-logger';
+  import { notify } from '$lib/components/patterns/notify';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import { Input } from '$lib/components/ui/input';
   import {
+    selectAgentIsResponding,
+    selectAgentBackgroundPending,
+    selectAgentDetailHydrated,
     selectAgentSession,
     selectAgentPreview,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectPendingQuestionRecovery } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import {
-    deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
-    renameAgentSessionRequested,
-    stopAgentSessionRequested,
+    agentRetirementSupportRequested,
+    setAgentNotificationsMutedRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
+  import { selectAgentRetirementSupported } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
@@ -30,11 +28,21 @@
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAgentNodeStatusLabel } from './agent-node-status-label';
+  import { hasNodeOwnedAgentPath } from '$shared/utils/agent-node';
+  import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
+  import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
+  import { deriveAgentHasPendingQuestion } from './questions/wizard-gate';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import {
+    agentMutationUiConsumed,
+    agentMutationUiReleased,
+    agentMutationUiRequested,
+  } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
+  import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
   import {
     getPanelLayoutManager,
     hasPanelLayoutManager,
@@ -42,27 +50,41 @@
   import type { AgentSession, Workspace } from '$shared/types';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import HarnessFeaturesModal from './HarnessFeaturesModal.svelte';
+  import RetireAgentModal from '$lib/components/modals/RetireAgentModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
+    faBoxArchive,
+    faBell,
+    faBellSlash,
     faCircleInfo,
     faFolderOpen,
     faPen,
     faRightLeft,
     faStop,
     faTrash,
-    faUserTie,
   } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
-  import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectIsWorkspaceHostLocal,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { backgroundModeMenuItems } from './agent-background-menu';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
+  import TaskProgressControl from './TaskProgressControl.svelte';
+  import type { TaskProgressItem } from './workspace-task-fallback';
 
   interface Props {
     agentId: string;
@@ -108,6 +130,10 @@
     provider?: string;
     /** Optional actions rendered beside, never inside, the row activation button. */
     headerActions?: Snippet;
+    /** Optional per-agent task progress rendered beside row actions. */
+    taskProgress?: TaskProgressItem[];
+    /** Visual presentation for the optional task progress control. */
+    taskProgressPresentation?: 'status-stack' | 'checklist';
     /** Optional timestamp supplied by list data before the session selector is hydrated. */
     updatedAt?: AgentSession['updatedAt'];
     /** Disable navigation, mutation, editing, and file operations in isolated previews. */
@@ -135,42 +161,68 @@
     isCompleted = false,
     provider = undefined,
     headerActions,
+    taskProgress = [],
+    taskProgressPresentation = 'status-stack',
     updatedAt: updatedAtProp = undefined,
     readOnly = false,
   }: Props = $props();
 
-  const logger = createLogger('AgentCard');
+  const mutationConsumerId = crypto.randomUUID();
+  const renameConsumerId = crypto.randomUUID();
+  const mutationWorkspaceIdStore = writable('');
+  const mutation$ = selectAgentMutationUi(mutationWorkspaceIdStore, mutationConsumerId);
+  const rename$ = selectAgentMutationUi(mutationWorkspaceIdStore, renameConsumerId);
+  $effect(() => {
+    const wsId = mutationWorkspaceId;
+    void agentId;
+    mutationWorkspaceIdStore.set(wsId);
+    return () => {
+      appStore.dispatch(agentMutationUiReleased(wsId, mutationConsumerId));
+      appStore.dispatch(agentMutationUiReleased(wsId, renameConsumerId));
+    };
+  });
+  $effect(() => {
+    for (const outcome of [$mutation$, $rename$]) {
+      if (
+        !outcome ||
+        outcome.workspaceId !== mutationWorkspaceId ||
+        outcome.agentId !== agentId ||
+        outcome.status === 'pending'
+      )
+        continue;
+      if (outcome.operation.kind === 'stop') closeContextMenu();
+      appStore.dispatch(
+        agentMutationUiConsumed($mutationWorkspaceIdStore, outcome.id, outcome.requestId),
+      );
+    }
+  });
   const INLINE_PEEK_TYPOGRAPHY_CLASS = 'font-normal! text-muted-foreground';
-
+  const hasTaskProgress = $derived(taskProgress.length > 0);
   // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
   const agentIdStore = writable(agentId);
   $effect(() => {
     agentIdStore.set(agentId);
   });
-
   const agentPermCount = selectPendingCount(agentIdStore);
-
+  const hasCapturedQuestion$ = selectHudAgentHasPendingQuestion(agentIdStore);
+  const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
+  const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
+  // Load missing rows only; list projections must not trigger per-card detail
+  // fan-out. handleContextMenu loads detail-only fields on demand.
   $effect(() => {
     const wsId = workspace?.id;
-    if (wsId && !readOnly) {
-      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
-    }
+    if (!wsId || readOnly) return;
+    if (selectAgentSession.select(appStore.state, agentId)) return;
+    appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
   });
-
-  // Inline editing state
   let isEditing = $state(false);
   let editingValue = $state('');
   let editInputRef: HTMLInputElement | null = $state(null);
-
-  // Context menu state
-  let contextMenu: { x: number; y: number } | null = $state(null);
-
-  // Read-only harness-features modal (opened from the context menu).
+  let contextMenu: (SidebarContextPosition & { sourcePanelId?: string }) | null = $state(null);
   let harnessModalOpen = $state(false);
-
-  // Replace Agent modal (opened from the context menu when eligible).
   let replaceAgentModalOpen = $state(false);
-
+  let retireAgentModalOpen = $state(false);
+  const retirementSupported$ = selectAgentRetirementSupported();
   // Platform file-manager label (locality-gated reveal ⇒ daemon host is this
   // machine, so the client platform matches; PanelTabBar idiom).
   const isWindows = typeof navigator !== 'undefined' && navigator.platform?.startsWith('Win');
@@ -186,7 +238,6 @@
       ? 'Finder'
       : m.chat_agentCard_fileManager_label();
 
-  // Start editing the agent name
   async function startEditing() {
     if (readOnly || isEditing) return;
     editingValue = displayName;
@@ -196,7 +247,6 @@
     editInputRef?.select();
   }
 
-  // Save the edited name
   function saveEdit() {
     if (!isEditing) return;
     const nextName = editingValue.trim();
@@ -209,39 +259,21 @@
           ? String(workspace.id)
           : undefined;
       if (wsId) {
-        // Capture previous values before the optimistic dispatch so a failed
-        // rename can revert back to exactly what the user saw.
-        const previousName = displayName;
-        const previousNameExplicitlySet = $agent$?.nameExplicitlySet ?? false;
         appStore.dispatch(
-          updateAgentSessionFields(agentId, {
+          agentMutationUiRequested(wsId, renameConsumerId, crypto.randomUUID(), agentId, {
+            kind: 'rename',
             name: nextName,
-            nameExplicitlySet: true,
-          } as any),
+          }),
         );
-        const action = renameAgentSessionRequested(wsId, agentId, nextName);
-        appStore.dispatch(action);
-        action.promise.catch(() => {
-          // Revert the optimistic dispatch so Redux matches disk, then notify.
-          appStore.dispatch(
-            updateAgentSessionFields(agentId, {
-              name: previousName,
-              nameExplicitlySet: previousNameExplicitlySet,
-            } as any),
-          );
-          toast.error(m.chat_agentCard_renameFailed_error());
-        });
       }
     }
   }
 
-  // Cancel editing
   function cancelEdit() {
     isEditing = false;
     editingValue = '';
   }
 
-  // Handle keyboard events during editing
   function handleEditKeydown(e: KeyboardEvent) {
     e.stopPropagation();
     if (e.key === 'Enter' && !e.isComposing) {
@@ -257,7 +289,6 @@
     e.stopPropagation();
   }
 
-  // Handle double-click on name
   function handleNameDoubleClick(e: MouseEvent) {
     if (readOnly) return;
     e.preventDefault();
@@ -265,9 +296,12 @@
     startEditing();
   }
 
-  // Handle keyboard events on the card button
   function handleCardKeydown(e: KeyboardEvent) {
     if (readOnly) return;
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      handleContextMenu(e);
+      return;
+    }
     if (e.key === 'Enter' && isCmdClickModifier({ event: e })) {
       e.preventDefault();
       e.stopPropagation();
@@ -284,12 +318,17 @@
     }
   }
 
-  // Context menu handlers
-  function handleContextMenu(e: MouseEvent) {
+  function handleContextMenu(e: MouseEvent | KeyboardEvent) {
     if (readOnly) return;
-    e.preventDefault();
-    e.stopPropagation();
-    contextMenu = { x: e.clientX, y: e.clientY };
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
+    contextMenu = { ...position, sourcePanelId: findSourcePanelId(e.currentTarget) };
+    void appStore.dispatch(agentRetirementSupportRequested());
+    // Read detail-only menu fields on demand; items update when they arrive.
+    const wsId = $agent$?.workspaceId ?? workspace?.id;
+    if (wsId) {
+      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
+    }
   }
 
   function closeContextMenu() {
@@ -310,12 +349,15 @@
                 ? String(workspace.id)
                 : undefined;
             if (wsId) {
-              appStore.dispatch(openAgentTabRequested(wsId, { agentId }));
+              appStore.dispatch(
+                openAgentTabRequested(wsId, { agentId, sourcePanelId: contextMenu?.sourcePanelId }),
+              );
             }
           }
           closeContextMenu();
         },
       },
+      { type: 'separator' },
       {
         id: 'rename',
         label: m.chat_agentCard_menu_rename_label(),
@@ -326,6 +368,33 @@
         },
       },
     ];
+
+    items.push(...backgroundModeMenuItems($agent$, $backgroundPending$, closeContextMenu));
+
+    // Per-agent notification mute (daemon-owned `notificationsMuted`, §5.5):
+    // one toggle whose label reflects the current flag. Only offered once the
+    // session is in the store — the workspace id is needed for agent.update.
+    if ($agent$) {
+      const muted = isNotificationsMuted;
+      items.push({
+        id: 'toggle-notifications-muted',
+        label: muted
+          ? m.chat_agentCard_menu_unmuteNotifications_label()
+          : m.chat_agentCard_menu_muteNotifications_label(),
+        icon: muted ? faBell : faBellSlash,
+        onClick: async () => {
+          const wsId = $agent$?.workspaceId
+            ? String($agent$.workspaceId)
+            : workspace?.id
+              ? String(workspace.id)
+              : undefined;
+          closeContextMenu();
+          if (!wsId) return;
+          // The saga owns the failure toast and rollback.
+          appStore.dispatch(setAgentNotificationsMutedRequested(wsId, agentId, !muted));
+        },
+      });
+    }
 
     // Reveal the agent's CoW sandbox directory. Sandboxes are cloned from the
     // workspace checkout, so they live on the workspace's host — only offered
@@ -338,7 +407,11 @@
       : workspace?.id
         ? String(workspace.id)
         : '';
-    if (sandboxPath && selectIsWorkspaceHostLocal.select(appStore.state, sandboxWsId)) {
+    if (
+      sandboxPath &&
+      !hasNodeOwnedAgentPath($agent$) &&
+      selectIsWorkspaceHostLocal.select(appStore.state, sandboxWsId)
+    ) {
       items.push({
         id: 'reveal-sandbox',
         label: m.chat_agentCard_menu_revealIn_label({ fileManager: fileManagerName }),
@@ -348,7 +421,7 @@
           try {
             await invoke('shell:showItemInFolder', { path: sandboxPath });
           } catch (error) {
-            toast.error(
+            notify.error(
               error instanceof Error
                 ? error.message
                 : m.chat_agentCard_revealFailed_error({ fileManager: fileManagerName }),
@@ -358,42 +431,37 @@
       });
     }
 
-    // Add stop option if agent is running
-    if (avatarState === 'running' || avatarState === 'responding') {
+    // Attention states can mask a running turn; use canonical runtime state.
+    if (isTurnRunning) {
+      items.push({ type: 'separator' });
       items.push({
         id: 'stop',
         label: m.chat_agentCard_menu_stop_label(),
         icon: faStop,
-        onClick: async () => {
+        disabled:
+          $mutation$?.agentId === agentId &&
+          $mutation$.operation.kind === 'stop' &&
+          $mutation$.status === 'pending',
+        onClick: () => {
           const wsId = $agent$?.workspaceId
             ? String($agent$.workspaceId)
             : workspace?.id
               ? String(workspace.id)
               : undefined;
-          // The stop trigger settles for real now (agent-mutation-service
-          // forwards agent.stop) — guard so a daemon-side failure cannot
-          // become an unhandled rejection that skips closing the menu.
-          try {
-            if (wsId) {
-              const action = stopAgentSessionRequested(wsId, agentId);
-              appStore.dispatch(action);
-              await action.promise;
-            }
-          } catch (error) {
-            logger.error('Failed to stop agent', { agentId, error });
-          } finally {
-            closeContextMenu();
-          }
+          if (wsId)
+            appStore.dispatch(
+              agentMutationUiRequested(wsId, mutationConsumerId, crypto.randomUUID(), agentId, {
+                kind: 'stop',
+              }),
+            );
+          else closeContextMenu();
         },
       });
     }
 
     items.push({ type: 'separator' });
 
-    // "Replace Agent" (peer-agent hand-off): hidden unless every
-    // session-derived eligibility gate passes (harnessFeatures.peerAgents
-    // snapshot true, top-level, non-background, not retired) — mirrors the
-    // AgentTabType panel menu.
+    // Match the panel menu's peer-agent hand-off eligibility.
     if (!readOnly && !isBackground && isReplaceAgentEligible($agent$)) {
       items.push({
         id: 'replace-agent',
@@ -406,45 +474,59 @@
       });
     }
 
-    items.push({
-      id: 'delete',
-      label: m.chat_agentCard_menu_delete_label(),
-      icon: faTrash,
-      destructive: true,
-      onClick: async () => {
-        // Close related panel tabs before deleting
-        const sessionWorkspaceId = $agent$?.workspaceId
-          ? String($agent$.workspaceId)
-          : workspace?.id
-            ? String(workspace.id)
-            : undefined;
-        if (sessionWorkspaceId && hasPanelLayoutManager(sessionWorkspaceId)) {
-          const layoutManager = getPanelLayoutManager(sessionWorkspaceId);
-          layoutManager.closeTabsByType('agent', 'agentId', agentId);
-        }
-        closeContextMenu();
+    // `agent.delete` is refused (-32003) for a collaborator, so the item is withheld
+    // (never merely disabled) in a guest / collaborator window.
+    const rawWorkspaceId = $agent$?.workspaceId || workspace?.id;
+    const deleteWorkspaceId = rawWorkspaceId ? String(rawWorkspaceId) : undefined;
+    const hidesDelete =
+      !!deleteWorkspaceId &&
+      selectHidesAgentLifecycleActions.select(appStore.state, deleteWorkspaceId);
+    if ($retirementSupported$ && deleteWorkspaceId && $agent$ && !$agent$.retiredAt) {
+      items.push({
+        id: 'retire-agent',
+        label: m.modals_retireAgent_confirm_label(),
+        icon: faBoxArchive,
+        onClick: () => {
+          retireAgentModalOpen = true;
+          closeContextMenu();
+        },
+      });
+    }
+    if (!hidesDelete) {
+      items.push({
+        id: 'delete',
+        label: m.chat_agentCard_menu_delete_label(),
+        icon: faTrash,
+        destructive: true,
+        onClick: () => {
+          // Close related panel tabs before deleting
+          if (deleteWorkspaceId && hasPanelLayoutManager(deleteWorkspaceId)) {
+            getPanelLayoutManager(deleteWorkspaceId).closeTabsByType('agent', 'agentId', agentId);
+          }
+          closeContextMenu();
 
-        if (sessionWorkspaceId) {
-          const action = deleteAgentWithUndoRequested(
-            sessionWorkspaceId,
-            agentId,
-            agentName || undefined,
-          );
-          appStore.dispatch(action);
-          await action.promise;
-        }
-      },
-    });
+          if (deleteWorkspaceId) {
+            appStore.dispatch(
+              agentMutationUiRequested(
+                deleteWorkspaceId,
+                mutationConsumerId,
+                crypto.randomUUID(),
+                agentId,
+                { kind: 'delete', name: agentName || undefined },
+              ),
+            );
+          }
+        },
+      });
+    }
 
-    // Read-only info stamps. Specialist (monorepo#3498): resolved display
-    // name when the id is known, raw id fallback otherwise; omitted for
-    // agents without a specialist. Harness version (PROTOCOL §5.5): selecting
-    // the item opens the harness-features modal (monorepo#2459) — legacy
-    // sessions without a harnessFeatures snapshot open it too (every catalog
-    // feature renders OFF); sessions from daemons that predate the field omit
-    // the item entirely.
+    // Specialist is metadata, resolved by name with a raw-ID fallback (monorepo#3498).
+    // Harness opens the features modal (PROTOCOL §5.5, monorepo#2459). The detail-only
+    // snapshot may be absent on slim rows, so wait for hydration before enabling.
+    // Hydrated legacy sessions without a snapshot show every feature OFF.
     const specialistId = specialist;
     const harnessVersion = $agent$?.harnessVersion;
+    const harnessSnapshotResolved = $agent$?.harnessFeatures !== undefined || $agentDetailHydrated$;
     if (specialistId || harnessVersion) {
       items.push({ type: 'separator' });
     }
@@ -452,11 +534,9 @@
       const specialistName =
         selectSpecialistName.select(appStore.state, specialistId) ?? specialistId;
       items.push({
+        type: 'label',
         id: 'specialist',
         label: m.chat_agentCard_menu_specialist_label({ name: specialistName }),
-        icon: faUserTie,
-        disabled: true,
-        onClick: () => {},
       });
     }
     if (harnessVersion) {
@@ -464,6 +544,7 @@
         id: 'harness-version',
         label: m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
         icon: faCircleInfo,
+        disabled: !harnessSnapshotResolved,
         onClick: () => {
           harnessModalOpen = true;
           closeContextMenu();
@@ -477,11 +558,11 @@
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
+  const mutationWorkspaceId = $derived(String($agent$?.workspaceId || workspace?.id || ''));
+  const backgroundPending$ = selectAgentBackgroundPending(agentIdStore);
+  const agentDetailHydrated$ = selectAgentDetailHydrated(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
-
-  // Get parent agent ID from metadata (for delegation info)
   const parentAgentId = $derived(agentData?.parentAgentId);
-
   // Mirror the parent agent ID into a writable so the Redux selector
   // re-evaluates reactively: the "Delegated by" label appears as soon as
   // the parent session lands in state (e.g. on workspace restore) without
@@ -502,10 +583,38 @@
   // fields; null when none is pending (retired on agent:updated clear).
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
 
+  // Mirrors PanelHeaderAgentAvatar / the mini dock: captured HUD question or
+  // marker/transcript-derived pending question (the marker alone suffices for
+  // an out-of-view agent whose question row is not in the local store).
+  const hasQuestion = $derived.by(() => {
+    if ($hasCapturedQuestion$) return true;
+    // The shared gate reads the responding flag, the marker/dismissal metadata
+    // and the out-of-tail recovery result straight from store state; touching
+    // the readables here keeps this $derived reactive to changes that do not
+    // alter the session's message array (recovery settling, gate flips).
+    void $agentIsResponding$;
+    void $agent$?.metadata?.pendingQuestionsMessageId;
+    void $agent$?.metadata?.dismissedQuestionsMessageId;
+    void $pendingQuestionRecovery$;
+    return deriveAgentHasPendingQuestion(appStore.state, agentId, $agent$?.messages ?? []);
+  });
+
+  // Canonical running predicate for the session, independent of the display
+  // precedence applied by getAvatarState below.
+  const isTurnRunning = $derived(
+    $agent$ ? isAgentRunningState(toAgentRuntimeStateInput($agent$)) : false,
+  );
+
+  // Daemon-owned per-agent notification mute (served on AgentLite, converged
+  // through agent:updated). Drives the context-menu toggle label and the
+  // bell-slash indicator beside the name.
+  const isNotificationsMuted = $derived($agent$?.notificationsMuted === true);
+
   // Use the canonical session state derivation for every agent surface.
   const avatarState = $derived(
     getAvatarStateForSession($agent$, {
       hasPermissionRequest: $agentPermCount > 0,
+      hasQuestion,
       isActive: selected,
       isCompleted,
       attentionKind: attentionRequest?.kind ?? null,
@@ -529,6 +638,8 @@
     if (!wsId) return;
     appStore.dispatch(sendMessage(agentId, { wsId, text, agentName: displayName }));
   }
+
+  const effectiveStatusLabel = $derived(getAgentNodeStatusLabel($agent$) ?? statusLabel);
 
   // Sandbox directory for sandboxed agents (daemon-provided metadata).
   const agentSandboxPath = $derived.by(() => {
@@ -560,16 +671,17 @@
 
   const updatedAt = $derived(updatedAtProp ?? $agent$?.updatedAt);
 
-  // Border color based on state - only show colored border if showStateBorder is true
-  const isRunning = $derived(avatarState === 'running' || avatarState === 'responding');
+  // Border color based on state - only show colored border if showStateBorder
+  // is true. Keyed on the display state (not isTurnRunning) so the amber/red
+  // attention shadows keep their precedence over the active glow.
   const glowClass = $derived.by(() => {
     if (!showStateBorder) return '';
-    if (isRunning) return 'agent-glow-active';
+    if (avatarState === 'running' || avatarState === 'responding') return 'agent-glow-active';
     if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';
-    if (avatarState === 'needs-permission') return 'shadow shadow-amber-500 shadow-sm';
-    if (avatarState === 'attention-discussion') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'needs-permission') return 'shadow shadow-warning shadow-sm';
+    if (avatarState === 'attention-discussion') return 'shadow shadow-warning shadow-sm';
     if (avatarState === 'attention-blocker') return 'shadow shadow-red-500 shadow-sm';
-    if (avatarState === 'waiting') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'waiting') return 'shadow shadow-warning shadow-sm';
     return 'glow-transparent';
   });
 
@@ -606,7 +718,7 @@
     if (onclick) {
       onclick(event);
     } else {
-      const sourcePanelId = findSourcePanelId(event.target);
+      const sourcePanelId = findSourcePanelId(event.currentTarget);
       const openInAdjacentPanel = isCmdClickModifier({ event });
       const wsId = $agent$?.workspaceId
         ? String($agent$.workspaceId)
@@ -637,10 +749,10 @@
     <svelte:element
       this={isEditing ? 'div' : 'button'}
       type={isEditing ? undefined : 'button'}
-      class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-150 {isEditing
+      class="flex w-full min-w-0 max-w-full text-left gap-2 transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none {isEditing
         ? 'overflow-visible'
         : 'overflow-hidden'} {isEditing ? 'cursor-text' : 'cursor-pointer'} group border {panelRow
-        ? 'h-10 items-center rounded-md border-transparent bg-transparent px-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0'
+        ? 'h-10 items-center rounded-md border-transparent border-l-0 bg-transparent pl-0 pr-2 py-2 type-body font-normal text-foreground hover:bg-transparent active:bg-transparent focus-visible:-outline-offset-2 focus-visible:bg-transparent focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0'
         : inline
           ? `type-body items-center rounded-md ${inlineRowClass}`
           : 'px-1.75 pt-1.25 pb-1.5'} {panelRow
@@ -677,9 +789,13 @@
       <div
         class="agent-card-content flex min-w-0 max-w-full flex-1 {isEditing
           ? 'overflow-visible'
-          : 'overflow-hidden'} {headerActions ? 'mr-14' : ''} {inline || panelRow
-          ? 'flex-row items-center gap-2'
-          : 'flex-col'}"
+          : 'overflow-hidden'} {hasTaskProgress
+          ? headerActions
+            ? 'mr-25'
+            : 'mr-11'
+          : headerActions
+            ? 'mr-14'
+            : ''} {inline || panelRow ? 'flex-row items-center gap-2' : 'flex-col'}"
       >
         <!-- Header row -->
         <div
@@ -715,8 +831,8 @@
             >
               {#if isEditing}
                 <!-- svelte-ignore a11y_autofocus -->
-                <input
-                  bind:this={editInputRef}
+                <Input
+                  bind:ref={editInputRef}
                   type="text"
                   bind:value={editingValue}
                   aria-label={m.chat_agentCard_menu_rename_label()}
@@ -735,17 +851,20 @@
                   oncopycapture={isolateEditEvent}
                   oncutcapture={isolateEditEvent}
                   onpastecapture={isolateEditEvent}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent text-sm text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                  noFocusStyle
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent hover:bg-transparent {panelRow
+                    ? 'type-body font-normal'
+                    : 'text-sm'} text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                 />
               {:else}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <h3
-                  class="relative z-10 cursor-text whitespace-nowrap {panelRow
+                  class="relative z-10 cursor-inherit whitespace-nowrap {panelRow
                     ? 'min-w-0 flex-1 truncate type-body font-normal text-foreground'
                     : inline
                       ? typographyClass
-                        ? 'shrink-0 type-body font-normal text-foreground!'
-                        : 'shrink-0 type-body font-normal text-foreground'
+                        ? 'shrink-0 type-body font-normal text-muted-foreground!'
+                        : 'shrink-0 type-body font-normal text-muted-foreground'
                       : 'shrink-0 text-sm font-normal text-foreground'}"
                   data-testid="agent-card-name"
                   data-agent-row-name={panelRow ? '' : undefined}
@@ -761,24 +880,25 @@
                   : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
               ></span>
             </div>
-            {#if statusLabel}
+            {#if isNotificationsMuted && (!inline || panelRow)}
+              <span
+                class="inline-flex shrink-0 items-center text-subtle"
+                role="img"
+                aria-label={m.chat_agentCard_notificationsMuted_tooltip()}
+                title={m.chat_agentCard_notificationsMuted_tooltip()}
+                data-testid="agent-card-muted-indicator"
+              >
+                <Fa icon={faBellSlash} class="h-3! w-3!" />
+              </span>
+            {/if}
+            {#if effectiveStatusLabel}
               <span
                 class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"
                 data-testid="agent-card-status"
               >
-                {statusLabel}
+                {effectiveStatusLabel}
               </span>
             {/if}
-            <!-- {#if specialist}
-            <span
-              class="specialist-icon shrink-0 text-subtle dark:text-background ml-1.5 mr-0.5"
-            >
-              <SpecialistToolIcon {specialist} size={12} muted />
-            </span>
-            <span class="specialist-text text-ui text-subtle shrink-0">
-              {specialistDisplayName}
-            </span>
-          {/if} -->
             {#if delegatedByName && (!inline || panelRow)}
               <span
                 class="delegated-by-text min-w-0 shrink truncate whitespace-nowrap text-ui text-subtle {panelRow
@@ -825,14 +945,6 @@
               class="flex shrink-0 items-center gap-1.5"
               data-agent-row-trailing={panelRow ? '' : undefined}
             >
-              {#if panelRow && isBackground}
-                <span
-                  class="shrink-0 rounded bg-muted px-1 py-0.5 text-ui font-bold text-subtle"
-                  data-agent-background-badge
-                >
-                  {m.chat_agentCard_background_badge()}
-                </span>
-              {/if}
               {#if !panelRow && $lineChanges$ && ($lineChanges$.additions > 0 || $lineChanges$.deletions > 0)}
                 <LineChangeStats
                   additions={$lineChanges$.additions}
@@ -858,14 +970,14 @@
           <div
             class="mt-0.5 w-full min-w-0 max-w-full overflow-hidden"
             data-testid="agent-card-preview-row"
-            transition:safeSlide={{ axis: 'y', duration: 150 }}
+            transition:safeDisclosureTransition={{ tier: 'fast' }}
           >
             {#if $preview$.kind === 'attention'}
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm {$preview$
                   .attention.kind === 'blocker'
                   ? 'text-red-500'
-                  : 'text-amber-500'}"
+                  : 'text-warning-ink'}"
                 data-testid="agent-card-attention"
               >
                 {$preview$.attention.kind === 'blocker'
@@ -881,7 +993,7 @@
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm text-subtle"
                 data-testid="agent-card-preview"
               >
-                <AgentPreviewToolLabel toolUse={$preview$.toolUse} animate={isRunning} />
+                <AgentPreviewToolLabel toolUse={$preview$.toolUse} animate={isTurnRunning} />
               </div>
             {:else if $preview$.kind === 'report'}
               <p
@@ -903,21 +1015,32 @@
         {/if}
       </div>
     </svelte:element>
-    {#if headerActions}
+    {#if headerActions || hasTaskProgress}
       <div
-        class="absolute right-3 top-1/2 z-10 h-6 w-14 shrink-0 -translate-y-1/2"
+        class="absolute right-3 top-1/2 z-10 flex h-6 shrink-0 -translate-y-1/2 items-center justify-end {hasTaskProgress
+          ? headerActions
+            ? 'w-25'
+            : 'w-11'
+          : 'w-14'}"
         data-testid="agent-card-trailing-slot"
       >
-        {#if updatedAt}
-          <RelativeTime
-            date={updatedAt}
-            compact
-            class="type-caption tabular-nums absolute inset-0 flex items-center justify-end text-right {INLINE_PEEK_TYPOGRAPHY_CLASS} transition-opacity group-hover/watch:opacity-0 group-focus-within/watch:opacity-0"
-          />
+        {#if hasTaskProgress}
+          <TaskProgressControl tasks={taskProgress} presentation={taskProgressPresentation} />
         {/if}
-        <div class="absolute inset-0 flex items-center justify-end gap-1">
-          {@render headerActions()}
-        </div>
+        {#if headerActions}
+          <div class="relative h-6 w-14 shrink-0">
+            {#if updatedAt}
+              <RelativeTime
+                date={updatedAt}
+                compact
+                class="type-caption tabular-nums absolute inset-0 flex items-center justify-end text-right {INLINE_PEEK_TYPOGRAPHY_CLASS} transition-opacity group-hover/watch:opacity-0 group-focus-within/watch:opacity-0"
+              />
+            {/if}
+            <div class="absolute inset-0 flex items-center justify-end gap-1">
+              {@render headerActions()}
+            </div>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -929,6 +1052,7 @@
   <SidebarContextMenu
     x={contextMenu.x}
     y={contextMenu.y}
+    returnFocus={contextMenu.returnFocus}
     items={getContextMenuItems()}
     onClickOutside={closeContextMenu}
   />
@@ -939,6 +1063,15 @@
     bind:open={harnessModalOpen}
     version={$agent$.harnessVersion}
     features={$agent$?.harnessFeatures ?? null}
+  />
+{/if}
+
+{#if retireAgentModalOpen}
+  <RetireAgentModal
+    bind:open={retireAgentModalOpen}
+    agentName={$agent$?.name || agentName || ''}
+    workspaceId={String($agent$?.workspaceId || workspace?.id)}
+    {agentId}
   />
 {/if}
 
@@ -1003,7 +1136,7 @@
   :global(.agent-glow-active) {
     position: relative;
     box-shadow: 0 0 12px 2px rgba(16, 185, 129, 0.1);
-    animation: agent-glow-pulse 2s ease-in-out infinite;
+    animation: agent-glow-pulse calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
   }
 
   :global(.agent-glow-active)::before {
@@ -1054,7 +1187,7 @@
   }
 
   /* Reduced motion support */
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     :global(.agent-glow-active) {
       animation: none;
       box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.12);

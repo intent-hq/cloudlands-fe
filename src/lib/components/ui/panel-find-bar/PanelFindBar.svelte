@@ -149,8 +149,8 @@
       disabled={disabled || inputDisabled}
       noFocusStyle
       class={cn(
-        'h-6 w-36 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
-        'placeholder:text-muted-foreground/60',
+        'h-6 w-36 border-0 bg-transparent px-0 py-0 text-sm shadow-none',
+        'placeholder:text-muted-foreground',
         inputClass,
       )}
       aria-label={searchAriaLabel}

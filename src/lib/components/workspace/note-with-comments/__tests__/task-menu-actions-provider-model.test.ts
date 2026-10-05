@@ -11,6 +11,8 @@ const {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   removeOptimisticNoteMock,
   selectSelectedModelMock,
+  hidesAgentLifecycleActionsMock,
+  creationDispatchMock,
 } = vi.hoisted(() => ({
   addOptimisticNoteMock: vi.fn(),
   createAgentMock: vi.fn(),
@@ -20,6 +22,12 @@ const {
   appStoreFactoryMock: vi.fn(),
   removeOptimisticNoteMock: vi.fn(),
   selectSelectedModelMock: vi.fn(),
+  hidesAgentLifecycleActionsMock: vi.fn(() => false),
+  creationDispatchMock: vi.fn(),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: { select: hidesAgentLifecycleActionsMock },
 }));
 
 vi.mock('$features/agent/services/agent-factory', () => ({
@@ -143,7 +151,16 @@ describe('task menu actions provider model', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    appStoreFactoryMock.mockReturnValue({ getState: () => legacyState });
+    hidesAgentLifecycleActionsMock.mockReturnValue(false);
+    creationDispatchMock.mockImplementation((action) => {
+      if (action.type === 'workspaceAgents/createAgentFromConfigRequested') {
+        action.success({ id: 'agent-daemon-assigned', name: 'Task Agent' });
+      }
+    });
+    appStoreFactoryMock.mockReturnValue({
+      getState: () => legacyState,
+      dispatch: creationDispatchMock,
+    });
     selectSelectedModelMock.mockReturnValue('selector-workspace-model');
     findByIdMock.mockReturnValue({ title: 'Parent note' });
     createPrerequisiteMock.mockResolvedValue({
@@ -183,15 +200,44 @@ describe('task menu actions provider model', () => {
         status: 'not_started',
       }),
     );
-    expect(agentsCreateMock).toHaveBeenCalledWith(
+    expect(creationDispatchMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        workspaceId: 'ws-1',
-        model: 'selector-workspace-model',
+        type: 'workspaceAgents/createAgentFromConfigRequested',
+        payload: [
+          'ws-1',
+          expect.objectContaining({ workspaceId: 'ws-1', model: 'selector-workspace-model' }),
+          { activateAgent: false, notifyOnError: false },
+        ],
       }),
     );
     // No client-supplied agentId: the daemon assigns the agent id on create.
-    expect(agentsCreateMock.mock.calls[0][0]).not.toHaveProperty('agentId');
-    expect(agentsCreateMock.mock.calls[0][0].model).not.toBe(legacyState.model.selectedModel);
+    expect(creationDispatchMock.mock.calls[0][0].payload[1]).not.toHaveProperty('agentId');
+    expect(agentsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses to assign an agent when agent lifecycle actions are hidden (multiplayer w4)', async () => {
+    hidesAgentLifecycleActionsMock.mockReturnValue(true);
+    const storeDispatch = vi.fn();
+    const editor = createEditorWithDuplicateTasks();
+
+    await runAssignAgentTaskMenuAction({
+      editor,
+      workspace,
+      noteId: 'note-1',
+      taskData: { text: 'Ship feature', position: '1' },
+      parentNoteTitle: 'Parent note',
+      model: 'selector-workspace-model',
+      debounceUpdate: vi.fn(),
+      storeDispatch,
+      logger,
+    });
+
+    expect(hidesAgentLifecycleActionsMock).toHaveBeenCalledWith(expect.anything(), 'ws-1');
+    expect(createPrerequisiteMock).not.toHaveBeenCalled();
+    expect(agentsCreateMock).not.toHaveBeenCalled();
+    expect(storeDispatch).not.toHaveBeenCalled();
+    // No optimistic "Spinning up…" marker is left on the task item either.
+    expect(editor.state.doc.nodeAt(1).attrs).not.toHaveProperty('delegatedAgentId');
   });
 
   it('persists menu-assigned duplicate tasks keyed to the daemon-assigned agent id', async () => {
@@ -273,5 +319,72 @@ describe('task menu actions provider model', () => {
     );
     expect(storeDispatch.mock.calls[0][0].payload[1]).not.toHaveProperty('id');
     expect(storeDispatch.mock.calls[0][0].payload[1]).not.toHaveProperty('model');
+  });
+
+  it('waits for acknowledged creation before associating the task and retains captured workspace routing', async () => {
+    creationDispatchMock.mockImplementation(() => undefined);
+    const storeDispatch = vi.fn();
+    const pending = runAssignAgentTaskMenuAction({
+      editor: null,
+      workspace,
+      noteId: 'note-1',
+      taskData: { text: 'Ship feature', position: '1' },
+      parentNoteTitle: 'Parent note',
+      model: 'selector-workspace-model',
+      debounceUpdate: vi.fn(),
+      storeDispatch,
+      logger,
+    });
+    await vi.waitFor(() => expect(creationDispatchMock).toHaveBeenCalledTimes(1));
+    expect(
+      storeDispatch.mock.calls.some(
+        ([action]) => action.type === 'taskAgentAssociations/addTaskAgentAssociation',
+      ),
+    ).toBe(false);
+    appStoreFactoryMock.mockReturnValue({ getState: () => ({ activeWorkspaceId: 'ws-other' }) });
+    const action = creationDispatchMock.mock.calls[0][0];
+    expect(action.payload[0]).toBe('ws-1');
+    action.success({ id: 'acknowledged-agent' });
+    await pending;
+    expect(storeDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'taskAgentAssociations/addTaskAgentAssociation',
+        payload: ['ws-1', 'note-1', expect.objectContaining({ agentId: 'acknowledged-agent' })],
+      }),
+    );
+    expect(agentsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves a created task note when its subsequent agent creation fails without associating a placeholder', async () => {
+    creationDispatchMock.mockImplementation((action) => action.failure(new Error('host refused')));
+    const storeDispatch = vi.fn();
+    await runAssignAgentTaskMenuAction({
+      editor: null,
+      workspace,
+      noteId: 'note-1',
+      taskData: { text: 'Ship feature', position: '1' },
+      parentNoteTitle: 'Parent note',
+      model: 'selector-workspace-model',
+      debounceUpdate: vi.fn(),
+      storeDispatch,
+      logger,
+    });
+    expect(
+      storeDispatch.mock.calls.some(
+        ([action]) => action.type === 'taskAgentAssociations/addTaskAgentAssociation',
+      ),
+    ).toBe(false);
+    expect(storeDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNotes/removeOptimisticNote',
+        payload: ['ws-1', 'note-optimistic'],
+      }),
+    );
+    expect(storeDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceNotes/addOptimisticNote',
+        payload: ['ws-1', expect.objectContaining({ id: 'task-note-1' })],
+      }),
+    );
   });
 });

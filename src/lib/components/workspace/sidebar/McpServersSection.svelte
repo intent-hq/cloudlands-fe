@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { workspaceCatalogRequested } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+  import SidebarGroupHeader from './SidebarGroupHeader.svelte';
+  import { Button } from '$lib/components/ui/button';
   /**
    * McpServersSection - Displays user-defined MCP servers with toggles
    *
@@ -7,22 +10,21 @@
    */
   import { writable } from 'svelte/store';
   import type { McpServerConfig } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
+  import { getMcpServerKey } from '$lib/components/settings/mcp/types';
 
   import {
     hydrateWorkspaceMcpDisabled,
-    loadServers,
     toggleWorkspaceMcpServer,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
   import {
     selectMcpServers,
     selectMcpErrorMessages,
-    selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
+    selectWorkspaceDisabledMcpServerKeysByWorkspaceId,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
-    faChevronDown,
     faExclamationTriangle,
     faGear,
     faPlug,
@@ -48,9 +50,9 @@
   });
 
   // ✅ At component init — these use getContext() internally
-  const servers$ = selectMcpServers();
-  const disabledServerNames$ = selectWorkspaceDisabledMcpServerNamesByWorkspaceId(workspaceIdStore);
-  const serverErrors$ = selectMcpErrorMessages();
+  const servers$ = selectMcpServers(workspaceIdStore);
+  const disabledServerKeys$ = selectWorkspaceDisabledMcpServerKeysByWorkspaceId(workspaceIdStore);
+  const serverErrors$ = selectMcpErrorMessages(workspaceIdStore);
 
   type McpServerRow = {
     server: McpServerConfig;
@@ -61,8 +63,8 @@
   const serverRows = $derived<McpServerRow[]>(
     $servers$.map((server) => ({
       server,
-      enabled: !$disabledServerNames$.includes(server.name),
-      error: $serverErrors$[server.name],
+      enabled: !$disabledServerKeys$.includes(getMcpServerKey(server)),
+      error: $serverErrors$[getMcpServerKey(server)],
     })),
   );
   const enabledServerCount = $derived(serverRows.filter((row) => row.enabled).length);
@@ -78,7 +80,7 @@
   $effect(() => {
     if (workspaceId && workspaceId !== lastInitWorkspaceId) {
       lastInitWorkspaceId = workspaceId;
-      appStore.dispatch(loadServers());
+      appStore.dispatch(workspaceCatalogRequested(workspaceId));
       appStore.dispatch(hydrateWorkspaceMcpDisabled(workspaceId));
     }
   });
@@ -114,45 +116,34 @@
 
   // Get description for server type
 
-  function handleToggle(serverName: string, enabled: boolean) {
-    appStore.dispatch(toggleWorkspaceMcpServer(workspaceId, serverName, enabled));
+  function handleToggle(serverKey: string, enabled: boolean) {
+    appStore.dispatch(toggleWorkspaceMcpServer(workspaceId, serverKey, enabled));
   }
 
-  function handleFaviconError(serverName: string) {
-    faviconErrors = { ...faviconErrors, [serverName]: true };
+  function handleFaviconError(serverKey: string) {
+    faviconErrors = { ...faviconErrors, [serverKey]: true };
   }
 </script>
 
 {#if serverRows.length > 0}
   <div class="mt-3 {className ?? ''}">
-    <!-- Section Header -->
-    <button
-      type="button"
-      class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    <SidebarGroupHeader
+      title={m.workspace_mcpServers_title()}
+      meta={m.workspace_mcpServers_enabledCount_label({ count: formatInteger(enabledServerCount) })}
+      expanded={isExpanded}
+      collapsedChevronClass="rotate-90"
       onclick={() => (isExpanded = !isExpanded)}
-    >
-      <Fa
-        icon={faChevronDown}
-        size="xs"
-        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : 'rotate-90'}"
-      />
-      <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
-      <span>{m.workspace_mcpServers_title()}</span>
-      <span class="ml-auto text-ui opacity-60"
-        >{m.workspace_mcpServers_enabledCount_label({
-          count: formatInteger(enabledServerCount),
-        })}</span
-      >
-    </button>
+    />
 
     {#if isExpanded}
-      <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', duration: 200 }}>
-        {#each serverRows as { server, enabled, error } (server.name)}
+      <div class="space-y-0.5 mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+        {#each serverRows as { server, enabled, error } (getMcpServerKey(server))}
+          {@const serverKey = getMcpServerKey(server)}
           {@const isEnabled = enabled}
           {@const serverError = error}
           {@const faviconUrl = getFaviconUrl(server)}
-          {@const showFallback = !faviconUrl || faviconErrors[server.name]}
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors group">
+          {@const showFallback = !faviconUrl || faviconErrors[serverKey]}
+          <div class="flex h-7 items-center gap-1.5 px-2 rounded-md transition-colors group">
             <!-- Server Icon - Favicon for HTTP/SSE, terminal icon for command -->
             <div
               class="size-3.5 rounded flex items-center justify-center shrink-0 {isEnabled
@@ -163,14 +154,14 @@
                 <Fa
                   icon={server.type === 'stdio' ? faTerminal : faPlug}
                   size="xs"
-                  class={isEnabled ? 'text-primary' : 'text-muted-foreground'}
+                  class={isEnabled ? 'text-primary-ink' : 'text-muted-foreground'}
                 />
               {:else if faviconUrl}
                 <img
                   src={faviconUrl}
                   alt={m.workspace_mcpServers_serverIcon_alt({ name: server.name })}
                   class="size-3.5"
-                  onerror={() => handleFaviconError(server.name)}
+                  onerror={() => handleFaviconError(serverKey)}
                 />
               {/if}
             </div>
@@ -178,7 +169,11 @@
             <!-- Server Name & Type -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span class="text-sm truncate {isEnabled ? 'text-foreground' : 'text-subtle'}">
+                <span
+                  class="type-body font-normal truncate {isEnabled
+                    ? 'text-foreground'
+                    : 'text-subtle'}"
+                >
                   {server.name}
                 </span>
                 {#if serverError && isEnabled}
@@ -206,21 +201,23 @@
             <Switch
               size="sm"
               checked={isEnabled}
-              onCheckedChange={(checked) => handleToggle(server.name, checked)}
+              onCheckedChange={(checked) => handleToggle(serverKey, checked)}
               ariaLabel={`Toggle ${server.name} MCP server`}
             />
           </div>
         {/each}
 
         <!-- Manage Servers Button -->
-        <button
+        <Button
+          variant="ghost"
           type="button"
-          class="w-full flex items-center gap-1.5 px-2 py-1.5 mt-1 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+          size="compact"
+          class="h-7 w-full flex items-center justify-start gap-1.5 px-2 mt-1 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => navigateToSettings({ hash: 'mcp-servers' })}
         >
           <Fa icon={faGear} size={13} class="opacity-50 mx-[2px]" />
           <span>{m.workspace_mcpServers_manageServers_label()}</span>
-        </button>
+        </Button>
       </div>
     {/if}
   </div>

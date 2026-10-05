@@ -45,15 +45,13 @@ function createMockGL() {
     vertexAttribPointer: vi.fn(),
     enable: vi.fn(),
     blendFunc: vi.fn(),
-    getUniformLocation: vi.fn(() => ({})),
+    getUniformLocation: vi.fn((_program: unknown, name: string) => ({ name })),
     viewport: vi.fn(),
     clearColor: vi.fn(),
     clear: vi.fn(),
     useProgram: vi.fn(),
     uniform1f: vi.fn(),
-    uniform1fv: vi.fn(),
     uniform2f: vi.fn(),
-    uniform2fv: vi.fn(),
     uniform3f: vi.fn(),
     drawArrays: vi.fn(),
     getExtension: vi.fn((name: string) => (name === 'WEBGL_lose_context' ? { loseContext } : null)),
@@ -128,6 +126,7 @@ describe('AuroraBackground cleanup', () => {
     document.documentElement.toggleAttribute('data-window-blurred', originalWindowBlurred);
     getContextSpy.mockRestore();
     getComputedStyleSpy.mockRestore();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -192,28 +191,6 @@ describe('AuroraBackground cleanup', () => {
     expect(mockGL.loseContext).toHaveBeenCalledTimes(1);
   });
 
-  it('uses five blobs with radii increased by about twelve percent', () => {
-    render(AuroraBackground);
-
-    const fragmentSource = mockGL.gl.shaderSource.mock.calls
-      .map(([, source]) => String(source))
-      .find((source) => source.includes('precision mediump float'));
-    expect(fragmentSource).toBeDefined();
-
-    const radii = Array.from(
-      fragmentSource!.matchAll(/float b[1-5] = blob\(uv, c[1-5], ([0-9.]+)\);/g),
-      (match) => Number(match[1]),
-    );
-    const previousRadii = [0.5, 0.45, 0.55, 0.48, 0.42];
-
-    expect(radii).toHaveLength(5);
-    radii.forEach((radius, index) => {
-      expect(radius / previousRadii[index]).toBeGreaterThanOrEqual(1.11);
-      expect(radius / previousRadii[index]).toBeLessThanOrEqual(1.13);
-    });
-    expect(fragmentSource).toContain('float alpha = intensity * 0.9;');
-  });
-
   it('sets every shader color to the computed active surface on initial mount', () => {
     render(AuroraBackground);
 
@@ -228,26 +205,70 @@ describe('AuroraBackground cleanup', () => {
 
   it('updates every shader color after live theme and semantic token changes', async () => {
     render(AuroraBackground);
+    flushRafCallbacks();
     mockGL.gl.uniform3f.mockClear();
 
     computedAuroraColor = 'rgb(173, 197, 116)';
     document.documentElement.classList.toggle('dark');
-    await vi.waitFor(() => expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3));
+    await Promise.resolve();
+    flushRafCallbacks();
+    expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3);
     const dark = [173 / 255, 197 / 255, 116 / 255];
     expect(uniformColors()).toEqual([dark, dark, dark]);
 
     mockGL.gl.uniform3f.mockClear();
     computedAuroraColor = 'rgb(227, 180, 31)';
     window.dispatchEvent(new CustomEvent('theme-changed'));
+    flushRafCallbacks();
     const liveTheme = [227 / 255, 180 / 255, 31 / 255];
     expect(uniformColors()).toEqual([liveTheme, liveTheme, liveTheme]);
 
     mockGL.gl.uniform3f.mockClear();
     computedAuroraColor = 'rgb(91, 122, 219)';
     document.documentElement.style.setProperty('--agent-avatar-surface-active', '225 63% 61%');
-    await vi.waitFor(() => expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3));
+    await Promise.resolve();
+    flushRafCallbacks();
+    expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3);
     const customToken = [91 / 255, 122 / 255, 219 / 255];
     expect(uniformColors()).toEqual([customToken, customToken, customToken]);
+  });
+
+  it('coalesces theme notifications without reading styles during a DOM update burst', async () => {
+    render(AuroraBackground);
+    flushRafCallbacks();
+    getComputedStyleSpy.mockClear();
+    mockGL.gl.uniform3f.mockClear();
+
+    for (let update = 0; update < 20; update += 1) {
+      window.dispatchEvent(new CustomEvent('theme-changed'));
+    }
+    computedAuroraColor = 'rgb(91, 122, 219)';
+    document.documentElement.classList.toggle('dark');
+    await Promise.resolve();
+
+    expect(getComputedStyleSpy).not.toHaveBeenCalled();
+    expect(mockGL.gl.uniform3f).not.toHaveBeenCalled();
+    flushRafCallbacks();
+    expect(getComputedStyleSpy).toHaveBeenCalledTimes(1);
+    const expected = [91 / 255, 122 / 255, 219 / 255];
+    expect(uniformColors()).toEqual([expected, expected, expected]);
+    expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3);
+  });
+
+  it('cancels deferred mount geometry and theme reads on unmount', () => {
+    const widthReads = vi.spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get');
+    const heightReads = vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get');
+    const { unmount } = render(AuroraBackground);
+    window.dispatchEvent(new CustomEvent('theme-changed'));
+    unmount();
+    flushRafCallbacks();
+
+    expect(widthReads).not.toHaveBeenCalled();
+    expect(heightReads).not.toHaveBeenCalled();
+    expect(getComputedStyleSpy).not.toHaveBeenCalled();
+    expect(mockGL.gl.viewport).not.toHaveBeenCalled();
+    widthReads.mockRestore();
+    heightReads.mockRestore();
   });
 
   it('does not draw an unrelated fallback while the semantic color is unresolved', async () => {
@@ -259,7 +280,9 @@ describe('AuroraBackground cleanup', () => {
 
     computedAuroraColor = 'rgb(202, 213, 91)';
     document.documentElement.style.setProperty('--agent-avatar-surface-active', '67 72% 60%');
-    await vi.waitFor(() => expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3));
+    await Promise.resolve();
+    flushRafCallbacks();
+    expect(mockGL.gl.uniform3f).toHaveBeenCalledTimes(3);
   });
 
   it('keeps drawing throttled to the 30 fps budget', () => {
@@ -279,28 +302,45 @@ describe('AuroraBackground cleanup', () => {
     now.mockRestore();
   });
 
-  it('uploads stable phases once and moving centers for each drawn frame', () => {
+  it.each([30, 'display'] as const)('benchmarks actual draws at %s cadence', (frameRate) => {
     const now = vi.spyOn(performance, 'now').mockReturnValue(0);
-    render(AuroraBackground);
+    const onDraw = vi.fn();
+    render(AuroraBackground, {
+      benchmark: { pixelRatio: 0.5, frameRate, seed: 123, onDraw },
+    });
+    flushRafCallbacks();
+    MockResizeObserver.instances[0].fire(800, 272);
+    mockGL.gl.drawArrays.mockClear();
+    onDraw.mockClear();
 
-    expect(mockGL.gl.uniform1fv).toHaveBeenCalledTimes(1);
-    expect(Array.from(mockGL.gl.uniform1fv.mock.calls[0][1])).toHaveLength(5);
+    for (const time of [10, 20, 34]) {
+      now.mockReturnValue(time);
+      flushRafCallbacks();
+    }
+    expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(frameRate === 30 ? 1 : 3);
+    expect(onDraw).toHaveBeenCalledTimes(frameRate === 30 ? 1 : 3);
+    expect(onDraw).toHaveBeenLastCalledWith({ time: 34, submissionMs: 0, width: 400, height: 136 });
+    expect(mockGL.gl.uniform1f).toHaveBeenCalledWith({ name: 'u_seed' }, 123);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 400, 136);
+  });
+
+  it('advances shader time while retaining the session seed across frames', () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    vi.spyOn(Math, 'random').mockReturnValue(0.42);
+    render(AuroraBackground);
 
     now.mockReturnValue(34);
     flushRafCallbacks();
     expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(1);
-    expect(mockGL.gl.uniform2fv).toHaveBeenCalledTimes(1);
-    const firstCenters = Array.from(mockGL.gl.uniform2fv.mock.calls[0][1]);
+    expect(mockGL.gl.uniform1f).toHaveBeenCalledWith({ name: 'u_time' }, 0.034);
+    expect(mockGL.gl.uniform1f).toHaveBeenCalledWith({ name: 'u_seed' }, 420);
 
+    mockGL.gl.uniform1f.mockClear();
     now.mockReturnValue(68);
     flushRafCallbacks();
     expect(mockGL.gl.drawArrays).toHaveBeenCalledTimes(2);
-    expect(mockGL.gl.uniform2fv).toHaveBeenCalledTimes(2);
-    const secondCenters = Array.from(mockGL.gl.uniform2fv.mock.calls[1][1]);
-
-    expect(firstCenters).toHaveLength(10);
-    expect(secondCenters).not.toEqual(firstCenters);
-    expect(mockGL.gl.uniform1fv).toHaveBeenCalledTimes(1);
+    expect(mockGL.gl.uniform1f).toHaveBeenCalledWith({ name: 'u_time' }, 0.068);
+    expect(mockGL.gl.uniform1f).toHaveBeenCalledWith({ name: 'u_seed' }, 420);
     now.mockRestore();
   });
 
@@ -357,8 +397,8 @@ describe('AuroraBackground cleanup', () => {
     now.mockRestore();
   });
 
-  it('caps Retina backing work across common sizes without frame layout reads', () => {
-    const devicePixelRatio = vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(2);
+  it.each([1, 2])('renders at display DPR %s without frame layout reads', (dpr) => {
+    const devicePixelRatio = vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(dpr);
     const clientWidth = vi
       .spyOn(HTMLCanvasElement.prototype, 'clientWidth', 'get')
       .mockReturnValue(0);
@@ -367,8 +407,8 @@ describe('AuroraBackground cleanup', () => {
       .mockReturnValue(0);
     render(AuroraBackground);
 
-    expect(clientWidth).toHaveBeenCalledTimes(1);
-    expect(clientHeight).toHaveBeenCalledTimes(1);
+    expect(clientWidth).not.toHaveBeenCalled();
+    expect(clientHeight).not.toHaveBeenCalled();
     flushRafCallbacks();
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);
@@ -380,16 +420,24 @@ describe('AuroraBackground cleanup', () => {
       [1440, 360],
     ]) {
       MockResizeObserver.instances[0].fire(width, height);
-      expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, width / 2, height / 2);
-      expect([canvas.width, canvas.height]).toEqual([width / 2, height / 2]);
-      expect(canvas.width * canvas.height).toBe((width * height) / 4);
+      expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, width * dpr, height * dpr);
+      expect([canvas.width, canvas.height]).toEqual([width * dpr, height * dpr]);
+      expect(canvas.width * canvas.height).toBe(width * height * dpr * dpr);
     }
     expect(clientWidth).toHaveBeenCalledTimes(1);
     expect(clientHeight).toHaveBeenCalledTimes(1);
 
     MockResizeObserver.instances[0].fire(640.25, 360.25);
-    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(0, 0, 320, 180);
-    expect([canvas.width, canvas.height]).toEqual([320, 180]);
+    expect(mockGL.gl.viewport).toHaveBeenLastCalledWith(
+      0,
+      0,
+      Math.round(640.25 * dpr),
+      Math.round(360.25 * dpr),
+    );
+    expect([canvas.width, canvas.height]).toEqual([
+      Math.round(640.25 * dpr),
+      Math.round(360.25 * dpr),
+    ]);
 
     mockGL.gl.viewport.mockClear();
     MockResizeObserver.instances[0].fire(640.25, 360.25);

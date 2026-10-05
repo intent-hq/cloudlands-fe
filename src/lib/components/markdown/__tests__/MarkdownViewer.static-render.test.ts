@@ -5,8 +5,19 @@
  * EditorView is constructed for chat transcript messages.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import MarkdownViewer from '../MarkdownViewer.svelte';
+
+const imageSources = [
+  'workspace-asset://asset-123',
+  'https://example.com/diagram.png',
+  'data:image/png;base64,iVBORw0KGgo=',
+];
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('MarkdownViewer static rendering', () => {
   it('renders plain text through the simple path', () => {
@@ -15,6 +26,69 @@ describe('MarkdownViewer static rendering', () => {
     });
     expect(container.querySelector('.simple-content')).toBeTruthy();
     expect(container.querySelector('.ProseMirror')).toBeNull();
+  });
+
+  it.each([
+    ['$x^2$', false],
+    [String.raw`\(x^2\)`, false],
+    [String.raw`$$\frac{1}{2}$$`, true],
+    [String.raw`\[\sqrt{x}\]`, true],
+  ])('renders math-only read-only content for %s', async (content, displayMode) => {
+    const { container } = render(MarkdownViewer, { props: { content } });
+
+    const math = await waitFor(() => {
+      const element = container.querySelector('math');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    expect(math.closest(displayMode ? '.math-display' : '.math-inline')).toBeTruthy();
+    expect(container.querySelector('.ProseMirror')).toBeNull();
+  });
+
+  it.each([
+    ['ordinary prices', 'Costs $5 and $10'],
+    ['escaped delimiters', String.raw`Literal \$x$ and \\(y\\)`],
+    ['inline code', '`$x^2$`'],
+    ['unfinished math', String.raw`Before \(x + 1`],
+  ])('keeps %s literal', async (_case, content) => {
+    const { container } = render(MarkdownViewer, { props: { content } });
+
+    await waitFor(() => expect(container.textContent).toContain(content.replace(/`/g, '')));
+    expect(container.querySelector('math')).toBeNull();
+  });
+
+  it('renders math only after streaming content completes', async () => {
+    const content = String.raw`Answer: $x^2$`;
+    const view = render(MarkdownViewer, { props: { content, isStreaming: true } });
+
+    await waitFor(() => expect(view.container.textContent).toContain('$x^2$'));
+    expect(view.container.querySelector('math')).toBeNull();
+
+    await view.rerender({ content, isStreaming: false });
+    await waitFor(() => expect(view.container.querySelector('math')).toBeTruthy());
+  });
+
+  it('reclassifies mounted content between plain text, math and task lists', async () => {
+    const view = render(MarkdownViewer, { props: { content: '' } });
+    expect(view.container.querySelector('math')).toBeNull();
+
+    await view.rerender({ content: '$x^2$' });
+    await waitFor(() => expect(view.container.querySelector('math')).toBeTruthy());
+
+    await view.rerender({ content: 'Costs $5 and $10' });
+    await waitFor(() => expect(view.container.textContent).toContain('Costs $5 and $10'));
+    expect(view.container.querySelector('math')).toBeNull();
+
+    await view.rerender({ content: '- [x] completed' });
+    await waitFor(() => {
+      const checkbox = view.container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkbox?.checked).toBe(true);
+      expect(checkbox?.disabled).toBe(true);
+    });
+
+    await view.rerender({ content: 'plain end' });
+    await waitFor(() => expect(view.container.textContent).toContain('plain end'));
+    expect(view.container.querySelector('input')).toBeNull();
   });
 
   it('renders task lists as static HTML without a ProseMirror view', async () => {
@@ -98,9 +172,91 @@ describe('MarkdownViewer static rendering', () => {
     expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
   });
 
-  it('offers image actions for a note workspace asset without chat thumbnails', async () => {
+  it.each(['webm', 'mp4'])(
+    'opens a saved %s asset in the video player without file routing',
+    async (extension) => {
+      const src = `workspace-asset://ws-abc/mfr7-1234abcd.${extension}?backend=remote-1`;
+      const { container } = render(MarkdownViewer, {
+        props: {
+          content: `![saved demo](${src})`,
+          workspaceId: 'ws-abc',
+          chatImageThumbnails: true,
+        },
+      });
+      const trigger = await screen.findByRole('button', { name: /play saved demo/i });
+      expect(container.querySelector('img')).toBeNull();
+      await fireEvent.click(trigger);
+      const player = screen.getByTestId('chat-video-player') as HTMLVideoElement;
+      expect(player.src).toBe(src);
+      expect(player.controls).toBe(true);
+      expect(player.autoplay).toBe(false);
+    },
+  );
+
+  it.each([false, true])(
+    'copies the focused image rather than a hovered neighbor with streaming=%s',
+    async (isStreaming) => {
+      const write = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { write }, configurable: true });
+      class FakeClipboardItem {
+        constructor(public items: Record<string, Blob>) {}
+      }
+      vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+      const { container } = render(MarkdownViewer, {
+        props: {
+          content:
+            '![focused](data:image/png;base64,cGl4ZWxz)\n\n![neighbor](data:image/png;base64,bmVpZ2hib3I=)\n\nOther content.',
+          isStreaming,
+        },
+      });
+      const focused = await screen.findByRole('button', { name: 'focused' });
+      const neighbor = await screen.findByRole('button', { name: 'neighbor' });
+      await fireEvent.mouseOver(focused);
+      expect(
+        await fireEvent.keyDown(screen.getByText('Other content.'), { key: 'c', metaKey: true }),
+      ).toBe(true);
+      expect(write).not.toHaveBeenCalled();
+      focused.focus();
+      await screen.findByRole('button', { name: /image options/i });
+      await fireEvent.mouseOver(neighbor);
+      await fireEvent.mouseLeave(container.querySelector('.markdown-viewer')!);
+      expect(await fireEvent.keyDown(focused, { key: 'c', metaKey: true })).toBe(false);
+      await waitFor(() => expect(write).toHaveBeenCalledOnce());
+      expect(write.mock.calls[0][0][0].items['image/png'].size).toBe(6);
+      expect(screen.queryByRole('dialog')).toBeNull();
+      neighbor.focus();
+      await fireEvent.focusIn(neighbor);
+      expect(await fireEvent.copy(neighbor)).toBe(false);
+      await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+      expect(write.mock.calls[1][0][0].items['image/png'].size).toBe(8);
+    },
+  );
+
+  it.each([false, true])(
+    'opens image actions on right-click with streaming=%s',
+    async (isStreaming) => {
+      render(MarkdownViewer, {
+        props: {
+          content: '![diagram](data:image/png;base64,iVBORw0KGgo=)\n\nOther content.',
+          isStreaming,
+        },
+      });
+      const image = await screen.findByRole('button', { name: 'diagram' });
+      expect(await fireEvent.contextMenu(screen.getByText('Other content.'))).toBe(true);
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(await fireEvent.contextMenu(image)).toBe(false);
+      expect(await screen.findByRole('menuitem', { name: /download/i })).toBeTruthy();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      await fireEvent.click(image);
+      expect(await screen.findByRole('dialog', { name: /image preview/i })).toBeTruthy();
+    },
+  );
+
+  it.each(imageSources)('offers keyboard image actions for %s', async (src) => {
     const { container } = render(MarkdownViewer, {
-      props: { content: '![note image](workspace-asset://asset-123)' },
+      props: { content: `![note image](${src})` },
     });
     const image = await waitFor(() => {
       const element = container.querySelector<HTMLImageElement>('img');
@@ -116,7 +272,146 @@ describe('MarkdownViewer static rendering', () => {
     expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
   });
 
-  it('replaces a missing workspace image with its file placeholder and actions', async () => {
+  it.each(imageSources)('keeps %s actions interactive across streaming updates', async (src) => {
+    const content = `![streamed image](${src})`;
+    const view = render(MarkdownViewer, { props: { content, isStreaming: true } });
+    const image = await waitFor(() => {
+      const element = view.container.querySelector<HTMLImageElement>('img');
+      expect(element?.tabIndex).toBe(0);
+      return element!;
+    });
+    image.focus();
+    const trigger = await screen.findByRole('button', { name: /image options/i });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+
+    await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await view.rerender({ content: content + '\n\nA new streamed paragraph.' });
+    await waitFor(() => expect(view.container.textContent).toContain('A new streamed paragraph.'));
+    expect(trigger.isConnected).toBe(true);
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+  });
+
+  it('keeps keyboard image actions reachable when the pointer leaves', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '![diagram](https://example.com/diagram.png)\n\nOther content.' },
+    });
+    const image = await screen.findByRole('button', { name: 'diagram' });
+    image.focus();
+    const trigger = await screen.findByRole('button', { name: /image options/i });
+
+    await fireEvent.mouseOver(screen.getByText('Other content.'));
+    await fireEvent.mouseLeave(container.querySelector('.markdown-viewer')!);
+    expect(trigger.isConnected).toBe(true);
+    trigger.focus();
+    await fireEvent.mouseLeave(container.querySelector('.markdown-viewer')!);
+    expect(document.activeElement).toBe(trigger);
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+  });
+
+  it.each(imageSources)('previews %s with the keyboard and restores image focus', async (src) => {
+    const { container } = render(MarkdownViewer, { props: { content: `![preview](${src})` } });
+    const image = await waitFor(() => {
+      const element = container.querySelector<HTMLImageElement>('img');
+      expect(element?.tabIndex).toBe(0);
+      return element!;
+    });
+    image.focus();
+    await fireEvent.keyDown(image, { key: 'Enter' });
+    const dialog = await screen.findByRole('dialog', { name: /image preview/i });
+    expect(dialog.querySelector('img')?.getAttribute('src')).toBe(src);
+    await fireEvent.click(screen.getByRole('button', { name: /close preview/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(image);
+  });
+
+  it.each(['http://example.com/image.png', 'file:///tmp/image.png', 'blob:untrusted'])(
+    'does not add image actions or preview to unsupported %s',
+    async (src) => {
+      const { container } = render(MarkdownViewer, {
+        props: { content: `![unsupported](${src})\n\nrender complete` },
+      });
+      await screen.findByText('render complete');
+      const image = container.querySelector<HTMLImageElement>('img');
+      if (image) {
+        expect(image.tabIndex).toBe(-1);
+        expect(await fireEvent.contextMenu(image)).toBe(true);
+        expect(screen.queryByRole('menu')).toBeNull();
+        await fireEvent.mouseOver(image);
+        await fireEvent.click(image);
+        await fireEvent.keyDown(image, { key: 'Enter' });
+      }
+      expect(screen.queryByRole('button', { name: /image options/i })).toBeNull();
+      expect(screen.queryByRole('dialog')).toBeNull();
+    },
+  );
+
+  it.each([
+    ['recursive', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
+    ['inline', 'workspace-asset://ws-abc/demo.mp4?backend=bad%2Froute', 'ws-abc'],
+    ['static', 'workspace-asset://ws-abc/../demo.mp4', 'ws-abc'],
+    ['unknown workspace', 'workspace-asset://ws-abc/demo.webm', undefined],
+  ])('keeps rejected saved videos inert in %s rendering', async (mode, src, workspaceId) => {
+    const validSrc = 'workspace-asset://ws-abc/valid.mp4';
+    const markdown = `![rejected](${src})`;
+    const { container } = render(MarkdownViewer, {
+      props: {
+        content:
+          mode === 'recursive'
+            ? `![valid](${validSrc})\n\n${markdown}\n\nrender complete`
+            : `Recording: ${markdown}\n\nrender complete`,
+        workspaceId,
+        chatImageThumbnails: mode === 'recursive',
+      },
+    });
+    await screen.findByText('render complete');
+    const sources = Array.from(container.querySelectorAll('img[src], video[src]'), (node) =>
+      node.getAttribute('src'),
+    );
+    expect(sources).toEqual(mode === 'recursive' ? [validSrc] : []);
+  });
+
+  it.each(['webm', 'mp4'])(
+    'retains download recovery for a failed inline saved %s video',
+    async (extension) => {
+      const src = `workspace-asset://ws-abc/mfr7-1234abcd.${extension}?backend=remote-1`;
+      const fetchVideo = vi
+        .fn()
+        .mockResolvedValue({ ok: true, blob: async () => new Blob(['video']) });
+      vi.stubGlobal('fetch', fetchVideo);
+      vi.stubGlobal(
+        'URL',
+        Object.assign(URL, {
+          createObjectURL: vi.fn(() => 'blob:saved-video'),
+          revokeObjectURL: vi.fn(),
+        }),
+      );
+      const anchorClick = vi
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => {});
+      const { container } = render(MarkdownViewer, {
+        props: { content: `Here is the recording: ![saved demo](${src})`, workspaceId: 'ws-abc' },
+      });
+      await waitFor(() => expect(container.querySelector('video')).toBeTruthy());
+      await fireEvent.error(container.querySelector('video')!);
+      expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
+      expect(screen.queryByRole('button', { name: /open file|copy path/i })).toBeNull();
+      const trigger = screen.getByRole('button', { name: /video options/i });
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.click(await screen.findByRole('menuitem', { name: /download/i }));
+      await waitFor(() => expect(anchorClick).toHaveBeenCalledOnce());
+      expect(fetchVideo).toHaveBeenCalledWith(src);
+      expect((anchorClick.mock.instances[0] as HTMLAnchorElement).download).toBe(
+        `saved demo.${extension}`,
+      );
+    },
+  );
+
+  it('preserves file actions without claiming an image load error proves absence', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
@@ -133,12 +428,12 @@ describe('MarkdownViewer static rendering', () => {
 
     await fireEvent.error(image);
 
-    expect(screen.getByRole('status').textContent).toContain('File is missing');
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
     await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('out/missing image.png'));
   });
 
-  it('replaces a missing workspace video with its file placeholder', async () => {
+  it('does not label a workspace video load error as a missing file', async () => {
     const { container } = render(MarkdownViewer, {
       props: {
         content: '![demo](intent://local/file/out/demo.mp4)',
@@ -152,7 +447,7 @@ describe('MarkdownViewer static rendering', () => {
 
     const status = screen.getByRole('status');
     expect(status.textContent).toContain('demo');
-    expect(status.textContent).toContain('File is missing');
+    expect(status.dataset.reason).toBe('load-failed');
   });
 
   it('renders Mermaid fenced blocks as visible source when requested', async () => {
@@ -206,5 +501,112 @@ describe('MarkdownViewer static rendering', () => {
     await waitFor(() => expect(container.querySelector('a')).toBeTruthy());
     expect(container.querySelector('img')).toBeNull();
     expect(container.querySelector('[data-chat-video]')).toBeNull();
+  });
+
+  describe('image dimension sidecar (text block media)', () => {
+    const src = 'intent://local/file/docs/diagram.png';
+    const media = { [src]: { width: 640, height: 360 } };
+
+    async function renderSized(extra: Record<string, unknown> = {}) {
+      const view = render(MarkdownViewer, {
+        props: { content: `![diagram](${src})`, workspaceId: 'ws-abc', media, ...extra },
+      });
+      const image = await waitFor(() => {
+        const element = view.container.querySelector<HTMLImageElement>('img');
+        expect(element?.getAttribute('width')).toBe('640');
+        return element!;
+      });
+      return { ...view, image };
+    }
+
+    it('reserves the final box and shows an icon + path placeholder until the image loads', async () => {
+      const { image } = await renderSized();
+      expect(image.getAttribute('height')).toBe('360');
+
+      const frame = await waitFor(() => {
+        const element = image.parentElement;
+        expect(element?.dataset.loaded).toBe('false');
+        return element!;
+      });
+      expect(frame.style.aspectRatio).toBe('640 / 360');
+      expect(frame.style.width).toBe('min(640px, 100%)');
+      const placeholder = screen.getByTestId('media-loading-placeholder');
+      expect(frame.contains(placeholder)).toBe(true);
+      expect(placeholder.textContent).toContain('docs/diagram.png');
+
+      await fireEvent.load(image);
+
+      expect(frame.dataset.loaded).toBe('true');
+      expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+      expect(frame.contains(image)).toBe(true);
+    });
+
+    it('keeps the lightbox and image actions on a sized workspace image', async () => {
+      const { image } = await renderSized();
+      await waitFor(() => expect(image.tabIndex).toBe(0));
+
+      await fireEvent.keyDown(image, { key: 'Enter' });
+
+      expect(screen.getByRole('dialog', { name: /image preview/i })).toBeTruthy();
+    });
+
+    it('replaces the frame with the unavailable placeholder when the image fails', async () => {
+      const { container, image } = await renderSized();
+      await waitFor(() => expect(image.parentElement?.dataset.loaded).toBe('false'));
+
+      await fireEvent.error(image);
+
+      expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
+      expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+      expect(container.querySelector('[data-loaded]')).toBeNull();
+    });
+
+    it('labels a sized relative-path image with its source path, not its alt text', async () => {
+      const { container } = render(MarkdownViewer, {
+        props: {
+          content: '![chart](docs/diagram.png)',
+          workspaceId: 'ws-abc',
+          media: { 'docs/diagram.png': { width: 640, height: 360 } },
+        },
+      });
+      await waitFor(() => {
+        expect(container.querySelector('img')?.getAttribute('width')).toBe('640');
+      });
+
+      const placeholder = await screen.findByTestId('media-loading-placeholder');
+      expect(placeholder.textContent).toContain('docs/diagram.png');
+    });
+
+    it('renders legacy images without media exactly as before', async () => {
+      const { container } = render(MarkdownViewer, {
+        props: { content: `![diagram](${src})`, workspaceId: 'ws-abc' },
+      });
+      const image = await waitFor(() => {
+        const element = container.querySelector<HTMLImageElement>('img');
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      await waitFor(() => expect(image.tabIndex).toBe(0));
+
+      expect(image.hasAttribute('width')).toBe(false);
+      expect(image.hasAttribute('height')).toBe(false);
+      expect(container.querySelector('[data-loaded]')).toBeNull();
+      expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+    });
+
+    it('sizes images when media arrives after the first render', async () => {
+      const view = render(MarkdownViewer, {
+        props: { content: `![diagram](${src})`, workspaceId: 'ws-abc' },
+      });
+      await waitFor(() => expect(view.container.querySelector('img')).toBeTruthy());
+      expect(view.container.querySelector('img')?.hasAttribute('width')).toBe(false);
+
+      await view.rerender({ content: `![diagram](${src})`, workspaceId: 'ws-abc', media });
+
+      await waitFor(() => {
+        expect(view.container.querySelector('img')?.getAttribute('width')).toBe('640');
+      });
+      expect(await screen.findByTestId('media-loading-placeholder')).toBeTruthy();
+    });
   });
 });

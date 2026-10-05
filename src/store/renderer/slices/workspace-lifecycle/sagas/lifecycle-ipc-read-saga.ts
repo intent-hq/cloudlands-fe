@@ -1,3 +1,5 @@
+import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { hostExecutionConnectionChanged } from '../../host-execution/host-execution-slice';
 import type { Task } from 'redux-saga';
 import type { SagaGenerator } from 'typed-redux-saga';
 import {
@@ -77,12 +79,6 @@ import {
   loadWorkspaceNotesSucceeded,
   workspaceNotesHydrationRequested,
 } from '../../workspace-notes/workspace-notes-slice';
-import {
-  ensureWorkspaceTasksLoaded,
-  loadWorkspaceTasksFailed,
-  loadWorkspaceTasksRequested,
-  loadWorkspaceTasksSucceeded,
-} from '../../workspace-tasks/workspace-tasks-slice';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { selectWorkspaceById } from '../../workspace/workspace-selectors';
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
@@ -115,16 +111,23 @@ function normalizeRepo(repo: GithubRepo): GithubRepoItem {
   };
 }
 
+function* readRepositoriesOnCurrentHost(worker: () => SagaGenerator<void>): SagaGenerator<void> {
+  yield* race({ read: call(worker), reset: take(hostExecutionConnectionChanged) });
+}
+
 function* refreshGithubRepos(): SagaGenerator<void> {
+  const connection = yield* selectPrincipalConnectionContext.effect();
   yield* put(setGithubReposLoading());
   try {
     const repos: Awaited<ReturnType<typeof githubAuthClient.listRepos>> = yield* call([
       githubAuthClient,
       githubAuthClient.listRepos,
     ]);
-    yield* put(setGithubRepos(repos.map(normalizeRepo)));
+    if (connection === (yield* selectPrincipalConnectionContext.effect()))
+      yield* put(setGithubRepos(repos.map(normalizeRepo)));
   } catch (error) {
-    yield* put(setGithubReposError(error instanceof Error ? error.message : String(error)));
+    if (connection === (yield* selectPrincipalConnectionContext.effect()))
+      yield* put(setGithubReposError(error instanceof Error ? error.message : String(error)));
   }
 }
 
@@ -152,12 +155,14 @@ function* refreshEditors(forceRefresh: boolean): SagaGenerator<void> {
 }
 
 function* refreshKnownRepos(): SagaGenerator<void> {
+  const connection = yield* selectPrincipalConnectionContext.effect();
   try {
     const result: KnownReposResponse = yield* call(
       invoke<KnownReposResponse>,
       IPC_CHANNELS.WORKSPACE.GET_RECENT_REPOSITORIES,
       {},
     );
+    if (connection !== (yield* selectPrincipalConnectionContext.effect())) return;
     if (result.success && Array.isArray(result.data)) yield* put(setRepos(result.data));
     else logger.warn('Recent-repositories IPC returned no usable data; keeping prior known repos');
   } catch (error) {
@@ -317,11 +322,6 @@ function* dispatchHydrationBranch(
     return;
   }
   switch (branch) {
-    case 'tasks':
-      yield* put(
-        force ? loadWorkspaceTasksRequested(workspaceId) : ensureWorkspaceTasksLoaded(workspaceId),
-      );
-      break;
     case 'events':
       yield* put(loadEventsRequested(workspaceId));
       break;
@@ -467,14 +467,11 @@ function* settleHydrationBranch(
         : first;
   if (typeof workspaceId !== 'string') return;
   const failureTypes = new Set([
-    loadWorkspaceTasksFailed.type,
     eventsLoadFailed.type,
     loadSkillsFailed.type,
     loadWorkspaceNotesFailed.type,
   ]);
   const mappings: Partial<Record<string, WorkspaceHydrationBranch>> = {
-    [loadWorkspaceTasksSucceeded.type]: 'tasks',
-    [loadWorkspaceTasksFailed.type]: 'tasks',
     [eventsLoaded.type]: 'events',
     [eventsLoadFailed.type]: 'events',
     [setScriptsInitialized.type]: 'scripts',
@@ -503,8 +500,6 @@ function* settleHydrationBranch(
 }
 
 const hydrationSettleActionTypes = new Set([
-  loadWorkspaceTasksSucceeded.type,
-  loadWorkspaceTasksFailed.type,
   eventsLoaded.type,
   eventsLoadFailed.type,
   setScriptsInitialized.type,
@@ -553,9 +548,9 @@ export function* lifecycleIpcReadSaga(): SagaGenerator<void> {
   const coordinator: DeferredHydrationCoordinator = { tasks: new Map(), generations: new Map() };
   const backend = { id: yield* selectActiveBackendId() };
   yield* all([
-    takeLeading(loadGithubRepos, refreshGithubRepos),
+    takeLeading(loadGithubRepos, readRepositoriesOnCurrentHost, refreshGithubRepos),
     takeLeading(fetchEditors, refreshEditorsWorker),
-    takeLeading(loadKnownRepos, refreshKnownRepos),
+    takeLeading(loadKnownRepos, readRepositoriesOnCurrentHost, refreshKnownRepos),
     takeEvery(workspaceHydrationRequested, workspaceHydrationRequestedWorker),
     takeEvery(
       workspaceMounted,

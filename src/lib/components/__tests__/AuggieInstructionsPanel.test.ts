@@ -15,8 +15,8 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),
   },

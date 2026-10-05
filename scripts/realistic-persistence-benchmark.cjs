@@ -141,7 +141,7 @@ async function testCachePerformance() {
   const startWithCache = performance.now();
   for (let i = 0; i < 100; i++) {
     // Just access cache
-    const cached = cache.data;
+    void cache.data;
   }
   const timeWithCache = performance.now() - startWithCache;
 

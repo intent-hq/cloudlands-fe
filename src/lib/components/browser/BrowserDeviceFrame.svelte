@@ -3,6 +3,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
+  import { Button } from '$lib/components/ui/button';
 
   const MIN_VIEWPORT_PX = 320;
   const MAX_VIEWPORT_PX = 3840;
@@ -149,8 +150,11 @@
       >
         {dimensionsLabel}
       </span>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-xs"
+        iconOnly
         class="absolute bottom-0 right-0 z-20 size-5 cursor-nwse-resize touch-none border-0 bg-transparent p-0 after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b-2 after:border-r-2 after:border-muted-foreground"
         aria-label={m.browser_viewport_resizeHandle_ariaLabel()}
         data-testid="browser-device-resize-handle"
@@ -158,7 +162,7 @@
         onpointermove={handlePointerMove}
         onpointerup={handlePointerEnd}
         onpointercancel={handlePointerEnd}
-      ></button>
+      ></Button>
     {/if}
   </div>
 </div>

@@ -10,8 +10,8 @@
    * shared viewer is untouched everywhere else.
    */
 
-  import * as Dialog from '$lib/components/ui/dialog';
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { ContentDialog } from '$lib/components/patterns/confirm';
+  import { Button } from '$lib/components/ui/button';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import { openExternalUrl } from '$lib/utils/open-external';
   import { m } from '$shared/paraglide/messages.js';
@@ -19,12 +19,19 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     releaseNotes: ReleaseNotes | null;
     loading?: boolean;
     onClose?: () => void;
   }
 
-  let { open = $bindable(false), releaseNotes, loading = false, onClose }: Props = $props();
+  let {
+    open = $bindable(false),
+    static: staticPosition = false,
+    releaseNotes,
+    loading = false,
+    onClose,
+  }: Props = $props();
 
   const title = $derived(
     releaseNotes
@@ -51,10 +58,6 @@
     onClose?.();
   }
 
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) onClose?.();
-  }
-
   function openReleasePage() {
     if (!releaseNotes) return;
     // eslint-disable-next-line intent/no-component-async-data-fetch -- opens an external URL in the system browser, not a domain data fetch
@@ -62,47 +65,30 @@
   }
 </script>
 
-<Dialog.Root bind:open onOpenChange={handleOpenChange}>
-  <Dialog.Content
-    class="release-notes-dialog flex max-w-2xl flex-col gap-0 overflow-hidden rounded-lg p-0"
-  >
-    <div class="flex shrink-0 items-center border-b border-border px-6 py-4 pr-12">
-      <Dialog.Title class="type-title text-foreground">{title}</Dialog.Title>
-    </div>
+<ContentDialog bind:open static={staticPosition} {title} size="wide" onClose={close}>
+  <div class="release-notes-body min-w-0">
+    {#if loading}
+      <p class="text-sm text-muted-foreground">{m.releaseNotes_modal_loading_message()}</p>
+    {:else if displayNotes}
+      <MarkdownViewer content={displayNotes} forceExternalLinks />
+    {:else}
+      <p class="text-sm text-muted-foreground">{m.releaseNotes_modal_unavailable_message()}</p>
+    {/if}
+  </div>
 
-    <div class="release-notes-body min-h-0 flex-1 overflow-y-auto px-6 py-5">
-      {#if loading}
-        <p class="text-sm text-muted-foreground">{m.releaseNotes_modal_loading_message()}</p>
-      {:else if displayNotes}
-        <MarkdownViewer content={displayNotes} forceExternalLinks />
-      {:else}
-        <p class="text-sm text-muted-foreground">{m.releaseNotes_modal_unavailable_message()}</p>
-      {/if}
-    </div>
-
-    <Dialog.Footer
-      class="mt-0 shrink-0 flex-row items-center justify-between gap-3 px-6 py-3 sm:justify-between"
-    >
-      {#if releaseNotes}
-        <Button variant="ghost" size="sm" onclick={openReleasePage}>
-          {m.releaseNotes_modal_viewOnGitHub_label()}
-        </Button>
-      {:else}
-        <span></span>
-      {/if}
-      <Button size="sm" onclick={close}>{m.releaseNotes_modal_dismiss_label()}</Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+  {#snippet footer()}
+    {#if releaseNotes}
+      <Button variant="ghost" size="sm" onclick={openReleasePage}>
+        {m.releaseNotes_modal_viewOnGitHub_label()}
+      </Button>
+    {:else}
+      <span></span>
+    {/if}
+    <Button size="sm" onclick={close}>{m.releaseNotes_modal_dismiss_label()}</Button>
+  {/snippet}
+</ContentDialog>
 
 <style>
-  /* Cap the dialog height so long release bodies scroll inside the body pane
-     while the header and footer stay fixed. Doubles the class on the shared
-     editorial content rule to win its max-height deterministically. */
-  :global(.dialog-editorial-content.release-notes-dialog) {
-    max-height: min(85dvh, 44rem);
-  }
-
   /* Release-notes typography over the shared MarkdownViewer output — scoped
      under .release-notes-body so no other MarkdownViewer usage is affected.
      Selectors include .markdown-viewer to outrank the viewer's own rules. */
@@ -125,15 +111,13 @@
     border-top: none;
   }
 
-  /* h3 (Features / Bug Fixes / …) → small uppercase eyebrow labels */
+  /* h3 (Features / Bug Fixes / …) → small sentence-case eyebrow labels */
   .release-notes-body :global(.markdown-viewer h3) {
     margin-top: 1.25rem;
     margin-bottom: 0.375rem;
     font-size: 0.6875rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
     line-height: 1.4;
-    text-transform: uppercase;
     color: hsl(var(--muted-foreground));
   }
 

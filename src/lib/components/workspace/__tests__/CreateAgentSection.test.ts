@@ -8,7 +8,7 @@ vi.mock('svelte-fa', async () => {
 
 import CreateAgentSection from '../CreateAgentSection.svelte';
 
-describe('CreateAgentSection blank-agent creation', () => {
+describe('CreateAgentSection creation defaults', () => {
   afterEach(() => {
     cleanup();
   });
@@ -20,14 +20,22 @@ describe('CreateAgentSection blank-agent creation', () => {
     });
 
     const trigger = screen.getByRole('button', { name: 'Create new agent' });
-    expect(trigger.classList.contains('shadow-none')).toBe(true);
-    expect(trigger.classList.contains('shadow-xs')).toBe(false);
+    expect(trigger.querySelector('[data-slot="button-surface"]')).toBeTruthy();
 
     await fireEvent.click(trigger);
 
     expect(onCreateWithSpecialist).toHaveBeenCalledOnce();
     expect(onCreateWithSpecialist).toHaveBeenCalledWith(null);
     expect(screen.queryByText('Blank Agent')).toBeNull();
+  });
+
+  it('prefers implicit creation so the workspace specialist can be restored', async () => {
+    const onCreate = vi.fn();
+    const onCreateWithSpecialist = vi.fn();
+    render(CreateAgentSection, { props: { compact: true, onCreate, onCreateWithSpecialist } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Create new agent' }));
+    expect(onCreate).toHaveBeenCalledOnce();
+    expect(onCreateWithSpecialist).not.toHaveBeenCalled();
   });
 
   it('falls back to plain creation from the full-width button', async () => {

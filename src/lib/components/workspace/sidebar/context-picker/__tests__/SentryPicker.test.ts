@@ -5,6 +5,14 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SentryIssueResult } from '$features/sentry-auth/types';
 
+vi.unmock('$lib/electron-bridge');
+const wire = vi.hoisted(() => ({ request: vi.fn() }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: wire.request,
+  onBackendNotification: () => () => {},
+  onBackendReconnected: () => () => {},
+}));
+
 const sentryState = vi.hoisted(() => ({
   isAuthenticated: false,
   isConnecting: false,
@@ -12,6 +20,7 @@ const sentryState = vi.hoisted(() => ({
 
 const clientMocks = vi.hoisted(() => ({
   fetchIssues: vi.fn(),
+  getAuthState: vi.fn(async () => ({ isAuthenticated: sentryState.isAuthenticated })),
 }));
 
 const storeMocks = vi.hoisted(() => ({
@@ -33,6 +42,12 @@ vi.mock('$store/renderer/slices/sentry-auth/sentry-auth-selectors', () => {
   return {
     selectSentryIsAuthenticated: vi.fn(() => readable(() => sentryState.isAuthenticated)),
     selectSentryIsConnecting: vi.fn(() => readable(() => sentryState.isConnecting)),
+    selectSentryAuthConsumerOperation: Object.assign(
+      vi.fn(() => readable(() => null)),
+      {
+        select: vi.fn(() => null),
+      },
+    ),
   };
 });
 
@@ -41,12 +56,13 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({}),
+    state: () => ({ theme: { name: 'dark' } }),
     dispatch: storeMocks.dispatch,
   });
 });
 
 import SentryPicker from '../SentryPicker.svelte';
+import LinearPicker from '../LinearPicker.svelte';
 import { warmImport } from '../../../../../../test/warm-import';
 
 // Protocol-shaped issue per SentryIssueResult (features/sentry-auth/types.ts).
@@ -100,9 +116,7 @@ describe('SentryPicker direct-client fetch', () => {
 
     expect(screen.getByText('Connect to Sentry to see your issues')).toBeTruthy();
     expect(clientMocks.fetchIssues).not.toHaveBeenCalled();
-    expect(storeMocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'sentryAuth/initialize' }),
-    );
+    expect(clientMocks.getAuthState).toHaveBeenCalledWith(baseProps.workspaceId);
   });
 
   it('fetches issues through the client once when authenticated and renders them', async () => {
@@ -117,7 +131,7 @@ describe('SentryPicker direct-client fetch', () => {
     await waitFor(() => expect(screen.getByText('PROJ-1')).toBeTruthy());
     expect(screen.getByText('PROJ-2')).toBeTruthy();
     expect(clientMocks.fetchIssues).toHaveBeenCalledTimes(1);
-    expect(clientMocks.fetchIssues).toHaveBeenCalledWith();
+    expect(clientMocks.fetchIssues).toHaveBeenCalledWith({ workspaceId: baseProps.workspaceId });
   });
 
   it('renders the empty state when the client resolves no issues', async () => {
@@ -127,6 +141,53 @@ describe('SentryPicker direct-client fetch', () => {
 
     await waitFor(() => expect(screen.getByText('No issues found')).toBeTruthy());
     expect(clientMocks.fetchIssues).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops late issues when the picker changes workspace with the same issue IDs', async () => {
+    sentryState.isAuthenticated = true;
+    let resolveA!: (issues: SentryIssueResult[]) => void;
+    clientMocks.fetchIssues.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveA = resolve;
+        }),
+    );
+    const view = render(SentryPicker, { props: { ...baseProps, workspaceId: 'a' } });
+    await waitFor(() => expect(clientMocks.fetchIssues).toHaveBeenCalledWith({ workspaceId: 'a' }));
+    clientMocks.fetchIssues.mockResolvedValue([makeIssue({ title: 'Workspace B issue' })]);
+    await view.rerender({ ...baseProps, workspaceId: 'b' });
+    await waitFor(() => expect(screen.getByText('Workspace B issue')).toBeTruthy());
+    resolveA([makeIssue({ title: 'Late workspace A issue' })]);
+    await Promise.resolve();
+    expect(screen.queryByText('Late workspace A issue')).toBeNull();
+    expect(clientMocks.getAuthState).toHaveBeenLastCalledWith('b');
+  });
+
+  it('carries the rendered picker workspace through the real client and bridge to the wire', async () => {
+    const { sentryAuthClient: realClient } = await vi.importActual<
+      typeof import('$features/sentry-auth/renderer/sentry-auth.client')
+    >('$features/sentry-auth/renderer/sentry-auth.client');
+    await import('$store/renderer/seeders/integrations-bridge-seeder');
+    wire.request.mockImplementation(async (method: string) =>
+      method === 'sentry.authStatus'
+        ? { authenticated: true }
+        : { issues: [makeIssue()], nextToken: null },
+    );
+    clientMocks.getAuthState.mockImplementation(realClient.getAuthState);
+    clientMocks.fetchIssues.mockImplementation(realClient.fetchIssues.bind(realClient));
+    const view = render(SentryPicker, { props: { ...baseProps, workspaceId: 'a' } });
+    await waitFor(() =>
+      expect(wire.request).toHaveBeenCalledWith('sentry.listIssues', { workspaceId: 'a' }),
+    );
+    await view.rerender({ ...baseProps, workspaceId: 'b' });
+    await waitFor(() =>
+      expect(wire.request).toHaveBeenCalledWith('sentry.listIssues', { workspaceId: 'b' }),
+    );
+    expect(wire.request).toHaveBeenCalledWith('sentry.authStatus', { workspaceId: 'a' });
+    expect(wire.request).toHaveBeenCalledWith('sentry.authStatus', { workspaceId: 'b' });
+    clientMocks.getAuthState.mockImplementation(async () => ({
+      isAuthenticated: sentryState.isAuthenticated,
+    }));
   });
 
   it('reports the selected issue with sentry metadata and closes', async () => {
@@ -154,4 +215,29 @@ describe('SentryPicker direct-client fetch', () => {
     });
     expect(baseProps.onClose).toHaveBeenCalledTimes(1);
   });
+});
+
+it('carries Linear picker auth and issue reads through its production client to the wire', async () => {
+  await import('$store/renderer/seeders/integrations-bridge-seeder');
+  wire.request.mockImplementation(async (method: string) =>
+    method === 'linear.authStatus'
+      ? { authenticated: true }
+      : { issues: [{ id: 'same', identifier: 'APP-1', title: 'Linear issue' }], nextToken: null },
+  );
+  const view = render(LinearPicker, { props: { ...baseProps, workspaceId: 'linear-a' } });
+  await waitFor(() =>
+    expect(wire.request).toHaveBeenCalledWith('linear.listIssues', {
+      filter: 'all',
+      workspaceId: 'linear-a',
+    }),
+  );
+  await view.rerender({ ...baseProps, workspaceId: 'linear-b' });
+  await waitFor(() =>
+    expect(wire.request).toHaveBeenCalledWith('linear.listIssues', {
+      filter: 'all',
+      workspaceId: 'linear-b',
+    }),
+  );
+  expect(wire.request).toHaveBeenCalledWith('linear.authStatus', { workspaceId: 'linear-a' });
+  expect(wire.request).toHaveBeenCalledWith('linear.authStatus', { workspaceId: 'linear-b' });
 });

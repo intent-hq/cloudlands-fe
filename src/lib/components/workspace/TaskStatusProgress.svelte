@@ -115,7 +115,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .flame-progress-enter,
     .flame-status-segment {
       animation: none;

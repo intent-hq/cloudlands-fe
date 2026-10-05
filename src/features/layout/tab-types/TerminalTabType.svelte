@@ -5,9 +5,8 @@
    * Renders a terminal session.
    */
 
-  import Fa from 'svelte-fa';
   import { faChevronDown } from '$lib/icons/phosphor-icons';
-  import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import Terminal from '$lib/components/terminal/Terminal.svelte';
   import ScriptOutputViewer from '$lib/components/terminal/ScriptOutputViewer.svelte';
@@ -34,21 +33,17 @@
 
   $effect(() => {
     if (!headerContext || !isActive) return;
-    return headerContext.registerActions({ primary: surfaceAction });
+    return headerContext.registerActions({ actions: surfaceAction });
   });
 </script>
 
 {#snippet surfaceAction()}
-  <Button
-    variant="ghost-light"
-    size="icon-sm"
+  <Menu.CommandItem
+    icon={faChevronDown}
+    label={m.workspace_shell_showInBottomBar_tooltip()}
     onclick={moveToBottomBar}
-    tooltip={m.workspace_shell_showInBottomBar_tooltip()}
-    aria-label={m.workspace_shell_showInBottomBar_tooltip()}
     data-move-to-bottom-bar
-  >
-    <Fa icon={faChevronDown} size="xs" />
-  </Button>
+  />
 {/snippet}
 
 {#if scriptId && isActive}

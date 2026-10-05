@@ -1834,6 +1834,23 @@ describe('getPRStatusTooltip', () => {
     expect(tooltip).toContain('Merge conflict must be resolved');
   });
 
+  it('reports an absent unresolved count as unreadable only when resolution is required', () => {
+    const required = getPRStatusTooltip(
+      makePR({
+        monitorSnapshot: makeSnapshot({ threads: { resolutionRequired: true } }),
+      }),
+    );
+    expect(required).toContain('Unresolved threads: could not be read');
+    expect(required).not.toContain('Unresolved threads: 0');
+
+    const notRequired = getPRStatusTooltip(
+      makePR({
+        monitorSnapshot: makeSnapshot({ threads: { resolutionRequired: false } }),
+      }),
+    );
+    expect(notRequired).not.toContain('Unresolved threads');
+  });
+
   it('capitalizes a lowercase merge-blocked reason', () => {
     const tooltip = getPRStatusTooltip(
       makePR({

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import { faCircleCheck, faCircleXmark, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faCircleCheck, faCircleXmark } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
   import {
     CHAT_OPERATIONAL_ICON_CLASS,
@@ -15,9 +16,9 @@
   const presentation = $derived.by(() => {
     if (status === 'running') {
       return {
-        icon: faSpinner,
+        icon: null,
         label: m.workspace_devScripts_running_label(),
-        className: 'animate-spin text-muted-foreground',
+        className: 'text-muted-foreground',
       };
     }
     if (status === 'error') {
@@ -43,6 +44,10 @@
   aria-label={presentation.label}
   title={presentation.label}
 >
-  <Fa icon={presentation.icon} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+  {#if presentation.icon}
+    <Fa icon={presentation.icon} size={16} class={CHAT_OPERATIONAL_ICON_CLASS} />
+  {:else}
+    <IntentMarkLoader size={12} class={CHAT_OPERATIONAL_ICON_CLASS} />
+  {/if}
   <span class="sr-only">{presentation.label}</span>
 </span>

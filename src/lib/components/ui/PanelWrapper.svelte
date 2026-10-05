@@ -1,9 +1,11 @@
+<!-- @catalog-exempt: panel chrome layout wrapper with no interactive DOM of its own; no catalog fixtures yet -->
+
 <script lang="ts">
   import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
   import type { Snippet } from 'svelte';
   import { ContentHeader } from '$features/layout/components/content-header';
   import type { BreadcrumbItem } from '$features/layout/components/content-header/types';
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
 
   interface Props {
     title: string;
@@ -50,14 +52,8 @@
 
 <div
   class="flex-1 min-h-0 h-[calc(100%_-_1.5rem)] flex flex-col overflow-auto rounded shadow shadow-muted-foreground/15 m-1 bg-background my-3.5 col-span-full row-span-full {className}"
-  in:fly={{
-    y: 10,
-    duration: 200,
-  }}
-  out:fly={{
-    y: 10,
-    duration: 200,
-  }}
+  in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}
+  out:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}
 >
   <!-- Fixed header using ContentHeader -->
   <ContentHeader

@@ -10,8 +10,8 @@
  * stuck on "checking".
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { HostRequirementsState } from './host-requirements-types';
 
 // ---------------------------------------------------------------------------
@@ -65,11 +65,16 @@ export const checkHostRequirementsComplete = createAction(
   'hostRequirements/checkHostRequirementsComplete',
 );
 
+/** A different connection or principal must obtain its own diagnostic results. */
+export const hostRequirementsReset = createAction('hostRequirements/reset');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const hostRequirementsReducer = createReducer<HostRequirementsState>(initialState);
+
+hostRequirementsReducer.with(hostRequirementsReset, () => initialState);
 
 hostRequirementsReducer.with(checkHostRequirementsStarted, (state) => ({
   ...state,

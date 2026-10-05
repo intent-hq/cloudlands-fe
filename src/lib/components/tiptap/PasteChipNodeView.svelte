@@ -78,7 +78,7 @@
         <div class="space-y-1.5 max-w-96 min-w-48">
           <div class="flex items-center gap-1.5">
             <Fa icon={faClipboard} size="xs" class="opacity-40" />
-            <span class="text-ui font-medium text-muted-foreground uppercase tracking-wide"
+            <span class="text-ui font-medium text-muted-foreground"
               >{m.tiptap_pasteChip_pastedText_label()}</span
             >
             <span class="text-ui text-subtle"

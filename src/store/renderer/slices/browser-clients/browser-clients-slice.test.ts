@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 vi.mock('svelte', async (importOriginal) => ({
   ...(await importOriginal<typeof import('svelte')>()),
   getContext: () => undefined,
 }));
 
-import type { BrowserTab, BrowserTabListing, LiveClient } from '$shared/types/browser-clients';
+import type { BrowserTab, LiveClient } from '$shared/types/browser-clients';
+import {
+  resolveDrivingClientSwitch,
+  resolveDrivingClientView,
+} from '$lib/components/workspace/driving-indicator';
 import type { StoreState } from '../../types';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import {
@@ -14,13 +19,14 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   browserClientsReducer,
+  authenticatedClientsReceived,
+  authenticatedClientsCleared,
   browserTabClosed,
   browserTabUpserted,
   initialState,
   liveClientsReceived,
   ownClientIdReceived,
   workspaceBrowserClientReceived,
-  workspaceBrowserTabsReceived,
 } from './browser-clients-slice';
 import {
   selectBrowserTabHost,
@@ -29,7 +35,6 @@ import {
   selectLiveClientsLoaded,
   selectOwnClientId,
   selectWorkspaceBrowserClient,
-  selectWorkspaceBrowserTabs,
   selectWorkspaceBrowserTabsRevision,
   selectWorkspaceDrivingClient,
 } from './browser-clients-selectors';
@@ -154,7 +159,7 @@ describe('browserClientsReducer', () => {
       connectedAt: '2026-09-07T00:00:03.000Z',
     };
     let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
-    state = browserClientsReducer(state, liveClientsReceived([desk, laptop, viewer]));
+    state = browserClientsReducer(state, liveClientsReceived([desk, laptop, viewer], 'ws-1'));
     state = browserClientsReducer(
       state,
       workspaceBrowserClientReceived('ws-1', {
@@ -194,123 +199,74 @@ describe('browserClientsReducer', () => {
     expect(selectWorkspaceDrivingClient.select(asState(state), 'ws-1').driving).toBeNull();
   });
 
-  it('mirrors browser.listTabs rows and patches them from browser:tab-* events', () => {
-    const listed: BrowserTabListing = {
-      ...tab('tab-a', { title: 'Example', ownerAgentId: 'agent-1', ownerAgentName: 'Agent' }),
-      hostConnected: true,
-      hostName: 'Intent Desktop',
-    };
-    let state = browserClientsReducer(
-      initialState,
-      workspaceBrowserTabsReceived('ws-1', [listed], 0),
+  it('gates the indicator on browser tabs and two clients, except for an offline pin', () => {
+    let state = browserClientsReducer(initialState, ownClientIdReceived('cli-desk'));
+    state = browserClientsReducer(state, liveClientsReceived([desk, laptop], 'ws-1'));
+    state = browserClientsReducer(
+      state,
+      workspaceBrowserClientReceived('ws-1', {
+        source: 'default',
+        resolved: { clientId: 'cli-laptop', name: 'Intent Desktop' },
+      }),
     );
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([listed]);
-
-    // tab-updated: the event row is the canonical registry row — optional
-    // fields it omits (title, owner) were cleared and must not survive; only
-    // the listing's presence decoration carries over.
-    const moved = tab('tab-a', {
-      url: 'https://example.com/next',
-      updatedAt: '2026-09-07T00:00:05.000Z',
+    const twoClients = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
+    // Two clients, no browser tabs: hidden — but the switch stays offered.
+    expect(resolveDrivingClientView({ ...twoClients, hasBrowserTabs: false })).toBeNull();
+    expect(resolveDrivingClientSwitch(twoClients)).toMatchObject({
+      mode: 'elsewhere',
+      canSwitchHere: true,
     });
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', moved));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
-      { ...moved, hostConnected: true, hostName: 'Intent Desktop' },
-    ]);
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')[0]).not.toHaveProperty(
-      'title',
-    );
+    // Two clients with a browser tab: shown.
+    expect(resolveDrivingClientView({ ...twoClients, hasBrowserTabs: true })).toMatchObject({
+      mode: 'elsewhere',
+      hostName: 'Intent Desktop',
+      canSwitchHere: true,
+    });
 
-    // tab-opened: a new row appends.
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', tab('tab-b')));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
-      'tab-a',
-      'tab-b',
-    ]);
-
-    // tab-closed: the row is removed; an unknown tabId leaves the rows alone.
-    const rowsBefore = selectWorkspaceBrowserTabs.select(asState(state), 'ws-1');
-    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-nope'));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual(rowsBefore);
-    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-a'));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
-      'tab-b',
-    ]);
-  });
-
-  it('recomputes the presence decoration from client.list when a tab row moves to another host', () => {
-    const listed: BrowserTabListing = {
-      ...tab('tab-a', { hostClientId: 'cli-desk' }),
-      hostConnected: true,
-      hostName: 'Desk (hello name)',
-    };
-    const migrated = (hostClientId: string): BrowserTab =>
-      tab('tab-a', { hostClientId, updatedAt: '2026-09-07T00:00:05.000Z' });
-
-    // Live list read: the new host is listed → connected, with its hello name.
-    let state = browserClientsReducer(initialState, liveClientsReceived([desk, laptop]));
-    state = browserClientsReducer(state, workspaceBrowserTabsReceived('ws-1', [listed], 0));
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', migrated('cli-laptop')));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
-      { ...migrated('cli-laptop'), hostConnected: true, hostName: laptop.name },
-    ]);
-
-    // Live list read: the new host is not listed → disconnected, no stale name.
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', migrated('cli-gone')));
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([
-      { ...migrated('cli-gone'), hostConnected: false },
-    ]);
-
-    // Live list never read: the decoration is dropped rather than carried over.
-    let cold = browserClientsReducer(
-      initialState,
-      workspaceBrowserTabsReceived('ws-1', [listed], 0),
-    );
-    cold = browserClientsReducer(cold, browserTabUpserted('ws-1', migrated('cli-laptop')));
-    expect(selectWorkspaceBrowserTabs.select(asState(cold), 'ws-1')).toEqual([
-      migrated('cli-laptop'),
-    ]);
-  });
-
-  it('drops a browser.listTabs snapshot issued before a browser:tab-* patch landed', () => {
-    const listed = (tabId: string): BrowserTabListing => ({ ...tab(tabId), hostConnected: true });
-    let state = browserClientsReducer(
-      initialState,
-      workspaceBrowserTabsReceived('ws-1', [listed('tab-a'), listed('tab-b')], 0),
-    );
-    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(0);
-
-    // A closed event (even for a row not yet mirrored) and an opened event
-    // each advance the revision the next read must be stamped with.
-    const staleRead = selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1');
-    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-a'));
-    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-not-mirrored'));
-    state = browserClientsReducer(state, browserTabUpserted('ws-1', tab('tab-c')));
-    const current = selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1');
-    expect(current).toBe(staleRead + 3);
-
-    // The snapshot from the stale read would resurrect tab-a and lose tab-c.
-    const patched = state;
+    // One client with a browser tab: hidden.
+    state = browserClientsReducer(state, liveClientsReceived([desk], 'ws-1'));
     state = browserClientsReducer(
       state,
-      workspaceBrowserTabsReceived('ws-1', [listed('tab-a'), listed('tab-b')], staleRead),
+      workspaceBrowserClientReceived('ws-1', {
+        source: 'default',
+        resolved: { clientId: 'cli-desk', name: 'Intent Desktop' },
+      }),
     );
-    expect(state).toBe(patched);
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
-      'tab-b',
-      'tab-c',
-    ]);
+    const oneClient = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
+    expect(resolveDrivingClientView({ ...oneClient, hasBrowserTabs: true })).toBeNull();
 
-    // A snapshot stamped with the current revision applies; it does not bump it.
+    // Offline pin, one connected client, no browser tabs: still surfaced.
     state = browserClientsReducer(
       state,
-      workspaceBrowserTabsReceived('ws-1', [listed('tab-b'), listed('tab-c')], current),
+      workspaceBrowserClientReceived('ws-1', {
+        source: 'workspace',
+        clientId: 'cli-travel',
+        resolved: null,
+      }),
     );
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1').map((t) => t.tabId)).toEqual([
-      'tab-b',
-      'tab-c',
-    ]);
-    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(current);
+    const offlinePin = selectWorkspaceDrivingClient.select(asState(state), 'ws-1');
+    expect(resolveDrivingClientView({ ...offlinePin, hasBrowserTabs: false })).toMatchObject({
+      mode: 'offline',
+      canSwitchHere: true,
+    });
+  });
+
+  it('advances the per-workspace tabsRevision on every browser:tab-* event', () => {
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(initialState), 'ws-1')).toBe(0);
+
+    // Opened / updated rows and closed ids (even for a tab never seen here)
+    // each advance the revision the registry saga compares its reads against.
+    let state = browserClientsReducer(initialState, browserTabUpserted('ws-1', tab('tab-a')));
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(1);
+    state = browserClientsReducer(state, browserTabUpserted('ws-1', tab('tab-a')));
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(2);
+    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-a'));
+    state = browserClientsReducer(state, browserTabClosed('ws-1', 'tab-never-seen'));
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(4);
+
+    // Other workspaces are untouched.
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-2')).toBe(0);
+    expect(state.byWorkspaceId['ws-1']?.browserClient).toBeNull();
   });
 
   it.each([
@@ -335,9 +291,63 @@ describe('browserClientsReducer', () => {
 
     expect(state.byWorkspaceId['ws-1']).toBeUndefined();
     expect(selectWorkspaceBrowserClient.select(asState(state), 'ws-1')).toBeNull();
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-1')).toEqual([]);
-    expect(selectWorkspaceBrowserTabs.select(asState(state), 'ws-2').map((t) => t.tabId)).toEqual([
-      'tab-z',
-    ]);
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-1')).toBe(0);
+    expect(selectWorkspaceBrowserTabsRevision.select(asState(state), 'ws-2')).toBe(1);
+  });
+});
+
+describe('authenticated Devices view lifetime', () => {
+  it('replaces server rows and clears only the matching view context', () => {
+    const admitted = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('host-b-person-b', [desk]),
+    );
+    expect(selectLiveClients.select({ browserClients: admitted } as StoreState)).toEqual([desk]);
+    expect(browserClientsReducer(admitted, authenticatedClientsCleared('old-host'))).toBe(admitted);
+    const cleared = browserClientsReducer(admitted, authenticatedClientsCleared('host-b-person-b'));
+    expect(selectLiveClients.select({ browserClients: cleared } as StoreState)).toEqual([]);
+    expect(cleared.authenticatedContext).toBeNull();
+    expect(cleared.liveClientsLoaded).toBe(false);
+  });
+  it('retains principal/client tuples while leaving raw browser-routing IDs unchanged', () => {
+    const a = { ...desk, principalId: 'person-a', hostRole: 'owner' as const, connections: 2 };
+    const b = { ...desk, principalId: 'person-b', hostRole: 'member' as const, name: 'B phone' };
+    let state = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('context', [a, b]),
+    );
+    const rows = () => getItems(state.authenticatedClients!);
+    expect(rows()).toMatchObject([a, b]);
+    expect(rows().map((row) => row.clientId)).toEqual(['cli-desk', 'cli-desk']);
+    expect(selectLiveClient.select({ browserClients: state } as StoreState, 'cli-desk')).toEqual(b);
+    state = browserClientsReducer(
+      state,
+      authenticatedClientsReceived('context', [a, { ...b, name: 'B tablet' }]),
+    );
+    expect(rows()).toMatchObject([a, { ...b, name: 'B tablet' }]);
+    state = browserClientsReducer(state, authenticatedClientsReceived('context', [b]));
+    expect(rows()).toMatchObject([b]);
+    state = browserClientsReducer(
+      state,
+      authenticatedClientsReceived('context', [a, { ...a, connections: 3 }]),
+    );
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toMatchObject({
+      principalId: 'person-a',
+      clientId: 'cli-desk',
+      connections: 3,
+    });
+    state = browserClientsReducer(state, authenticatedClientsCleared('context'));
+    expect(rows()).toEqual([]);
+  });
+  it('does not alias tuples whose fields contain delimiters', () => {
+    const state = browserClientsReducer(
+      initialState,
+      authenticatedClientsReceived('context', [
+        { ...desk, principalId: 'a:b', clientId: 'c' },
+        { ...desk, principalId: 'a', clientId: 'b:c' },
+      ]),
+    );
+    expect(getItems(state.authenticatedClients!)).toHaveLength(2);
   });
 });

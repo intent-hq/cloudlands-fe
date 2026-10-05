@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseUiComponentMetadata } from '../component-metadata';
 import { invalidControlContrastCases } from '../../../../../tests/helpers/invalid-control-contrast';
@@ -10,6 +11,51 @@ import { checkboxMetadata } from './checkbox.meta';
 afterEach(() => cleanup());
 
 describe('Checkbox', () => {
+  it('forwards rest attributes and binds the underlying control ref', async () => {
+    const binding = { ref: null as HTMLButtonElement | null };
+    const target = document.createElement('div');
+    document.body.append(target);
+    const component = mount(Checkbox, {
+      target,
+      props: {
+        'data-testid': 'forwarded-control',
+        'aria-label': 'Forwarded control',
+        get ref() {
+          return binding.ref;
+        },
+        set ref(value) {
+          binding.ref = value;
+        },
+      },
+    });
+    try {
+      await tick();
+      const control = target.querySelector('[data-testid="forwarded-control"]');
+      expect(control).not.toBeNull();
+      expect(binding.ref).toBe(control);
+      expect(control?.getAttribute('aria-label')).toBe('Forwarded control');
+      binding.ref?.focus();
+      expect(document.activeElement).toBe(control);
+    } finally {
+      await unmount(component);
+      target.remove();
+    }
+    expect(binding.ref).toBeNull();
+  });
+
+  it('forwards click handlers after stopping propagation', async () => {
+    const onclick = vi.fn((event: MouseEvent) => {
+      expect(event.cancelBubble).toBe(true);
+    });
+    const onCheckedChange = vi.fn();
+    const { getByRole } = render(Checkbox, {
+      props: { ariaLabel: 'Choice', onclick, onCheckedChange },
+    });
+    await fireEvent.click(getByRole('checkbox'));
+    expect(onclick).toHaveBeenCalledOnce();
+    expect(onCheckedChange).toHaveBeenCalledWith(true);
+  });
+
   it('exposes controlled checked and mixed states with an accessible name', async () => {
     const { getByRole, rerender } = render(CheckboxHarness, {
       props: { indeterminate: true },
@@ -20,6 +66,8 @@ describe('Checkbox', () => {
 
     await rerender({ checked: true, indeterminate: false });
     expect(checkbox.getAttribute('aria-checked')).toBe('true');
+    expect(checkbox.className).toContain('data-[state=checked]:bg-primary');
+    expect(checkbox.className).toContain('data-[state=checked]:text-primary-foreground');
     await rerender({ checked: false, indeterminate: false });
     expect(checkbox.getAttribute('aria-checked')).toBe('false');
   });
@@ -78,6 +126,15 @@ describe('Checkbox', () => {
     }
   });
 
+  it('uses a one-pixel offset focus outline without a shadow', () => {
+    const { getByRole } = render(Checkbox, { props: { ariaLabel: 'Focused choice' } });
+    const classes = getByRole('checkbox', { name: 'Focused choice' }).className;
+
+    expect(classes).toContain('focus-visible:outline-1');
+    expect(classes).toContain('focus-visible:outline-offset-2');
+    expect(classes).toContain('focus-visible:shadow-none');
+  });
+
   it('publishes valid metadata and a complete fixture state matrix', () => {
     expect(() => parseUiComponentMetadata(checkboxMetadata)).not.toThrow();
     expect(checkboxMetadata.fixtures[0].states).toEqual(
@@ -85,6 +142,8 @@ describe('Checkbox', () => {
         'unchecked',
         'checked',
         'mixed',
+        'solid-primary',
+        'inverted-glyph',
         'disabled',
         'invalid',
         'required-invalid',

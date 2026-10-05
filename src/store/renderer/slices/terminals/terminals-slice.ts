@@ -1,5 +1,5 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   addItem,
@@ -8,13 +8,13 @@ import {
   getItem,
   getItemIndex,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import {
   DEFAULT_TERMINAL_OVERLAY_HEIGHT,
   clampTerminalOverlayHeight,
   isValidTerminalOverlayHeight,
 } from '$shared/utils/terminal-overlay-height';
-import { setScriptsData } from '../scripts/scripts-slice';
+import { setScriptsData, removeScript } from '../scripts/scripts-slice';
 
 // ============================================================================
 // Constants
@@ -221,6 +221,10 @@ export const hydratePlacements = createAction<
 
 export const createTerminalRequested = createAction<[wsId: string]>(
   'terminals/createTerminalRequested',
+);
+
+export const createPanelTerminalRequested = createAction<[wsId: string, panelId?: string]>(
+  'terminals/createPanelTerminalRequested',
 );
 
 /**
@@ -629,6 +633,16 @@ terminalsReducer.with(setScriptsData, (state, { payload: { wsId, scripts } }) =>
   const ws = state.workspaces[wsId];
   if (!ws?.selectedScriptId) return state;
   if (scripts.some((script) => script.id === ws.selectedScriptId)) return state;
+  return setWs(state, wsId, {
+    ...ws,
+    selectedScriptId: null,
+    isOpen: ws.activeTerminalId !== null ? ws.isOpen : false,
+  });
+});
+
+terminalsReducer.with(removeScript, (state, { payload: [wsId, scriptId] }) => {
+  const ws = state.workspaces[wsId];
+  if (ws?.selectedScriptId !== scriptId) return state;
   return setWs(state, wsId, {
     ...ws,
     selectedScriptId: null,

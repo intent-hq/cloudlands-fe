@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Workspace, WorkspaceId, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   removeWorkspaceEntity,
@@ -13,10 +13,12 @@ import {
   clearWorkspaceTasks,
   emptyWorkspaceTaskStats,
   initialState,
+  invalidateWorkspaceTasks,
   loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
   workspaceTasksReducer,
+  workspaceTasksReadStarted,
 } from './workspace-tasks-slice';
 
 const WS = 'ws-1';
@@ -52,18 +54,18 @@ describe('workspaceTasksReducer', () => {
   });
 
   describe('loadWorkspaceTasksRequested', () => {
-    it('marks the workspace as loading and clears errors', () => {
+    it('marks stale without pretending a read was admitted', () => {
       const failed = workspaceTasksReducer(initialState, loadWorkspaceTasksFailed(WS, 'nope'));
       const state = workspaceTasksReducer(failed, loadWorkspaceTasksRequested(WS));
 
-      expect(state.byWorkspaceId[WS]).toMatchObject({ loading: true, error: null });
+      expect(state.byWorkspaceId[WS]).toMatchObject({ loading: false, stale: true, error: 'nope' });
     });
 
-    it('is a no-op when a request is already in flight', () => {
+    it('records invalidations even when a request is already in flight', () => {
       const loading = workspaceTasksReducer(initialState, loadWorkspaceTasksRequested(WS));
       const again = workspaceTasksReducer(loading, loadWorkspaceTasksRequested(WS));
 
-      expect(again).toBe(loading);
+      expect(again.byWorkspaceId[WS].revision).toBe(loading.byWorkspaceId[WS].revision + 1);
     });
   });
 
@@ -100,7 +102,7 @@ describe('workspaceTasksReducer', () => {
 
   describe('loadWorkspaceTasksFailed', () => {
     it('records the error and stops loading', () => {
-      const loading = workspaceTasksReducer(initialState, loadWorkspaceTasksRequested(WS));
+      const loading = workspaceTasksReducer(initialState, workspaceTasksReadStarted(WS));
       const state = workspaceTasksReducer(loading, loadWorkspaceTasksFailed(WS, 'boom'));
 
       expect(state.byWorkspaceId[WS]).toMatchObject({ loading: false, error: 'boom' });
@@ -211,6 +213,22 @@ describe('workspaceTasksReducer', () => {
       expect(state).toBe(loaded);
       expect(state.byWorkspaceId[WS].stats).toEqual(canonical);
     });
+
+    it.each(['list', 'entity'])(
+      'accepts newer daemon summaries for loaded stale rows via %s',
+      (source) => {
+        const loaded = loadedState([makeTask('t1')], { total: 1, completed: 0, inProgress: 0 });
+        const stale = workspaceTasksReducer(loaded, invalidateWorkspaceTasks(WS));
+        const workspace = makeWorkspace({ id: WS, taskStats: seedStats });
+        const state = workspaceTasksReducer(
+          stale,
+          source === 'list' ? replaceWorkspaceList([workspace]) : setWorkspaceEntity(workspace),
+        );
+        expect(state.byWorkspaceId[WS].stats).toEqual(seedStats);
+        expect(state.byWorkspaceId[WS].stale).toBe(true);
+        expect(getItems(state.byWorkspaceId[WS].tasks)).toEqual([makeTask('t1')]);
+      },
+    );
 
     it('is a no-op for rows without taskStats', () => {
       const state = workspaceTasksReducer(

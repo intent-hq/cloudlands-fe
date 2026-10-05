@@ -26,7 +26,11 @@
  * This module retains the reusable joystick, parsing, and settings helpers;
  * saga orchestration owns hydration, persistence, and cancellation.
  */
-import { appClient } from '$lib/client';
+import {
+  HARDWARE_CONSOLE_SETTINGS_PATH,
+  readHardwareConsoleSettingsBag,
+  persistHardwareConsoleSettingsPatch,
+} from '../settings-bag';
 import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -38,7 +42,6 @@ import {
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder, DEFAULT_JOYSTICK_ENGAGE_DISTANCE } from '../input/input-decoder';
 import { radialCancelSector, radialSectorForAngle } from './radial-layout';
-import { HARDWARE_CONSOLE_SETTINGS_PATH } from '../assignment/key-pin-persistence-service';
 import {
   clampPromptPickerLimit,
   type PromptUsageEntry,
@@ -67,6 +70,8 @@ export interface PromptPickerJoystickDeps {
   centerDwellMs?: number;
   /** Console-owner gate (#1928). Defaults to the store-backed `isConsoleOwner`. */
   isOwner?: () => boolean;
+  /** Active-session keyboard fallback; null disables it for non-DOM hosts. */
+  keyboardTarget?: EventTarget | null;
 }
 
 interface JoystickSession {
@@ -96,6 +101,12 @@ export function installHardwareConsolePromptPickerJoystick(
   const selectDistance = deps.selectDistance ?? DEFAULT_JOYSTICK_ENGAGE_DISTANCE;
   const centerDwellMs = deps.centerDwellMs ?? DEFAULT_CENTER_DWELL_MS;
   const isOwner = deps.isOwner ?? isConsoleOwner;
+  const keyboardTarget =
+    deps.keyboardTarget === undefined
+      ? typeof window === 'undefined'
+        ? null
+        : window
+      : deps.keyboardTarget;
 
   let session: JoystickSession | null = null;
   let detachDecoder: (() => void) | null = null;
@@ -159,6 +170,34 @@ export function installHardwareConsolePromptPickerJoystick(
     }
   };
 
+  // Keep focus in the original editor so insertion still targets it. Only an
+  // active owner session consumes keys; Escape also clears the service session
+  // so a later joystick release cannot insert a canceled prompt.
+  const onKeydown = (event: Event): void => {
+    if (!session) return;
+    const key = event as KeyboardEvent;
+    if (key.isComposing || key.altKey || key.ctrlKey || key.metaKey || key.defaultPrevented) return;
+    if (!['Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key.key))
+      return;
+    if (!isOwner()) {
+      closeSession();
+      return;
+    }
+    key.preventDefault();
+    key.stopImmediatePropagation();
+    if (key.key === 'Escape') {
+      closeSession();
+    } else if (key.key === 'Enter') {
+      onRelease();
+    } else {
+      const count = session.prompts.length + 1;
+      const direction = key.key === 'ArrowLeft' || key.key === 'ArrowUp' ? -1 : 1;
+      session.belowSince = null;
+      setSelection(((session.selection ?? count - 1) + direction + count) % count);
+    }
+  };
+  keyboardTarget?.addEventListener('keydown', onKeydown, true);
+
   const teardownDecoder = (): void => {
     detachDecoder?.();
     detachDecoder = null;
@@ -191,6 +230,7 @@ export function installHardwareConsolePromptPickerJoystick(
   if (manager.status === 'connected') setupDecoder();
 
   return () => {
+    keyboardTarget?.removeEventListener('keydown', onKeydown, true);
     offStatus();
     teardownDecoder();
   };
@@ -208,52 +248,25 @@ export function extractSubmittedPromptText(action: unknown): string | null {
   return typeof text === 'string' && text.trim().length > 0 ? text : null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-async function readBag(): Promise<Record<string, unknown> | null> {
-  const setting = await appClient.settings.get(HARDWARE_CONSOLE_SETTINGS_PATH);
-  if (setting === null) return null;
-  return isRecord(setting.value) ? setting.value : {};
-}
-
-/** Read the bag for a read-modify-write, failing when the read failed so a persist can never wipe sibling fields. */
-async function readBagForPersist(): Promise<Record<string, unknown>> {
-  const bag = await readBag();
-  if (bag === null) {
-    throw new Error(
-      `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed; skipping persist to avoid wiping the bag`,
-    );
-  }
-  return bag;
-}
-
 /** Read-modify-write: replace only `promptUsage`, preserving sibling fields. */
 export async function persistHardwareConsolePromptUsage(
   promptUsage: PromptUsageEntry[],
 ): Promise<void> {
-  const bag = await readBagForPersist();
-  await appClient.settings.update([
-    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, promptUsage } },
-  ]);
+  await persistHardwareConsoleSettingsPatch({ promptUsage });
 }
 
 /** Read-modify-write: replace only `promptPickerLimit`, preserving sibling fields. */
 export async function persistHardwareConsolePromptPickerLimit(
   promptPickerLimit: number,
 ): Promise<void> {
-  const bag = await readBagForPersist();
-  await appClient.settings.update([
-    { path: HARDWARE_CONSOLE_SETTINGS_PATH, value: { ...bag, promptPickerLimit } },
-  ]);
+  await persistHardwareConsoleSettingsPatch({ promptPickerLimit });
 }
 
 export async function loadHardwareConsolePrompts(): Promise<{
   promptUsage: ReturnType<typeof parsePromptUsage>;
   promptPickerLimit: number;
 }> {
-  const bag = await readBag();
+  const bag = await readHardwareConsoleSettingsBag();
   if (bag === null) {
     throw new Error(
       `settings.get(${HARDWARE_CONSOLE_SETTINGS_PATH}) returned null — daemon read failed`,

@@ -1,6 +1,10 @@
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, ContentBlock } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getAgentMessageAttribution, stripAgentMessageHeader } from './agent-message-attribution';
+import {
+  getCollaboratorSenderAttribution,
+  stripCollaboratorSenderPreamble,
+} from './collaborator-sender-attribution';
 import { getQueueInfo } from './queue-info';
 
 const ISO_TIMESTAMP = String.raw`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})`;
@@ -54,18 +58,59 @@ export function stripTruncatedTrailingDeliveryNote(text: string, metadata?: unkn
   return text.slice(0, match.index);
 }
 
-/** Return immutable user-authored text for rendering and other UI surfaces. */
-export function getPresentedUserMessageText(message: AgentMessage): string {
+/**
+ * Mirror of the daemon's serve-time `degrade_inline_file_blocks` pass
+ * (PROTOCOL §5.5). A user-row file block with no non-empty `attachmentId`
+ * is the shape older daemons persisted for inline file data; a daemon with
+ * that pass serves it, in place, as
+ * `{ type: 'text', text: 'Attached file: <fileName>' }` (`'Attached file'`
+ * when the name is missing or blank), carrying over only the block `id`, with
+ * the bytes dropped. Applied to transcripts still served by an older daemon so
+ * the projection is identical and the bytes are never read or rendered. Block
+ * order is preserved; reference file blocks and every other block pass through.
+ */
+export function degradeLegacyFileBlocks(
+  blocks: readonly ContentBlock[] | undefined,
+): ContentBlock[] {
+  return (blocks ?? []).map((block) => {
+    if (block.type !== 'file') return block;
+    if (typeof block.attachmentId === 'string' && block.attachmentId.trim()) return block;
+    const name = typeof block.fileName === 'string' ? block.fileName.trim() : '';
+    // i18n-ignore (mirrors the daemon's degrade_inline_file_blocks text projection)
+    const text = name ? `Attached file: ${name}` : 'Attached file';
+    return block.id ? { id: block.id, type: 'text', text } : { type: 'text', text };
+  });
+}
+
+/**
+ * Return immutable user-authored text for rendering and other UI surfaces.
+ * `ownerPrincipalId` (`workspace.ownerPrincipalId`) gates the collaborator
+ * preamble strip: it keeps an owner-authored row byte-identical even when its
+ * first line is the exact preamble, and without it (no workspace at hand) no
+ * preamble is stripped at all — every surface with the workspace must pass it.
+ */
+export function getPresentedUserMessageText(
+  message: AgentMessage,
+  ownerPrincipalId?: string | null,
+): string {
   // Rows sent by another agent carry the daemon-stamped sender header in
-  // content; the attribution chip conveys the sender, so presentation copies
-  // (render, preview, copy) drop the leading header line.
+  // content, and rows sent by a workspace collaborator carry the daemon's
+  // sender preamble; the attribution chip conveys the sender, so presentation
+  // copies (render, preview, copy, edit) drop the leading header line. The
+  // two never coexist on one row (agent vs human caller); each strip is an
+  // exact match against the text the daemon built.
   const attribution = getAgentMessageAttribution(message.metadata);
+  const collaboratorSender = attribution
+    ? null
+    : getCollaboratorSenderAttribution(message, ownerPrincipalId);
   const presentLeadingHeader = attribution
     ? (text: string) => stripAgentMessageHeader(text, attribution)
-    : (text: string) => text;
+    : collaboratorSender
+      ? (text: string) => stripCollaboratorSenderPreamble(text, collaboratorSender)
+      : (text: string) => text;
 
-  const textParts = message.contentBlocks
-    ?.filter((block) => block.type === 'text')
+  const textParts = degradeLegacyFileBlocks(message.contentBlocks)
+    .filter((block) => block.type === 'text')
     .map((block) => block.text ?? '');
   if (!textParts?.length)
     return presentLeadingHeader(

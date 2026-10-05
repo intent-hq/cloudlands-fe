@@ -4,8 +4,23 @@ import { tick } from 'svelte';
 import BubbleMenu from '../BubbleMenu.svelte';
 import TooltipWrapper from '../comments/__tests__/TooltipWrapper.svelte';
 
-const { dispatchMock } = vi.hoisted(() => ({
+const { dispatchMock, mocks } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
+  mocks: {
+    hidesAgentLifecycleActions: false,
+    readable<T>(value: T) {
+      return {
+        subscribe(run: (value: T) => void) {
+          run(value);
+          return () => {};
+        },
+      };
+    },
+  },
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => mocks.readable(mocks.hidesAgentLifecycleActions),
 }));
 
 // Mock the createLogger function at module level
@@ -91,6 +106,7 @@ describe('BubbleMenu', () => {
     // Clear mock calls
     vi.clearAllMocks();
     dispatchMock.mockReset();
+    mocks.hidesAgentLifecycleActions = false;
 
     // Reset event handlers
     editorEventHandlers = {};
@@ -188,6 +204,27 @@ describe('BubbleMenu', () => {
     // BubbleMenu renders via Portal to document.body
     const bubbleMenu = document.body.querySelector('.bubble-menu-floating');
     expect(bubbleMenu).toBeTruthy();
+  });
+
+  it('renders every toolbar button with a name and an icon', async () => {
+    renderBubbleMenu();
+
+    await triggerSelectionUpdate();
+
+    // Open the link input so its confirm/cancel buttons are included too
+    await fireEvent.click(document.body.querySelector('[aria-label="Add link"]')!);
+    await tick();
+
+    const buttons = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.bubble-menu-floating button'),
+    );
+    expect(buttons.length).toBe(10);
+
+    for (const button of buttons) {
+      const label = button.getAttribute('aria-label');
+      expect(label, 'toolbar button must be named').toBeTruthy();
+      expect(button.querySelector('svg'), `${label} must render an icon`).toBeTruthy();
+    }
   });
 
   it('should toggle bold formatting', async () => {
@@ -326,6 +363,17 @@ describe('BubbleMenu', () => {
       expect(onAgentLaunched).toHaveBeenCalledWith(createdAgent);
       expect(document.body.querySelector('.launch-dialog')).toBeFalsy();
     });
+  });
+
+  it('withholds the send-to-agent action when agent lifecycle actions are hidden', async () => {
+    mocks.hidesAgentLifecycleActions = true;
+
+    renderBubbleMenu();
+    await triggerSelectionUpdate();
+
+    expect(document.body.querySelector('[aria-label="Send to Agent"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label="Add comment"]')).toBeTruthy();
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it('should keep launch dialog open and avoid notifying when launch fails', async () => {

@@ -12,6 +12,44 @@ import {
 
 const WS = 'ws-1234';
 
+describe('saved workspace asset video rendering', () => {
+  it.each(['webm', 'mp4'])('renders %s without changing asset identity or routing', (extension) => {
+    const src = `workspace-asset://${WS}/mfr7-1234abcd.${extension}?backend=remote-1&v=render-1`;
+    const html = rewriteIntentFileImageSrcs(
+      `<img src="${src.replace('&', '&amp;')}" alt="demo">`,
+      WS,
+    );
+    expect(html).toContain('<video');
+    expect(html).toContain(`src="${src.replace('&', '&amp;')}"`);
+    expect(html).not.toContain('<img');
+    expect(workspaceFileMediaUrlToIntentFileUrl(src)).toBeNull();
+  });
+
+  it.each([
+    'workspace-asset://other-ws/demo.webm',
+    `workspace-asset://${WS}/../demo.webm`,
+    `workspace-asset://${WS}/a%2Fdemo.webm`,
+    `workspace-asset://${WS}/a%5Cdemo.webm`,
+    `workspace-asset://${WS}/a%00.webm`,
+    `workspace-asset://${WS}/%zz.webm`,
+    `workspace-asset://${WS}/demo.webm?backend=one&backend=two`,
+    `workspace-asset://${WS}/demo.webm?unknown=one`,
+    `workspace-asset://${WS}/demo.webm#fragment`,
+    `workspace-asset://${WS}/demo.mov`,
+    `workspace-asset://${WS}/demo.svg`,
+    `workspace-asset://user@${WS}/demo.webm`,
+  ])('does not promote unsafe or unsupported asset URL %s', (src) => {
+    const html = rewriteIntentFileImageSrcs(`<img src="${src}" alt="demo">`, WS);
+    expect(html).not.toContain('<video');
+    expect(html).not.toContain('workspace-file://');
+  });
+
+  it('preserves saved images without converting their asset IDs to file paths', () => {
+    const html = `<img src="workspace-asset://${WS}/image.png" alt="image">`;
+    expect(rewriteIntentFileImageSrcs(html, WS)).toBe(html);
+  });
+});
+
 describe('intentFileImageUrlToWorkspaceFileUrl', () => {
   it('converts short-form links using the current workspace ID', () => {
     expect(intentFileImageUrlToWorkspaceFileUrl('intent://local/file/docs/shot.png', WS)).toBe(

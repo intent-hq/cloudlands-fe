@@ -1,3 +1,8 @@
+vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
+  selectDaemonConnectionGeneration: () => ({
+    subscribe: (run: (value: number) => void) => (run(0), () => {}),
+  }),
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 
@@ -22,6 +27,8 @@ const mockState = vi.hoisted(() => {
 
   return {
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
+    hidesAgentLifecycleActions: store(false),
+    presencePeople: store<unknown[]>([]),
     activeAgentId: store('agent-1'),
     defaultModel: store('auggie:default'),
     dispatch: vi.fn(),
@@ -47,16 +54,24 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
 }));
 vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+  faArrowDown: { iconName: 'arrow-down' },
   faCheck: { iconName: 'check' },
+  faChevronDown: { iconName: 'chevron-down' },
+  faChevronRight: { iconName: 'chevron-right' },
+  faCircle: { iconName: 'circle' },
+  faCircleQuestion: { iconName: 'circle-question' },
   faCircleInfo: { iconName: 'circle-info' },
+  faClock: { iconName: 'clock' },
   faCopy: { iconName: 'copy' },
+  faEye: { iconName: 'eye' },
+  faList: { iconName: 'list' },
+  faListCheck: { iconName: 'list-check' },
+  faSpinner: { iconName: 'spinner' },
   faSliders: { iconName: 'sliders' },
   faTrash: { iconName: 'trash' },
+  faTriangleExclamation: { iconName: 'triangle-exclamation' },
 }));
 vi.mock('$lib/icons/faNote', () => ({ faNote: { iconName: 'note' } }));
-vi.mock('$lib/components/layout/panel-system/panel-header-context.svelte', () => ({
-  getPanelHeaderContext: () => ({ registerActions: vi.fn(), registerState: vi.fn() }),
-}));
 vi.mock('$features/agent/browser', () => ({
   subscribeToAgent: (agentId: string, run: (session: any) => void) => {
     run(mockState.agents.get()[agentId]);
@@ -68,14 +83,21 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
-    state: () => ({ agents: mockState.agents.get() }),
+    state: () => ({ agents: mockState.agents.get(), agentMutationUi: { byWorkspaceId: {} } }),
     dispatch: mockState.dispatch,
   });
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
+  selectHidesAgentLifecycleActions: () => mockState.hidesAgentLifecycleActions,
+}));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentPresencePeople: () => mockState.presencePeople,
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAgentRetirementSupported: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
+  }),
   selectActiveAgentId: () => mockState.activeAgentId,
   selectInitialAgentId: () => ({
     subscribe: (run: (value: string | null) => void) => (run(null), () => {}),
@@ -122,6 +144,12 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   }),
 }));
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectPanels: () => ({
+    subscribe: (run: (value: object) => void) => (run({}), () => {}),
+  }),
+  selectHiddenTabs: () => ({
+    subscribe: (run: (value: unknown[]) => void) => (run([]), () => {}),
+  }),
   selectAgentTabInfoByTabId: () => ({
     subscribe: (run: (value: null) => void) => (run(null), () => {}),
   }),
@@ -175,7 +203,7 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
-import AgentTabType from '../AgentTabType.svelte';
+import AgentTabTypePrimaryActionsHarness from './mocks/AgentTabTypePrimaryActionsHarness.svelte';
 
 describe('AgentTabType agent model reactivity', () => {
   beforeEach(() => {
@@ -194,7 +222,7 @@ describe('AgentTabType agent model reactivity', () => {
   });
 
   it('updates the ChatPanel agentModel prop when Redux session model changes', async () => {
-    render(AgentTabType, {
+    render(AgentTabTypePrimaryActionsHarness, {
       props: {
         tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
         workspaceId: 'ws-1',
@@ -221,3 +249,8 @@ describe('AgentTabType agent model reactivity', () => {
     });
   });
 });
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', () => ({
+  selectContextSpecialists: () => mockState.presencePeople,
+  selectContextSelectedModel: () => mockState.defaultModel,
+}));

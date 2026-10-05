@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ResponseGroupCollapseHost from './ResponseGroupCollapseHost.svelte';
 
 test('auto-collapses every completed group while later response activity remains', async ({

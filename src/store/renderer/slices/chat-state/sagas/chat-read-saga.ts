@@ -1,3 +1,19 @@
+import { hasUnresolvedQueueProcessing } from '../../pending-submissions/pending-submissions-model';
+import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+import { loadChatTranscript } from '$features/agent/chat-read-service';
+import { takeSingleFlightInContext } from '../../../utils/context-saga-effects';
+import {
+  selectPendingSubmissionEntry,
+  selectAgentSubmissionDisplay,
+} from '../../pending-submissions/pending-submissions-selectors';
+import {
+  pendingSubmissionAccepted,
+  pendingSubmissionSettled,
+  pendingEvidenceObserved,
+  pendingLifecycleObserved,
+  pendingScopeReleased,
+} from '../../pending-submissions/pending-submissions-slice';
+import { selectAgentSessionWorkspaceId } from '$store/renderer/slices/agent-session/agent-session-selectors';
 /**
  * Chat read saga — SINGLE-TRANSFER hydration. Opening a chat transfers the
  * conversation once: the standing `chat.subscribe` subscription's seq-0
@@ -52,7 +68,11 @@ import {
   acquireChatInterestLease,
   releaseChatInterestLease,
 } from '$features/agent/utils/chat-interest-leases';
-import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  markAgentDetailHydrated,
+  upsertSession,
+} from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { cleanupDeletedAgentTabs } from '../../workspace-agents/sagas/deleted-agent-cleanup';
@@ -142,12 +162,12 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   try {
     yield* put(transcriptHydrationStarted(agentId));
     started = true;
-    const session: AgentSession | null = yield* call(readAgentSession, agentId);
+    const session: AgentSession | null = yield* call(readAgentSession, agentId, wsId);
     if (!session || String(session.workspaceId) !== wsId) {
       return { started, succeeded: true };
     }
     // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
-    // §5.5 `pendingDeleteAt`, v6.7+) — a deletion scheduled by another
+    // §5.5 `pendingDeleteAt`) — a deletion scheduled by another
     // window/client (or before an FE restart) is not in the local registry.
     if (session.pendingDeleteAt) return { started, succeeded: true };
     if (yield* call(isAgentDeletionPending, agentId)) {
@@ -162,6 +182,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
     const hydrated = { ...session, messages: preserved };
     yield* put(bulkUpsertSessions([hydrated]));
     yield* put(upsertSession(hydrated));
+    yield* put(markAgentDetailHydrated(agentId));
 
     // SOLE SOURCE: wait (bounded) for the standing subscription's seq-0
     // snapshot. `chatTranscriptSnapshotApplied` is dispatched by the
@@ -335,7 +356,7 @@ function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapsho
 }
 
 /**
- * Lazy block hydration (§5.5 slim projection → v7.2 `agent.getMessageBlock`):
+ * Lazy block hydration (§5.5 slim projection → `agent.getMessageBlock`):
  * fetch one FULL content block on demand when the user expands a truncated
  * tool row or views a truncated image. Single-flight per block, twice over:
  * the `messageBlockHydrationRequested` reducer parks `loading` under the
@@ -361,6 +382,7 @@ function* hydrateMessageBlockWorker(
       agentId,
       messageId,
       blockId,
+      yield* selectAgentSessionWorkspaceId.effect(agentId),
     );
     yield* put(messageBlockHydrated(agentId, messageId, blockId, block));
   } catch (error) {
@@ -372,11 +394,43 @@ function* hydrateMessageBlockWorker(
   }
 }
 
+const queueReconciliationActions = [
+  pendingSubmissionAccepted,
+  pendingSubmissionSettled,
+  pendingEvidenceObserved,
+  pendingLifecycleObserved,
+  pendingScopeReleased,
+];
+type QueueReconciliationAction = ReturnType<(typeof queueReconciliationActions)[number]>;
+
+/** Evidence invalidates both reads. Coalesce bursts and wait for the event mirror to publish. */
+function* reconcileQueueSubmissionDisplay(action: QueueReconciliationAction): SagaGenerator<void> {
+  yield* delay(0);
+  const [scope] = action.payload;
+  const entry = yield* selectPendingSubmissionEntry.effect(scope);
+  if (!entry?.supported || !entry.refreshNeeded || hasUnresolvedQueueProcessing(entry)) return;
+  const display = yield* selectAgentSubmissionDisplay.effect(scope.agentId, scope.workspaceId);
+  if (!display.queue.length) return;
+  // Both services retain their existing scope/connection/read fences and trailing coalescing.
+  yield* all([
+    call(hydrateAgentQueue, scope.agentId, scope.workspaceId),
+    call(loadChatTranscript, scope.agentId, scope.workspaceId),
+  ]);
+}
+
 export function* chatReadSaga() {
   const hydrationTails: HydrationTails = new Map();
   const inFlightBlocks = new Set<string>();
   try {
     yield* all([
+      takeSingleFlightInContext(
+        queueReconciliationActions,
+        (action: QueueReconciliationAction) => {
+          const context = JSON.stringify(action.payload[0]);
+          return action.type === pendingScopeReleased.type ? { context, cancel: true } : context;
+        },
+        reconcileQueueSubmissionDisplay,
+      ),
       takeEvery(initializeChatRequested, initializeChatWorker, hydrationTails),
       takeEvery(refreshChatTranscriptRequested, refreshChatWorker, hydrationTails),
       takeEvery(chatTranscriptSnapshotApplied, snapshotRecoveryWorker),

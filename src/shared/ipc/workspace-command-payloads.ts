@@ -107,6 +107,8 @@ export type BrowserShowTabPayload = WorkspaceCommandPayload & {
 export type BrowserListTabsRequestPayload = WorkspaceCommandPayload & {
   /** Echoed back so main resolves the matching pending request (monorepo#2602). */
   requestId?: string;
+  /** Explicit navigation may recreate this tab's dead offscreen guest without focusing it. */
+  recoverTabId?: string;
 };
 
 export type BrowserTabOwnerChangedPayload = WorkspaceCommandPayload & {

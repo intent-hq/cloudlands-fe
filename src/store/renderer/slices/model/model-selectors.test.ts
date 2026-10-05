@@ -10,7 +10,7 @@ import {
   selectProviderModelEffortLevels,
   selectSelectedModel,
 } from './model-selectors';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ModelState } from './model-types';
 import type { ProviderSettingsState } from '../provider-settings/provider-settings-slice';
@@ -34,6 +34,36 @@ function mockState(
       ...model,
     },
     providerSettings: { ...providerSettingsInitialState, ...settings },
+    providerCatalog: {
+      providers: createCollection('id'),
+      loaded: false,
+      byWorkspaceId: {
+        'ws-1': {
+          catalog: { providers: [] },
+          settings: [
+            {
+              path: 'model.defaultProvider',
+              value: model.defaultProviderId ?? activeProviderId ?? 'auggie',
+            },
+            { path: 'model.providerDefaults', value: model.providerModels ?? {} },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      },
+    },
+    providerModels: {
+      byProviderId: {},
+      clearEpoch: 0,
+      byWorkspaceId: {
+        'ws-1': {
+          [model.availableModelsProviderId ?? activeProviderId ?? 'auggie']: {
+            models: Object.values(model.availableModels?.map ?? {}),
+            fetchedAt: '2026-09-28T00:00:00Z',
+          },
+        },
+      },
+    },
     agentAvailability: {
       providerStatusMap,
       providerLoadingMap: {},
@@ -79,7 +109,7 @@ describe('selectSelectedModel', () => {
     expect(selectSelectedModel.select(state)).toBe('gpt5.4');
   });
 
-  it('replaces a stale Auggie model with the Claude Code catalog default', () => {
+  it('keeps an explicit model absent from a partial provider catalog', () => {
     const providerId = 'claude-code';
     const availableModels = createCollection<AuggieModel, 'value'>('value', [
       { value: 'claude-opus-4-1', label: 'Claude Opus 4.1' },
@@ -96,7 +126,7 @@ describe('selectSelectedModel', () => {
       { [providerId]: { available: true } },
     );
 
-    expect(selectSelectedModel.select(state)).toBe('claude-fable-5[1m]');
+    expect(selectSelectedModel.select(state)).toBe('fable-5');
   });
 
   it('keeps the persisted model when the catalog was loaded for another provider', () => {
@@ -406,9 +436,42 @@ describe('selectProviderModelEffortLevels', () => {
 });
 
 describe('selectAgentModelEffortLevels', () => {
+  it('inherits defaults from its own workspace instead of direct settings', () => {
+    const state = mockState({ defaultProviderId: 'auggie', providerModels: { auggie: 'local' } });
+    state.providerCatalog = {
+      providers: createCollection('id'),
+      loaded: false,
+      byWorkspaceId: {
+        A: {
+          catalog: { providers: [] },
+          settings: [
+            { path: 'model.defaultProvider', value: 'codex' },
+            { path: 'model.providerDefaults', value: { codex: 'remote' } },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      },
+    } as StoreState['providerCatalog'];
+    state.providerModels.byWorkspaceId = {
+      A: {
+        codex: {
+          models: [{ value: 'remote', label: 'Remote', effortLevels: ['high'] }],
+          fetchedAt: '2026-09-28T00:00:00Z',
+        },
+      },
+    };
+    state.agentSessions = {
+      byAgentId: { a: { id: 'a', workspaceId: 'A' } },
+      agentIdsByWorkspace: {},
+    } as unknown as StoreState['agentSessions'];
+    expect(selectAgentModelEffortLevels.select(state, 'a')).toEqual(['high']);
+  });
+
   it('resolves effort levels from the agent session model', () => {
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
@@ -434,6 +497,7 @@ describe('selectAgentModelEffortLevels', () => {
     const base = mockState({
       defaultProviderId,
       providerModels: { auggie: 'gpt5.6-sol' },
+      availableModelsProviderId: 'auggie',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         {
           value: 'gpt5.6-sol',
@@ -465,6 +529,7 @@ describe('selectAgentModelEffortLevels', () => {
     // row carries its own (possibly stale) static effortLevels.
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'codex:gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
@@ -498,6 +563,7 @@ describe('selectAgentModelEffortLevels', () => {
     // on what the session discovered at open.
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'claude-code:opus', label: 'Claude Opus' },
       ]),
@@ -528,6 +594,7 @@ describe('selectAgentModelEffortLevels', () => {
   it('falls back to the catalog when the session effortLevels are absent or empty', () => {
     const base = mockState({
       defaultProviderId,
+      availableModelsProviderId: 'codex',
       availableModels: createCollection<AuggieModel, 'value'>('value', [
         { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', effortLevels: ['low', 'high'] },
       ]),
@@ -550,5 +617,140 @@ describe('selectAgentModelEffortLevels', () => {
 
     expect(selectAgentModelEffortLevels.select(state, 'absent')).toEqual(['low', 'high']);
     expect(selectAgentModelEffortLevels.select(state, 'empty')).toEqual(['low', 'high']);
+  });
+});
+
+it.each(['acp', 'default', 'augment'])(
+  'normalizes inherited %s against each workspace catalog',
+  (alias) => {
+    const state = mockState();
+    const scoped = (provider: string) => ({
+      catalog: { providers: [{ id: provider, legacyAliases: [alias] }] },
+      settings: [
+        { path: 'model.defaultProvider', value: provider },
+        { path: 'model.providerDefaults', value: { [provider]: 'same-model' } },
+      ],
+      specialists: [],
+      readiness: {},
+    });
+    state.providerCatalog.byWorkspaceId = {
+      A: scoped('auggie'),
+      B: scoped('codex'),
+    } as unknown as NonNullable<StoreState['providerCatalog']['byWorkspaceId']>;
+    state.providerModels.byWorkspaceId = {
+      A: {
+        auggie: {
+          models: [{ value: 'same-model', label: 'A', effortLevels: ['low', 'high'] }],
+          fetchedAt: 'now',
+        },
+      },
+      B: {
+        codex: {
+          models: [{ value: 'same-model', label: 'B', effortLevels: ['medium', 'max'] }],
+          fetchedAt: 'now',
+        },
+      },
+    };
+    state.agentSessions = {
+      byAgentId: {
+        a: { id: 'a', workspaceId: 'A', provider: alias, model: null },
+        b: { id: 'b', workspaceId: 'B', provider: alias, model: null },
+      },
+    } as unknown as StoreState['agentSessions'];
+    expect(selectAgentModelEffortLevels.select(state, 'a')).toEqual(['low', 'high']);
+    expect(selectAgentModelEffortLevels.select(state, 'b')).toEqual(['medium', 'max']);
+  },
+);
+
+describe('learned model display names', () => {
+  function learnedState() {
+    const state = mockState();
+    state.providerModels.learnedNames = {
+      codex: {
+        shared: 'Remembered Codex',
+        'org/model:variant': 'Custom identity',
+        org: 'Wrong base',
+      },
+      auggie: { shared: 'Remembered Auggie' },
+    };
+    return state;
+  }
+
+  it('resolves learned names without live catalogs and keeps provider identities separate', () => {
+    const state = learnedState();
+    expect(selectModelDisplayName.select(state, 'codex', 'shared')).toBe('Remembered Codex');
+    expect(selectModelDisplayName.select(state, 'auggie', 'shared', 'ws-1')).toBe(
+      'Remembered Auggie',
+    );
+    expect(selectModelDisplayName.select(state, 'codex', 'never-seen')).toBeUndefined();
+    expect(selectProviderModelEffortLevels.select(state, 'codex', 'shared')).toBeUndefined();
+    expect(selectHasResolvableModel.select(state, 'codex')).toBe(false);
+  });
+
+  it('preserves full slash/colon identities and only formats recognized legacy effort suffixes', () => {
+    const state = learnedState();
+    expect(selectModelDisplayName.select(state, 'codex', 'org/model:variant')).toBe(
+      'Custom identity',
+    );
+    expect(selectModelDisplayName.select(state, 'codex', 'org/unknown')).toBeUndefined();
+    expect(selectModelDisplayName.select(state, 'codex', 'codex:shared/high')).toBe(
+      'Remembered Codex (High)',
+    );
+    state.providerModels.learnedNames.codex['shared/high'] = 'Exact slash model';
+    expect(selectModelDisplayName.select(state, 'codex', 'shared/high')).toBe('Exact slash model');
+  });
+
+  it.each(['live', 'learned'])(
+    'formats minimal effort from %s names without losing exact slash identities',
+    (source) => {
+      const state = learnedState();
+      if (source === 'live') {
+        state.model.availableModelsProviderId = 'codex';
+        state.model.availableModels = createCollection('value', [
+          { value: 'shared', label: 'Current Codex' },
+        ]);
+      }
+      const base = source === 'live' ? 'Current Codex' : 'Remembered Codex';
+      expect(selectModelDisplayName.select(state, 'codex', 'codex:shared/minimal')).toBe(
+        `${base} (Minimal)`,
+      );
+      if (source === 'live') {
+        state.model.availableModels = createCollection('value', [
+          { value: 'shared', label: base },
+          { value: 'shared/minimal', label: 'Exact minimal identity' },
+        ]);
+      } else state.providerModels.learnedNames.codex['shared/minimal'] = 'Exact minimal identity';
+      expect(selectModelDisplayName.select(state, 'codex', 'codex:shared/minimal')).toBe(
+        'Exact minimal identity',
+      );
+    },
+  );
+
+  it('normalizes advertised provider aliases and their legacy prefixes', () => {
+    const state = learnedState();
+    state.providerCatalog.providers = createCollection('id', [
+      { id: 'codex', legacyAliases: ['old-codex'] },
+    ] as never);
+    expect(selectModelDisplayName.select(state, 'old-codex', 'old-codex:shared')).toBe(
+      'Remembered Codex',
+    );
+  });
+
+  it('prefers live labels in the requested scope, including legacy effort base labels', () => {
+    const state = learnedState();
+    state.model.availableModelsProviderId = 'codex';
+    state.model.availableModels = createCollection('value', [
+      { value: 'shared', label: 'Active name' },
+    ]);
+    state.providerModels.learnedNames.codex['shared/high'] = 'Old effort name';
+    state.providerModels.byWorkspaceId = {
+      'ws-1': { codex: { models: [{ value: 'shared', label: 'Workspace name' }], fetchedAt: '' } },
+    };
+    expect(selectModelDisplayName.select(state, 'codex', 'shared')).toBe('Active name');
+    expect(selectModelDisplayName.select(state, 'codex', 'shared/high')).toBe('Active name (High)');
+    expect(selectModelDisplayName.select(state, 'codex', 'shared', 'ws-1')).toBe('Workspace name');
+    expect(selectModelDisplayName.select(state, 'codex', 'shared', 'ws-2')).toBe(
+      'Remembered Codex',
+    );
   });
 });

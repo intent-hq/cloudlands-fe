@@ -10,6 +10,7 @@ import {
   PickNotificationSoundSchema,
   ReadNotificationSoundSchema,
 } from '../../../shared/notification-audio';
+import { assertNormalAppOperation, isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { spawn } from 'child_process';
 import { collectOpenWorkspaceIds, collectWindowIdsForWorkspace } from './window-workspace-tracking';
 import {
@@ -34,6 +35,7 @@ import {
   SystemExecuteCommandSchema,
   SystemExecuteCommandStreamingSchema,
   SystemWriteClipboardSchema,
+  UserMcpAuthenticateSchema,
   UserMcpCheckAuthSchema,
   UserMcpTestConnectionSchema,
   VscodeOpenDiffSchema,
@@ -179,6 +181,11 @@ function getPayloadWorkspaceId(data: unknown): string | undefined {
 const windowWorkspaceState = new Map<number, boolean>();
 /** Track which workspace ID each window is viewing */
 const windowWorkspaceIds = new Map<number, string>();
+/**
+ * Diagnostic only: the last workspace each window ever reported, kept when the
+ * window leaves the workspace so hang/crash logs still carry context.
+ */
+const lastKnownWindowWorkspaceIds = new Map<number, string>();
 /** Track which workspace tabs are open per window */
 const windowOpenWorkspaceTabs = new Map<number, string[]>();
 
@@ -200,6 +207,16 @@ export function getFocusedWindowWorkspaceId(): string | undefined {
   const focusedWindow = BrowserWindow.getFocusedWindow();
   if (!focusedWindow) return undefined;
   return windowWorkspaceIds.get(focusedWindow.id);
+}
+
+/**
+ * Get the last-known workspace ID viewed by a specific window, for diagnostics.
+ * Unlike the current-workspace maps this survives the window navigating away
+ * from the workspace; it returns undefined only when the window has never
+ * reported a workspace view.
+ */
+export function getWorkspaceIdForWindow(windowId: number): string | undefined {
+  return lastKnownWindowWorkspaceIds.get(windowId);
 }
 
 /**
@@ -354,6 +371,7 @@ app.on('browser-window-created', (_event, window) => {
   window.on('closed', () => {
     windowWorkspaceState.delete(window.id);
     windowWorkspaceIds.delete(window.id);
+    lastKnownWindowWorkspaceIds.delete(window.id);
     clearWindowBrowserFocusOwner(window.id);
     windowOpenWorkspaceTabs.delete(window.id);
     // A close changes the set of open workspaces: notify listeners (menu
@@ -395,6 +413,7 @@ export async function installIntentCli(): Promise<{
   message: string;
   error?: string;
 }> {
+  assertNormalAppOperation();
   try {
     const fs = require('fs');
     const { promises: fsPromises } = require('fs');
@@ -522,6 +541,7 @@ export async function installIntentCli(): Promise<{
  * - If admin prompt is cancelled/fails, logs a warning and continues (non-fatal)
  */
 export async function autoRepairCliSymlink(): Promise<void> {
+  if (isIsolatedTestBuild()) return;
   try {
     // Only run in production mode
     if (process.env.NODE_ENV === 'development') {
@@ -739,13 +759,32 @@ export function setupSystemIPC() {
     ),
   );
 
+  // Closes the SENDER's window (a renderer action such as the guest-offline
+  // overlay's "Close window"), not whichever window happens to be focused.
+  // When it is the app's last live window a local window is opened first —
+  // the same guard the forget / leave-host paths use — so closing a remote
+  // window never enters the window-all-closed / quit path. The pooled client
+  // for a backend whose last window closed is disposed by the registered
+  // last-window-closed handler (main/window.ts), not here.
   ipcMain.handle(
     WINDOW_CHANNELS.CLOSE,
     createSafeValidatedHandler(
       EmptySchema,
-      async () => {
-        const window = BrowserWindow.getFocusedWindow();
-        if (window) {
+      async (event) => {
+        const window =
+          BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
+        if (!window || window.isDestroyed()) {
+          return { success: true };
+        }
+        const { ensureLocalWindowBeforeClosingBackend, getBackendIdForWindow } =
+          await import('../../../main/window');
+        const survivors = BrowserWindow.getAllWindows().filter(
+          (other) => other !== window && !other.isDestroyed(),
+        );
+        if (survivors.length === 0) {
+          await ensureLocalWindowBeforeClosingBackend(getBackendIdForWindow(window));
+        }
+        if (!window.isDestroyed()) {
           window.close();
         }
         return { success: true };
@@ -837,6 +876,7 @@ export function setupSystemIPC() {
             windowWorkspaceState.set(windowId, validated.inWorkspace);
             if (validated.workspaceId) {
               windowWorkspaceIds.set(windowId, validated.workspaceId);
+              lastKnownWindowWorkspaceIds.set(windowId, validated.workspaceId);
             } else if (!validated.inWorkspace) {
               windowWorkspaceIds.delete(windowId);
             }
@@ -1252,7 +1292,7 @@ export function setupSystemIPC() {
       SystemWriteClipboardSchema,
       async (_event, validated) => {
         try {
-          clipboard.writeText(validated.text);
+          await clipboard.writeText(validated.text);
           return { success: true };
         } catch (error) {
           logger.error('Failed to write clipboard', { error });
@@ -2334,6 +2374,57 @@ export function setupSystemIPC() {
   // (or to namespaced localStorage for the FE-only keys); no main-side
   // handler is needed in the daemon-backed build. The `SETTINGS_CHANNELS`
   // constants remain exported for the bridge seeder + its tests.
+
+  // Run interactive OAuth for a daemon-saved hosted MCP server. The OAuth
+  // target URL is resolved from the daemon's server record by `serverId`
+  // (PROTOCOL §5.22 `mcp.servers.list`); the renderer-supplied `url` is
+  // advisory and rejected when it disagrees with the daemon record.
+  ipcMain.handle(
+    USER_MCP_CHANNELS.AUTHENTICATE,
+    createSafeValidatedHandler(
+      UserMcpAuthenticateSchema,
+      async (_event, validated) => {
+        const { servers } = await getBackendClient().request<{
+          servers?: Array<{ id?: string; url?: string }>;
+        }>('mcp.servers.list');
+        const record = servers?.find((server) => server.id === validated.serverId);
+        if (!record) {
+          return {
+            success: false,
+            error: {
+              code: 'MCP_SERVER_NOT_FOUND',
+              message: m.system_ipc_mcpAuthServerNotFound_error(),
+            },
+          };
+        }
+        if (typeof record.url !== 'string' || !record.url) {
+          return {
+            success: false,
+            error: {
+              code: 'MCP_SERVER_URL_MISSING',
+              message: m.system_ipc_mcpAuthServerUrlMissing_error(),
+            },
+          };
+        }
+        if (validated.url !== undefined && validated.url !== record.url) {
+          logger.warn('MCP OAuth URL from renderer disagrees with daemon record', {
+            serverId: validated.serverId,
+          });
+          return {
+            success: false,
+            error: {
+              code: 'MCP_SERVER_URL_MISMATCH',
+              message: m.system_ipc_mcpAuthServerUrlMismatch_error(),
+            },
+          };
+        }
+        const { initiateMcpOAuth } = await import('../../mcp/main/mcp-oauth');
+        const result = await initiateMcpOAuth(validated.serverId, record.url);
+        return { success: true, data: result };
+      },
+      USER_MCP_CHANNELS.AUTHENTICATE,
+    ),
+  );
 
   // Check MCP server auth requirements
   ipcMain.handle(

@@ -6,7 +6,7 @@
     agents?: InterruptedAgent[];
     onResumeSelected?: (resumeIds: string[], abandonIds: string[]) => void;
     onAbandonAll?: (abandonIds: string[]) => void;
-    onClose?: () => void;
+    onClose?: (reason: 'dismissed' | 'resolved') => void;
   }
 
   // Stand-in for InterruptedAgentsModal that publishes the handler props the
@@ -19,9 +19,9 @@
     onClose,
   }: Props = $props();
 
-  function close() {
+  function close(reason: 'dismissed' | 'resolved' = 'dismissed') {
     open = false;
-    onClose?.();
+    onClose?.(reason);
   }
 
   function resume(resumeIds: string[], abandonIds: string[]) {

@@ -22,6 +22,7 @@ import {
   ghRequirementResolved,
   gitRequirementResolved,
   hostRequirementsReducer,
+  hostRequirementsReset,
   initialState,
   nodeRequirementResolved,
 } from './host-requirements-slice';
@@ -32,6 +33,13 @@ function storeWith(hostRequirements: HostRequirementsState): StoreState {
 }
 
 describe('hostRequirementsReducer', () => {
+  it('requires fresh diagnostics after the owner connection changes', () => {
+    const previous = hostRequirementsReducer(
+      hostRequirementsReducer(initialState, nodeRequirementResolved(true, '22.1.0')),
+      checkHostRequirementsComplete(),
+    );
+    expect(hostRequirementsReducer(previous, hostRequirementsReset())).toEqual(initialState);
+  });
   it('starts unchecked, not checking, requirements unmet', () => {
     const state = hostRequirementsReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual({

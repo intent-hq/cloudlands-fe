@@ -3,27 +3,18 @@
  *
  * Renderer mirror of the daemon-owned REV-2 browser-client routing state
  * (PROTOCOL §5.17 `client.list`, `workspace.getBrowserClient` /
- * `workspace.setBrowserClient`, `browser.*` tab registry). The saga performs
+ * `workspace.setBrowserClient`, `browser.*` tab commands). The saga performs
  * the reads/writes through `appClient`; the daemon-events-bridge dispatches
  * `refreshLiveClientsRequested` on `client:connected` / `client:disconnected`
- * and the `browserTab*` patches on `browser:tab-*` events. Pure mirror — no
- * routing decisions are made here; the daemon owns them.
+ * and `browserTabUpserted` / `browserTabClosed` on `browser:tab-*` events,
+ * which only advance the workspace's `tabsRevision` — the tab rows themselves
+ * live in the panel-layout browser-tab registry. Pure mirror — no routing
+ * decisions are made here; the daemon owns them.
  */
 
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import {
-  addItem,
-  getItem,
-  removeItem,
-  replaceItem,
-} from '@augmentcode/themis/utils/collections/collection-utils';
-import type {
-  BrowserTab,
-  BrowserTabListing,
-  LiveClient,
-  WorkspaceBrowserClient,
-} from '$shared/types/browser-clients';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
+import type { BrowserTab, LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import {
@@ -32,7 +23,7 @@ import {
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type { BrowserClientsState } from './browser-clients-types';
 import {
-  createBrowserTabCollection,
+  createAuthenticatedClientCollection,
   createLiveClientCollection,
   emptyWorkspaceBrowserClientsState,
   initialState,
@@ -46,12 +37,12 @@ export { initialState } from './browser-clients-types';
 // ---------------------------------------------------------------------------
 
 /** Learn this connection's own clientId and read the live client list. */
-export const hydrateBrowserClientsRequested = createAction(
+export const hydrateBrowserClientsRequested = createAction<[workspaceId?: string]>(
   'browserClients/hydrateBrowserClientsRequested',
 );
 
 /** Re-read `client.list` (bridge: `client:connected` / `client:disconnected`). */
-export const refreshLiveClientsRequested = createAction(
+export const refreshLiveClientsRequested = createAction<[workspaceId?: string]>(
   'browserClients/refreshLiveClientsRequested',
 );
 
@@ -64,11 +55,6 @@ export const fetchWorkspaceBrowserClientRequested = createAction<[wsId: string]>
 export const setWorkspaceBrowserClientRequested = createAction<
   [wsId: string, clientId: string | null]
 >('browserClients/setWorkspaceBrowserClientRequested');
-
-/** Read `browser.listTabs` for one workspace. */
-export const fetchWorkspaceBrowserTabsRequested = createAction<[wsId: string]>(
-  'browserClients/fetchWorkspaceBrowserTabsRequested',
-);
 
 /**
  * Forward a viewer's navigation to the tab's host (`browser.navigateTab`,
@@ -98,7 +84,17 @@ export const ownClientIdReceived = createAction<[clientId: string]>(
   'browserClients/ownClientIdReceived',
 );
 
-export const liveClientsReceived = createAction<[clients: LiveClient[]]>(
+export const liveClientListsInvalidated = createAction('browserClients/liveClientListsInvalidated');
+
+export const authenticatedClientsCleared = createAction<[context: string]>(
+  'browserClients/authenticatedClientsCleared',
+);
+
+export const authenticatedClientsReceived = createAction<[context: string, clients: LiveClient[]]>(
+  'browserClients/authenticatedClientsReceived',
+);
+
+export const liveClientsReceived = createAction<[clients: LiveClient[], workspaceId?: string]>(
   'browserClients/liveClientsReceived',
 );
 
@@ -107,20 +103,18 @@ export const workspaceBrowserClientReceived = createAction<
 >('browserClients/workspaceBrowserClientReceived');
 
 /**
- * `browser.listTabs` snapshot. `revision` is the workspace's `tabsRevision`
- * when the read was issued; the reducer drops the snapshot if a `browser:tab-*`
- * patch advanced it in the meantime (the saga then re-reads).
+ * `browser:tab-opened` / `browser:tab-updated`: the daemon's row for the tab.
+ * The panel-layout registry saga reacts to the action; here it only bumps
+ * `tabsRevision`.
  */
-export const workspaceBrowserTabsReceived = createAction<
-  [wsId: string, tabs: BrowserTabListing[], revision: number]
->('browserClients/workspaceBrowserTabsReceived');
-
-/** `browser:tab-opened` / `browser:tab-updated`: the daemon's row for the tab. */
 export const browserTabUpserted = createAction<[wsId: string, tab: BrowserTab]>(
   'browserClients/browserTabUpserted',
 );
 
-/** `browser:tab-closed`: the row was removed or tombstoned. */
+/**
+ * `browser:tab-closed`: the row was removed or tombstoned. The panel-layout
+ * registry saga reacts to the action; here it only bumps `tabsRevision`.
+ */
 export const browserTabClosed = createAction<[wsId: string, tabId: string]>(
   'browserClients/browserTabClosed',
 );
@@ -134,80 +128,76 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } = createWork
 );
 
 export const browserClientsReducer = createReducer<BrowserClientsState>(initialState);
+browserClientsReducer.with(authenticatedClientsCleared, (state, { payload: [context] }) =>
+  state.authenticatedContext !== context
+    ? state
+    : {
+        ...state,
+        authenticatedContext: null,
+        authenticatedClients: createAuthenticatedClientCollection(),
+        liveClients: createLiveClientCollection(),
+        liveClientsLoaded: false,
+      },
+);
+
+browserClientsReducer.with(
+  authenticatedClientsReceived,
+  (state, { payload: [context, clients] }) => ({
+    ...state,
+    authenticatedContext: context,
+    authenticatedClients: createAuthenticatedClientCollection(clients),
+    liveClients: createLiveClientCollection(clients),
+    liveClientsLoaded: true,
+  }),
+);
 browserClientsReducer.with(ownClientIdReceived, (state, { payload: [clientId] }) =>
   state.ownClientId === clientId ? state : { ...state, ownClientId: clientId },
 );
-browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients] }) => ({
+browserClientsReducer.with(liveClientListsInvalidated, (state) => ({
   ...state,
-  liveClients: createLiveClientCollection(clients),
-  liveClientsLoaded: true,
+  liveClients: createLiveClientCollection(),
+  liveClientsLoaded: false,
+  authenticatedContext: null,
+  authenticatedClients: createAuthenticatedClientCollection(),
+  byWorkspaceId: Object.fromEntries(
+    Object.entries(state.byWorkspaceId).map(([id, entry]) => [
+      id,
+      { ...entry, liveClients: createLiveClientCollection(), liveClientsLoaded: false },
+    ]),
+  ),
 }));
+browserClientsReducer.with(liveClientsReceived, (state, { payload: [clients, workspaceId] }) =>
+  workspaceId
+    ? setWorkspaceState(state, workspaceId, {
+        ...getWorkspaceState(state, workspaceId),
+        liveClients: createLiveClientCollection(clients),
+        liveClientsLoaded: true,
+      })
+    : {
+        ...state,
+        authenticatedContext: null,
+        authenticatedClients: createAuthenticatedClientCollection(),
+        liveClients: createLiveClientCollection(clients),
+        liveClientsLoaded: true,
+      },
+);
 browserClientsReducer.with(
   workspaceBrowserClientReceived,
   (state, { payload: [wsId, browserClient] }) =>
     setWorkspaceState(state, wsId, { ...getWorkspaceState(state, wsId), browserClient }),
 );
-browserClientsReducer.with(
-  workspaceBrowserTabsReceived,
-  (state, { payload: [wsId, tabs, revision] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    if (ws.tabsRevision !== revision) return state;
-    return setWorkspaceState(state, wsId, { ...ws, tabs: createBrowserTabCollection(tabs) });
-  },
-);
-browserClientsReducer.with(browserTabUpserted, (state, { payload: [wsId, tab] }) => {
+function bumpTabsRevision(state: BrowserClientsState, wsId: string): BrowserClientsState {
   const ws = getWorkspaceState(state, wsId);
-  // The event row is the canonical registry row (an omitted optional field
-  // was cleared), so it replaces the entry outright — `upsertItem` would
-  // merge and retain cleared fields. Only the `browser.listTabs` presence
-  // decoration, which event payloads never carry, is kept from the last read
-  // — and only while it still describes the same host: when the row moved to
-  // another client it is recomputed from the live client list (or dropped
-  // when that list has not been read yet).
-  const existing = getItem(ws.tabs, tab.tabId) as BrowserTabListing | undefined;
-  if (!existing) {
-    return setWorkspaceState(state, wsId, {
-      ...ws,
-      tabs: addItem(ws.tabs, tab),
-      tabsRevision: ws.tabsRevision + 1,
-    });
-  }
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    tabs: replaceItem(ws.tabs, tab.tabId, decorateReplacedTab(state, existing, tab)),
-    tabsRevision: ws.tabsRevision + 1,
-  });
-});
-
-function decorateReplacedTab(
-  state: BrowserClientsState,
-  existing: BrowserTab | BrowserTabListing,
-  tab: BrowserTab,
-): BrowserTab | BrowserTabListing {
-  if (!('hostConnected' in existing)) return tab;
-  if (existing.hostClientId === tab.hostClientId) {
-    return {
-      ...tab,
-      hostConnected: existing.hostConnected,
-      ...(existing.hostName !== undefined ? { hostName: existing.hostName } : {}),
-    };
-  }
-  if (!state.liveClientsLoaded) return tab;
-  const host = getItem(state.liveClients, tab.hostClientId);
-  return host
-    ? { ...tab, hostConnected: true, ...(host.name !== undefined ? { hostName: host.name } : {}) }
-    : { ...tab, hostConnected: false };
+  return setWorkspaceState(state, wsId, { ...ws, tabsRevision: ws.tabsRevision + 1 });
 }
-browserClientsReducer.with(browserTabClosed, (state, { payload: [wsId, tabId] }) => {
-  const ws = getWorkspaceState(state, wsId);
-  // Bump the revision even for an unknown tabId: the row may be in a
-  // `browser.listTabs` snapshot still in flight, which must not resurrect it.
-  return setWorkspaceState(state, wsId, {
-    ...ws,
-    tabs: getItem(ws.tabs, tabId) ? removeItem(ws.tabs, tabId) : ws.tabs,
-    tabsRevision: ws.tabsRevision + 1,
-  });
-});
+browserClientsReducer.with(browserTabUpserted, (state, { payload: [wsId] }) =>
+  bumpTabsRevision(state, wsId),
+);
+// Bump the revision even for an unknown tabId: the row may be in a
+// `browser.listTabs` read still in flight, which must not resurrect it.
+browserClientsReducer.with(browserTabClosed, (state, { payload: [wsId] }) =>
+  bumpTabsRevision(state, wsId),
+);
 browserClientsReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
   clearWorkspaceState(state, wsId),
 );

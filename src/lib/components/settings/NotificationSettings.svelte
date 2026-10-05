@@ -27,11 +27,16 @@
 
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
-  import { Toggle } from '$lib/components/ui/toggle';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingsControlContext,
+  } from '$lib/components/patterns/settings';
+  import { Button, Slider, Switch } from '$lib/components/patterns/settings/custom-controls';
   import { playNotificationSound } from '$lib/utils/notification-sound';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { faPlay, faFolderOpen, faRotateLeft } from '@fortawesome/free-solid-svg-icons';
-  import Button from '../ui/button/button.svelte';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
@@ -72,11 +77,8 @@
     }
   }
 
-  function handleVolumeChange(e: Event) {
-    const target = e.target as HTMLInputElement;
-    const percentage = parseInt(target.value, 10);
-    const normalized = percentage / 100;
-    appStore.dispatch(setVolume(normalized));
+  function handleVolumeChange(percentage: number) {
+    appStore.dispatch(setVolume(percentage / 100));
   }
 
   // Derive volume percentage from store (0-1 to 0-100)
@@ -84,49 +86,64 @@
   const volumePercentageLabel = $derived(
     formatNumber(volumePercentage / 100, { style: 'percent', maximumFractionDigits: 0 }),
   );
+
+  const schema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'notifications',
+          title: m.settings_section_notifications(),
+          entries: [
+            {
+              kind: 'switch',
+              id: 'notification-desktop',
+              label: m.settings_notifications_desktop_label(),
+              description: m.settings_notifications_desktop_description(),
+              get: () => $notificationEnabled,
+              set: (value: boolean) => {
+                appStore.dispatch(setNotificationEnabled(value));
+              },
+            },
+            {
+              kind: 'custom',
+              id: 'notification-sound',
+              label: m.settings_notifications_sound_label(),
+              description: m.settings_notifications_sound_description(),
+              error: () =>
+                pickerFailed ? m.settings_notifications_chooseSound_error() : undefined,
+            },
+            {
+              kind: 'switch',
+              id: 'notification-unfocused',
+              label: m.settings_notifications_unfocusedOnly_label(),
+              description: m.settings_notifications_unfocusedOnly_description(),
+              get: () => $soundOnlyWhenUnfocused,
+              set: (value: boolean) => {
+                appStore.dispatch(setSoundOnlyWhenUnfocused(value));
+              },
+            },
+            {
+              kind: 'custom',
+              id: 'notification-volume',
+              label: m.settings_notifications_volume_label(),
+              description: m.settings_notifications_volume_description(),
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div class="grid grid-cols-1 gap-x-10 gap-y-6 sm:grid-cols-2">
-  <!-- Desktop notifications -->
-  <div class="flex justify-between">
-    <div>
-      <p class="text-sm font-medium text-foreground">{m.settings_notifications_desktop_label()}</p>
-      <p class="text-xs text-subtle">{m.settings_notifications_desktop_description()}</p>
-    </div>
-    <Toggle
-      pressed={$notificationEnabled}
-      onclick={() => appStore.dispatch(setNotificationEnabled(!$notificationEnabled))}
-      variant="indicator"
-      size="xs"
-      class="mb-auto"
-      ariaLabel={m.settings_notifications_desktop_label()}
-    />
-  </div>
-
-  <!-- Sound notifications -->
-  <div class="flex justify-between gap-3">
-    <div class="min-w-0">
-      <p class="text-sm font-medium text-foreground">{m.settings_notifications_sound_label()}</p>
-      <p class="text-xs text-subtle">{m.settings_notifications_sound_description()}</p>
-      {#if $soundPath}
-        <p class="text-xs text-subtle truncate" title={$soundPath}>
-          <span aria-hidden="true">{soundFilename}</span>
-          <span class="sr-only">{$soundPath}</span>
-        </p>
-      {/if}
-      {#if pickerFailed}
-        <p role="alert" class="text-xs text-destructive">
-          {m.settings_notifications_chooseSound_error()}
-        </p>
-      {/if}
-    </div>
-    <div class="flex items-start gap-1 shrink-0">
-      <Toggle
-        pressed={$soundEnabled}
-        onclick={() => appStore.dispatch(setSoundEnabled(!$soundEnabled))}
-        variant="indicator"
-        size="xs"
-        ariaLabel={m.settings_notifications_sound_label()}
+{#snippet soundControl({ labelId, descriptionId }: SettingsControlContext)}
+  <div class="flex min-w-0 flex-col items-end gap-1">
+    <div class="flex shrink-0 items-center gap-1">
+      <Switch
+        checked={$soundEnabled}
+        onCheckedChange={(value) => appStore.dispatch(setSoundEnabled(value))}
+        ariaLabelledby={labelId}
+        ariaDescribedby={descriptionId}
+        size="compact"
       />
       {#if canPickSound}
         <Button
@@ -156,51 +173,46 @@
         </Button>
       {/if}
     </div>
-  </div>
-
-  <!-- Sound only when unfocused -->
-  <div class="flex justify-between">
-    <div>
-      <p class="text-sm font-medium text-foreground">
-        {m.settings_notifications_unfocusedOnly_label()}
+    {#if $soundPath}
+      <p class="type-caption max-w-48 truncate text-muted-foreground" title={$soundPath}>
+        <span aria-hidden="true">{soundFilename}</span>
+        <span class="sr-only">{$soundPath}</span>
       </p>
-      <p class="text-xs text-subtle">{m.settings_notifications_unfocusedOnly_description()}</p>
-    </div>
-    <Toggle
-      pressed={$soundOnlyWhenUnfocused}
-      onclick={() => appStore.dispatch(setSoundOnlyWhenUnfocused(!$soundOnlyWhenUnfocused))}
-      variant="indicator"
-      size="xs"
-      class="mb-auto"
-      ariaLabel={m.settings_notifications_unfocusedOnly_label()}
-    />
+    {/if}
   </div>
+{/snippet}
 
-  <!-- Volume control -->
-  <div class="flex justify-between">
-    <div>
-      <p class="text-sm font-medium text-foreground">{m.settings_notifications_volume_label()}</p>
-      <p class="text-xs text-subtle">{m.settings_notifications_volume_description()}</p>
-    </div>
-    <div class="flex items-center gap-3">
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        aria-label={m.settings_notifications_testSound_ariaLabel()}
-        onclick={handleTestSound}
-        disabled={testSoundLoading}
-      >
-        <Fa icon={faPlay} size={10} />
-      </Button>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        value={volumePercentage}
-        oninput={handleVolumeChange}
-        class="w-24 h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
-      />
-      <span class="text-xs text-subtle w-8 text-right">{volumePercentageLabel}</span>
-    </div>
+{#snippet volumeControl({ labelId, descriptionId }: SettingsControlContext)}
+  <div class="flex items-center gap-3">
+    <Button
+      variant="ghost-light"
+      size="icon-xs"
+      aria-label={m.settings_notifications_testSound_ariaLabel()}
+      onclick={handleTestSound}
+      disabled={testSoundLoading}
+    >
+      <Fa icon={faPlay} size={10} />
+    </Button>
+    <Slider
+      value={volumePercentage}
+      min={0}
+      max={100}
+      onValueChange={handleVolumeChange}
+      formatValue={(value) =>
+        formatNumber(value / 100, { style: 'percent', maximumFractionDigits: 0 })}
+      aria-labelledby={labelId}
+      aria-describedby={descriptionId}
+      class="w-24"
+    />
+    <span class="type-caption w-8 text-right text-muted-foreground">{volumePercentageLabel}</span>
   </div>
-</div>
+{/snippet}
+
+<SettingsForm
+  {schema}
+  compact={false}
+  custom={defineSettingsCustomControls({
+    'notification-sound': soundControl,
+    'notification-volume': volumeControl,
+  })}
+/>

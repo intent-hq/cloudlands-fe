@@ -116,9 +116,11 @@ describe('ActivityLogPreview', () => {
 
     const item = container.querySelector('[data-activity-preview-item]')!;
     const avatarAction = screen.getByRole('button', { name: 'Open agent' });
-    const rowAction = item.querySelector(':scope > button');
+    const rowAction = Array.from(item.querySelectorAll(':scope > div > button')).find(
+      (button) => button !== avatarAction,
+    );
     expect(avatarAction.closest('[data-activity-preview-item]')).toBe(item);
-    expect(rowAction?.parentElement).toBe(item);
+    expect(rowAction?.closest('[data-activity-preview-item]')).toBe(item);
     expect(avatarAction.contains(rowAction)).toBe(false);
     expect(rowAction?.contains(avatarAction)).toBe(false);
 
@@ -149,8 +151,11 @@ describe('ActivityLogPreview', () => {
         onShowAgent,
       },
     });
-    const actions = container.querySelectorAll<HTMLButtonElement>(
-      '[data-activity-preview-item] > button',
+    const actions = Array.from(container.querySelectorAll('[data-activity-preview-item]')).map(
+      (item) =>
+        Array.from(item.querySelectorAll<HTMLButtonElement>(':scope > div > button')).find(
+          (button) => button.getAttribute('aria-label') !== 'Open agent',
+        )!,
     );
 
     await fireEvent.click(actions[0]);

@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AppClient } from '$lib/client';
-import type { Store } from '@augmentcode/themis/svelte-store';
+import type { Store } from '@themislib/themis/svelte-store';
 
 // FAKE transport seam: capture the reconnect handler so tests can fire it.
 const reconnectHandlers: Array<() => void> = [];

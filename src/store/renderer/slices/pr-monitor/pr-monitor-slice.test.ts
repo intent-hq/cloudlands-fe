@@ -2,7 +2,7 @@
  * prMonitor slice reducer + selector tests (PROTOCOL §6.9 monitored-PRs state).
  */
 import { describe, expect, it } from 'vitest';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import {

@@ -367,9 +367,14 @@ export function workspaceMediaBackendRedirect(
   return redirectURL ? { redirectURL } : {};
 }
 
-// Serves images from workspace note assets via workspace-asset://{workspaceId}/{assetId}
+// Serves saved images and videos via workspace-asset://{workspaceId}/{assetId}.
 export function setupWorkspaceAssetProtocolHandler() {
   protocol.handle('workspace-asset', async (request) => {
+    const authorization = authorizeWorkspaceFileRequest(request);
+    if (!authorization.ok) {
+      return new Response('Forbidden', { status: 403, headers: { Vary: 'Origin' } });
+    }
+    const { corsHeaders } = authorization;
     const url = new URL(request.url);
     const workspaceId = url.hostname;
     const hint = parseWorkspaceMediaBackendHint(url.search);
@@ -449,12 +454,46 @@ export function setupWorkspaceAssetProtocolHandler() {
           asset: assetId,
         })) as typeof result;
       }
-      return new Response(new Uint8Array(Buffer.from(result.data, 'base64')), {
+      const bytes = new Uint8Array(Buffer.from(result.data, 'base64'));
+      const isVideo = result.mimeType === 'video/mp4' || result.mimeType === 'video/webm';
+      const headers = {
+        ...corsHeaders,
+        'Content-Type': result.mimeType,
+        'Cache-Control': 'max-age=31536000', // Immutable saved asset bytes.
+        ...(isVideo ? { 'Accept-Ranges': 'bytes', 'Content-Length': String(bytes.length) } : {}),
+      };
+      const rangeHeader = isVideo ? request.headers.get('range') : null;
+      if (rangeHeader !== null) {
+        const range = parseByteRangeHeader(rangeHeader);
+        const start =
+          range?.kind === 'suffix' ? Math.max(bytes.length - range.length, 0) : range?.start;
+        if (!range || start === undefined || start >= bytes.length) {
+          return new Response(null, {
+            status: 416,
+            headers: {
+              ...corsHeaders,
+              'Accept-Ranges': 'bytes',
+              'Content-Range': `bytes */${bytes.length}`,
+            },
+          });
+        }
+        const end =
+          range.kind === 'suffix'
+            ? bytes.length
+            : Math.min((range.end ?? bytes.length - 1) + 1, bytes.length);
+        const body = bytes.subarray(start, end);
+        return new Response(body, {
+          status: 206,
+          headers: {
+            ...headers,
+            'Content-Length': String(body.length),
+            'Content-Range': `bytes ${start}-${end - 1}/${bytes.length}`,
+          },
+        });
+      }
+      return new Response(bytes, {
         status: 200,
-        headers: {
-          'Content-Type': result.mimeType,
-          'Cache-Control': 'max-age=31536000', // 1 year — assets are content-addressed
-        },
+        headers,
       });
     } catch (error) {
       logger.warn('Daemon note.readAsset failed', {

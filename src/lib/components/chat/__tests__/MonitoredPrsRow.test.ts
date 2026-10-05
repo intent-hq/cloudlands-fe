@@ -208,7 +208,10 @@ describe('MonitoredPrsRow', () => {
     expect(summary.textContent).not.toContain('acme/');
     expect(line?.className).toContain('min-h-9');
     expect(line?.className).toContain('gap-2');
-    expect(line?.className).toContain('px-3');
+    expect(line?.className).toContain('subscription-card-row-inset');
+    expect(screen.getByTestId('monitored-pr-label').className).toContain('text-muted-foreground');
+    expect(screen.getByTestId('monitored-pr-chip').className).toContain('h-6');
+    expect(screen.getByTestId('monitored-pr-disclosure').className).toContain('h-6');
   });
 
   it('renders selector data without dispatching lifecycle actions on mount', () => {
@@ -352,7 +355,7 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).toContain('Open, but blocked by required checks still running.');
     expect(card.textContent).toContain('1 of 4 checks are still running.');
     expect(card.textContent).toContain('0 of 1 required approvals received.');
-    expect(card.textContent).toContain('2 unresolved threads');
+    expect(card.textContent).toContain('2 unresolved threads.');
     expect(card.textContent).not.toContain('Mergeable');
     expect(card.textContent).not.toContain('REVIEW_REQUIRED');
     expect(screen.getByTestId('monitored-pr-pending').textContent).toContain(
@@ -360,7 +363,7 @@ describe('MonitoredPrsRow', () => {
     );
   });
 
-  it('inline details stack one fact per line without dot separators', async () => {
+  it('renders non-empty details as ordered plain sentences', async () => {
     monitorsState.monitors = [
       makeMonitor({
         hasPendingChanges: true,
@@ -371,19 +374,17 @@ describe('MonitoredPrsRow', () => {
     render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
 
     const card = await openDetails();
-    // Facts live in a flex-col block, one <span> per line — no inline
-    // "·" separators that wrap mid-phrase.
-    expect(card.textContent).not.toContain('·');
-    const lines = Array.from(card.querySelectorAll(':scope > span')).map(
-      (line) => line.textContent,
-    );
-    expect(lines).toEqual([
+    const lines = Array.from(card.children).map((line) => line.textContent?.trim());
+    expect(card.querySelector('dl, dt, dd, strong')).toBeNull();
+    expect(lines.slice(0, 4)).toEqual([
+      'Open, but blocked by required checks still running.',
       '1 of 4 checks are still running.',
       '0 of 1 required approvals received.',
-      '2 unresolved threads',
-      expect.stringContaining('Last change'),
-      '1 change pending emit',
+      '2 unresolved threads.',
     ]);
+    expect(lines[4]).toMatch(/^Last change at .*2026.*$/);
+    expect(lines[4]).not.toMatch(/:[0-9]{2}:[0-9]{2}/);
+    expect(lines[5]).toBe('1 change pending emit');
   });
 
   it('inline details render no pending line at all when nothing is pending', async () => {
@@ -393,6 +394,12 @@ describe('MonitoredPrsRow', () => {
     const card = await openDetails();
     expect(screen.queryByTestId('monitored-pr-pending')).toBeNull();
     expect(card.textContent).not.toContain('No changes pending');
+    expect(Array.from(card.children).map((line) => line.textContent?.trim())).toEqual([
+      'Open, but blocked by required checks still running.',
+      '1 of 4 checks are still running.',
+      '0 of 1 required approvals received.',
+      '2 unresolved threads.',
+    ]);
 
     expect(document.querySelector('[data-tooltip-trigger]')).toBeNull();
   });
@@ -442,6 +449,63 @@ describe('MonitoredPrsRow', () => {
     expect(card.textContent).not.toContain('blocked by blocked by');
   });
 
+  it('reports an absent unresolved count as unreadable when thread resolution is required', async () => {
+    const base = makeMonitor().lastSnapshot!;
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...base,
+          mergeable: false,
+          checks: {
+            ...base.checks,
+            passed: 4,
+            failed: 0,
+            pending: 0,
+            failingRequired: 0,
+            pendingRequired: 0,
+          },
+          approvals: { decision: 'APPROVED', have: 1, needed: 1, changesRequested: 0 },
+          threads: { resolutionRequired: true },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain(
+      'Open, but blocked by review threads that could not be read.',
+    );
+    expect(card.textContent).toContain('Review threads could not be read.');
+    expect(card.textContent).not.toContain('0 unresolved');
+    expect(card.textContent).not.toContain('unmet merge requirements');
+  });
+
+  it('omits the threads line when the count is absent and resolution is not required', async () => {
+    const base = makeMonitor().lastSnapshot!;
+    monitorsState.monitors = [
+      makeMonitor({
+        lastSnapshot: {
+          ...base,
+          checks: {
+            ...base.checks,
+            passed: 4,
+            failed: 0,
+            pending: 0,
+            failingRequired: 0,
+            pendingRequired: 0,
+          },
+          approvals: { decision: 'APPROVED', have: 1, needed: 1, changesRequested: 0 },
+          threads: { resolutionRequired: false },
+        },
+      }),
+    ];
+    render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+    const card = await openDetails();
+    expect(card.textContent).toContain('Open and ready to merge.');
+    expect(card.textContent).not.toContain('thread');
+  });
+
   it('shows queued to merge when the open snapshot is in the merge queue', async () => {
     // The default fixture carries a pending-required-checks blocker — the
     // queued status takes precedence over the blocker/unknown fallthrough.
@@ -465,6 +529,106 @@ describe('MonitoredPrsRow', () => {
     const card = await openDetails();
     expect(card.textContent).toContain('Open, but blocked by required checks still running.');
     expect(card.textContent).not.toContain('queued to merge');
+  });
+
+  describe('rate-limit pause (pausedUntil)', () => {
+    const NOW = new Date('2026-08-07T10:10:00Z');
+
+    function pausedMonitor(overrides: Partial<PrMonitorRow> = {}) {
+      return makeMonitor({
+        lastPolledAt: new Date(NOW.getTime() - 12 * 60_000).toISOString(),
+        pausedUntil: new Date(NOW.getTime() + 35 * 60_000).toISOString(),
+        lastError: 'forge rate limit hit; polling paused',
+        ...overrides,
+      });
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('replaces the readiness line with the paused status and marks checklist lines stale', async () => {
+      vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+      monitorsState.monitors = [pausedMonitor()];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const card = await openDetails();
+      const row = screen.getByTestId('monitored-pr-summary').closest('[data-monitor-state]');
+      expect(row?.getAttribute('data-monitor-paused')).toBe('true');
+      const readiness = screen.getByTestId('monitored-pr-readiness').textContent ?? '';
+      expect(readiness).toMatch(
+        /^Monitoring paused until .* \(GitHub rate limit\); last checked 12 minutes ago\.$/,
+      );
+      expect(readiness).not.toContain('blocked by');
+      const lines = Array.from(card.children).map((line) => line.textContent?.trim());
+      expect(lines.slice(1, 4)).toEqual([
+        'As of 12 minutes ago: 1 of 4 checks are still running.',
+        'As of 12 minutes ago: 0 of 1 required approvals received.',
+        'As of 12 minutes ago: 2 unresolved threads.',
+      ]);
+    });
+
+    it('omits the last-checked clause when the paused row has never been polled', async () => {
+      vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+      monitorsState.monitors = [pausedMonitor({ lastPolledAt: undefined })];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const card = await openDetails();
+      const readiness = screen.getByTestId('monitored-pr-readiness').textContent ?? '';
+      expect(readiness).toMatch(/^Monitoring paused until .* \(GitHub rate limit\)\.$/);
+      expect(readiness).not.toContain('last checked');
+      expect(card.textContent).toContain('1 of 4 checks are still running.');
+      expect(card.textContent).not.toContain('As of');
+    });
+
+    it('renders unchanged when pausedUntil is already in the past', async () => {
+      vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+      monitorsState.monitors = [
+        pausedMonitor({ pausedUntil: new Date(NOW.getTime() - 60_000).toISOString() }),
+      ];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const card = await openDetails();
+      const row = screen.getByTestId('monitored-pr-summary').closest('[data-monitor-state]');
+      expect(row?.hasAttribute('data-monitor-paused')).toBe(false);
+      expect(card.textContent).not.toContain('Monitoring paused');
+      expect(card.textContent).not.toContain('As of');
+      expect(Array.from(card.children).map((line) => line.textContent?.trim())).toEqual([
+        'Open, but blocked by required checks still running.',
+        '1 of 4 checks are still running.',
+        '0 of 1 required approvals received.',
+        '2 unresolved threads.',
+      ]);
+    });
+
+    it('renders unchanged when pausedUntil is absent', async () => {
+      monitorsState.monitors = [makeMonitor({ lastPolledAt: '2026-08-07T10:05:00Z' })];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      const card = await openDetails();
+      expect(card.textContent).not.toContain('Monitoring paused');
+      expect(card.textContent).not.toContain('As of');
+      expect(card.textContent).toContain('Open, but blocked by required checks still running.');
+    });
+
+    it('stops rendering as paused once the deadline elapses without a wire update', async () => {
+      vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] });
+      monitorsState.monitors = [
+        pausedMonitor({ pausedUntil: new Date(NOW.getTime() + 45_000).toISOString() }),
+      ];
+      render(MonitoredPrsRow, { props: { workspaceId: 'ws-1', agentId: 'agent-1' } });
+
+      await openDetails();
+      expect(screen.getByTestId('monitored-pr-readiness').textContent).toContain(
+        'Monitoring paused',
+      );
+      await vi.advanceTimersByTimeAsync(60_000);
+      await waitFor(() =>
+        expect(screen.getByTestId('monitored-pr-readiness').textContent).toBe(
+          'Open, but blocked by required checks still running.',
+        ),
+      );
+    });
   });
 
   it('uses the custom kebab before the disclosure and keeps their actions isolated', async () => {
@@ -491,7 +655,7 @@ describe('MonitoredPrsRow', () => {
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
     await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
     const menu = screen.getByTestId('monitored-pr-menu');
-    const items = Array.from(menu.querySelectorAll('button'));
+    const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       'Check and Flush',
       'Open in App',
@@ -539,7 +703,9 @@ describe('MonitoredPrsRow', () => {
     for (const item of Array.from(menu.querySelectorAll('button'))) {
       expect(item.className).toContain('h-auto');
       expect(item.className).toContain('whitespace-normal');
-      expect(item.querySelector('span')?.className).toContain('break-words');
+      expect(item.querySelector('[data-slot="button-content"] > span')?.className).toContain(
+        'break-words',
+      );
     }
   });
 
@@ -561,7 +727,7 @@ describe('MonitoredPrsRow', () => {
 
     await fireEvent.click(screen.getByTestId('monitored-pr-chip'));
     const flushItem = await waitFor(() => screen.getByTestId('monitored-pr-check-flush-item'));
-    expect((flushItem as HTMLButtonElement).disabled).toBe(false);
+    expect(flushItem.hasAttribute('data-disabled')).toBe(false);
 
     await fireEvent.click(flushItem);
     expect(dispatchMock).toHaveBeenCalledTimes(1);

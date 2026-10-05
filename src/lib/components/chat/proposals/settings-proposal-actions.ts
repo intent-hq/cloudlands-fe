@@ -3,9 +3,11 @@ import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import { m } from '$shared/paraglide/messages.js';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { isUpdateChannel } from '$features/auto-update/types';
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
+import { isQuickActionProviderSwitchBlocked } from '$store/renderer/slices/background-agent-settings/quick-action-provider-switch';
 import {
   getActiveBackendId,
   namespaceBackendKey,
@@ -41,6 +43,9 @@ import {
   selectGroupByRepo,
   selectGithubLinkDefaultAction,
   selectHasCompletedProviderSetup,
+  selectLabsMultiplayerEnabled,
+  selectLabsGitLabEnabled,
+  selectLabsRemoteAgentsEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
@@ -54,6 +59,8 @@ import {
   selectUpdateChannel,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
+  selectBgDefaultReasoningEffort,
+  selectBgTypeReasoningEffortOverrides,
   selectBgDefaultModel,
   selectBgTypeOverrides,
 } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
@@ -94,6 +101,9 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsMultiplayerEnabled,
+  setLabsGitLabEnabled,
+  setLabsRemoteAgentsEnabled,
   setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -109,6 +119,8 @@ import {
   type NoteFontStyle,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import {
+  setDefaultReasoningEffort,
+  setTypeReasoningEffortOverrides,
   setDefaultModel,
   setTypeOverride,
   type BackgroundAgentType,
@@ -288,6 +300,12 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectChatAuroraEnabled.select(state);
     case 'appearance.shellTransparency':
       return selectShellTransparencyEnabled.select(state);
+    case 'labs.multiplayer':
+      return selectLabsMultiplayerEnabled.select(state);
+    case 'labs.gitlab':
+      return selectLabsGitLabEnabled.select(state);
+    case 'labs.remoteAgents':
+      return selectLabsRemoteAgentsEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -316,6 +334,10 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
       return selectSoundOnlyWhenUnfocused.select(state);
     case 'notifications.volume':
       return selectNotificationVolume.select(state);
+    case 'quickActions.defaultReasoningEffort':
+      return selectBgDefaultReasoningEffort.select(state);
+    case 'quickActions.typeReasoningEffortOverrides':
+      return selectBgTypeReasoningEffortOverrides.select(state);
     case 'quickActions.defaultModel':
       return selectBgDefaultModel.select(state);
     case 'quickActions.typeOverrides':
@@ -392,6 +414,16 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'appearance.shellTransparency':
       appStore.dispatch(setShellTransparencyEnabled(Boolean(value)));
       return true;
+    case 'labs.multiplayer':
+      appStore.dispatch(setLabsMultiplayerEnabled(Boolean(value)));
+      return true;
+    case 'labs.gitlab':
+      appStore.dispatch(setLabsGitLabEnabled(Boolean(value)));
+      return true;
+    case 'labs.remoteAgents':
+      if (typeof value !== 'boolean') return false;
+      appStore.dispatch(setLabsRemoteAgentsEnabled(value));
+      return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));
       return true;
@@ -419,9 +451,11 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(selectThemePreset(String(value)));
       return true;
     case 'model.default':
+      assertSettingProviderSwitchAllowed(path, value);
       appStore.dispatch(selectModel(String(value ?? '')));
       return true;
     case 'model.defaultProvider':
+      assertSettingProviderSwitchAllowed(path, value);
       appStore.dispatch(setActiveProvider(String(value ?? '')));
       return true;
     case 'providers.enabled': {
@@ -454,6 +488,21 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
       appStore.dispatch(setVolume(parsed));
       return true;
     }
+    case 'quickActions.defaultReasoningEffort':
+      appStore.dispatch(setDefaultReasoningEffort(String(value ?? '')));
+      return true;
+    case 'quickActions.typeReasoningEffortOverrides':
+      appStore.dispatch(
+        setTypeReasoningEffortOverrides(
+          Object.fromEntries(
+            Object.entries(objectValue(value)).map(([type, effort]) => [
+              type,
+              String(effort ?? ''),
+            ]),
+          ),
+        ),
+      );
+      return true;
     case 'quickActions.defaultModel':
       appStore.dispatch(setDefaultModel(String(value ?? '')));
       return true;
@@ -607,6 +656,19 @@ async function rollbackSettingsChanges(applied: PreparedSettingsChange[]): Promi
   return failures;
 }
 
+function assertSettingProviderSwitchAllowed(path: string, value: unknown): void {
+  const provider =
+    path === 'model.defaultProvider'
+      ? String(value ?? '')
+      : path === 'model.default'
+        ? splitLegacyCompoundId(String(value ?? '')).providerId
+        : undefined;
+  if (!provider) return;
+  if (isQuickActionProviderSwitchBlocked(appStore.state.backgroundAgentSettings, provider)) {
+    throw new Error(m.settings_backgroundAgent_legacySwitch_error({ provider }));
+  }
+}
+
 async function applySettingsTransaction(
   changes: SettingsChangePayload[],
   failurePrefix: string,
@@ -618,6 +680,11 @@ async function applySettingsTransaction(
 
   const applied: PreparedSettingsChange[] = [];
   try {
+    // Check all provider switches before the first mutation, irrespective of
+    // proposal order. Recheck at dispatch in case an awaited change altered state.
+    for (const change of prepared) {
+      assertSettingProviderSwitchAllowed(change.path, change.value);
+    }
     for (const change of prepared) {
       await applyPersistedSetting(change.path, change.value, change.apply);
       applied.push(change);

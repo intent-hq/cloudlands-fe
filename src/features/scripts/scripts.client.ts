@@ -25,8 +25,7 @@ import type {
   ScriptRuntimeState,
   ScriptWithState,
   ScriptMode,
-  ScriptCategory,
-  ScriptSource,
+  ScriptPurpose,
 } from './types';
 import { createLogger } from '$lib/utils/client-logger';
 import { appClient } from '$lib/client';
@@ -40,13 +39,14 @@ const logger = createLogger('ScriptsClient');
 
 /** Input for creating a new script. */
 export interface CreateScriptInput {
+  purpose?: ScriptPurpose;
   name: string;
   command: string;
   cwd?: string;
   env?: Record<string, string>;
   mode: ScriptMode;
-  category?: ScriptCategory;
-  source?: ScriptSource;
+  category?: string;
+  source?: string;
   autoStart?: boolean;
 }
 
@@ -57,7 +57,7 @@ export interface UpdateScriptInput {
   cwd?: string;
   env?: Record<string, string>;
   mode?: ScriptMode;
-  category?: ScriptCategory;
+  category?: string;
   autoStart?: boolean;
 }
 
@@ -91,6 +91,7 @@ export const scriptsClient = {
       name: script.name,
       command: script.command,
       mode: script.mode,
+      ...(script.purpose !== undefined ? { purpose: script.purpose } : {}),
       cwd: script.cwd,
       env: script.env,
       category: script.category,
@@ -112,7 +113,7 @@ export const scriptsClient = {
     scriptId: string,
     updates: UpdateScriptInput,
   ): Promise<CommandResponse<WorkspaceScript>> {
-    const scripts = await appClient.scripts.list(workspaceId);
+    const scripts = await appClient.scripts.list(workspaceId, { archive: 'all' });
     const existing = scripts.find((script) => script.id === scriptId);
     if (!existing) {
       return { success: false, error: m.scripts_client_notFound_error({ scriptId }) };
@@ -215,7 +216,7 @@ export const scriptsClient = {
         appClient.files,
         workspaceId,
       );
-      const existing = await appClient.scripts.list(workspaceId);
+      const existing = await appClient.scripts.list(workspaceId, { archive: 'all' });
 
       const existingUserNames = new Set<string>();
       const existingAutoByName = new Map<string, ScriptWithState>();
@@ -241,6 +242,7 @@ export const scriptsClient = {
             name: candidate.name,
             command: candidate.command,
             mode: candidate.mode,
+            purpose: 'saved',
             category: candidate.category,
           });
           if (createResult.success) {

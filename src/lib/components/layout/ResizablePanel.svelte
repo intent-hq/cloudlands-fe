@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { onMount, onDestroy, untrack } from 'svelte';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly, spring } from '$lib/motion';
   import {
     requestResizablePanelSize,
     setResizablePanelSize,
@@ -25,6 +25,7 @@
     className = '',
     handleClassName = '',
     showHandleIndicator = false,
+    resizable = true,
     active = true,
 
     // Width props (for horizontal orientation)
@@ -47,7 +48,7 @@
 
     // Animation props
     animateOnMount = false,
-    animationDuration = 300,
+    animationDuration: _animationDuration = spring.slow.settleMs,
     disableWidthTransition = false,
     onWidthChange,
     onResizeStart,
@@ -91,6 +92,8 @@
     className?: string;
     handleClassName?: string;
     showHandleIndicator?: boolean;
+    /** Remove the interactive handle without changing controlled or persisted sizing. */
+    resizable?: boolean;
     active?: boolean;
 
     // Width props (for horizontal orientation)
@@ -888,13 +891,13 @@
   <div
     bind:this={panelElement}
     transition:fly={{
-      x: animateOnMount ? (side === 'right' ? actualWidth : -actualWidth) : 0,
-      duration: animateOnMount ? animationDuration : 0,
-      easing: cubicOut,
+      axis: 'x',
+      distance: animateOnMount ? (side === 'right' ? actualWidth : -actualWidth) : 0,
+      tier: 'slow',
     }}
     class="relative shrink-0 {isResizing || disableWidthTransition
       ? ''
-      : 'transition-[width,min-width,max-width] mx-auto duration-300 ease-(--ease-emphasized-out)'} {!doSkipResize &&
+      : 'transition-[width,min-width,max-width] mx-auto duration-spring-slow ease-spring-slow motion-reduce:transition-none'} {!doSkipResize &&
     actualWidth === 0
       ? 'overflow-hidden'
       : ''} {className}"
@@ -904,7 +907,7 @@
   >
     <!-- Panel content slot -->
     <div
-      class="h-full min-h-0 transition-opacity duration-300 ease-(--ease-emphasized-out) {!doSkipResize &&
+      class="h-full min-h-0 transition-opacity duration-spring-slow ease-spring-slow motion-reduce:transition-none {!doSkipResize &&
       actualWidth === 0
         ? 'opacity-0'
         : 'opacity-100'}"
@@ -915,8 +918,9 @@
     <!-- Resize handle -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 
-    {#if !doSkipResize}
-      <button
+    {#if resizable && !doSkipResize}
+      <Button
+        variant="ghost"
         type="button"
         class="absolute top-0 {side === 'left'
           ? '-right-2'
@@ -927,11 +931,10 @@
         onmousedown={startResize}
         ondblclick={handleDoubleClick}
         onkeydown={handleHandleKeydown}
-        tabindex="0"
+        tabindex={0}
         aria-label={m.layout_resizable_resizePanel_ariaLabel()}
         title={m.layout_resizable_dragToResize_tooltip()}
-      >
-      </button>
+      ></Button>
     {/if}
   </div>
 {:else}
@@ -939,14 +942,15 @@
   <div
     class="relative flex flex-col {isResizing
       ? ''
-      : 'transition-[height] duration-200 ease-out'} {className}"
+      : 'transition-[height] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none'} {className}"
     style={doSkipResize
       ? ''
       : `height: ${actualHeight}px; min-height: ${minHeight}px; max-height: ${maxHeight}px;`}
   >
-    {#if !doSkipResize}
+    {#if resizable && !doSkipResize}
       <!-- Resize handle -->
-      <button
+      <Button
+        variant="ghost"
         type="button"
         class="{edge === 'top'
           ? 'absolute -top-2'
@@ -956,11 +960,10 @@
         onmousedown={startResize}
         ondblclick={handleDoubleClick}
         onkeydown={handleHandleKeydown}
-        tabindex="0"
+        tabindex={0}
         aria-label={m.layout_resizable_resizePanelHeight_ariaLabel()}
         title={m.layout_resizable_dragToResizeHeight_tooltip()}
-      >
-      </button>
+      ></Button>
     {/if}
 
     <!-- Panel content slot -->
@@ -978,21 +981,21 @@
      as PanelSplitHandle.svelte); the trailing half keeps the forgiving
      target. Note inset() sides are physical, not logical: under RTL the
      leading edge would flip to the right, but all shipped locales are LTR. */
-  .resizable-panel-handle[data-resize-axis='x'] {
+  :global(.resizable-panel-handle[data-resize-axis='x']) {
     clip-path: inset(0 0 0 8px);
   }
 
   /* Nudge the 2px indicator off the boundary center so the clip leaves it
      fully visible instead of a 1px sliver. */
-  .resizable-panel-handle.app-resize-handle[data-resize-axis='x']::before {
+  :global(.resizable-panel-handle.app-resize-handle[data-resize-axis='x'])::before {
     left: calc(50% + 1px);
   }
 
-  .resizable-panel-handle[data-resize-axis='y'] {
+  :global(.resizable-panel-handle[data-resize-axis='y']) {
     clip-path: inset(8px 0 0 0);
   }
 
-  .resizable-panel-handle.app-resize-handle[data-resize-axis='y']::before {
+  :global(.resizable-panel-handle.app-resize-handle[data-resize-axis='y'])::before {
     top: calc(50% + 1px);
   }
 </style>

@@ -35,11 +35,9 @@ import { agentReadSaga } from './agent-read-saga';
 
 const WS = 'ws-read';
 const AGENT = 'agent-read';
-const settle = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
-};
+// Macrotask hop: drains every pending microtask regardless of how many
+// promise hops the read seam chains internally.
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 function session(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -84,7 +82,7 @@ describe('agentReadSaga', () => {
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
     await settle();
 
-    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.get).toHaveBeenCalledWith(AGENT, WS);
     const upsert = dispatch.mock.calls.find(
       ([action]) => action.type === bulkUpsertSessions.type,
     )?.[0];
@@ -165,8 +163,8 @@ describe('agentReadSaga', () => {
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
     channel.put(ensureAgentSessionLoaded(WS, otherAgent));
     await settle();
-    expect(mocks.get).toHaveBeenNthCalledWith(1, AGENT);
-    expect(mocks.get).toHaveBeenNthCalledWith(2, otherAgent);
+    expect(mocks.get).toHaveBeenNthCalledWith(1, AGENT, WS);
+    expect(mocks.get).toHaveBeenNthCalledWith(2, otherAgent, WS);
     const completedUpserts = dispatch.mock.calls.filter(
       ([action]) => action.type === bulkUpsertSessions.type,
     );
@@ -239,7 +237,7 @@ describe('agentReadSaga', () => {
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
     await settle();
 
-    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.get).toHaveBeenCalledWith(AGENT, WS);
     const upsert = dispatch.mock.calls.find(
       ([action]) => action.type === bulkUpsertSessions.type,
     )?.[0];
@@ -260,7 +258,7 @@ describe('agentReadSaga', () => {
     channel.put(ensureAgentSessionLoaded(WS, AGENT));
     await settle();
 
-    expect(mocks.get).toHaveBeenCalledWith(AGENT);
+    expect(mocks.get).toHaveBeenCalledWith(AGENT, WS);
     expect(
       dispatch.mock.calls.find(([action]) => action.type === bulkUpsertSessions.type),
     ).toBeUndefined();

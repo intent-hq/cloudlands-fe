@@ -45,6 +45,40 @@ describe('deriveAgentHasUnread', () => {
     ).toBe(false);
   });
 
+  it('is read for a child agent keyed only by the wire parentAgentId (§5.5 row scope)', () => {
+    expect(
+      deriveAgentHasUnread({
+        parentAgentId: 'agent-parent',
+        isBackground: false,
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: {},
+      }),
+    ).toBe(false);
+  });
+
+  it('is read for a muted agent even with an unseen assistant message', () => {
+    expect(
+      deriveAgentHasUnread({
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        notificationsMuted: true,
+        metadata: { lastSeenMessageId: 'm-5' },
+      }),
+    ).toBe(false);
+  });
+
+  it('is unread again once the mute is lifted and the message is still unseen', () => {
+    expect(
+      deriveAgentHasUnread({
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        notificationsMuted: false,
+        metadata: { lastSeenMessageId: 'm-5' },
+      }),
+    ).toBe(true);
+  });
+
   it('ignores an empty-string / non-string createdByAgentId (not a child)', () => {
     expect(
       deriveAgentHasUnread({

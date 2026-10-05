@@ -1,3 +1,8 @@
+import {
+  NativeReviewPreparedViewSchema,
+  type NativeReviewSession,
+} from '$shared/types/native-review-operation';
+import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/types';
 
@@ -6,15 +11,34 @@ import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/typ
 // client emits and how it folds success / error into a MutationResult.
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
+  captureBackendRepositoryRoute: vi.fn(),
+  captureBackendRepositorySelection: vi.fn(),
+  prepareBackendNativeReview: vi.fn(),
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
-import { backendRequest } from './backend-transport';
+// `$lib/client` resolves to the REAL LiveWorkspacesClient (over the fake
+// transport above) so the on-demand detail helper's reads hit the same
+// single-flight seam as `open` / `get`.
+vi.mock('$lib/client', async () => {
+  const { LiveWorkspacesClient } = await import('./live-workspaces-client');
+  return { appClient: { workspaces: new LiveWorkspacesClient() } };
+});
+
+import {
+  backendRequest,
+  captureBackendRepositoryRoute,
+  captureBackendRepositorySelection,
+  prepareBackendNativeReview,
+} from './backend-transport';
+import repositoryFixture from '$shared/types/__fixtures__/repository-context.json';
 import { BackendError } from './backend-transport-types';
 import { LiveWorkspacesClient } from './live-workspaces-client';
 import { CreateWorkspaceRequestSchema } from '$shared/schemas';
+import { appClient } from '$lib/client';
+import { fetchWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -149,6 +173,79 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: workspace.id });
     expect(result).toMatchObject({ id: workspace.id, title: workspace.title });
   });
+
+  it.each(['high', '', undefined])(
+    'forwards initial effort %j without a second mutation',
+    async (reasoningEffort) => {
+      const initialAgent = {
+        name: 'Developer',
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
+        specialist: 'developer',
+        model: 'gpt-fixture',
+        provider: 'codex',
+        prompt: 'Build the thing',
+        ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+      };
+      const agent = {
+        id: 'agent-daemon-1',
+        workspaceId: 'ws-effort',
+        name: 'Developer',
+        model: 'gpt-fixture',
+        provider: 'codex',
+        status: 'idle',
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+      };
+      mockedRequest.mockResolvedValueOnce({
+        workspace: { id: 'ws-effort', title: 'Effort', branch: 'effort', status: 'Active' },
+        initialAgent: agent,
+      });
+      const result = await new LiveWorkspacesClient().create({
+        idempotencyKey: 'effort-create',
+        repositoryPath: '/repo',
+        initialAgent,
+      });
+      expect(mockedRequest).toHaveBeenCalledExactlyOnceWith(
+        'workspace.create',
+        { idempotencyKey: 'effort-create', repositoryPath: '/repo', initialAgent },
+        { timeoutMs: 120_000 },
+      );
+      expect(result).toMatchObject({
+        success: true,
+        workspace: { id: 'ws-effort' },
+        initialAgent: agent,
+      });
+    },
+  );
+
+  it.each([undefined, 'エージェント', 'Agente'])(
+    'preserves General name omission or explicit custom name %j on the wire',
+    async (name) => {
+      const initialAgent = {
+        ...(name !== undefined ? { name } : {}),
+        nameExplicitlySet: name !== undefined,
+        rememberSpecialist: true,
+        provider: 'codex',
+      };
+      const agent = {
+        id: 'agent-general',
+        workspaceId: 'ws-general',
+        name: name ?? 'Agent',
+        provider: 'codex',
+        status: 'idle',
+      };
+      mockedRequest.mockResolvedValueOnce({
+        workspace: { id: 'ws-general', title: 'General', branch: 'general', status: 'Active' },
+        initialAgent: agent,
+      });
+      const request = { idempotencyKey: 'general-create', repositoryPath: '/repo', initialAgent };
+      const result = await new LiveWorkspacesClient().create(request);
+      expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.create', request, {
+        timeoutMs: 120_000,
+      });
+      expect(result).toMatchObject({ success: true, initialAgent: agent });
+    },
+  );
 
   it('create surfaces the daemon-assigned initialAgent on the result', async () => {
     // When the request carries an `initialAgent`, the daemon assigns the
@@ -414,6 +511,70 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
   });
 });
 
+describe('LiveWorkspacesClient.get (PROTOCOL §5.1, fake transport)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('shares one in-flight workspace.get between open() and the on-demand detail helper', async () => {
+    const workspace = {
+      id: '88888888-8888-4888-8888-888888888888',
+      title: 'Shared read',
+      branch: 'intent/shared-read',
+      status: 'Active',
+    };
+    let resolveRequest: ((value: { workspace: unknown }) => void) | undefined;
+    mockedRequest.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
+    const client = appClient.workspaces as LiveWorkspacesClient;
+    const getSpy = vi.spyOn(client, 'get');
+
+    const opened = client.open(workspace.id);
+    const detail = fetchWorkspaceDetail(workspace.id);
+    // The helper resolves `$lib/client` lazily — wait until its read has
+    // reached the client seam before asserting the wire count.
+    await vi.waitFor(() => expect(getSpy).toHaveBeenCalledTimes(2));
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: workspace.id });
+    resolveRequest?.({ workspace });
+    const [fromOpen, fromDetail] = await Promise.all([opened, detail]);
+    expect(fromOpen).toMatchObject({ id: workspace.id, title: workspace.title });
+    expect(fromDetail).toMatchObject({ id: workspace.id, title: workspace.title });
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    getSpy.mockRestore();
+  });
+
+  it('does not share reads across different workspace ids', async () => {
+    const idA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+    const idB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
+    mockedRequest
+      .mockResolvedValueOnce({ workspace: { id: idA, title: 'A' } })
+      .mockResolvedValueOnce({ workspace: { id: idB, title: 'B' } });
+    const client = new LiveWorkspacesClient();
+
+    const [a, b] = await Promise.all([client.get(idA), client.get(idB)]);
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    expect(a).toMatchObject({ id: idA });
+    expect(b).toMatchObject({ id: idB });
+  });
+
+  it('clears a failed single-flight read so a later call can retry', async () => {
+    const id = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3';
+    mockedRequest
+      .mockRejectedValueOnce(new Error('workspace.get timed out'))
+      .mockResolvedValueOnce({ workspace: { id, title: 'Recovered' } });
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.get(id)).rejects.toThrow('timed out');
+    await expect(client.get(id)).resolves.toMatchObject({ id, title: 'Recovered' });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
@@ -547,6 +708,48 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
     expect(workspaces[0]?.displayStatus).toBeUndefined();
+  });
+
+  it('passes the membership summary through normalization (intent-hq/intentd#1868)', async () => {
+    // `ownerPrincipalId` / `myRole` / `memberCount` ride every workspace
+    // payload once the daemon tracks members; the normalizer retains them
+    // verbatim so chat can gate author identity on `memberCount >= 2`.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          title: 'Shared ws',
+          branch: 'intent/shared',
+          status: 'Active',
+          ownerPrincipalId: 'principal-owner',
+          myRole: 'collaborator',
+          canManage: true,
+          memberCount: 2,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        },
+        {
+          id: '77777777-7777-4777-8777-777777777777',
+          title: 'Legacy ws',
+          branch: 'intent/legacy',
+          status: 'Active',
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(workspaces[0]).toMatchObject({
+      ownerPrincipalId: 'principal-owner',
+      myRole: 'collaborator',
+      canManage: true,
+      memberCount: 2,
+    });
+    expect(workspaces[1]?.myRole).toBeUndefined();
+    expect(workspaces[1]?.memberCount).toBeUndefined();
+    expect(workspaces[1]?.ownerPrincipalId).toBeUndefined();
+    expect(workspaces[1]?.canManage).toBeUndefined();
   });
 
   it('passes the BE-owned attention flag through normalization (PROTOCOL §5.1 / §9.9)', async () => {
@@ -693,6 +896,40 @@ describe('LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake tr
 describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
+  const totals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const base = { byAgentId: {}, totals, byModel: {}, lastScanAt: null };
+  const rows = ['\uE000', '\u{10000}'].map((model) => ({
+    agentId: 'agent-a',
+    model,
+    totals,
+    humanMessages: 0,
+    agentMessages: 1,
+  }));
+
+  it.each([{}, { byAgentModel: [] }, { byAgentModel: rows }])(
+    'preserves optional matrix presence and producer order: %j',
+    async (matrix) => {
+      const tokenUsage = { ...base, ...matrix };
+      mockedRequest.mockResolvedValueOnce({ tokenUsage });
+      const result = await new LiveWorkspacesClient().getTokenUsage('ws-abc');
+      expect(result).toEqual(tokenUsage);
+      expect(Object.hasOwn(result!, 'byAgentModel')).toBe(Object.hasOwn(matrix, 'byAgentModel'));
+      expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.getTokenUsage', {
+        workspaceId: 'ws-abc',
+      });
+    },
+  );
+
+  it.each([[...rows].reverse(), [rows[0], rows[0]]])(
+    'rejects unsorted and duplicate wire matrices without repairing them: %j',
+    async (...byAgentModel) => {
+      const original = structuredClone(byAgentModel);
+      mockedRequest.mockResolvedValueOnce({ tokenUsage: { ...base, byAgentModel } });
+      await expect(new LiveWorkspacesClient().getTokenUsage('ws-abc')).rejects.toThrow();
+      expect(byAgentModel).toEqual(original);
+    },
+  );
+
   it('sends workspace.getTokenUsage with the workspaceId and unwraps the tokenUsage envelope', async () => {
     // PROTOCOL §5.23 response shape, verbatim.
     const tokenUsage = {
@@ -712,6 +949,20 @@ describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)',
           cacheCreationTokens: 1200,
         },
       },
+      byAgentModel: [
+        {
+          agentId: 'agent-123',
+          model: 'opus-4.8',
+          totals: {
+            inputTokens: 12000,
+            outputTokens: 3400,
+            cacheReadTokens: 8000,
+            cacheCreationTokens: 1200,
+          },
+          humanMessages: 3,
+          agentMessages: 4,
+        },
+      ],
       totals: {
         inputTokens: 12000,
         outputTokens: 3400,
@@ -734,6 +985,33 @@ describe('LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)',
     const client = new LiveWorkspacesClient();
 
     expect(await client.getTokenUsage('ws-abc')).toBeNull();
+  });
+
+  it('rejects a malformed token usage matrix at the wire boundary', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tokenUsage: {
+        byAgentId: {},
+        totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        byModel: {},
+        byAgentModel: [
+          {
+            agentId: 'agent-a',
+            model: 'model-a',
+            totals: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+            },
+            humanMessages: -1,
+            agentMessages: 0,
+          },
+        ],
+        lastScanAt: null,
+      },
+    });
+
+    await expect(new LiveWorkspacesClient().getTokenUsage('ws-abc')).rejects.toThrow();
   });
 
   it('passes provider cost through unchanged when the daemon reports it', async () => {
@@ -999,4 +1277,146 @@ describe('LiveWorkspacesClient browser client pin (REV-2 PROTOCOL §5.17, fake t
       );
     },
   );
+});
+
+describe('LiveWorkspacesClient bound inventory', () => {
+  it('uses the captured inventory route and retires the delivered view without legacy reads', async () => {
+    let retire = () => {};
+    const release = vi.fn(async () => {});
+    const read = vi.fn(async () => ({
+      operationId: 'own',
+      current: true,
+      settlement: { status: 'fulfilled' as const, value: repositoryFixture },
+    }));
+    vi.mocked(captureBackendRepositoryRoute).mockResolvedValue({
+      request: read as never,
+      release,
+      onRetired(handler) {
+        retire = handler;
+        return () => {};
+      },
+    });
+    mockedRequest.mockClear();
+    const handler = vi.fn();
+    const request = { workspaceId: 'workspace-1', binding: 'guest-original', requestId: 'read-1' };
+    const close = await new LiveWorkspacesClient().observeRepositoryContext(request, handler);
+    await vi.waitFor(() =>
+      expect(handler).toHaveBeenCalledWith({
+        type: 'received',
+        response: { request, context: repositoryFixture },
+      }),
+    );
+    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(read).toHaveBeenCalledWith('workspace.repositoryContext', {
+      workspaceId: 'workspace-1',
+    });
+    retire();
+    expect(handler).toHaveBeenLastCalledWith({ type: 'retired', request });
+    close();
+    expect(release).toHaveBeenCalledOnce();
+  });
+});
+
+it('opens selection editing through its explicit facade without a generic mutation', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const session = {
+    preview: {
+      root,
+      scope: { daemonId: 'A', authorityScopeId: 's', authorityGeneration: '1' },
+      snapshot: {
+        root,
+        rootIncarnation: '1',
+        selectionRevision: '0',
+        selection: { kind: 'neverSaved' as const },
+      },
+      expiresAfterMs: 300000 as const,
+    },
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(captureBackendRepositorySelection).mockResolvedValueOnce(session);
+  mockedRequest.mockClear();
+  const result = await new LiveWorkspacesClient().beginRepositorySelectionEdit(
+    { root, editId: 'edit', admission: 'guest' },
+    vi.fn(),
+  );
+  expect(captureBackendRepositorySelection).toHaveBeenCalledWith(root);
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await result.release();
+  expect(session.release).toHaveBeenCalledOnce();
+});
+
+it('uses the native preparation facade without any generic mutation or selection grant', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const input = {
+    workspaceId: root.workspaceId,
+    action: 'create-pr' as const,
+    review: { root, choice: { kind: 'saved' as const } },
+  };
+  const session = {
+    preview: {
+      ...nativeFixture.prepare,
+      reviewPreparation: { ...nativeFixture.prepare.reviewPreparation, root },
+      root,
+      expiresAfterMs: 300000 as const,
+    },
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(prepareBackendNativeReview).mockResolvedValueOnce(session as never);
+  mockedRequest.mockClear();
+  const opened = await new LiveWorkspacesClient().beginNativeReview(
+    { root, attemptId: 'original', admission: 'A', hostContext: 'A' },
+    input,
+    vi.fn(),
+  );
+  expect(prepareBackendNativeReview).toHaveBeenCalledWith(input);
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await opened.release();
+  expect(session.release).toHaveBeenCalledOnce();
+});
+
+it('forwards a companion only through its original Live session without a second backend preparation', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const child: NativeReviewSession = {
+    preview: NativeReviewPreparedViewSchema.parse({
+      ...nativeFixture.prepare,
+      root,
+      expiresAfterMs: 300000,
+    }),
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  const parent: NativeReviewSession = {
+    ...child,
+    prepareCompanion: vi.fn(async () => child),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(prepareBackendNativeReview).mockClear().mockResolvedValueOnce(parent);
+  mockedRequest.mockClear();
+  const opened = await new LiveWorkspacesClient().beginNativeReview(
+    { root, attemptId: 'marked', admission: 'member', hostContext: 'host-A' },
+    {
+      workspaceId: 'ws',
+      action: 'commit',
+      review: {
+        root,
+        choice: { kind: 'saved' },
+        targetBranch: 'trunk',
+        companion: { kind: 'create-pr' },
+      },
+    },
+    vi.fn(),
+  );
+  expect(await opened.prepareCompanion!()).toBe(child);
+  expect(prepareBackendNativeReview).toHaveBeenCalledOnce();
+  expect(parent.prepareCompanion).toHaveBeenCalledOnce();
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await opened.release();
 });

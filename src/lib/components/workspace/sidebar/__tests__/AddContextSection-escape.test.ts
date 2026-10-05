@@ -74,8 +74,7 @@ describe('AddContextSection Escape handling (escape-layer stack)', () => {
     render(AddContextSection, { props: { compact: true, onAddNote, onOpenBrowser } });
 
     const trigger = screen.getByRole('button', { name: 'Add context' });
-    expect(trigger.classList.contains('shadow-none')).toBe(true);
-    expect(trigger.classList.contains('shadow-xs')).toBe(false);
+    expect(trigger.querySelector('[data-slot="button-surface"]')).toBeTruthy();
 
     await fireEvent.click(trigger);
 

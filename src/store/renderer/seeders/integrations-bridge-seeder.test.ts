@@ -31,17 +31,25 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 }));
 
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { BackendError } from '$lib/client/live/backend-transport-types';
 import {
   __resetGitHubAuthStatusForTests,
+  GITHUB_AUTH_STATUS_TTL_MS,
   readGitHubAuthStatus,
 } from '$features/github-auth/renderer/github-auth-status.client';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { FORGE_AUTH_CHANNELS } from '$features/forge-auth/constants';
 import { GITHUB_AUTH_CHANNELS } from '$features/github-auth/constants';
 import { LINEAR_AUTH_CHANNELS } from '$features/linear-auth/constants';
 import { SENTRY_AUTH_CHANNELS } from '$features/sentry-auth/constants';
 
 const mockedRequest = vi.mocked(backendRequest);
+
+/** The params object of the nth `backendRequest` call. */
+function sentParams(call: number): Record<string, unknown> {
+  return mockedRequest.mock.calls[call][1] as Record<string, unknown>;
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -65,6 +73,75 @@ describe('integrations-bridge-seeder', () => {
   afterEach(() => {
     __resetGitHubAuthStatusForTests();
     vi.clearAllMocks();
+  });
+
+  it('retains workspace origin through integration bridge serializers', async () => {
+    mockedRequest.mockResolvedValue({
+      issues: [],
+      pulls: [],
+      users: [],
+      repos: [],
+      nextToken: null,
+    });
+    for (const workspaceId of ['workspace-a', 'workspace-b']) {
+      await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'same', workspaceId });
+      expect(mockedRequest).toHaveBeenLastCalledWith('github.users.search', {
+        query: 'same',
+        workspaceId,
+      });
+      await mockInvoke(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'org',
+        repo: 'repo',
+        workspaceId,
+        options: { query: 'same', nextToken: 'cursor' },
+      });
+      expect(mockedRequest.mock.lastCall?.[1]).toMatchObject({
+        workspaceId,
+        query: 'same',
+        nextToken: 'cursor',
+      });
+      await mockInvoke(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, 'same', {
+        nextToken: 'cursor',
+        workspaceId,
+      });
+      expect(mockedRequest).toHaveBeenLastCalledWith('linear.searchIssues', {
+        query: 'same',
+        nextToken: 'cursor',
+        workspaceId,
+      });
+      await mockInvoke(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, { project: 'project', workspaceId });
+      expect(mockedRequest).toHaveBeenLastCalledWith('sentry.listIssues', {
+        project: 'project',
+        workspaceId,
+      });
+      await mockInvoke(FORGE_AUTH_CHANNELS.GET_STATUS, {
+        provider: 'gitlab',
+        host: 'forge.example',
+        workspaceId,
+      });
+      expect(mockedRequest).toHaveBeenLastCalledWith('sourceControl.authStatus', {
+        provider: 'gitlab',
+        host: 'forge.example',
+        workspaceId,
+      });
+    }
+  });
+
+  it('separates auth reads for repeated workspace IDs across reconnects', async () => {
+    const old = deferred<unknown>();
+    mockedRequest.mockImplementationOnce(() => old.promise as Promise<never>);
+    const a = mockInvoke(GITHUB_AUTH_CHANNELS.GET_STATUS, { workspaceId: 'a' });
+    mockedRequest.mockResolvedValue({ isConfigured: false });
+    await mockInvoke(GITHUB_AUTH_CHANNELS.GET_STATUS, { workspaceId: 'b' });
+    expect(mockedRequest).toHaveBeenLastCalledWith('github.authStatus', { workspaceId: 'b' });
+    githubLifecycle.reconnected?.();
+    await mockInvoke(GITHUB_AUTH_CHANNELS.GET_STATUS, { workspaceId: 'a' });
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    old.resolve({ isConfigured: true });
+    await a;
+    await expect(
+      mockInvoke(GITHUB_AUTH_CHANNELS.GET_STATUS, { workspaceId: 'a' }),
+    ).resolves.toMatchObject({ isConfigured: false });
   });
 
   it('single-flights auth reads and refetches after auth events and reconnects', async () => {
@@ -538,6 +615,50 @@ describe('integrations-bridge-seeder', () => {
         ],
       });
     });
+
+    it('search-users forwards to github.users.search and maps the hits, nulling absent urls', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        users: [
+          {
+            id: 1,
+            login: 'octocat',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+            htmlUrl: 'https://github.com/octocat',
+          },
+          { id: 2, login: 'octokit' },
+        ],
+      });
+
+      const response = await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'octo' });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.users.search', { query: 'octo' });
+      expect(response).toEqual({
+        success: true,
+        data: [
+          {
+            id: 1,
+            login: 'octocat',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+            htmlUrl: 'https://github.com/octocat',
+          },
+          { id: 2, login: 'octokit', avatarUrl: null, htmlUrl: null },
+        ],
+      });
+    });
+
+    it('search-users refuses an empty query without a forge call and folds a daemon failure', async () => {
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: '' })).toEqual({
+        success: false,
+        error: 'query is required',
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+
+      mockedRequest.mockRejectedValueOnce(new Error('rate limited'));
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'octo' })).toEqual({
+        success: false,
+        error: 'rate limited',
+      });
+    });
   });
 
   describe('github-auth OAuth triggers → daemon device flow (§5.27 connect/cancelAuth/revoke)', () => {
@@ -560,6 +681,36 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
+    it('start with reconnect forwards to github.connect even when a token is configured (#5206)', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: '',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: null,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          userCode: 'WXYZ-5678',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        });
+
+      const result = await mockInvoke(GITHUB_AUTH_CHANNELS.START_AUTH, { reconnect: true });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.connect');
+      expect(result).toEqual({
+        success: true,
+        oauthUrl: 'https://github.com/login/device',
+        userCode: 'WXYZ-5678',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 899,
+        interval: 5,
+      });
+    });
+
     it('start forwards to github.connect and carries the device-flow codes (§5.27)', async () => {
       mockedRequest
         .mockResolvedValueOnce({
@@ -571,6 +722,7 @@ describe('integrations-bridge-seeder', () => {
         })
         .mockResolvedValueOnce({
           ok: true,
+          flowId: 'flow-7',
           userCode: 'ABCD-1234',
           verificationUri: 'https://github.com/login/device',
           expiresIn: 899,
@@ -582,12 +734,30 @@ describe('integrations-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenCalledWith('github.connect');
       expect(result).toEqual({
         success: true,
+        flowId: 'flow-7',
         oauthUrl: 'https://github.com/login/device',
         userCode: 'ABCD-1234',
         verificationUri: 'https://github.com/login/device',
         expiresIn: 899,
         interval: 5,
       });
+    });
+
+    it('start omits flowId when an older daemon returns none from github.connect', async () => {
+      mockedRequest
+        .mockRejectedValueOnce(new Error('GitHub is not configured.'))
+        .mockResolvedValueOnce({
+          ok: true,
+          userCode: 'ABCD-1234',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        });
+
+      const result = await mockInvoke<Record<string, unknown>>(GITHUB_AUTH_CHANNELS.START_AUTH);
+
+      expect(result.success).toBe(true);
+      expect(result).not.toHaveProperty('flowId');
     });
 
     it('start folds a github.connect failure to the error envelope', async () => {
@@ -648,6 +818,129 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
+    it.each(['pending', 'expired', 'denied', 'error'] as const)(
+      'poll stays incomplete while a reconnect device flow is %s on top of a configured token (#5206)',
+      async (flowStatus) => {
+        mockedRequest.mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: 'https://github.com/login/device',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: {
+            status: flowStatus,
+            userCode: 'WXYZ-5678',
+            verificationUri: 'https://github.com/login/device',
+            expiresIn: 899,
+            interval: 5,
+          },
+        });
+
+        expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+          success: true,
+          data: { isComplete: false, user: null },
+        });
+        expect(mockedRequest).not.toHaveBeenCalledWith('github.getUser');
+      },
+    );
+
+    it('poll completes for a reconnect only once the daemon clears the flow slot on authorize (#5206)', async () => {
+      const pendingFlow = {
+        status: 'pending',
+        userCode: 'WXYZ-5678',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 899,
+        interval: 5,
+      };
+      mockedRequest
+        .mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: 'https://github.com/login/device',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: pendingFlow,
+        })
+        .mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: '',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: null,
+        })
+        .mockResolvedValueOnce({ user: WIRE_USER });
+
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+        success: true,
+        data: { isComplete: false, user: null },
+      });
+      githubLifecycle.notification?.({
+        method: 'events.event',
+        params: { event: { type: 'github:auth-changed', data: { status: 'authorized' } } },
+      });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+        success: true,
+        data: {
+          isComplete: true,
+          user: {
+            login: 'octocat',
+            name: null,
+            email: null,
+            avatar_url: WIRE_USER.avatarUrl,
+          },
+        },
+      });
+      expect(mockedRequest.mock.calls.map(([method]) => method)).toEqual([
+        'github.authStatus',
+        'github.authStatus',
+        'github.getUser',
+      ]);
+    });
+
+    it('poll observes the authorized flow past the cache TTL even when github:auth-changed is missed (#5362)', async () => {
+      vi.useFakeTimers();
+      try {
+        const pendingFlow = {
+          status: 'pending',
+          userCode: 'WXYZ-5678',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        };
+        mockedRequest
+          .mockResolvedValueOnce({
+            isConfigured: true,
+            oauthUrl: 'https://github.com/login/device',
+            configuredButNeedsUpdate: false,
+            updatedScopes: '',
+            deviceFlow: pendingFlow,
+          })
+          .mockResolvedValueOnce({
+            isConfigured: true,
+            oauthUrl: '',
+            configuredButNeedsUpdate: false,
+            updatedScopes: '',
+            deviceFlow: null,
+          })
+          .mockResolvedValueOnce({ user: WIRE_USER });
+
+        expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+          success: true,
+          data: { isComplete: false, user: null },
+        });
+        vi.advanceTimersByTime(GITHUB_AUTH_STATUS_TTL_MS);
+        const result = (await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)) as {
+          data: { isComplete: boolean };
+        };
+        expect(result.data.isComplete).toBe(true);
+        expect(mockedRequest.mock.calls.map(([method]) => method)).toEqual([
+          'github.authStatus',
+          'github.authStatus',
+          'github.getUser',
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('poll stays incomplete (user null) while the PAT does not validate', async () => {
       mockedRequest.mockRejectedValueOnce(new Error('GitHub is not configured.'));
       expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
@@ -660,6 +953,21 @@ describe('integrations-bridge-seeder', () => {
       mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: true });
       expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH)).toEqual({ success: true });
       expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth');
+    });
+
+    it('cancel scopes github.cancelAuth to the flowId the caller started (§5.27)', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: true });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, { flowId: 'flow-7' })).toEqual({
+        success: true,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth', { flowId: 'flow-7' });
+    });
+
+    it('cancel treats a scoped no-op (cancelled: false) as a confirmed cancel', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: false });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, { flowId: 'stale' })).toEqual({
+        success: true,
+      });
     });
 
     it('cancel maps a non-ok github.cancelAuth result to a failed envelope', async () => {
@@ -690,6 +998,227 @@ describe('integrations-bridge-seeder', () => {
         success: false,
         error: 'revoke failed',
       });
+    });
+  });
+
+  describe('forge-auth:* → daemon sourceControl.* (provider-generic, host-bound)', () => {
+    const HOST = 'gitlab.example.com';
+    /** `SourceControlUser` — `id` is a string on the wire. */
+    const GITLAB_USER = { id: '7', login: 'octo', displayName: 'Octo' };
+    const STATUS = {
+      provider: 'gitlab',
+      host: HOST,
+      isConfigured: true,
+      oauthUrl: '',
+      configuredButNeedsUpdate: false,
+      updatedScopes: '',
+      deviceFlow: null,
+      method: 'pat',
+      user: GITLAB_USER,
+      deviceGrantSupported: false,
+    };
+
+    it('get-status forwards { provider, host } verbatim and returns the wire status untouched', async () => {
+      mockedRequest.mockResolvedValueOnce(STATUS);
+
+      const status = await mockInvoke(FORGE_AUTH_CHANNELS.GET_STATUS, {
+        provider: 'gitlab',
+        host: HOST,
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.authStatus', {
+        provider: 'gitlab',
+        host: HOST,
+      });
+      expect(status).toEqual(STATUS);
+    });
+
+    it('omits host (never sends it empty) so the daemon resolves its configured instance', async () => {
+      mockedRequest.mockResolvedValueOnce(STATUS);
+
+      await mockInvoke(FORGE_AUTH_CHANNELS.GET_STATUS, { provider: 'gitlab', host: '' });
+
+      expect(sentParams(0)).toEqual({ provider: 'gitlab' });
+    });
+
+    it('cancel-auth, revoke and get-user each carry the requested host to the daemon', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({ ok: true, cancelled: true })
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ user: GITLAB_USER });
+
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CANCEL_AUTH, { provider: 'gitlab', host: HOST }),
+      ).resolves.toEqual({ success: true });
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.REVOKE, { provider: 'gitlab', host: HOST }),
+      ).resolves.toEqual({ success: true });
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.GET_USER, { provider: 'gitlab', host: HOST }),
+      ).resolves.toEqual(GITLAB_USER);
+
+      expect(mockedRequest.mock.calls).toEqual([
+        ['sourceControl.cancelAuth', { provider: 'gitlab', host: HOST }],
+        ['sourceControl.revoke', { provider: 'gitlab', host: HOST }],
+        ['sourceControl.getUser', { provider: 'gitlab', host: HOST }],
+      ]);
+    });
+
+    it('connect sends the PAT only with method "pat" and maps { ok, method } to the success envelope', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, method: 'pat' });
+
+      const result = await mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'pat',
+        token: 'glpat-secret',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'pat',
+        token: 'glpat-secret',
+      });
+      expect(result).toEqual({ success: true });
+    });
+
+    it('connect drops a token supplied with the device method and surfaces the typed error code', async () => {
+      mockedRequest.mockRejectedValueOnce(
+        Object.assign(new Error('device grant unsupported'), {
+          code: 'device-grant-unsupported',
+        }),
+      );
+
+      const result = await mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+        token: 'glpat-secret',
+      });
+
+      expect(sentParams(0)).toEqual({ provider: 'gitlab', host: HOST, method: 'device' });
+      expect(result).toEqual({
+        success: false,
+        error: 'device grant unsupported',
+        code: 'device-grant-unsupported',
+      });
+    });
+
+    it.each([
+      { shape: 'raw string data', data: 'Device authorization was denied by GitLab.' },
+      {
+        shape: 'normalized data.detail',
+        data: {
+          code: 'INTERNAL_ERROR',
+          detail: 'Device authorization was denied by GitLab.',
+          token: 'must-not-be-echoed',
+        },
+      },
+    ])('connect surfaces the daemon cause from $shape', async ({ data }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({
+          code: 'INTERNAL_ERROR',
+          rpcCode: -32603,
+          message: 'Internal error',
+          data,
+        }),
+      );
+
+      const result = await mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+      });
+      expect(result).toEqual({
+        success: false,
+        error: 'Internal error: Device authorization was denied by GitLab.',
+        code: undefined,
+      });
+    });
+
+    it.each([
+      { shape: 'absent data', data: undefined },
+      { shape: 'null data', data: null },
+      { shape: 'empty string data', data: '' },
+      { shape: 'absent detail', data: { code: 'INTERNAL_ERROR', token: 'must-not-be-echoed' } },
+      { shape: 'empty detail', data: { detail: '' } },
+      { shape: 'non-string detail', data: { detail: { token: 'must-not-be-echoed' } } },
+    ])('connect keeps the generic fallback for $shape', async ({ data }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({
+          code: 'INTERNAL_ERROR',
+          rpcCode: -32603,
+          message: 'Internal error',
+          data,
+        }),
+      );
+
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+          provider: 'gitlab',
+          host: HOST,
+          method: 'device',
+        }),
+      ).resolves.toEqual({ success: false, error: 'Internal error', code: undefined });
+    });
+
+    it.each([
+      { code: 'device-grant-unsupported', message: 'Device grant unsupported', method: 'device' },
+      { code: 'source-control-unauthorized', message: 'Invalid token', method: 'pat' },
+    ])('connect preserves the $code error and message', async ({ code, message, method }) => {
+      mockedRequest.mockRejectedValueOnce(
+        new BackendError({ code, message, data: { code, detail: 'must-not-replace-the-message' } }),
+      );
+      const params = {
+        provider: 'gitlab',
+        host: HOST,
+        method,
+        ...(method === 'pat' ? { token: 'glpat-test-only' } : {}),
+      };
+
+      await expect(mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, params)).resolves.toEqual({
+        success: false,
+        error: message,
+        code,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', params);
+    });
+
+    it('connect still returns the device flow from a successful grant', async () => {
+      const deviceFlow = {
+        userCode: 'ABCD-EFGH',
+        verificationUri: 'https://gitlab.example.com/oauth/device',
+        expiresIn: 300,
+        interval: 5,
+      };
+      mockedRequest.mockResolvedValueOnce({ ok: true, method: 'device', ...deviceFlow });
+
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+          provider: 'gitlab',
+          host: HOST,
+          method: 'device',
+        }),
+      ).resolves.toEqual({ success: true, deviceFlow });
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.connect', {
+        provider: 'gitlab',
+        host: HOST,
+        method: 'device',
+      });
+    });
+
+    it('rejects an unknown provider without a wire call', async () => {
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.REVOKE, { provider: 'bitbucket', host: HOST }),
+      ).resolves.toEqual({ success: false, error: 'provider is required' });
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 
@@ -769,6 +1298,8 @@ describe('integrations-bridge-seeder', () => {
             updatedAt: '2026-01-02T00:00:00Z',
             user: WIRE_USER,
             labels: ['bug'],
+            owner: 'octocat',
+            repo: 'hello',
           },
         ],
         nextToken: 'cursor-2',
@@ -787,11 +1318,12 @@ describe('integrations-bridge-seeder', () => {
         state: 'open',
         limit: 20,
       });
+      expect(sentParams(0).repos).toBeUndefined();
       expect(response).toEqual({
         success: true,
         data: [
           {
-            id: '7',
+            id: 'octocat/hello#7',
             number: 7,
             title: 'Bug in flux',
             body: 'It breaks',
@@ -868,7 +1400,9 @@ describe('integrations-bridge-seeder', () => {
       });
       expect(response.success).toBe(true);
       expect(response.data[0]).toMatchObject({
-        id: '42',
+        id: 'octocat/hello#42',
+        owner: 'octocat',
+        repo: 'hello',
         state: 'draft',
         author: { login: 'octocat' },
         assignees: ['octocat'],
@@ -876,6 +1410,145 @@ describe('integrations-bridge-seeder', () => {
         targetBranch: 'main',
         description: '…',
       });
+    });
+
+    it('search-github-issues forwards options.repos as the daemon `repos` param and attributes each item to its own repo', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        issues: [
+          {
+            number: 7,
+            title: 'Parent issue',
+            state: 'open',
+            htmlUrl: 'https://github.com/intent-hq/intent/issues/7',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-03T00:00:00Z',
+            owner: 'intent-hq',
+            repo: 'intent',
+          },
+          {
+            number: 7,
+            title: 'Submodule issue',
+            state: 'open',
+            htmlUrl: 'https://github.com/intent-hq/intentd/issues/7',
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-02T00:00:00Z',
+            owner: 'intent-hq',
+            repo: 'intentd',
+          },
+        ],
+        nextToken: 'cursor-2',
+      });
+
+      const response = await mockInvoke<{
+        success: boolean;
+        data: { id: string; owner: string; repo: string }[];
+        nextToken: string | null;
+      }>(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'intent-hq',
+        repo: 'intent',
+        options: {
+          filter: 'all',
+          state: 'open',
+          query: 'flux',
+          repos: [
+            { owner: 'intent-hq', repo: 'intentd' },
+            { owner: 'intent-hq', repo: 'cloudlands-fe' },
+          ],
+        },
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.issues.search', {
+        owner: 'intent-hq',
+        repo: 'intent',
+        filter: 'all',
+        state: 'open',
+        query: 'flux',
+        repos: [
+          { owner: 'intent-hq', repo: 'intentd' },
+          { owner: 'intent-hq', repo: 'cloudlands-fe' },
+        ],
+      });
+      expect(response.success).toBe(true);
+      expect(response.data.map((row) => [row.id, row.owner, row.repo])).toEqual([
+        ['intent-hq/intent#7', 'intent-hq', 'intent'],
+        ['intent-hq/intentd#7', 'intent-hq', 'intentd'],
+      ]);
+      expect(new Set(response.data.map((row) => row.id)).size).toBe(2);
+      expect(response.nextToken).toBe('cursor-2');
+    });
+
+    it('search-github-issues drops malformed options.repos entries and omits an empty repos list', async () => {
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
+      await mockInvoke(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'octocat',
+        repo: 'hello',
+        options: { filter: 'all', repos: [{ owner: 'acme' }, 'nope', { owner: '', repo: 'x' }] },
+      });
+      expect(sentParams(0).repos).toBeUndefined();
+
+      mockedRequest.mockResolvedValueOnce({ issues: [], nextToken: null });
+      await mockInvoke(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, {
+        owner: 'octocat',
+        repo: 'hello',
+        options: { filter: 'all', repos: [] },
+      });
+      expect(sentParams(1).repos).toBeUndefined();
+    });
+
+    it('search-pull-requests forwards options.repos as the daemon `repos` param and attributes each item to its own repo', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        pulls: [
+          {
+            number: 42,
+            title: 'Parent PR',
+            state: 'open',
+            htmlUrl: 'https://github.com/intent-hq/intent/pull/42',
+            merged: false,
+            draft: false,
+            owner: 'intent-hq',
+            repo: 'intent',
+          },
+          {
+            number: 42,
+            title: 'Submodule PR',
+            state: 'closed',
+            htmlUrl: 'https://github.com/intent-hq/cloudlands-fe/pull/42',
+            merged: true,
+            draft: false,
+            owner: 'intent-hq',
+            repo: 'cloudlands-fe',
+          },
+        ],
+        nextToken: 'cursor-2',
+      });
+
+      const response = await mockInvoke<{
+        success: boolean;
+        data: { id: string; owner: string; repo: string; state: string }[];
+        nextToken: string | null;
+      }>(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, {
+        owner: 'intent-hq',
+        repo: 'intent',
+        options: {
+          filter: 'all',
+          state: 'open',
+          repos: [{ owner: 'intent-hq', repo: 'cloudlands-fe' }],
+        },
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.pulls.search', {
+        owner: 'intent-hq',
+        repo: 'intent',
+        filter: 'all',
+        state: 'open',
+        repos: [{ owner: 'intent-hq', repo: 'cloudlands-fe' }],
+      });
+      expect(response.success).toBe(true);
+      expect(response.data.map((row) => [row.id, row.owner, row.repo, row.state])).toEqual([
+        ['intent-hq/intent#42', 'intent-hq', 'intent', 'open'],
+        ['intent-hq/cloudlands-fe#42', 'intent-hq', 'cloudlands-fe', 'merged'],
+      ]);
+      expect(response.nextToken).toBe('cursor-2');
     });
 
     it('search-pull-requests forwards query + nextToken and returns the response nextToken (§5.27)', async () => {
@@ -908,6 +1581,59 @@ describe('integrations-bridge-seeder', () => {
           owner: 'octocat',
           repo: 'hello',
           options: {},
+        }),
+      ).toEqual({ success: false, error: 'GitHub is not configured.' });
+    });
+  });
+
+  describe('git-tracking:list-related-repos → daemon github.relatedRepos.list (§5.27)', () => {
+    it('forwards { owner, repo } and returns the wire repos verbatim in the success envelope', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        repos: [
+          { owner: 'intent-hq', repo: 'intentd', path: 'packages/intentd' },
+          { owner: 'intent-hq', repo: 'cloudlands-fe', path: 'packages/cloudlands-fe' },
+        ],
+      });
+
+      const response = await mockInvoke(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, {
+        owner: 'intent-hq',
+        repo: 'intent',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.relatedRepos.list', {
+        owner: 'intent-hq',
+        repo: 'intent',
+      });
+      expect(response).toEqual({
+        success: true,
+        data: [
+          { owner: 'intent-hq', repo: 'intentd', path: 'packages/intentd' },
+          { owner: 'intent-hq', repo: 'cloudlands-fe', path: 'packages/cloudlands-fe' },
+        ],
+      });
+    });
+
+    it('maps the graceful no-.gitmodules { repos: [] } to an empty success list', async () => {
+      mockedRequest.mockResolvedValueOnce({ repos: [] });
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, {
+          owner: 'octocat',
+          repo: 'hello',
+        }),
+      ).toEqual({ success: true, data: [] });
+    });
+
+    it('rejects missing owner/repo client-side and folds a daemon failure to the error envelope', async () => {
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, { owner: 'octocat' }),
+      ).toEqual({ success: false, error: 'owner and repo are required' });
+      expect(mockedRequest).not.toHaveBeenCalled();
+
+      mockedRequest.mockRejectedValueOnce(new Error('GitHub is not configured.'));
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, {
+          owner: 'octocat',
+          repo: 'hello',
         }),
       ).toEqual({ success: false, error: 'GitHub is not configured.' });
     });

@@ -5,7 +5,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { BrowserTabViewport } from '../../../../shared/ipc/workspace-command-payloads';
 
 export type { BrowserTabViewport } from '../../../../shared/ipc/workspace-command-payloads';
@@ -48,6 +48,8 @@ export interface PanelTab {
   icon?: PanelTabIcon;
   closable: boolean;
   hasUnsavedChanges?: boolean;
+  /** Source pane to reactivate on close, if it remains in the same panel. */
+  openerTabId?: string;
 
   // Type-specific identifiers
   workspaceId?: string;
@@ -297,6 +299,13 @@ export interface WorkspacePanelLayoutState {
     import('./panel-layout-width-provenance').PanelCanvasWidthSource | null;
   deferSpecTab: boolean;
   newWorkspaceLifecycle: NewWorkspacePanelLifecycle | null;
+  /**
+   * Session-only: the user deliberately emptied this layout with an explicit
+   * close (closeTab / closeAllTabs / closePanel / resetLayout). The empty
+   * restored-layout reconcile leaves such a layout blank instead of reseeding
+   * the primary agent tab; a restore clears it. Never persisted.
+   */
+  emptiedByUserClose: boolean;
 }
 
 export type PanelDragLayoutSnapshot = Pick<

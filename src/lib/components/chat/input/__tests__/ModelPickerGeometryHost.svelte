@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
   import { onDestroy, untrack } from 'svelte';
   import ModelPicker from '../ModelPicker.svelte';
   import * as Dialog from '$lib/components/ui/dialog';
@@ -6,15 +7,14 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { MOCK_PROVIDER_CATALOG } from '../../../../../test/fixtures/provider-catalog.fixture';
-  import {
-    setActiveProvider,
-    setProviderEnabled,
-  } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import {
     checkSingleProviderSuccess,
     checkAllProvidersComplete,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
   import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+  // eslint-disable-next-line themis/forbidden-component-import -- CT-only root harness starts the production owner; ModelPicker only dispatches intents
+  import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
   import { registerMockIpcHandler, unregisterMockIpcHandler } from '$shared/ipc-mock-router';
 
   let {
@@ -23,18 +23,23 @@
     disabled = false,
     reasoningOutcome = 'accept',
     settleDelayMs = 0,
+    multipleProviders = false,
+    diagnostic,
   }: {
     placement?: 'settings' | 'composer' | 'modal';
     longList?: boolean;
     disabled?: boolean;
     reasoningOutcome?: 'accept' | 'reject';
     settleDelayMs?: number;
+    multipleProviders?: boolean;
+    diagnostic?: string;
   } = $props();
   let model = $state('reasoning-model');
   let effort = $state<string | null>(null);
   let changes = $state(0);
   let settled = $state(0);
   let modalOpen = $state(true);
+  let refreshRequests = $state<unknown[]>([]);
 
   function commitReasoning(value: string | null): boolean {
     settled += 1;
@@ -51,20 +56,44 @@
   const models = Array.from({ length: 20 }, (_, i) => ({
     value: i === 0 ? 'reasoning-model' : `model-${i + 1}`,
     label: i === 0 ? 'Reasoning model' : `Model ${i + 1}`,
+    description: i === 0 ? 'A model with adjustable reasoning' : undefined,
     effortLevels: levels,
   }));
-  const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const disposeStore = startRootStoreLifecycle(store, {
+    startSagas: () => [store.runSaga(modelReloadSaga)],
+  });
   store.dispatch(providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
-  store.dispatch(setActiveProvider('codex'));
+  store.dispatch(hydrateDefaultProvider('codex'));
   store.dispatch(setProviderEnabled({ providerId: 'codex', enabled: true }));
   store.dispatch(checkSingleProviderSuccess('codex', { available: true, authenticated: true }));
   store.dispatch(checkAllProvidersComplete());
-  store.dispatch(providerModelsLoaded('codex', { models }, 0));
+  store.dispatch(
+    providerModelsLoaded(
+      'codex',
+      { models, ...(diagnostic ? { warning: diagnostic, stale: true } : {}) },
+      0,
+    ),
+  );
   // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalog, not a domain fetch
-  registerMockIpcHandler('codex:get-models', () => ({ success: true, data: models }));
+  registerMockIpcHandler('codex:get-models', (params) => {
+    if (params) refreshRequests = [...refreshRequests, { channel: 'codex:get-models', params }];
+    return { success: true, data: models };
+  });
+  if (multipleProviders) {
+    const otherModels = [{ value: 'other-model', label: 'Other provider model' }];
+    store.dispatch(setProviderEnabled({ providerId: 'claude-code', enabled: true }));
+    store.dispatch(
+      checkSingleProviderSuccess('claude-code', { available: true, authenticated: true }),
+    );
+    store.dispatch(providerModelsLoaded('claude-code', { models: otherModels }, 0));
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalog
+    registerMockIpcHandler('claude-code:get-models', () => ({ success: true, data: otherModels }));
+  }
   onDestroy(() => {
     // eslint-disable-next-line intent/no-component-async-data-fetch -- clean up the CT-only catalog handler
     unregisterMockIpcHandler('codex:get-models');
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only handler cleanup
+    if (multipleProviders) unregisterMockIpcHandler('claude-code:get-models');
     disposeStore();
   });
 </script>
@@ -74,6 +103,7 @@
     <ModelPicker
       selectedModel={model}
       providerId="codex"
+      size={placement === 'composer' ? 'xs' : 'sm'}
       showReasoning
       reasoningEffort={effort}
       reasoningDisabled={disabled}
@@ -95,6 +125,7 @@
     >{JSON.stringify({ model, effort, changes })}</output
   >
   <output class="sr-only" data-testid="reasoning-settled">{settled}</output>
+  <output class="sr-only" data-testid="refresh-requests">{JSON.stringify(refreshRequests)}</output>
 {/snippet}
 
 {#if placement === 'modal'}

@@ -19,8 +19,11 @@ import {
   moveTabToPanel,
   moveTabToSplit,
   moveTabToSplitLevel,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '$store/renderer/slices/panel-layout/panel-layout-invariants.test-helpers';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 function makeLayout(
   stacks: Record<string, string[]>,

@@ -14,9 +14,10 @@
  *
  * This test drives the PROTOCOL §7-shaped `agent:tool:call` notification
  * against a store whose in-flight assistant row was seeded exactly as the
- * chat-subscribe saga's `replaceMessages` leaves it, and asserts the leading
- * group-tag text block survives. Guarded by the merge-by-block-identity fix
- * (`mergeStreamContentBlocks` in stream-content-blocks.ts).
+ * chat-subscribe saga's `replaceMessages` leaves it, and asserts the row is
+ * untouched. Guarded by the bookkeeping-only firehose contract: the standing
+ * chat.subscribe stream is the transcript's sole content writer, so a tool
+ * tick's dispatch carries no `contentBlocks` at all.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -52,6 +53,10 @@ import {
   __resetDaemonEventsBridgeForTests,
   routeDaemonEventsNotification,
 } from '$features/events/daemon-events-bridge.client';
+import {
+  clearAllStandingChatSubscriptions,
+  markStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
 import { groupContentBlocks } from '$lib/utils/messageParser';
 
 const WS = 'ws-group-regression';
@@ -102,6 +107,8 @@ describe('group-tag flip regression (monorepo#2814)', () => {
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     capturedHandlers[0] = (n) => routeDaemonEventsNotification(n.method, n.params, 'sub-1');
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
 
     // The in-flight assistant message EXACTLY as the chat-subscribe saga's
     // replaceMessages leaves it after §7.1 deltas: block 0 is the text block
@@ -146,7 +153,10 @@ describe('group-tag flip regression (monorepo#2814)', () => {
     );
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
   it('an agent:tool:call progress tick must not delete the leading group-tag text block', () => {
     const handler = capturedHandlers[0]!;
@@ -172,7 +182,7 @@ describe('group-tag flip regression (monorepo#2814)', () => {
     expect(message).toBeDefined();
     const blocks = message!.contentBlocks ?? [];
 
-    // ROOT CAUSE (fails today): the bridge's text-starved accumulator replaced
+    // ROOT CAUSE (pre-fix): the bridge's text-starved accumulator replaced
     // the message's contentBlocks wholesale — the leading text block carrying
     // <group:Researching> is gone, so the transcript renders ungrouped until
     // the next chat.subscribe emit restores it (the visible flip).
@@ -186,8 +196,9 @@ describe('group-tag flip regression (monorepo#2814)', () => {
     expect(grouped[0]?.type).toBe('content_group');
   });
 
-  it('characterization: the tool tick itself still lands (status merge on the tool_use block)', () => {
+  it('the tool tick leaves the subscription-owned tool_use untouched (the §7.1 delta advances its status)', () => {
     const handler = capturedHandlers[0]!;
+    const before = readAssistantMessage()!.contentBlocks;
 
     handler(
       notification('agent:tool:call', {
@@ -204,10 +215,10 @@ describe('group-tag flip regression (monorepo#2814)', () => {
     );
 
     const message = readAssistantMessage();
+    expect(message?.contentBlocks).toEqual(before);
     const toolUse = (message?.contentBlocks ?? []).find(
       (b) => b.type === 'tool_use' && (b as { toolCallId?: string }).toolCallId === 'toolu_01',
     );
-    expect(toolUse).toBeDefined();
-    expect((toolUse as { metadata?: { status?: string } })?.metadata?.status).toBe('completed');
+    expect((toolUse as { metadata?: { status?: string } })?.metadata?.status).toBe('started');
   });
 });

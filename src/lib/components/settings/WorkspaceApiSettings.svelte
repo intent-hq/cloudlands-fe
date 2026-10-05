@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* eslint-disable intent/no-component-async-data-fetch */
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   /**
    * Tool Output & Retention Settings Component
    *
@@ -19,38 +19,76 @@
    * UI state only.
    */
   import { onMount } from 'svelte';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
-  import { toast } from '$lib/components/ui/toast';
-  import { appClient } from '$lib/client';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    settingsFormOpened,
+    settingsFormClosed,
+    settingsFormLoadRequested,
+    settingsFormSaveRequested,
+    settingsFormDraftChanged,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsForm,
+    selectSettingsFormEntries,
+    selectSettingsFormOperation,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingsControlContext,
+  } from '$lib/components/patterns/settings';
 
   const MAX_OUTPUT_CHARS_PATH = 'workspaceApi.maxOutputChars';
   const TOON_OUTPUT_PATH = 'workspaceApi.toonOutput';
   const REPLAY_CHARS_PATH = 'agents.historyReplayToolContentChars';
   const RETENTION_DAYS_PATH = 'agents.toolPayloadRetentionDays';
 
-  let loading = $state(true);
-  let toonOutput = $state(true);
+  const identity = { formId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
+  const form$ = selectSettingsForm(identity);
+  const entries$ = selectSettingsFormEntries(identity);
+  const maxCharsOperation$ = selectSettingsFormOperation(identity, MAX_OUTPUT_CHARS_PATH);
+  const replayOperation$ = selectSettingsFormOperation(identity, REPLAY_CHARS_PATH);
+  const retentionOperation$ = selectSettingsFormOperation(identity, RETENTION_DAYS_PATH);
+  const loading = $derived(!$form$?.loaded);
+  const toonOutput = $derived(
+    ($form$?.drafts[TOON_OUTPUT_PATH] ?? $entries$[TOON_OUTPUT_PATH]?.value) !== false,
+  );
 
   // Max output chars editing state (persisted value vs input string)
-  let persistedMaxOutputChars = $state<number>(100000);
-  let editedMaxOutputChars = $state<string>('100000');
-  let maxCharsSaving = $state(false);
+  const persistedMaxOutputChars = $derived(
+    Number($entries$[MAX_OUTPUT_CHARS_PATH]?.value ?? 100000),
+  );
+  const editedMaxOutputChars = $derived(
+    String($form$?.drafts[MAX_OUTPUT_CHARS_PATH] ?? persistedMaxOutputChars),
+  );
+  const maxCharsSaving = $derived($maxCharsOperation$?.status === 'pending');
+  const maxOutputCharsValid = $derived.by(() => {
+    const parsed = parseIntegerInput(editedMaxOutputChars);
+    return Number.isInteger(parsed) && (parsed === 0 || (parsed >= 1000 && parsed <= 10_000_000));
+  });
 
   // Replay tool content chars editing state (persisted value vs input string)
-  let persistedReplayChars = $state<number>(4000);
-  let editedReplayChars = $state<string>('4000');
-  let replayCharsSaving = $state(false);
+  const persistedReplayChars = $derived(Number($entries$[REPLAY_CHARS_PATH]?.value ?? 4000));
+  const editedReplayChars = $derived(
+    String($form$?.drafts[REPLAY_CHARS_PATH] ?? persistedReplayChars),
+  );
+  const replayCharsSaving = $derived($replayOperation$?.status === 'pending');
 
   // Tool payload retention days editing state (persisted value vs input string)
-  let persistedRetentionDays = $state<number>(0);
-  let editedRetentionDays = $state<string>('0');
-  let retentionDaysSaving = $state(false);
+  const persistedRetentionDays = $derived(Number($entries$[RETENTION_DAYS_PATH]?.value ?? 0));
+  const editedRetentionDays = $derived(
+    String($form$?.drafts[RETENTION_DAYS_PATH] ?? persistedRetentionDays),
+  );
+  const retentionDaysSaving = $derived($retentionOperation$?.status === 'pending');
 
-  onMount(async () => {
-    await loadSettings();
+  onMount(() => {
+    appStore.dispatch(settingsFormOpened(identity, 'workspace-api'));
+    appStore.dispatch(
+      settingsFormLoadRequested({ ...identity, requestId: crypto.randomUUID(), resource: 'load' }),
+    );
+    return () => appStore.dispatch(settingsFormClosed(identity));
   });
 
   // A number input bound with bind:value yields a number, or null when blank;
@@ -60,74 +98,28 @@
     return Number(raw);
   }
 
-  async function loadSettings() {
-    try {
-      loading = true;
-      const settings = await appClient.settings.list();
-      const maxChars = settings.find(
-        (s: { path: string; value: unknown }) => s.path === MAX_OUTPUT_CHARS_PATH,
-      );
-      const toon = settings.find(
-        (s: { path: string; value: unknown }) => s.path === TOON_OUTPUT_PATH,
-      );
-      const replayChars = settings.find(
-        (s: { path: string; value: unknown }) => s.path === REPLAY_CHARS_PATH,
-      );
-      const retentionDays = settings.find(
-        (s: { path: string; value: unknown }) => s.path === RETENTION_DAYS_PATH,
-      );
-      if (typeof maxChars?.value === 'number') {
-        persistedMaxOutputChars = maxChars.value;
-        editedMaxOutputChars = String(maxChars.value);
-      }
-      if (typeof replayChars?.value === 'number') {
-        persistedReplayChars = replayChars.value;
-        editedReplayChars = String(replayChars.value);
-      }
-      if (typeof retentionDays?.value === 'number') {
-        persistedRetentionDays = retentionDays.value;
-        editedRetentionDays = String(retentionDays.value);
-      }
-      toonOutput = toon?.value !== false;
-    } catch (error) {
-      toast.error(
-        m.settings_workspaceApi_loadError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      loading = false;
-    }
+  function handleToonToggle(checked: boolean) {
+    if (!selectSettingsForm.select(appStore.state, identity)?.loaded) return;
+    appStore.dispatch(settingsFormDraftChanged(identity, TOON_OUTPUT_PATH, checked));
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: TOON_OUTPUT_PATH, requestId: crypto.randomUUID() },
+        [{ path: TOON_OUTPUT_PATH, value: checked }],
+      ),
+    );
   }
 
-  async function handleToonToggle(checked: boolean) {
-    try {
-      const result = await appClient.settings.update([{ path: TOON_OUTPUT_PATH, value: checked }]);
-
-      // A missing entry means the daemon did not apply the change; treat it
-      // like a rollback.
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === TOON_OUTPUT_PATH,
-      );
-      if (!applied || applied.value !== checked) {
-        toast.error(m.settings_workspaceApi_toonOutput_rollbackError());
-        toonOutput = applied ? applied.value !== false : !checked;
-        return;
-      }
-
-      toonOutput = checked;
-    } catch (error) {
-      toast.error(
-        m.settings_workspaceApi_toonOutput_error({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      toonOutput = !checked;
-    }
-  }
-
-  async function handleMaxCharsSave() {
-    const newValue = parseIntegerInput(editedMaxOutputChars);
+  function handleMaxCharsSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const newValue = parseIntegerInput(
+      String(
+        form.drafts[MAX_OUTPUT_CHARS_PATH] ??
+          selectSettingsFormEntries.select(appStore.state, identity)[MAX_OUTPUT_CHARS_PATH]
+            ?.value ??
+          '',
+      ),
+    );
     if (
       !Number.isInteger(newValue) ||
       newValue < 0 ||
@@ -137,293 +129,232 @@
       return; // invalid input, do nothing
     }
 
-    try {
-      maxCharsSaving = true;
-      const result = await appClient.settings.update([
-        { path: MAX_OUTPUT_CHARS_PATH, value: newValue },
-      ]);
-
-      // A missing entry means the daemon did not apply the change; treat it
-      // like a rollback.
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === MAX_OUTPUT_CHARS_PATH,
-      );
-      if (!applied || applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied?.value === 'number' ? applied.value : persistedMaxOutputChars;
-        toast.error(m.settings_workspaceApi_maxOutputChars_rollbackError());
-        persistedMaxOutputChars = rolledBackValue;
-        editedMaxOutputChars = String(rolledBackValue);
-        return;
-      }
-
-      persistedMaxOutputChars = newValue;
-      toast.success(m.settings_workspaceApi_maxOutputChars_saved());
-    } catch (error) {
-      toast.error(
-        m.settings_workspaceApi_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedMaxOutputChars = String(persistedMaxOutputChars);
-    } finally {
-      maxCharsSaving = false;
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: MAX_OUTPUT_CHARS_PATH, requestId: crypto.randomUUID() },
+        [{ path: MAX_OUTPUT_CHARS_PATH, value: newValue }],
+      ),
+    );
   }
 
-  async function handleReplayCharsSave() {
-    const newValue = parseIntegerInput(editedReplayChars);
+  function handleReplayCharsSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const newValue = parseIntegerInput(
+      String(
+        form.drafts[REPLAY_CHARS_PATH] ??
+          selectSettingsFormEntries.select(appStore.state, identity)[REPLAY_CHARS_PATH]?.value ??
+          '',
+      ),
+    );
     if (!Number.isInteger(newValue) || newValue < 500 || newValue > 100_000) {
       return; // invalid input, do nothing
     }
 
-    try {
-      replayCharsSaving = true;
-      const result = await appClient.settings.update([
-        { path: REPLAY_CHARS_PATH, value: newValue },
-      ]);
-
-      // A missing entry means the daemon did not apply the change; treat it
-      // like a rollback.
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === REPLAY_CHARS_PATH,
-      );
-      if (!applied || applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied?.value === 'number' ? applied.value : persistedReplayChars;
-        toast.error(m.settings_workspaceApi_replayChars_rollbackError());
-        persistedReplayChars = rolledBackValue;
-        editedReplayChars = String(rolledBackValue);
-        return;
-      }
-
-      persistedReplayChars = newValue;
-      toast.success(m.settings_workspaceApi_replayChars_saved());
-    } catch (error) {
-      toast.error(
-        m.settings_workspaceApi_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedReplayChars = String(persistedReplayChars);
-    } finally {
-      replayCharsSaving = false;
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: REPLAY_CHARS_PATH, requestId: crypto.randomUUID() },
+        [{ path: REPLAY_CHARS_PATH, value: newValue }],
+      ),
+    );
   }
 
-  async function handleRetentionDaysSave() {
-    const newValue = parseIntegerInput(editedRetentionDays);
+  function handleRetentionDaysSave() {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    if (!form?.loaded) return;
+    const newValue = parseIntegerInput(
+      String(
+        form.drafts[RETENTION_DAYS_PATH] ??
+          selectSettingsFormEntries.select(appStore.state, identity)[RETENTION_DAYS_PATH]?.value ??
+          '',
+      ),
+    );
     if (!Number.isInteger(newValue) || newValue < 0 || newValue > 3650) {
       return; // invalid input, do nothing
     }
 
-    try {
-      retentionDaysSaving = true;
-      const result = await appClient.settings.update([
-        { path: RETENTION_DAYS_PATH, value: newValue },
-      ]);
-
-      // A missing entry means the daemon did not apply the change; treat it
-      // like a rollback.
-      const applied = result.find(
-        (r: { path: string; value: unknown }) => r.path === RETENTION_DAYS_PATH,
-      );
-      if (!applied || applied.value !== newValue) {
-        const rolledBackValue =
-          typeof applied?.value === 'number' ? applied.value : persistedRetentionDays;
-        toast.error(m.settings_workspaceApi_retentionDays_rollbackError());
-        persistedRetentionDays = rolledBackValue;
-        editedRetentionDays = String(rolledBackValue);
-        return;
-      }
-
-      persistedRetentionDays = newValue;
-      toast.success(m.settings_workspaceApi_retentionDays_saved());
-    } catch (error) {
-      toast.error(
-        m.settings_workspaceApi_saveError({
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-      editedRetentionDays = String(persistedRetentionDays);
-    } finally {
-      retentionDaysSaving = false;
-    }
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: RETENTION_DAYS_PATH, requestId: crypto.randomUUID() },
+        [{ path: RETENTION_DAYS_PATH, value: newValue }],
+      ),
+    );
   }
+  const schema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'workspace-api',
+          title: m.settings_workspaceApi_maxOutputChars_label(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'workspace-api-retentionDays',
+              label: m.settings_workspaceApi_retentionDays_label(),
+              description: m.settings_workspaceApi_retentionDays_description(),
+              error: () =>
+                Number.isInteger(parseIntegerInput(editedRetentionDays)) &&
+                parseIntegerInput(editedRetentionDays) >= 0 &&
+                parseIntegerInput(editedRetentionDays) <= 3650
+                  ? undefined
+                  : m.settings_workspaceApi_retentionDays_invalid(),
+              disabled: () => retentionDaysSaving || loading,
+            },
+
+            {
+              kind: 'custom',
+              id: 'workspace-api-replayChars',
+              label: m.settings_workspaceApi_replayChars_label(),
+              description: m.settings_workspaceApi_replayChars_description(),
+              error: () =>
+                Number.isInteger(parseIntegerInput(editedReplayChars)) &&
+                parseIntegerInput(editedReplayChars) >= 500 &&
+                parseIntegerInput(editedReplayChars) <= 100000
+                  ? undefined
+                  : m.settings_workspaceApi_replayChars_invalid(),
+              disabled: () => replayCharsSaving || loading,
+            },
+
+            {
+              kind: 'custom',
+              id: 'workspace-api-max-output-chars',
+              label: m.settings_workspaceApi_maxOutputChars_label(),
+              description: m.settings_workspaceApi_maxOutputChars_description(),
+              error: () =>
+                maxOutputCharsValid ? undefined : m.settings_workspaceApi_maxOutputChars_invalid(),
+              disabled: () => maxCharsSaving || loading,
+            },
+            {
+              kind: 'switch',
+              id: 'workspace-api-toon-output',
+              label: m.settings_workspaceApi_toonOutput_label(),
+              description: m.settings_workspaceApi_toonOutput_description(),
+              get: () => toonOutput,
+              set: handleToonToggle,
+              disabled: () => loading,
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-  <!-- Max output chars -->
-  <section class="px-6 py-4">
-    {#snippet maxCharsValidation()}
-      {@const parsed = parseIntegerInput(editedMaxOutputChars)}
-      <!-- i18n-ignore (template expression, not user-facing text) -->
-      {@const isValid =
-        Number.isInteger(parsed) && (parsed === 0 || (parsed >= 1000 && parsed <= 10_000_000))}
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <p class="text-sm font-medium text-foreground">
-            {m.settings_workspaceApi_maxOutputChars_label()}
-          </p>
-          <p class="text-xs text-subtle mt-1">
-            {m.settings_workspaceApi_maxOutputChars_description()}
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <div class="shrink-0 w-32">
-            <Input
-              type="number"
-              min="0"
-              max="10000000"
-              bind:value={editedMaxOutputChars}
-              disabled={maxCharsSaving || loading}
-              aria-label={m.settings_workspaceApi_maxOutputChars_ariaLabel()}
-              class="h-9 text-sm"
-            />
-          </div>
-          {#if parsed !== persistedMaxOutputChars}
-            <Button
-              variant="secondary"
-              size="xs"
-              onclick={handleMaxCharsSave}
-              disabled={maxCharsSaving || !isValid}
-            >
-              {maxCharsSaving
-                ? m.settings_workspaceApi_maxOutputChars_saving()
-                : m.settings_workspaceApi_maxOutputChars_save()}
-            </Button>
-          {/if}
-        </div>
-      </div>
-      {#if !isValid}
-        <p class="text-xs text-amber-500/90 mt-1">
-          {m.settings_workspaceApi_maxOutputChars_invalid()}
-        </p>
-      {/if}
-    {/snippet}
-    {@render maxCharsValidation()}
-  </section>
+{#snippet maxOutputCharsControl({ labelId, descriptionId, errorId }: SettingsControlContext)}
+  <div class="flex items-center gap-2">
+    <Input
+      type="number"
+      min="0"
+      max="10000000"
+      value={editedMaxOutputChars}
+      oninput={(event) =>
+        appStore.dispatch(
+          settingsFormDraftChanged(identity, MAX_OUTPUT_CHARS_PATH, event.currentTarget.value),
+        )}
+      disabled={maxCharsSaving || loading}
+      aria-label={m.settings_workspaceApi_maxOutputChars_ariaLabel()}
+      aria-labelledby={labelId}
+      aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined}
+      class="w-32"
+    />
+    {#if parseIntegerInput(editedMaxOutputChars) !== persistedMaxOutputChars}
+      <Button
+        variant="link"
+        size="sm"
+        type="button"
+        class="h-auto px-0"
+        onclick={handleMaxCharsSave}
+        disabled={maxCharsSaving || !maxOutputCharsValid}
+      >
+        {maxCharsSaving
+          ? m.settings_workspaceApi_maxOutputChars_saving()
+          : m.settings_workspaceApi_maxOutputChars_save()}
+      </Button>
+    {/if}
+  </div>
+{/snippet}
 
-  <!-- Replay tool output characters -->
-  <section class="px-6 py-4">
-    {#snippet replayCharsValidation()}
-      {@const parsed = parseIntegerInput(editedReplayChars)}
-      <!-- i18n-ignore (template expression, not user-facing text) -->
-      {@const isValid = Number.isInteger(parsed) && parsed >= 500 && parsed <= 100_000}
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <p class="text-sm font-medium text-foreground">
-            {m.settings_workspaceApi_replayChars_label()}
-          </p>
-          <p class="text-xs text-subtle mt-1">
-            {m.settings_workspaceApi_replayChars_description()}
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <div class="shrink-0 w-32">
-            <Input
-              type="number"
-              min="500"
-              max="100000"
-              bind:value={editedReplayChars}
-              disabled={replayCharsSaving || loading}
-              aria-label={m.settings_workspaceApi_replayChars_ariaLabel()}
-              class="h-9 text-sm"
-            />
-          </div>
-          {#if parsed !== persistedReplayChars}
-            <Button
-              variant="secondary"
-              size="xs"
-              onclick={handleReplayCharsSave}
-              disabled={replayCharsSaving || !isValid}
-            >
-              {replayCharsSaving
-                ? m.settings_workspaceApi_maxOutputChars_saving()
-                : m.settings_workspaceApi_maxOutputChars_save()}
-            </Button>
-          {/if}
-        </div>
-      </div>
-      {#if !isValid}
-        <p class="text-xs text-amber-500/90 mt-1">
-          {m.settings_workspaceApi_replayChars_invalid()}
-        </p>
-      {/if}
-    {/snippet}
-    {@render replayCharsValidation()}
-  </section>
+{#snippet replayCharsControl({ descriptionId, errorId }: SettingsControlContext)}
+  <div class="flex items-center gap-2">
+    <Input
+      type="number"
+      min="500"
+      max="100000"
+      value={editedReplayChars}
+      oninput={(event) =>
+        appStore.dispatch(
+          settingsFormDraftChanged(identity, REPLAY_CHARS_PATH, event.currentTarget.value),
+        )}
+      disabled={replayCharsSaving || loading}
+      aria-label={m.settings_workspaceApi_replayChars_ariaLabel()}
+      aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined}
+      class="w-32"
+    />
+    {#if parseIntegerInput(editedReplayChars) !== persistedReplayChars}
+      <Button
+        variant="link"
+        size="sm"
+        type="button"
+        class="h-auto px-0"
+        onclick={handleReplayCharsSave}
+        disabled={replayCharsSaving ||
+          !Number.isInteger(parseIntegerInput(editedReplayChars)) ||
+          parseIntegerInput(editedReplayChars) < 500 ||
+          parseIntegerInput(editedReplayChars) > 100000}
+      >
+        {replayCharsSaving
+          ? m.settings_workspaceApi_maxOutputChars_saving()
+          : m.settings_workspaceApi_maxOutputChars_save()}
+      </Button>
+    {/if}
+  </div>
+{/snippet}
 
-  <!-- Tool payload retention (days) -->
-  <section class="px-6 py-4">
-    {#snippet retentionDaysValidation()}
-      {@const parsed = parseIntegerInput(editedRetentionDays)}
-      <!-- i18n-ignore (template expression, not user-facing text) -->
-      {@const isValid = Number.isInteger(parsed) && parsed >= 0 && parsed <= 3650}
-      <div class="flex items-center justify-between gap-3">
-        <div>
-          <p class="text-sm font-medium text-foreground">
-            {m.settings_workspaceApi_retentionDays_label()}
-          </p>
-          <p class="text-xs text-subtle mt-1">
-            {m.settings_workspaceApi_retentionDays_description()}
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <div class="shrink-0 w-32">
-            <Input
-              type="number"
-              min="0"
-              max="3650"
-              bind:value={editedRetentionDays}
-              disabled={retentionDaysSaving || loading}
-              aria-label={m.settings_workspaceApi_retentionDays_ariaLabel()}
-              class="h-9 text-sm"
-            />
-          </div>
-          {#if parsed !== persistedRetentionDays}
-            <Button
-              variant="secondary"
-              size="xs"
-              onclick={handleRetentionDaysSave}
-              disabled={retentionDaysSaving || !isValid}
-            >
-              {retentionDaysSaving
-                ? m.settings_workspaceApi_maxOutputChars_saving()
-                : m.settings_workspaceApi_maxOutputChars_save()}
-            </Button>
-          {/if}
-        </div>
-      </div>
-      {#if !isValid}
-        <p class="text-xs text-amber-500/90 mt-1">
-          {m.settings_workspaceApi_retentionDays_invalid()}
-        </p>
-      {/if}
-    {/snippet}
-    {@render retentionDaysValidation()}
-  </section>
+{#snippet retentionDaysControl({ descriptionId, errorId }: SettingsControlContext)}
+  <div class="flex items-center gap-2">
+    <Input
+      type="number"
+      min="0"
+      max="3650"
+      value={editedRetentionDays}
+      oninput={(event) =>
+        appStore.dispatch(
+          settingsFormDraftChanged(identity, RETENTION_DAYS_PATH, event.currentTarget.value),
+        )}
+      disabled={retentionDaysSaving || loading}
+      aria-label={m.settings_workspaceApi_retentionDays_ariaLabel()}
+      aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined}
+      class="w-32"
+    />
+    {#if parseIntegerInput(editedRetentionDays) !== persistedRetentionDays}
+      <Button
+        variant="link"
+        size="sm"
+        type="button"
+        class="h-auto px-0"
+        onclick={handleRetentionDaysSave}
+        disabled={retentionDaysSaving ||
+          !Number.isInteger(parseIntegerInput(editedRetentionDays)) ||
+          parseIntegerInput(editedRetentionDays) < 0 ||
+          parseIntegerInput(editedRetentionDays) > 3650}
+      >
+        {retentionDaysSaving
+          ? m.settings_workspaceApi_maxOutputChars_saving()
+          : m.settings_workspaceApi_maxOutputChars_save()}
+      </Button>
+    {/if}
+  </div>
+{/snippet}
 
-  <!-- TOON output toggle -->
-  <section class="px-6 py-5">
-    <div class="flex items-center justify-between">
-      <div>
-        <p class="text-sm font-medium text-foreground">
-          {m.settings_workspaceApi_toonOutput_label()}
-        </p>
-        <p class="text-xs text-subtle mt-1">
-          {m.settings_workspaceApi_toonOutput_description()}
-        </p>
-      </div>
-      <Toggle
-        pressed={toonOutput}
-        onclick={() => handleToonToggle(!toonOutput)}
-        variant="indicator"
-        size="xs"
-        class="mb-auto"
-        disabled={loading}
-        ariaLabel={m.settings_workspaceApi_toonOutput_label()}
-      />
-    </div>
-  </section>
+<div data-slot="settings-section-body" class="rounded-xl bg-card px-6 py-4">
+  <SettingsForm
+    {schema}
+    embedded
+    compact={false}
+    custom={defineSettingsCustomControls({
+      'workspace-api-replayChars': replayCharsControl,
+      'workspace-api-retentionDays': retentionDaysControl,
+      'workspace-api-max-output-chars': maxOutputCharsControl,
+    })}
+  />
 </div>

@@ -224,7 +224,7 @@
     let receivedChunk = false;
 
     // Listen for IPC messages
-    const listener = (event, data) => {
+    const listener = () => {
       receivedChunk = true;
     };
 

@@ -12,9 +12,14 @@
  * async actions and the `connections:cert-mismatch` push.
  */
 
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import {
+  createCollection,
+  getItem,
+  upsertItem,
+  removeItem,
+} from '@themislib/themis/utils/collections/collection-utils';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type {
   AddConnectionParams,
@@ -39,7 +44,12 @@ import type {
   ConnectionCertWarningsEvent,
   ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
+  ConnectionWorkflow,
+  ConnectionWorkflowIntent,
+  ConnectionWorkflowOutcome,
+  SelfPublicationOperation,
 } from './connections-types';
+import type { SelfPublishedStateResult } from '$shared/types/connections';
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -54,12 +64,19 @@ export const initialState: ConnectionsState = {
   connectedIds: [],
   status: 'idle',
   error: null,
+  openingIds: [],
   certMismatch: null,
   certWarnings: {},
   authRejected: null,
   protocolMismatch: null,
   protocolMismatchModalDismissed: false,
   keychainSync: null,
+  keychainLoadError: false,
+  keychainSaveError: false,
+  keychainWritesPending: 0,
+  workflows: createCollection<ConnectionWorkflow, 'id'>('id'),
+  selfPublication: null,
+  selfPublicationBusy: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -92,6 +109,27 @@ export const connectOperationSettled = createAction('connections/operationSettle
  * message is stored for the UI.
  */
 export const connectOperationFailed = createAction<[error: string]>('connections/operationFailed');
+
+/**
+ * An open operation for one backend started. Records the id in `openingIds`
+ * and moves status to 'connecting' — opens run concurrently, so each is
+ * tracked per id.
+ */
+export const openOperationStarted = createAction<[id: string]>('connections/openStarted');
+
+/**
+ * The open operation for one backend succeeded. Drops the id from
+ * `openingIds`; status returns to 'idle' only once no other open remains in
+ * flight.
+ */
+export const openOperationSettled = createAction<[id: string]>('connections/openSettled');
+
+/**
+ * The open operation for one backend failed. Drops the id from `openingIds`,
+ * moves status to 'error' and stores the message for the UI.
+ */
+export const openOperationFailed =
+  createAction<[id: string, error: string]>('connections/openFailed');
 
 /**
  * A `connections:cert-mismatch` push arrived — a pinned cert changed on
@@ -216,6 +254,9 @@ export const keychainSyncStateReceived = createAction<[result: KeychainSyncState
   'connections/keychainSyncStateReceived',
 );
 
+/** Clear the renderer's cached sync state without changing the backend setting. */
+export const keychainSyncStateCleared = createAction('connections/keychainSyncStateCleared');
+
 /**
  * A `connections:sync-status-changed` push arrived — a reconcile's
  * availability verdict changed. Ignored until the full state has been loaded
@@ -237,11 +278,128 @@ export const setKeychainSyncEnabledRequested = createAsyncAction<
   KeychainSyncStateResult
 >('connections/setKeychainSyncEnabled', 'connections/setKeychainSyncEnabledRequested');
 
+export const connectionWorkflowRequested = createAction(
+  'connections/workflowRequested',
+  (consumerId: string, intent: ConnectionWorkflowIntent) => ({
+    consumerId,
+    requestId: crypto.randomUUID(),
+    intent,
+  }),
+);
+export const connectionWorkflowCleared = createAction<[consumerId: string]>(
+  'connections/workflowCleared',
+);
+export const connectionWorkflowProgress = createAction<
+  [
+    consumerId: string,
+    requestId: string,
+    phase: ConnectionWorkflow['phase'],
+    secretReplaced?: boolean,
+  ]
+>('connections/workflowProgress');
+export const connectionWorkflowFinished = createAction<
+  [consumerId: string, requestId: string, outcome: ConnectionWorkflowOutcome]
+>('connections/workflowFinished');
+
+/** Compatibility action for the WSS settings caller; execution remains saga-owned. */
+export const selfPublicationRequested = createAsyncAction<
+  [operation: SelfPublicationOperation],
+  void
+>('connections/selfPublication', 'connections/selfPublicationRequested');
+export const selfPublicationReceived = createAction<[state: SelfPublishedStateResult | null]>(
+  'connections/selfPublicationReceived',
+);
+export const selfPublicationBusyChanged = createAction<[busy: boolean]>(
+  'connections/selfPublicationBusyChanged',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
 
 export const connectionsReducer = createReducer<ConnectionsState>(initialState);
+connectionsReducer.with(connectionWorkflowRequested, (state, { payload }) => ({
+  ...state,
+  workflows: upsertItem(state.workflows, {
+    id: payload.consumerId,
+    requestId: payload.requestId,
+    targetId:
+      'id' in payload.intent
+        ? payload.intent.id
+        : 'id' in payload.intent.params
+          ? payload.intent.params.id
+          : null,
+    kind: payload.intent.kind,
+    phase: 'running',
+    secretReplaced: false,
+    outcome: null,
+  }),
+}));
+connectionsReducer.with(connectionWorkflowCleared, (state, { payload: [id] }) => {
+  if (!getItem(state.workflows, id)) return state;
+  return { ...state, workflows: removeItem(state.workflows, id) };
+});
+connectionsReducer.with(
+  connectionWorkflowProgress,
+  (state, { payload: [id, requestId, phase, secretReplaced] }) => {
+    const current = getItem(state.workflows, id);
+    if (!current || current.requestId !== requestId) return state;
+    return {
+      ...state,
+      workflows: upsertItem(state.workflows, {
+        ...current,
+        phase,
+        secretReplaced: secretReplaced ?? current.secretReplaced,
+      }),
+    };
+  },
+);
+connectionsReducer.with(
+  connectionWorkflowFinished,
+  (state, { payload: [id, requestId, outcome] }) => {
+    const current = getItem(state.workflows, id);
+    if (!current || current.requestId !== requestId) return state;
+    return {
+      ...state,
+      workflows: upsertItem(state.workflows, { ...current, phase: 'settled', outcome }),
+    };
+  },
+);
+connectionsReducer.with(loadKeychainSyncStateRequested, (state) => ({
+  ...state,
+  keychainLoadError: false,
+}));
+connectionsReducer.with(loadKeychainSyncStateRequested.failure, (state) => ({
+  ...state,
+  keychainLoadError: true,
+}));
+connectionsReducer.with(loadKeychainSyncStateRequested.success, (state) => ({
+  ...state,
+  keychainLoadError: false,
+}));
+connectionsReducer.with(setKeychainSyncEnabledRequested, (state) => ({
+  ...state,
+  keychainWritesPending: state.keychainWritesPending + 1,
+  keychainSaveError: false,
+}));
+connectionsReducer.with(setKeychainSyncEnabledRequested.success, (state) => ({
+  ...state,
+  keychainWritesPending: Math.max(0, state.keychainWritesPending - 1),
+  keychainSaveError: false,
+}));
+connectionsReducer.with(setKeychainSyncEnabledRequested.failure, (state) => ({
+  ...state,
+  keychainWritesPending: Math.max(0, state.keychainWritesPending - 1),
+  keychainSaveError: true,
+}));
+connectionsReducer.with(selfPublicationReceived, (state, { payload: [selfPublication] }) => ({
+  ...state,
+  selfPublication,
+}));
+connectionsReducer.with(
+  selfPublicationBusyChanged,
+  (state, { payload: [selfPublicationBusy] }) => ({ ...state, selfPublicationBusy }),
+);
 connectionsReducer.with(connectionsListReceived, (state, { payload: [result] }) => {
   const next: ConnectionsState = {
     ...state,
@@ -310,6 +468,37 @@ connectionsReducer.with(connectOperationSettled, (state) => {
 connectionsReducer.with(connectOperationFailed, (state, { payload: [error] }) => {
   return { ...state, status: 'error', error };
 });
+/**
+ * Drop exactly one occurrence of `id` from the in-flight multiset so a repeat
+ * open of the same backend keeps the id tracked until its own settle.
+ */
+function removeOneOpening(openingIds: string[], id: string): string[] {
+  const index = openingIds.indexOf(id);
+  if (index === -1) return openingIds;
+  return [...openingIds.slice(0, index), ...openingIds.slice(index + 1)];
+}
+
+connectionsReducer.with(openOperationStarted, (state, { payload: [id] }) => {
+  // Mirrors connectOperationStarted's legacy latch-clearing semantics: any new
+  // open clears the auth-rejected latch, regardless of whether `id` matches
+  // the window's own backend (the clearing is not scoped to the opened id).
+  // Opening does not itself replace the client (main's connectBackendClient
+  // reuses the pooled instance; replacement happens on re-pair/config
+  // changes). One entry per operation (not per id): takeEvery admits repeat
+  // opens of the same backend and each must settle on its own.
+  const openingIds = [...state.openingIds, id];
+  return { ...state, openingIds, status: 'connecting', error: null, authRejected: null };
+});
+connectionsReducer.with(openOperationSettled, (state, { payload: [id] }) => {
+  const openingIds = removeOneOpening(state.openingIds, id);
+  // Another open still in flight keeps the global status busy.
+  if (openingIds.length > 0) return { ...state, openingIds };
+  return { ...state, openingIds, status: 'idle', error: null };
+});
+connectionsReducer.with(openOperationFailed, (state, { payload: [id, error] }) => {
+  const openingIds = removeOneOpening(state.openingIds, id);
+  return { ...state, openingIds, status: 'error', error };
+});
 connectionsReducer.with(certMismatchReceived, (state, { payload: [event] }) => {
   // The fatal mismatch also carries every per-host mismatch the failing
   // multi-host race observed — seed the passive list from it so the
@@ -361,6 +550,9 @@ connectionsReducer.with(protocolMismatchModalDismissed, (state) => {
 });
 connectionsReducer.with(keychainSyncStateReceived, (state, { payload: [result] }) => {
   return { ...state, keychainSync: result };
+});
+connectionsReducer.with(keychainSyncStateCleared, (state) => {
+  return state.keychainSync === null ? state : { ...state, keychainSync: null };
 });
 connectionsReducer.with(keychainSyncStatusReceived, (state, { payload: [status] }) => {
   // Status alone cannot seed the state — `supported`/`enabled` are unknown

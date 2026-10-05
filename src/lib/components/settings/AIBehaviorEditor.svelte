@@ -1,4 +1,11 @@
 <script lang="ts">
+  import {
+    selectCanAdministerHost,
+    selectPrincipalActionContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
+  import { onDestroy } from 'svelte';
+  import { SettingsDisclosure } from '$lib/components/patterns/settings';
+  import { Button, Input, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
@@ -17,7 +24,7 @@
     selectHasOverrides,
     selectSpecialistFilePath,
     selectSpecialistSourceLabel,
-    selectSpecialistsFolderPath,
+    selectSpecialistCreation,
     selectEffectiveCodingAgent,
     selectExplicitReasoningEffort,
     selectFileSpecialists,
@@ -26,27 +33,24 @@
   import {
     deleteFileSpecialist as deleteFileSpecialistAction,
     saveFileSpecialist,
+    updateSpecialistDraft,
+    discardSpecialistDraft,
+    createSpecialistFromDraft,
   } from '$store/renderer/slices/specialists/specialists-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import AgentRulesEditor from './AgentRulesEditor.svelte';
   import AutoSaveTextarea from './AutoSaveTextarea.svelte';
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
-
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
-  import { toast } from 'svelte-sonner';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import {
-    generateUniqueSpecialistId,
-    type SpecialistModelOption,
-  } from '$shared/specialist-file-types';
+  import type { SpecialistModelOption } from '$shared/specialist-file-types';
+  import type { SpecialistDraft } from '$store/renderer/slices/specialists/specialist-creation-types';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
@@ -63,7 +67,8 @@
   let { activeView, workspaceId, onSpecialistCreated, onSpecialistDeleted, onDiscard }: Props =
     $props();
 
-  const specialists = selectSpecialists();
+  const canEdit$ = selectCanAdministerHost();
+  const admission$ = selectPrincipalActionContext();
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
@@ -71,6 +76,7 @@
   const routeWorkspaceId = $derived(
     workspaceId !== undefined ? workspaceId : routeWorkspaceContext?.workspaceId,
   );
+  const specialists = $derived(selectSpecialists(routeWorkspaceId ?? undefined));
 
   function parseCompoundModelId(compoundModelId: string): {
     providerId: string;
@@ -86,16 +92,28 @@
     return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
   }
 
-  // New specialist form state. Model defaults to inherit (undefined) — a
-  // created specialist file has no `model:` key unless the user picks one.
-  let newName = $state('');
-  let newDescription = $state('');
-  let newCodingAgent = $state<string | undefined>(undefined);
-  let newModel = $state<string | undefined>(undefined);
-  let newEffort = $state<string | undefined>(undefined);
-  let newPrompt = $state(m.settings_aiBehavior_newPromptTemplate());
+  const draftContext = $derived(routeWorkspaceId ? `workspace:${routeWorkspaceId}` : 'user');
+  const creation$ = $derived(selectSpecialistCreation(draftContext));
+  const newName = $derived($creation$.draft.name);
+  const newDescription = $derived($creation$.draft.description);
+  const newModel = $derived($creation$.draft.model);
+  const newEffort = $derived($creation$.draft.reasoningEffort);
+  const newPrompt = $derived(
+    $creation$.draft.behaviorPrompt ?? m.settings_aiBehavior_newPromptTemplate(),
+  );
+  const creating = $derived($creation$.status === 'saving' || $creation$.status === 'refreshing');
+  const refreshFailed = $derived($creation$.status === 'refresh-failed');
+  const draftLocked = $derived(creating || refreshFailed);
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+  });
 
-  // Character limits
+  function updateDraft(patch: Partial<SpecialistDraft>) {
+    if (!selectCanAdministerHost.select(appStore.state)) return;
+    appStore.dispatch(updateSpecialistDraft(draftContext, patch));
+  }
+
   const MAX_PROMPT_LENGTH = 50000;
   const WARNING_THRESHOLD = 40000;
 
@@ -108,57 +126,59 @@
     Math.min(100, Math.round((newPromptCharCount / MAX_PROMPT_LENGTH) * 100)),
   );
 
-  // Reset form when switching to create view
-  $effect(() => {
-    if (activeView.type === 'create-specialist') {
-      newName = '';
-      newDescription = '';
-      newCodingAgent = undefined;
-      newModel = undefined;
-      newEffort = undefined;
-      newPrompt = m.settings_aiBehavior_newPromptTemplate();
-    }
-  });
-
-  // Get current specialist if viewing one
   const currentSpecialist = $derived(
     activeView.type === 'specialist' ? $specialists.find((s) => s.id === activeView.id) : null,
   );
 
+  const isImported = $derived(currentSpecialist?.importedFrom === 'claude-code');
+
   const isBuiltIn = $derived(
-    currentSpecialist ? selectIsBuiltIn.select(appStore.state, currentSpecialist.id) : false,
+    currentSpecialist
+      ? selectIsBuiltIn.select(appStore.state, currentSpecialist.id, routeWorkspaceId ?? undefined)
+      : false,
   );
 
   const isFileBased = $derived(
-    currentSpecialist ? selectIsFileBased.select(appStore.state, currentSpecialist.id) : false,
+    currentSpecialist
+      ? selectIsFileBased.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        )
+      : false,
   );
 
-  /**
-   * A built-in specialist is "modified" only when its user override file
-   * actually differs from the bundled defaults — a lingering identical file
-   * never shows "Modified" (diff-based, monorepo#1450).
-   */
+  // An identical override file does not mark a built-in as modified.
   const hasOverrides = $derived.by(() => {
     void $fileSpecialists$; // track file specialist changes for reactivity
     if (!currentSpecialist) return false;
-    return selectHasOverrides.select(appStore.state, currentSpecialist.id);
+    return selectHasOverrides.select(
+      appStore.state,
+      currentSpecialist.id,
+      routeWorkspaceId ?? undefined,
+    );
   });
 
   const specialistFilePath = $derived(
     currentSpecialist
-      ? selectSpecialistFilePath.select(appStore.state, currentSpecialist.id)
+      ? selectSpecialistFilePath.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        )
       : undefined,
   );
 
   const sourceLabel = $derived(
     currentSpecialist
-      ? selectSpecialistSourceLabel.select(appStore.state, currentSpecialist.id)
+      ? selectSpecialistSourceLabel.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        )
       : null,
   );
 
-  const specialistsFolderPath = selectSpecialistsFolderPath();
-
-  // Local state for specialist model/coding agent selection
   let _specialistCodingAgentValue = $state('');
   let specialistModelValue = $state<string | undefined>(undefined);
   let specialistEffortValue = $state<string | undefined>(undefined);
@@ -177,12 +197,15 @@
   const effectiveBehaviorPrompt = $derived.by(() => {
     void $fileSpecialists$; // track file specialist changes
     return currentSpecialist
-      ? selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id)
+      ? selectEffectiveBehaviorPrompt.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        )
       : '';
   });
 
-  // Sync specialist model value when specialist changes or file specialists
-  // change. The picker's selected value is the EXPLICIT frontmatter model
+  // Sync the EXPLICIT frontmatter model from the specialist's owning scope
   // only — undefined when inheriting (the daemon resolvedModel preview is
   // shown via the picker's default-option plumbing instead). The stored
   // model is a BARE id (PROTOCOL §5.11); the picker boundary still speaks
@@ -190,9 +213,20 @@
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      const codingAgent = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
+      // User/bundled saves update the global list before the route projection.
+      const specialistWorkspaceId =
+        currentSpecialist.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
+      const codingAgent = selectEffectiveCodingAgent.select(
+        appStore.state,
+        currentSpecialist.id,
+        specialistWorkspaceId,
+      );
       _specialistCodingAgentValue = codingAgent;
-      const explicitModel = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      const explicitModel = selectExplicitModel.select(
+        appStore.state,
+        currentSpecialist.id,
+        specialistWorkspaceId,
+      );
       specialistModelValue =
         explicitModel && codingAgent && !explicitModel.includes(':')
           ? `${codingAgent}:${explicitModel}`
@@ -200,24 +234,24 @@
       specialistEffortValue = selectExplicitReasoningEffort.select(
         appStore.state,
         currentSpecialist.id,
+        specialistWorkspaceId,
       );
     }
   });
 
-  /**
-   * Drop an effort level the given model does not advertise, so switching to
-   * a model without that level resets the dropdown to Default instead of
-   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`). The
-   * lookup is provider-scoped: a cross-provider pick consults the resolved
-   * provider's cached catalog, not the active one.
-   */
+  // Drop unsupported effort levels using the selected provider’s catalog.
   function effortForModel(
     providerId: string | undefined,
     modelId: string | undefined,
     effort: string | undefined,
   ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
+    const levels = selectProviderModelEffortLevels.select(
+      appStore.state,
+      providerId,
+      modelId,
+      currentSpecialist?.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
+    );
     return levels?.includes(effort) ? effort : undefined;
   }
 
@@ -225,7 +259,7 @@
     compoundModelId: string,
     pick?: { providerId: string; modelId: string },
   ) {
-    if (!currentSpecialist) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
 
     // Empty string = the inherit ("use global default") option was picked:
     // clear the explicit pin so the saved file has no `model:` key. On a
@@ -242,7 +276,11 @@
       );
       specialistEffortValue = nextEffort;
       if (!isFileBased) return;
-      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+      const fileSpec = selectGetFileSpecialist.select(
+        appStore.state,
+        currentSpecialist.id,
+        routeWorkspaceId ?? undefined,
+      );
       if (!fileSpec || !fileSpec.model) return;
       // If clearing the pin leaves the override identical to the bundled
       // defaults, delete the file instead of rewriting it — a redundant file
@@ -255,9 +293,19 @@
           { ignoreModelPin: true },
         )
       ) {
-        appStore.dispatch(deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source }));
+        appStore.dispatch(
+          deleteFileSpecialistAction({
+            id: fileSpec.id,
+            scope: fileSpec.source,
+            workspaceId:
+              fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
+            workspacePath: fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined,
+          }),
+        );
         return;
       }
+      const workspaceId =
+        fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       appStore.dispatch(
         saveFileSpecialist({
@@ -272,6 +320,7 @@
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
+          workspaceId,
         }),
       );
       return;
@@ -294,8 +343,14 @@
 
     if (isFileBased) {
       // Already a file specialist (user or project) — update in place
-      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+      const fileSpec = selectGetFileSpecialist.select(
+        appStore.state,
+        currentSpecialist.id,
+        routeWorkspaceId ?? undefined,
+      );
       if (fileSpec) {
+        const workspaceId =
+          fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
         const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
         appStore.dispatch(
           saveFileSpecialist({
@@ -310,6 +365,7 @@
             behaviorPrompt: fileSpec.behaviorPrompt,
             scope: fileSpec.source,
             workspacePath,
+            workspaceId,
           }),
         );
       }
@@ -318,6 +374,7 @@
       const effectivePrompt = selectEffectiveBehaviorPrompt.select(
         appStore.state,
         currentSpecialist.id,
+        routeWorkspaceId ?? undefined,
       );
       appStore.dispatch(
         saveFileSpecialist({
@@ -336,21 +393,20 @@
     }
   }
 
-  /**
-   * Persist the specialist's reasoning-effort level. Default (undefined)
-   * omits the key on the wire so the model default is inherited; on a
-   * built-in with no override file, picking Default is a no-op and picking a
-   * level exports a user file (mirroring the model-pin export path). Clearing
-   * the level on a user override that then matches the bundled defaults
-   * deletes the file (monorepo#1450).
-   */
+  // Clearing effort on a redundant built-in override removes the override file.
   function handleSpecialistEffortChange(effort: string | undefined) {
-    if (!currentSpecialist) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     specialistEffortValue = effort;
 
     if (isFileBased) {
-      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+      const fileSpec = selectGetFileSpecialist.select(
+        appStore.state,
+        currentSpecialist.id,
+        routeWorkspaceId ?? undefined,
+      );
       if (!fileSpec) return;
+      const workspaceId =
+        fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       if (!effort && !fileSpec.model && !fileSpec.codingAgent) {
         const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
@@ -361,7 +417,12 @@
           )
         ) {
           appStore.dispatch(
-            deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source, workspacePath }),
+            deleteFileSpecialistAction({
+              id: fileSpec.id,
+              scope: fileSpec.source,
+              workspacePath,
+              workspaceId,
+            }),
           );
           return;
         }
@@ -379,6 +440,7 @@
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
+          workspaceId,
         }),
       );
       return;
@@ -388,13 +450,18 @@
     const effectivePrompt = selectEffectiveBehaviorPrompt.select(
       appStore.state,
       currentSpecialist.id,
+      routeWorkspaceId ?? undefined,
     );
     appStore.dispatch(
       saveFileSpecialist({
         id: currentSpecialist.id,
         name: currentSpecialist.name,
         description: currentSpecialist.description,
-        codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
+        codingAgent: selectEffectiveCodingAgent.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        ),
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
         modelOptions: currentSpecialist.modelOptions,
@@ -411,25 +478,40 @@
   ) {
     // Empty string = the inherit ("use global default") option was picked.
     if (!compoundModelId) {
-      newCodingAgent = undefined;
-      newModel = undefined;
-      newEffort = effortForModel($defaultProviderId$ || undefined, $selectedModel, newEffort);
+      updateDraft({
+        codingAgent: undefined,
+        model: undefined,
+        reasoningEffort: effortForModel(
+          $defaultProviderId$ || undefined,
+          $selectedModel,
+          newEffort,
+        ),
+      });
       return;
     }
     // Prefer the resolved triple legs the picker emits (catalog-group
     // attribution for bare cross-provider picks); fall back to splitting a
     // legacy compound id (old persisted values).
     const resolved = pick ?? parseCompoundModelId(compoundModelId);
-    newCodingAgent = resolved.providerId || $defaultProviderId$;
-    newModel = compoundModelId;
-    newEffort = effortForModel(newCodingAgent || undefined, resolved.modelId, newEffort);
+    const provider = resolved.providerId || $defaultProviderId$;
+    updateDraft({
+      codingAgent: provider,
+      model: compoundModelId,
+      reasoningEffort: effortForModel(provider || undefined, resolved.modelId, newEffort),
+    });
   }
 
   function handlePromptSave(prompt: string) {
-    if (!currentSpecialist) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     if (isFileBased) {
-      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+      const fileSpec = selectGetFileSpecialist.select(
+        appStore.state,
+        currentSpecialist.id,
+        routeWorkspaceId ?? undefined,
+      );
       if (fileSpec) {
+        const workspaceId =
+          fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
         const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
         appStore.dispatch(
           saveFileSpecialist({
@@ -444,6 +526,7 @@
             behaviorPrompt: prompt,
             scope: fileSpec.source,
             workspacePath,
+            workspaceId,
           }),
         );
       }
@@ -455,6 +538,7 @@
       const effectiveCodingAgent = selectEffectiveCodingAgent.select(
         appStore.state,
         currentSpecialist.id,
+        routeWorkspaceId ?? undefined,
       );
       appStore.dispatch(
         saveFileSpecialist({
@@ -473,21 +557,20 @@
     }
   }
 
-  /**
-   * Persist the committed model-option rows. Empty list ⇒ the key is omitted
-   * on save (inherit is maintained — coordinator constraint; the mutation
-   * service drops empty lists before the wire call). A built-in with no
-   * override file gets one only when a non-empty list is committed, mirroring
-   * the model-pin export path; clearing the last option on a user override
-   * that then matches the bundled defaults deletes the file (monorepo#1450).
-   */
+  // Empty options inherit; remove an override that becomes identical to its built-in.
   function handleModelOptionsCommit(options: SpecialistModelOption[]) {
-    if (!currentSpecialist) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     const next = options.length > 0 ? options : undefined;
 
     if (isFileBased) {
-      const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+      const fileSpec = selectGetFileSpecialist.select(
+        appStore.state,
+        currentSpecialist.id,
+        routeWorkspaceId ?? undefined,
+      );
       if (!fileSpec) return;
+      const workspaceId =
+        fileSpec.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined;
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       if (!next && !fileSpec.model && !fileSpec.codingAgent) {
         const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
@@ -495,7 +578,12 @@
           isRedundantBuiltInOverride({ ...fileSpec, modelOptions: undefined }, bundledSpecialists)
         ) {
           appStore.dispatch(
-            deleteFileSpecialistAction({ id: fileSpec.id, scope: fileSpec.source, workspacePath }),
+            deleteFileSpecialistAction({
+              id: fileSpec.id,
+              scope: fileSpec.source,
+              workspacePath,
+              workspaceId,
+            }),
           );
           return;
         }
@@ -513,6 +601,7 @@
           behaviorPrompt: fileSpec.behaviorPrompt,
           scope: fileSpec.source,
           workspacePath,
+          workspaceId,
         }),
       );
       return;
@@ -527,13 +616,18 @@
     const effectivePrompt = selectEffectiveBehaviorPrompt.select(
       appStore.state,
       currentSpecialist.id,
+      routeWorkspaceId ?? undefined,
     );
     appStore.dispatch(
       saveFileSpecialist({
         id: currentSpecialist.id,
         name: currentSpecialist.name,
         description: currentSpecialist.description,
-        codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
+        codingAgent: selectEffectiveCodingAgent.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        ),
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
         modelOptions: next,
@@ -545,57 +639,83 @@
   }
 
   function handleNameSave(newNameValue: string) {
-    if (!currentSpecialist) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     const trimmed = newNameValue.trim();
     if (!trimmed || trimmed === currentSpecialist.name) return;
 
-    const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+    const fileSpec = selectGetFileSpecialist.select(
+      appStore.state,
+      currentSpecialist.id,
+      routeWorkspaceId ?? undefined,
+    );
     appStore.dispatch(
       saveFileSpecialist({
         id: currentSpecialist.id,
         name: trimmed,
         description: currentSpecialist.description,
-        codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
+        codingAgent: selectEffectiveCodingAgent.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        ),
         // Explicit frontmatter model only — never bake the daemon's resolved
         // preview into the file (it would pin a floating default).
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
         modelOptions: currentSpecialist.modelOptions,
         reasoningEffort: currentSpecialist.reasoningEffort,
-        behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
+        behaviorPrompt: selectEffectiveBehaviorPrompt.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        ),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
+        workspaceId: fileSpec?.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
       }),
     );
   }
 
   function handleDescriptionSave(newDescValue: string) {
-    if (!currentSpecialist) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     const trimmed = newDescValue.trim();
     if (trimmed === currentSpecialist.description) return;
 
-    const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
+    const fileSpec = selectGetFileSpecialist.select(
+      appStore.state,
+      currentSpecialist.id,
+      routeWorkspaceId ?? undefined,
+    );
     appStore.dispatch(
       saveFileSpecialist({
         id: currentSpecialist.id,
         name: currentSpecialist.name,
         description: trimmed || currentSpecialist.description,
-        codingAgent: selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id),
+        codingAgent: selectEffectiveCodingAgent.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        ),
         // Explicit frontmatter model only — never bake the daemon's resolved
         // preview into the file (it would pin a floating default).
         model: currentSpecialist.defaultModel,
         roleReminder: currentSpecialist.roleReminder,
         modelOptions: currentSpecialist.modelOptions,
         reasoningEffort: currentSpecialist.reasoningEffort,
-        behaviorPrompt: selectEffectiveBehaviorPrompt.select(appStore.state, currentSpecialist.id),
+        behaviorPrompt: selectEffectiveBehaviorPrompt.select(
+          appStore.state,
+          currentSpecialist.id,
+          routeWorkspaceId ?? undefined,
+        ),
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
+        workspaceId: fileSpec?.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
       }),
     );
   }
 
   function resetToDefault() {
-    if (!currentSpecialist) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     // Delete the user override file so the specialist reverts to bundled defaults
     appStore.dispatch(
       deleteFileSpecialistAction({
@@ -606,61 +726,59 @@
   }
 
   function deleteSpecialist() {
-    if (!currentSpecialist) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     // Capture values before deletion since currentSpecialist is a $derived
     // that will become null once the specialist is removed from the store
     const specialistId = currentSpecialist.id;
-    const fileSpec = selectGetFileSpecialist.select(appStore.state, specialistId);
+    const fileSpec = selectGetFileSpecialist.select(
+      appStore.state,
+      specialistId,
+      routeWorkspaceId ?? undefined,
+    );
     appStore.dispatch(
       deleteFileSpecialistAction({
         id: specialistId,
         scope: fileSpec?.source ?? 'user',
         workspacePath: fileSpec?.source === 'project' ? getCurrentWorkspacePath() : undefined,
+        workspaceId: fileSpec?.source === 'project' ? (routeWorkspaceId ?? undefined) : undefined,
       }),
     );
     onSpecialistDeleted?.();
   }
 
-  function createSpecialist() {
-    if (!newName.trim() || newPromptIsOverLimit) return;
-    const createdId = generateUniqueSpecialistId(
-      newName.trim(),
-      selectSpecialists.select(appStore.state).map((specialist) => specialist.id),
-    );
-    // `newModel` carries the picker's compound id for display; writes emit
-    // the bare model id only (PROTOCOL §5.11), the provider on codingAgent.
-    const bareNewModel = newModel ? parseCompoundModelId(newModel).modelId : undefined;
-    appStore.dispatch(
-      saveFileSpecialist({
-        id: createdId,
-        name: newName.trim(),
-        description: newDescription.trim() || m.settings_aiBehavior_customSpecialistFallback(),
-        codingAgent: newCodingAgent,
-        model: bareNewModel,
-        reasoningEffort: newEffort,
-        behaviorPrompt: newPrompt,
-        scope: 'user',
-      }),
-    );
-    // Show success toast with file path
-    const folderPath = $specialistsFolderPath;
-    const expectedPath = folderPath
-      ? `${folderPath}/${createdId}.md`
-      : `~/.intent/specialists/${createdId}.md`;
-    toast.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
-      description: expectedPath.replace(/^\/Users\/[^/]+/, '~'),
-    });
-
-    onSpecialistCreated?.(createdId);
+  async function createSpecialist() {
+    if (!selectCanAdministerHost.select(appStore.state)) return;
+    const submittedAdmission = selectPrincipalActionContext.select(appStore.state);
+    const current = selectSpecialistCreation.select(appStore.state, draftContext);
+    if (
+      current.status === 'saving' ||
+      current.status === 'refreshing' ||
+      !current.draft.name.trim() ||
+      (current.draft.behaviorPrompt?.length ?? 0) > MAX_PROMPT_LENGTH
+    )
+      return;
+    const submittedView = activeView;
+    const submittedContext = draftContext;
+    const action = createSpecialistFromDraft(draftContext, routeWorkspaceId ?? undefined);
+    appStore.dispatch(action);
+    try {
+      const id = await action.promise;
+      if (
+        mounted &&
+        selectPrincipalActionContext.select(appStore.state) === submittedAdmission &&
+        activeView === submittedView &&
+        draftContext === submittedContext
+      ) {
+        onSpecialistCreated?.(id);
+      }
+    } catch {
+      // Errors are retained by the saga.
+    }
   }
 
   function discardNewSpecialist() {
-    newName = '';
-    newDescription = '';
-    newCodingAgent = undefined;
-    newModel = undefined;
-    newEffort = undefined;
-    newPrompt = m.settings_aiBehavior_newPromptTemplate();
+    if (creating) return;
+    appStore.dispatch(discardSpecialistDraft(draftContext));
     onDiscard?.();
   }
 </script>
@@ -671,13 +789,17 @@
     ? 'specialist-editor-container'
     : ''}"
 >
-  <!-- System Prompt View -->
+  {#if !$canEdit$ && activeView.type !== 'system-prompt'}
+    <p class="type-body mb-4 text-muted-foreground">
+      {m.settings_agentSettings_ownerOnly_description()}
+    </p>
+  {/if}
   {#if activeView.type === 'system-prompt'}
     <div
       data-testid="all-agents-editor-layout"
       class="flex min-w-0 flex-col gap-4 xl:h-full xl:min-h-0 xl:flex-1"
     >
-      <p class="text-sm text-muted-foreground">
+      <p class="type-body text-muted-foreground">
         {m.settings_agentRules_description()}
       </p>
       <div
@@ -687,8 +809,6 @@
         <AgentRulesEditor class="xl:min-h-0 xl:flex-1" />
       </div>
     </div>
-
-    <!-- Specialist Editor View -->
   {:else if activeView.type === 'specialist' && currentSpecialist}
     <div
       data-testid="specialist-editor-layout"
@@ -703,8 +823,8 @@
           data-testid="specialist-prompt-header"
           class="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2"
         >
-          {#if !isBuiltIn && !hasOverrides}
-            <input
+          {#if $canEdit$ && !isImported && !isBuiltIn && !hasOverrides}
+            <Input
               type="text"
               value={currentSpecialist.name}
               onblur={(e) => handleNameSave(e.currentTarget.value)}
@@ -716,51 +836,68 @@
               }}
               aria-label={m.settings_aiBehavior_name_label()}
               placeholder={m.settings_aiBehavior_specialistName_placeholder()}
-              class="min-w-0 flex-1 text-base font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="min-w-0 flex-1 type-title font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
             />
           {:else}
-            <h2 class="text-base font-medium text-foreground">{currentSpecialist.name}</h2>
-            {#if isBuiltIn && hasOverrides}
+            <h2 class="type-title font-medium text-foreground">{currentSpecialist.name}</h2>
+            {#if !isImported && isBuiltIn && hasOverrides}
               <span
-                class="text-xs px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
+                class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary-ink font-medium inline-flex items-center gap-1"
               >
                 <Fa icon={faPencil} class="w-2.5 h-2.5" />
                 {m.settings_aiBehavior_modifiedBadge()}
               </span>
             {/if}
           {/if}
-          {#if isBuiltIn && hasOverrides}
-            <button
+          {#if $canEdit$ && !isImported && isBuiltIn && hasOverrides}
+            <Button
+              variant="plain"
+              size="sm"
               type="button"
               onclick={resetToDefault}
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+              class="h-auto type-caption text-muted-foreground hover:text-foreground gap-1"
             >
               <Fa icon={faRotateLeft} class="w-3 h-3" />
               {m.settings_aiBehavior_reset()}
-            </button>
+            </Button>
           {/if}
-          {#if specialistFilePath}
+          {#if $canEdit$ && specialistFilePath}
             <div class="ml-auto shrink-0">
-              <OpenComboButton filePath={specialistFilePath} isDirectory={false} />
+              <OpenComboButton
+                filePath={specialistFilePath}
+                isDirectory={false}
+                workspaceId={routeWorkspaceId ?? undefined}
+              />
             </div>
           {/if}
         </div>
-        <AutoSaveTextarea
-          value={effectiveBehaviorPrompt}
-          originalValue={currentSpecialist.defaultBehaviorPrompt}
-          placeholder={m.settings_aiBehavior_systemPrompt_placeholder()}
-          minRows={12}
-          maxLength={50000}
-          onSave={handlePromptSave}
-          class="xl:min-h-0 xl:flex-1"
-        />
+        {#if isImported || !$canEdit$}
+          <Textarea
+            value={effectiveBehaviorPrompt}
+            readonly
+            aria-label={m.settings_aiBehavior_systemPrompt_placeholder()}
+            rows={12}
+            class="xl:min-h-0 xl:flex-1"
+          />
+        {:else}
+          {#key $admission$}
+            <AutoSaveTextarea
+              value={effectiveBehaviorPrompt}
+              originalValue={currentSpecialist.defaultBehaviorPrompt}
+              placeholder={m.settings_aiBehavior_systemPrompt_placeholder()}
+              minRows={12}
+              maxLength={50000}
+              onSave={handlePromptSave}
+              class="xl:min-h-0 xl:flex-1"
+            />
+          {/key}
+        {/if}
       </div>
 
       <div data-testid="specialist-details-column" class="flex min-w-0 flex-col gap-6 xl:pt-8">
-        <!-- Specialist identity and source context. -->
         <div class="min-w-0">
-          {#if !isBuiltIn && !hasOverrides}
-            <input
+          {#if $canEdit$ && !isImported && !isBuiltIn && !hasOverrides}
+            <Input
               type="text"
               value={currentSpecialist.description}
               onblur={(e) => handleDescriptionSave(e.currentTarget.value)}
@@ -771,14 +908,39 @@
                 }
               }}
               placeholder={m.settings_aiBehavior_specialistDescription_placeholder()}
-              class="w-full text-sm text-muted-foreground bg-transparent border-none outline-none px-0 py-0 mt-1 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="type-body mt-1 w-full border-none bg-transparent px-0 py-0 text-muted-foreground outline-none placeholder:text-muted-foreground focus:outline-none focus:ring-0"
             />
           {:else}
-            <p class="text-sm text-muted-foreground mt-1">{currentSpecialist.description}</p>
+            <p class="type-body mt-1 text-muted-foreground">{currentSpecialist.description}</p>
           {/if}
 
-          {#if !isBuiltIn}
-            <p class="text-sm text-muted-foreground mt-2">
+          {#if isImported}
+            <p class="type-body mt-2 font-medium text-foreground">
+              {m.settings_aiBehavior_importedClaude_title()}
+            </p>
+            <p class="type-body mt-2 text-muted-foreground">
+              {m.settings_aiBehavior_importedClaude_readOnly()}
+            </p>
+            {#if currentSpecialist.missingSkills?.length}
+              <p
+                data-testid="specialist-missing-skills"
+                role="status"
+                class="type-body mt-2 text-danger"
+              >
+                {m.settings_aiBehavior_importMissingSkills({
+                  skills: currentSpecialist.missingSkills.join(', '),
+                })}
+              </p>
+            {/if}
+            {#if currentSpecialist.unsupportedFields?.length}
+              <p data-testid="specialist-import-warning" class="type-body mt-2 text-danger">
+                {m.settings_aiBehavior_importedClaude_unsupported({
+                  fields: currentSpecialist.unsupportedFields.join(', '),
+                })}
+              </p>
+            {/if}
+          {:else if !isBuiltIn}
+            <p class="type-body mt-2 text-muted-foreground">
               {#if sourceLabel === 'Project'}
                 {m.settings_aiBehavior_projectInfo_before()}
                 <code class="bg-muted px-1 py-0.5 rounded break-all"
@@ -796,68 +958,91 @@
               {/if}
             </p>
           {/if}
-          <p class="text-sm text-muted-foreground mt-2">
-            {m.settings_aiBehavior_usageHint()}
-          </p>
+          {#if $canEdit$ && !isImported}
+            <p class="type-body mt-2 text-muted-foreground">
+              {m.settings_aiBehavior_usageHint()}
+            </p>
+          {/if}
         </div>
 
-        <!-- Preserve the specialist model, reasoning, and delegation controls. -->
         <div class="min-w-0">
           <div class="flex min-w-0 flex-wrap items-center gap-3">
-            <span class="text-sm font-medium text-foreground shrink-0">
+            <span class="type-body shrink-0 font-medium text-foreground">
               {m.settings_aiBehavior_model_label()}
             </span>
-            <ModelPicker
-              selectedModel={specialistModelValue}
-              onModelChange={handleSpecialistModelChange}
-              showDefaultOption={true}
-              defaultModelId={currentSpecialist.resolvedModel}
-              defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
-              defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
-              defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
-              formatDefaultModelLabel={(model) =>
-                m.settings_aiBehavior_inheritModelPreview_label({ model })}
-              size="sm"
-              variant="default"
-              showReasoning
-              reasoningEffort={specialistEffortValue ?? null}
-              onReasoningChange={(effort) => handleSpecialistEffortChange(effort ?? undefined)}
-            />
+            {#if isImported || !$canEdit$}
+              <span class="type-body text-muted-foreground"
+                >{currentSpecialist.defaultModel ||
+                  currentSpecialist.resolvedModel ||
+                  m.settings_aiBehavior_inheritModel_label()}{specialistEffortValue
+                  ? ` · ${specialistEffortValue}`
+                  : ''}</span
+              >
+            {:else}
+              <ModelPicker
+                workspaceId={currentSpecialist.source === 'project'
+                  ? (routeWorkspaceId ?? undefined)
+                  : undefined}
+                selectedModel={specialistModelValue}
+                onModelChange={handleSpecialistModelChange}
+                showDefaultOption={true}
+                defaultModelId={currentSpecialist.resolvedModel}
+                defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
+                defaultOptionLabel={m.settings_aiBehavior_inheritModel_label()}
+                defaultOptionDescription={m.settings_aiBehavior_inheritModel_description()}
+                formatDefaultModelLabel={(model) =>
+                  m.settings_aiBehavior_inheritModelPreview_label({ model })}
+                size="sm"
+                variant="default"
+                showReasoning
+                reasoningEffort={specialistEffortValue ?? null}
+                onReasoningChange={(effort) => handleSpecialistEffortChange(effort ?? undefined)}
+              />
+            {/if}
           </div>
 
           <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
                the specialist id so draft rows never leak across specialist
                switches (remounting resets the component's local rows). -->
-          <details class="mt-4 min-w-0">
-            <summary class="text-ui cursor-pointer text-muted-foreground">
-              {m.settings_aiBehavior_advanced_label()}
-            </summary>
-            {#key currentSpecialist.id}
-              <SpecialistModelOptions
-                savedOptions={savedModelOptions}
-                onCommit={handleModelOptionsCommit}
-              />
-            {/key}
-          </details>
+          {#if !isImported}
+            <SettingsDisclosure
+              label={m.settings_aiBehavior_advanced_label()}
+              class="mt-4"
+              flush
+              muted
+            >
+              {#key JSON.stringify([$admission$, currentSpecialist.id])}
+                <SpecialistModelOptions
+                  workspaceId={currentSpecialist.source === 'project'
+                    ? (routeWorkspaceId ?? undefined)
+                    : undefined}
+                  readonly={!$canEdit$}
+                  savedOptions={savedModelOptions}
+                  onCommit={handleModelOptionsCommit}
+                />
+              {/key}
+            </SettingsDisclosure>
+          {/if}
         </div>
 
-        {#if !isBuiltIn}
+        {#if $canEdit$ && !isImported && !isBuiltIn}
           <div class="pt-4 border-border">
-            <button
+            <Button
+              variant="ghost"
               type="button"
               onclick={deleteSpecialist}
-              class="text-xs text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
+              class="type-body text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Fa icon={faTrash} class="w-3 h-3" />
               {m.settings_aiBehavior_deleteSpecialist()}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
     </div>
 
     <!-- Create Specialist View -->
-  {:else if activeView.type === 'create-specialist'}
+  {:else if activeView.type === 'create-specialist' && $canEdit$}
     <div
       data-testid="create-specialist-editor-layout"
       class="grid min-w-0 grid-cols-1 gap-8 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:items-stretch"
@@ -867,22 +1052,24 @@
         data-testid="create-specialist-prompt-column"
         class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
       >
-        <h2 class="mb-2 shrink-0 text-base font-medium text-foreground">
+        <h2 class="mb-2 shrink-0 type-title font-medium text-foreground">
           {m.settings_aiBehavior_createSpecialist_title()}
         </h2>
         <div class="flex min-h-0 flex-1 flex-col gap-1.5">
-          <textarea
+          <Textarea
             id="create-specialist-prompt"
-            bind:value={newPrompt}
+            bind:value={() => newPrompt, (value) => updateDraft({ behaviorPrompt: value })}
+            disabled={draftLocked}
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
-            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
-              focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
-              {newPromptIsOverLimit ? 'border-danger' : ''}"></textarea>
+            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 type-body
+              xl:min-h-0
+              {newPromptIsOverLimit ? 'border-danger' : ''}"
+          ></Textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
             <div
-              class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
+              class="flex shrink-0 items-center justify-end type-caption {newPromptIsOverLimit
                 ? 'text-danger'
-                : 'text-warning'}"
+                : 'text-warning-ink'}"
             >
               <span>
                 {m.settings_autoSave_limitUsed({
@@ -904,7 +1091,7 @@
         <div>
           <label
             for="create-specialist-name"
-            class="text-sm font-medium text-foreground block mb-1.5"
+            class="type-body font-medium text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_name_label()}
           </label>
@@ -912,7 +1099,8 @@
             id="create-specialist-name"
             noFocusStyle
             type="text"
-            bind:value={newName}
+            bind:value={() => newName, (value) => updateDraft({ name: value })}
+            disabled={draftLocked}
             placeholder={m.settings_aiBehavior_name_placeholder()}
           />
         </div>
@@ -920,7 +1108,7 @@
         <div>
           <label
             for="create-specialist-description"
-            class="text-sm font-medium text-foreground block mb-1.5"
+            class="type-body font-medium text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_description_label()}
           </label>
@@ -928,17 +1116,19 @@
             id="create-specialist-description"
             noFocusStyle
             type="text"
-            bind:value={newDescription}
+            bind:value={() => newDescription, (value) => updateDraft({ description: value })}
+            disabled={draftLocked}
             placeholder={m.settings_aiBehavior_description_placeholder()}
           />
         </div>
 
-        <div class="flex items-center gap-3">
-          <span class="text-sm font-medium text-foreground shrink-0">
+        <fieldset disabled={draftLocked} class="flex items-center gap-3">
+          <span class="type-body shrink-0 font-medium text-foreground">
             {m.settings_aiBehavior_model_label()}
           </span>
           <ModelPicker
             selectedModel={newModel}
+            providerId={$creation$.draft.codingAgent}
             onModelChange={handleCreateModelChange}
             showDefaultOption={true}
             defaultModelId={$selectedModel}
@@ -951,23 +1141,31 @@
             showReasoning
             reasoningEffort={newEffort ?? null}
             onReasoningChange={(effort) => {
-              newEffort = effort ?? undefined;
+              updateDraft({ reasoningEffort: effort ?? undefined });
             }}
           />
-        </div>
+        </fieldset>
 
+        {#if $creation$.error}
+          <p role="alert" class="type-body text-danger">{$creation$.error}</p>
+        {/if}
         <div class="pt-4 border-border">
           <div class="flex justify-end gap-2">
-            <Button variant="ghost" onclick={discardNewSpecialist}>
+            <Button variant="ghost" onclick={discardNewSpecialist} disabled={creating}>
               {m.settings_aiBehavior_discard()}
             </Button>
             <Button
               variant="default"
               onclick={createSpecialist}
+              loading={creating}
               disabled={!newName.trim() || newPromptIsOverLimit}
             >
-              <Fa icon={faPlus} class="w-3.5 h-3.5 mr-1.5" />
-              {m.settings_aiBehavior_createSpecialist_title()}
+              {#if !creating && !refreshFailed}
+                <Fa icon={faPlus} class="w-3.5 h-3.5 mr-1.5" />
+              {/if}
+              {refreshFailed
+                ? m.ui_errorToast_retry_label()
+                : m.settings_aiBehavior_createSpecialist_title()}
             </Button>
           </div>
         </div>
@@ -994,10 +1192,5 @@
       height: 100%;
       min-height: 0;
     }
-  }
-
-  /* Warning color fallback */
-  .text-warning {
-    color: hsl(38, 92%, 50%);
   }
 </style>

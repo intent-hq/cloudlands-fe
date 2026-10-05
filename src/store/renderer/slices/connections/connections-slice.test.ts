@@ -13,14 +13,26 @@ import {
   connectOperationStarted,
   connectOperationSettled,
   connectOperationFailed,
+  openOperationStarted,
+  openOperationSettled,
+  openOperationFailed,
   certMismatchReceived,
   certMismatchCleared,
   certWarningsReceived,
   authRejectedReceived,
+  keychainSyncStateCleared,
   keychainSyncStateReceived,
   keychainSyncStatusReceived,
   protocolMismatchReceived,
   protocolMismatchModalDismissed,
+  connectionWorkflowRequested,
+  connectionWorkflowProgress,
+  connectionWorkflowFinished,
+  connectionWorkflowCleared,
+  setKeychainSyncEnabledRequested,
+  loadKeychainSyncStateRequested,
+  selfPublicationReceived,
+  selfPublicationBusyChanged,
 } from './connections-slice';
 import type {
   ConnectionRecord,
@@ -31,7 +43,7 @@ import type {
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
 } from './connections-types';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 
 const LOCAL: ConnectionRecord = {
   id: LOCAL_CONNECTION_ID,
@@ -94,6 +106,83 @@ const LIST_RESULT: ConnectionsListResult = {
 };
 
 describe('connectionsReducer', () => {
+  it('retains token-free workflow state and rejects obsolete progress/results after replacement or clear', () => {
+    const first = connectionWorkflowRequested('editor', {
+      kind: 'capture',
+      params: { host: 'host', port: 5181, token: 'fixture-only' },
+    });
+    const second = connectionWorkflowRequested('editor', { kind: 'open', id: REMOTE.id });
+    let state = connectionsReducer(initialState, first);
+    expect(JSON.stringify(state)).not.toContain('fixture-only');
+    state = connectionsReducer(state, second);
+    expect(getItems(state.workflows)[0].targetId).toBe(REMOTE.id);
+    expect(
+      connectionsReducer(
+        state,
+        connectionWorkflowFinished('editor', first.payload.requestId, {
+          kind: 'captured',
+          fingerprint: 'old',
+        }),
+      ),
+    ).toBe(state);
+    expect(
+      connectionsReducer(
+        state,
+        connectionWorkflowProgress('editor', first.payload.requestId, 'sync'),
+      ),
+    ).toBe(state);
+    state = connectionsReducer(
+      state,
+      connectionWorkflowProgress('editor', second.payload.requestId, 'secret', true),
+    );
+    expect(getItems(state.workflows)[0]).toMatchObject({ phase: 'secret', secretReplaced: true });
+    state = connectionsReducer(
+      state,
+      connectionWorkflowFinished('editor', second.payload.requestId, { kind: 'done' }),
+    );
+    expect(getItems(state.workflows)[0]).toMatchObject({
+      phase: 'settled',
+      outcome: { kind: 'done' },
+    });
+    state = connectionsReducer(state, connectionWorkflowCleared('editor'));
+    expect(getItems(state.workflows)).toEqual([]);
+    expect(
+      connectionsReducer(
+        state,
+        connectionWorkflowFinished('editor', second.payload.requestId, { kind: 'done' }),
+      ),
+    ).toBe(state);
+    expect(connectionsReducer(state, connectionWorkflowCleared('editor'))).toBe(state);
+  });
+
+  it('keeps sync busy through every queued write and permits retry after failure', () => {
+    const first = setKeychainSyncEnabledRequested(true);
+    const second = setKeychainSyncEnabledRequested(false);
+    let state = connectionsReducer(connectionsReducer(initialState, first), second);
+    expect(state.keychainWritesPending).toBe(2);
+    state = connectionsReducer(state, setKeychainSyncEnabledRequested.failure(new Error('locked')));
+    expect(state.keychainWritesPending).toBe(1);
+    expect(state.keychainSaveError).toBe(true);
+    state = connectionsReducer(
+      state,
+      setKeychainSyncEnabledRequested.success({ supported: true, enabled: false, status: null }),
+    );
+    expect(state.keychainWritesPending).toBe(0);
+    expect(state.keychainSaveError).toBe(false);
+    state = connectionsReducer(state, loadKeychainSyncStateRequested.failure(new Error('locked')));
+    expect(state.keychainLoadError).toBe(true);
+    state = connectionsReducer(state, loadKeychainSyncStateRequested());
+    expect(state.keychainLoadError).toBe(false);
+  });
+
+  it('receives publication state and busy state without changing connections', () => {
+    const result = { published: true, suppressed: false, selfConnectionId: 'self' };
+    let state = connectionsReducer(initialState, selfPublicationReceived(result));
+    state = connectionsReducer(state, selfPublicationBusyChanged(true));
+    expect(state.selfPublication).toEqual(result);
+    expect(state.selfPublicationBusy).toBe(true);
+    expect(state.connections).toBe(initialState.connections);
+  });
   it('has the correct initial state', () => {
     expect(getItems(initialState.connections)).toEqual([]);
     expect(initialState.activeId).toBe(LOCAL_CONNECTION_ID);
@@ -203,6 +292,87 @@ describe('connectionsReducer', () => {
     it('connectOperationFailed records the error', () => {
       const state = { ...initialState, status: 'connecting' as const };
       const next = connectionsReducer(state, connectOperationFailed('unreachable'));
+      expect(next.status).toBe('error');
+      expect(next.error).toBe('unreachable');
+    });
+  });
+
+  describe('per-id open operations', () => {
+    it('starts with no opens in flight', () => {
+      expect(initialState.openingIds).toEqual([]);
+    });
+
+    it('openOperationStarted records the id, moves to connecting and clears latches', () => {
+      const state = {
+        ...initialState,
+        status: 'error' as const,
+        error: 'boom',
+        authRejected: AUTH_REJECTED,
+      };
+      const next = connectionsReducer(state, openOperationStarted('remote-1'));
+      expect(next.openingIds).toEqual(['remote-1']);
+      expect(next.status).toBe('connecting');
+      expect(next.error).toBeNull();
+      expect(next.authRejected).toBeNull();
+    });
+
+    it('openOperationStarted tracks one entry per operation, including a repeat of the same id', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-2'));
+      state = connectionsReducer(state, openOperationStarted('remote-1'));
+      expect(state.openingIds).toEqual(['remote-1', 'remote-2', 'remote-1']);
+    });
+
+    it('settling one of two same-id opens keeps the id in flight and status connecting', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-1'));
+      const afterFirst = connectionsReducer(state, openOperationSettled('remote-1'));
+      expect(afterFirst.openingIds).toEqual(['remote-1']);
+      expect(afterFirst.status).toBe('connecting');
+      const afterSecond = connectionsReducer(afterFirst, openOperationSettled('remote-1'));
+      expect(afterSecond.openingIds).toEqual([]);
+      expect(afterSecond.status).toBe('idle');
+    });
+
+    it('failing one of two same-id opens keeps the other in flight', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-1'));
+      const next = connectionsReducer(state, openOperationFailed('remote-1', 'unreachable'));
+      expect(next.openingIds).toEqual(['remote-1']);
+      expect(next.status).toBe('error');
+      expect(next.error).toBe('unreachable');
+    });
+
+    it('settling an id that is not in flight is a no-op on the list', () => {
+      const state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      const next = connectionsReducer(state, openOperationSettled('remote-2'));
+      expect(next.openingIds).toEqual(['remote-1']);
+      expect(next.status).toBe('connecting');
+    });
+
+    it('openOperationSettled keeps status connecting while another open is in flight', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-2'));
+      const next = connectionsReducer(state, openOperationSettled('remote-1'));
+      expect(next.openingIds).toEqual(['remote-2']);
+      expect(next.status).toBe('connecting');
+    });
+
+    it('openOperationSettled returns to idle once the last open settles', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-2'));
+      state = connectionsReducer(state, openOperationSettled('remote-1'));
+      const next = connectionsReducer(state, openOperationSettled('remote-2'));
+      expect(next.openingIds).toEqual([]);
+      expect(next.status).toBe('idle');
+      expect(next.error).toBeNull();
+    });
+
+    it('openOperationFailed drops the id and records the error', () => {
+      let state = connectionsReducer(initialState, openOperationStarted('remote-1'));
+      state = connectionsReducer(state, openOperationStarted('remote-2'));
+      const next = connectionsReducer(state, openOperationFailed('remote-1', 'unreachable'));
+      expect(next.openingIds).toEqual(['remote-2']);
       expect(next.status).toBe('error');
       expect(next.error).toBe('unreachable');
     });
@@ -510,6 +680,20 @@ describe('connectionsReducer', () => {
     it('keychainSyncStateReceived stores the full state', () => {
       const next = connectionsReducer(initialState, keychainSyncStateReceived(SYNC_STATE));
       expect(next.keychainSync).toEqual(SYNC_STATE);
+    });
+
+    it('keychainSyncStateCleared removes only the loaded sync state', () => {
+      const failed = connectionsReducer(initialState, connectOperationFailed('connection failed'));
+      const loaded = connectionsReducer(failed, keychainSyncStateReceived(SYNC_STATE));
+      const next = connectionsReducer(loaded, keychainSyncStateCleared());
+
+      expect(next).toEqual(failed);
+      expect(next.connections).toBe(loaded.connections);
+      expect(loaded.keychainSync).toEqual(SYNC_STATE);
+    });
+
+    it('keychainSyncStateCleared preserves identity when already unloaded', () => {
+      expect(connectionsReducer(initialState, keychainSyncStateCleared())).toBe(initialState);
     });
 
     it('keychainSyncStatusReceived refreshes only the status of a loaded state', () => {

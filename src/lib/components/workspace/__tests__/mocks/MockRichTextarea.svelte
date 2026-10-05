@@ -3,11 +3,19 @@
    * Minimal RichTextarea stand-in for CompactWorkspaceInitializer tests.
    * Exposes the imperative surface the initializer calls via bind:this.
    */
-  let { value = $bindable(''), disabled = false }: { value?: string; disabled?: boolean } =
-    $props();
+  let {
+    ariaLabel,
+    value = $bindable(''),
+    disabled = false,
+  }: { ariaLabel: string; value?: string; disabled?: boolean } = $props();
 
-  export function focus() {}
-  export function focusAndSelectAll() {}
+  let element: HTMLDivElement;
+  export function focus() {
+    element?.focus();
+  }
+  export function focusAndSelectAll() {
+    element?.focus();
+  }
   export async function setContent(content: string) {
     value = content;
   }
@@ -28,4 +36,12 @@
   }
 </script>
 
-<div data-testid="mock-rich-textarea" data-disabled={disabled}>{value}</div>
+<div
+  bind:this={element}
+  aria-label={ariaLabel}
+  role="textbox"
+  data-testid="mock-rich-textarea"
+  data-disabled={disabled}
+>
+  {value}
+</div>

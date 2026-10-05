@@ -317,6 +317,33 @@ describe('agent-ipc-bridge-seeder', () => {
       expect(result).toEqual({ ok: true, data: { success: true, modelId: 'fable-5' } });
     });
 
+    it('forwards the agent provider as providerId for a bare host-catalog model (guest window)', async () => {
+      // Guest window: the host agent runs on claude-code and its session
+      // carries a bare model id. The picker attributes the pick to the agent's
+      // provider (the default provider is not this agent's), and the bridge
+      // must forward exactly that id — the daemon rejects a claude-code model
+      // sent under `providerId: 'auggie'` as "does not belong to provider".
+      mockedRequest.mockResolvedValueOnce({ success: true, modelId: 'claude-sonnet-4-8' });
+
+      const result = await agentClient.setModel(
+        'agent-7',
+        'claude-sonnet-4-8',
+        WORKSPACE_ID,
+        'claude-code',
+      );
+
+      expect(mockedRequest).toHaveBeenCalledWith('agent.setModel', {
+        agentId: 'agent-7',
+        modelId: 'claude-sonnet-4-8',
+        workspaceId: WORKSPACE_ID,
+        providerId: 'claude-code',
+      });
+      expect(result).toEqual({
+        ok: true,
+        data: { success: true, modelId: 'claude-sonnet-4-8' },
+      });
+    });
+
     it('forwards a legacy compound reasoning-effort model and returns the protocol response', async () => {
       mockedRequest.mockResolvedValueOnce({
         success: true,

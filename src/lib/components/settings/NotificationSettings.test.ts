@@ -69,6 +69,23 @@ afterEach(() => {
 });
 
 describe('NotificationSettings', () => {
+  it('toggles sound through the labeled settings control without clearing the selected file', async () => {
+    render(NotificationSettings);
+    const toggle = screen.getByRole('switch', { name: m.settings_notifications_sound_label() });
+    await fireEvent.click(toggle);
+    expect(mocks.state.userPreferences).toMatchObject({
+      soundEnabled: true,
+      soundPath: '/old.mp3',
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(toggle);
+    expect(mocks.state.userPreferences).toMatchObject({
+      soundEnabled: false,
+      soundPath: '/old.mp3',
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+  });
+
   it('picks local MP3 while muted, exposes its full path, previews it and clears it', async () => {
     render(NotificationSettings);
     picker().focus();

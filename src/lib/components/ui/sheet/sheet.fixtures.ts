@@ -7,6 +7,10 @@ export const sheetFixtures = [
     states: [
       'closed',
       'open',
+      'entering',
+      'exiting',
+      'top',
+      'bottom',
       'left',
       'right',
       'disabled-close',
@@ -19,6 +23,7 @@ export const sheetFixtures = [
       'outside-dismiss',
       'escape-dismiss',
       'focus-return',
+      'reduced-motion',
     ],
     themes: ['light', 'dark'],
     viewport: 'both',

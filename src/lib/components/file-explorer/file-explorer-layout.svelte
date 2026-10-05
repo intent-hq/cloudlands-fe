@@ -1,25 +1,28 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { invoke } from '$lib/electron-bridge';
   import FileExplorerSidebar from './file-explorer-sidebar.svelte';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
   import * as Breadcrumb from '$lib/components/ui/breadcrumb';
   import { Separator } from '$lib/components/ui/separator';
   import * as Sidebar from '$lib/components/ui/sidebar';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
+  import { faXmark, faFileAlt, faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
+  import { store as appStore } from '$store/renderer/store';
   import {
-    faXmark,
-    faFileAlt,
-    faExclamationCircle,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
-  import { createLogger } from '$lib/utils/client-logger';
+    selectAllFileContentEntries,
+    selectFileContentEntry,
+  } from '$store/renderer/slices/files/files-selectors';
+  import {
+    loadFileContentRequested,
+    saveFileContentRequested,
+    updateFileContent,
+  } from '$store/renderer/slices/files/files-slice';
   import { m } from '$shared/paraglide/messages.js';
-
-  const logger = createLogger('FileExplorerLayout');
+  import { stripWorkspacePrefix } from '$lib/utils/file-utils';
 
   interface Props {
     workspaceId?: string;
@@ -36,13 +39,29 @@
     workspaceIdStore.set(workspaceId);
   });
 
-  // State for open files
-  let openFiles = $state<Map<string, { content: string; modified: boolean }>>(new Map());
+  // Only tab membership and selection are local. Content and operation outcomes
+  // share the canonical files cache with panel editors.
+  let openPaths = $state<Record<string, string[]>>({});
   // svelte-ignore state_referenced_locally - intentional: prop seeds the initial selection; user selection owns it afterwards
   let selectedFile: string = $state(initialFile || '');
-  let currentFileContent: string = $state('');
-  let isLoading = $state(false);
-  let error: string | null = $state(null);
+  const selectedPathStore = writable('');
+  const entries$ = selectAllFileContentEntries(workspaceIdStore);
+  const selectedEntry$ = selectFileContentEntry(workspaceIdStore, selectedPathStore);
+  const currentFileContent = $derived($selectedEntry$?.localContent ?? '');
+  const isLoading = $derived($selectedEntry$?.loading ?? false);
+  const error = $derived($selectedEntry$?.error ?? null);
+  const openFiles = $derived.by(() => {
+    const entries = new Map($entries$.map((entry) => [entry.path, entry]));
+    return new Map(
+      (openPaths[workspaceId] ?? []).map((path) => {
+        const entry = entries.get(path);
+        return [path, { modified: !!entry && entry.localContent !== entry.originalContent }];
+      }),
+    );
+  });
+  $effect(() => {
+    selectedPathStore.set(selectedFile);
+  });
 
   // Get breadcrumb parts from file path
   function getBreadcrumbParts(filePath: string): string[] {
@@ -52,90 +71,56 @@
   }
 
   // Load file content
-  async function loadFile(filePath: string) {
-    if (openFiles.has(filePath)) {
-      currentFileContent = openFiles.get(filePath)!.content;
-      return;
-    }
-
-    isLoading = true;
-    error = null;
-
-    try {
-      const result = (await invoke('file:open', { path: filePath, workspaceId })) as any;
-      if (result?.success) {
-        const fileData = { content: result.content, modified: false };
-        openFiles.set(filePath, fileData);
-        currentFileContent = result.content;
-      } else {
-        error = result?.error || m.fileExplorer_layout_loadFailed_error();
-      }
-    } catch (err) {
-      logger.error('Failed to load file:', err);
-      error = m.fileExplorer_layout_loadFailed_error();
-    } finally {
-      isLoading = false;
-    }
+  function loadFile(filePath: string) {
+    const entry = selectFileContentEntry.select(appStore.state, workspaceId, filePath);
+    if (entry?.localContent !== null && entry?.localContent !== undefined) return;
+    appStore.dispatch(
+      loadFileContentRequested(workspaceId, filePath, `${$fileExplorerWorkspacePath}/${filePath}`),
+    );
   }
 
   // Save file
-  async function saveFile(filePath: string) {
-    const fileData = openFiles.get(filePath);
-    if (!fileData || !fileData.modified) return;
-
-    try {
-      const result = (await invoke('file:save', {
-        filePath,
-        content: fileData.content,
+  function saveFile(filePath: string) {
+    const entry = selectFileContentEntry.select(appStore.state, workspaceId, filePath);
+    if (!entry || entry.localContent === null || entry.localContent === entry.originalContent)
+      return;
+    appStore.dispatch(
+      saveFileContentRequested(
         workspaceId,
-      })) as any;
-      if (result?.success) {
-        fileData.modified = false;
-        openFiles.set(filePath, fileData);
-      } else {
-        error = result?.error || m.fileExplorer_layout_saveFailed_error();
-      }
-    } catch (err) {
-      logger.error('Failed to save file:', err);
-      error = m.fileExplorer_layout_saveFailed_error();
-    }
+        filePath,
+        entry.absolutePath ?? filePath,
+        entry.localContent,
+      ),
+    );
   }
 
   // Close file
   function closeFile(filePath: string) {
-    openFiles.delete(filePath);
+    openPaths[workspaceId] = (openPaths[workspaceId] ?? []).filter((path) => path !== filePath);
     if (selectedFile === filePath) {
-      const remainingFiles = Array.from(openFiles.keys());
+      const remainingFiles = openPaths[workspaceId];
       selectedFile = remainingFiles[remainingFiles.length - 1] || '';
-      if (selectedFile) {
-        currentFileContent = openFiles.get(selectedFile)!.content;
-      }
     }
   }
 
   // Handle file selection
-  async function handleFileSelect(filePath: string) {
+  function handleFileSelect(selectedPath: string) {
+    const filePath = stripWorkspacePrefix(selectedPath, $fileExplorerWorkspacePath);
     selectedFile = filePath;
-    await loadFile(filePath);
+    if (!openPaths[workspaceId]?.includes(filePath)) {
+      openPaths[workspaceId] = [...(openPaths[workspaceId] ?? []), filePath];
+    }
+    loadFile(filePath);
   }
 
   // Handle content changes
   function handleContentChange(newContent: string) {
-    if (selectedFile && openFiles.has(selectedFile)) {
-      const fileData = openFiles.get(selectedFile)!;
-      fileData.content = newContent;
-      fileData.modified = true;
-      openFiles.set(selectedFile, fileData);
-      currentFileContent = newContent;
+    if (selectedFile) {
+      appStore.dispatch(
+        updateFileContent(workspaceId, selectedFile, newContent, { autoSave: false }),
+      );
     }
   }
-
-  // Watch for editor changes
-  $effect(() => {
-    if (currentFileContent !== undefined && selectedFile) {
-      handleContentChange(currentFileContent);
-    }
-  });
 
   // Get file language from extension
   function getFileLanguage(filePath: string): string {
@@ -211,14 +196,22 @@
 
   // Load initial file if provided
   $effect(() => {
-    if (initialFile) {
-      handleFileSelect(initialFile);
-    }
+    workspaceId;
+    const filePath = initialFile;
+    if (!$fileExplorerWorkspacePath) return;
+    untrack(() => {
+      selectedFile = '';
+      if (filePath) handleFileSelect(filePath);
+    });
   });
 </script>
 
 <Sidebar.Provider>
-  <FileExplorerSidebar {workspaceId} onFileSelect={handleFileSelect} bind:selectedFile />
+  <FileExplorerSidebar
+    {workspaceId}
+    onFileSelect={handleFileSelect}
+    selectedFile={selectedFile ? `${$fileExplorerWorkspacePath}/${selectedFile}` : ''}
+  />
 
   <Sidebar.Inset>
     <!-- Header with breadcrumb and tabs -->
@@ -261,15 +254,18 @@
               {#if fileData.modified}
                 <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
               {/if}
-              <button
-                class="ml-1 hover:bg-accent rounded p-0.5"
+              <Button
+                size="icon-compact"
+                iconOnly
+                class="ml-1 size-5 hover:bg-accent"
                 onclick={(e) => {
                   e.stopPropagation();
                   closeFile(filePath);
                 }}
+                aria-label={m.fileExplorer_layout_closeFile_ariaLabel({ fileName })}
               >
-                <Fa icon={faXmark} size="xs" class="w-3 h-3" />
-              </button>
+                <Fa icon={faXmark} />
+              </Button>
             </Button>
           {/each}
         </div>
@@ -287,11 +283,11 @@
         </div>
       {:else if isLoading}
         <div class="flex items-center justify-center h-full">
-          <Fa icon={faSpinner} size="lg" class="w-8 h-8 animate-spin text-subtle" />
+          <IntentMarkLoader size={32} class="text-subtle" />
         </div>
       {:else if selectedFile}
         <CodeEditor
-          bind:value={currentFileContent}
+          bind:value={() => currentFileContent, handleContentChange}
           language={getFileLanguage(selectedFile)}
           fileName={selectedFile}
           lineNumbers={true}

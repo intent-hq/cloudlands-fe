@@ -216,7 +216,7 @@ describe('TipTapEditor slash skills', () => {
     const { component, editor } = await mountEditor();
 
     expect(editor.getAttribute('aria-haspopup')).toBe('listbox');
-    expect(editor.getAttribute('aria-expanded')).toBe('false');
+    expect(editor.hasAttribute('aria-expanded')).toBe(false);
     expect(editor.hasAttribute('aria-controls')).toBe(false);
     expect(editor.hasAttribute('aria-activedescendant')).toBe(false);
 
@@ -224,7 +224,7 @@ describe('TipTapEditor slash skills', () => {
     const listbox = await screen.findByRole('listbox');
     const options = screen.getAllByRole('option');
     await waitFor(() => {
-      expect(editor.getAttribute('aria-expanded')).toBe('true');
+      expect(editor.hasAttribute('aria-expanded')).toBe(false);
       expect(editor.getAttribute('aria-controls')).toBe(listbox.id);
       expect(editor.getAttribute('aria-activedescendant')).toBe(options[0].id);
     });
@@ -233,7 +233,7 @@ describe('TipTapEditor slash skills', () => {
     await waitFor(() => expect(editor.getAttribute('aria-activedescendant')).toBe(options[1].id));
 
     await fireEvent.keyDown(editor, { key: 'Escape' });
-    expect(editor.getAttribute('aria-expanded')).toBe('false');
+    expect(editor.hasAttribute('aria-expanded')).toBe(false);
     expect(editor.hasAttribute('aria-controls')).toBe(false);
     expect(editor.hasAttribute('aria-activedescendant')).toBe(false);
   });

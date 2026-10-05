@@ -1,0 +1,81 @@
+<script lang="ts">
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { cn } from '$lib/utils';
+  import ActionMenu from './ActionMenu.svelte';
+  import { splitActions } from './actions';
+  import type { ActionDefinition, ActionHandler } from './types';
+
+  let {
+    actions,
+    onAction,
+    visibleCount = Number.POSITIVE_INFINITY,
+    overflowLabel,
+    destructiveInline = true,
+    class: className,
+  }: {
+    actions: readonly ActionDefinition[];
+    onAction?: ActionHandler;
+    visibleCount?: number;
+    overflowLabel: string;
+    destructiveInline?: boolean;
+    class?: string;
+  } = $props();
+
+  const split = $derived(splitActions(actions, visibleCount));
+  const visibleActions = $derived(
+    split.visible.filter((action) => action.kind !== 'label' && !action.children?.length),
+  );
+  const overflowActions = $derived([
+    ...split.visible.filter((action) => action.kind === 'label' || action.children?.length),
+    ...split.overflow,
+  ]);
+</script>
+
+<div data-slot="action-bar" class={cn('flex items-center gap-1', className)}>
+  {#each visibleActions as action (action.id)}
+    {#if action.icon}
+      <Button
+        variant={action.destructive && destructiveInline ? 'destructive' : 'ghost-light'}
+        size="icon-xs"
+        iconOnly
+        aria-label={action.label}
+        aria-pressed={action.checked === undefined ? undefined : action.checked}
+        active={action.checked}
+        disabled={action.disabled || action.disabledReason !== undefined}
+        tooltip={action.disabledReason ?? action.label}
+        tooltipShortcut={action.shortcut}
+        onclick={(event) => onAction?.(action.id, event)}
+        data-action-id={action.id}
+      >
+        <Fa icon={action.icon} size="xs" />
+      </Button>
+    {:else}
+      <Button
+        variant={action.destructive && destructiveInline ? 'destructive' : 'ghost-light'}
+        size="xs"
+        aria-label={action.label}
+        aria-pressed={action.checked === undefined ? undefined : action.checked}
+        active={action.checked}
+        disabled={action.disabled || action.disabledReason !== undefined}
+        tooltip={action.disabledReason ?? action.label}
+        tooltipShortcut={action.shortcut}
+        onclick={(event) => onAction?.(action.id, event)}
+        data-action-id={action.id}
+      >
+        {action.label}
+      </Button>
+    {/if}
+  {/each}
+
+  {#if overflowActions.length > 0}
+    <ActionMenu actions={overflowActions} {onAction} ariaLabel={overflowLabel} align="end">
+      {#snippet trigger({ props })}
+        <Button {...props} variant="ghost-light" size="icon-xs" iconOnly aria-label={overflowLabel}>
+          <KebabIcon class="size-3.5" />
+        </Button>
+      {/snippet}
+    </ActionMenu>
+  {/if}
+</div>

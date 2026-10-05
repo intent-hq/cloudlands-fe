@@ -115,8 +115,8 @@ vi.mock('svelte/easing', () => ({
 }));
 
 // Mock sonner toast
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     error: vi.fn(),
     success: vi.fn(),
   },
@@ -137,7 +137,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 
 import SetupScriptBanner from '../SetupScriptBanner.svelte';
 import type { WorkspaceSetupScript } from '$lib/client/app-client';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 
 describe('SetupScriptBanner wire contract', () => {
   beforeEach(() => {
@@ -229,6 +229,28 @@ describe('SetupScriptBanner wire contract', () => {
     });
   });
 
+  it('renders the editor panel resize handle on the shared app-resize-handle contract', async () => {
+    backendRequestMock.mockResolvedValue({ setupScript: null });
+
+    const result = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
+
+    await waitFor(() => {
+      expect(result.container.querySelector('.setup-script-banner')).toBeTruthy();
+    });
+    expect(result.container.querySelector('[data-resize-axis="x"]')).toBeNull();
+
+    (result.getByText('Create setup script').closest('button') as HTMLButtonElement).click();
+    await waitFor(() => {
+      expect(result.getByText('Save')).toBeTruthy();
+    });
+
+    const resizeHandle = result.container.querySelector<HTMLElement>('[data-resize-axis="x"]');
+    expect(resizeHandle).toBeTruthy();
+    expect(resizeHandle!.classList.contains('app-resize-handle')).toBe(true);
+    // The handle belongs to the editor side panel, the element that also hosts Save.
+    expect(resizeHandle!.parentElement!.contains(result.getByText('Save'))).toBe(true);
+  });
+
   it('shows the banner on RPC failure (fallback behavior)', async () => {
     backendRequestMock.mockRejectedValue(new Error('connection failed'));
 
@@ -270,8 +292,8 @@ describe('SetupScriptBanner wire contract', () => {
         expect.objectContaining({ content: expect.stringContaining('pnpm install') }),
       );
     });
-    expect(toast.success).toHaveBeenCalled();
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(notify.success).toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('shows an error and does not claim success when the workspace has no repo path', async () => {
@@ -283,9 +305,9 @@ describe('SetupScriptBanner wire contract', () => {
     await expandAndSave(result);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalled();
+      expect(notify.error).toHaveBeenCalled();
     });
     expect(recordLastUsedMock).not.toHaveBeenCalled();
-    expect(toast.success).not.toHaveBeenCalled();
+    expect(notify.success).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,29 +57,24 @@ describe('SidebarNav unified Spaces control', () => {
     expect(document.querySelector('.sidebar-hover-card')).toBeNull();
   });
 
-  it('renders one 16px dandelion in a 20px optical box and a 32px active target', async () => {
-    const { container } = render(SidebarNavHarness);
+  it('keeps the icon decorative while exposing sidebar toggle state', async () => {
+    render(SidebarNavHarness);
     resetNavState();
-    appStore.dispatch(togglePanel('all-workspaces'));
     await tick();
     const control = screen.getByRole('button', { name: 'Toggle sidebar' });
-    const dandelion = container.querySelector('[data-navigation-icon="dandelion"]');
+    const icon = control.querySelector('svg');
 
-    expect(container.querySelectorAll('[data-navigation-icon]')).toHaveLength(1);
-    expect(container.querySelector('[data-navigation-icon="spaces"]')).toBeNull();
-    expect(control.className).toContain('size-8');
-    expect(control.className).toContain('text-foreground');
-    expect(control.className).toContain('opacity-100');
-    expect(control.className).toContain('titlebar-navigation-control');
-    expect(getComputedStyle(control).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    expect(control.className).toContain('focus-visible:ring-0');
-    expect(control.className).not.toContain('focus-visible:ring-2');
-    expect(control.className).not.toContain('shadow-xs');
-    expect(control.hasAttribute('title')).toBe(false);
-    expect(control.textContent?.trim()).toBe('');
-    expect(dandelion?.parentElement?.className).toContain('size-5');
-    expect(dandelion?.getAttribute('width')).toBe('16');
-    expect(dandelion?.getAttribute('height')).toBe('16');
+    expect(icon?.getAttribute('aria-hidden')).toBe('true');
+    expect(icon?.getAttribute('focusable')).toBe('false');
+    expect(control.getAttribute('aria-pressed')).toBe('false');
+
+    await fireEvent.click(control);
+    await waitFor(() => expect(control.getAttribute('aria-pressed')).toBe('true'));
+    expect(appStore.state.sidebarNav.panelItem).toBe('all-workspaces');
+
+    await fireEvent.click(control);
+    await waitFor(() => expect(control.getAttribute('aria-pressed')).toBe('false'));
+    expect(appStore.state.sidebarNav.panelItem).toBeNull();
   });
 
   it('shows one accessible shortcut tooltip from keyboard focus', async () => {

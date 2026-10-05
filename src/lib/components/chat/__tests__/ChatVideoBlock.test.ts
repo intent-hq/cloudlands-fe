@@ -91,7 +91,7 @@ describe('ChatVideoBlock', () => {
     expect(screen.queryByRole('button', { name: /play/i })).toBeNull();
   });
 
-  it('shows workspace file actions when a workspace video is missing', async () => {
+  it('retains file recovery actions without claiming a video load error proves absence', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
@@ -110,11 +110,30 @@ describe('ChatVideoBlock', () => {
 
     const video = screen.getByRole('button', { name: /play/i }).querySelector('video')!;
     await fireEvent.error(video);
-    expect(screen.getByRole('status').textContent).toContain('File is missing');
+    expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
     await fireEvent.click(screen.getByRole('button', { name: /copy path/i }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('out/missing demo.mp4'));
     expect(screen.getByRole('button', { name: /open file/i })).toBeTruthy();
   });
+
+  it.each([2, 3, 4])(
+    'keeps saved video recovery available after media error code %s',
+    async (code) => {
+      const url = 'workspace-asset://ws-1/mfr7-1234abcd.webm?backend=remote-1';
+      render(ChatVideoBlock, {
+        props: { source: { kind: 'workspace', url, mimeType: 'video/webm' }, name: 'saved demo' },
+      });
+      const video = screen
+        .getByRole('button', { name: /play saved demo/i })
+        .querySelector('video')!;
+      Object.defineProperty(video, 'error', { value: { code } });
+      await fireEvent.error(video);
+      expect(screen.getByTestId('media-unavailable').dataset.reason).toBe('load-failed');
+      expect(screen.queryByRole('button', { name: /open file|copy path/i })).toBeNull();
+      await openVideoActionsMenu();
+      expect(screen.getByRole('menuitem', { name: /download/i })).toBeTruthy();
+    },
+  );
 
   it('accepts a workspace-file poster', () => {
     render(ChatVideoBlock, {
@@ -176,7 +195,10 @@ describe('VideoActionsMenu', () => {
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy link' }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(remoteSource.url));
-    expect(toastSuccess).toHaveBeenCalledWith('Link copied to clipboard');
+    expect(toastSuccess).toHaveBeenCalledWith('Link copied to clipboard', {
+      duration: 2000,
+      id: undefined,
+    });
   });
 
   it('copies a decoded workspace-relative path and reports success', async () => {
@@ -200,7 +222,10 @@ describe('VideoActionsMenu', () => {
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith('.demo-artifacts/some run/demo.webm'),
     );
-    expect(toastSuccess).toHaveBeenCalledWith('Path copied to clipboard');
+    expect(toastSuccess).toHaveBeenCalledWith('Path copied to clipboard', {
+      duration: 2000,
+      id: undefined,
+    });
   });
 
   it('downloads remote video bytes under the display name', async () => {
@@ -224,5 +249,44 @@ describe('VideoActionsMenu', () => {
     expect(anchor.getAttribute('href')).toBe('blob:video-download');
     expect(anchor.getAttribute('download')).toBe('demo.mp4');
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:video-download');
+  });
+});
+
+describe('video media provenance', () => {
+  it('keeps external playback but never mounts a file-backed poster without authority', async () => {
+    const { container, rerender } = render(ChatVideoBlock, {
+      source: remoteSource,
+      poster: 'workspace-file://ws/poster.png',
+      allowFileMedia: false,
+    });
+    expect(container.querySelector('video')?.getAttribute('src')).toBe(remoteSource.url);
+    expect(container.querySelector('video')?.getAttribute('poster')).toBeNull();
+    await rerender({ allowFileMedia: true });
+    expect(container.querySelector('video')?.getAttribute('poster')).toBe(
+      'workspace-file://ws/poster.png',
+    );
+    await rerender({ allowFileMedia: false });
+    expect(container.querySelector('video')?.getAttribute('poster')).toBeNull();
+  });
+  it('preserves note-asset playback for node agents', () => {
+    const url = 'workspace-asset://ws/demo.mp4';
+    const { container } = render(ChatVideoBlock, {
+      source: { kind: 'workspace', url, mimeType: 'video/mp4' },
+      allowFileMedia: false,
+    });
+    expect(container.querySelector('video')?.getAttribute('src')).toBe(url);
+  });
+  it('unmounts an open file-backed lightbox when placement changes', async () => {
+    const { rerender } = render(ChatVideoBlock, {
+      source: { kind: 'workspace', url: 'workspace-file://ws/demo.mp4', mimeType: 'video/mp4' },
+      allowFileMedia: true,
+    });
+    await fireEvent.click(screen.getByTestId('chat-video-snapshot'));
+    await screen.findByRole('dialog');
+    await rerender({ allowFileMedia: false });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[src^="workspace-file:"]')).toHaveLength(0),
+    );
+    expect(screen.queryByRole('button', { name: 'Video options' })).toBeNull();
   });
 });

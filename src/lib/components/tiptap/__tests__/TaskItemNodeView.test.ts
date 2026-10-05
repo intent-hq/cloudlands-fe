@@ -58,12 +58,15 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectSelectedNoteId: Object.assign(() => mockReadable(null), {
     select: () => null,
   }),
-  selectNotesVersion: () => mockReadable(0),
   selectWorkspaceNotesState: () => ({
     subscribe(fn: (value: { initialized: boolean }) => void) {
       return linkedNoteState.initializedReadable.subscribe((initialized) => fn({ initialized }));
     },
   }),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => mockReadable(false),
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -142,6 +145,8 @@ function createMockEditor(node?: any) {
     state: {
       doc: {
         textBetween: vi.fn(() => 'Task text'),
+        content: { size: 0 },
+        resolve: () => ({ parent: { type: { name: 'doc' } } }),
         nodeAt: vi.fn(() => nodeToReturn),
       },
     },
@@ -639,7 +644,7 @@ describe('TaskItemNodeView - Data Attributes', () => {
   });
 });
 
-describe('TaskItemNodeView - Daemon-provided unmetDependsOn (v6.8, monorepo#1979)', () => {
+describe('TaskItemNodeView - Daemon-provided unmetDependsOn (monorepo#1979)', () => {
   const WS_ID = 'ws-1';
   const TASK_ID = 'task-note-1';
 

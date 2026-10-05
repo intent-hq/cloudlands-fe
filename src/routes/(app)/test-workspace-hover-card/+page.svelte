@@ -386,9 +386,7 @@
 
 <div class="min-h-screen bg-background px-8 py-10 text-foreground">
   <header class="mx-auto mb-10 max-w-6xl">
-    <p class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-subtle">
-      Mock-only sandbox
-    </p>
+    <p class="mb-2 text-xs font-semibold text-subtle">Mock-only sandbox</p>
     <h1 class="text-3xl font-bold tracking-tight">Workspace hover-card gallery</h1>
     <p class="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
       Visual test route for <code>WorkspaceHoverCard</code> using local mock data only. Cards use a consistent

@@ -129,7 +129,7 @@ describe('AllWorkspacesCard archived discovery', () => {
     await waitFor(() => expect(goto).toHaveBeenCalledWith('/workspace/archived'));
   });
 
-  it('uses the canonical single-border focus treatment and keeps listbox keys on the expanded input', async () => {
+  it('uses the shared quiet field and keeps listbox keys on the expanded input', async () => {
     renderCard();
 
     const controls = document.querySelector('[data-workspace-search-controls]');
@@ -145,7 +145,7 @@ describe('AllWorkspacesCard archived discovery', () => {
     expect(search.classList.contains('min-w-0')).toBe(true);
     expect(search.classList.contains('border')).toBe(true);
     expect(search.classList.contains('border-border')).toBe(true);
-    expect(search.classList.contains('focus-visible:border-ring')).toBe(true);
+    expect(search.classList.contains('focus-visible:border-ring')).toBe(false);
     expect(search.classList.contains('focus-visible:outline-none')).toBe(true);
     expect(search.classList.contains('focus-visible:ring-0')).toBe(true);
     expect(search.className).not.toMatch(/focus-visible:ring-(?:1|2|4|8)|ring-inset|ring-offset/);

@@ -11,11 +11,14 @@
 
   import { page } from '$app/state';
   import { m } from '$shared/paraglide/messages.js';
+  import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { formatGuestSessionLabel } from '$lib/utils/connection-label';
   import { invoke } from '$lib/electron-bridge';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { selectActiveTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
@@ -59,7 +62,7 @@
   let { workspaceId }: Props = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
-  let prefersReducedMotion = $state(false);
+  const reducedMotion = watchReducedMotion();
   const routedWorkspaceId = $derived(
     page.url.pathname.startsWith('/workspace/') && page.params.id !== 'new'
       ? (page.params.id ?? null)
@@ -118,6 +121,7 @@
   const zoomFactor = selectZoomFactor();
   const counterScale = selectCounterScale();
   const workspaceItems = selectWorkspaceItems();
+  const windowGuestSession$ = selectWindowGuestSession();
 
   // Detect platform for conditional styling and shortcuts
   const isMac = $derived.by(() => {
@@ -148,16 +152,7 @@
   // Get focused tab info
   const focusedTab = $derived($focusedTab$ ?? null);
 
-  onMount(() => {
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
-    updateMotionPreference();
-    motionQuery.addEventListener('change', updateMotionPreference);
-
-    return () => {
-      motionQuery.removeEventListener('change', updateMotionPreference);
-    };
-  });
+  onMount(() => reducedMotion.cleanup);
   // Build display text for the search bar - show focused tab title and workspace
   const displayText = $derived.by(() => {
     if (focusedTab?.title && workspace?.title) {
@@ -172,16 +167,12 @@
     return '';
   });
 
-  // i18n-ignore (development instance identifier supplied by the launcher)
-  const devTitleText = $derived(
-    import.meta.env.DEV && import.meta.env.VITE_DEV_NAME
-      ? `${displayText || 'Intent'} · [${import.meta.env.VITE_DEV_NAME}]`
-      : '',
-  );
-
   // Update the native window title when displayText changes
   $effect(() => {
-    const title = displayText || 'Intent';
+    const workspaceTitle = displayText || 'Intent';
+    const title = $windowGuestSession$
+      ? `${workspaceTitle} [${formatGuestSessionLabel($windowGuestSession$)}]`
+      : workspaceTitle;
     // Update the native window title via IPC
     invoke(IPC_CHANNELS.WINDOW.SET_TITLE, { title }).catch(() => {
       // Silently ignore errors (e.g., if not in Electron context)
@@ -252,7 +243,7 @@
         <SidebarNav />
       </div>
       <div
-        class="flex min-w-0 self-end items-center gap-1 transition-[margin-left] duration-200 ease-[cubic-bezier(0.215,0.61,0.355,1)] motion-reduce:transition-none"
+        class="flex min-w-0 self-end items-center gap-1 transition-[margin-left] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
         style:margin-left={`${panelOffset}px`}
         data-titlebar-workspace-controls
       >
@@ -278,24 +269,15 @@
 
     <!-- Right column: global status and settings -->
     <div class="app-no-drag flex items-center justify-end pr-4 gap-1">
-      {#if devTitleText}
-        <span
-          class="max-w-[min(45vw,40rem)] truncate px-2 text-xs text-muted-foreground"
-          title={devTitleText}
-          data-dev-instance-title
-        >
-          {devTitleText}
-        </span>
-      {/if}
       {@render titlebarUtilities(true)}
     </div>
     {#if activeTabBounds}
       <div
-        class="pointer-events-none absolute -bottom-px z-[60] h-px bg-sidebar motion-reduce:transition-none"
+        class="pointer-events-none absolute -bottom-0.5 z-[60] h-1 bg-sidebar motion-reduce:transition-none"
         style:left={`${activeTabBounds.left}px`}
         style:width={`${activeTabBounds.width}px`}
         style:mask-image={getWorkspaceTabBorderMaskImage(activeTabBounds)}
-        style:transition={activeTabTracking || prefersReducedMotion
+        style:transition={activeTabTracking || reducedMotion.current
           ? 'none'
           : `left ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}, width ${WORKSPACE_TAB_MOTION_DURATION_MS}ms ${WORKSPACE_TAB_MOTION_EASING}`}
         data-active-tab-border-mask
@@ -308,7 +290,7 @@
 <style>
   .window-title-bar-wrapper {
     position: relative;
-    z-index: 50;
+    z-index: var(--layer-chrome);
     overflow: visible;
     background: transparent;
     -webkit-app-region: drag;
@@ -325,7 +307,7 @@
     align-items: center;
     /* border-bottom: 1px solid hsl(var(--border) / 0.5); */
     position: relative;
-    z-index: 50;
+    z-index: var(--layer-chrome);
     padding-top: 2px;
     --titlebar-control-shift: 0px;
     -webkit-app-region: drag;

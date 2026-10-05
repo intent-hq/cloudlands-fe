@@ -12,9 +12,12 @@
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { onMount } from 'svelte';
+  import { untrack } from 'svelte';
+  import { captureIntegrationContext } from '$features/integrations-request-context';
+  import { onBackendReconnected } from '$lib/client/live/backend-transport';
   import { createLogger } from '$lib/utils/client-logger';
 
   import { startLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
@@ -35,7 +38,6 @@
     onClose: () => void;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let { workspaceId, onSelect, onClose }: Props = $props();
 
   let isAuthenticated = $state(false);
@@ -55,10 +57,16 @@
     );
   });
 
+  let generation = 0;
   async function loadIssues() {
+    const mine = ++generation;
+    const context = captureIntegrationContext(workspaceId);
+    const current = () =>
+      mine === generation && context.isCurrent() && context.workspaceId === workspaceId;
     try {
       // Initialize via Redux (fire-and-forget), then check auth state via client
-      const authState = await linearAuthClient.getAuthState(true);
+      const authState = await linearAuthClient.getAuthState(true, context.workspaceId);
+      if (!current()) return;
       isAuthenticated = authState.isAuthenticated;
 
       if (!isAuthenticated) {
@@ -67,17 +75,19 @@
       }
 
       isLoading = true;
-      const result = await linearAuthClient.fetchMyIssues('all');
+      const result = await linearAuthClient.fetchMyIssues('all', context.workspaceId);
+      if (!current()) return;
       issues = result;
       logger.info('Loaded Linear issues', { count: result.length });
     } catch (error) {
       logger.error('Failed to load Linear issues', error as Error);
     } finally {
-      isLoading = false;
+      if (current()) isLoading = false;
     }
   }
 
   async function handleConnect() {
+    const context = captureIntegrationContext(workspaceId);
     isConnecting = true;
     try {
       appStore.dispatch(startLinearAuth());
@@ -85,7 +95,7 @@
       // The user will complete OAuth externally, so we poll
       await new Promise((resolve) => setTimeout(resolve, 1000));
       const authState = await linearAuthClient.getAuthState(true);
-      if (authState.isAuthenticated) {
+      if (context.isCurrent() && context.workspaceId === workspaceId && authState.isAuthenticated) {
         isAuthenticated = true;
         await loadIssues();
       }
@@ -112,25 +122,38 @@
     onClose();
   }
 
-  onMount(() => {
-    loadIssues();
+  $effect(() => {
+    workspaceId;
+    untrack(() => {
+      issues = [];
+      isAuthenticated = false;
+      void loadIssues();
+    });
+    const stop = onBackendReconnected(() => {
+      issues = [];
+      void loadIssues();
+    });
+    return () => {
+      generation += 1;
+      stop();
+    };
   });
 </script>
 
 {#if !isAuthenticated}
-  <div class="p-8 flex flex-col items-center gap-4">
+  <div class="flex flex-col items-start gap-4 p-8 text-left">
     <LinearIcon size={48} class="text-subtle" />
-    <p class="text-sm text-subtle text-center">{m.workspace_linearPicker_connectPrompt_label()}</p>
+    <p class="text-left text-sm text-subtle">{m.workspace_linearPicker_connectPrompt_label()}</p>
     <Button onclick={handleConnect} disabled={isConnecting}>
       {#if isConnecting}
-        <Fa icon={faSpinner} class="animate-spin mr-2" />
+        <IntentMarkLoader size={16} class="mr-2" />
       {/if}
       {m.workspace_linearPicker_connect_label()}
     </Button>
   </div>
 {:else if isLoading}
   <div class="p-8 flex justify-center">
-    <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
+    <IntentMarkLoader size={20} class="text-subtle" />
   </div>
 {:else}
   <!-- Search -->
@@ -149,12 +172,13 @@
   <!-- Issues list -->
   <div class="max-h-80 overflow-y-auto">
     {#if filteredIssues.length === 0}
-      <div class="p-8 text-center text-subtle text-sm">
+      <div class="p-8 text-left text-sm text-subtle">
         {searchQuery ? 'No matching issues found' : 'No issues found'}
       </div>
     {:else}
       {#each filteredIssues as issue (issue.id)}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="w-full text-left px-4 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer flex items-start gap-3 border-b border-border last:border-0"
           onclick={() => handleSelect(issue)}
@@ -171,7 +195,7 @@
             </div>
             <p class="text-sm truncate mt-0.5">{issue.title}</p>
           </div>
-        </button>
+        </Button>
       {/each}
     {/if}
   </div>

@@ -6,9 +6,12 @@
  * the helper spawn wrapper, and the two-way reconciliation between the synced
  * keychain registry and the local connections store.
  *
- * Model: ONE keychain item per backend under the fixed service
- * `com.cloudlands.intent.backends`, keyed by the normalized `host:port`
- * account (mirrors the local store's dedupe identity). Conflicts resolve
+ * Owner v1 model: ONE keychain item per backend under
+ * `com.cloudlands.intent.backends`, keyed by normalized `host:port`.
+ * Invited v2 sessions use the separate person-keyed reconciler in
+ * invited-session-sync.ts under `com.cloudlands.intent.guest-sessions`.
+ * This module supplies its helper transport and legacy v1 parser only.
+ * In the owner v1 reconciler, conflicts resolve
  * last-writer-wins by the payload's `updatedAt`. Deletes are TOMBSTONES
  * (`deleted: true`, token scrubbed) rather than raw item deletion, so "item
  * missing" is never ambiguous with "keychain unreadable"; tombstones are
@@ -29,10 +32,12 @@
  */
 
 import { spawn } from 'child_process';
+import { isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { m } from '../../../shared/paraglide/messages.js';
 import {
   DEFAULT_CONNECTION_ACCENT,
   isConnectionAccent,
@@ -44,6 +49,14 @@ import {
 } from '../../../shared/types/connections';
 
 const logger = new Logger('KeychainSync');
+
+/** Keychain service holding guest sessions (credentials minted by an
+ * `invite.prove` join). Kept apart from the helper's default backends
+ * service (`com.cloudlands.intent.backends`, the only one the iOS companion
+ * reads) so a guest credential can never surface as — or tombstone — an
+ * owner record. */
+// i18n-ignore (keychain service identifier)
+export const KEYCHAIN_SERVICE_GUEST_SESSIONS = 'com.cloudlands.intent.guest-sessions';
 
 /** Current payload schema version. Items with a NEWER `v` (written by a newer
  * app) freeze their account: neither pulled nor overwritten by a push. */
@@ -90,6 +103,14 @@ export interface KeychainSyncRecord {
   detectHosts: boolean;
   /** Bearer token; always `''` on tombstones. */
   token: string;
+  /**
+   * Guest principal identity (guest-sessions service only): the principal id
+   * the daemon minted the credential for and the GitHub login it proved.
+   * Absent on owner-backend payloads — serialization omits the keys, so the
+   * backends service payload is byte-identical to before the field existed.
+   */
+  principalId?: string;
+  login?: string;
   /** Last-writer-wins conflict clock, ms since epoch. */
   updatedAt: number;
   /** Tombstone marker: the backend was forgotten on some machine. */
@@ -137,6 +158,8 @@ export function serializeRecord(record: KeychainSyncRecord): string {
     token: record.deleted === true ? '' : record.token,
     updatedAt: record.updatedAt,
   };
+  if (record.principalId !== undefined) payload.principalId = record.principalId;
+  if (record.login !== undefined) payload.login = record.login;
   if (record.deleted === true) {
     payload.deleted = true;
     payload.deletedAt = record.deletedAt ?? record.updatedAt;
@@ -192,6 +215,10 @@ export function parsePayload(payload: string): ParsedPayload {
     token: typeof obj.token === 'string' ? obj.token : '',
     updatedAt: obj.updatedAt,
   };
+  if (typeof obj.principalId === 'string' && obj.principalId !== '') {
+    record.principalId = obj.principalId;
+  }
+  if (typeof obj.login === 'string' && obj.login !== '') record.login = obj.login;
   if (obj.deleted === true) {
     record.deleted = true;
     record.deletedAt = typeof obj.deletedAt === 'number' ? obj.deletedAt : record.updatedAt;
@@ -249,6 +276,11 @@ type KeychainClientResult<T> =
 export interface KeychainClient {
   list(): Promise<KeychainClientResult<{ items: KeychainItem[]; sharedGroup?: string }>>;
   upsert(account: string, payload: string): Promise<KeychainClientResult<object>>;
+  /** Create only, atomically in the helper. A duplicate returns the original bytes unchanged. */
+  insert?(
+    account: string,
+    payload: string,
+  ): Promise<KeychainClientResult<{ inserted: boolean; payload: string }>>;
   delete(account: string, group?: string): Promise<KeychainClientResult<object>>;
 }
 
@@ -393,13 +425,34 @@ export interface HelperClientOptions {
   platform?: NodeJS.Platform;
   /** Skip candidate probing and use this binary path directly. */
   helperPath?: string;
+  /**
+   * Keychain service the client operates on, passed to the helper as
+   * `--service <name>` ahead of the subcommand. Absent = the helper's default
+   * backends service, which keeps the argv of the owner registry client
+   * unchanged.
+   */
+  service?: string;
 }
 
 /** The real helper-backed client. Never throws — every failure is a result. */
 export function createHelperKeychainClient(options: HelperClientOptions = {}): KeychainClient {
   const platform = options.platform ?? process.platform;
 
-  async function invoke(args: string[], stdinBody?: string): Promise<KeychainClientResult<object>> {
+  // The service is a fixed identifier (not secret) — argv is fine.
+  const serviceArgs = options.service !== undefined ? ['--service', options.service] : [];
+
+  async function invoke(
+    subcommand: string[],
+    stdinBody?: string,
+  ): Promise<KeychainClientResult<object>> {
+    if (isIsolatedTestBuild()) {
+      return {
+        ok: false,
+        code: 'helper-missing',
+        message: m.settings_backendSync_status_unavailable(),
+      };
+    }
+    const args = [...serviceArgs, ...subcommand];
     if (platform !== 'darwin') {
       return {
         ok: false,
@@ -432,6 +485,23 @@ export function createHelperKeychainClient(options: HelperClientOptions = {}): K
       const result = await invoke(['list']);
       if (!result.ok) return result;
       const rows = (result as unknown as { items?: unknown }).items;
+      if (
+        options.service === KEYCHAIN_SERVICE_GUEST_SESSIONS &&
+        (!Array.isArray(rows) ||
+          rows.some(
+            (row) =>
+              !row ||
+              typeof row !== 'object' ||
+              typeof row.account !== 'string' ||
+              typeof row.payload !== 'string',
+          ))
+      ) {
+        return {
+          ok: false,
+          code: 'helper-failed',
+          message: m.settings_backendSync_invitedPending(),
+        };
+      }
       const items: KeychainItem[] = Array.isArray(rows)
         ? rows.filter(
             (row): row is KeychainItem =>
@@ -448,6 +518,19 @@ export function createHelperKeychainClient(options: HelperClientOptions = {}): K
     },
     upsert(account, payload) {
       return invoke(['upsert', account], JSON.stringify({ payload }));
+    },
+    async insert(account, payload) {
+      const result = await invoke(['insert', account], JSON.stringify({ payload }));
+      if (!result.ok) return result;
+      const value = result as { ok: true; inserted?: unknown; payload?: unknown };
+      if (typeof value.inserted !== 'boolean' || typeof value.payload !== 'string') {
+        return {
+          ok: false,
+          code: 'helper-failed',
+          message: m.settings_backendSync_invitedPending(),
+        };
+      }
+      return { ok: true, inserted: value.inserted, payload: value.payload };
     },
     delete(account, group) {
       // The group is an entitlement identifier (not secret) — argv is fine.

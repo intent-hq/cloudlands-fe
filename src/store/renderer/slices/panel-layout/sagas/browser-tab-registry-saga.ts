@@ -11,6 +11,10 @@
  *   acknowledged; changed tabs go out as `browser.upsertTab`, vanished ones as
  *   `browser.removeTab`. Single-flight per workspace with one trailing rerun,
  *   so a navigation burst costs one in-flight call plus at most one more.
+ *   The report carries the `displayed` layout fact (visible AND its panel's
+ *   active tab); the daemon keeps it process-local, so it rides every report
+ *   and snapshot, and a row that comes back without it (daemon restart) is
+ *   re-reported (intent#4835).
  *   A tab the registry has not seen yet (legacy layout, offline open) is
  *   reported the same way and then acknowledged locally — that is the
  *   localStorage → registry migration, idempotent because an acknowledged tab
@@ -68,6 +72,7 @@
  * including one equal to that label — is reported and restored verbatim.
  */
 import { deepEqual } from 'fast-equals';
+import { buffers, channel as createChannel, type Channel } from 'redux-saga';
 import {
   all,
   call,
@@ -80,9 +85,10 @@ import {
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
 import { appClient } from '$lib/client';
+import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
+import type { ResolvedBrowserLink } from '$lib/utils/browser-url-resolution';
 import { createLogger } from '$lib/utils/client-logger';
 import type { BrowserTab, BrowserTabInput } from '$shared/types/browser-clients';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
@@ -109,6 +115,8 @@ import {
   registrySnapshotAcknowledged,
   registryTabForgotten,
   registryTabReported,
+  registryTabResolved,
+  registryTabsUnresolved,
   type BrowserTabClosingState,
   type WorkspaceBrowserTabRegistryState,
 } from '../../browser-tab-registry/browser-tab-registry-slice';
@@ -122,12 +130,20 @@ import {
   selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
 import { setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
-import { selectPanelLayoutWorkspace } from '../panel-layout-selectors';
 import {
+  collectBrowserTabs,
+  selectPanelLayoutWorkspace,
+  selectPanelLayoutWorkspaces,
+  type BrowserTabVisibility as Visibility,
+  type LayoutBrowserTab as HostedTab,
+} from '../panel-layout-selectors';
+import {
+  PANEL_LAYOUT_HANDLED_ACTION_TYPES,
   acknowledgeBrowserTabHost,
   applyBrowserTabRegistryRow,
   browserTabRegistryReportRequested,
   closeTab,
+  destroyTabsByType,
   openHiddenTab,
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
@@ -135,7 +151,10 @@ import {
   setRestoreStatus,
 } from '../panel-layout-slice';
 import type { PanelTab, WorkspacePanelLayoutState } from '../panel-layout-types';
-import type { RehydratableBrowserTab } from '../browser-tab-rehydration';
+import {
+  rebaseRequestedUrlForNavigation,
+  type RehydratableBrowserTab,
+} from '../browser-tab-rehydration';
 import { rehydrateTunneledBrowserTabs } from './panel-layout-saga';
 
 const logger = createLogger('BrowserTabRegistrySaga');
@@ -152,8 +171,6 @@ export const SYNC_RETRY_MS = 5_000;
 /** Longest a materialised row waits for the routing saga to place it. */
 const PLACEMENT_WAIT_MS = 5_000;
 
-type Visibility = BrowserTab['visibility'];
-type HostedTab = { tab: PanelTab; visibility: Visibility };
 type Listing = { rows: BrowserTab[]; revision: number };
 /**
  * One workspace's connect-time load: its rows, the generation they were read
@@ -186,8 +203,33 @@ class FenceMoved extends Error {
 /** Connect-time sync guards: one sync per connection generation, reset on backend change. */
 let syncedBackendId: string | null = null;
 let syncedConnectionGeneration: number | null = null;
+/**
+ * The daemon refused a `browser.*` call with `-32003` on the current
+ * connection (multiplayer w3: browser tabs are owner-only). The refusal is a
+ * property of the connection, not of the workspace named in the call: the
+ * daemon gates every `browser.*` method on the caller's administrator flag
+ * (`is_non_administrator_caller() && !collaborator_may_call(method)` in
+ * intent-transport's frame dispatch), so one refusal is the answer for every
+ * workspace this connection can see. The connect-time sync therefore stops
+ * retrying instead of burning its attempts on the same refusal, later loads
+ * answer from the latch without re-dialing, and `listTabs` reads as an
+ * authoritative empty listing so the workspace settles (`applied`, nothing
+ * reported); the next connection starts clean.
+ */
+let registryForbidden = false;
+
+/** What a refused `browser.*` call reads as: no rows to apply, no reply to act on. */
+function forbiddenReply(method: WireMethod): BrowserTab[] | null {
+  return method === 'listTabs' ? [] : null;
+}
 /** Removals being sent, so two workspaces' reporters do not send the same one. */
 const removalsInFlight = new Set<string>();
+/**
+ * Each workspace's layout as the mutation watcher last saw it. The reducer
+ * returns the same reference for an untouched workspace, so a moved reference
+ * — an entry added, replaced or removed — is the workspace a mutation changed.
+ */
+let seenLayouts: Record<string, WorkspacePanelLayoutState> = {};
 
 function isActive(ws: WorkspaceBrowserTabRegistryState): boolean {
   return ws.phase === 'applied' || ws.phase === 'reporting';
@@ -252,14 +294,21 @@ function* wire<M extends WireMethod>(
   ...args: Parameters<BrowserWire[M]>
 ): SagaGenerator<Awaited<ReturnType<BrowserWire[M]>> | null> {
   yield* check(fences);
+  if (registryForbidden) return forbiddenReply(method) as Awaited<ReturnType<BrowserWire[M]>>;
   const fn = appClient.browser[method] as (...a: unknown[]) => Promise<unknown>;
   let result: unknown = null;
   try {
     result = yield* call([appClient.browser, fn], ...args);
   } catch (error) {
-    logger.warn(`browser.${method} failed`, {
-      error: error instanceof Error ? error.message : error,
-    });
+    if (isForbiddenErrorResponse(error)) {
+      registryForbidden = true;
+      logger.debug(`browser.${method} is owner-only on this connection; treating as empty`);
+      result = forbiddenReply(method);
+    } else {
+      logger.warn(`browser.${method} failed`, {
+        error: error instanceof Error ? error.message : error,
+      });
+    }
   }
   yield* check(fences);
   return result as Awaited<ReturnType<BrowserWire[M]>> | null;
@@ -279,19 +328,6 @@ function isSettled(layout: WorkspacePanelLayoutState): boolean {
   );
 }
 
-function collectBrowserTabs(layout: WorkspacePanelLayoutState): HostedTab[] {
-  const out: HostedTab[] = [];
-  for (const panel of Object.values(layout.panels)) {
-    for (const tab of panel.tabs) {
-      if (tab.type === 'browser') out.push({ tab, visibility: 'visible' });
-    }
-  }
-  for (const tab of getItems(layout.hiddenTabs)) {
-    if (tab.type === 'browser') out.push({ tab, visibility: 'hidden' });
-  }
-  return out;
-}
-
 /** A tab this client renders: acknowledged as ours, or not yet seen by the registry. */
 function hostedHere(tab: PanelTab, ownClientId: string): boolean {
   return tab.hostClientId === undefined || tab.hostClientId === ownClientId;
@@ -302,7 +338,7 @@ function hasReportableUrl(tab: PanelTab): boolean {
   return typeof tab.browserUrl === 'string';
 }
 
-function toInput(wsId: string, { tab, visibility }: HostedTab): BrowserTabInput {
+function toInput(wsId: string, { tab, visibility, displayed }: HostedTab): BrowserTabInput {
   return {
     tabId: tab.id,
     workspaceId: wsId,
@@ -312,10 +348,22 @@ function toInput(wsId: string, { tab, visibility }: HostedTab): BrowserTabInput 
     ownerAgentId: tab.ownerAgentId ?? null,
     ownerAgentName: tab.ownerAgentName ?? null,
     visibility,
-    emulatedSize: tab.emulatedSize ?? null,
+    // The registry has no separate viewport-mode field: absence represents
+    // Fit, while preset/custom dimensions represent a fixed viewport. Use the
+    // persisted mode rather than an owned Fit tab's retained offscreen size.
+    emulatedSize:
+      !tab.viewport || tab.viewport.mode === 'fit'
+        ? null
+        : { width: tab.viewport.width, height: tab.viewport.height },
+    displayed,
   };
 }
 
+/**
+ * What the daemon holds for a row, in report shape. A row without
+ * `displayed` (never reported, or the daemon restarted) reads as `null`, so
+ * the next report diff sends the layout fact again.
+ */
 function rowToInput(row: BrowserTab): BrowserTabInput {
   return {
     tabId: row.tabId,
@@ -327,6 +375,7 @@ function rowToInput(row: BrowserTab): BrowserTabInput {
     ownerAgentName: row.ownerAgentName ?? null,
     visibility: row.visibility,
     emulatedSize: row.emulatedSize ?? null,
+    displayed: row.displayed ?? null,
   };
 }
 
@@ -348,6 +397,47 @@ function rowToTab(row: BrowserTab): Omit<PanelTab, 'id'> {
 function rehydratable(row: BrowserTab): RehydratableBrowserTab | null {
   if (!row.requestedUrl || !row.url) return null;
   return { tabId: row.tabId, requestedUrl: row.requestedUrl, storedUrl: row.url };
+}
+
+/**
+ * A tab this client hosts is local truth for its URL and title, but not for
+ * a claim it lost to persistence: a remount reinstalls the persisted layout,
+ * in which a registry-hosted tab is a geometry shell (owner, requested URL
+ * and emulated size stripped with the URL), and a guest that reports its
+ * location before the rows land makes the shell look complete. The row
+ * still holds the claim (only this host ever reports it, and no local
+ * change clears it short of destroying the tab), so the fields the tab
+ * lacks are taken from the row — the requested URL rebased onto the local
+ * URL when the guest moved, so a navigation off the row's origin still
+ * drops it. Null when the tab already carries everything the row holds.
+ */
+function claimFromRow(tab: PanelTab, row: BrowserTab): BrowserTab | null {
+  const url = tab.browserUrl ?? row.url;
+  const requestedUrl =
+    tab.browserRequestedUrl ??
+    (url === row.url
+      ? row.requestedUrl
+      : rebaseRequestedUrlForNavigation(row.url, url, row.requestedUrl));
+  const ownerAgentId = tab.ownerAgentId ?? row.ownerAgentId;
+  const ownerAgentName = tab.ownerAgentName ?? row.ownerAgentName;
+  const emulatedSize = tab.emulatedSize ?? row.emulatedSize;
+  if (
+    requestedUrl === tab.browserRequestedUrl &&
+    ownerAgentId === tab.ownerAgentId &&
+    ownerAgentName === tab.ownerAgentName &&
+    emulatedSize === tab.emulatedSize
+  ) {
+    return null;
+  }
+  return {
+    ...row,
+    url,
+    title: tab.title,
+    requestedUrl,
+    ownerAgentId,
+    ownerAgentName,
+    emulatedSize,
+  };
 }
 
 function* waitForOwnClientId(): SagaGenerator<string> {
@@ -434,16 +524,23 @@ function* reconcileVisibility(
 /**
  * Apply the daemon's rows for one settled workspace over the local layout.
  * A tab this client already hosts that still carries a URL is local truth
- * (it may have navigated while the daemon was unreachable) and is only
- * acknowledged; everything else — including a mirror the daemon re-homed
- * here while we were away, whose URL and visibility are stale — follows the
- * row. A row for a tab being closed here is left alone: rematerialising it
- * would undo the close. Local tabs the registry no longer holds are
- * destroyed unless they can still be (re)reported from local state; they
- * are forgotten first, so the destroy is not read as a close to report. The
- * workspace becomes `applied` only if every materialised row is in the
- * layout; otherwise nothing is recorded and false is returned. A fence that
- * moved anywhere along the way ends the step.
+ * (it may have navigated while the daemon was unreachable): it is only
+ * acknowledged, completed with a claim it lost to persistence
+ * (`claimFromRow`), and — its guest being the one that produced the URL —
+ * not re-resolved, unless it is still `unresolved`: filled from a row at an
+ * earlier load without its tunnel re-resolution being established, its URL
+ * is the row's copy and the resolution is retried. Everything else —
+ * including a mirror the daemon re-homed here while we were away, whose URL
+ * and visibility are stale — follows the row, and a row of ours applied
+ * that way is queued for tunnel re-resolution, which marks the tab
+ * `unresolved` until it lands. A row for a tab being closed here is left alone:
+ * rematerialising it would undo the close. Local tabs the registry no
+ * longer holds are destroyed unless they can still be (re)reported from
+ * local state; they are forgotten first, so the destroy is not read as a
+ * close to report. The workspace becomes `applied` only if every
+ * materialised row is in the layout; otherwise nothing is recorded and
+ * false is returned. A fence that moved anywhere along the way ends the
+ * step.
  */
 function* applyRows(
   fence: WorkspaceFence,
@@ -453,6 +550,7 @@ function* applyRows(
   const { wsId } = fence;
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   const closing = yield* selectBrowserTabsClosing.effect();
+  const { unresolved } = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
   // Rebuilt from the listing — what the daemon holds: anything acknowledged
   // earlier but absent now (cleared layout, other host, restart) is no longer ours.
   const reported: Record<string, BrowserTabInput> = {};
@@ -460,6 +558,11 @@ function* applyRows(
   const local = new Map(collectBrowserTabs(layout).map((h) => [h.tab.id, h]));
   const toRehydrate: RehydratableBrowserTab[] = [];
   const materialised: string[] = [];
+  const applied = (row: BrowserTab) => {
+    reported[row.tabId] = rowToInput(row);
+    const item = rehydratable(row);
+    if (item) toRehydrate.push(item);
+  };
   for (const row of rows) {
     const existing = local.get(row.tabId);
     const mine = row.hostClientId === ownClientId;
@@ -467,28 +570,42 @@ function* applyRows(
       if (row.tabId in closing) continue;
       yield* call(materialiseRow, fence, row);
       materialised.push(row.tabId);
-      if (mine) reported[row.tabId] = rowToInput(row);
+      if (mine) applied(row);
     } else if (mine && hostedHere(existing.tab, ownClientId) && hasReportableUrl(existing.tab)) {
       reported[row.tabId] = rowToInput(row);
-      if (existing.tab.hostClientId !== ownClientId) {
+      const claim = claimFromRow(existing.tab, row);
+      if (claim) {
+        yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, claim));
+      } else if (existing.tab.hostClientId !== ownClientId) {
         yield* effect(fence, acknowledgeBrowserTabHost(wsId, row.tabId, ownClientId));
+      }
+      const requestedUrl = claim ? claim.requestedUrl : existing.tab.browserRequestedUrl;
+      if (row.tabId in unresolved && requestedUrl && existing.tab.browserUrl) {
+        toRehydrate.push({ tabId: row.tabId, requestedUrl, storedUrl: existing.tab.browserUrl });
       }
     } else {
       yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, row));
       yield* call(reconcileVisibility, fence, existing, row);
-      if (mine) reported[row.tabId] = rowToInput(row);
-    }
-    if (mine) {
-      const item = rehydratable(row);
-      if (item) toRehydrate.push(item);
+      if (mine) applied(row);
     }
   }
   for (const [tabId, { tab }] of local) {
-    if (known.has(tabId) || tab.hostClientId === undefined) continue;
+    if (known.has(tabId)) continue;
+    // A refused listing is authoritative for every local browser tab: a
+    // collaborator cannot host one either, so tabs this client would
+    // otherwise keep to report later go too.
+    if (registryForbidden) {
+      yield* effect(fence, registryTabForgotten(wsId, tabId));
+      continue;
+    }
+    if (tab.hostClientId === undefined) continue;
     if (tab.hostClientId === ownClientId && hasReportableUrl(tab)) continue;
     yield* effect(fence, registryTabForgotten(wsId, tabId));
     yield* effect(fence, closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
   }
+  // Destroyed, not closed: a per-tab destroy still parks unowned tabs in
+  // recentlyClosed, and a collaborator must not be able to reopen one.
+  if (registryForbidden) yield* effect(fence, destroyTabsByType(wsId, 'browser'));
   yield* check(fence);
   const placed = new Set(
     collectBrowserTabs(yield* selectPanelLayoutWorkspace.effect(wsId)).map((h) => h.tab.id),
@@ -508,13 +625,35 @@ function* applyRows(
  * Re-resolve tunneled URLs detached from the caller (the resolution goes
  * over IPC and must not hold up the load), fenced: a resolution that lands
  * after the layout was torn down and rebuilt must not navigate the tab the
- * rebuild restored.
+ * rebuild restored. The tabs are `unresolved` until a resolution is
+ * established, so the next load retries the ones that failed.
+ * `resolveBrowserLinkUrl` never throws: a rewrite it could not establish
+ * comes back as the requested URL passed through, or as the rewritten
+ * target with an `error` — neither is established.
  */
 function* rehydrateUnderFence(
   fence: WorkspaceFence,
   tabs: RehydratableBrowserTab[],
 ): SagaGenerator<void> {
-  yield* spawn(rehydrateTunneledBrowserTabs, fence.wsId, tabs, () => isCurrent(fence));
+  const { wsId, generation } = fence;
+  yield* effect(
+    fence,
+    registryTabsUnresolved(
+      wsId,
+      generation,
+      tabs.map((tab) => tab.tabId),
+    ),
+  );
+  yield* spawn(
+    rehydrateTunneledBrowserTabs,
+    wsId,
+    tabs,
+    () => isCurrent(fence),
+    function* (tab: RehydratableBrowserTab, resolved: ResolvedBrowserLink) {
+      if (resolved.error || resolved.url === tab.requestedUrl) return;
+      yield* effect(fence, registryTabResolved(wsId, tab.tabId));
+    },
+  );
 }
 
 /**
@@ -579,19 +718,75 @@ function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGe
 }
 
 /**
- * Every layout mutation: the tabs the workspace reported that its layout no
- * longer holds were closed here. They are recorded as pending removals in
- * the same dispatch — before the debounced reporter, so a close made right
- * before an unmount, or while the daemon is unreachable, survives both —
- * and every reporter run sends them, every snapshot omits them, until the
- * daemon acknowledges. The reducer bumps the generation on `clearPanelLayout`
- * before this runs, so closing the last panel records its tabs under the
- * new one; an unmount leaves the layout in place and forgets the map
- * instead (its tabs left with the workspace).
+ * An action the panel-layout reducer handles — derived from its registrations,
+ * so a cross-slice case (`scripts/removeScript` destroying a script's tabs
+ * and handing the active slot to a browser sibling; intent-hq/intent#4835)
+ * is covered the moment it is registered. Which workspaces it changed is
+ * read from the state, not the payload (`changedWorkspaces`).
  */
-function* recordRemovals(action: { type: string; payload?: unknown }): SagaGenerator<void> {
-  const wsId = reportContext(action);
-  if (wsId === null) return;
+function isLayoutMutation(action: unknown): action is { type: string } {
+  return (
+    typeof action === 'object' &&
+    action !== null &&
+    'type' in action &&
+    typeof action.type === 'string' &&
+    PANEL_LAYOUT_HANDLED_ACTION_TYPES.has(action.type)
+  );
+}
+
+/** The workspaces whose layout reference moved since the previous call; records the new baseline. */
+function changedWorkspaces(layouts: Record<string, WorkspacePanelLayoutState>): string[] {
+  const previous = seenLayouts;
+  seenLayouts = layouts;
+  if (previous === layouts) return [];
+  const changed: string[] = [];
+  for (const wsId of new Set([...Object.keys(previous), ...Object.keys(layouts)])) {
+    if (previous[wsId] !== layouts[wsId]) changed.push(wsId);
+  }
+  return changed;
+}
+
+/**
+ * Every layout mutation, in the same dispatch: record the removals of each
+ * workspace the reducer changed, then hand it to the single-flight reporter.
+ * A mutation the reducer answered with the same state changes no workspace
+ * and reports nothing.
+ */
+function* onLayoutMutation(reports: Channel<string>): SagaGenerator<void> {
+  const changed = changedWorkspaces(yield* selectPanelLayoutWorkspaces.effect());
+  for (const wsId of changed) yield* call(requestReport, reports, wsId);
+}
+
+/**
+ * The saga's own "report now" trigger, sent once rows are applied and once
+ * a connect sync completes. It is not a reducer case — the layout may be
+ * exactly as it was — so it reaches the reporter here, not via the
+ * mutation watcher.
+ */
+function* onReportRequested(
+  reports: Channel<string>,
+  action: ReturnType<typeof browserTabRegistryReportRequested>,
+): SagaGenerator<void> {
+  yield* call(requestReport, reports, action.payload[0]);
+}
+
+function* requestReport(reports: Channel<string>, wsId: string): SagaGenerator<void> {
+  yield* call(recordRemovals, wsId);
+  yield* put(reports, wsId);
+}
+
+/**
+ * The tabs the workspace reported that its layout no longer holds were
+ * closed here. They are recorded as pending removals in the same dispatch —
+ * before the debounced reporter, so a close made right before an unmount,
+ * or while the daemon is unreachable, survives both — and every reporter
+ * run sends them, every snapshot omits them, until the daemon acknowledges.
+ * The reducer bumps the generation on `clearPanelLayout` before this runs,
+ * so closing the last panel records its tabs under the new one; a deletion
+ * or an unmount forgets the map instead (its tabs left with the workspace),
+ * so there is nothing to record.
+ */
+function* recordRemovals(wsId: string): SagaGenerator<void> {
   const registry = yield* selectBrowserTabRegistryWorkspace.effect(wsId);
   const reported = Object.keys(registry.reported);
   if (reported.length === 0) return;
@@ -631,11 +826,6 @@ function* sendRemoval(fence: RemovalFence): SagaGenerator<void> {
 
 function findBrowserTab(layout: WorkspacePanelLayoutState, tabId: string): PanelTab | undefined {
   return collectBrowserTabs(layout).find((h) => h.tab.id === tabId)?.tab;
-}
-
-function* reportWorkspaceTabs(action: { type: string; payload?: unknown }): SagaGenerator<void> {
-  const wsId = reportContext(action);
-  if (wsId !== null) yield* call(reportHostedTabs, wsId);
 }
 
 /**
@@ -696,32 +886,13 @@ function* reportUnder(
   }
 }
 
-function reportContext(action: { type: string; payload?: unknown }): string | null {
-  const payload = action.payload;
-  if (typeof payload === 'string') return payload;
-  if (Array.isArray(payload) && typeof payload[0] === 'string') return payload[0];
-  if (payload && typeof payload === 'object' && 'wsId' in payload) {
-    const { wsId } = payload as { wsId?: unknown };
-    if (typeof wsId === 'string') return wsId;
-  }
-  return null;
-}
-
-function isLayoutMutation(action: unknown): action is { type: string; payload?: unknown } {
-  return (
-    typeof action === 'object' &&
-    action !== null &&
-    'type' in action &&
-    typeof action.type === 'string' &&
-    action.type.startsWith('panelLayout/') &&
-    reportContext(action as { type: string; payload?: unknown }) !== null
-  );
-}
-
 /**
  * `browser:tab-opened` / `browser:tab-updated`. Applied to an applied
  * workspace only: a row landing while the workspace is loading moves its
  * `tabsRevision`, which makes the load re-read and apply the row itself.
+ * A row of ours materialised or re-homed here from the event enters the
+ * same fenced re-resolution as one applied from a listing: its URL is the
+ * row's, not a guest's, and `applyRows` only retries what is `unresolved`.
  */
 function* onRegistryRow(action: ReturnType<typeof browserTabUpserted>): SagaGenerator<void> {
   const [wsId, row] = action.payload;
@@ -747,14 +918,24 @@ function* applyRow(
   const { wsId, generation } = fence;
   const mine = row.hostClientId === ownClientId;
   const reported = () => registryTabReported(wsId, generation, row.tabId, rowToInput(row));
+  const applied = function* (): SagaGenerator<void> {
+    yield* effect(fence, reported());
+    const item = rehydratable(row);
+    if (item) yield* call(rehydrateUnderFence, fence, [item]);
+  };
   if (!existing) {
     // An echo for a tab being closed here: the daemon is being told.
     if (row.tabId in (yield* selectBrowserTabsClosing.effect())) return;
     yield* call(materialiseRow, fence, row);
-    if (mine) yield* effect(fence, reported());
+    if (mine) yield* call(applied);
     return;
   }
-  if (mine && existing.tab.hostClientId === ownClientId) return;
+  if (mine && existing.tab.hostClientId === ownClientId) {
+    // Local truth; a claim the persisted shell lost is completed from the echo.
+    const claim = hasReportableUrl(existing.tab) ? claimFromRow(existing.tab, row) : null;
+    if (claim) yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, claim));
+    return;
+  }
   if (mine && existing.tab.hostClientId === undefined) {
     // The registry took our unacknowledged report; local state stays truth.
     yield* effect(fence, acknowledgeBrowserTabHost(wsId, row.tabId, ownClientId));
@@ -763,9 +944,7 @@ function* applyRow(
   yield* effect(fence, applyBrowserTabRegistryRow(wsId, row.tabId, row));
   yield* call(reconcileVisibility, fence, existing, row);
   if (mine) {
-    yield* effect(fence, reported());
-    const item = rehydratable(row);
-    if (item) yield* call(rehydrateUnderFence, fence, [item]);
+    yield* call(applied);
   } else if (row.tabId in registry.reported) {
     yield* effect(fence, registryTabForgotten(wsId, row.tabId));
   }
@@ -978,6 +1157,7 @@ function* syncOnConnect(): SagaGenerator<void> {
   const generation = yield* selectDaemonConnectionGeneration.effect();
   if (syncedConnectionGeneration === generation) return;
   syncedConnectionGeneration = generation;
+  registryForbidden = false;
 
   const ownClientId = yield* waitForOwnClientId();
   for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt++) {
@@ -987,6 +1167,9 @@ function* syncOnConnect(): SagaGenerator<void> {
     }
     if (syncedBackendId !== backendId || syncedConnectionGeneration !== generation) return;
     if (yield* call(syncTabsOnce, backendId, generation, ownClientId)) return;
+    // A forbidden reply is this connection's final answer: keep the
+    // generation marked synced so nothing re-runs until the next connect.
+    if (registryForbidden) return;
   }
   if (syncedConnectionGeneration === generation) syncedConnectionGeneration = null;
 }
@@ -1001,13 +1184,13 @@ function* onConnectionStatus(
 export function* browserTabRegistrySaga(): SagaGenerator<void> {
   syncedBackendId = null;
   syncedConnectionGeneration = null;
+  registryForbidden = false;
   removalsInFlight.clear();
-  yield* takeEvery(isLayoutMutation, recordRemovals);
-  yield* takeSingleFlightInContext(
-    isLayoutMutation,
-    (action) => reportContext(action) as string,
-    reportWorkspaceTabs,
-  );
+  seenLayouts = yield* selectPanelLayoutWorkspaces.effect();
+  const reports = createChannel<string>(buffers.expanding());
+  yield* takeEvery(isLayoutMutation, onLayoutMutation, reports);
+  yield* takeEvery(browserTabRegistryReportRequested, onReportRequested, reports);
+  yield* takeSingleFlightInContext(reports, (wsId) => wsId, reportHostedTabs);
   yield* takeEvery(setRestoreStatus, reconcileOnSettle);
   yield* takeEvery(browserTabUpserted, onRegistryRow);
   yield* takeEvery(browserTabClosed, onRegistryClose);

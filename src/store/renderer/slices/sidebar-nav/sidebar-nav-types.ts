@@ -7,7 +7,7 @@
 
 export const CHIEF_WORKSPACE_ID = '__chief__';
 // i18n-ignore (sentinel compared against daemon-stored names; localizing would break placeholder detection)
-export const DEFAULT_CHIEF_THREAD_TITLE = 'New chat with Intent';
+export const DEFAULT_CHIEF_THREAD_TITLE = 'New chat';
 
 export type SidebarNavItem =
   'new-workspace' | 'active' | 'chief' | 'all-workspaces' | 'hud' | 'stats' | 'settings';
@@ -58,6 +58,7 @@ export type SidebarNavState = {
   showArchivedWorkspaces: boolean;
   /** Collapsed All Spaces status-group IDs (persisted) */
   collapsedStatusGroupIds: string[];
+  collapsedRepoGroupKeys: string[];
   /** Whether the Chief of Staff section in the combined panel is collapsed (persisted) */
   isChiefCollapsed: boolean;
   /** Pinned workspace IDs (persisted to localStorage) */

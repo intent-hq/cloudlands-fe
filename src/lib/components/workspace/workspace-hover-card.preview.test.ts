@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PullRequestStatus } from '$shared/types';
 import {
   workspaceHoverCardPreview,
   workspaceHoverCardStateMatrix,
@@ -106,6 +107,13 @@ describe('workspace hover-card preview audit', () => {
     expect(states['landscape-question'].props.cards[0]?.agents?.[0]?.lastAgentResponse).toContain(
       'rollout safeguards',
     );
+    expect(states['landscape-question'].props.cards[0]?.workspace?.activePullRequest).toMatchObject(
+      {
+        number: 74,
+        status: PullRequestStatus.Open,
+      },
+    );
+    expect(states.attention.props.cards[1]?.workspace?.activePullRequest).toBeUndefined();
   });
 
   it('has an explicit expected result, coverage route, and conflict rule for every family', () => {

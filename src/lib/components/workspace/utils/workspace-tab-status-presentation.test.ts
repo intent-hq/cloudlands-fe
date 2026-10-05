@@ -12,7 +12,7 @@ describe('workspace tab status presentation', () => {
         count: 2,
         agentNames: ['Coordinator', 'Builder'],
       }),
-    ).toBe('RUNNING: 2 (Coordinator, Builder)');
+    ).toBe('Running: 2 (Coordinator, Builder)');
   });
 
   it('formats unnamed details and summaries through the same contract', () => {
@@ -25,9 +25,9 @@ describe('workspace tab status presentation', () => {
       visibleCategories: [],
       hiddenCategoryCount: 0,
     };
-    expect(formatWorkspaceTabStatusDetail(status.categories[0])).toBe('REVIEW REQUIRED: 1');
+    expect(formatWorkspaceTabStatusDetail(status.categories[0])).toBe('Review required: 1');
     expect(formatWorkspaceTabStatusSummary(status)).toBe(
-      'REVIEW REQUIRED: 1 · RUNNING: 1 (Coordinator)',
+      'Review required: 1 · Running: 1 (Coordinator)',
     );
   });
 });

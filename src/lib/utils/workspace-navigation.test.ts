@@ -14,6 +14,7 @@ import {
   navigateAfterWorkspaceRemoval,
   navigateToFirstWorkspace,
   navigateToSettings,
+  findSourcePanelId,
 } from './workspace-navigation';
 
 const { mockDispatch, mockWorkspaceItems } = vi.hoisted(() => ({
@@ -53,6 +54,24 @@ import {
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
 describe('workspace-navigation', () => {
+  it.each(['span', 'svg', 'path'])(
+    'resolves a bubbling %s click to its containing panel',
+    (tag) => {
+      const panel = document.createElement('div');
+      panel.setAttribute('data-panel-id', 'source');
+      const target =
+        tag === 'span'
+          ? document.createElement(tag)
+          : document.createElementNS('http://www.w3.org/2000/svg', tag);
+      panel.append(target);
+      const resolved = vi.fn();
+      panel.addEventListener('click', (event) => resolved(findSourcePanelId(event.target)));
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(resolved).toHaveBeenCalledExactlyOnceWith('source');
+      expect(findSourcePanelId(document.createElement('button'))).toBeUndefined();
+    },
+  );
+
   const mockPage = {
     url: {
       pathname: '/workspace/test-workspace-id',

@@ -37,6 +37,11 @@ import {
 
 // Import consolidated AgentSession type
 import type {
+  AgentDelegatedCounts as NewAgentDelegatedCounts,
+  AgentDelegatedParentCounts as NewAgentDelegatedParentCounts,
+  AgentListBin as NewAgentListBin,
+  AgentListScope as NewAgentListScope,
+  AgentScopeCounts as NewAgentScopeCounts,
   AgentSession as NewAgentSession,
   PendingAgentSession as NewPendingAgentSession,
   QueuedMessage as NewQueuedMessage,
@@ -47,7 +52,15 @@ import { isPendingAgentSession as isNewPendingAgentSession } from './types/agent
 import { isAgentSession as isNewAgentSession } from './types/agent-session.guards';
 
 // Import consolidated ContentBlock type
-import type { ContentBlock, VideoContentBlock, VideoSource } from './types/content-block';
+import type {
+  ContentBlock,
+  PlanContentBlock,
+  PlanEntry,
+  PlanEntryPriority,
+  PlanEntryStatus,
+  VideoContentBlock,
+  VideoSource,
+} from './types/content-block';
 import type {
   BulkProposalItem,
   Proposal,
@@ -60,6 +73,8 @@ import type {
 import { isProposal, isProposalKind, PROPOSAL_KINDS } from './types/proposal';
 import {
   isContentBlock,
+  isPlanContentBlock,
+  PLAN_ENTRIES_MAX,
   dedupeAgentVideoContentBlocks,
   normalizeAgentVideoContentBlocks,
   normalizeContentBlock,
@@ -91,12 +106,14 @@ import {
 // Import consolidated AgentMessage type
 import type {
   AgentMessage,
+  MessageAuthor,
   MessageMetadata,
   MessageRole,
   ProviderMessage,
   ToolCall,
   ToolResult,
 } from './types/agent-message';
+import { MESSAGE_ROLES } from './types/agent-message';
 import {
   extractAllContent,
   extractContentFromBlocks,
@@ -140,6 +157,8 @@ export {
   isAudioBlock,
   isCodeBlock,
   isContentBlock,
+  isPlanContentBlock,
+  PLAN_ENTRIES_MAX,
   dedupeAgentVideoContentBlocks,
   isErrorBlock,
   isFileBlock,
@@ -157,7 +176,15 @@ export {
   normalizeContentBlocks,
   normalizeAgentVideoContentBlocks,
 };
-export type { ContentBlock, VideoContentBlock, VideoSource };
+export type {
+  ContentBlock,
+  PlanContentBlock,
+  PlanEntry,
+  PlanEntryPriority,
+  PlanEntryStatus,
+  VideoContentBlock,
+  VideoSource,
+};
 export { isProposal, isProposalKind, PROPOSAL_KINDS };
 export type {
   BulkProposalItem,
@@ -177,8 +204,17 @@ export {
   mergeMessages,
   normalizeAgentMessage,
   toProviderMessage,
+  MESSAGE_ROLES,
 };
-export type { AgentMessage, MessageMetadata, MessageRole, ProviderMessage, ToolCall, ToolResult };
+export type {
+  AgentMessage,
+  MessageAuthor,
+  MessageMetadata,
+  MessageRole,
+  ProviderMessage,
+  ToolCall,
+  ToolResult,
+};
 
 // Re-export SuggestedPrompt types and helpers
 export type { SuggestedPrompt, SuggestedPromptsEvent } from './types/suggested-prompt';
@@ -275,6 +311,11 @@ export function isWorkspaceAttention(value: unknown): value is WorkspaceAttentio
   );
 }
 
+/** The caller's role in a workspace (PROTOCOL §5.1 membership summary,
+ *  multiplayer w1). `collaborator` connections are refused (-32003) on every
+ *  owner-only method, so the desktop hides those surfaces up front. */
+export type WorkspaceRole = 'owner' | 'collaborator';
+
 export interface Workspace {
   id: WorkspaceId;
   name?: string; // Added for compatibility with agent system
@@ -318,6 +359,16 @@ export interface Workspace {
    *  wire — omitted when false, so older daemons (which never send it) read
    *  as not waiting. */
   waiting?: boolean;
+  /** Membership summary (PROTOCOL §5.1, intent-hq/intentd#1868). `myRole` is
+   *  relative to the caller and absent for a non-member; `memberCount` counts
+   *  accepted members; `openInviteCount` counts unredeemed invites. All absent
+   *  on older daemons. */
+  ownerPrincipalId?: string;
+  myRole?: WorkspaceRole;
+  /** Caller-relative management capability (PROTOCOL §5.49); absent on older daemons. */
+  canManage?: boolean;
+  memberCount?: number;
+  openInviteCount?: number;
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
@@ -339,6 +390,10 @@ export interface Workspace {
   prNumber?: number;
   prStatus?: PullRequestStatus;
   pullRequests?: PullRequestInfo[];
+  /** Size of the full `pullRequests` pool when a `workspace.list` row was
+   *  truncated to its cap (PROTOCOL §5.1); omitted when nothing was dropped.
+   *  `workspace.get` serves the full pool and never carries it. */
+  pullRequestsTotal?: number;
   activePullRequest?: PullRequestInfo | null;
   /** Issue/PR context links persisted at create (PROTOCOL §5.1). Write-once —
    *  supplied on `workspace.create`, never mutated after insert — and omitted
@@ -348,7 +403,7 @@ export interface Workspace {
   archived?: boolean;
   archivedAt?: string;
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.1 delete grace
-   *  window, v6.7+). Present only while a `workspace.delete { undoDelayMs > 0 }`
+   *  window). Present only while a `workspace.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `workspace.cancelDelete` and dropped by
    *  a daemon restart (the workspace survives). Rows carrying it are hidden
    *  from the FE workspace list. */
@@ -550,6 +605,11 @@ export interface PullRequestInfo {
   closedAt?: string;
   /** GitHub mergeability state: 'clean', 'dirty', 'blocked', 'behind', 'unstable', 'unknown' */
   mergeableState?: string;
+  /**
+   * The PR sits in the host's merge queue. Present as `true` only when a signal-bearing
+   * read reported it (a queued PR reads `mergeableState: 'clean'` on REST); absent otherwise.
+   */
+  isInMergeQueue?: boolean;
   /** Number of review comments on the PR */
   reviewComments?: number;
   /** CI status summary */
@@ -624,7 +684,7 @@ export interface WorkspaceAgentInfo {
   isStreaming?: boolean;
   isResponding?: boolean;
   /**
-   * Delegating/spawning agent's id (PROTOCOL §5.1, v2.9 additive) — omitted
+   * Delegating/spawning agent's id (PROTOCOL §5.1 `WorkspaceAgentInfo`, additive) — omitted
    * for root agents, so clients can rebuild the delegation tree.
    */
   parentAgentId?: string;
@@ -913,7 +973,7 @@ export interface TaskMetadata {
   /**
    * Daemon-computed at read/push time (never persisted): `dependsOn` ids whose
    * task note is not `complete` (missing and cancelled deps count as unmet).
-   * Present on note-shaped read/push payloads only (PROTOCOL §5.2, v6.8,
+   * Present on note-shaped read/push payloads only (PROTOCOL §5.2,
    * monorepo#1979); omitted when empty and on mutation-response notes.
    */
   unmetDependsOn?: NoteId[];
@@ -1037,6 +1097,11 @@ export type PendingAgentSession = NewPendingAgentSession;
 export type QueuedMessage = NewQueuedMessage;
 export type QueuedMessageContextItem = NewQueuedMessageContextItem;
 export type SessionStats = NewSessionStats;
+export type AgentListScope = NewAgentListScope;
+export type AgentListBin = NewAgentListBin;
+export type AgentScopeCounts = NewAgentScopeCounts;
+export type AgentDelegatedCounts = NewAgentDelegatedCounts;
+export type AgentDelegatedParentCounts = NewAgentDelegatedParentCounts;
 
 // Re-export type guards
 export const isPendingAgentSession = isNewPendingAgentSession;
@@ -1113,6 +1178,9 @@ export interface AgentMetadata {
   source?: 'workspace-initializer' | 'contextual-menu' | 'chat-panel' | 'api' | string; // Source of agent creation
   agentType?: string; // Type of agent (e.g., "investigate", "implement", "verify")
   specialist?: string; // Specialist type (e.g., "spec-writer", "implementor", "verifier")
+  // Creation-time prompt identity, persisted and served by AgentLite (§5.5).
+  // Omitted on legacy sessions; creation dates never imply a version.
+  chiefPromptVersion?: number;
   isInitialAgent?: boolean; // Whether this is the initial agent for a workspace
   isInitialWorkspaceAgent?: boolean; // Alias for isInitialAgent
   originalAgentId?: string; // Original agent ID if this is a restored/migrated agent
@@ -1589,7 +1657,13 @@ export interface CreateWorkspaceRequest {
      */
     agentId?: string;
     name?: string;
+    /** False for a generated label so first-message naming remains available. */
+    nameExplicitlySet?: boolean;
+    /** Remember the successful manual initial specialist selection. */
+    rememberSpecialist?: boolean;
     model?: string;
+    /** Persisted before the first turn. Omit to inherit defaults; blank explicitly clears. */
+    reasoningEffort?: string;
     prompt?: string;
     rules?: string;
     agentType?: string;

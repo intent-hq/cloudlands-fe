@@ -3,6 +3,7 @@
  *
  * AgentTabType — read-only "Harness vX.Y" entry in the panel actions (⋯)
  * menu (PROTOCOL §5.5 `harnessVersion` / `harnessFeatures`; monorepo#2459).
+ * protocol-version-ok-file: "Harness v1.0" fixtures are `harnessVersion` values.
  *
  * Mirrors AgentCard-harness-version.test.ts for the tab menu: renders the
  * agentActions snippet through the real panel-header context and real Menu
@@ -34,9 +35,14 @@ const mockState = vi.hoisted(() => {
 
   return {
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
+    hidesAgentLifecycleActions: store(false),
+    retirementSupported: store(true),
+    presencePeople: store<unknown[]>([]),
     defaultModel: store('auggie:default'),
     dispatch: vi.fn(),
     agents: store<Record<string, any>>({}),
+    panels: {} as Record<string, any>,
+    hiddenTabs: [] as any[],
   };
 });
 
@@ -46,20 +52,48 @@ vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { agentMutationUiReducer } =
+    await import('$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice');
+  let mutationState = agentMutationUiReducer.initialState;
 
-  return createAppStoreMockModule({
-    state: () => ({ agents: mockState.agents.get() }),
-    dispatch: mockState.dispatch,
+  const module = createAppStoreMockModule({
+    state: () => ({ agents: mockState.agents.get(), agentMutationUi: mutationState }),
+    dispatch: (action) => {
+      mockState.dispatch(action);
+      mutationState = agentMutationUiReducer(mutationState, action);
+      module.store.emitState();
+    },
   });
+  return module;
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
+  selectHidesAgentLifecycleActions: () => mockState.hidesAgentLifecycleActions,
+}));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentPresencePeople: () => mockState.presencePeople,
+}));
+vi.mock('$store/renderer/slices/daemon-health/daemon-health-selectors', () => ({
+  selectDaemonConnectionGeneration: () => ({
+    subscribe: (run: (value: number) => void) => (run(0), () => {}),
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAgentRetirementSupported: () => mockState.retirementSupported,
   selectInitialAgentId: () => ({
     subscribe: (run: (value: string | null) => void) => (run(null), () => {}),
   }),
 }));
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => {
+  const readable = (getter: () => unknown) => ({
+    subscribe: (run: (value: unknown) => void) => (run(getter()), () => {}),
+  });
+  const selectPanels = () => readable(() => mockState.panels);
+  selectPanels.select = () => mockState.panels;
+  const selectHiddenTabs = () => readable(() => mockState.hiddenTabs);
+  selectHiddenTabs.select = () => mockState.hiddenTabs;
+  return { selectPanels, selectHiddenTabs };
+});
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: (
     agentIdStore: { subscribe: (run: (value: string) => void) => () => void } | string,
@@ -122,6 +156,12 @@ vi.mock('$lib/utils/client-logger', () => ({
 
 import AgentTabType from '../AgentTabType.svelte';
 import MockTabTypeHeaderHarness from './mocks/MockTabTypeHeaderHarness.svelte';
+import { setAgentNotificationsMutedRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { store as appStore } from '$store/renderer/store';
+import {
+  agentMutationUiRequested,
+  agentMutationUiFinished,
+} from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-slice';
 
 function seedSession(overrides: Record<string, unknown> = {}) {
   mockState.agents.set({
@@ -177,6 +217,9 @@ describe('AgentTabType harness version panel-actions menu item', () => {
     // Enabled, plain command item (no flyout).
     expect(menuItem!.getAttribute('aria-disabled')).not.toBe('true');
     expect(menuItem!.getAttribute('aria-haspopup')).not.toBe('menu');
+    const actionIcons = screen.getByRole('menu').querySelectorAll('svg[data-icon]');
+    expect(actionIcons.length).toBeGreaterThan(0);
+    for (const icon of actionIcons) expect(icon.getAttribute('data-weight')).toBe('regular');
 
     await fireEvent.click(menuItem!);
 
@@ -230,6 +273,20 @@ describe('AgentTabType harness version panel-actions menu item', () => {
     // Menu is open (Delete agent present) but no harness entry.
     expect(await screen.findByText('Delete agent')).toBeTruthy();
     expect(screen.queryByText(/^Harness v/)).toBeNull();
+  });
+
+  it('withholds the Delete agent item in a guest / collaborator window', async () => {
+    mockState.hidesAgentLifecycleActions.set(true);
+    try {
+      seedSession({ harnessVersion: '2.3' });
+      renderTab();
+      await openPanelActionsMenu();
+
+      expect(await screen.findByText('Harness v2.3')).toBeTruthy();
+      expect(screen.queryByText('Delete agent')).toBeNull();
+    } finally {
+      mockState.hidesAgentLifecycleActions.set(false);
+    }
   });
 
   it('dismisses the modal with Escape', async () => {
@@ -327,5 +384,110 @@ describe('AgentTabType specialist panel-actions menu item', () => {
     expect(await screen.findByText('Delete agent')).toBeTruthy();
     expect(screen.queryByText(/^Specialist:/)).toBeNull();
     expect(separatorsAfterDelete()).toBe(0);
+  });
+});
+
+describe('AgentTabType notification mute (PROTOCOL §5.5 notificationsMuted)', () => {
+  const MUTE_ACTION = setAgentNotificationsMutedRequested.type;
+
+  beforeEach(() => {
+    mockState.dispatch.mockClear();
+    mockState.agents.set({});
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  it('offers "Mute notifications" for an unmuted agent and dispatches the mute', async () => {
+    seedSession();
+    renderTab();
+    await openPanelActionsMenu();
+
+    expect(screen.queryByText('Unmute notifications')).toBeNull();
+    const item = await screen.findByText('Mute notifications');
+    const menuItem = item.closest('[role="menuitem"]');
+    expect(menuItem).not.toBeNull();
+    await fireEvent.click(menuItem!);
+
+    const dispatchedAction = mockState.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action?.type === MUTE_ACTION);
+    expect(dispatchedAction).toBeDefined();
+    expect(dispatchedAction.payload).toEqual(['ws-1', 'agent-1', true]);
+  });
+
+  it('offers "Unmute notifications" for a muted agent and dispatches the unmute', async () => {
+    seedSession({ notificationsMuted: true });
+    renderTab();
+    await openPanelActionsMenu();
+
+    expect(screen.queryByText('Mute notifications')).toBeNull();
+    const item = await screen.findByText('Unmute notifications');
+    await fireEvent.click(item.closest('[role="menuitem"]')!);
+
+    const dispatchedAction = mockState.dispatch.mock.calls
+      .map(([action]) => action)
+      .find((action) => action?.type === MUTE_ACTION);
+    expect(dispatchedAction.payload).toEqual(['ws-1', 'agent-1', false]);
+  });
+});
+
+vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', async () => {
+  const specialists = await import('$store/renderer/slices/specialists/specialists-selectors');
+  return {
+    selectContextSelectedModel: () => mockState.defaultModel,
+    selectContextSpecialists: specialists.selectSpecialists,
+  };
+});
+
+describe('AgentTabType retirement', () => {
+  const mutations = () =>
+    mockState.dispatch.mock.calls
+      .map(([a]) => a)
+      .filter((a) => a.type === agentMutationUiRequested.type);
+  beforeEach(() => {
+    mockState.dispatch.mockReset();
+    mockState.hidesAgentLifecycleActions.set(false);
+    mockState.retirementSupported.set(true);
+    seedSession({ harnessFeatures: { peerAgents: false } });
+  });
+  afterEach(() => cleanup());
+
+  it('opens confirmation without a model turn and dispatches retirement only on confirmation', async () => {
+    mockState.hidesAgentLifecycleActions.set(true);
+    renderTab();
+    await openPanelActionsMenu();
+    await fireEvent.click(await screen.findByText('Retire Agent'));
+    await screen.findByRole('dialog');
+    expect(mutations()).toEqual([]);
+    await fireEvent.click(screen.getByRole('button', { name: 'Retire Agent' }));
+    expect(mutations()).toHaveLength(1);
+    expect(mutations()[0]).toMatchObject({
+      type: agentMutationUiRequested.type,
+      payload: ['ws-1', expect.any(String), expect.any(String), 'agent-1', { kind: 'retire' }],
+    });
+    expect(screen.queryByRole('dialog')).not.toBeNull();
+    const [workspaceId, consumerId, requestId] = mutations()[0].payload;
+    appStore.dispatch(agentMutationUiFinished(workspaceId, consumerId, requestId, 'succeeded'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('cancels without dispatching', async () => {
+    renderTab();
+    await openPanelActionsMenu();
+    await fireEvent.click(await screen.findByText('Retire Agent'));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(mutations()).toEqual([]);
+  });
+
+  it.each(['retired', 'unsupported'])('withholds retirement for %s agents', async (state) => {
+    if (state === 'retired') seedSession({ retiredAt: '2026-09-28T08:00:00Z' });
+    else mockState.retirementSupported.set(false);
+    renderTab();
+    await openPanelActionsMenu();
+    expect(screen.queryByText('Retire Agent')).toBeNull();
+    expect(mutations()).toEqual([]);
   });
 });

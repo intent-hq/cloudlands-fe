@@ -10,6 +10,7 @@ export const breadcrumbFixtures = [
       'ellipsis',
       'long-content',
       'keyboard-focus',
+      'overlay-hover',
       'compact',
       'zoom-200',
       'no-overflow',

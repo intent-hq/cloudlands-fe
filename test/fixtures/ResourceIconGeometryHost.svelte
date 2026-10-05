@@ -70,6 +70,7 @@
       workspaceId={`workspace-${scenario.id}`}
       contentActions={{ primary: headerActions }}
       onClosePanel={() => {}}
+      onTabClose={() => {}}
       showTabStrip
     />
   </div>

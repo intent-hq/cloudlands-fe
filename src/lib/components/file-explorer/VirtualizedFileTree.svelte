@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
@@ -7,8 +9,9 @@
     FlattenedFileNode,
   } from '$store/renderer/slices/file-explorer/file-explorer-types';
   import { ListItem } from '$lib/components/ui/list';
+  import CaretDownIcon from 'phosphor-svelte/lib/CaretDownIcon';
+  import CaretRightIcon from 'phosphor-svelte/lib/CaretRightIcon';
   import {
-    faChevronDown,
     faPlus,
     faArrowUpRightFromSquare,
     faDownload,
@@ -16,21 +19,21 @@
     faFolderOpen,
     faTrash,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
-  import Fa from 'svelte-fa';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
-  import { invoke } from '$lib/electron-bridge';
-  import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
-  import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import {
-    getPanelLayoutManager,
-    hasPanelLayoutManager,
-  } from '$features/layout/panel-layout-adapter';
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
+  import { invoke } from '$lib/electron-bridge';
+  import { downloadWorkspaceFile } from '$features/file/services/download-workspace-file';
+  import { workspaceRelativeFilePath } from '$features/file/utils/workspace-file-path';
+  import { pathsMatch as filePathsMatch, stripWorkspacePrefix } from '$lib/utils/file-utils';
+  import { deleteFileWithUndoRequested } from '$store/renderer/slices/files/files-slice';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
@@ -436,6 +439,11 @@
     // Don't handle if we're editing or creating
     if (editingPath || creatingInDir) return;
 
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      handleContextMenu(e, focusedNode?.node ?? null);
+      return;
+    }
+
     const nodeCount = effectiveNodes.length;
     if (nodeCount === 0) return;
 
@@ -705,85 +713,99 @@
   }
 
   // Context menu state
-  let contextMenu: { x: number; y: number; node: FileNode | null } | null = $state(null);
+  let contextMenu:
+    | (SidebarContextPosition & { node: FileNode | null; workspaceId: string; rootPath: string })
+    | null = $state(null);
 
-  function handleContextMenu(e: MouseEvent, node: FileNode) {
-    e.preventDefault();
-    e.stopPropagation();
-    contextMenu = { x: e.clientX, y: e.clientY, node };
+  function handleContextMenu(e: MouseEvent | KeyboardEvent, node: FileNode | null) {
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
+    contextMenu = {
+      ...position,
+      returnFocus: treeContainer ?? null,
+      node,
+      workspaceId,
+      rootPath: $fileExplorerWorkspacePath,
+    };
   }
 
   function handleBackgroundContextMenu(e: MouseEvent) {
     // Only show if click target is the tree container or scroll area (not a file item)
-    e.preventDefault();
-    contextMenu = { x: e.clientX, y: e.clientY, node: null };
+    handleContextMenu(e, null);
   }
 
   function closeContextMenu() {
     contextMenu = null;
   }
 
-  // TODO(redux-remove): explorer file-tree CRUD (delete/read/write-for-undo here, plus
-  // create/rename) stays on the legacy absolute-path `file:*` IPC. The files AppClient
-  // seam is workspace-scoped + relative-path, so migrating these absolute-path,
-  // undo-aware operations is deferred to a dedicated explorer migration; out of scope.
-  async function handleDeleteFile(filePath: string) {
-    const fileName = filePath.split('/').pop() || m.fileExplorer_tree_file_fallback();
-    // Read file content before deleting so we can undo
-    let savedContent = '';
-    try {
-      const result = await invoke<{ content: string }>('file:read', { path: filePath });
-      savedContent = result?.content ?? '';
-    } catch {
-      // If we can't read the file, proceed with delete but undo won't restore content
-    }
-
-    await deleteWithUndo(
-      `"${fileName}"`,
-      async () => {
-        const result = await invoke<{ success: boolean; error?: string }>('file:delete', {
-          path: filePath,
-        });
-        if (!result?.success) {
-          throw new Error(result?.error || m.fileExplorer_tree_deleteFailed_error());
-        }
-        // Close related panel tabs after successful deletion
-        if (workspaceId && hasPanelLayoutManager(workspaceId)) {
-          const layoutManager = getPanelLayoutManager(workspaceId);
-          layoutManager.closeTabsByType('file', 'filePath', filePath);
-        }
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
-      },
-      async () => {
-        await invoke('file:write', {
-          path: filePath,
-          content: savedContent,
-          workspaceId,
-        });
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'create', filePath });
-      },
+  function isContextTargetCurrent(target: typeof contextMenu): boolean {
+    return (
+      !!target &&
+      target.workspaceId === workspaceId &&
+      target.rootPath === $fileExplorerWorkspacePath &&
+      (!target.node ||
+        flattenedNodes.some(
+          ({ node }) => node.path === target.node?.path && node.type === target.node?.type,
+        ))
     );
   }
 
-  // Save a copy of a file (or a zip of a folder) via the main process's native
-  // save dialog. Workspace-host-local only — the local main process reads the path.
+  $effect(() => {
+    if (contextMenu && !isContextTargetCurrent(contextMenu)) closeContextMenu();
+  });
+
+  function guardContextItems(items: SidebarMenuEntry[]): SidebarMenuEntry[] {
+    const target = contextMenu;
+    return items.map((item) =>
+      'onClick' in item
+        ? {
+            ...item,
+            onClick: () => {
+              if (contextMenu !== target || !isContextTargetCurrent(target)) return;
+              if (
+                (item.id === 'reveal' ||
+                  (item.id === 'download' && target?.node?.type !== 'file')) &&
+                !selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)
+              )
+                return;
+              item.onClick();
+            },
+          }
+        : item,
+    );
+  }
+
+  function handleDeleteFile(filePath: string) {
+    const rootPath = selectEffectiveFileExplorerWorkspacePath.select(appStore.state, workspaceId);
+    if (!workspaceId || !rootPath) return;
+    appStore.dispatch(
+      deleteFileWithUndoRequested(workspaceId, stripWorkspacePrefix(filePath, rootPath), {
+        absolutePath: filePath,
+      }),
+    );
+  }
+
+  // Files use workspace-aware transfers; folder ZIPs remain host-local.
   async function handleDownload(node: FileNode) {
     try {
-      const result = await invoke<{
-        success: boolean;
-        canceled?: boolean;
-        data?: { filePath: string };
-        error?: { code: string; message: string };
-      }>('file:download', { path: node.path });
+      const result =
+        node.type === 'file'
+          ? await downloadWorkspaceFile(workspaceId, node.path, $fileExplorerWorkspacePath)
+          : await invoke<{
+              success: boolean;
+              canceled?: boolean;
+              data?: { filePath: string };
+              error?: { code: string; message: string };
+            }>('file:download', { path: node.path });
       if (result?.success && result.data?.filePath) {
-        toast.success(
+        notify.success(
           m.fileExplorer_tree_downloadSuccess_toast({ filePath: result.data.filePath }),
         );
       } else if (!result?.canceled) {
-        toast.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
+        notify.error(result?.error?.message || m.fileExplorer_tree_downloadFailed_error());
       }
     } catch {
-      toast.error(m.fileExplorer_tree_downloadFailed_error());
+      notify.error(m.fileExplorer_tree_downloadFailed_error());
     }
   }
 
@@ -800,7 +822,7 @@
         },
       });
     }
-    return items;
+    return guardContextItems(items);
   }
 
   function getContextMenuItems(node: FileNode): SidebarMenuEntry[] {
@@ -868,10 +890,12 @@
     }
 
     if (node.type === 'file') {
+      items.push({ type: 'separator' });
       items.push({
         id: 'delete',
         label: m.fileExplorer_tree_delete_label(),
         icon: faTrash,
+        destructive: true,
         onClick: () => {
           handleDeleteFile(node.path);
           closeContextMenu();
@@ -879,12 +903,13 @@
       });
     }
 
-    // Add download and reveal-in-file-manager options — desktop actions on
-    // workspace file paths, only offered when the daemon runs on this machine
-    // (PROTOCOL §5.14 locality) AND the workspace checkout lives on the daemon
-    // host, i.e. not a remote (SSH) workspace (monorepo#2171).
-    if (selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)) {
-      items.push({ type: 'separator' });
+    const hostLocal = selectIsWorkspaceHostLocal.select(appStore.state, workspaceId);
+    const canDownload =
+      node.type === 'file'
+        ? !!workspaceId && !!workspaceRelativeFilePath(node.path, $fileExplorerWorkspacePath)
+        : hostLocal;
+    if (canDownload || hostLocal) items.push({ type: 'separator' });
+    if (canDownload) {
       items.push({
         id: 'download',
         label:
@@ -897,6 +922,9 @@
           void handleDownload(node);
         },
       });
+    }
+    // Reveal and folder ZIPs read host paths and require a local checkout.
+    if (hostLocal) {
       items.push({
         id: 'reveal',
         label: m.layout_panelTabBar_revealIn_label({ fileManager: fileManagerName }),
@@ -907,7 +935,7 @@
       });
     }
 
-    return items;
+    return guardContextItems(items);
   }
 
   // Start editing a file/folder name
@@ -1090,7 +1118,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   bind:this={treeContainer}
-  class="relative h-full overflow-hidden outline-none transition-colors duration-150"
+  class="relative h-full overflow-hidden outline-none transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
   class:file-drop-root={isExternalFileDragOver && dropTargetPath === null}
   style="contain: layout style;"
   tabindex="0"
@@ -1117,6 +1145,7 @@
           {@const absoluteIndex = startIndex + i}
           {@const node = flatNode.node}
           {@const depth = flatNode.depth}
+          {@const DisclosureIcon = flatNode.isExpanded ? CaretDownIcon : CaretRightIcon}
 
           {#if node.path === CREATING_SENTINEL_PATH}
             <!-- Inline file creation input -->
@@ -1133,14 +1162,14 @@
                 >
                   {@html getFileTypeIconSvg(creatingValue || '')}
                 </span>
-                <input
-                  bind:this={createInputRef}
+                <Input
+                  bind:ref={createInputRef}
                   type="text"
                   bind:value={creatingValue}
                   onblur={saveCreate}
                   onkeydown={handleCreateKeydown}
                   placeholder={m.fileExplorer_tree_filename_placeholder()}
-                  class="flex-1 text-sm leading-tight bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
+                  class="flex-1 type-body font-normal bg-transparent border-none outline-none! ring-0! focus:ring-0! focus:outline-none! focus-visible:ring-0! focus-visible:outline-none! min-w-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -1152,7 +1181,7 @@
             {@const gitColor =
               node.type === 'directory'
                 ? flatNode.directoryHasChanges
-                  ? 'text-yellow-700 dark:text-yellow-400'
+                  ? 'text-warning-ink'
                   : ''
                 : getGitStatusColor(flatNode.gitStatus?.status)}
             {@const hasChanges =
@@ -1171,12 +1200,12 @@
 
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="relative flex items-center transition-colors duration-150 {isIgnored
-                ? 'opacity-50'
+              class="group/file-row relative isolate flex items-center [&>[data-slot=list-item-row]]:min-w-0 [&>[data-slot=list-item-row]]:flex-1 transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isIgnored
+                ? 'text-muted-foreground'
                 : ''}"
               class:folder-drop-target={isDropTarget}
               class:inside-drop-target={isInsideDropTarget}
-              style="height: {itemHeight}px; padding-left: {depth * 16}px;"
+              style="height: {itemHeight}px; padding-inline: var(--space-1);"
               data-file-path={node.path}
               ondblclick={(e) => handleDoubleClick(node, e)}
               oncontextmenu={(e) => handleContextMenu(e, node)}
@@ -1185,24 +1214,31 @@
                 <!-- Inline edit mode - matches ListItem sm size styling exactly -->
                 <div
                   class="relative z-10 min-w-0 flex items-center gap-2.5 py-1 rounded-md text-foreground"
-                  style="margin-left: 0.5px; padding-left: 9px; padding-right: 0.5px; width: calc(100% - 0.5px);"
+                  style="margin-left: 0.5px; padding-left: {9 +
+                    depth * 16}px; padding-right: 0.5px; width: calc(100% - 0.5px);"
                 >
                   <span
                     class={`shrink-0 flex items-center justify-center ${node.type === 'directory' ? `opacity-50 ${gitColor}` : `w-4 h-4 [&>svg]:w-full [&>svg]:h-full`}`}
                   >
                     {#if node.type === 'directory'}
-                      <Fa icon={faChevronDown} size="12" />
+                      <DisclosureIcon
+                        size={12}
+                        weight="regular"
+                        mirrored={false}
+                        aria-hidden="true"
+                      />
                     {:else}
                       {@html getFileTypeIconSvg(node.name)}
                     {/if}
                   </span>
-                  <input
-                    bind:this={editInputRef}
+                  <Input
+                    bind:ref={editInputRef}
                     type="text"
                     bind:value={editingValue}
                     onblur={saveEdit}
                     onkeydown={handleEditKeydown}
-                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-sm leading-tight outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                    noFocusStyle
+                    class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent hover:bg-transparent type-body font-normal outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                     onclick={(e) => e.stopPropagation()}
                   />
                 </div>
@@ -1211,13 +1247,15 @@
                   active={isSelected(node.path)}
                   selected={isFocused}
                   tabindex={-1}
-                  icon={faChevronDown}
-                  iconClass={`opacity-50 [&>svg]:w-2! [&>svg]:mr-1! ${gitColor} transition-transform duration-150 ${flatNode.isExpanded ? '' : 'rotate-90'}`}
+                  aria-expanded={flatNode.isExpanded}
+                  iconClass={`-ml-1 mr-1 w-3 text-muted-foreground ${gitColor}`}
                   title={displayName}
-                  titleClass={`cursor-text ${gitColor}`}
+                  titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
-                  class="flex-1"
+                  indent={depth}
+                  indentSize={16}
+                  class="flex-1 bg-transparent!"
                   actions={onCreateFile
                     ? [
                         {
@@ -1232,7 +1270,19 @@
                       ]
                     : []}
                   actionsVisible="hover"
-                />
+                >
+                  {#snippet iconSnippet()}
+                    <!-- Extend into the row inset, keeping labels and hit areas unchanged. -->
+                    <DisclosureIcon
+                      size={12}
+                      weight="regular"
+                      mirrored={false}
+                      class="shrink-0"
+                      aria-hidden="true"
+                      data-file-tree-disclosure
+                    />
+                  {/snippet}
+                </ListItem>
               {:else}
                 <ListItem
                   active={isSelected(node.path)}
@@ -1240,12 +1290,14 @@
                   tabindex={-1}
                   iconClass={gitColor}
                   title={displayName}
-                  titleClass={`cursor-text ${gitColor}`}
+                  titleClass={`cursor-text type-body font-normal leading-(--text-body-line-height) ${gitColor}`}
                   badge={isModified ? '•' : undefined}
                   badgeClass={isModified ? 'text-blue-500' : undefined}
                   onclick={(event) => handleItemClick(flatNode, absoluteIndex, event)}
                   size="sm"
-                  class="flex-1"
+                  indent={depth}
+                  indentSize={16}
+                  class="flex-1 bg-transparent!"
                 >
                   {#snippet iconSnippet()}
                     <span class="w-4 h-4 [&>svg]:w-full [&>svg]:h-full">
@@ -1265,7 +1317,7 @@
               {#if flatNode.agentEdits && flatNode.agentEdits.length > 0 && (node.type === 'file' || !flatNode.isExpanded)}
                 <div class="flex items-center -space-x-1 mr-1 ml-2">
                   {#each flatNode.agentEdits.slice(0, 3) as agentId (agentId)}
-                    <button
+                    <Button
                       type="button"
                       class="rounded-full overflow-hidden cursor-pointer"
                       title={m.fileExplorer_tree_openAgent_tooltip()}
@@ -1275,16 +1327,16 @@
                       }}
                     >
                       <AgentAvatar {agentId} variant="compact" />
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
               <span
                 aria-hidden="true"
-                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
+                class="pointer-events-none absolute -z-10 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
                 node.path
-                  ? 'inset-px border-ring/60 bg-background'
-                  : 'inset-x-1 inset-y-0.5 border-transparent bg-transparent'}"
+                  ? 'inset-x-1 inset-y-px border-ring/60 bg-background'
+                  : `inset-x-1 inset-y-0.5 border-transparent ${isSelected(node.path) ? 'bg-active' : isFocused ? 'bg-selected' : 'bg-transparent group-hover/file-row:bg-hover'}`}"
               ></span>
             </div>
           {/if}
@@ -1296,9 +1348,11 @@
 
 {#if contextMenu}
   <SidebarContextMenu
-    x={contextMenu.x}
-    y={contextMenu.y}
-    items={contextMenu.node
+    x={contextMenu?.x ?? 0}
+    y={contextMenu?.y ?? 0}
+    ariaLabel={contextMenu?.node?.path || m.fileExplorer_tree_fileExplorer_ariaLabel()}
+    returnFocus={contextMenu?.returnFocus}
+    items={contextMenu?.node
       ? getContextMenuItems(contextMenu.node)
       : getBackgroundContextMenuItems()}
     onClickOutside={closeContextMenu}
@@ -1312,7 +1366,7 @@
 
   /* Visual feedback when dragging files to root level (no specific folder targeted) */
   .file-drop-root {
-    outline: 2px dashed hsl(var(--primary));
+    outline: 2px dashed hsl(var(--primary-ink));
     outline-offset: -2px;
     background-color: hsl(var(--primary) / 0.05);
   }

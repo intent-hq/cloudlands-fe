@@ -28,8 +28,8 @@ vi.mock('$features/pi/pi-models.client', () => ({
   installPiMcpAdapter: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: mocks.toastError, success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: vi.fn() },
 }));
 
 vi.mock('./ProviderPathConfig.svelte', async () => ({
@@ -52,8 +52,11 @@ async function buildState(fileSpecialists: object[]) {
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
     await import('$store/renderer/slices/model/model-slice');
-  const { createCollection } =
-    await import('@augmentcode/themis/utils/collections/collection-utils');
+  const { initialState: providerSettingsInitialState } =
+    await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+  const { initialState: availabilityInitialState } =
+    await import('$store/renderer/slices/agent-availability/agent-availability-slice');
+  const { createCollection } = await import('@themislib/themis/utils/collections/collection-utils');
   const {
     initialState: providerCatalogInitialState,
     providerCatalogLoaded,
@@ -67,6 +70,7 @@ async function buildState(fileSpecialists: object[]) {
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
     ),
     providerSettings: {
+      ...providerSettingsInitialState,
       enabledProviders: { 'claude-code': true, codex: true },
       nonDisableableProviderIds: [],
     },
@@ -78,6 +82,7 @@ async function buildState(fileSpecialists: object[]) {
     featureCodes: { activeFeatures: [], initialized: true },
     githubAuth: { isAuthenticated: false },
     agentAvailability: {
+      ...availabilityInitialState,
       providerStatusMap: {
         auggie: { available: true, authenticated: true },
         'claude-code': { available: true, authenticated: true },
@@ -171,13 +176,17 @@ describe('ProviderSelector disable guard', () => {
       result,
       'Anthropic Claude Code',
     )) as HTMLButtonElement;
-    expect(claudeButton.disabled).toBe(true);
+    expect(claudeButton.getAttribute('aria-disabled')).toBe('true');
+    expect(claudeButton.getAttribute('title')).toBeTruthy();
+    mocks.dispatch.mockClear();
+    await fireEvent.click(claudeButton);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
 
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
     );
     const codexButton = (await getDisableButton(result, 'OpenAI Codex')) as HTMLButtonElement;
-    expect(codexButton.disabled).toBe(false);
+    expect(codexButton.getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('still dispatches setProviderEnabled(false) for providers not in use', async () => {
@@ -187,7 +196,10 @@ describe('ProviderSelector disable guard', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'providerSettings/setProviderEnabled',
-        payload: [{ providerId: 'codex', enabled: false }],
+        payload: [
+          { providerId: 'codex', enabled: false },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
       }),
     );
   });
@@ -201,10 +213,20 @@ describe('ProviderSelector disable guard', () => {
     );
   });
 
-  it('dispatches ensureProvidersChecked on mount so availability is populated outside onboarding', async () => {
+  it('opens and closes a saga-owned availability panel session', async () => {
     await renderSelector();
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'agentAvailability/ensureProvidersChecked' }),
+      expect.objectContaining({
+        type: 'agentAvailability/panelOpened',
+        payload: [expect.any(String)],
+      }),
+    );
+    const opened = mocks.dispatch.mock.calls.find(
+      ([action]) => action.type === 'agentAvailability/panelOpened',
+    )![0];
+    cleanup();
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'agentAvailability/panelClosed', payload: opened.payload }),
     );
   });
 });

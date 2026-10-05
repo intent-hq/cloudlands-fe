@@ -770,7 +770,7 @@ describe('tool-result-parser', () => {
   });
 
   describe('agent delegate/create TOON results', () => {
-    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output
+    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output // protocol-version-ok: toon-format crate version
     // (`render_workspace_api_value` in intentd): hyphenated strings are
     // quoted, arrays use the `tasks[N]:` list / inline syntax.
     const AGENT_ID = 'agent-12345678-1234-1234-1234-123456789abc';
@@ -889,7 +889,7 @@ describe('tool-result-parser', () => {
   });
 
   describe('workspace_api TOON results (generalized renderers)', () => {
-    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output
+    // Fixtures mirror the daemon's toon-format v0.5 `encode_default` output // protocol-version-ok: toon-format crate version
     // (`render_workspace_api_value` in intentd), verified against the npm
     // `@toon-format/toon` decoder.
     const wsInput = (code: string) => ({ code, summary: 'ws call' });
@@ -1110,6 +1110,7 @@ describe('tool-result-parser', () => {
           status: 'open',
           commentCount: 2,
           latestAuthor: 'Clement',
+          latestAuthorType: 'user',
           lastActivity: '2026-08-17T02:00:00Z',
         },
       ]);
@@ -1182,5 +1183,75 @@ describe('tool-result-parser', () => {
       expect(result.evaluateResult).toBe('ok');
       expect(result.screenshotUrl).toBe('workspace-asset://shot-2.png');
     });
+  });
+});
+
+describe('latest comment creator attribution', () => {
+  it('preserves a qualified identity-only latest author in TOON', () => {
+    const toon = [
+      'threads[1]:',
+      '  - threadId: t',
+      '    latestCommentAuthor: same',
+      '    latestCommentAuthorType: user',
+      '    latestCommentAuthorIdentity:',
+      '      provider: gitlab',
+      '      host: gitlab.example',
+      '      externalUserId: "42"',
+      'totalComments: 1',
+    ].join('\n');
+    const result = parseToolResult(
+      'workspace_api_workspace-mcp',
+      { code: 'return await ws.comment.list("spec")' },
+      toon,
+    );
+    expect(result.commentThreads?.[0]).toMatchObject({
+      latestAuthor: 'same',
+      latestAuthorType: 'user',
+      latestAuthorIdentity: {
+        provider: 'gitlab',
+        host: 'gitlab.example',
+        externalUserId: '42',
+      },
+    });
+    expect(result.commentThreads?.[0]).not.toHaveProperty('latestAuthorPrincipalId');
+  });
+
+  it('keeps the selected latest identity, never the root or another reply', () => {
+    const identity = { provider: 'gitlab', host: 'gitlab.example', externalUserId: '42' };
+    const result = parseToolResult(
+      'workspace_api_workspace-mcp',
+      { code: 'return await ws.comment.list("spec")' },
+      JSON.stringify({
+        threads: [
+          {
+            threadId: 't',
+            latestCommentAuthor: 'same',
+            latestCommentAuthorType: 'user',
+            latestCommentAuthorIdentity: identity,
+          },
+          {
+            threadId: 'u',
+            latestCommentAuthor: 'same',
+            latestCommentAuthorType: 'user',
+            authorIdentity: identity,
+            comments: [{ authorIdentity: identity }],
+          },
+          {
+            threadId: 'a',
+            latestCommentAuthor: 'agent',
+            latestCommentAuthorType: 'agent',
+            latestCommentAuthorIdentity: identity,
+          },
+        ],
+      }),
+    );
+    expect(result.commentThreads?.[0]).toMatchObject({
+      latestAuthor: 'same',
+      latestAuthorType: 'user',
+      latestAuthorIdentity: identity,
+    });
+    expect(result.commentThreads?.[0]).not.toHaveProperty('latestAuthorPrincipalId');
+    expect(result.commentThreads?.[1]).not.toHaveProperty('latestAuthorIdentity');
+    expect(result.commentThreads?.[2]).not.toHaveProperty('latestAuthorIdentity');
   });
 });

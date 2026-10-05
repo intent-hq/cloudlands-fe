@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: static brand glyph with no interactive DOM -->
+
 <script lang="ts">
   import { cn } from '$lib/utils';
 

@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  acquireBrowserTabMount,
   closeWorkspaceTab,
+  consumeBrowserTabRecovery,
+  consumeBrowserTabNavigation,
+  observeBrowserTabNavigation,
+  requestBrowserTabNavigation,
   endDrag,
   loadScrollPositions,
   loadWorkspaceTabsState,
   moveWorkspace,
   openWorkspaceTab,
   reopenLastClosedWorkspaceTab,
+  releaseBrowserTabMount,
+  requestBrowserTabRecovery,
   restoreWorkspaceTab,
   saveScrollPosition,
   serializeWorkspaceTabsState,
@@ -44,6 +51,9 @@ describe('tabStateReducer', () => {
     recentlyClosedTabAt: {},
     version: 0,
     hydratedBackendId: null,
+    mountedBrowserTabLeases: {},
+    browserTabRecoveryRequests: {},
+    browserTabNavigations: {},
   };
 
   const makeState = (overrides: Partial<TabState> = {}): TabState => ({
@@ -53,6 +63,70 @@ describe('tabStateReducer', () => {
 
   it('returns the initial state', () => {
     expect(tabStateReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('keeps a tab leased until its last actual mount releases ownership', () => {
+    const mounted = tabStateReducer(initialState, acquireBrowserTabMount('browser-a', 'mount-1'));
+    expect(mounted.mountedBrowserTabLeases).toEqual({ 'browser-a': { 'mount-1': true } });
+    expect(tabStateReducer(mounted, acquireBrowserTabMount('browser-a', 'mount-1'))).toBe(mounted);
+
+    const overlap = tabStateReducer(mounted, acquireBrowserTabMount('browser-a', 'mount-2'));
+    const released = tabStateReducer(overlap, releaseBrowserTabMount('browser-a', 'mount-1'));
+    expect(released.mountedBrowserTabLeases).toEqual({ 'browser-a': { 'mount-2': true } });
+    expect(tabStateReducer(released, releaseBrowserTabMount('browser-a', 'mount-1'))).toBe(
+      released,
+    );
+    expect(tabStateReducer(released, releaseBrowserTabMount('missing', 'mount-2'))).toBe(released);
+    expect(
+      tabStateReducer(released, releaseBrowserTabMount('browser-a', 'mount-2'))
+        .mountedBrowserTabLeases,
+    ).toEqual({});
+  });
+
+  it('consumes only the current recovery request without persisting DOM intent', () => {
+    const requested = tabStateReducer(initialState, requestBrowserTabRecovery('tab-a', 'req-1'));
+    expect(requested.browserTabRecoveryRequests).toEqual({ 'tab-a': 'req-1' });
+    expect(tabStateReducer(requested, requestBrowserTabRecovery('tab-a', 'req-1'))).toBe(requested);
+    const newer = tabStateReducer(requested, requestBrowserTabRecovery('tab-a', 'req-2'));
+    expect(tabStateReducer(newer, consumeBrowserTabRecovery('tab-a', 'req-1'))).toBe(newer);
+    expect(
+      tabStateReducer(newer, consumeBrowserTabRecovery('tab-a', 'req-2'))
+        .browserTabRecoveryRequests,
+    ).toEqual({});
+    expect(serializeWorkspaceTabsState(newer)).toEqual(serializeWorkspaceTabsState(initialState));
+    expect(newer.version).toBe(initialState.version);
+  });
+
+  it('consumes exact navigation intent without erasing a newer same-URL command or persisting it', () => {
+    const first = tabStateReducer(
+      initialState,
+      observeBrowserTabNavigation('tab-a', 'https://a.test/'),
+    );
+    const observed = first.browserTabNavigations['tab-a'];
+    expect(observed).toEqual({ url: 'https://a.test/', kind: 'observed' });
+    const command = tabStateReducer(first, requestBrowserTabNavigation('tab-a', 'https://a.test/'));
+    const requested = command.browserTabNavigations['tab-a'];
+    expect(requested).toEqual({ url: 'https://a.test/', kind: 'requested' });
+    expect(tabStateReducer(command, consumeBrowserTabNavigation('tab-a', observed))).toBe(command);
+    const retry = tabStateReducer(command, requestBrowserTabNavigation('tab-a', 'https://a.test/'));
+    expect(tabStateReducer(retry, consumeBrowserTabNavigation('tab-a', requested))).toBe(retry);
+    expect(
+      tabStateReducer(
+        retry,
+        consumeBrowserTabNavigation('tab-a', retry.browserTabNavigations['tab-a']),
+      ).browserTabNavigations,
+    ).toEqual({});
+    expect(serializeWorkspaceTabsState(retry)).toEqual(serializeWorkspaceTabsState(initialState));
+    expect(retry.version).toBe(initialState.version);
+  });
+
+  it('does not persist leases or change them when workspace tabs are rehydrated', () => {
+    const mounted = tabStateReducer(initialState, acquireBrowserTabMount('browser-a', 'mount-1'));
+    const persisted = serializeWorkspaceTabsState(mounted);
+    expect(persisted).toEqual(serializeWorkspaceTabsState(initialState));
+    expect(mounted.version).toBe(initialState.version);
+    const hydrated = tabStateReducer(mounted, loadWorkspaceTabsState(persisted));
+    expect(hydrated.mountedBrowserTabLeases).toBe(mounted.mountedBrowserTabLeases);
   });
 
   it('records the hydrated backend id (idempotently)', () => {
@@ -121,6 +195,13 @@ describe('tabStateReducer', () => {
     expect(tabStateReducer(openedState, openWorkspaceTab('ws-1'))).toBe(openedState);
   });
 
+  it('keeps route ownership transient and preserves the ordinary workspace selection behavior', () => {
+    const fromRoute = tabStateReducer(initialState, openWorkspaceTab('ws-1', 'follow-request'));
+    const fromClick = tabStateReducer(initialState, openWorkspaceTab('ws-1'));
+    expect(fromRoute).toEqual(fromClick);
+    expect(serializeWorkspaceTabsState(fromRoute)).toEqual(serializeWorkspaceTabsState(fromClick));
+    expect(tabStateReducer(fromRoute, openWorkspaceTab('ws-1'))).toBe(fromRoute);
+  });
   it('never adds the onboarding route sentinel to workspace stacks', () => {
     expect(tabStateReducer(initialState, openWorkspaceTab('new'))).toBe(initialState);
   });

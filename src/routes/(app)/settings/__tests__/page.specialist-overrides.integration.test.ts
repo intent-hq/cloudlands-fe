@@ -9,13 +9,19 @@ import type { ReduxStoreContext } from '$store/renderer/types';
 import {
   setBundledSpecialists,
   setFileSpecialists,
+  discardSpecialistDraft,
 } from '$store/renderer/slices/specialists/specialists-slice';
+import { warmImport } from '../../../../test/warm-import';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
   page: { url: new URL('http://localhost/settings?tab=agents&specialist=implementor') },
 }));
 
 vi.mock('$app/state', () => ({ page: mocks.page }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
+}));
 vi.mock('$lib/utils/workspace-navigation', () => ({
   getSettingsPreviousPath: () => '/',
   navigateBackFromSettings: vi.fn(),
@@ -23,6 +29,8 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
 vi.mock('svelte-fa', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
+
+warmImport(() => import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte'));
 
 async function slotOnly() {
   return {
@@ -46,6 +54,9 @@ vi.mock('$features/external-editors/components/OpenComboButton.svelte', slotOnly
 vi.mock('$lib/components/settings/SpecialistModelOptions.svelte', slotOnly);
 
 import SettingsPage from '../+page.svelte';
+import { appClient } from '$lib/client';
+import { specialistsSaga } from '$store/renderer/slices/specialists/sagas/specialists-saga';
+import type { SpecialistCatalog, SpecialistDef } from '$lib/client/app-client';
 
 let storeContext: ReduxStoreContext | undefined;
 
@@ -54,6 +65,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  admitLegacyPrincipal();
+  appStore.dispatch(discardSpecialistDraft('user'));
   window.history.pushState({}, '', '/settings?tab=agents&specialist=implementor');
   mocks.page.url = new URL(window.location.href);
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
@@ -141,5 +154,160 @@ describe('settings collapsed built-in override chrome', () => {
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toBeTruthy());
     expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull();
+  });
+});
+
+describe('specialist creation draft navigation', () => {
+  it('restores unsaved fields after leaving and reopening Settings', async () => {
+    window.history.replaceState({}, '', '/settings?tab=specialists&view=create-specialist');
+    mocks.page.url = new URL(window.location.href);
+    const options = { context: new Map([['redux-store-context', storeContext]]) };
+    const page = render(SettingsPage, options);
+    await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Draft reviewer' } });
+    await fireEvent.input(screen.getByLabelText('Description'), {
+      target: { value: 'Review safely' },
+    });
+    await fireEvent.input(document.getElementById('create-specialist-prompt')!, {
+      target: { value: 'Keep this unfinished prompt' },
+    });
+    page.unmount();
+    render(SettingsPage, options);
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft reviewer');
+    expect((screen.getByLabelText('Description') as HTMLInputElement).value).toBe('Review safely');
+    expect((document.getElementById('create-specialist-prompt') as HTMLTextAreaElement).value).toBe(
+      'Keep this unfinished prompt',
+    );
+  });
+});
+
+describe('specialist creation progress in Settings', () => {
+  let stopSaga: (() => void) | undefined;
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: Error) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+  async function startCreate() {
+    const write = deferred<SpecialistDef>();
+    const catalog = deferred<SpecialistCatalog>();
+    const create = vi.spyOn(appClient.specialists, 'create').mockReturnValue(write.promise);
+    const list = vi.spyOn(appClient.specialists, 'listCatalog').mockReturnValue(catalog.promise);
+    vi.spyOn(appClient.specialists, 'subscribeCatalog').mockImplementation(() => () => {});
+    stopSaga = appStore.runSaga(specialistsSaga);
+    window.history.replaceState({}, '', '/settings?tab=specialists&view=create-specialist');
+    mocks.page.url = new URL(window.location.href);
+    appStore.dispatch(setBundledSpecialists([]));
+    appStore.dispatch(setFileSpecialists([]));
+    const options = { context: new Map([['redux-store-context', storeContext]]) };
+    const page = render(SettingsPage, options);
+    await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Draft reviewer' } });
+    await fireEvent.input(screen.getByLabelText('Description'), {
+      target: { value: 'Description to keep' },
+    });
+    await fireEvent.input(document.getElementById('create-specialist-prompt')!, {
+      target: { value: 'Prompt to keep' },
+    });
+    const button = within(screen.getByTestId('create-specialist-details-column')).getByRole(
+      'button',
+      { name: 'Create Specialist' },
+    );
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    await fireEvent.click(button);
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    const definition: SpecialistDef = {
+      id: 'draft-reviewer',
+      name: 'Draft reviewer',
+      description: 'Description to keep',
+      behaviorPrompt: 'Prompt to keep',
+      source: 'user',
+    };
+    return { write, catalog, create, list, page, options, button, definition };
+  }
+  afterEach(() => {
+    stopSaga?.();
+    stopSaga = undefined;
+    vi.restoreAllMocks();
+  });
+
+  it('keeps the accessible busy state until the saved specialist reaches the sidebar', async () => {
+    const h = await startCreate();
+    await waitFor(() => expect(h.button.getAttribute('aria-busy')).toBe('true'));
+    expect((h.button as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Discard' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    await fireEvent.click(h.button);
+    expect(h.create).toHaveBeenCalledOnce();
+    h.write.resolve(h.definition);
+    await waitFor(() => expect(h.list).toHaveBeenCalledOnce());
+    await waitFor(() => expect(h.button.getAttribute('aria-busy')).toBe('true'));
+    expect(window.location.search).toContain('view=create-specialist');
+    h.catalog.resolve({ specialists: [h.definition] });
+    await waitFor(() => expect(window.location.search).toContain('specialist=draft-reviewer'));
+    expect(
+      await within(screen.getByRole('navigation', { name: 'Settings' })).findByRole('button', {
+        name: 'Draft reviewer',
+      }),
+    ).toBeTruthy();
+    await fireEvent.click(
+      within(screen.getByRole('navigation', { name: 'Settings' })).getByRole('button', {
+        name: 'Create Specialist',
+      }),
+    );
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('');
+  });
+
+  it('retains progress across unmount and never navigates a newly mounted form on completion', async () => {
+    const h = await startCreate();
+    h.page.unmount();
+    render(SettingsPage, h.options);
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft reviewer');
+    expect(
+      within(screen.getByTestId('create-specialist-details-column'))
+        .getByRole('button', { name: 'Create Specialist' })
+        .getAttribute('aria-busy'),
+    ).toBe('true');
+    h.write.resolve(h.definition);
+    await waitFor(() => expect(h.list).toHaveBeenCalledOnce());
+    h.catalog.resolve({ specialists: [h.definition] });
+    await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe(''));
+    expect(window.location.search).toContain('view=create-specialist');
+    expect(h.create).toHaveBeenCalledOnce();
+  });
+
+  it('keeps input after a failed write and permits a successful retry', async () => {
+    const h = await startCreate();
+    h.write.reject(new Error('Write unavailable'));
+    await screen.findByRole('alert');
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft reviewer');
+    expect((h.button as HTMLButtonElement).disabled).toBe(false);
+    h.create.mockResolvedValue(h.definition);
+    await fireEvent.click(h.button);
+    await waitFor(() => expect(h.list).toHaveBeenCalledOnce());
+    h.catalog.resolve({ specialists: [h.definition] });
+    await waitFor(() =>
+      expect(appStore.state.specialists.creationByContext.user.status).toBe('editing'),
+    );
+    await waitFor(() => expect(window.location.search).toContain('specialist=draft-reviewer'));
+    expect(h.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers refresh-only recovery after the write succeeds but the catalog fails', async () => {
+    const h = await startCreate();
+    h.write.resolve(h.definition);
+    await waitFor(() => expect(h.list).toHaveBeenCalledOnce());
+    h.catalog.reject(new Error('Refresh unavailable'));
+    await screen.findByRole('alert');
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Draft reviewer');
+    expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(true);
+    expect(window.location.search).toContain('view=create-specialist');
+    h.list.mockResolvedValue({ specialists: [h.definition] });
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(window.location.search).toContain('specialist=draft-reviewer'));
+    expect(h.create).toHaveBeenCalledOnce();
   });
 });

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import FilesOpenInDropdownHost from './mocks/FilesOpenInDropdownHost.svelte';
 
 test.describe('Files Open In Dropdown', () => {

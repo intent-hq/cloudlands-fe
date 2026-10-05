@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import DisclosureMotionPreparationHost from './DisclosureMotionPreparationHost.svelte';
 
 interface FrameSample {
@@ -363,11 +364,20 @@ for (const cohort of [
       },
     });
     await expect(component.getByTestId('event-subscriptions-outer-header')).toHaveCount(0);
+    const list = component.getByTestId('one-shot-agent-list');
+    if (cohort.agentCount === 1) {
+      await expect(component.getByTestId('one-shot-header')).toHaveCount(0);
+      await expect(component.getByTestId('one-shot-summary-toggle')).toHaveCount(0);
+      await expect(list).toHaveCount(1);
+      await expect(list).toHaveAttribute('data-agent-list-mode', 'direct');
+      await expect(list.locator('[data-subscription-motion-row]')).toHaveCount(1);
+      await expect(component.getByTestId('finished-agent-group')).toHaveCount(0);
+      return;
+    }
     await expect(component.getByTestId('one-shot-summary-toggle')).toHaveAttribute(
       'aria-expanded',
       String(cohort.expanded),
     );
-    const list = component.getByTestId('one-shot-agent-list');
     await expect(list).toHaveCount(cohort.expanded ? 1 : 0);
     if (cohort.expanded) {
       await expect(list).toHaveAttribute('data-agent-list-mode', 'grouped');

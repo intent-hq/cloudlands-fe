@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   /**
    * TransferWorkspaceModalHost — Redux host for the Transfer/Download wizard
    * (global for all workspace entrypoints, same pattern as
@@ -79,6 +80,10 @@
   finalizeStatus={$finalizeStatus$}
   finalizeError={$finalizeError$}
   onSelectDestination={(destination) => appStore.dispatch(selectTransferDestination(destination))}
+  onConnectDevice={() => {
+    appStore.dispatch(closeTransferModal());
+    void navigateToSettings({ tab: 'devices' });
+  }}
   onNext={() => appStore.dispatch(transferPlanRequested())}
   onBack={() => appStore.dispatch(transferWizardBack())}
   onCancel={() => appStore.dispatch(closeTransferModal())}

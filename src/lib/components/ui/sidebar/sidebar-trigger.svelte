@@ -11,9 +11,11 @@
     ref = $bindable(null),
     class: className,
     onclick,
+    onpointerenter,
     ...restProps
   }: ComponentProps<typeof Button> & {
     onclick?: (e: MouseEvent) => void;
+    onpointerenter?: (e: PointerEvent) => void;
   } = $props();
 
   const sidebar = useSidebar();
@@ -25,8 +27,12 @@
   variant="ghost"
   size="icon"
   aria-label={m.ui_sidebar_toggle_label()}
-  class={cn('size-7', className)}
+  class={cn('size-6 [&_svg]:size-4', className)}
   type="button"
+  onpointerenter={(e) => {
+    onpointerenter?.(e);
+    sidebar.requestPeek('hover');
+  }}
   onclick={(e) => {
     onclick?.(e);
     sidebar.toggle();

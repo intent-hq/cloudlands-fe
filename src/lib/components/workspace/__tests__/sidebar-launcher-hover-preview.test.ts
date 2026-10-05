@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentSession, Note } from '$shared/types';
 import {
@@ -7,10 +6,9 @@ import {
   getAgentLauncherPreview,
   getNoteLauncherPreview,
 } from '../utils/sidebar-launcher-preview';
+import { warmImport } from '../../../../test/warm-import';
 
-function source(relativePath: string) {
-  return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
-}
+warmImport(() => import('../sidebar/SidebarLauncherHoverCard.svelte'));
 
 describe('sidebar launcher hover previews', () => {
   it('sorts agents by their last message with unmessaged agents last', () => {
@@ -138,25 +136,6 @@ describe('sidebar launcher hover previews', () => {
       'agent-4',
       'agent-5',
     ]);
-  });
-
-  it('wraps both agent and note launcher items in rich hover cards', () => {
-    const sidebar = source('../MultiSelectTabbedSidebar.svelte');
-    expect(sidebar).toContain('getAgentLauncherPreview(agent)');
-    expect(sidebar).not.toContain('selectAgentSessionStreamingContent');
-    expect(sidebar).toContain('label: m.chat_agentThread_you_label(),');
-    expect(sidebar).toContain('label: m.workspace_fileChanges_agent_label(),');
-    expect(sidebar).toContain('rows={[{ text: getNoteLauncherPreview(note) }]}');
-    expect(sidebar).toContain('if (open && agent.messages.length === 0)');
-    expect(sidebar).toContain('void loadChatTranscript(agent.id)');
-    expect(sidebar).toContain('deriveAgentLauncherItems(');
-    expect(sidebar).toContain('let openLauncherHoverKey = $state<string | null>(null)');
-    expect(sidebar).toContain('open={openLauncherHoverKey === `agent:${agent.id}`}');
-    expect(sidebar).toContain('open={openLauncherHoverKey === `note:${note.id}`}');
-    expect(sidebar).toContain(
-      'isolate grid h-9 w-full min-w-0 grid-flow-col items-start overflow-visible',
-    );
-    expect(sidebar).toContain('data-launcher-pack="left"');
   });
 
   it('delays launcher hover cards so a mouse pass-over never opens them', async () => {

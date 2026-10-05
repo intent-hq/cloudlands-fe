@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACTION_KEY_ACTION_IDS,
   ACTION_KEY_COUNT,
   ACTION_KEY_IDS,
   CODEX_MIC_LINKED_SLOT,
   DEFAULT_ACTION_MAPPING,
   DEFAULT_ACTION_MAPPINGS,
   LEGACY_CM2_DEFAULT_ACTION_MAPPING,
+  PRE_CLOSE_TAB_CM2_DEFAULT_ACTION_MAPPING,
   PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
   PRE_PTT_CODEX_DEFAULT_ACTION_MAPPING,
   PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING,
@@ -42,7 +44,7 @@ describe('per-model default mappings', () => {
       'new-workspace',
       'new-agent',
       'see-spec',
-      'switch-window-layouts',
+      'close-tab',
       'push-to-talk',
       'cycle-open-windows',
       'cycle-unread-agents',
@@ -53,6 +55,12 @@ describe('per-model default mappings', () => {
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('cycle-workspace-agents');
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('cycle-attention-agents');
     expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('cycle-in-progress-agents');
+    expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2']).not.toContain('switch-window-layouts');
+  });
+
+  it('CM2 row 3 key 4 (ACT09) defaults to close-tab', () => {
+    expect(ACTION_KEY_IDS[3]).toBe('ACT09');
+    expect(DEFAULT_ACTION_MAPPINGS['creator-micro-2'][3]).toBe('close-tab');
   });
 
   it('CM2 row 4 (ACT10–ACT12) defaults to push-to-talk / open windows / unread', () => {
@@ -122,11 +130,18 @@ describe('normalizeActionMapping', () => {
       'none',
       'new-agent',
       'toggle-sidebar-tabs',
-      'switch-window-layouts',
+      'close-tab',
       'push-to-talk',
       'new-workspace',
       'cycle-unread-agents',
     ]);
+  });
+
+  it('keeps switch-window-layouts assignable now that it left the CM2 defaults', () => {
+    const mapping = normalizeActionMapping(
+      new Array(ACTION_KEY_COUNT).fill('switch-window-layouts'),
+    );
+    expect(mapping.every((id) => id === 'switch-window-layouts')).toBe(true);
   });
 
   it('accepts the new global cycle actions as valid entries', () => {
@@ -211,6 +226,7 @@ describe('migrateLegacyCm2DefaultActionMapping', () => {
     ['previous (cycle-workspace)', PREVIOUS_CM2_DEFAULT_ACTION_MAPPING],
     ['pre-PTT (row-4 cycling)', PRE_PTT_CM2_DEFAULT_ACTION_MAPPING],
     ['pre-window-cycle (ACT11 in-progress)', PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING],
+    ['pre-close-tab (ACT09 switch-window-layouts)', PRE_CLOSE_TAB_CM2_DEFAULT_ACTION_MAPPING],
   ])('upgrades a CM2 mapping still equal to the %s defaults', (_label, priorDefaults) => {
     const mappings = normalizeActionMappingsByModel({
       'creator-micro-2': [...priorDefaults],
@@ -225,6 +241,7 @@ describe('migrateLegacyCm2DefaultActionMapping', () => {
       PREVIOUS_CM2_DEFAULT_ACTION_MAPPING,
       PRE_PTT_CM2_DEFAULT_ACTION_MAPPING,
       PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING,
+      PRE_CLOSE_TAB_CM2_DEFAULT_ACTION_MAPPING,
     ]) {
       const customized = [...priorDefaults];
       customized[0] = 'stop-agent';
@@ -269,7 +286,10 @@ describe('isActionKeyActionId', () => {
   it('accepts catalog ids and rejects everything else', () => {
     expect(isActionKeyActionId('stop-agent')).toBe(true);
     expect(isActionKeyActionId('cycle-open-windows')).toBe(true);
+    expect(isActionKeyActionId('close-tab')).toBe(true);
+    expect(isActionKeyActionId('switch-window-layouts')).toBe(true);
     expect(isActionKeyActionId('none')).toBe(true);
+    expect(ACTION_KEY_ACTION_IDS[ACTION_KEY_ACTION_IDS.length - 1]).toBe('none');
     expect(isActionKeyActionId('bogus')).toBe(false);
     expect(isActionKeyActionId(3)).toBe(false);
   });

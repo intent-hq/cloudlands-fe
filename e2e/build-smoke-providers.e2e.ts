@@ -29,6 +29,8 @@ import {
   startPermissionAutoApprover,
   startChatNudgeMonitor,
   setMockAgentBehavior,
+  exitPackagedApp,
+  openAgentsSidebarPanel,
 } from './build-smoke-helpers';
 import { join } from 'path';
 
@@ -99,7 +101,9 @@ test.describe('Build Smoke — Provider Verification', () => {
     repoCleanup = repo.cleanup;
 
     // Launch the packaged app
-    const launched = await launchPackagedApp({});
+    const launched = await launchPackagedApp({
+      extraEnv: { MOCK_AGENT_SCRIPT_PATH: path.resolve(process.cwd(), 'e2e/mock-acp-agent.js') },
+    });
     app = launched.app;
     page = launched.page;
     console.log(
@@ -122,34 +126,7 @@ test.describe('Build Smoke — Provider Verification', () => {
     }
     console.log('================================\n');
 
-    // Close app — app.close() triggers Electron's before-quit handler which
-    // shows a native "Quit anyway?" dialog when agents are still running.
-    // That dialog blocks the close forever.  Instead, use app.exit(0) via
-    // Playwright's evaluate() which immediately terminates the Node process
-    // without firing before-quit.  Fall back to pkill if that fails.
-    if (app) {
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.exit(0));
-      } catch {
-        // evaluate may fail if the app already crashed — force-kill
-      }
-      // Give the OS a moment to release the single-instance lock file
-      await new Promise((r) => setTimeout(r, 2_000));
-      // Belt-and-suspenders: kill any stragglers (e.g. helper processes)
-      try {
-        const { execSync } = await import('child_process');
-        if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent.exe"', {
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-        } else {
-          execSync('pkill -9 -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
-        }
-      } catch {
-        // No matching processes — already exited cleanly
-      }
-    }
+    await exitPackagedApp(app);
 
     // Clean up temp repo
     if (repoCleanup) {
@@ -163,6 +140,12 @@ test.describe('Build Smoke — Provider Verification', () => {
 
   for (const providerId of KNOWN_PROVIDERS) {
     test(`${providerId} provider completes the hello-world task`, async () => {
+      if (providerId === 'mock') {
+        expect(
+          availableProviders.has('mock'),
+          'The configured mock fixture must be available',
+        ).toBe(true);
+      }
       // Skip unavailable providers — shows as "skipped" in Playwright reporter.
       if (!availableProviders.has(providerId)) {
         test.skip(true, `${providerId} is not installed`);
@@ -188,7 +171,7 @@ test.describe('Build Smoke — Provider Verification', () => {
       try {
         // Always explicitly switch provider via localStorage — don't assume any
         // default.  A previous test run may have left a different provider active.
-        await switchProviderViaLocalStorage(page, providerId);
+        if (providerId !== 'mock') await switchProviderViaLocalStorage(page, providerId);
 
         // OpenCode models are dynamic (fetched from the CLI at runtime) so
         // they aren't in PROVIDER_MODEL_TIERS.  Without an explicit model
@@ -218,7 +201,11 @@ test.describe('Build Smoke — Provider Verification', () => {
         }
 
         // Create a workspace through the UI (like a real user would)
-        workspaceId = await createWorkspaceWithPrompt(page, { repoPath, prompt: PROMPT });
+        workspaceId = await createWorkspaceWithPrompt(page, {
+          repoPath,
+          prompt: PROMPT,
+          ...(providerId === 'mock' ? { providerName: 'Mock (E2E)' } : {}),
+        });
         await takeScreenshot(page, `${providerId}-workspace-created`);
 
         // Get the actual worktree path via IPC — the worktree directory is
@@ -262,7 +249,12 @@ test.describe('Build Smoke — Provider Verification', () => {
         lastWorkspaceId = workspaceId;
 
         // Wait for at least one agent to appear (proves provider connected)
-        await page.waitForSelector('[data-agent-id]', { timeout: 60_000 });
+        await openAgentsSidebarPanel(page);
+        await expect(
+          page.locator('[data-testid="agent-panel"] [data-agent-id]').first(),
+        ).toBeVisible({
+          timeout: 30_000,
+        });
         await takeScreenshot(page, `${providerId}-agent-started`);
 
         // Auto-approve any permission requests (e.g. tool-use approvals)

@@ -5,38 +5,37 @@
  * this connection's own `clientId`, the live logical-client list
  * (`client.list`, refreshed on `client:connected` / `client:disconnected`),
  * and per workspace the effective browser client
- * (`workspace.getBrowserClient`) plus the daemon tab registry rows
- * (`browser.listTabs`, patched by `browser:tab-*` events).
+ * (`workspace.getBrowserClient`) plus a `browser:tab-*` event counter the
+ * panel-layout registry saga stamps on its `browser.listTabs` reads.
  */
 
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
-import type { BrowserTab, LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
+} from '@themislib/themis/utils/collections/collection-utils';
+import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
 
 export type LiveClientCollection = Collection<LiveClient, 'clientId'>;
-/**
- * Registry rows as the daemon sent them: `browser.listTabs` rows carry the
- * `hostConnected` / `hostName` presence decoration (`BrowserTabListing`),
- * `browser:tab-*` event rows do not — both are stored verbatim.
- */
-export type BrowserTabCollection = Collection<BrowserTab, 'tabId'>;
+type AuthenticatedClient = LiveClient & { deviceKey: string };
+type AuthenticatedClientCollection = Collection<AuthenticatedClient, 'deviceKey'>;
 
 export type WorkspaceBrowserClientsState = {
   /** `workspace.getBrowserClient` result; null until the first read lands. */
   browserClient: WorkspaceBrowserClient | null;
-  /** Daemon tab-registry rows for this workspace. */
-  tabs: BrowserTabCollection;
+  liveClients?: LiveClientCollection;
+  liveClientsLoaded?: boolean;
   /**
-   * Bumped by every `browser:tab-*` patch. A `browser.listTabs` snapshot is
-   * applied only when it was requested at the current revision, so an older
-   * snapshot never erases an event patch that landed while it was in flight.
+   * Bumped by every `browser:tab-*` event. The panel-layout registry saga
+   * reads it before and after a `browser.listTabs` read: a changed value
+   * means the listing may predate an event, so it is re-read.
    */
   tabsRevision: number;
 };
 
 export type BrowserClientsState = {
+  /** Current-person Devices projection; browser routing retains raw client IDs below. */
+  authenticatedContext?: string | null;
+  authenticatedClients?: AuthenticatedClientCollection;
   /** The `clientId` this renderer's connection presents on `client.hello`. */
   ownClientId: string | null;
   /** `client.list` snapshot; empty until the first read lands. */
@@ -49,16 +48,24 @@ export type BrowserClientsState = {
 export const createLiveClientCollection = (items?: LiveClient[]): LiveClientCollection =>
   createCollection('clientId', items);
 
-export const createBrowserTabCollection = (items?: BrowserTab[]): BrowserTabCollection =>
-  createCollection('tabId', items);
+export const createAuthenticatedClientCollection = (
+  items: LiveClient[] = [],
+): AuthenticatedClientCollection =>
+  createCollection(
+    'deviceKey',
+    items.map((item) => ({
+      ...item,
+      deviceKey: JSON.stringify([item.principalId, item.clientId]),
+    })),
+  );
 
 export const emptyWorkspaceBrowserClientsState: WorkspaceBrowserClientsState = {
   browserClient: null,
-  tabs: createBrowserTabCollection(),
   tabsRevision: 0,
 };
 
 export const initialState: BrowserClientsState = {
+  authenticatedClients: createAuthenticatedClientCollection(),
   ownClientId: null,
   liveClients: createLiveClientCollection(),
   liveClientsLoaded: false,

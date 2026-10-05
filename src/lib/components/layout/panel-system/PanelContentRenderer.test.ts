@@ -121,4 +121,20 @@ describe('PanelContentRenderer async boundary', () => {
 
     expect(loader).not.toHaveBeenCalled();
   });
+
+  it('mounts a preloaded component without re-entering the async load path', async () => {
+    const loader = vi.fn(async () => ({ default: AsyncPanelContent }));
+    register('async-preloaded', loader);
+    await tabTypeRegistry.loadComponent('async-preloaded');
+    const loadComponent = vi.spyOn(tabTypeRegistry, 'loadComponent');
+
+    render(PanelContentRenderer, {
+      props: props('async-preloaded'),
+    });
+
+    expect(screen.getByTestId('async-panel-content')).toBeTruthy();
+    expect(loadComponent).not.toHaveBeenCalled();
+    expect(loader).toHaveBeenCalledOnce();
+    loadComponent.mockRestore();
+  });
 });

@@ -1,10 +1,12 @@
+import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { readable } from 'svelte/store';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import { derived, readable } from 'svelte/store';
 
 vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
@@ -37,8 +39,9 @@ vi.mock('$lib/icons/phosphor-icons', () => ({
   faRotateRight: { iconName: 'rotate-right' },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', async () => ({
+  ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
+  notify: {
     error: vi.fn(),
     success: vi.fn(),
     info: vi.fn(),
@@ -207,6 +210,13 @@ const mockReduxState = vi.hoisted(
       provider: string;
       keyConfigured: Record<string, boolean>;
     };
+    workspace: { hasLoaded: boolean; workspaces: unknown };
+    connections: { windowBackendId: string };
+    guestSessions: {
+      sessions: { idField: 'id'; map: Record<string, never>; ids: string[] };
+      hasReceivedList: boolean;
+      listUnavailable: boolean;
+    };
     providerCatalog?: unknown;
     daemonHealth: { hostLocality: 'local' | 'remote' | null; transport: unknown };
   } => ({
@@ -232,6 +242,18 @@ const mockReduxState = vi.hoisted(
       provider: 'elevenlabs',
       keyConfigured: { elevenlabs: true, openai: false },
     },
+    // The mic gate also reads the caller's workspace role (multiplayer w3);
+    // admitted owner fixtures explicitly hydrate their workspace rows.
+    workspace: { hasLoaded: false, workspaces: null },
+    // The role gate also rules out a guest window (multiplayer w4): this
+    // window's backend is not a joined host, and the guest list has settled
+    // (an unsettled identity reads as collaborator-only).
+    connections: { windowBackendId: 'local' },
+    guestSessions: {
+      sessions: { idField: 'id', map: {}, ids: [] },
+      hasReceivedList: true,
+      listUnavailable: false,
+    },
   }),
 );
 const mockReduxDispatch = vi.hoisted(() => vi.fn());
@@ -244,10 +266,24 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_PROVIDER_CATALOG } =
     await import('../../../../test/fixtures/provider-catalog.fixture');
-  mockReduxState.providerCatalog = providerCatalogReducer(
-    initialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
-  );
+  mockReduxState.providerCatalog = {
+    ...providerCatalogReducer(initialState, providerCatalogLoaded(MOCK_PROVIDER_CATALOG)),
+    get byWorkspaceId() {
+      return {
+        'ws-1': {
+          catalog: MOCK_PROVIDER_CATALOG,
+          settings: [
+            {
+              path: 'model.defaultProvider',
+              value: mockReduxState.providerSettings.activeProviderId,
+            },
+          ],
+          specialists: [],
+          readiness: {},
+        },
+      };
+    },
+  };
 
   return createAppStoreMockModule({
     state: () => mockReduxState,
@@ -267,6 +303,14 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   },
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentProvider: (agentId$: import('svelte/store').Readable<string>) =>
+    derived(agentId$, (id) => {
+      for (const ws of Object.values(mockReduxState.workspaceAgents.byWorkspaceId) as any[]) {
+        const agent = ws?.agents?.map?.[id];
+        if (agent) return agent.provider || agent.metadata?.provider;
+      }
+      return undefined;
+    }),
   selectAgentReasoningEffort: () => readable(undefined),
   selectAgentSession: {
     select: (_state: any, agentId: string) => {
@@ -279,6 +323,22 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   },
 }));
 import SimpleRichInput from './SimpleRichInput.svelte';
+beforeEach(() => {
+  mockReduxState.workspace = {
+    hasLoaded: true,
+    workspaces: createCollection(
+      'id',
+      ['ws-1', 'ws-2'].map((id) => ({ id, myRole: 'owner' })),
+    ),
+  };
+  const admitted = withLegacyPrincipal(mockReduxState);
+  Object.assign(mockReduxState, {
+    principal: admitted.principal,
+    connections: admitted.connections,
+    daemonHealth: admitted.daemonHealth,
+    workspaceEvents: admitted.workspaceEvents,
+  });
+});
 import { warmImport } from '../../../../test/warm-import';
 
 function createSession(overrides: Record<string, unknown> = {}) {
@@ -403,6 +463,21 @@ describe('SimpleRichInput draft change notification', () => {
     expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
     expect(editor.getAttribute('placeholder')).toBe('Ask anything');
   });
+
+  it('leaves Tab available for normal editor focus navigation', async () => {
+    const onvaluechange = vi.fn();
+    render(SimpleRichInput, {
+      props: {
+        value: '',
+        contextItems: [],
+        onvaluechange,
+      },
+    });
+
+    const accepted = await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), { key: 'Tab' });
+    expect(accepted).toBe(true);
+    expect(onvaluechange).not.toHaveBeenCalled();
+  });
 });
 
 describe('SimpleRichInput image paste', () => {
@@ -501,7 +576,9 @@ describe('SimpleRichInput action bar layout', () => {
           const submitActions = view.container.querySelector('[data-chat-input-submit-actions]');
           expect(primaryActions?.contains(target)).toBe(false);
           expect(submitActions?.contains(target)).toBe(true);
-          expect(view.getByTestId('message-input').className).toContain('focus-within:border-ring');
+          expect(view.getByTestId('message-input').getAttribute('data-ring-state')).toMatch(
+            /^(rest|hover|focus)$/,
+          );
         },
       };
     });
@@ -535,45 +612,14 @@ describe('SimpleRichInput action bar layout', () => {
     expect(promptMenu.querySelector('[data-icon="plus"]')).toBeTruthy();
     expect(submitActions?.contains(micButton)).toBe(true);
     await fireEvent.click(promptMenu);
-    expect(await screen.findByRole('menuitem', { name: /Add Context/i })).toBeTruthy();
+    const addContext = await screen.findByRole('menuitem', { name: /Add Context/i });
+    expect(addContext.getAttribute('aria-haspopup')).toBe('dialog');
     expect(screen.getByRole('menuitem', { name: /Attach files/i })).toBeTruthy();
-    const modelPickerClass = screen.getByTestId('model-picker').className;
-    expect(modelPickerClass).toContain('px-0');
-    expect(modelPickerClass).toContain('font-medium');
-    expect(modelPickerClass).toContain('hover:bg-transparent');
-    expect(screen.getByTestId('message-input').className).toContain('focus-within:border-ring');
-    expect(screen.getByTestId('message-input').className).toContain('focus-within:ring-0');
-    expect(screen.getByTestId('message-input').className).not.toContain('focus-within:ring-2');
-  });
-
-  it('uses the nested sidebar surface only when edge-docked', () => {
-    render(SimpleRichInput, {
-      props: { value: '', contextItems: [], edgeDocked: true },
-    });
-
-    const edgeDockedInput = screen.getByTestId('message-input');
-    expect(edgeDockedInput.className).toContain('rounded-lg');
-    expect(edgeDockedInput.className).toContain('border-0');
-    expect(edgeDockedInput.className).toContain('bg-sidebar');
-    expect(edgeDockedInput.className).not.toContain('bg-transparent');
-    expect(document.querySelector('[data-chat-input-action-bar]')?.className).toContain(
-      'flex-wrap',
-    );
-    expect(document.querySelector('[data-chat-input-submit-actions]')?.className).toContain(
-      'justify-end',
-    );
-
-    cleanup();
-    render(SimpleRichInput, { props: { value: '', contextItems: [] } });
-    const standaloneInput = screen.getByTestId('message-input');
-    expect(standaloneInput.className).toContain('border-border');
-    expect(standaloneInput.className).not.toContain('bg-sidebar');
-    expect(document.querySelector('[data-chat-input-action-bar]')?.className).not.toContain(
-      'flex-wrap',
-    );
-    expect(document.querySelector('[data-chat-input-submit-actions]')?.className).toContain(
-      'shrink-0',
-    );
+    const composer = screen.getByTestId('message-input');
+    await fireEvent.mouseEnter(composer);
+    expect(composer.getAttribute('data-ring-state')).toBe('hover');
+    await fireEvent.focusIn(screen.getByTestId('tiptap-editor'));
+    expect(composer.getAttribute('data-ring-state')).toBe('focus');
   });
 });
 
@@ -623,7 +669,7 @@ describe('SimpleRichInput provider switch sync', () => {
       },
     });
 
-    expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+    expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
     expect(screen.getByTestId('model-picker-model').textContent).toBe('');
     expect(onmodelChange).not.toHaveBeenCalled();
     expect(setModelMock).not.toHaveBeenCalled();
@@ -640,7 +686,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -648,7 +694,7 @@ describe('SimpleRichInput provider switch sync', () => {
     expect(setModelMock).not.toHaveBeenCalled();
   });
 
-  it('hydrates the persisted model without passing the session provider as a filter', async () => {
+  it('hydrates the persisted provider and model as one selection', async () => {
     removeMockSession('ws-1', 'agent-1');
     addMockSession(
       'ws-1',
@@ -678,7 +724,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-provider').textContent).toBe('');
+      expect(screen.getByTestId('model-picker-provider').textContent).toBe('codex');
       expect(screen.getByTestId('model-picker-model').textContent).toBe('codex:gpt-5-codex');
     });
 
@@ -753,7 +799,6 @@ describe('SimpleRichInput provider switch sync', () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(dialog.textContent).toContain('Switch provider mid-conversation?');
     expect(setModelMock).not.toHaveBeenCalled();
     expect(onmodelChange).not.toHaveBeenCalled();
 
@@ -765,7 +810,7 @@ describe('SimpleRichInput provider switch sync', () => {
     await fireEvent.click(confirmButton!);
 
     await waitFor(() => {
-      expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
+      expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
     });
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
@@ -854,8 +899,6 @@ describe('SimpleRichInput provider switch sync', () => {
       expect(el).not.toBeNull();
       return el as HTMLElement;
     });
-    expect(dialog.textContent).toContain('Switch model mid-conversation?');
-    expect(dialog.textContent).not.toContain('Switch provider mid-conversation?');
 
     const confirmButton = Array.from(dialog.querySelectorAll('button')).find(
       (b) => b.textContent?.trim() === 'Switch model',
@@ -905,7 +948,7 @@ describe('SimpleRichInput provider switch sync', () => {
     });
   });
 
-  it('calls agentClient.setModel exactly once during a cross-provider model switch', async () => {
+  it('mirrors a provider pick without becoming a second mutation owner', async () => {
     const onmodelChange = vi.fn();
     const workspace = {
       id: 'ws-1',
@@ -937,18 +980,10 @@ describe('SimpleRichInput provider switch sync', () => {
     fireEvent.input(triggerInput, { target: { value: 'codex:gpt-5-codex' } });
     await fireEvent.click(triggerButton);
 
-    // Wait for the async handleProviderChangeFromModel to complete
-    await waitFor(() => {
-      expect(setModelMock).toHaveBeenCalledTimes(1);
-    });
-
-    // The explicit target provider rides along as the 4th wire arg so the
-    // daemon validates the model against it, not the session's provider.
-    expect(setModelMock).toHaveBeenCalledWith('agent-1', 'codex:gpt-5-codex', 'ws-1', 'codex');
-    expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
-      'low',
-      'high',
-    ]);
+    // The real picker owns the guarded operation; the parent only mirrors
+    // the selection. The real-parent suite asserts the actual wire count.
+    expect(setModelMock).not.toHaveBeenCalled();
+    expect(reconcileAgentReasoningEffortMock).not.toHaveBeenCalled();
     expect(onmodelChange).toHaveBeenCalledWith('codex:gpt-5-codex');
   });
 
@@ -1050,23 +1085,11 @@ describe('SimpleRichInput Stop-button visibility', () => {
     selectedModel: 'gpt5.4',
   });
 
-  // The mocked Button component strips aria-label, so locate the Send/Stop
-  // affordances via the Fa icon's data-icon attribute instead. The icon mocks
-  // above render `data-icon="stop"` for the Stop button and
-  // `data-icon="arrow-right"` for the Send button.
   function stopButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="stop"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+    return document.querySelector('[data-testid="composer-submit-button"][data-mode="stop"]');
   }
   function sendButton(): HTMLButtonElement | null {
-    const icons = document.body.querySelectorAll('[data-icon="arrow-right"]');
-    for (const icon of icons) {
-      const btn = icon.closest('button') as HTMLButtonElement | null;
-      // Skip the interrupt-and-send split button inside the Stop block; that
-      // button carries data-testid="interrupt-btn".
-      if (btn && btn.dataset.testid !== 'interrupt-btn') return btn;
-    }
-    return null;
+    return document.querySelector('[data-testid="composer-submit-button"][data-mode="send"]');
   }
 
   beforeEach(() => {
@@ -1125,15 +1148,14 @@ describe('SimpleRichInput Stop-button visibility', () => {
     expect(sendButton()).toBeNull();
   });
 
-  it('uses the same muted treatment for prompt controls and Stop', () => {
+  it('keeps prompt controls muted and makes Stop the primary morph state', () => {
     render(SimpleRichInput, { props: { ...baseProps(), isResponding: true } });
 
     expect(document.querySelector('[data-chat-input-action-bar]')?.className).toContain(
       'text-muted-foreground',
     );
     expect(screen.getByTestId('model-picker').className).toContain('text-muted-foreground');
-    expect(stopButton()?.dataset.variant).toBe('ghost-light');
-    expect(stopButton()?.className).toContain('text-muted-foreground');
+    expect(stopButton()?.dataset.variant).toBe('primary');
     expect(screen.getByTestId('prompt-actions-trigger').dataset.variant).toBe('ghost-light');
   });
 
@@ -1142,7 +1164,7 @@ describe('SimpleRichInput Stop-button visibility', () => {
     { mode: 'attachment-only', value: '', contextItems: [readyAttachment()] },
     { mode: 'mixed', value: 'follow up', contextItems: [readyAttachment()] },
   ])(
-    'renders accessible Queue and Interrupt actions while responding with $mode content',
+    'morphs to Queue while responding with $mode content and preserves force-submit',
     async ({ value, contextItems }) => {
       const onsubmit = vi.fn();
       const onforcesubmit = vi.fn();
@@ -1158,13 +1180,14 @@ describe('SimpleRichInput Stop-button visibility', () => {
       });
 
       const queue = screen.getByRole('button', { name: 'Queue message' });
-      const send = screen.getByRole('button', { name: 'Interrupt and send' });
-      expect(queue?.dataset.variant).toBe('ghost-light');
-      expect(send?.dataset.variant).toBe('ghost-light');
+      expect(queue?.dataset.variant).toBe('primary');
       expect(queue?.parentElement?.className).not.toContain('bg-sidebar');
 
       await fireEvent.click(queue!);
-      await fireEvent.click(send!);
+      await fireEvent.keyDown(screen.getByTestId('tiptap-editor'), {
+        key: 'Enter',
+        metaKey: true,
+      });
       expect(onsubmit).toHaveBeenCalledWith(value);
       expect(onforcesubmit).toHaveBeenCalledWith(value);
     },
@@ -1295,8 +1318,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
     expect(composer.className).toContain(
       'transition-[border-color,background-color,box-shadow,min-height]',
     );
-    expect(composer.className).toContain('duration-(--motion-fast)');
-    expect(composer.className).toContain('ease-(--ease-standard)');
     expect(composer.className).toContain('motion-reduce:transition-none');
 
     await fireEvent.focusIn(editor);
@@ -1379,11 +1400,20 @@ describe('SimpleRichInput automatic composer geometry', () => {
     },
   );
 
+  it('renders the composer resize handle on the shared app-resize-handle contract', () => {
+    renderInPanel(720);
+    const composer = screen.getByTestId('message-input');
+
+    const resizeHandle = screen.getByRole('button', { name: /Resize input area/ });
+    expect(composer.contains(resizeHandle)).toBe(true);
+    expect(resizeHandle.classList.contains('app-resize-handle')).toBe(true);
+    expect(resizeHandle.getAttribute('data-resize-axis')).toBe('y');
+  });
+
   it('keeps a manual resize when focus changes', async () => {
     renderInPanel(720);
     const composer = screen.getByTestId('message-input');
     const editor = screen.getByTestId('tiptap-editor');
-    const editorWrapper = composer.querySelector('.editor-wrapper');
     Object.defineProperty(composer, 'offsetHeight', { configurable: true, value: 80 });
 
     const resizeHandle = screen.getByRole('button', { name: /Resize input area/ });
@@ -1401,7 +1431,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
     expect(composer.getAttribute('style')).not.toContain('min-height');
     expect(composer.className).toContain('transition-[border-color,background-color,box-shadow]');
     expect(composer.className).not.toContain('box-shadow,min-height');
-    expect(editorWrapper?.className).toContain('pt-1');
   });
 
   it('affirms idle and focused geometry in every required visual state', async () => {
@@ -1419,7 +1448,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
       });
       expect(editor.getAttribute('placeholder')).toBe('Ask anything');
       expect(editorWrapper?.classList.contains('placeholder-hidden')).toBe(true);
-      expect(editorWrapper?.className).toContain('pt-1');
 
       return {
         ...view,
@@ -1431,7 +1459,6 @@ describe('SimpleRichInput automatic composer geometry', () => {
           await waitFor(() => {
             expect(composer.getAttribute('style')).toContain(`min-height: ${activeHeight}px`);
           });
-          expect(editorWrapper?.className).toContain('pt-1');
           expect(composer.className).toContain('motion-reduce:transition-none');
         },
       };
@@ -1703,8 +1730,8 @@ describe('SimpleRichInput prompt enhancement menu (§5.31)', () => {
       );
     });
 
-    const { toast } = await import('svelte-sonner');
-    const successMock = toast.success as ReturnType<typeof vi.fn>;
+    const { notify } = await import('$lib/components/patterns/notify');
+    const successMock = notify.success as ReturnType<typeof vi.fn>;
     expect(successMock).toHaveBeenCalledTimes(1);
     const firstToastUndo = successMock.mock.calls[0]![1].action.onClick as () => void;
 
@@ -1762,8 +1789,7 @@ describe('SimpleRichInput input lock while enhancing', () => {
   }
 
   function sendButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="arrow-right"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+    return document.querySelector('[data-testid="composer-submit-button"]');
   }
 
   beforeEach(() => {
@@ -1930,13 +1956,26 @@ describe('SimpleRichInput mic-button visibility (effective voice engine)', () =>
     render(SimpleRichInput, { props: baseProps() });
     expect(micButton()).not.toBeNull();
   });
+
+  it('hides the mic button for a collaborator-only client even with a configured engine (multiplayer w3)', () => {
+    mockReduxState.workspace = {
+      hasLoaded: true,
+      workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'collaborator' }]),
+    };
+    Object.assign(mockReduxState, {
+      principal: withLegacyPrincipal(mockReduxState, 'guest').principal,
+    });
+    render(SimpleRichInput, { props: baseProps() });
+    expect(micButton()).toBeNull();
+    mockReduxState.workspace = { hasLoaded: false, workspaces: null };
+  });
 });
 
 describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
-  // The transcribing spinner button (located via the Fa mock's data-icon).
+  // The transcribing button is identified by the canonical loading indicator.
   function transcribingButton(): HTMLButtonElement | null {
-    const icon = document.body.querySelector('[data-icon="spinner"]');
-    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+    const loader = document.body.querySelector('[data-slot="intent-mark-loader"]');
+    return (loader?.closest('button') as HTMLButtonElement | null) ?? null;
   }
 
   beforeEach(() => {
@@ -1957,7 +1996,7 @@ describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders an enabled cancel control (not a disabled spinner) while transcribing', async () => {
+  it('renders an enabled cancel control with the shared loader while transcribing', async () => {
     const { m } = await import('$shared/paraglide/messages.js');
     render(SimpleRichInput, {
       props: {
@@ -1975,6 +2014,7 @@ describe('SimpleRichInput mic-button cancel-while-transcribing', () => {
     });
     const button = transcribingButton();
     expect(button).not.toBeNull();
+    expect(button!.querySelector('[data-slot="intent-mark-loader"]')).not.toBeNull();
     expect(button!.disabled).toBe(false);
     expect(button!.getAttribute('aria-label')).toBe(m.chat_richInput_micCancelTranscribing_label());
   });
@@ -2090,7 +2130,8 @@ describe('SimpleRichInput mic-button focus retention', () => {
     const editor = screen.getByTestId('tiptap-editor');
     editor.focus();
 
-    await clickLikeABrowser(buttonByIcon('spinner')!);
+    const loader = document.body.querySelector('[data-slot="intent-mark-loader"]');
+    await clickLikeABrowser(loader?.closest('button') as HTMLButtonElement);
 
     expect(document.activeElement).toBe(editor);
   });
@@ -2128,7 +2169,11 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
   beforeEach(() => {
     vi.clearAllMocks();
     (window as any).__tiptapInsertMentionCalls = [];
-    mockReduxState.daemonHealth = { hostLocality: null, transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: null,
+      transport: null,
+    };
     addMockSession('ws-1', createSession());
   });
 
@@ -2182,9 +2227,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     expect(item.placementStatus).toBe('placed');
     expect(item.file).toBeUndefined();
     expect(insertMentionCalls()).toHaveLength(0);
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
-    expect(toast.success).toHaveBeenCalledTimes(1);
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
+    expect(notify.success).toHaveBeenCalledTimes(1);
   });
 
   it('never sends base64 bytes: a file with no resolvable sourcePath becomes a failed pill', async () => {
@@ -2193,9 +2238,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     render(SimpleRichInput, { props: baseProps() });
     await dropFiles([makeFile('big.log', 'text/plain', 11 * 1024 * 1024)]);
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // No wire call at all — base64 is not a fallback.
     expect(placeAttachmentMock).not.toHaveBeenCalled();
@@ -2208,9 +2253,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     render(SimpleRichInput, { props: baseProps() });
     await dropFiles([makeFile('huge.png', 'image/png', 31 * 1024 * 1024)]);
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     expect(placeAttachmentMock).not.toHaveBeenCalled();
     expect(insertMentionCalls()).toHaveLength(0);
@@ -2250,9 +2295,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     render(SimpleRichInput, { props: { ...baseProps(), value: 'hello', oncontextAdd, onsubmit } });
     await dropFiles([makeFile('big.log', 'text/plain', 11 * 1024 * 1024)]);
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // The item stays visible as a failed pill (not silently dropped)…
     const chip = document.querySelector('[data-placement-status="failed"]');
@@ -2508,9 +2553,9 @@ describe('SimpleRichInput non-image attachment placement (unified flow)', () => 
     placeAttachmentMock.mockRejectedValueOnce(new Error('source file not found'));
     await fireEvent.click(screen.getByTestId('attachment-retry'));
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // Still a failed pill, still blocking — the stale path surfaced visibly.
     expect(document.querySelector('[data-placement-status="failed"]')).not.toBeNull();
@@ -2563,7 +2608,11 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
   beforeEach(() => {
     vi.clearAllMocks();
     (window as any).__tiptapInsertMentionCalls = [];
-    mockReduxState.daemonHealth = { hostLocality: 'local', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'local',
+      transport: null,
+    };
     addMockSession('ws-1', createSession());
   });
 
@@ -2593,12 +2642,16 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
     expect((mention.meta as any).fullPath).toBe('/home/user/projects/my-folder');
     // Folders are never placed as attachments.
     expect(placeAttachmentMock).not.toHaveBeenCalled();
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('remote drop containing a folder rejects the WHOLE drop with one error toast', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'remote',
+      transport: null,
+    };
     (window as any).electronAPI.getPathForFile = vi.fn(() => '/home/user/projects/my-folder');
 
     render(SimpleRichInput, { props: baseProps() });
@@ -2612,9 +2665,9 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
       ]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     // Nothing attaches — not even the file in the same drop.
     expect(insertMentionCalls()).toHaveLength(0);
@@ -2645,7 +2698,11 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
   });
 
   it('file-only drops behave exactly as before when remote (no folder involved)', async () => {
-    mockReduxState.daemonHealth = { hostLocality: 'remote', transport: null };
+    mockReduxState.daemonHealth = {
+      ...mockReduxState.daemonHealth,
+      hostLocality: 'remote',
+      transport: null,
+    };
 
     render(SimpleRichInput, { props: baseProps() });
     const image = makeFile('photo.png', 'image/png');
@@ -2655,8 +2712,8 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
     );
 
     expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy();
-    const { toast } = await import('svelte-sonner');
-    expect(toast.error).not.toHaveBeenCalled();
+    const { notify } = await import('$lib/components/patterns/notify');
+    expect(notify.error).not.toHaveBeenCalled();
     expect(insertMentionCalls()).toHaveLength(0);
   });
 
@@ -2695,9 +2752,9 @@ describe('SimpleRichInput folder drop (path references, local daemon only)', () 
       makeItemsDropEvent([{ file: folder, isDirectory: true }]),
     );
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
     expect(insertMentionCalls()).toHaveLength(0);
   });

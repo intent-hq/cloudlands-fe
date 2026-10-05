@@ -5,22 +5,24 @@
   Appears on hover for both user and assistant messages.
 -->
 <script lang="ts">
-  import { safeSlide } from '$lib/utils/animations';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import { Tooltip, TooltipShortcut } from '$lib/components/ui/tooltip';
-  import { formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
-  import Fa from 'svelte-fa';
+  import { onMount } from 'svelte';
+  import { observeMessageActionDay } from './message-action-day-clock';
+  import { queueMessageControls } from './message-controls-mount-queue';
+  import { observeLazyTurnVisibility } from './lazy-turn-observer';
+  import { ActionBar, defineActions } from '$lib/components/patterns/action-menu';
+  import { formatDateTime, formatFullDateTime, formatTime, type DateInput } from '$lib/i18n/format';
   import {
-    faCopy,
-    faCheck,
-    faPencil,
-    faRotateRight,
-    faThumbsUp,
-    faThumbsDown,
-    faCodeBranch,
+    faArrowRotateRight,
     faArrowUp,
-  } from '@fortawesome/free-solid-svg-icons';
+    faCodeBranch,
+    faCopy,
+    faPencil,
+    faThumbsDown,
+    faThumbsUp,
+  } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import type { QueueInfo } from '$lib/utils/queue-info';
+  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
   import {
     MESSAGE_ACTION_REVEAL_CLASS,
     MESSAGE_ACTION_SURFACE_CLASS,
@@ -45,10 +47,13 @@
     requestId?: string;
     /** Called when user wants to scroll to previous user message */
     onScrollToPrevious?: () => void;
+    previousMessageLoading?: boolean;
     /** Canonical message time. */
     timestamp?: DateInput | null;
     /** Legacy fallback when the canonical timestamp is absent or invalid. */
     createdAt?: DateInput | null;
+    /** Delivery metadata, presented only with the user message's hover/focus actions. */
+    queueInfo?: QueueInfo | null;
   }
 
   let {
@@ -63,38 +68,182 @@
     class: className = '',
     requestId,
     onScrollToPrevious,
+    previousMessageLoading = false,
     timestamp,
     createdAt,
+    queueInfo,
   }: Props = $props();
 
-  let copied = $state(false);
-  let copiedSessionId = $state(false);
-  let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
-  let compactTime = $derived(actionDate ? formatTime(actionDate) : '');
-  let fullTime = $derived(actionDate ? formatFullDateTime(actionDate) : '');
+  let actionSurface: HTMLDivElement;
+  let controlsReady = $state(false);
+  let containerWidth = $state(Number.POSITIVE_INFINITY);
+  onMount(() => {
+    const root = actionSurface.closest<HTMLElement>('[data-message-controls-root]');
+    const parent = actionSurface.parentElement;
+    if (!root || !parent) {
+      controlsReady = true;
+      return;
+    }
+    let stopObserving = () => {};
+    let released = false;
+    const release = () => {
+      // Both queued mounting and teardown release this registration.
+      if (released) return;
+      released = true;
+      stopObserving();
+      parent.removeEventListener('pointerenter', queued.mountNow);
+      parent.removeEventListener('focusin', queued.mountNow);
+    };
+    const queued = queueMessageControls(() => {
+      controlsReady = true;
+      release();
+    });
+    stopObserving = observeLazyTurnVisibility(actionSurface, root, (_intersecting, visible) => {
+      if (visible) queued.prioritize();
+    });
+    parent.addEventListener('pointerenter', queued.mountNow);
+    parent.addEventListener('focusin', queued.mountNow);
+    return () => {
+      queued.cancel();
+      release();
+    };
+  });
 
-  async function handleCopy(event: MouseEvent) {
-    if (event.shiftKey && requestId) {
+  $effect(() => {
+    if (!controlsReady) return;
+    const parent = actionSurface.parentElement;
+    if (!parent || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      containerWidth = entry.contentRect.width;
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  });
+
+  let today = $state(new Date().toDateString());
+  onMount(() => observeMessageActionDay((day) => (today = day)));
+
+  let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
+  const showDate = $derived(actionDate !== null && actionDate.toDateString() !== today);
+  let compactTime = $derived(
+    actionDate ? (showDate ? formatDateTime(actionDate) : formatTime(actionDate)) : '',
+  );
+  let fullTime = $derived(actionDate ? formatFullDateTime(actionDate) : '');
+  const interactiveClass = $derived(
+    showOnHover
+      ? 'group-hover:pointer-events-auto group-focus-within:pointer-events-auto'
+      : 'pointer-events-auto',
+  );
+  // Keep a full date beside the primary action; the existing menu keeps the rest reachable.
+  const visibleActionCount = $derived(
+    role === 'assistant' && showDate && containerWidth < 320 ? 1 : Number.POSITIVE_INFINITY,
+  );
+  const actions = $derived(
+    defineActions([
+      {
+        id: 'edit',
+        label: m.chat_messageActions_editMessage_ariaLabel(),
+        icon: faPencil,
+        shortcut: 'e',
+        when: role === 'user' && Boolean(onEdit),
+      },
+      {
+        id: 'regenerate',
+        label: m.chat_messageActions_regenerate_ariaLabel(),
+        icon: faArrowRotateRight,
+        when: role === 'assistant' && Boolean(onRegenerate),
+      },
+      {
+        id: 'scroll-previous',
+        label: previousMessageLoading
+          ? m.chat_messageActions_previousMessageLoading_label()
+          : m.chat_messageActions_previousUserMessage_label(),
+        disabled: previousMessageLoading,
+        icon: faArrowUp,
+        when: role === 'assistant' && Boolean(onScrollToPrevious),
+      },
+      {
+        id: 'fork',
+        label: m.chat_messageActions_fork_ariaLabel(),
+        icon: faCodeBranch,
+        when: role === 'assistant' && Boolean(onFork),
+      },
+      {
+        id: 'vote-up',
+        kind: 'checkbox',
+        label: m.chat_messageActions_goodResponse_label(),
+        icon: faThumbsUp,
+        checked: currentVote === 'up',
+        when: role === 'assistant' && Boolean(onVote),
+      },
+      {
+        id: 'vote-down',
+        kind: 'checkbox',
+        label: m.chat_messageActions_badResponse_label(),
+        icon: faThumbsDown,
+        checked: currentVote === 'down',
+        when: role === 'assistant' && Boolean(onVote),
+      },
+      {
+        id: 'copy',
+        label: m.chat_messageActions_copyMessage_ariaLabel(),
+        icon: faCopy,
+        when: Boolean(onCopy),
+      },
+      {
+        id: 'scroll-previous',
+        label: previousMessageLoading
+          ? m.chat_messageActions_previousMessageLoading_label()
+          : m.chat_messageActions_scrollToPrevious_label(),
+        disabled: previousMessageLoading,
+        icon: faArrowUp,
+        when: role === 'user' && Boolean(onScrollToPrevious),
+      },
+    ]),
+  );
+
+  async function handleCopy(event: Event) {
+    if ('shiftKey' in event && event.shiftKey && requestId) {
       // Shift+click: copy session ID
       await navigator.clipboard.writeText(requestId);
-      copiedSessionId = true;
-      setTimeout(() => (copiedSessionId = false), 2000);
     } else {
       // Normal click: copy message content
       onCopy?.();
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
     }
   }
 
-  function handleVote(vote: 'up' | 'down') {
-    onVote?.(vote);
+  function handleAction(id: string, event: Event) {
+    switch (id) {
+      case 'edit':
+        onEdit?.();
+        break;
+      case 'regenerate':
+        onRegenerate?.();
+        break;
+      case 'fork':
+        onFork?.();
+        break;
+      case 'vote-up':
+        onVote?.('up');
+        break;
+      case 'vote-down':
+        onVote?.('down');
+        break;
+      case 'copy':
+        void handleCopy(event);
+        break;
+      case 'scroll-previous':
+        onScrollToPrevious?.();
+        break;
+    }
   }
 </script>
 
 <div
+  bind:this={actionSurface}
   data-testid="message-actions"
   data-message-actions-role={role}
+  style:max-width="calc(100% - 0.5rem)"
   class="{MESSAGE_ACTION_SURFACE_CLASS} {showOnHover
     ? MESSAGE_ACTION_REVEAL_CLASS
     : ''} {className}"
@@ -108,143 +257,19 @@
     >
   {/if}
 
-  {#if role === 'user'}
-    <!-- User message actions: Edit, Copy -->
-    {#if onEdit}
-      <TooltipShortcut
-        label={m.chat_messageActions_edit_label()}
-        shortcut="e"
-        side="top"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={onEdit}
-          aria-label={m.chat_messageActions_editMessage_ariaLabel()}
-        >
-          <Fa icon={faPencil} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-    {/if}
-  {:else}
-    <!-- Assistant message actions: Regenerate, Fork, Vote, Copy -->
-    {#if onRegenerate}
-      <TooltipShortcut
-        label={m.chat_messageActions_regenerate_label()}
-        side="top"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={onRegenerate}
-          aria-label={m.chat_messageActions_regenerate_ariaLabel()}
-        >
-          <Fa icon={faRotateRight} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
+  {#if controlsReady}
+    {#if role === 'user' && queueInfo}
+      <div class="min-w-0 {interactiveClass}">
+        <QueuedMessageNoticeHeader {queueInfo} />
+      </div>
     {/if}
 
-    {#if onFork}
-      <TooltipShortcut label={m.chat_messageActions_fork_label()} side="top" delayDuration={300}>
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={onFork}
-          aria-label={m.chat_messageActions_fork_ariaLabel()}
-        >
-          <Fa icon={faCodeBranch} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-    {/if}
-
-    {#if onVote}
-      <TooltipShortcut
-        label={m.chat_messageActions_goodResponse_label()}
-        side="top"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={() => handleVote('up')}
-          aria-label={m.chat_messageActions_goodResponse_label()}
-          class={currentVote === 'up' ? 'text-green-500' : ''}
-        >
-          <Fa icon={faThumbsUp} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-
-      <TooltipShortcut
-        label={m.chat_messageActions_badResponse_label()}
-        side="top"
-        delayDuration={300}
-      >
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={() => handleVote('down')}
-          aria-label={m.chat_messageActions_badResponse_label()}
-          class={currentVote === 'down' ? 'text-red-500' : ''}
-        >
-          <Fa icon={faThumbsDown} class="w-2.5! h-2.5!" />
-        </Button>
-      </TooltipShortcut>
-    {/if}
-  {/if}
-
-  <!-- Copy button for all messages -->
-  {#if onCopy}
-    <Tooltip side="top" delayDuration={300} contentClass="whitespace-nowrap">
-      {#snippet trigger()}
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={handleCopy}
-          aria-label={m.chat_messageActions_copyMessage_ariaLabel()}
-        >
-          {#if copied || copiedSessionId}
-            <div in:safeSlide={{ axis: 'x', duration: 150 }}>
-              <Fa icon={faCheck} class="w-2.5! h-2.5! text-green-500" />
-            </div>
-          {:else}
-            <div in:safeSlide={{ axis: 'x', duration: 150 }}>
-              <Fa icon={faCopy} class="w-2.5! h-2.5!" />
-            </div>
-          {/if}
-        </Button>
-      {/snippet}
-      {#snippet content()}
-        <div class="w-full flex flex-col">
-          <div class="flex items-center gap-3">
-            <span class="text-sm">{m.chat_messageActions_copyMessage_label()}</span>
-          </div>
-          {#if requestId}
-            <div class="text-subtle text-sm">
-              {m.chat_messageActions_copySessionIdHint_label()}
-            </div>
-          {/if}
-        </div>
-      {/snippet}
-    </Tooltip>
-  {/if}
-
-  <!-- Scroll to previous button for user messages -->
-  {#if role === 'user' && onScrollToPrevious}
-    <TooltipShortcut
-      label={m.chat_messageActions_scrollToPrevious_label()}
-      side="top"
-      delayDuration={300}
-    >
-      <Button
-        variant="ghost-light"
-        size="icon-xs"
-        onclick={() => onScrollToPrevious?.()}
-        aria-label={m.chat_messageActions_scrollToPrevious_label()}
-      >
-        <Fa icon={faArrowUp} class="w-2.5! h-2.5!" />
-      </Button>
-    </TooltipShortcut>
+    <ActionBar
+      {actions}
+      visibleCount={visibleActionCount}
+      class="shrink-0 {interactiveClass}"
+      overflowLabel={m.lib_commandPalette_quickActions_ariaLabel()}
+      onAction={handleAction}
+    />
   {/if}
 </div>

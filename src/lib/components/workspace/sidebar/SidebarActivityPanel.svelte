@@ -5,7 +5,7 @@
    * event handling and natural language descriptions.
    */
   import { writable } from 'svelte/store';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faFile,
@@ -304,7 +304,7 @@
 
     // Active/running states
     if (type === 'agent:started' || type === 'agent:created') return 'text-blue-400/70';
-    if (type === 'agent:woken-by-subscription') return 'text-amber-400/70';
+    if (type === 'agent:woken-by-subscription') return 'text-warning-ink';
 
     // Messaging
     if (type === 'agent:message:sent' || type === 'agent:message:received')
@@ -420,7 +420,7 @@
       {/if}
       <Button
         variant="plain"
-        size="xs"
+        size="compact"
         class="!h-auto text-ui text-subtle hover:text-foreground"
         loading={$loadingOlder$}
         onclick={() => appStore.dispatch(loadOlderEventsRequested(workspaceId))}
@@ -446,7 +446,7 @@
     </div>
   {:else if dedupedEvents.length === 0}
     <!-- Empty state -->
-    <div class="flex-1 flex flex-col items-center justify-center text-subtle py-8">
+    <div class="flex flex-1 flex-col items-start justify-center px-5 py-8 text-left text-subtle">
       <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
       <p class="text-ui">{m.workspace_activityPanel_noActivity_label()}</p>
     </div>
@@ -473,55 +473,57 @@
             ) > 60000}
           {@const clickable = isEventClickable(event)}
 
-          <button
-            type="button"
-            class="relative group flex items-start gap-2 py-1 w-full text-left transition-colors z-10 outline-none {clickable
-              ? 'cursor-pointer'
-              : 'cursor-default'}"
-            onclick={() => handleEventClick(event)}
-            disabled={!clickable}
-            transition:slide={{ axis: 'y', duration: 150 }}
-          >
-            <!-- Icon or Agent Avatar - use h-[1.2rem] to match text line-height for vertical centering -->
-            <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">
-              {#if eventAgentId}
-                <div class="flex items-center justify-center bg-sidebar">
-                  <AgentAvatar size={14} agentId={eventAgentId} />
-                </div>
-              {:else}
-                <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">
-                  <Fa {icon} class="text-ui {statusColor}" />
-                </div>
-              {/if}
-            </div>
+          <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
+            <Button
+              type="button"
+              variant="plain"
+              class="h-auto! rounded-none! relative group flex items-start gap-2 py-1! w-full text-left transition-colors z-10 outline-none {clickable
+                ? 'cursor-pointer'
+                : 'cursor-default'}"
+              onclick={() => handleEventClick(event)}
+              disabled={!clickable}
+            >
+              <!-- Icon or Agent Avatar - use h-[1.2rem] to match text line-height for vertical centering -->
+              <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">
+                {#if eventAgentId}
+                  <div class="flex items-center justify-center bg-sidebar">
+                    <AgentAvatar size={14} agentId={eventAgentId} />
+                  </div>
+                {:else}
+                  <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">
+                    <Fa {icon} class="text-ui {statusColor}" />
+                  </div>
+                {/if}
+              </div>
 
-            <!-- Content -->
-            <div class="flex-1 min-w-0 flex items-baseline gap-1">
-              <span
-                class="text-ui leading-[1.2rem] truncate text-subtle {clickable
-                  ? 'group-hover:text-foreground'
-                  : ''} transition-colors"
-              >
-                {#each labelParts as part}{#if part.emphasis}<span
-                      class="font-semibold text-foreground">{part.text}</span
-                    >{:else}{part.text}{/if}{/each}
-              </span>
-              {#if changes}
-                <LineChangesBadge
-                  additions={changes.additions}
-                  deletions={changes.deletions}
-                  size="xs"
-                />
-              {/if}
-            </div>
+              <!-- Content -->
+              <div class="flex-1 min-w-0 flex items-baseline gap-1">
+                <span
+                  class="text-ui leading-[1.2rem] truncate text-subtle {clickable
+                    ? 'group-hover:text-foreground'
+                    : ''} transition-colors"
+                >
+                  {#each labelParts as part}{#if part.emphasis}<span
+                        class="font-semibold text-foreground">{part.text}</span
+                      >{:else}{part.text}{/if}{/each}
+                </span>
+                {#if changes}
+                  <LineChangesBadge
+                    additions={changes.additions}
+                    deletions={changes.deletions}
+                    size="xs"
+                  />
+                {/if}
+              </div>
 
-            <!-- Timestamp -->
-            {#if showTimestamp}
-              <span class="text-ui text-subtle shrink-0">
-                <RelativeTime date={new Date(event.timestamp)} compact />
-              </span>
-            {/if}
-          </button>
+              <!-- Timestamp -->
+              {#if showTimestamp}
+                <span class="text-ui text-subtle shrink-0">
+                  <RelativeTime date={new Date(event.timestamp)} compact />
+                </span>
+              {/if}
+            </Button>
+          </div>
         {/each}
       </div>
     </div>

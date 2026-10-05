@@ -195,45 +195,10 @@ class EventFilterEngine {
       return false;
     }
   }
-
-  /**
-   * Apply filters to an array of events
-   */
-  filterEvents(events: WorkspaceEvent[], filters: EventFilter[]): WorkspaceEvent[] {
-    if (!filters || filters.length === 0) {
-      return events;
-    }
-
-    // Extract limit filter if present
-    const limitFilter = filters.find((f) => f.field === '_limit');
-    const limit = limitFilter?.value as number | undefined;
-
-    // Filter events
-    const filteredEvents = events.filter((event) =>
-      this.matches(
-        event,
-        filters.filter((f) => !f.field.startsWith('_')),
-      ),
-    );
-
-    // Apply limit if specified
-    if (limit && limit > 0) {
-      return filteredEvents.slice(0, limit);
-    }
-
-    return filteredEvents;
-  }
 }
 
 const subscriptionFilterEngine = new EventFilterEngine();
 
 export function eventMatchesSubscription(event: WorkspaceEvent, filters: EventFilter[]): boolean {
   return subscriptionFilterEngine.matches(event, filters);
-}
-
-export function filterEventsForSubscription(
-  events: WorkspaceEvent[],
-  filters: EventFilter[],
-): WorkspaceEvent[] {
-  return subscriptionFilterEngine.filterEvents(events, filters);
 }

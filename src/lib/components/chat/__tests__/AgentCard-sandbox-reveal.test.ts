@@ -143,6 +143,26 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
     expect(screen.queryByText(/^Reveal in /)).toBeNull();
   });
 
+  it('hides node paths even when the head daemon is local', async () => {
+    seedLocality('local');
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({
+          placement: { target: 'remote', checkout: 'isolated' },
+          nodePath: '/node/private/checkout',
+          metadata: { sandboxPath: '/node/private/checkout' },
+        }),
+      ]),
+    );
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+    expect(await screen.findByText('Open')).toBeTruthy();
+    expect(screen.queryByText(/^Reveal in /)).toBeNull();
+    expect(mockedInvoke.mock.calls.some(([channel]) => channel === 'shell:showItemInFolder')).toBe(
+      false,
+    );
+  });
+
   it('hides the reveal item when the daemon is remote', async () => {
     seedLocality('remote');
     appStore.dispatch(
@@ -195,8 +215,8 @@ describe('AgentCard sandbox "Reveal in" context-menu item', () => {
       bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
     );
     mockedInvoke.mockRejectedValueOnce(new Error('open exited with code 1'));
-    const { toast } = await import('svelte-sonner');
-    const errorSpy = vi.spyOn(toast, 'error').mockImplementation(() => '' as never);
+    const { notify } = await import('$lib/components/patterns/notify');
+    const errorSpy = vi.spyOn(notify, 'error').mockImplementation(() => '' as never);
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();

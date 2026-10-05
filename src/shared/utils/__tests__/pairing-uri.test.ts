@@ -1,11 +1,11 @@
+import { TC_ADDRESS } from '../../../test/fixtures/tc-address.fixture';
 import { describe, expect, it } from 'vitest';
 
 import { isPairingUri, parsePairingUri } from '../pairing-uri';
 
 // The canonical shape from PROTOCOL §5 `pairing.getInfo`:
 // intent://pair?v=1&host=<ip[,ip...]>&port=<p>&fp=<sha256>&token=<t>[&tc=<addr>]
-const FULL_URI =
-  'intent://pair?v=1&host=192.168.1.10,10.0.0.5&port=5181&fp=AA%3ABB%3ACC&token=abab12&tc=tc7f2a91.tailcat.net';
+const FULL_URI = `intent://pair?v=1&host=192.168.1.10,10.0.0.5&port=5181&fp=AA%3ABB%3ACC&token=abab12&tc=${TC_ADDRESS}`;
 
 describe('isPairingUri', () => {
   it('recognizes pairing URIs (case-insensitive, surrounding whitespace)', () => {
@@ -34,13 +34,19 @@ describe('isPairingUri', () => {
 });
 
 describe('parsePairingUri', () => {
+  it('preserves a Tailcat-only pairing payload byte-for-byte', () => {
+    const parsed = parsePairingUri(`intent://pair?v=1&host=&port=5181&token=t&tc=${TC_ADDRESS}`);
+    expect(parsed?.hosts).toEqual([]);
+    expect(parsed?.tcAddress).toBe(TC_ADDRESS);
+  });
+
   it('parses every component field including the tc= tunnel address', () => {
     expect(parsePairingUri(FULL_URI)).toEqual({
       hosts: ['192.168.1.10', '10.0.0.5'],
       port: 5181,
       fingerprint: 'AA:BB:CC',
       token: 'abab12',
-      tcAddress: 'tc7f2a91.tailcat.net',
+      tcAddress: TC_ADDRESS,
     });
   });
 

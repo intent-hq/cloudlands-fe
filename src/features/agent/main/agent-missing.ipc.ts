@@ -85,82 +85,15 @@ interface AgentListActiveResult {
 }
 
 /**
- * Last successfully resolved active-streams snapshot (from either the daemon
- * `agent.listActive` probe or the legacy fallback). Served back on a transient
- * `agent.listActive` failure so a slow/overloaded daemon degrades to a stale
- * read instead of triggering the legacy fan-out — see `isMethodNotFoundError`.
+ * Last successfully resolved active-streams snapshot from the daemon's
+ * `agent.listActive` probe. Served back on ANY `agent.listActive` failure —
+ * including a `-32601` METHOD_NOT_FOUND — so a slow/overloaded daemon degrades
+ * to a stale read instead of issuing more RPCs. The former
+ * `workspace.list` → `agent.list` per-workspace fan-out was removed: every
+ * supported daemon serves `agent.listActive`, and fanning out O(workspaces)
+ * `agent.list` calls on a failure only amplified load (monorepo#1395).
  */
 let lastKnownActiveStreams: ActiveStream[] = [];
-
-/**
- * The legacy `workspace.list` → `agent.list` fan-out is only a safe substitute
- * for `agent.listActive` when the daemon genuinely predates the method
- * (JSON-RPC -32601 / `METHOD_NOT_FOUND`). Any other failure (timeout,
- * connection drop, internal error) means the daemon is already struggling, and
- * fanning out into O(workspaces) extra RPCs would amplify that load —
- * precisely the load ⇒ timeout ⇒ fan-out ⇒ more load loop this guards against
- * (monorepo#1395).
- *
- * Checks the structured `code`/`rpcCode` fields only — never the error
- * message — so a daemon error whose message happens to contain "method not
- * found" (e.g. an internal error surfacing an unrelated method name) is not
- * misclassified as a genuine `METHOD_NOT_FOUND` and does not trigger the
- * fan-out.
- */
-function isMethodNotFoundError(error: unknown): boolean {
-  if (error && typeof error === 'object') {
-    if ((error as { code?: unknown }).code === 'METHOD_NOT_FOUND') return true;
-    if ((error as { rpcCode?: unknown }).rpcCode === -32601) return true;
-  }
-  return false;
-}
-
-async function getLegacyActiveStreams(
-  client: ReturnType<typeof getBackendClient>,
-): Promise<ActiveStream[]> {
-  const workspaceListResult = (await client.request('workspace.list')) as
-    { workspaces?: Array<Record<string, unknown>> } | undefined;
-  const workspaces = Array.isArray(workspaceListResult?.workspaces)
-    ? workspaceListResult.workspaces
-    : [];
-
-  const perWorkspace = await Promise.all(
-    workspaces.map(async (ws) => {
-      const workspaceId = String(ws.id ?? ws.workspaceId ?? '');
-      if (!workspaceId) return [];
-      try {
-        const agentListResult = (await client.request('agent.list', { workspaceId })) as
-          | {
-              agents?: Array<{
-                id?: string;
-                isStreaming?: boolean;
-                isResponding?: boolean;
-                updatedAt?: string;
-              }>;
-            }
-          | undefined;
-        const agents = Array.isArray(agentListResult?.agents) ? agentListResult.agents : [];
-        return agents
-          .filter((agent) => agent.isStreaming === true || agent.isResponding === true)
-          .map((agent) => {
-            const agentId = String(agent.id ?? '');
-            const parsed = agent.updatedAt ? Date.parse(agent.updatedAt) : NaN;
-            const startTime = Number.isFinite(parsed) ? parsed : 0;
-            return { agentId, sessionId: agentId, workspaceId, startTime };
-          })
-          .filter((entry) => entry.agentId.length > 0);
-      } catch (error) {
-        logger.warn('agent.list failed during active-streams probe; skipping workspace', {
-          workspaceId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return [];
-      }
-    }),
-  );
-
-  return perWorkspace.flat();
-}
 
 // Note: Agent context schemas are defined in agent-context.ipc.ts
 
@@ -184,9 +117,8 @@ export function registerMissingAgentHandlers(): void {
     }
   }
 
-  // Cross-workspace active-streams probe used by the renderer tracker. New
-  // daemons answer this in one request; the legacy fan-out remains as a
-  // compatibility fallback while older sidecars may still be installed.
+  // Cross-workspace active-streams probe used by the renderer tracker — one
+  // daemon-global `agent.listActive` request, never a per-workspace fan-out.
   ipcMain.handle('agent:get-active-streams', async () => {
     try {
       const client = getBackendClient();
@@ -200,20 +132,13 @@ export function registerMissingAgentHandlers(): void {
           startTime,
         }));
       } catch (error) {
-        if (!isMethodNotFoundError(error)) {
-          // Transient failure (timeout, connection drop, internal error) — the
-          // daemon is already struggling, so serve the last known snapshot
-          // instead of fanning out into the legacy workspace.list + agent.list
-          // per-workspace probe, which would only add more load.
-          logger.warn('agent.listActive failed transiently; returning last known active streams', {
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return { success: true, data: lastKnownActiveStreams };
-        }
-        logger.warn('agent.listActive unavailable; falling back to legacy active-streams probe', {
+        // Any failure (timeout, connection drop, internal error, method not
+        // found) — serve the last known snapshot rather than issuing more
+        // RPCs against a daemon that is already struggling.
+        logger.warn('agent.listActive failed; returning last known active streams', {
           error: error instanceof Error ? error.message : String(error),
         });
-        activeStreams = await getLegacyActiveStreams(client);
+        return { success: true, data: lastKnownActiveStreams };
       }
 
       logger.debug('agent:get-active-streams called', {

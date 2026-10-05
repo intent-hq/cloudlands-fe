@@ -3,7 +3,7 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), invoke: vi.fn(), toastWarning: vi.fn() }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.request }));
-vi.mock('svelte-sonner', () => ({ toast: { warning: mocks.toastWarning } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { warning: mocks.toastWarning } }));
 
 import {
   closeTransferModal,
@@ -17,7 +17,7 @@ import {
   transferStartRequested,
   workspaceTransferReducer,
 } from '../workspace-transfer-slice';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import { openConnectionRequested } from '../../connections/connections-slice';
 import type { ConnectionRecord, ConnectionsState } from '../../connections/connections-types';

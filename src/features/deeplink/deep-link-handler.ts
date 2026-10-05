@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron';
 import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
+import { isInviteUri } from '$shared/utils/invite-uri';
 import { isPairingUri } from '$shared/utils/pairing-uri';
 import type { Workspace } from '../../shared/types';
 import { Logger } from '../../shared/logger';
@@ -70,9 +71,10 @@ export class DeepLinkHandler {
         type: action as 'open' | 'create' | 'clone' | 'settings',
         params,
       };
-    } catch (error) {
+    } catch {
+      // Node's URL errors can carry the complete credential-bearing input.
       // i18n-ignore (developer log message)
-      mainLogger.error('[DeepLinkHandler] Failed to parse URL:', error as Error);
+      mainLogger.error('[DeepLinkHandler] Failed to parse URL');
       return null;
     }
   }
@@ -96,6 +98,20 @@ export class DeepLinkHandler {
       // which imports this module — a static import would create a cycle.
       const { handlePairDeepLink } = await import('./main/pair-deep-link');
       await handlePairDeepLink(url);
+      return;
+    }
+
+    // Invite links: same main-process-only posture (the invite secret must
+    // never reach the renderer); same cold-start parking and import cycle.
+    if (isInviteUri(url)) {
+      if (!mainWindow) {
+        // i18n-ignore (developer log message)
+        mainLogger.info('[DeepLinkHandler] App not ready, storing invite URL for later');
+        this.pendingUrl = url;
+        return;
+      }
+      const { handleInviteDeepLink } = await import('./main/invite-deep-link');
+      await handleInviteDeepLink(url);
       return;
     }
 

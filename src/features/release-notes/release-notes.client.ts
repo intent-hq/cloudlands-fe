@@ -2,8 +2,8 @@
  * Release Notes Client (renderer)
  *
  * Thin wrapper over the `release-notes:*` IPC surface: an on-demand fetch for
- * the running version's notes and a subscription to the main-process push that
- * opens the modal.
+ * the running version's notes, the dismiss notification, and subscriptions to
+ * the main-process pushes that open and close the modal.
  */
 
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
@@ -33,14 +33,30 @@ export const releaseNotesClient = {
   },
 
   /**
-   * Claim the startup notes the main process parked before the renderer had a
+   * Read the startup notes the main process parked before the renderer had a
    * `release-notes:show` listener. Resolves `null` when there is nothing
-   * pending; claiming clears the slot so the modal opens at most once.
+   * pending. This is a read, not a claim: main keeps the parked notes until
+   * `release-notes:dismiss` clears them (from any window), so every window can
+   * see them; the renderer dedups per version so the modal opens at most once
+   * per window.
    */
   async claimPendingReleaseNotes(): Promise<ReleaseNotesContent | null> {
     const response = await invokeIpc<ReleaseNotesResponse>(RELEASE_NOTES_CHANNELS.GET_PENDING);
     if (!response?.success) return null;
     return response.data ?? null;
+  },
+
+  /**
+   * Tell the main process the user dismissed the modal so it can clear the
+   * parked notes and broadcast `release-notes:close` to every window.
+   * Fail-soft: a missing bridge or handler error never surfaces to the caller.
+   */
+  async dismissReleaseNotes(): Promise<void> {
+    try {
+      await invokeIpc<ReleaseNotesResponse>(RELEASE_NOTES_CHANNELS.DISMISS);
+    } catch {
+      // Best-effort notification; the local modal is already closed.
+    }
   },
 
   /**
@@ -52,6 +68,20 @@ export const releaseNotesClient = {
     return () => {
       if (listenerId) {
         window.electronAPI?.offById(RELEASE_NOTES_CHANNELS.SHOW, listenerId);
+      }
+    };
+  },
+
+  /**
+   * Subscribe to the main → renderer "close release notes" broadcast, sent
+   * after any window dismisses the modal.
+   * @returns Unsubscribe function
+   */
+  onClose(callback: () => void): () => void {
+    const listenerId = window.electronAPI?.on(RELEASE_NOTES_CHANNELS.CLOSE, callback);
+    return () => {
+      if (listenerId) {
+        window.electronAPI?.offById(RELEASE_NOTES_CHANNELS.CLOSE, listenerId);
       }
     };
   },

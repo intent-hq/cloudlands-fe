@@ -176,6 +176,10 @@ export const EMITTED_MOCK_IPC_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   // main-process enter/leave-full-screen (via the real preload bridge) or DOM
   // fullscreenchange re-emitted for listenSync('window:fullscreen') consumers.
   'window:fullscreen',
+  // power-bridge-seeder.ts registerBatteryChangedEventRelay — main-process
+  // powerMonitor battery ↔ AC transitions (via the real preload bridge)
+  // re-emitted for listenSync('power:battery-changed') consumers.
+  'power:battery-changed',
 ]);
 
 /**
@@ -193,15 +197,6 @@ export const EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES: readonly string[] = [
  * an unemitted listened channel is a bug unless proven otherwise.
  */
 export const UNEMITTED_LISTENER_ALLOWLIST: ReadonlyMap<string, string> = new Map<string, string>([
-  // ChatPanel auto-commit badges. The daemon auto-commits internally on
-  // agent:idle (intent-services auto_commit.rs) but emits no per-commit
-  // git:auto-commit-* events (PROTOCOL §6.5 lists git:* as reserved-but-
-  // unused), and the refresh these listeners would trigger reads
-  // git:get-auto-commit-status — itself an allowlisted absent surface above.
-  // The badges stay hidden until a daemon status surface exists.
-  ['git:auto-commit-started', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
-  ['git:auto-commit-succeeded', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
-  ['git:auto-commit-hook-failure', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
   // Tiptap editor agent-suggestion marks (editor-listeners.ts). The legacy
   // agent note-suggestion flow was never ported — no producer exists on the
   // daemon; the editor simply never renders suggestion marks.
@@ -238,6 +233,30 @@ export class UnbridgedMockIpcChannelError extends Error {
 /** Register (or replace) the mock handler for a single invoke channel. */
 export function registerMockIpcHandler(channel: string, handler: MockIpcInvokeHandler): void {
   invokeHandlers.set(channel, handler);
+}
+
+/**
+ * Temporarily override a handler. Dispose in reverse registration order per channel.
+ * Repeated disposal is harmless; an out-of-order disposal throws without changing state.
+ */
+export function overrideMockIpcHandler(
+  channel: string,
+  handler: MockIpcInvokeHandler,
+): MockIpcUnsubscribe {
+  const previous = invokeHandlers.get(channel);
+  // Give each scope its own identity even when nested scopes use the same handler.
+  const scoped: MockIpcInvokeHandler = (...args) => handler(...args);
+  invokeHandlers.set(channel, scoped);
+  let disposed = false;
+  return () => {
+    if (disposed) return;
+    if (invokeHandlers.get(channel) !== scoped) {
+      throw new Error(`Mock IPC overrides for '${channel}' must be disposed in reverse order`);
+    }
+    if (previous) invokeHandlers.set(channel, previous);
+    else invokeHandlers.delete(channel);
+    disposed = true;
+  };
 }
 
 /** Remove a previously registered invoke handler. */

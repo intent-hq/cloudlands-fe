@@ -63,6 +63,7 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-slice', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
+  selectHidesOwnerWorkspaceActions: mocks.selector(() => false),
 }));
 
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Toggle from '$lib/components/ui/toggle/toggle.svelte';
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import { Button, Switch } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { legacyImportRequested } from '$store/renderer/slices/legacy-import/legacy-import-slice';
@@ -34,21 +34,22 @@
 </script>
 
 <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-  <section class="px-6 py-5">
-    <div class="flex items-center justify-between gap-6">
-      <div>
-        <p class="text-sm font-medium text-foreground">{m.settings_legacyImport_title_label()}</p>
-        <p class="text-xs text-subtle mt-0.5">{m.settings_legacyImport_description()}</p>
-      </div>
+  <section data-slot="settings-section-body" class="px-6 py-4">
+    <SettingsFieldRow
+      id="legacy-import"
+      label={m.settings_legacyImport_title_label()}
+      description={m.settings_legacyImport_description()}
+      busy={$loading}
+    >
       <Button size="sm" disabled={$loading} onclick={handleImport}>
         {$loading
           ? m.settings_legacyImport_importing_label()
           : m.settings_legacyImport_import_label()}
       </Button>
-    </div>
+    </SettingsFieldRow>
 
     {#if $report}
-      <p class="text-xs text-foreground mt-3" role="status">
+      <p class="type-body text-foreground mt-3" role="status">
         {summary($report)}
         {#if $report.compatibilityFailures}
           {m.settings_legacyImport_compatFailures_label()}
@@ -56,7 +57,7 @@
       </p>
     {:else if $error}
       <p
-        class="text-xs text-danger bg-danger-background/10 border border-danger/20 rounded-md px-3 py-2 mt-3"
+        class="type-body text-danger bg-danger-background/10 border border-danger/20 rounded-md px-3 py-2 mt-3"
         role="alert"
       >
         {m.settings_legacyImport_importFailed_error({ error: $error })}
@@ -64,24 +65,20 @@
     {/if}
   </section>
 
-  <section class="px-6 py-4">
-    <div class="flex items-center justify-between gap-4">
-      <div>
-        <p class="text-sm font-medium text-foreground">
-          {m.settings_legacyImport_overwrite_label()}
-        </p>
-        <p class="text-xs text-subtle mt-0.5">{m.settings_legacyImport_overwrite_description()}</p>
-      </div>
-      <Toggle
-        variant="indicator"
+  <section data-slot="settings-section-body" class="px-6 py-4">
+    <SettingsFieldRow
+      id="legacy-import-overwrite"
+      label={m.settings_legacyImport_overwrite_label()}
+      description={m.settings_legacyImport_overwrite_description()}
+      busy={$loading}
+    >
+      <Switch
         size="xs"
-        pressed={overwrite}
+        checked={overwrite}
         disabled={$loading}
         ariaLabel={m.settings_legacyImport_overwrite_ariaLabel()}
-        onLabel={m.settings_legacyImport_on_label()}
-        offLabel={m.settings_legacyImport_off_label()}
-        onChange={(value) => (overwrite = value === true)}
+        onCheckedChange={(checked) => (overwrite = checked)}
       />
-    </div>
+    </SettingsFieldRow>
   </section>
 </div>

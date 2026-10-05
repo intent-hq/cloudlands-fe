@@ -25,7 +25,7 @@
   const navItems: { id: SidebarNavItem }[] = [{ id: 'all-workspaces' }];
 
   function isItemActive(id: SidebarNavItem): boolean {
-    // Highlight the workspace button for either half of the combined panel.
+    // Highlight the sidebar button for either Workspaces or Intent.
     if ($panelItem$ === id) return true;
     if (
       id === 'all-workspaces' &&
@@ -37,7 +37,7 @@
   }
 
   function handleClick(id: SidebarNavItem) {
-    // Primary activation toggles the persistent combined Spaces + Chief panel.
+    // Primary activation toggles the persistent Workspaces / Intent sidebar.
     appStore.dispatch(togglePanel(id));
   }
 </script>
@@ -68,11 +68,7 @@
             data-titlebar-spaces-control
           >
             <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
-              <IntentNavigationIcon
-                name="dandelion"
-                size={16}
-                class="pointer-events-none size-4!"
-              />
+              <IntentNavigationIcon name="sidebar" size={16} class="pointer-events-none size-4!" />
             </span>
           </Button>
         </TitlebarNavigationTooltip>

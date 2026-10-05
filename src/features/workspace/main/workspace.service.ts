@@ -24,14 +24,6 @@ import type {
 import { PullRequestStatus, WorkspaceStatus } from '../../../shared/types';
 import { CHIEF_WORKSPACE_ID, type WorkspaceId } from '../../../shared/types/branded-ids';
 
-import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import {
-  workspaceCreated,
-  workspaceUpdated,
-  workspaceDeleting,
-  workspaceDeleted,
-  workspaceArchived,
-} from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { isValidWorkspaceIdFormat } from '../../../main/utils/workspace-validation';
 import type { WorkspaceRepository } from './workspace.repository';
 import { DaemonWorkspaceRepository, getChiefWorkspace } from './workspace.repository';
@@ -893,14 +885,6 @@ export class WorkspaceService {
       // this write does not serve pre-mutation rows.
       this.workspaceListCache.clear();
 
-      // Emit event
-      mainDispatch(
-        workspaceUpdated({
-          workspaceId: merged.id,
-          changes: request,
-        }),
-      );
-
       logger.info('Workspace updated', {
         workspaceId: merged.id,
         changedFields: Object.keys(rest).filter((k) => k !== 'id'),
@@ -922,8 +906,7 @@ export class WorkspaceService {
    *
    * Delegates to the daemon (`workspace.duplicate`, PROTOCOL.md §5.1). The
    * daemon owns fresh-id allocation, worktree provisioning, spec seeding, and
-   * non-spec note copy; the FE only forwards the request and emits its local
-   * lifecycle event so redux consumers observe the new row.
+   * non-spec note copy; the FE only forwards the request.
    */
   async duplicateWorkspace(id: WorkspaceId, newTitle?: string): Promise<Result<Workspace, string>> {
     try {
@@ -945,13 +928,6 @@ export class WorkspaceService {
       // Invalidate the workspace.list cache so a list requested shortly after
       // this write does not serve pre-mutation rows.
       this.workspaceListCache.clear();
-
-      mainDispatch(
-        workspaceCreated({
-          workspaceId: newWorkspace.id,
-          workspace: newWorkspace,
-        }),
-      );
 
       logger.info('Workspace duplicated successfully', {
         sourceId: id,
@@ -982,13 +958,6 @@ export class WorkspaceService {
 
       logger.info('Starting deletion of workspace', { workspaceId: id });
 
-      // Emit pre-delete event to allow cleanup
-      mainDispatch(
-        workspaceDeleting({
-          workspaceId: id,
-        }),
-      );
-
       // Worktree removal is owned by the daemon: `workspace.delete` sweeps
       // local worktrees itself (PROTOCOL.md §5.1).
       const worktreeWorkspaceResult = await this.getWorkspace(id as WorkspaceId);
@@ -1007,13 +976,6 @@ export class WorkspaceService {
       // Invalidate the workspace.list cache so a list requested shortly after
       // this write does not serve pre-mutation rows.
       this.workspaceListCache.clear();
-
-      // Emit event
-      mainDispatch(
-        workspaceDeleted({
-          workspaceId: id,
-        }),
-      );
 
       logger.info('Workspace deleted successfully', { workspaceId: id });
 
@@ -1072,13 +1034,6 @@ export class WorkspaceService {
         };
       }
 
-      // Emit event
-      mainDispatch(
-        workspaceArchived({
-          workspaceId: id,
-        }),
-      );
-
       logger.info('Workspace archived', { workspaceId: id });
 
       return { ok: true, data: workspace };
@@ -1122,14 +1077,6 @@ export class WorkspaceService {
         };
       }
 
-      // Emit event
-      mainDispatch(
-        workspaceUpdated({
-          workspaceId: id,
-          changes: { archived: false },
-        }),
-      );
-
       logger.info('Workspace unarchived', { workspaceId: id });
 
       return { ok: true, data: workspace };
@@ -1147,8 +1094,7 @@ export class WorkspaceService {
    *
    * Delegates to the daemon (`workspace.restore`, PROTOCOL.md §5.1), which is
    * a semantic alias of `workspace.unarchive` returning the refreshed
-   * `Workspace`. The FE emits `workspaceUpdated` so redux consumers observe
-   * the archived → active transition.
+   * `Workspace`.
    */
   async restoreWorkspace(id: WorkspaceId): Promise<Result<Workspace, string>> {
     try {
@@ -1167,13 +1113,6 @@ export class WorkspaceService {
       // Invalidate the workspace.list cache so a list requested shortly after
       // this write does not serve pre-mutation rows.
       this.workspaceListCache.clear();
-
-      mainDispatch(
-        workspaceUpdated({
-          workspaceId: id,
-          changes: { archived: false, status: WorkspaceStatus.Active },
-        }),
-      );
 
       logger.info('Workspace restored', { workspaceId: id });
 

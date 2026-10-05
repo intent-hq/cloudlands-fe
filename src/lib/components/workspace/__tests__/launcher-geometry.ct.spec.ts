@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import LauncherGeometryHost from './mocks/LauncherGeometryHost.svelte';
 
@@ -26,7 +26,7 @@ async function inspectLauncher(card: Locator) {
       const surfaceRect = surface?.getBoundingClientRect();
       const textNode = item.hasAttribute('data-agent-avatar-overflow')
         ? item
-        : item.querySelector<HTMLElement>('span[aria-hidden="true"]');
+        : item.querySelector<HTMLElement>('[data-slot="button-label"] > span[aria-hidden="true"]');
       const textRect = textNode?.getBoundingClientRect();
       return {
         left: (rect.left - cardRect.left) / scale,
@@ -146,10 +146,7 @@ for (const scenario of [
     expect(contextResource.height).toBeCloseTo(20, 1);
 
     const changesLauncher = component.locator('[data-sidebar-launcher="changes"]');
-    const changesResource = await inspectResource(changesLauncher);
-    expect(changesResource.leftDelta).toBeLessThanOrEqual(2);
-    expect(changesResource.width).toBeCloseTo(24, 1);
-    expect(changesResource.height).toBeCloseTo(24, 1);
+    await expect(changesLauncher.locator('[data-resource-icon-tile]')).toHaveCount(0);
     const changesLabel = changesLauncher.locator('[data-sidebar-launcher-label]');
     const prAction = changesLauncher.locator('[data-sidebar-pr-trigger]');
     await expect(prAction).toHaveCount(1);
@@ -183,6 +180,24 @@ for (const scenario of [
     await expectOpaque(component.locator('[data-sidebar-card-surface]'));
     await expectOpaque(component.locator('[data-agent-avatar-with-state]'));
     await expectOpaque(component.locator('[data-resource-icon-tile]'));
+
+    const agentsLauncher = component.locator('[data-sidebar-launcher="agents"]');
+    const tokenTrigger = agentsLauncher.getByTestId('token-usage-disclosure');
+    const [agentsLabelBox, tokenTriggerBox, agentsCardBox] = await Promise.all([
+      agentsLauncher.locator('[data-sidebar-launcher-label]').boundingBox(),
+      tokenTrigger.boundingBox(),
+      agentsLauncher.boundingBox(),
+    ]);
+    await expect(tokenTrigger).toHaveText(/124K/);
+    await expect(tokenTrigger).toHaveAccessibleDescription('124K tokens used');
+    expect(tokenTriggerBox!.x).toBeGreaterThan(agentsLabelBox!.x + agentsLabelBox!.width);
+    expect(
+      Math.abs(
+        (agentsCardBox!.x + agentsCardBox!.width - tokenTriggerBox!.x - tokenTriggerBox!.width) /
+          scenario.zoom -
+          8,
+      ),
+    ).toBeLessThanOrEqual(1);
   });
 }
 
@@ -232,10 +247,49 @@ test('preserves hover, focus, and click behavior without open-panel markers', as
   await agents.first().focus();
   await page.keyboard.press('Tab');
   await expect(agents.nth(1)).toBeFocused();
+
+  const tokenTrigger = component.getByTestId('token-usage-disclosure');
+  await tokenTrigger.click();
+  await expect(page.getByTestId('token-usage-details')).toBeVisible();
+  await expect(component.locator('[data-sidebar-overlay]')).toHaveCount(0);
+
   await component.getByTestId('agent-panel-toggle').click();
   await expect(component.locator('[data-sidebar-overlay]')).toBeVisible();
+  await expect(page.getByTestId('token-usage-details')).toHaveCount(0);
+  await expect(component.getByTestId('token-usage-disclosure')).toHaveCount(0);
   await expect(component.locator('[data-sidebar-tab-strip]')).toHaveAttribute(
     'data-active-tab',
     'agents',
   );
+});
+
+test('opening an agent hover uses wire summaries without fetching its transcript', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(LauncherGeometryHost, {
+    props: { width: 480, itemCount: 2 },
+    hooksConfig: { mockBackend: {} },
+  });
+  await page.evaluate(() => {
+    const api = window.electronAPI!;
+    const invoke = api.invoke.bind(api);
+    (window as unknown as { transcriptReads: string[] }).transcriptReads = [];
+    api.invoke = ((channel: string, payload?: unknown) => {
+      const method = (payload as { method?: string } | undefined)?.method;
+      if (method === 'agent.getConversation' || method === 'chat.subscribe')
+        (window as unknown as { transcriptReads: string[] }).transcriptReads.push(method);
+      return invoke(channel as never, payload as never);
+    }) as typeof api.invoke;
+  });
+  await component.locator('[data-sidebar-agent]').first().hover();
+  const preview = page.locator('[data-sidebar-hover-card="agent"]');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('Review the latest work');
+  await expect(preview).toContainText('The summary is ready');
+  expect(
+    await page.evaluate(() => (window as unknown as { transcriptReads: string[] }).transcriptReads),
+  ).toEqual([]);
+  await page.mouse.move(1000, 800);
+  await expect(preview).not.toBeVisible();
 });

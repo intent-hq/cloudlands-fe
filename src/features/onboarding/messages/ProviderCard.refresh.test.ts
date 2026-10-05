@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * ProviderCard explicit-refresh feedback: clicking the per-card refresh
- * button must show "Checking…" + a spinning icon until the single-provider
+ * button must show "Checking…" + the shared loading indicator until the single-provider
  * probe settles — even though AgentGrid suppresses `statusLoading` once a
  * status is cached. Background rechecks (loading flips without a click) must
  * stay silent: no "Checking…" flicker.
@@ -76,7 +76,7 @@ const baseProps = () => ({
 const refreshButton = (root: HTMLElement) =>
   root.querySelector('[aria-label="Refresh OpenCode status"]') as HTMLElement;
 const statusText = (root: HTMLElement) => root.textContent ?? '';
-const spinner = (root: HTMLElement) => refreshButton(root)?.querySelector('span.inline-block');
+const loader = (root: HTMLElement) => refreshButton(root)?.querySelector('[role="status"]');
 let stopProviderAvailabilitySaga: (() => void) | undefined;
 
 const flush = async () => {
@@ -104,7 +104,7 @@ describe('ProviderCard explicit refresh feedback', () => {
     unregisterMockIpcHandler(CHECK_SINGLE);
   });
 
-  it('shows Checking… and spins the icon from click until the probe settles', async () => {
+  it('shows Checking… and a loading indicator from click until the probe settles', async () => {
     let releaseProbe: () => void = () => {};
     const probeGate = new Promise<void>((resolve) => {
       releaseProbe = resolve;
@@ -131,7 +131,7 @@ describe('ProviderCard explicit refresh feedback', () => {
 
     // Feedback is immediate even though the card has a cached status.
     await waitFor(() => expect(statusText(container)).toContain('Checking…'));
-    expect(spinner(container)?.className).toContain('animate-spin');
+    expect(loader(container)).toBeTruthy();
 
     releaseProbe();
     await flush();
@@ -139,7 +139,7 @@ describe('ProviderCard explicit refresh feedback', () => {
     // Probe settled → Checking… clears, cached status text returns.
     await waitFor(() => expect(statusText(container)).not.toContain('Checking…'));
     expect(statusText(container)).toContain('Not installed');
-    expect(spinner(container)?.className).not.toContain('animate-spin');
+    expect(loader(container)).toBeNull();
   });
 
   it('keeps background rechecks silent: loading flips without a click show no Checking…', async () => {

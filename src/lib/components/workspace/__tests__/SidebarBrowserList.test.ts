@@ -8,14 +8,21 @@
  */
 import { render, fireEvent, cleanup } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import type { ScriptWithState } from '$features/scripts/types';
 
-const { dispatchMock, layoutState } = vi.hoisted(() => ({
+const { dispatchMock, layoutState, managerMock, scripts } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
   layoutState: {
     panels: {} as Record<string, unknown>,
     hiddenTabs: [] as unknown[],
     focusedPanelId: null as string | null,
   },
+  managerMock: {
+    setActiveTab: vi.fn(),
+    focusPanel: vi.fn(),
+    openBrowserPanel: vi.fn(),
+  },
+  scripts: [] as ScriptWithState[],
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -50,10 +57,14 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
 });
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
-  const readable = { subscribe: (run: (value: unknown) => void) => (run([]), () => {}) };
+  const readable = { subscribe: (run: (value: unknown) => void) => (run(scripts), () => {}) };
   const selectWorkspaceScriptEntries = () => readable;
   return { selectWorkspaceScriptEntries };
 });
+
+vi.mock('$features/layout/panel-layout-adapter', () => ({
+  getPanelLayoutManager: () => managerMock,
+}));
 
 import SidebarBrowserList from '../SidebarBrowserList.svelte';
 import { revealHiddenTabAvoidingPanel } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -82,6 +93,8 @@ afterEach(() => {
   layoutState.panels = {};
   layoutState.hiddenTabs = [];
   layoutState.focusedPanelId = null;
+  scripts.length = 0;
+  vi.clearAllMocks();
 });
 
 function renderList() {
@@ -102,6 +115,37 @@ function findRevealAction() {
 }
 
 describe('SidebarBrowserList hidden-tab restore', () => {
+  it('opens a running target as new and restores an existing hidden browser tab', async () => {
+    scripts.push({
+      id: 'dev-server',
+      workspaceId: 'ws-1',
+      name: 'Dev server',
+      command: 'pnpm dev',
+      mode: 'service',
+      source: 'user',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      runtime: {
+        status: 'running',
+        restartCount: 0,
+        detectedUrl: 'http://localhost:5173',
+      },
+    });
+    renderList();
+    await fireEvent.click(document.querySelector<HTMLElement>('[data-browser-running-url]')!);
+    expect(managerMock.openBrowserPanel).toHaveBeenCalledWith('http://localhost:5173');
+
+    cleanup();
+    scripts.length = 0;
+    seedLayout();
+    renderList();
+    await clickRestore();
+    expect(findRevealAction()?.payload).toMatchObject({
+      wsId: 'ws-1',
+      tabId: 'hidden-1',
+      avoidPanelId: 'chat',
+    });
+  });
+
   it('reveals avoiding the focused panel hosting the current conversation', async () => {
     seedLayout();
     renderList();

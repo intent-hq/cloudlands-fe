@@ -16,7 +16,7 @@
  */
 import { appClient } from '$lib/client';
 import type { CommentAddParams, CommentRespondParams } from '$lib/client';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import type { CommentV2 } from './comment-types-v2';
 import { store as appStore } from '$store/renderer/store';
@@ -71,7 +71,7 @@ export async function addComment(
   }
   if (!result.success) {
     logger.error('Failed to add comment', result.error);
-    toast.error(m.comments_writeService_addFailed_error(), {
+    notify.error(m.comments_writeService_addFailed_error(), {
       description: result.error ?? m.comments_writeService_unknown_error(),
     });
     appStore.dispatch(removeCommentAction(optimistic.id));
@@ -96,7 +96,7 @@ export async function respondToComment(
   const result = await appClient.comments.respond(noteId, params);
   if (!result.success) {
     logger.error('Failed to respond to comment', result.error);
-    toast.error(m.comments_writeService_replyFailed_error(), {
+    notify.error(m.comments_writeService_replyFailed_error(), {
       description: result.error ?? m.comments_writeService_unknown_error(),
     });
     appStore.dispatch(removeCommentAction(optimisticReply.id));
@@ -124,7 +124,7 @@ export async function deleteComment(
   const result = await appClient.comments.delete(noteId, commentId, workspaceId);
   if (!result.success) {
     logger.error('Failed to delete comment', result.error);
-    toast.error(m.comments_writeService_deleteFailed_error(), {
+    notify.error(m.comments_writeService_deleteFailed_error(), {
       description: result.error ?? m.comments_writeService_unknown_error(),
     });
     if (snapshot) appStore.dispatch(addCommentAction(snapshot));

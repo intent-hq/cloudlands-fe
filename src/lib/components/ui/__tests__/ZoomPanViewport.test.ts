@@ -26,7 +26,9 @@ const children = createRawSnippet(() => ({
   render: () => '<img src="test.png" alt="test content" />',
 }));
 
-async function setup(props: { minZoom?: number; maxZoom?: number } = {}) {
+async function setup(
+  props: { minZoom?: number; maxZoom?: number; onScaleChange?: (scale: number) => void } = {},
+) {
   const result = render(ZoomPanViewport, { props: { children, ...props } });
   await tick();
   const viewport = result.container.querySelector<HTMLElement>(
@@ -119,6 +121,17 @@ describe('ZoomPanViewport', () => {
 
     await fireEvent.input(slider, { target: { value: '2' } });
     expect(getScale(content)).toBe(2);
+  });
+
+  it('reports each rendered zoom scale to geometry consumers', async () => {
+    const onScaleChange = vi.fn();
+    const { container } = await setup({ onScaleChange });
+    expect(onScaleChange).toHaveBeenLastCalledWith(1);
+
+    await fireEvent.input(container.querySelector('[data-testid="zoom-pan-slider"]')!, {
+      target: { value: '2' },
+    });
+    expect(onScaleChange).toHaveBeenLastCalledWith(2);
   });
 
   it('shows the zoom percentage readout and updates it', async () => {

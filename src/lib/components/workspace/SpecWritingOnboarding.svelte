@@ -29,9 +29,7 @@
     isStopping = true;
     try {
       logger.info('User stopping coordinator', { agentId });
-      const action = stopAgentSessionRequested(workspaceId, agentId);
-      appStore.dispatch(action);
-      await action.promise;
+      await appStore.dispatch(stopAgentSessionRequested(workspaceId, agentId));
     } catch (error) {
       logger.error('Failed to stop coordinator', error as Error, { agentId });
     } finally {
@@ -193,7 +191,7 @@
   }
 
   .step.current .step-content h4 {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
 
   .step-content p {
@@ -209,7 +207,7 @@
   }
 
   .step-content a {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
     text-decoration: underline;
     cursor: pointer;
   }

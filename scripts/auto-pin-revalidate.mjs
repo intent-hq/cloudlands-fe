@@ -59,6 +59,7 @@ export function revalidateAgainstLiveMain({
   } catch (err) {
     throw new Error(
       `cannot fetch ${remote}/${branch}: ${err instanceof Error ? err.message : err}`,
+      { cause: err },
     );
   }
   const mainSha = git(cwd, 'rev-parse', '--verify', 'FETCH_HEAD^{commit}').trim();
@@ -68,6 +69,7 @@ export function revalidateAgainstLiveMain({
   } catch (err) {
     throw new Error(
       `cannot read ${PIN_FILE} on ${remote}/${branch} (${mainSha}): ${err instanceof Error ? err.message : err}`,
+      { cause: err },
     );
   }
 

@@ -50,6 +50,7 @@ describe('app UI targets registry', () => {
       general: 'advanced',
       devices: 'devices',
       'websocket-api': 'devices',
+      'guest-sessions': 'collaboration',
     } as const;
 
     const targets = getAppUiTargets();
@@ -62,6 +63,9 @@ describe('app UI targets registry', () => {
   });
 
   it.each([
+    '/settings?tab=collaboration#collaboration',
+    '/settings?tab=guest-sessions#guest-sessions',
+    '/settings?tab=sharing#sharing',
     '/settings?tab=accounts#providers',
     '/settings?tab=accounts#integrations',
     '/settings?tab=setup#mcp-servers',

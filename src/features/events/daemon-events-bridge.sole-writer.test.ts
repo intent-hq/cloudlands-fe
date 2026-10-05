@@ -10,12 +10,12 @@
  * later delta to heal the merge result, so the turn's final text tail went
  * missing until a close/reopen rehydration.
  *
- * Fix under test: while a standing chat.subscribe registration covers the
- * agent (chat-subscription-registry), stream dispatches omit content blocks
- * entirely — the subscription is the transcript's SOLE content writer — and
- * keep only flag/metadata bookkeeping. Uncovered (background/unviewed)
- * agents keep the accumulator as their transcript writer, including the
- * terminal trailingBlocks (live Q&A) append.
+ * Fix under test: stream dispatches never carry content blocks — the standing
+ * chat.subscribe stream is the transcript's SOLE content writer — and keep
+ * only flag/metadata bookkeeping for the covered agent. An agent WITHOUT a
+ * standing registration (background/unviewed) gets no transcript rows from
+ * the firehose at all, including for the terminal trailingBlocks (live Q&A):
+ * its transcript is hydrated when a chat panel subscribes.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -252,10 +252,12 @@ describe('chat.subscribe sole-writer invariant at stream end', () => {
     expect(message!.contentBlocks).toEqual(reconciledBlocks());
   });
 
-  it('Q&A trailingBlocks still render live for a NON-subscribed agent', () => {
+  it('Q&A trailingBlocks write NO row for a NON-subscribed agent (no firehose-built transcript copies)', () => {
     const handler = capturedHandlers[0]!;
-    // No standing subscription for this agent: the firehose remains the
-    // transcript writer, and the terminal trailingBlocks append must land.
+    // No standing subscription for this agent: nothing may write transcript
+    // rows — a firehose-built partial row would become a stale seq-0 resume
+    // anchor for the eventual chat.subscribe. The session-level bookkeeping
+    // (streaming flag reset) still runs.
     seedSession([]);
 
     const questionBlock = {
@@ -278,10 +280,11 @@ describe('chat.subscribe sole-writer invariant at stream end', () => {
       }),
     );
 
-    const message = readAssistantMessage();
-    expect(message).toBeDefined();
-    expect(message!.id).toBe(MESSAGE_ID);
-    expect(message!.streamingComplete).toBe(true);
-    expect(message!.contentBlocks).toEqual([questionBlock]);
+    expect(readAssistantMessage()).toBeUndefined();
+    const session = (
+      appStore.state as { agentSessions?: { byAgentId: Record<string, AgentSession> } }
+    ).agentSessions?.byAgentId[AGENT];
+    expect(session?.messages ?? []).toEqual([]);
+    expect(session?.isStreaming).toBe(false);
   });
 });

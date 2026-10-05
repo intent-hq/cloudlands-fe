@@ -1,7 +1,7 @@
 import { store } from '../../store';
 import type { QueuedMessage } from '$shared/types';
 import type { StoreState } from '../../types';
-import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { AgentQueueEntryState } from './agent-queue-types';
 
 const emptyAgentQueueEntry: AgentQueueEntryState = {
@@ -16,7 +16,16 @@ const selectAgentQueueState = store.createSelector<[agentId: string], AgentQueue
     state.agentQueue?.byAgentId[agentId] ?? emptyAgentQueueEntry,
 );
 
-export const selectAgentQueueMessages = store.createSelector<[agentId: string], QueuedMessage[]>(
-  (state: StoreState, agentId: string): QueuedMessage[] =>
-    getItems(selectAgentQueueState.select(state, agentId).messages),
-);
+export const selectAgentQueueMessages = store.createSelector<
+  [agentId: string, workspaceId?: string],
+  QueuedMessage[]
+>((state: StoreState, agentId: string, workspaceId?: string): QueuedMessage[] => {
+  const entry = selectAgentQueueState.select(state, agentId);
+  if (
+    workspaceId !== undefined &&
+    entry.workspaceId !== undefined &&
+    entry.workspaceId !== workspaceId
+  )
+    return [];
+  return getItems(entry.messages);
+});

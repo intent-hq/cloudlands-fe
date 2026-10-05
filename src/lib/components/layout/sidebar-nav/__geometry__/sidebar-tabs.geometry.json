@@ -1,0 +1,287 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "intent": {
+    "420": {
+      "probes": {
+        "data-combined-panel-chief=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 512,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 288,
+          "x": 25,
+          "y": 73
+        },
+        "data-combined-panel-spaces=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 0,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "data-orientation=horizontal": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 2,
+          "height": 36,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 4,
+          "paddingRight": 4,
+          "width": 272,
+          "x": 33,
+          "y": 33
+        },
+        "data-probe=sidebar-tabs": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 560,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 288,
+          "x": 25,
+          "y": 25
+        },
+        "data-size=compact": {
+          "fontSize": 13,
+          "fontWeight": 500,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 131,
+          "x": 37,
+          "y": 37
+        },
+        "data-size=compact#2": {
+          "fontSize": 13,
+          "fontWeight": 500,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 131,
+          "x": 170,
+          "y": 37
+        }
+      },
+      "root": {
+        "height": 610,
+        "width": 420
+      }
+    }
+  },
+  "narrow": {
+    "420": {
+      "probes": {
+        "data-combined-panel-chief=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 0,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "data-combined-panel-spaces=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 482,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 100,
+          "x": 25,
+          "y": 103
+        },
+        "data-orientation=vertical": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 2,
+          "height": 66,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 4,
+          "paddingRight": 4,
+          "width": 84,
+          "x": 33,
+          "y": 33
+        },
+        "data-probe=sidebar-tabs": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 560,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 100,
+          "x": 25,
+          "y": 25
+        },
+        "data-size=compact": {
+          "fontSize": 13,
+          "fontWeight": 500,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 76,
+          "x": 37,
+          "y": 37
+        },
+        "data-size=compact#2": {
+          "fontSize": 13,
+          "fontWeight": 500,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 76,
+          "x": 37,
+          "y": 67
+        }
+      },
+      "root": {
+        "height": 610,
+        "width": 420
+      }
+    }
+  },
+  "workspaces": {
+    "420": {
+      "probes": {
+        "data-combined-panel-chief=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 0,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 0,
+          "x": 0,
+          "y": 0
+        },
+        "data-combined-panel-spaces=true": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 512,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 288,
+          "x": 25,
+          "y": 73
+        },
+        "data-orientation=horizontal": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 2,
+          "height": 36,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 4,
+          "paddingRight": 4,
+          "width": 272,
+          "x": 33,
+          "y": 33
+        },
+        "data-probe=sidebar-tabs": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 560,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 288,
+          "x": 25,
+          "y": 25
+        },
+        "data-size=compact": {
+          "fontSize": 13,
+          "fontWeight": 500,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 131,
+          "x": 37,
+          "y": 37
+        },
+        "data-size=compact#2": {
+          "fontSize": 13,
+          "fontWeight": 500,
+          "gap": 6,
+          "height": 28,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 8,
+          "paddingRight": 8,
+          "width": 131,
+          "x": 170,
+          "y": 37
+        }
+      },
+      "root": {
+        "height": 610,
+        "width": 420
+      }
+    }
+  }
+}

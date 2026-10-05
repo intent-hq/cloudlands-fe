@@ -1,3 +1,6 @@
+import type { RepositoryResourceSession } from '$shared/types/repository-resource-read';
+import type { NativeReviewInput, NativeReviewSession } from '$shared/types/native-review-operation';
+import type { RepositorySelectionSession } from '$shared/types/repository-selection';
 /**
  * Transport-agnostic contract for the renderer's live backend seam.
  *
@@ -9,6 +12,8 @@
  * the module-level functions in `backend-transport.ts`, which delegate to the
  * factory-selected transport.
  */
+
+import type { RepositoryRootIdentity } from '$shared/types/repository-context';
 
 /** Serializable error payload returned by the transport. */
 export interface BackendErrorPayload {
@@ -51,6 +56,23 @@ export function isDaemonErrorResponse(error: unknown): boolean {
   return typeof (error as { rpcCode?: unknown }).rpcCode === 'number';
 }
 
+/** JSON-RPC code the daemon answers owner-/administrator-only methods with when the bound caller lacks the capability. */
+const FORBIDDEN_RPC_CODE = -32003;
+
+/**
+ * Whether a request failure is the daemon's `-32003 Forbidden` capability
+ * refusal (multiplayer w3): the caller is a collaborator on a method reserved
+ * for the workspace owner / administrator (terminals, browser tabs, port
+ * forwarding, host exec). Not transient — a retry gets the same answer until
+ * the client reconnects under a different credential — so read paths treat it
+ * as an empty state rather than an error. Duck-typed like
+ * {@link isDaemonErrorResponse}.
+ */
+export function isForbiddenErrorResponse(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  return (error as { rpcCode?: unknown }).rpcCode === FORBIDDEN_RPC_CODE;
+}
+
 /** Daemon JSON-RPC notification delivered to `onNotification` handlers. */
 export interface BackendNotification {
   method: string;
@@ -59,6 +81,8 @@ export interface BackendNotification {
 
 /** Per-call options for `BackendTransport.request`. */
 export interface BackendRequestOptions {
+  /** Address this desktop's daemon from a window bound to another device. */
+  localMachine?: boolean;
   /**
    * Overrides the transport's default request timeout for a single call. Used
    * for long-running daemon operations (e.g. `git.pull`) whose own bound
@@ -66,6 +90,30 @@ export interface BackendRequestOptions {
    * result wins over a transport timeout.
    */
   timeoutMs?: number;
+}
+
+/** Original operation facts; current=false forbids application to the current UI. */
+export interface BoundRepositoryResult<T> {
+  operationId: string;
+  current: boolean;
+  settlement:
+    { status: 'fulfilled'; value: T } | { status: 'rejected'; error: BackendErrorPayload };
+}
+
+/**
+ * Main owns the opaque ID and scope. This object captures one bridge instance.
+ * The operation owner releases it in finally after completion or cancellation;
+ * interstage calls keep the original route, never a newly captured one.
+ */
+export interface BoundRepositoryRoute {
+  /** Subscribe immediately; an already retired route calls back synchronously. */
+  onRetired(listener: () => void): () => void;
+  request<T = unknown>(
+    method: string,
+    params: Record<string, unknown>,
+    options?: { timeoutMs?: number },
+  ): Promise<BoundRepositoryResult<T>>;
+  release(): Promise<void>;
 }
 
 /**
@@ -76,6 +124,11 @@ export interface BackendRequestOptions {
  * the underlying bridge is unavailable.
  */
 export interface BackendTransport {
+  captureRepositoryResource?(workspaceId: string): Promise<RepositoryResourceSession>;
+  prepareNativeReview?(input: NativeReviewInput): Promise<NativeReviewSession>;
+  captureRepositorySelection?(root: RepositoryRootIdentity): Promise<RepositorySelectionSession>;
+  /** Absent on older or non-Electron transports; never fall back to ordinary request. */
+  captureRepositoryRoute?(root: RepositoryRootIdentity): Promise<BoundRepositoryRoute>;
   /** Whether the live backend bridge is reachable in this environment. */
   isAvailable(): boolean;
   /** Forward a JSON-RPC request to the daemon. */
@@ -87,7 +140,7 @@ export interface BackendTransport {
   /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */
   subscribe<T = { subscriptionId?: string }>(params: unknown): Promise<T>;
   /** Unsubscribe from daemon events (`events.unsubscribe`). Best-effort. */
-  unsubscribe(subscriptionId: string): Promise<void>;
+  unsubscribe(subscriptionId: string, workspaceId?: string): Promise<void>;
   /** Listen for daemon notifications. Returns a disposer. */
   onNotification(handler: (notification: BackendNotification) => void): () => void;
   /**

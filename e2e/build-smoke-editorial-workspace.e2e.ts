@@ -10,12 +10,12 @@ import {
   sendFollowUpMessage,
   setMockAgentBehavior,
   waitForAgentNotStreaming,
+  exitPackagedApp,
+  getSmokeWorkspace,
 } from './build-smoke-helpers';
-import { launchApp } from './test-helpers';
 
 const artifactPhase = process.env.EDITORIAL_ARTIFACT_PHASE ?? 'current';
 const artifactDir = path.join(process.cwd(), 'e2e-reports', 'editorial-workspace', artifactPhase);
-const useBuiltApp = process.env.EDITORIAL_USE_BUILT_APP === '1';
 const conversationResponse = [
   '# Editorial conversation ready',
   '',
@@ -43,7 +43,6 @@ let app: ElectronApplication;
 let page: Page;
 let workspaceId: string;
 let cleanupRepo: (() => void) | undefined;
-let userDataDir: string;
 
 async function emulateViewport(width: number, height: number) {
   const cdp = await page.context().newCDPSession(page);
@@ -72,17 +71,17 @@ async function prepareSidebarFixture() {
   const longStatus =
     'Refining the rail, workspace identity, and selected sections while preserving every interaction.';
 
-  await page.getByTitle('Click to edit space title').click();
+  await page.getByTitle('Click to edit workspace title').click();
   const titleInput = page.locator('input[placeholder="Untitled"]').first();
   await titleInput.fill(longTitle);
   await titleInput.press('Enter');
 
-  await page.getByRole('button', { name: 'Add workspace status' }).click();
+  await page.getByRole('button', { name: 'Edit workspace status' }).click();
   const statusInput = page.getByLabel('Workspace status');
   await statusInput.fill(longStatus);
   await statusInput.press('Enter');
 
-  await expect(page.getByTitle('Click to edit space title')).toContainText(longTitle);
+  await expect(page.getByTitle('Click to edit workspace title')).toContainText(longTitle);
   await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
     longStatus,
   );
@@ -91,14 +90,14 @@ async function prepareSidebarFixture() {
 
 async function setSidebarSections(tabIds: string[]) {
   const target = tabIds.at(-1) ?? 'overview';
-  const expanded = page.locator('[data-sidebar-launcher][aria-expanded="true"]');
+  const expanded = page.locator('[data-sidebar-launcher] button[aria-expanded="true"]');
   if (target === 'overview') {
     if ((await expanded.count()) > 0) await expanded.first().click();
     await expect(expanded).toHaveCount(0);
     return;
   }
 
-  const launcher = page.locator(`[data-sidebar-launcher="${target}"]`);
+  const launcher = page.locator(`[data-sidebar-launcher="${target}"] button[aria-expanded]`);
   if ((await launcher.getAttribute('aria-expanded')) !== 'true') await launcher.click();
   await expect(launcher).toHaveAttribute('aria-expanded', 'true');
   await expect(expanded).toHaveCount(1);
@@ -128,7 +127,7 @@ async function setSidebarCollapsed(collapsed: boolean) {
   const isCollapsed = async () => (await sidebar.evaluate((element) => element.clientWidth)) === 0;
 
   if ((await isCollapsed()) !== collapsed) {
-    await page.keyboard.press('Meta+b');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+b' : 'Control+b');
   }
   await expect.poll(isCollapsed).toBe(collapsed);
 }
@@ -157,122 +156,171 @@ async function capture(name: string) {
 
 async function expectEditorialSurface() {
   const panel = page.locator('[data-panel-id]').first();
-  const { insetBox, panelBox, styles } = await panel.evaluate((element) => {
-    const inset = document.querySelector('[data-testid="panel-workspace-inset"]')!;
-    const insetRect = inset.getBoundingClientRect();
-    const panelRect = element.getBoundingClientRect();
-    const style = getComputedStyle(element);
-    const canvas = getComputedStyle(document.querySelector('[aria-label="Workspace layout"]')!);
-    return {
-      insetBox: {
-        x: insetRect.x,
-        y: insetRect.y,
-        width: insetRect.width,
-        height: insetRect.height,
-      },
-      panelBox: {
-        x: panelRect.x,
-        y: panelRect.y,
-        width: panelRect.width,
-        height: panelRect.height,
-      },
-      styles: {
+  await expect(async () => {
+    const geometry = await panel.evaluate((element) => {
+      const inset = element.closest<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
+      const frame = element.closest('.panel-canvas-frame')!;
+      const rect = (node: Element) => {
+        const box = node.getBoundingClientRect();
+        return { x: box.x, y: box.y, width: box.width, height: box.height };
+      };
+      const style = getComputedStyle(element);
+      const insetStyle = getComputedStyle(inset);
+      return {
+        inset: rect(inset),
+        frame: rect(frame),
+        panel: rect(element),
+        padding: [
+          insetStyle.paddingLeft,
+          insetStyle.paddingTop,
+          insetStyle.paddingRight,
+          insetStyle.paddingBottom,
+        ].map(Number.parseFloat),
+        scrollLeft: inset.scrollLeft,
+        scrollWidth: inset.scrollWidth,
+        viewportWidth: innerWidth,
+        pageWidth: document.documentElement.scrollWidth,
         radius: style.borderRadius,
         shadow: style.boxShadow,
         surface: style.backgroundColor,
-        canvas: canvas.backgroundColor,
-      },
-    };
-  });
-  const expectedInset = (await page.evaluate(() => innerWidth)) < 640 ? 8 : 12;
-  expect(panelBox.x - insetBox.x).toBeCloseTo(expectedInset, 0);
-  expect(panelBox.y - insetBox.y).toBeCloseTo(expectedInset, 0);
-  expect(insetBox.x + insetBox.width - panelBox.x - panelBox.width).toBeCloseTo(expectedInset, 0);
-  expect(insetBox.y + insetBox.height - panelBox.y - panelBox.height).toBeCloseTo(expectedInset, 0);
-  expect(styles.radius).toBe('9px');
-  expect(styles.shadow).not.toBe('none');
-  expect(styles.surface).not.toBe(styles.canvas);
+        canvas: getComputedStyle(element.closest('[aria-label="Workspace layout"]')!)
+          .backgroundColor,
+      };
+    });
+    // The current uncontained canvas is flush left, with responsive top/right/
+    // bottom padding. Its intrinsic width may leave unused space to the right.
+    const inset = geometry.viewportWidth < 640 ? 8 : 12;
+    expect(geometry.padding).toEqual([0, inset, inset, inset]);
+    expect(geometry.panel.x - geometry.inset.x + geometry.scrollLeft).toBeCloseTo(0, 0);
+    expect(geometry.panel.y - geometry.inset.y).toBeCloseTo(inset, 0);
+    expect(
+      geometry.inset.y + geometry.inset.height - geometry.panel.y - geometry.panel.height,
+    ).toBeCloseTo(inset, 0);
+    expect(geometry.panel.width).toBeGreaterThan(0);
+    expect(geometry.panel.width).toBeCloseTo(geometry.frame.width, 0);
+    expect(geometry.scrollWidth + 1).toBeGreaterThanOrEqual(geometry.frame.width + inset);
+    expect(geometry.pageWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+    expect(geometry.radius).toBe('12px');
+    expect(geometry.shadow).not.toBe('none');
+    expect(geometry.surface).not.toBe(geometry.canvas);
+  }).toPass({ timeout: 5_000 });
 }
 
 async function expectEightPixelGutters() {
-  const gutters = page.locator('[data-split-gutter]');
-  expect(await gutters.count()).toBeGreaterThanOrEqual(2);
-  for (let index = 0; index < (await gutters.count()); index += 1) {
-    const gutter = gutters.nth(index);
-    const direction = await gutter.getAttribute('data-split-gutter');
-    const gutterBox = await gutter.boundingBox();
-    const targetBox = await gutter
-      .getByRole('button', { name: 'Resize panel', exact: true })
-      .boundingBox();
-    expect(gutterBox).not.toBeNull();
-    expect(targetBox).not.toBeNull();
-    expect(direction === 'horizontal' ? gutterBox!.width : gutterBox!.height).toBeCloseTo(8, 0);
-    expect(direction === 'horizontal' ? targetBox!.width : targetBox!.height).toBeCloseTo(16, 0);
-  }
+  // New gutter wrappers have the same resize intro as new panels. Read every
+  // gutter and handle in one frame, then require settled geometry without
+  // disabling motion or weakening the 8px gutter / 16px handle contract.
+  await expect(async () => {
+    const gutters = await page.locator('[data-split-gutter]').evaluateAll((elements) =>
+      elements.map((element) => {
+        const handles = element.querySelectorAll('button[aria-label="Resize panel"]');
+        const box = element.getBoundingClientRect();
+        const handle = handles[0]?.getBoundingClientRect();
+        return {
+          direction: element.getAttribute('data-split-gutter'),
+          width: box.width,
+          height: box.height,
+          handles: handles.length,
+          handleWidth: handle?.width,
+          handleHeight: handle?.height,
+          moving: element
+            .getAnimations()
+            .some((animation) => animation.pending || animation.playState === 'running'),
+        };
+      }),
+    );
+    expect(gutters.length).toBeGreaterThanOrEqual(2);
+    for (const gutter of gutters) {
+      expect(['horizontal', 'vertical']).toContain(gutter.direction);
+      expect(gutter.moving).toBe(false);
+      expect(gutter.handles).toBe(1);
+      expect(gutter.width).toBeGreaterThan(0);
+      expect(gutter.height).toBeGreaterThan(0);
+      expect(gutter.direction === 'horizontal' ? gutter.width : gutter.height).toBeCloseTo(8, 0);
+      expect(
+        gutter.direction === 'horizontal' ? gutter.handleWidth : gutter.handleHeight,
+      ).toBeCloseTo(16, 0);
+    }
+  }).toPass({ timeout: 5_000 });
 }
 
 async function expectConversationGeometry() {
-  const geometry = await page.evaluate(() => {
-    const activeTab = document.querySelector('.tab-content-wrapper:not(.hidden)');
-    const panel = activeTab?.closest('[data-panel-id]');
-    const column = activeTab?.querySelector('.conversation-column');
-    const composer = activeTab?.querySelector('.conversation-composer');
-    const input = activeTab?.querySelector('.rich-input-container');
-    const assistant = activeTab?.querySelector('[data-message-role="assistant"]');
-    if (!panel || !column || !composer || !input || !assistant) return null;
-
-    const rect = (element: Element) => {
-      const box = element.getBoundingClientRect();
-      return {
-        left: box.left,
-        right: box.right,
-        top: box.top,
-        bottom: box.bottom,
-        width: box.width,
+  // Sample the transcript and inset composer lane together. The outer composer
+  // shell intentionally spans the panel and is not the shared content measure.
+  await expect(async () => {
+    const geometry = await page.evaluate(() => {
+      const activeTab = document.querySelector('.tab-content-wrapper[aria-hidden="false"]');
+      const panel = activeTab?.closest('[data-panel-id]');
+      const chat = activeTab?.querySelector('.chat-panel-container');
+      const column = activeTab?.querySelector('[data-testid="chat-transcript-inner"]');
+      const lane = activeTab?.querySelector('[data-testid="chat-composer-lane"]');
+      const input = activeTab?.querySelector('.rich-input-container');
+      const assistant = activeTab?.querySelector('[data-message-role="assistant"]');
+      if (!panel || !chat || !column || !lane || !input || !assistant) return null;
+      const rect = (element: Element) => {
+        const box = element.getBoundingClientRect();
+        return { left: box.left, right: box.right, bottom: box.bottom, width: box.width };
       };
-    };
-    const inputStyle = getComputedStyle(input);
-    return {
-      panel: rect(panel),
-      column: rect(column),
-      composer: rect(composer),
-      input: rect(input),
-      assistant: rect(assistant),
-      columnMaxWidth: getComputedStyle(column).maxWidth,
-      inputRadius: inputStyle.borderRadius,
-      inputShadow: inputStyle.boxShadow,
-      viewportWidth: document.documentElement.clientWidth,
-    };
-  });
-
-  expect(geometry).not.toBeNull();
-  expect(geometry!.columnMaxWidth).toBe('768px');
-  expect(geometry!.column.width).toBeLessThanOrEqual(Math.min(768, geometry!.viewportWidth));
-  expect(geometry!.composer.width).toBeCloseTo(geometry!.column.width, 0);
-  expect(geometry!.assistant.left).toBeGreaterThanOrEqual(geometry!.column.left);
-  expect(geometry!.assistant.right).toBeLessThanOrEqual(geometry!.column.right + 1);
-  expect(geometry!.inputRadius).toBe('8px');
-  expect(geometry!.inputShadow).not.toBe('none');
-  expect(geometry!.panel.bottom - geometry!.input.bottom).toBeGreaterThanOrEqual(8);
-  expect(geometry!.panel.bottom - geometry!.input.bottom).toBeLessThanOrEqual(20);
+      const inputStyle = getComputedStyle(input);
+      const columnStyle = getComputedStyle(column);
+      const laneStyle = getComputedStyle(lane);
+      return {
+        panel: rect(panel),
+        chat: rect(chat),
+        column: rect(column),
+        lane: rect(lane),
+        input: rect(input),
+        assistant: rect(assistant),
+        columnMaxWidth: Number.parseFloat(columnStyle.maxWidth),
+        columnFontSize: Number.parseFloat(columnStyle.fontSize),
+        laneMaxWidth: Number.parseFloat(laneStyle.maxWidth),
+        laneFontSize: Number.parseFloat(laneStyle.fontSize),
+        lanePadding: [laneStyle.paddingLeft, laneStyle.paddingRight, laneStyle.paddingBottom].map(
+          Number.parseFloat,
+        ),
+        inputRadius: inputStyle.borderRadius,
+        inputShadow: inputStyle.boxShadow,
+        inputBorder: inputStyle.borderBottomWidth,
+        viewportWidth: document.documentElement.clientWidth,
+        pageWidth: document.documentElement.scrollWidth,
+      };
+    });
+    expect(geometry).not.toBeNull();
+    const g = geometry!;
+    expect(g.columnMaxWidth / g.columnFontSize).toBeCloseTo(140, 4);
+    expect(g.laneMaxWidth / g.laneFontSize).toBeCloseTo(140, 4);
+    expect(g.column.width).toBeLessThanOrEqual(Math.min(g.columnMaxWidth, g.chat.width) + 1);
+    expect(g.column.width).toBeGreaterThan(0);
+    expect(Math.abs(g.lane.width - g.column.width)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs((g.column.left + g.column.right - g.lane.left - g.lane.right) / 2),
+    ).toBeLessThanOrEqual(1);
+    const expectedInset = g.chat.width >= 640 ? 24 : 16;
+    expect(g.lanePadding).toEqual([expectedInset, expectedInset, expectedInset]);
+    expect(g.input.left - g.lane.left).toBeCloseTo(expectedInset, 0);
+    expect(g.lane.right - g.input.right).toBeCloseTo(expectedInset, 0);
+    expect(g.lane.bottom - g.input.bottom).toBeCloseTo(expectedInset, 0);
+    expect(g.panel.bottom - g.lane.bottom).toBeCloseTo(1, 0);
+    expect(g.assistant.left).toBeGreaterThanOrEqual(g.column.left - 1);
+    expect(g.assistant.right).toBeLessThanOrEqual(g.column.right + 1);
+    expect(g.pageWidth).toBeLessThanOrEqual(g.viewportWidth + 1);
+    expect(g.inputRadius).toBe('8px');
+    expect(g.inputShadow).toBe('none');
+    expect(g.inputBorder).toBe('1px');
+  }).toPass({ timeout: 5_000 });
 }
 
 test.describe('Build Smoke — Editorial Workspace Shell', () => {
   test.beforeAll(async () => {
     const repo = createTempRepo();
     cleanupRepo = repo.cleanup;
-    userDataDir = await mkdtemp(path.join(tmpdir(), 'editorial-shell-user-data-'));
     const launchOptions = {
-      extraArgs: [`--user-data-dir=${userDataDir}`],
       extraEnv: {
         MOCK_AGENT_SCRIPT_PATH: path.resolve(process.cwd(), 'e2e', 'mock-acp-agent.js'),
         DEFAULT_PROVIDER_OVERRIDE: 'mock',
-        INTENTD_DATA_DIR: path.join(userDataDir, 'intentd'),
       },
     };
-    const launched = useBuiltApp
-      ? await launchApp(launchOptions)
-      : await launchPackagedApp(launchOptions);
+    const launched = await launchPackagedApp(launchOptions);
     app = launched.app;
     page = launched.page;
     const behavior = setMockAgentBehavior({ response: conversationResponse });
@@ -286,25 +334,56 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     });
     await page.locator('[data-panel-id]').first().waitFor({ state: 'visible', timeout: 20_000 });
     await page
-      .getByTitle('Click to edit space title')
+      .getByTitle('Click to edit workspace title')
       .waitFor({ state: 'visible', timeout: 60_000 });
     await expect(
       page
         .locator('[data-message-role="assistant"]')
         .filter({ hasText: 'Editorial conversation ready' }),
     ).toBeVisible({ timeout: 90_000 });
+    await waitForAgentNotStreaming(page, workspaceId, 90_000);
+    // The current sidebar omits empty status messages. Seed a distinct fixture
+    // status through the real daemon, then edit it through the UI below. The
+    // final title/status and reload assertions remain independent outcomes.
+    await page.evaluate(async (id) => {
+      const result = await (window as any).electronAPI.invoke('backend:request', {
+        method: 'workspace.update',
+        params: { workspaceId: id, statusMessage: 'Editorial fixture ready for UI editing.' },
+      });
+      if (
+        !result.ok ||
+        result.result?.workspace?.id !== id ||
+        result.result.workspace.statusMessage !== 'Editorial fixture ready for UI editing.'
+      ) {
+        throw new Error(`Failed to seed owned editorial fixture: ${JSON.stringify(result)}`);
+      }
+    }, workspaceId);
+    // Leave the transient new-workspace shell before testing the settled UI.
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
+      'Editorial fixture ready for UI editing.',
+    );
     await setSidebarCollapsed(false);
     await prepareSidebarFixture();
   });
 
   test.afterAll(async () => {
     if (page && workspaceId) await archiveAndGoHome(page, workspaceId).catch(() => undefined);
-    if (app) await app.close().catch(() => undefined);
+    await exitPackagedApp(app);
     cleanupRepo?.();
-    if (userDataDir) await rm(userDataDir, { recursive: true, force: true });
   });
 
   test('captures and verifies shell and conversation states', async () => {
+    const workspace = await getSmokeWorkspace(page, workspaceId);
+    expect(workspace.id).toBe(workspaceId);
+    // A renderer reload must retain the title/status we changed through the UI.
+    await page.reload();
+    await expect(page.getByTitle('Click to edit workspace title')).toContainText(
+      'Editorial navigation and sidebar hierarchy verification workspace',
+    );
+    await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
+      'Refining the rail, workspace identity, and selected sections while preserving every interaction.',
+    );
     test.setTimeout(360_000);
     for (const [label, width, height] of [
       ['desktop', 1440, 1000],
@@ -385,44 +464,116 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
 
     await setSidebarCollapsed(false);
 
-    let panels = page.locator('[data-panel-id]');
-    await panels.first().locator('button[aria-label="Split panel right"]').click();
+    const panels = page.locator('[data-panel-id]');
+    // The current product uses fixed horizontal columns: vertical split and
+    // split-vertical preset actions deliberately do nothing. Exercise the real
+    // create-column shortcut instead of fabricating retired nested layout state.
+    const firstPanelId = await panels.first().getAttribute('data-panel-id');
+    const createColumn = process.platform === 'darwin' ? 'Meta+Backslash' : 'Control+Backslash';
+    await panels.first().click({ position: { x: 24, y: 96 } });
+    await page.keyboard.press(createColumn);
     await expect(panels).toHaveCount(2);
     await capture('desktop-light-two-horizontal-panels');
-    await panels.nth(1).locator('button[aria-label="Split panel down"]').click();
+    await panels.nth(1).click({ position: { x: 24, y: 96 } });
+    await page.keyboard.press(createColumn);
     await expect(panels).toHaveCount(3);
+    const panelIds = await panels.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('data-panel-id')),
+    );
+    expect(new Set(panelIds).size).toBe(3);
+    expect(panelIds[0]).toBe(firstPanelId);
+    await expect(page.locator('[data-split-gutter="horizontal"]')).toHaveCount(2);
+    await expect(page.locator('[data-split-gutter="vertical"]')).toHaveCount(0);
     await expectEightPixelGutters();
-    await capture('desktop-light-nested-split');
+    await capture('desktop-light-three-horizontal-columns');
 
     await panels.nth(2).click({ position: { x: 24, y: 96 } });
     await expect(panels.nth(2)).toHaveAttribute('data-focused', 'true');
     await capture('desktop-light-focused-panel');
 
-    const target = panels.first();
-    const tabId = await target.locator('[data-tab-id]').first().getAttribute('data-tab-id');
-    await target.evaluate((element, id) => {
-      const transfer = new DataTransfer();
-      transfer.setData(
-        'application/x-panel-tab',
-        JSON.stringify({ tabId: id, panelId: 'fixture' }),
-      );
-      const rect = element.getBoundingClientRect();
-      element.dispatchEvent(
-        new DragEvent('dragover', {
-          bubbles: true,
-          cancelable: true,
-          clientX: rect.left + rect.width / 2,
-          clientY: rect.top + rect.height / 2,
-          dataTransfer: transfer,
-        }),
-      );
-    }, tabId);
-    await expect(target.getByText('Add to panel')).toBeVisible();
-    await capture('desktop-light-drag-over');
-    await target.dispatchEvent('dragleave');
+    // Keep the complete three-column canvas visible for a pointer-driven edge drop.
+    await emulateViewport(3200, 1000);
+    const target = page.locator(`[data-panel-id="${firstPanelId}"]`);
+    const header = target.locator('[data-panel-content-header][draggable="true"]');
+    await expect(header).toHaveAttribute('data-pane-stack-size', '1');
+    const activePane = target.locator('.tab-content-wrapper[aria-hidden="false"]');
+    await expect(activePane).toHaveCount(1);
+    const paneId = await activePane.getAttribute('data-tab-id');
+    expect(paneId).toBeTruthy();
+    const beforePanes = await panels.evaluateAll((elements) =>
+      elements.map((element) => ({
+        panelId: element.getAttribute('data-panel-id'),
+        panes: Array.from(element.querySelectorAll('.tab-content-wrapper')).map((pane) =>
+          pane.getAttribute('data-tab-id'),
+        ),
+      })),
+    );
+    // The empty flex spacer has no height. Grab the real header's top padding
+    // instead, and verify that hit-testing reaches this draggable header rather
+    // than a selector/button. No drag event or application state is injected.
+    await expect(header).toBeVisible();
+    await header.scrollIntoViewIfNeeded();
+    const headerBox = await header.boundingBox();
+    if (!headerBox) throw new Error('Pane header bounds are unavailable');
+    await header.hover({ position: { x: headerBox.width / 2, y: 2 } });
+    const { x: startX, y: startY } = await header.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      if (box.width <= 20 || box.height <= 4) throw new Error('Pane header is too small to drag');
+      const x = box.left + box.width / 2;
+      const y = box.top + 2;
+      if (document.elementFromPoint(x, y) !== element) {
+        throw new Error('Pane header drag origin is covered or interactive');
+      }
+      return { x, y };
+    });
+    const destinationBox = await panels.last().boundingBox();
+    if (!destinationBox) throw new Error('Pane drop bounds are unavailable');
+    const dropX = destinationBox.x + destinationBox.width - 3;
+    const dropY = destinationBox.y + 80;
+    const viewportWidth = await page.evaluate(() => window.innerWidth);
+    expect(startX).toBeGreaterThan(0);
+    expect(dropX).toBeLessThan(viewportWidth);
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    try {
+      await page.mouse.move(startX + 10, startY, { steps: 3 });
+      await page.mouse.move(dropX, dropY, { steps: 20 });
+      await page.mouse.move(dropX, dropY);
+      await expect(page.locator('[data-panel-layout-edge-preview="after"]')).toBeVisible();
+      await capture('wide-light-drag-over');
+    } finally {
+      await page.mouse.up();
+    }
+    await expect
+      .poll(() =>
+        panels.evaluateAll((elements) =>
+          elements.map((element) => ({
+            panelId: element.getAttribute('data-panel-id'),
+            panes: Array.from(element.querySelectorAll('.tab-content-wrapper')).map((pane) =>
+              pane.getAttribute('data-tab-id'),
+            ),
+          })),
+        ),
+      )
+      .toEqual([beforePanes[1], beforePanes[2], beforePanes[0]]);
+    await expect(panels).toHaveCount(3);
+    await expect(panels.last()).toHaveAttribute('data-panel-id', firstPanelId!);
+    await expect(activePane).toHaveAttribute('data-tab-id', paneId!);
+    await expect(activePane).toBeVisible();
+    await expect(target).toHaveAttribute('data-focused', 'true');
+    await expect(page.locator('[data-panel-layout-edge-preview]')).toHaveCount(0);
+    await expect(page.locator('[data-split-gutter="horizontal"]')).toHaveCount(2);
+    await expect(page.locator('[data-split-gutter="vertical"]')).toHaveCount(0);
+    await expectEightPixelGutters();
+    await capture('wide-light-reordered-columns');
+    await emulateViewport(1440, 1000);
 
-    await target.locator('[role="tab"][aria-selected="true"]').click({ button: 'right' });
-    await page.getByRole('button', { name: /^Zoom Panel/ }).click();
+    await target.click({ position: { x: 24, y: 96 } });
+    await expect(target).toHaveAttribute('data-focused', 'true');
+    // Mod+Shift+M toggles workspace chrome; Mod+Shift+Enter zooms the focused panel.
+    await page.keyboard.press(
+      process.platform === 'darwin' ? 'Meta+Shift+Enter' : 'Control+Shift+Enter',
+    );
     await expect(target).toHaveAttribute('data-zoomed', 'true');
     await capture('desktop-light-zoomed-panel');
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+J' : 'Control+J');

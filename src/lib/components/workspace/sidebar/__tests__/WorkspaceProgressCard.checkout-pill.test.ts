@@ -61,10 +61,13 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectCanShareWorkspace: mocks.selector(() => false),
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => []),
+  selectHidesOwnerWorkspaceActions: mocks.selector(() => false),
+  selectHidesAgentLifecycleActions: mocks.selector(() => false),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -86,6 +89,11 @@ vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-selectors'
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: mocks.selector(() => []),
+}));
+
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectWorkspacePresencePeople: mocks.selector(() => []),
+  selectWorkspacePresenceFocusTargets: mocks.selector(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
@@ -125,6 +133,10 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
+  requestArchiveWorkspace: vi.fn((id: string) => ({
+    type: 'workspaceOperations/requestArchiveWorkspace',
+    payload: [id],
+  })),
   requestDeleteWorkspace: vi.fn((id: string) => ({
     type: 'workspaceOperations/delete',
     payload: [id],

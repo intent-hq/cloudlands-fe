@@ -45,7 +45,7 @@ describe('SlashSkillSuggestionList', () => {
 
     const reviewOption = screen.getByRole('option', { name: 'review' });
     expect(reviewOption.textContent?.trim()).toBe('review');
-    const reviewLabel = reviewOption.querySelector('span');
+    const reviewLabel = reviewOption.querySelector('[data-slot="button-content"] > span');
     expect(reviewLabel?.className).toContain('type-body');
     expect(reviewLabel?.className).not.toContain('type-code');
     expect(screen.queryByText('Review a change')).toBeNull();
@@ -110,5 +110,33 @@ describe('SlashSkillSuggestionList', () => {
 
     await view.rerender({ items: [items[1]], onSelect });
     expect(screen.getByRole('option').getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('keeps result identity stable across filtering and clears hidden active descendants', async () => {
+    const onActiveOptionChange = vi.fn();
+    const onSelect = vi.fn();
+    const view = render(SlashSkillSuggestionList, {
+      props: { items, onSelect, onActiveOptionChange },
+    });
+    const resultId = screen.getByRole('option', { name: 'research' }).id;
+    await view.rerender({ items: [items[1]], onSelect, onActiveOptionChange });
+    expect(screen.getByRole('option').id).toBe(resultId);
+    expect(onActiveOptionChange).toHaveBeenLastCalledWith(resultId);
+    await view.rerender({ loading: true, items, onSelect, onActiveOptionChange });
+    expect(onActiveOptionChange).toHaveBeenLastCalledWith(undefined);
+    view.component.onKeyDown({ event: new KeyboardEvent('keydown', { key: 'Enter' }) });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed load without selecting cached skills', async () => {
+    const onRetry = vi.fn();
+    const onSelect = vi.fn();
+    const view = render(SlashSkillSuggestionList, {
+      props: { items, error: 'failed', onRetry, onSelect },
+    });
+    view.component.onKeyDown({ event: new KeyboardEvent('keydown', { key: 'Enter' }) });
+    await fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

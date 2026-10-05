@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   focusedPanelId: undefined as string | undefined,
   panels: {} as Record<string, { id: string; tabs: unknown[]; activeTabId: string | null }>,
+  lastPanelClose: null as { kind: 'column' | 'tab'; closedAt: number } | null,
 }));
 
 vi.mock('$store/renderer/store', () => ({
@@ -15,6 +16,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectAllTabs: { select: vi.fn() },
   selectPanelIds: { select: vi.fn() },
   selectPanel: { select: vi.fn() },
+  selectLastPanelClose: { select: () => mocks.lastPanelClose },
 }));
 
 import { PanelLayoutAdapter } from './panel-layout-adapter';
@@ -31,6 +33,7 @@ describe('PanelLayoutAdapter', () => {
     mocks.dispatch.mockClear();
     mocks.focusedPanelId = undefined;
     mocks.panels = {};
+    mocks.lastPanelClose = null;
   });
 
   it('falls back to the rightmost configured column without panel focus', () => {
@@ -53,6 +56,17 @@ describe('PanelLayoutAdapter', () => {
         payload: expect.objectContaining({ wsId: 'ws-1', panelId: 'panel-2', tab }),
       }),
     );
+  });
+
+  it.each([
+    ['column', 'panelLayout/reopenClosedPanelColumn'],
+    ['tab', 'panelLayout/reopenClosedTab'],
+  ] as const)('reopens the most recent %s close', (kind, actionType) => {
+    mocks.lastPanelClose = { kind, closedAt: 1000 };
+
+    new PanelLayoutAdapter('ws-1').reopenLastClosed();
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: actionType }));
   });
 
   it('routes browser content through canonical adjacent placement', () => {

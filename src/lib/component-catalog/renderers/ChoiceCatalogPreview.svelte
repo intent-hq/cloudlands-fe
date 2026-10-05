@@ -1,5 +1,9 @@
 <script lang="ts">
   import { Combobox, type ComboboxGroup, type ComboboxOption } from '$lib/components/ui/combobox';
+  import { Dropdown, type DropdownOption } from '$lib/components/ui/dropdown';
+  import { GroupedCombobox, type OptionGroup } from '$lib/components/ui/grouped-combobox';
+  import type { Option } from '$lib/components/ui/searchable-combobox';
+  import { SearchableSelect } from '$lib/components/ui/searchable-select';
   import { Select } from '$lib/components/ui/select';
   import type { CatalogRendererProps } from '../catalog-renderers';
 
@@ -14,6 +18,10 @@
   let openSelect = $state(true);
   let longSelectValue = $state('option-01');
   let longSelectOpen = $state(true);
+  let searchableValue = $state('grace');
+  let groupedValue = $state('grace');
+  let dropdownValue = $state<string | string[]>('grace');
+  let dropdownOpen = $state(true);
   const options: ComboboxOption[] = [
     { value: 'ada', label: 'Ada Lovelace' },
     { value: 'grace', label: 'Grace Hopper' },
@@ -30,17 +38,23 @@
     label: `Catalog option ${String(index + 1).padStart(2, '0')}`,
   }));
   const longSelectItems = longOptions.map(({ value, label }) => ({ value, label }));
+  const wrapperOptions: Option[] = options.map(({ value, label }) => ({ value, label }));
+  const wrapperGroups: OptionGroup[] = [
+    { key: 'people', label: 'People', options: wrapperOptions },
+  ];
+  const dropdownOptions: DropdownOption[] = options.map(({ value, label }) => ({ value, label }));
 </script>
 
 <div class="grid w-full min-w-0 max-w-md gap-4" data-catalog-renderer-fixture={fixture.id}>
   {#if componentId === 'combobox'}
     {#if fixture.id === 'combobox-state-matrix'}
-      <div data-catalog-rendered-state="closed selected">
+      <div data-catalog-rendered-state="closed selected keyboard-focus">
         <Combobox
           bind:value={comboboxValue}
           {options}
           portal={false}
           ariaLabel="Catalog combobox"
+          inputClass="outline-1 outline-offset-2 outline-focus-ring outline-solid"
         />
         <output class="sr-only" aria-label="Combobox value">{JSON.stringify(comboboxValue)}</output>
       </div>
@@ -127,6 +141,33 @@
         />
       </div>
     {/if}
+  {:else if componentId === 'searchable-select'}
+    <div data-catalog-rendered-state="default selected search long-content">
+      <SearchableSelect bind:value={searchableValue} options={wrapperOptions} staticPosition />
+    </div>
+    <div data-catalog-rendered-state="disabled">
+      <SearchableSelect options={wrapperOptions} disabled />
+    </div>
+  {:else if componentId === 'grouped-combobox'}
+    <div data-catalog-rendered-state="default selected collapsed expanded">
+      <GroupedCombobox bind:value={groupedValue} groups={wrapperGroups} defaultCollapsed={false} />
+    </div>
+    <div data-catalog-rendered-state="disabled">
+      <GroupedCombobox groups={wrapperGroups} disabled />
+    </div>
+  {:else if componentId === 'dropdown'}
+    <div class="pb-40" data-catalog-rendered-state="closed open selected search long-content">
+      <Dropdown
+        bind:value={dropdownValue}
+        bind:open={dropdownOpen}
+        options={dropdownOptions}
+        portal={false}
+        staticPosition
+      />
+    </div>
+    <div data-catalog-rendered-state="disabled">
+      <Dropdown options={dropdownOptions} disabled portal={false} />
+    </div>
   {:else if componentId === 'select'}
     {#if fixture.id === 'select-state-matrix'}
       <div class="relative z-20" data-catalog-rendered-state="closed selected focus-visible">

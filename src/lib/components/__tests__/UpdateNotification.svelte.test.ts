@@ -21,7 +21,7 @@ const sonner = vi.hoisted(() => {
   return {
     toasts,
     // When true, toast.dismiss(id) queues the onDismiss delivery instead of
-    // firing it synchronously — mirroring real svelte-sonner, which defers it
+    // firing it synchronously — mirroring real $lib/components/patterns/notify, which defers it
     // (dismiss flag -> Toaster $effect sets delete -> Toast $effect invokes
     // onDismiss), so in dismiss-then-recreate the new toast is created BEFORE
     // the old toast's onDismiss arrives. Default (false) fires synchronously.
@@ -44,7 +44,7 @@ const sonner = vi.hoisted(() => {
       toasts.set(id, options);
       return id;
     }),
-    // Mirror svelte-sonner: toast.dismiss(id) triggers that toast's
+    // Mirror $lib/components/patterns/notify: toast.dismiss(id) triggers that toast's
     // sonner-level onDismiss with the toast object (deferred when
     // deferDismiss is set — see above).
     dismiss: vi.fn((id: number) => {
@@ -59,8 +59,12 @@ const sonner = vi.hoisted(() => {
     }),
   };
 });
-vi.mock('svelte-sonner', () => ({
-  toast: { custom: sonner.custom, dismiss: sonner.dismiss },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
+    update: (componentProps: unknown, options: Record<string, unknown>) =>
+      sonner.custom(null, { ...options, componentProps }),
+    dismiss: sonner.dismiss,
+  },
 }));
 
 const storeHolder = vi.hoisted(() => ({
@@ -178,7 +182,7 @@ describe('UpdateNotification downloaded-toast persistence', () => {
     expect(autoUpdateState.toastVisible).toBe(true);
   });
 
-  // Same dismiss-then-recreate path, but with real svelte-sonner ordering:
+  // Same dismiss-then-recreate path, but with real $lib/components/patterns/notify ordering:
   // the new toast is created first and the OLD toast's onDismiss is delivered
   // afterwards. Without the currentToastId === dismissed.id guard the deferred
   // delivery would clear the NEW toast's currentToastId.

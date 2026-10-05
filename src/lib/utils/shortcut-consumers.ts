@@ -20,7 +20,10 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     source: 'routes/(app)/+layout.svelte',
     handler: 'keyboard manager',
   },
-  'global.toggle-spaces': { source: 'routes/(app)/+layout.svelte', handler: 'keyboard manager' },
+  'global.toggle-spaces': {
+    source: 'features/workspace/utils/workspace-spaces-shortcut.ts',
+    handler: 'keyboard manager',
+  },
   'global.new-space': {
     source: 'features/workspace/utils/workspace-tab-navigation.ts',
     handler: 'keyboard manager',
@@ -59,6 +62,22 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     handler: 'keyboard manager',
   },
   'navigation.move-space-tab-right': {
+    source: 'features/workspace/utils/workspace-tab-navigation.ts',
+    handler: 'keyboard manager',
+  },
+  'workspace.new-agent': {
+    source: 'features/workspace/utils/workspace-tab-navigation.ts',
+    handler: 'keyboard manager',
+  },
+  'workspace.new-note': {
+    source: 'features/workspace/utils/workspace-tab-navigation.ts',
+    handler: 'keyboard manager',
+  },
+  'workspace.new-terminal': {
+    source: 'features/workspace/utils/workspace-tab-navigation.ts',
+    handler: 'keyboard manager',
+  },
+  'workspace.new-browser': {
     source: 'features/workspace/utils/workspace-tab-navigation.ts',
     handler: 'keyboard manager',
   },

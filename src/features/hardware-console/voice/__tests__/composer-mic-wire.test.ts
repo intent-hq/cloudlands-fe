@@ -8,7 +8,7 @@
  * is the backend bridge, so the stub sits on its `invoke` boundary.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
@@ -36,7 +36,7 @@ vi.mock('$store/renderer/store', () => ({
     }),
   },
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn(), info: vi.fn() } }));
 
 import { voiceTranscriptionStarted } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { voiceTranscriptionSaga } from '$store/renderer/slices/hardware-console/sagas/voice-transcription-saga';

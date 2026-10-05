@@ -31,7 +31,26 @@ beforeEach(async () => {
 afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
   vi.doUnmock('electron');
+  vi.doUnmock('fs');
 });
+
+type Rename = typeof import('fs').promises.rename;
+
+/** Mock `fs` so the helper's `promises.rename` routes through `rename`; everything else is real. */
+async function mockFsRename(
+  rename: (actual: Rename, ...args: Parameters<Rename>) => Promise<void>,
+) {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  const promises = {
+    ...actual.promises,
+    rename: (...args: Parameters<Rename>) => rename(actual.promises.rename, ...args),
+  };
+  vi.doMock('fs', () => ({ ...actual, promises, default: { ...actual, promises } }));
+}
+
+async function readDocumentOnDisk(): Promise<unknown> {
+  return JSON.parse(await fs.readFile(path.join(tmpDir, 'local-prefs.json'), 'utf8'));
+}
 
 describe('local-prefs', () => {
   it('getLocalPref returns undefined for missing file/key', async () => {
@@ -72,6 +91,58 @@ describe('local-prefs', () => {
     expect(await getLocalPref('x')).toBe(1);
     expect(await getLocalPref('y')).toBe(2);
     expect(await getLocalPref('z')).toBe(3);
+  });
+
+  it('a reader interleaved between the temp write and the rename sees the previous complete document', async () => {
+    let gate: { started: () => void; release: Promise<void> } | null = null;
+    await mockFsRename(async (actual, from, to) => {
+      if (gate) {
+        gate.started();
+        await gate.release;
+      }
+      return actual(from, to);
+    });
+    const { setLocalPref, getLocalPref } = await import('../local-prefs');
+    await setLocalPref('doc', 'v1');
+
+    let started!: () => void;
+    let release!: () => void;
+    const renameStarted = new Promise<void>((resolve) => (started = resolve));
+    gate = { started, release: new Promise<void>((resolve) => (release = resolve)) };
+
+    const inflight = setLocalPref('doc', 'v2');
+    await renameStarted;
+
+    const midWriteEntries = await fs.readdir(tmpDir);
+    expect(midWriteEntries).toContain('local-prefs.json');
+    expect(midWriteEntries.some((name) => name.endsWith('.tmp'))).toBe(true);
+    expect(await readDocumentOnDisk()).toEqual({ doc: 'v1' });
+    expect(await getLocalPref('doc')).toBe('v1');
+
+    release();
+    await inflight;
+    expect(await readDocumentOnDisk()).toEqual({ doc: 'v2' });
+    expect(await getLocalPref('doc')).toBe('v2');
+    expect(await fs.readdir(tmpDir)).toEqual(['local-prefs.json']);
+  });
+
+  it('a failed rename leaves the previous file intact and no stray temp file', async () => {
+    let failRename = false;
+    await mockFsRename(async (actual, from, to) => {
+      if (failRename) {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      }
+      return actual(from, to);
+    });
+    const { setLocalPref, getLocalPref } = await import('../local-prefs');
+    await setLocalPref('doc', 'v1');
+
+    failRename = true;
+    await setLocalPref('doc', 'v2');
+
+    expect(await readDocumentOnDisk()).toEqual({ doc: 'v1' });
+    expect(await getLocalPref('doc')).toBe('v1');
+    expect(await fs.readdir(tmpDir)).toEqual(['local-prefs.json']);
   });
 
   it('malformed JSON on disk yields an empty map (defensive)', async () => {

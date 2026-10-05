@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -16,6 +16,7 @@ import {
   SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
 } from '../subscription-disclosure';
 import { USER_MESSAGE_SURFACE_CLASS } from '../user-message-surface';
+import { createMockWorkspace } from '../../../../test/factories/workspace.factory';
 
 const { dispatchMock, handleLinkMock, agentSelectorHarness } = vi.hoisted(() => {
   type Snapshot = {
@@ -351,8 +352,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(avatar.getAttribute('data-provider')).toBe('augment');
     expect(avatar.getAttribute('data-avatar-state')).toBe('idle');
     expect(avatar.getAttribute('data-avatar-variant')).toBe('standard');
-    const preview = screen.getByTestId('agent-message-preview');
-    expect(preview.textContent).toContain('hello from another agent');
+    expect(screen.queryByText('hello from another agent')).toBeNull();
     expect(screen.queryByTestId('agent-message-expanded-body')).toBeNull();
     const surface = screen.getByTestId('user-message-surface');
     for (const token of [
@@ -361,15 +361,9 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     ]) {
       expect(surface.classList.contains(token)).toBe(true);
     }
-    const disclosureHeader = screen.getByTestId('agent-message-disclosure-header');
-    for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
-      expect(disclosureHeader.classList.contains(token)).toBe(true);
-    }
-    for (const token of ['h-auto!', 'min-h-9', 'px-3!', 'py-2!', 'type-body', 'font-normal']) {
-      expect(disclosureHeader.classList.contains(token)).toBe(true);
-    }
-    expect(disclosureHeader.classList.contains('gap-2')).toBe(true);
-    expect(disclosureHeader.classList.contains('justify-start!')).toBe(true);
+    expect(
+      screen.getByTestId('agent-message-disclosure-toggle').getAttribute('aria-expanded'),
+    ).toBe('false');
     expect(surface.querySelector('button button')).toBeNull();
   });
 
@@ -487,7 +481,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     style.remove();
   });
 
-  it('uses a single-line attributed preview without changing plain user messages', () => {
+  it('keeps attributed content expanded-only without hiding plain user messages', async () => {
     const { unmount } = render(ChatMessage, {
       props: {
         message: userMessage({
@@ -498,17 +492,19 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       },
     });
 
-    const preview = screen.getByTestId('agent-message-preview');
-    expect(preview.className).toContain('truncate');
-    expect(preview.className).toContain('whitespace-nowrap');
+    const toggle = screen.getByTestId('agent-message-disclosure-toggle');
+    expect(toggle.getAttribute('aria-label')).not.toContain('hello from another agent');
+    expect(screen.queryByText('hello from another agent')).toBeNull();
     expect(screen.queryByTestId('agent-message-expanded-body')).toBeNull();
+    await fireEvent.click(toggle);
+    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    await fireEvent.click(toggle);
+    expect(screen.queryByText('hello from another agent')).toBeNull();
 
     unmount();
     render(ChatMessage, { props: { message: userMessage() } });
 
-    const plainBody = screen.getByText('hello from another agent').closest('.type-body');
-    expect(plainBody?.className).toContain('line-clamp-6');
-    expect(plainBody?.className).not.toContain('line-clamp-2');
+    expect(screen.getByText('hello from another agent')).toBeTruthy();
   });
 
   it('expands and collapses the full attributed message inside the same card', async () => {
@@ -533,7 +529,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
 
     await fireEvent.click(toggle);
     const expanded = screen.getByTestId('agent-message-expanded-body');
-    const body = screen.getByText(longMessage).closest('.type-body');
+    const body = within(expanded).getByText(longMessage).closest('.type-body');
     expect(surface.contains(expanded)).toBe(true);
     expect(expanded.className).toContain('border-t');
     expect(expanded.className).toContain('px-3');
@@ -547,7 +543,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('hides the daemon sender header line from the preview and expanded body', async () => {
+  it('hides the daemon sender header line when disclosing the message', async () => {
     render(ChatMessage, {
       props: {
         message: userMessage(
@@ -561,12 +557,15 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       },
     });
 
-    const preview = screen.getByTestId('agent-message-preview');
-    expect(preview.textContent).toContain('hello from another agent');
-    expect(preview.textContent).not.toContain('[MESSAGE FROM AGENT');
+    expect(screen.queryByText('hello from another agent')).toBeNull();
+    expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
 
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
-    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    expect(
+      within(screen.getByTestId('agent-message-expanded-body')).getByText(
+        'hello from another agent',
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
   });
 
@@ -593,21 +592,26 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
 
   it('renders Chief attribution as an exact source-message link', async () => {
     const sourceUrl = 'intent://local/__chief__/agent/agent-chief-1/message/msg-source-1';
+    const body = 'Review the workspace.';
     render(ChatMessageRouteContextHarness, {
       props: {
         workspaceId: WorkspaceId('ws-1'),
-        message: userMessage({
-          type: 'chief_message',
-          fromAgentId: 'agent-chief-1',
-          fromAgentName: 'Ignored sender label',
-          fromWorkspaceId: '__chief__',
-          sourceMessageId: 'msg-source-1',
-          sourceUrl,
-        }),
+        message: userMessage(
+          {
+            type: 'chief_message',
+            fromAgentId: 'agent-chief-1',
+            fromAgentName: 'Chief of Staff',
+            fromWorkspaceId: '__chief__',
+            sourceMessageId: 'msg-source-1',
+            sourceUrl,
+          },
+          `[MESSAGE FROM AGENT Chief of Staff (agent-chief-1)]\n\n${body}`,
+        ),
       },
     });
 
-    expect(screen.getByText('Chief of Staff')).toBeTruthy();
+    expect(screen.queryByText(body)).toBeNull();
+    expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
     const sourceLink = screen.getByTestId('agent-message-attribution');
     expect(sourceLink.tagName).toBe('A');
     expect(sourceLink.getAttribute('href')).toBe(sourceUrl);
@@ -619,6 +623,10 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       event: expect.any(MouseEvent),
     });
     expect(dispatchMock).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
+    expect(within(screen.getByTestId('agent-message-expanded-body')).getByText(body)).toBeTruthy();
+    expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
   });
 
   it('preserves Chief attribution and source navigation for a queued delivery', async () => {
@@ -641,7 +649,6 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     await fireEvent.click(sourceLink);
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
 
-    expect(screen.getByText('Chief of Staff')).toBeTruthy();
     expect(sourceLink.getAttribute('href')).toBe(sourceUrl);
     expect(screen.getByTestId('queued-message-notice-text').textContent).toBe(
       'Waited in queue for 3s',
@@ -652,7 +659,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     });
   });
 
-  it('shows Chief attribution without a broken link when source metadata is incomplete', () => {
+  it('does not navigate from Chief attribution when source metadata is incomplete', async () => {
     render(ChatMessage, {
       props: {
         message: userMessage({
@@ -665,9 +672,11 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       },
     });
 
-    expect(screen.getByText('Chief of Staff')).toBeTruthy();
-    expect(screen.getByTestId('agent-message-attribution').tagName).toBe('SPAN');
+    const attribution = screen.getByTestId('agent-message-attribution');
+    expect(attribution.hasAttribute('href')).toBe(false);
+    await fireEvent.click(attribution);
     expect(handleLinkMock).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it('falls back to "Agent" when fromAgentName is absent', () => {
@@ -719,10 +728,11 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     });
 
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
-    await fireEvent.click(screen.getByText('hello from another agent'));
+    const expanded = within(screen.getByTestId('agent-message-expanded-body'));
+    await fireEvent.click(expanded.getByText('hello from another agent'));
 
     // Still rendering the message (no edit input swapped in)
-    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    expect(expanded.getByText('hello from another agent')).toBeTruthy();
     expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
   });
 
@@ -759,7 +769,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     for (const token of USER_MESSAGE_SURFACE_CLASS.split(' ')) {
       expect(surface.classList.contains(token)).toBe(true);
     }
-    expect(surface.className).not.toContain(SUBSCRIPTION_CARD_SURFACE_CLASS);
+    expect(surface.classList.contains('shadow-sm')).toBe(true);
 
     await rerender({
       message: userMessage(),
@@ -779,6 +789,480 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(onStickyClick).toHaveBeenCalledOnce();
     expect(screen.queryByTestId('mock-rich-input')).toBeNull();
     expect(screen.getByText('hello from another agent')).toBeTruthy();
+  });
+});
+
+describe('ChatMessage portable human authors', () => {
+  it.each([undefined, null, 'self'])(
+    'shows historical identities without owner inference when owner ID is %s',
+    (ownerPrincipalId) => {
+      const authors = [
+        {
+          principalId: null,
+          login: 'same',
+          displayName: 'Same Person',
+          avatarUrl: null,
+          identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
+        },
+        {
+          principalId: null,
+          login: 'same',
+          displayName: 'Same Person',
+          avatarUrl: null,
+          identity: { provider: 'gitlab' as const, host: 'two.example', externalUserId: '42' },
+        },
+        { principalId: null, login: null, displayName: null, avatarUrl: null },
+      ];
+      for (const [i, author] of authors.entries()) {
+        const message: AgentMessage = {
+          ...userTextMessage(`portable body ${i}`),
+          id: `portable-${i}`,
+          author,
+          metadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+        };
+        const before = JSON.stringify(message);
+        render(ChatMessage, {
+          props: {
+            message,
+            workspace: createMockWorkspace({ memberCount: 1, ownerPrincipalId }),
+            ownPrincipalId: 'self',
+          },
+        });
+        expect(JSON.stringify(message)).toBe(before);
+      }
+      const chips = screen.getAllByTestId('user-message-author');
+      expect(chips).toHaveLength(3);
+      expect(chips[0].getAttribute('aria-label')).toContain('Same Person · @same');
+      expect(chips[1].getAttribute('aria-label')).toContain('Same Person · @same');
+      expect(chips[2].textContent?.trim()).not.toBe('');
+      expect(
+        chips.every(
+          (chip) =>
+            !chip.hasAttribute('data-principal-id') && !chip.hasAttribute('data-sender-role'),
+        ),
+      ).toBe(true);
+      expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+    },
+  );
+});
+
+describe('ChatMessage human author identity (multiplayer)', () => {
+  // PROTOCOL §5.5 serve-time `author` projection (intent-hq/intentd#1869) on
+  // a user row, plus the §5.1 membership summary (intent-hq/intentd#1868).
+  const author = {
+    principalId: 'principal-guest',
+    login: 'guest',
+    displayName: 'Guest User',
+    avatarUrl: 'https://avatars.example/guest.png',
+  };
+  const authoredMessage = (overrides: Partial<AgentMessage> = {}): AgentMessage => ({
+    ...userMessage({ fromPrincipalId: author.principalId }, 'hello from a guest'),
+    author,
+    ...overrides,
+  });
+  const multiMember = () =>
+    createMockWorkspace({ memberCount: 2, myRole: 'owner', ownerPrincipalId: 'principal-owner' });
+
+  it('renders the author avatar and display name once the workspace has two members', () => {
+    render(ChatMessage, { props: { message: authoredMessage(), workspace: multiMember() } });
+
+    const header = screen.getByTestId('user-message-author');
+    expect(header.getAttribute('data-principal-id')).toBe(author.principalId);
+    expect(header.getAttribute('aria-label')).toContain('Guest User');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Guest User · @guest');
+    const avatar = screen.getByTestId('user-message-author-avatar') as HTMLImageElement;
+    expect(avatar.getAttribute('src')).toBe(author.avatarUrl);
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
+
+  it('omits the author identity in a single-member workspace', () => {
+    render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: createMockWorkspace({ memberCount: 1 }) },
+    });
+
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
+
+  it('omits the author identity when the daemon reports no membership summary', () => {
+    render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: createMockWorkspace() },
+    });
+
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('omits the author identity on rows without a projection (optimistic / older daemon)', () => {
+    render(ChatMessage, {
+      props: { message: userMessage(undefined, 'hello from a guest'), workspace: multiMember() },
+    });
+
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
+
+  it('keeps the agent sender header, not the human author, on agent-to-agent rows', () => {
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          metadata: { type: 'agent_message', fromAgentId: 'agent-1', fromAgentName: 'Builder' },
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('falls back to login, then to a placeholder, when profile fields are null', () => {
+    const { unmount } = render(ChatMessage, {
+      props: {
+        message: authoredMessage({ author: { ...author, displayName: null, avatarUrl: null } }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('@guest');
+    expect(screen.queryByTestId('user-message-author-avatar')).toBeNull();
+    expect(screen.getByTestId('user-message-author-avatar-fallback').textContent).toBe('G');
+    unmount();
+
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          author: { principalId: 'gone', login: null, displayName: null, avatarUrl: null },
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    const header = screen.getByTestId('user-message-author');
+    expect(header.getAttribute('data-principal-id')).toBe('gone');
+    expect(screen.getByTestId('user-message-author-name').textContent).not.toBe('');
+    expect(screen.getByTestId('user-message-author-avatar-fallback').textContent).toBe('?');
+  });
+
+  it('hides the author identity in the compact sticky header', () => {
+    render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: multiMember(), isSticky: true },
+    });
+
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('renders two rows from distinct members with their own identities', () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: 'https://avatars.example/owner.png',
+    };
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({ id: 'user-msg-guest' }),
+        workspace: multiMember(),
+      },
+    });
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          id: 'user-msg-owner',
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: 'hello from the owner' }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+    // An unstamped pre-multiplayer row: the daemon resolves it to the owner
+    // (no `fromPrincipalId`, `author` = owner projection).
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          id: 'user-msg-legacy',
+          author: owner,
+          metadata: undefined,
+          contentBlocks: [{ type: 'text', text: 'hello from before multiplayer' }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    const headers = screen.getAllByTestId('user-message-author');
+    expect(headers.map((h) => h.getAttribute('data-principal-id'))).toEqual([
+      author.principalId,
+      owner.principalId,
+      owner.principalId,
+    ]);
+    expect(screen.getAllByTestId('user-message-author-name').map((n) => n.textContent)).toEqual([
+      'Guest User · @guest',
+      'Owner Person · @owner',
+      'Owner Person · @owner',
+    ]);
+    expect(
+      screen
+        .getAllByTestId('user-message-author-avatar')
+        .map((img) => (img as HTMLImageElement).getAttribute('src')),
+    ).toEqual([author.avatarUrl, owner.avatarUrl, owner.avatarUrl]);
+  });
+
+  it('follows the live membership boundary across 1 → 2 → 1 members without remounting', async () => {
+    const { rerender } = render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: createMockWorkspace({ memberCount: 1 }) },
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+
+    await rerender({ message: authoredMessage(), workspace: multiMember() });
+    expect(screen.getByTestId('user-message-author').getAttribute('data-principal-id')).toBe(
+      author.principalId,
+    );
+
+    await rerender({
+      message: authoredMessage(),
+      workspace: createMockWorkspace({ memberCount: 1 }),
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
+
+  it("omits the author identity on the viewer's own rows, keeping it on other members'", () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: 'https://avatars.example/owner.png',
+    };
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({ id: 'user-msg-guest' }),
+        workspace: multiMember(),
+        ownPrincipalId: owner.principalId,
+      },
+    });
+    render(ChatMessage, {
+      props: {
+        message: authoredMessage({
+          id: 'user-msg-owner',
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: 'hello from the owner' }],
+        }),
+        workspace: multiMember(),
+        ownPrincipalId: owner.principalId,
+      },
+    });
+
+    const headers = screen.getAllByTestId('user-message-author');
+    expect(headers.map((h) => h.getAttribute('data-principal-id'))).toEqual([author.principalId]);
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+    expect(screen.getByText('hello from the owner')).toBeTruthy();
+  });
+
+  it('shows every author while the own principal is still unknown, then drops its own', async () => {
+    const { rerender } = render(ChatMessage, {
+      props: { message: authoredMessage(), workspace: multiMember(), ownPrincipalId: null },
+    });
+    expect(screen.getByTestId('user-message-author').getAttribute('data-principal-id')).toBe(
+      author.principalId,
+    );
+
+    await rerender({
+      message: authoredMessage(),
+      workspace: multiMember(),
+      ownPrincipalId: author.principalId,
+    });
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+  });
+});
+
+describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
+  // PROTOCOL §5.5 collaborator sender preamble (intent-hq/intentd#1987): the
+  // daemon prepends it to a guest's message content and serves the row with
+  // the guest's `author` projection.
+  const guest = {
+    principalId: 'principal-guest',
+    login: 'octocat',
+    displayName: 'The Octocat',
+    avatarUrl: 'https://avatars.example/octocat.png',
+  };
+  const preamble =
+    'Message from @octocat (The Octocat), a collaborator (guest) of this workspace — not the workspace owner.';
+  const guestMessage = (overrides: Partial<AgentMessage> = {}): AgentMessage => ({
+    ...userMessage({ fromPrincipalId: guest.principalId }, `${preamble}\n\nhello from a guest`),
+    author: guest,
+    ...overrides,
+  });
+  const multiMember = () =>
+    createMockWorkspace({ memberCount: 2, myRole: 'owner', ownerPrincipalId: 'principal-owner' });
+
+  it('hides the preamble and shows the handle, name and guest role', () => {
+    render(ChatMessage, { props: { message: guestMessage(), workspace: multiMember() } });
+
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+    expect(screen.queryByText(preamble, { exact: false })).toBeNull();
+    const header = screen.getByTestId('user-message-author');
+    expect(header.getAttribute('data-principal-id')).toBe(guest.principalId);
+    expect(header.getAttribute('data-sender-role')).toBe('collaborator');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      'The Octocat · @octocat',
+    );
+    expect(screen.getByTestId('user-message-author-role').textContent?.trim()).not.toBe('');
+    expect((screen.getByTestId('user-message-author-avatar') as HTMLImageElement).src).toBe(
+      guest.avatarUrl,
+    );
+  });
+
+  it("shows the guest chip on the guest's own rows and without a membership summary", () => {
+    render(ChatMessage, {
+      props: {
+        message: guestMessage(),
+        workspace: createMockWorkspace({ ownerPrincipalId: 'principal-owner' }),
+        ownPrincipalId: guest.principalId,
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBe(
+      'collaborator',
+    );
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+    expect(screen.queryByText(preamble, { exact: false })).toBeNull();
+  });
+
+  // Regression (fe#2654 verifier): the owner exclusion needs the owner id, so
+  // a workspace served without one (older daemon) must not guess — nothing is
+  // stripped and no guest chip is shown, for guest and owner rows alike.
+  it('strips nothing and shows no guest chip without the workspace owner id', () => {
+    const { unmount } = render(ChatMessage, {
+      props: { message: guestMessage(), workspace: createMockWorkspace() },
+    });
+    expect(screen.getByText(preamble, { exact: false })).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    unmount();
+
+    render(ChatMessage, { props: { message: guestMessage(), workspace: null } });
+    expect(screen.getByText(preamble, { exact: false })).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('falls back to the handle alone when the display name is gone', () => {
+    const loginOnly = { ...guest, displayName: null, avatarUrl: null };
+    const text = `Message from @octocat, a collaborator (guest) of this workspace — not the workspace owner.\n\nhi`;
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          author: loginOnly,
+          contentBlocks: [{ type: 'text', text }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('@octocat');
+    expect(screen.getByTestId('user-message-author-role')).toBeTruthy();
+    expect(screen.getByText('hi')).toBeTruthy();
+  });
+
+  it('renders an owner row in the same workspace without the guest role', () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: null,
+    };
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: 'hello from the owner' }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    const header = screen.getByTestId('user-message-author');
+    expect(header.getAttribute('data-sender-role')).toBeNull();
+    expect(screen.getByTestId('user-message-author-role').textContent).toBe('Owner');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      'Owner Person · @owner',
+    );
+  });
+
+  it('keeps a lookalike first line, and no guest role, when it does not match the projection', () => {
+    const text = `Message from @someone (Else), a collaborator (guest) of this workspace — not the workspace owner.\n\nbody`;
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({ contentBlocks: [{ type: 'text', text }] }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+    expect(screen.getByText(/Message from @someone/)).toBeTruthy();
+  });
+
+  it('keeps an owner row byte-identical, without the guest role, when the owner typed the exact preamble', () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: null,
+    };
+    const ownerPreamble =
+      'Message from @owner (Owner Person), a collaborator (guest) of this workspace — not the workspace owner.';
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: `${ownerPreamble}\n\nquoting the daemon` }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBeNull();
+    expect(screen.getByTestId('user-message-author-role').textContent).toBe('Owner');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      'Owner Person · @owner',
+    );
+    expect(screen.getByText(/Message from @owner \(Owner Person\)/)).toBeTruthy();
+    expect(screen.getByText(/quoting the daemon/)).toBeTruthy();
+  });
+
+  it('labels the chip with the same sanitized identity the preamble named', () => {
+    const messy = { ...guest, login: 'a\t\u0000b', displayName: 'Two  Words\u00a0Here' };
+    const text = `Message from @a b (Two Words Here), a collaborator (guest) of this workspace — not the workspace owner.\n\nhi`;
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({ author: messy, contentBlocks: [{ type: 'text', text }] }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBe(
+      'collaborator',
+    );
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      'Two Words Here · @a b',
+    );
+    expect(screen.getByText('hi')).toBeTruthy();
+  });
+
+  it('keeps the agent sender header on an agent-to-agent row that starts with the preamble', () => {
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          metadata: { type: 'agent_message', fromAgentId: 'agent-1', fromAgentName: 'Builder' },
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
   });
 });
 
@@ -853,21 +1337,9 @@ describe('ChatMessage hook wake attribution', () => {
     expect(surface.getAttribute('data-external-spacing-owner')).toBe('automated-wake-card');
     expect(screen.getByText('ci-watch')).toBeTruthy();
     expect(screen.getByText('woke the agent')).toBeTruthy();
-    const textLane = screen.getByTestId('automated-wake-text-lane');
-    expect(textLane.className).toContain('gap-x-1');
-    expect(textLane.classList.contains('flex-wrap')).toBe(true);
-    const leadingIcon = header.firstElementChild;
-    expect(leadingIcon?.classList.contains('self-start')).toBe(true);
-    expect(leadingIcon?.classList.contains('mt-1')).toBe(true);
-    expect(screen.getByTestId('automated-wake-toggle').classList.contains('self-start')).toBe(true);
     const primaryLabel = screen.getByTestId('automated-wake-primary-label');
     expect(primaryLabel.textContent?.trim()).toBe('ci-watch');
-    expect(primaryLabel.classList.contains('break-words')).toBe(true);
-    expect(primaryLabel.classList.contains('truncate')).toBe(false);
-    const status = screen.getByTestId('wake-status');
-    expect(status.classList.contains('min-w-0')).toBe(true);
-    expect(status.classList.contains('break-words')).toBe(true);
-    expect(status.classList.contains('truncate')).toBe(false);
+    expect(primaryLabel.getAttribute('title')).toBe('ci-watch');
     expect(screen.queryByTestId('automated-wake-details')).toBeNull();
     await expandAutomatedWake();
     expect(screen.getByText('CI is red')).toBeTruthy();
@@ -1003,10 +1475,8 @@ describe('ChatMessage hook wake attribution', () => {
     expect(screen.queryByTestId('queued-message-notice')).toBeNull();
     await expandAutomatedWake();
     const timing = screen.getByTestId('queued-message-notice');
-    expect(screen.getByTestId('automated-wake-details').contains(timing)).toBe(true);
-    // Automated-wake cards render on the subscription-card surface → muted tone.
-    expect(timing.className).toContain('text-subtle');
-    expect(timing.className).not.toContain('text-primary-foreground/80');
+    expect(screen.getByTestId('message-actions').contains(timing)).toBe(true);
+    expect(screen.getByTestId('automated-wake-details').contains(timing)).toBe(false);
     expect(screen.getByTestId('queued-message-notice-text').textContent).toBe(
       'Waited in queue for 3s',
     );
@@ -1132,14 +1602,8 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     // Workspace repo unknown → owner/repo #N chip
     const chip = screen.getByTestId('pr-monitor-wake-chip');
     expect(chip.textContent?.trim()).toBe('intent-hq/monorepo #42');
-    // Label sits flush left next to the PR icon (overrides the Button base justify-center)
-    expect(chip.className).toContain('justify-start');
-    expect(chip.className).toContain('whitespace-normal');
-    expect(chip.className).toContain('break-words');
-    expect(chip.querySelector('.truncate')).toBeNull();
     expect(chip.getAttribute('title')).toBe('Open intent-hq/monorepo #42');
-    const lane = screen.getByTestId('automated-wake-text-lane');
-    expect(lane.classList.contains('flex-wrap')).toBe(true);
+    expect(screen.getByTestId('wake-status').textContent?.trim()).toBe('woke the agent');
     expect(screen.getByText('woke the agent')).toBeTruthy();
     await expandAutomatedWake();
     expect(screen.getByText('Checks failed')).toBeTruthy();
@@ -1271,4 +1735,84 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     expect(screen.getByText('Checks failed')).toBeTruthy();
     expect(screen.getByTestId('automated-wake-header')).toBeTruthy();
   });
+});
+
+describe('ChatMessage historical host-member sender', () => {
+  it('keeps member provenance without a role suffix and preserves stored bytes', () => {
+    const header =
+      'Message from @same (Same Person), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
+    const message: AgentMessage = {
+      ...userTextMessage(`${header}\n\nmember body`),
+      author: {
+        principalId: 'person-1',
+        login: 'same',
+        displayName: 'Same Person',
+        avatarUrl: null,
+        identity: { provider: 'gitlab', host: 'gitlab.example:8443', externalUserId: '42' },
+      },
+    };
+    const before = JSON.stringify(message);
+    render(ChatMessage, {
+      props: {
+        message,
+        workspace: createMockWorkspace({ ownerPrincipalId: 'owner', memberCount: 1 }),
+      },
+    });
+    const chip = screen.getByTestId('user-message-author');
+    expect(chip.getAttribute('data-sender-role')).toBe('member');
+    expect(chip.getAttribute('aria-label')).not.toContain('Host member');
+    expect(chip.getAttribute('aria-label')).toContain('Same Person · @same');
+    expect(chip.getAttribute('aria-label')).not.toContain('42');
+    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+    expect(screen.getByText('member body')).toBeTruthy();
+    expect(screen.queryByText(header, { exact: false })).toBeNull();
+    expect(JSON.stringify(message)).toBe(before);
+  });
+});
+
+describe('ChatMessage script monitor wake attribution', () => {
+  it.each(['finished', 'ttl-expired', 'output-match', 'line-count'])(
+    'attributes %s to the monitor and renders untrusted content without links or controls',
+    async (reason) => {
+      const matchedLine = '<img src=x onerror=alert(1)> https://example.com @agent';
+      const metadata = {
+        type: 'script_monitor_wake',
+        source: 'system',
+        monitorId: 'monitor-script',
+        workspaceId: 'ws-script',
+        agentId: 'agent-script',
+        scriptId: 'checks',
+        runId: 'run-old',
+        scriptName: 'Checks',
+        mode: 'command',
+        reason,
+        expiresAt: '2026-10-02T10:10:00Z',
+        settledAt: '2026-10-02T10:01:00Z',
+        ...(reason === 'output-match' ? { trigger: { observedLineCount: 3, matchedLine } } : {}),
+      };
+      const onEditSubmit = vi.fn();
+      const { container } = render(ChatMessage, {
+        props: {
+          message: {
+            id: 'msg-script',
+            role: 'user',
+            timestamp: new Date('2026-10-02T10:01:00Z'),
+            metadata,
+            contentBlocks: [{ type: 'text', text: `Monitoring ended. ${matchedLine}` }],
+          },
+          onEditSubmit,
+        },
+      });
+      expect(screen.getByTestId('automated-wake-header').getAttribute('data-wake-kind')).toBe(
+        'script',
+      );
+      await expandAutomatedWake();
+      const body = screen.getByTestId('automated-wake-details');
+      expect(body.textContent).toContain(matchedLine);
+      expect(body.querySelector('a, img')).toBeNull();
+      await fireEvent.click(body);
+      expect(container.querySelector('textarea')).toBeNull();
+      expect(onEditSubmit).not.toHaveBeenCalled();
+    },
+  );
 });

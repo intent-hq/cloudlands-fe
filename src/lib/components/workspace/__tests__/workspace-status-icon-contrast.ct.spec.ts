@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import WorkspaceStatusIconContrastHost from './WorkspaceStatusIconContrastHost.svelte';
 
 test('keeps every running workspace dot solid without changing geometry or other modes', async ({

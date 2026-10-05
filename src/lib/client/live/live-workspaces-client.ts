@@ -1,3 +1,18 @@
+import type {
+  NativeReviewOwner,
+  NativeReviewInput,
+  NativeReviewRetirement,
+  NativeReviewSession,
+} from '$shared/types/native-review-operation';
+import { createNativeReviewTransport } from './native-review-transport';
+import type {
+  RepositorySelectionEdit,
+  SelectionRetirement,
+} from '$shared/types/repository-selection';
+import { createRepositorySelectionTransport } from './repository-selection-transport';
+import type { RepositoryContextRequest } from '$shared/types/repository-context';
+import type { RepositoryContextUpdate } from '../app-client';
+import { createRepositoryContextTransport } from './repository-context-transport';
 /**
  * Live workspaces domain backed by the intentd daemon.
  *
@@ -17,6 +32,7 @@ import type {
   WorkspaceDiskUsage,
 } from '$shared/types';
 import type { TokenUsage } from '$features/token-usage/token-usage-types';
+import { parseTokenUsage } from '$features/token-usage/token-usage-schema';
 import type { ContextItem } from '$features/context/types';
 import {
   isWorkspaceBrowserClient,
@@ -140,7 +156,28 @@ function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserC
 }
 
 export class LiveWorkspacesClient implements WorkspacesClient {
+  beginNativeReview(
+    owner: NativeReviewOwner,
+    input: NativeReviewInput,
+    handler: (kind: NativeReviewRetirement) => void,
+  ): Promise<NativeReviewSession> {
+    return createNativeReviewTransport().begin(owner, input, handler);
+  }
+  beginRepositorySelectionEdit(
+    request: RepositorySelectionEdit,
+    handler: (kind: SelectionRetirement) => void,
+  ) {
+    return createRepositorySelectionTransport().begin(request, handler);
+  }
+  observeRepositoryContext(
+    request: RepositoryContextRequest,
+    handler: (update: RepositoryContextUpdate) => void,
+  ) {
+    return createRepositoryContextTransport().observe(request, handler);
+  }
+
   private readonly listRequests = new Map<boolean, Promise<Workspace[]>>();
+  private readonly getRequests = new Map<string, Promise<Workspace | null>>();
 
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]> {
     const includeArchived = options?.includeArchived === true;
@@ -166,16 +203,35 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return request;
   }
 
-  async get(id: string): Promise<Workspace | null> {
-    const result = await backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
+  /**
+   * `workspace.get` (§5.1), single-flighted per workspace id: every caller —
+   * `open`, the workspace-load saga, and the on-demand detail hydration
+   * helpers — shares one in-flight request, so overlapping reads never fan
+   * out into duplicate RPCs. The entry clears once the request settles either
+   * way, so a rejected read never poisons later ones.
+   */
+  get(id: string): Promise<Workspace | null> {
+    const existing = this.getRequests.get(id);
+    if (existing) return existing;
+
+    const request = backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
       workspaceId: id,
+    }).then((result) => {
+      const raw =
+        result && typeof result === 'object' && 'workspace' in result
+          ? (result as { workspace?: unknown }).workspace
+          : result;
+      if (!raw || typeof raw !== 'object') return null;
+      return normalizeWorkspace(raw as Record<string, unknown>);
     });
-    const raw =
-      result && typeof result === 'object' && 'workspace' in result
-        ? (result as { workspace?: unknown }).workspace
-        : result;
-    if (!raw || typeof raw !== 'object') return null;
-    return normalizeWorkspace(raw as Record<string, unknown>);
+    this.getRequests.set(id, request);
+    const clearRequest = () => {
+      if (this.getRequests.get(id) === request) {
+        this.getRequests.delete(id);
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
   }
 
   // The daemon owns watcher/monitoring start-up that the legacy main-process
@@ -333,11 +389,11 @@ export class LiveWorkspacesClient implements WorkspacesClient {
    * `workspace:tokenUsage-changed` event handled in `daemon-events-bridge`.
    */
   async getTokenUsage(workspaceId: string): Promise<TokenUsage | null> {
-    const result = await backendRequest<{ tokenUsage?: TokenUsage }>('workspace.getTokenUsage', {
+    const result = await backendRequest<{ tokenUsage?: unknown }>('workspace.getTokenUsage', {
       workspaceId,
     });
     const usage = result?.tokenUsage;
-    return usage && typeof usage === 'object' ? usage : null;
+    return usage && typeof usage === 'object' ? parseTokenUsage(usage) : null;
   }
 
   /**

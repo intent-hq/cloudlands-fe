@@ -10,7 +10,11 @@ import {
   setAllProvidersLoading,
 } from '../agent-availability/agent-availability-slice';
 import { selectHasCheckedOnce } from '../agent-availability/agent-availability-selectors';
-import { initialState as modelInitialState, modelReducer } from '../model/model-slice';
+import {
+  initialState as modelInitialState,
+  hydrateDefaultProvider,
+  modelReducer,
+} from '../model/model-slice';
 import {
   initialState as providerCatalogInitialState,
   providerCatalogLoaded,
@@ -21,10 +25,7 @@ import {
   initialState as providerSettingsInitialState,
   loadEnabledProvidersFromStorage,
   providerSettingsReducer,
-  setActiveProvider,
-  setProviderEnabled,
 } from './provider-settings-slice';
-import { hydrateDefaultProvider } from '../model/model-slice';
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from '$shared/types/provider-availability';
 import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
 import {
@@ -37,6 +38,7 @@ import {
   selectIsProviderEnabled,
   selectIsProviderModelAccessAllowed,
   selectModelFetchProviderIds,
+  selectQuotaRetryProviderIds,
 } from './provider-settings-selectors';
 
 const providerCatalog = providerCatalogReducer(
@@ -134,6 +136,22 @@ describe('provider-settings selectors', () => {
     it('should re-include a provider when explicitly re-enabled', () => {
       const state = mockState({ auggie: true }, 'codex');
       expect(selectEnabledProviderIds.select(state)).toContain('auggie');
+    });
+
+    it('guest backend: absent daemon receipts do not synthesize a default provider', () => {
+      // A guest window's backend is the host daemon, whose `settings.list` is
+      // administrator-only: `providers.enabled` never hydrates and the model
+      // slice receives no default-provider receipt. The renderer must not
+      // infer one from the catalog; the picker resolves an agent provider from
+      // the session rather than treating catalog order as a saved preference.
+      const state = {
+        ...mockState({}),
+        model: modelInitialState,
+      } as StoreState;
+
+      expect(selectEffectiveDefaultProviderId.select(state)).toBe('');
+      expect(selectEnabledProviderIds.select(state)).toEqual([]);
+      expect(selectEnabledProviderIds.select(state)).not.toContain('claude-code');
     });
 
     it('should include explicitly enabled providers', () => {
@@ -250,6 +268,67 @@ describe('provider-settings selectors', () => {
       expect(selectIsActiveProviderAvailable.select(state)).toBe(false);
     });
   });
+
+  describe('selectQuotaRetryProviderIds (#4455)', () => {
+    it('excludes the exhausted provider and keeps other signed-in providers', () => {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
+        auggie: { available: true, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      const ids = selectQuotaRetryProviderIds.select(state, 'claude-code');
+      expect(ids).not.toContain('claude-code');
+      expect(ids).toEqual(expect.arrayContaining(['auggie', 'codex']));
+    });
+
+    it('excludes signed-out providers that the model-picker gate still admits', () => {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
+        auggie: { available: true, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: false },
+      });
+      expect(selectAvailableEnabledProviderIds.select(state)).toContain('codex');
+      const ids = selectQuotaRetryProviderIds.select(state, 'claude-code');
+      expect(ids).toContain('auggie');
+      expect(ids).not.toContain('codex');
+    });
+
+    it('keeps providers whose auth is unknown, matching isProviderAuthenticationReady', () => {
+      const state = mockState({ auggie: true, 'claude-code': true, codex: true }, 'auggie', {
+        auggie: { available: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true },
+      });
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual(
+        expect.arrayContaining(['auggie', 'codex']),
+      );
+    });
+
+    it('still excludes unavailable and disabled providers', () => {
+      const state = mockState({ 'claude-code': true, codex: false }, 'auggie', {
+        auggie: { available: false, authenticated: true },
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
+    });
+
+    it('excludes an explicitly disabled default provider that the model-picker gate still admits', () => {
+      const state = mockState({ 'claude-code': true, codex: false }, 'codex', {
+        'claude-code': { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      expect(selectAvailableEnabledProviderIds.select(state)).toContain('codex');
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
+    });
+
+    it('returns an empty list when the exhausted provider was the only option', () => {
+      const state = mockState({ 'claude-code': true }, 'claude-code', {
+        'claude-code': { available: true, authenticated: true },
+      });
+      expect(selectQuotaRetryProviderIds.select(state, 'claude-code')).toEqual([]);
+    });
+  });
 });
 
 describe("install-mid-onboarding regression (false 'No provider available' on step 4)", () => {
@@ -312,15 +391,13 @@ describe("install-mid-onboarding regression (false 'No provider available' on st
       checkSingleProviderSuccess('claude-code', { available: true, authenticated: true }, 3),
     );
 
-    // (d) The user picks claude-code on step 3 (AgentGrid's
-    // handleSelectProvider dispatch sequence; the model slice mirrors
-    // setActiveProvider into its defaultProviderId/normalization).
+    // (d) The daemon reports the persisted pick after the user selection.
+    // Displayed settings stay unchanged until this receipt arrives.
     settings = providerSettingsReducer(
       settings,
-      setProviderEnabled({ providerId: 'claude-code', enabled: true }),
+      loadEnabledProvidersFromStorage({ 'claude-code': true }),
     );
-    settings = providerSettingsReducer(settings, setActiveProvider('claude-code'));
-    model = modelReducer(model, setActiveProvider('claude-code'));
+    model = modelReducer(model, hydrateDefaultProvider('claude-code'));
 
     // Step 4's gate: claude-code is available+enabled, so ModelPicker's
     // hasNoAvailableProvider condition is false.
@@ -333,9 +410,7 @@ describe("install-mid-onboarding regression (false 'No provider available' on st
     // fallback — so isEnhancePromptAvailable is false and the button hides.
     expect(selectEffectiveDefaultProviderId.select(state)).toBe('claude-code');
 
-    // (d') The daemon echoes the persisted pick back via settings:changed
-    // (model.defaultProvider / providers.enabled hydration) — the echo must
-    // not wipe or displace the pick.
+    // (d') Repeating the same daemon receipt is idempotent.
     settings = providerSettingsReducer(
       settings,
       loadEnabledProvidersFromStorage({ 'claude-code': true }),

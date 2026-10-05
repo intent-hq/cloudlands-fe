@@ -2,9 +2,9 @@
   /**
    * AttentionRequestBanner Component
    *
-   * Conversation-footer row shown when the current agent has a pending
-   * attention request (requestDiscussion / reportBlocker). Renders alongside
-   * the existing waiting/completed treatments (AgentSubscriptions) and
+   * Fallback notice shown when a pending attention request has no matching
+   * saved notice in the loaded conversation. Scrolls with the
+   * conversation at the shared content width, and
    * retires automatically when the daemon clears the session fields on the
    * user's next response — a user-origin delivery (sendMessage,
    * sendQueuedMessageNow, editAndRegenerate, drained user-origin queue
@@ -12,11 +12,13 @@
    * automatic deliveries leave it pending.
    */
   import { writable } from 'svelte/store';
-  import { safeSlide } from '$lib/utils/animations';
-  import Fa from 'svelte-fa';
-  import { faCommentDots, faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
-  import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import {
+    selectAgentAttentionRequest,
+    selectAgentMessages,
+    selectAgentHistoryMessages,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { hasMatchingAttentionNotice } from './attention-notice';
+  import ChatNotice from './ChatNotice.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -32,46 +34,24 @@
   });
 
   const attentionRequest$ = selectAgentAttentionRequest(agentIdStore);
+  const messages$ = selectAgentMessages(agentIdStore);
+  const historyMessages$ = selectAgentHistoryMessages(agentIdStore);
+  const hasSavedNotice = $derived(
+    hasMatchingAttentionNotice($messages$, $attentionRequest$) ||
+      hasMatchingAttentionNotice($historyMessages$, $attentionRequest$),
+  );
+  const isBlocker = $derived($attentionRequest$?.kind === 'blocker');
 </script>
 
-{#if $attentionRequest$}
-  <div
-    class="mt-6 w-full font-family-child"
-    data-testid="attention-request-banner"
-    transition:safeSlide={{ axis: 'y', duration: 200 }}
-  >
-    <div class="flex flex-col gap-1 px-3 py-1.5 text-sm">
-      <div class="flex items-start justify-between gap-3" data-testid="attention-request-header">
-        <span
-          class="flex min-w-0 items-start gap-2 {$attentionRequest$.kind === 'blocker'
-            ? 'text-red-500'
-            : 'text-amber-500'}"
-        >
-          <Fa
-            icon={$attentionRequest$.kind === 'blocker' ? faCircleExclamation : faCommentDots}
-            size="13"
-          />
-          <span class="min-w-0 break-words" data-testid="attention-request-label">
-            {$attentionRequest$.kind === 'blocker'
-              ? m.chat_agentCard_attentionBlocker_label()
-              : m.chat_agentCard_attentionDiscussion_label()}
-          </span>
-        </span>
-        {#if $attentionRequest$.timestamp}
-          <RelativeTime
-            date={$attentionRequest$.timestamp}
-            class="shrink-0 whitespace-nowrap text-xs text-ghost"
-          />
-        {/if}
-      </div>
-      {#if $attentionRequest$.reason}
-        <span
-          class="break-words whitespace-pre-wrap text-subtle"
-          data-testid="attention-request-reason"
-        >
-          {$attentionRequest$.reason}
-        </span>
-      {/if}
-    </div>
-  </div>
+{#if $attentionRequest$ && !hasSavedNotice}
+  <ChatNotice
+    title={isBlocker
+      ? m.chat_agentCard_attentionBlocker_label()
+      : m.chat_agentCard_attentionDiscussion_label()}
+    tone={isBlocker ? 'danger' : 'warning'}
+    reason={$attentionRequest$.reason}
+    timestamp={$attentionRequest$.timestamp}
+    announce={false}
+    testIdPrefix="attention-request"
+  />
 {/if}

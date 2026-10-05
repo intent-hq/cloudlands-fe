@@ -1,3 +1,4 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Pure helpers for the infinite-scrollback transcript (ChatPanel): compose
  * the hydrated history segment with the live tail into date groups, expose
@@ -6,6 +7,7 @@
  */
 import type { AgentMessage } from '$shared/types';
 import { groupMessagesByDate, type MessageGroup } from '$lib/utils/timeFormatting';
+import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
 
 interface ComposedTranscriptGroup extends MessageGroup<AgentMessage> {
   /**
@@ -27,6 +29,28 @@ export interface ComposedTranscript {
    * is no gap (no history, or history is contiguous with the tail).
    */
   gapBeforeGroupIndex: number | null;
+}
+
+/**
+ * Index nearest human prompts in the exact deduplicated render order. A null
+ * target means the true conversation start is loaded and top fallback is safe.
+ * Missing entries have an unknown predecessor: older rows are unloaded, or
+ * the walk hit the history-to-tail gap before finding a human prompt.
+ */
+export function indexPreviousUserMessages(
+  transcript: ComposedTranscript,
+  conversationStartLoaded: boolean,
+): Map<string, AgentMessage | null> {
+  const targets = new Map<string, AgentMessage | null>();
+  let previous: AgentMessage | null | undefined = conversationStartLoaded ? null : undefined;
+  for (const [groupIndex, group] of transcript.groups.entries()) {
+    if (groupIndex === transcript.gapBeforeGroupIndex) previous = undefined;
+    for (const message of group.messages) {
+      if (previous !== undefined) targets.set(message.id, previous);
+      if (message.role === 'user' && !isAutomatedChatMessage(message)) previous = message;
+    }
+  }
+  return targets;
 }
 
 function dayKey(date: Date): string {
@@ -59,9 +83,13 @@ function withStableGroupKeys(
  * rehydration and a seq-0 snapshot replaces it wholesale, so a row paged
  * into history can later re-enter the tail. Without this render-time guard
  * each such row renders twice (duplicate sections after repeated
- * scroll-up/scroll-down cycles).
+ * scroll-up/scroll-down cycles). Exported so the regenerate saga resolves
+ * its source against the same composed list the transcript renders.
  */
-function dropTailResidentRows(history: AgentMessage[], tail: AgentMessage[]): AgentMessage[] {
+export function dropTailResidentRows(
+  history: AgentMessage[],
+  tail: AgentMessage[],
+): AgentMessage[] {
   if (history.length === 0 || tail.length === 0) return history;
   const tailIds = new Set(tail.map((message) => message.id));
   const tailAppMessageIds = new Set(
@@ -156,8 +184,8 @@ export interface OlderHistoryTriggerParams {
 
 /**
  * Whether scrolling near the top should dispatch `olderHistoryPageRequested`.
- * Never fires for short conversations (all rows resident) or before the
- * transcript is tall enough to scroll. Older rows exist when the daemon says
+ * Never fires for short conversations with all rows resident. Underfilled
+ * viewports may request older rows even without a scroll range. The daemon says
  * the tail snapshot was truncated OR the snapshot's total row count exceeds
  * the resident rows (tail + history) — the latter covers rows the client
  * pruned locally under its own cap.
@@ -166,7 +194,6 @@ export function shouldRequestOlderHistory(params: OlderHistoryTriggerParams): bo
   const {
     scrollTop,
     threshold,
-    canScroll,
     fetching,
     exhausted,
     historyCount,
@@ -175,7 +202,7 @@ export function shouldRequestOlderHistory(params: OlderHistoryTriggerParams): bo
     totalMessages,
     spacerAbove = 0,
   } = params;
-  if (!canScroll || scrollTop > threshold + spacerAbove) return false;
+  if (scrollTop > threshold + spacerAbove) return false;
   if (fetching || exhausted) return false;
   return historyCount > 0 || tailTruncated || totalMessages > tailCount + historyCount;
 }
@@ -438,7 +465,7 @@ export function reconcileVirtualSpacer(
  * Rows per scrollback page (mirrors the saga's request limit). Used by the
  * gesture classifier to convert "pages of serial walking" into rows.
  */
-export const SCROLLBACK_PAGE_ROWS = 200;
+export const SCROLLBACK_PAGE_ROWS = CHAT_PAGE_SIZE;
 
 /**
  * A scroll position within this many PAGES of the resident segment's top
@@ -542,7 +569,7 @@ export interface RapidScrollParams {
  * relative to the viewport height — sum |delta| across consecutive samples
  * within `windowMs` of the newest sample and compare against
  * `viewportFactor` viewports. A wheel flick or scrollbar-thumb drag covers
- * more than one viewport inside one settle window (200ms), which a serial
+ * more than one viewport inside one settle window, which a serial
  * page walk cannot usefully chase — the caller defers paging to the settle
  * debounce. A gentle reading-pace scroll stays under the threshold and
  * keeps today's immediate edge-triggered serial fetch. Absolute deltas (not

@@ -8,6 +8,7 @@
  */
 import { getAttachmentInfo } from './input/context-api';
 import { createLogger } from '$lib/utils/client-logger';
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 
 const logger = createLogger('AttachmentImageUrl');
 
@@ -28,6 +29,18 @@ function workspaceFileUrl(workspaceId: string, relativePath: string): string {
  */
 const urlCache = new Map<string, string>();
 const inflight = new Map<string, Promise<string | null>>();
+let connectionGeneration = 0;
+let lifecycleInstalled = false;
+
+function ensureLifecycle(): void {
+  if (lifecycleInstalled) return;
+  lifecycleInstalled = true;
+  onBackendReconnected(() => {
+    connectionGeneration += 1;
+    urlCache.clear();
+    inflight.clear();
+  });
+}
 
 /**
  * Drop a cached URL whose `<img>` failed to load (e.g. the protocol handler
@@ -36,6 +49,55 @@ const inflight = new Map<string, Promise<string | null>>();
  */
 export function evictAttachmentImageUrl(workspaceId: string, attachmentId: string): void {
   urlCache.delete(`${workspaceId}/${attachmentId}`);
+}
+
+/** Resolve a mounted image and retry failed reads after a backend reconnect. */
+export function observeAttachmentImageUrl(
+  workspaceId: string,
+  attachmentId: string,
+  onUrl: (url: string | null) => void,
+): { imageFailed: () => void; dispose: () => void } {
+  ensureLifecycle();
+  let disposed = false;
+  let resolving = false;
+  let retryPending = false;
+
+  async function resolve(): Promise<void> {
+    if (disposed) return;
+    if (resolving) {
+      retryPending = true;
+      return;
+    }
+    resolving = true;
+    try {
+      const url = await resolveAttachmentImageUrl(workspaceId, attachmentId);
+      if (!disposed) {
+        onUrl(url);
+      }
+    } finally {
+      resolving = false;
+      if (retryPending) {
+        retryPending = false;
+        void resolve();
+      }
+    }
+  }
+
+  const unsubscribe = onBackendReconnected(() => {
+    void resolve();
+  });
+  void resolve();
+  return {
+    imageFailed() {
+      if (disposed) return;
+      evictAttachmentImageUrl(workspaceId, attachmentId);
+      onUrl(null);
+    },
+    dispose() {
+      disposed = true;
+      unsubscribe();
+    },
+  };
 }
 
 /**
@@ -47,6 +109,8 @@ export function resolveAttachmentImageUrl(
   workspaceId: string,
   attachmentId: string,
 ): Promise<string | null> {
+  ensureLifecycle();
+  const generation = connectionGeneration;
   const cacheKey = `${workspaceId}/${attachmentId}`;
   const cached = urlCache.get(cacheKey);
   if (cached) return Promise.resolve(cached);
@@ -55,7 +119,8 @@ export function resolveAttachmentImageUrl(
 
   const promise = (async () => {
     try {
-      const info = await getAttachmentInfo(attachmentId);
+      const info = await getAttachmentInfo({ attachmentId, workspaceId });
+      if (generation !== connectionGeneration) return null;
       if (!info.exists) {
         logger.warn('Attachment file missing on disk', { attachmentId });
         return null;
@@ -67,7 +132,7 @@ export function resolveAttachmentImageUrl(
       logger.warn('Failed to resolve attachment image', { attachmentId, error });
       return null;
     } finally {
-      inflight.delete(cacheKey);
+      if (generation === connectionGeneration) inflight.delete(cacheKey);
     }
   })();
   inflight.set(cacheKey, promise);

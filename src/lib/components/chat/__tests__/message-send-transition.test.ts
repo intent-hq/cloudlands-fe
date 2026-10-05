@@ -5,9 +5,9 @@ import {
   captureMessageSendOrigin,
   createMessageSendLaunchBubble,
   MESSAGE_SEND_TRANSITION_DURATION_MS,
-  MESSAGE_SEND_TRANSITION_EASING,
   MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS,
 } from '../message-send-transition';
+import { spring } from '$lib/motion';
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -113,7 +113,7 @@ describe('message send transition', () => {
           else
             expect(animate).toHaveBeenCalledWith(
               expect.any(Array),
-              expect.objectContaining({ duration: 280 }),
+              expect.objectContaining({ duration: spring.slow.settleMs }),
             );
           expect(target.style.opacity).toBe('');
           expect(target.style.visibility).toBe('');
@@ -128,18 +128,18 @@ describe('message send transition', () => {
     const animate = stubAnimate(() => ({ finished: Promise.resolve() }));
     const origin = captureMessageSendOrigin(composer);
     const launchBubble = createMessageSendLaunchBubble(origin, 'A sent message');
+    launchBubble?.style.setProperty('--spring-slow-ease', 'ease-in');
 
     await animateMessageSend({ origin, target, scrollContainer, launchBubble });
 
-    expect(MESSAGE_SEND_TRANSITION_DURATION_MS).toBe(280);
-    expect(MESSAGE_SEND_TRANSITION_EASING).toBe('cubic-bezier(0.2, 0, 0, 1)');
+    expect(MESSAGE_SEND_TRANSITION_DURATION_MS).toBe(spring.slow.settleMs);
     expect(scrollContainer.scrollTop).toBe(240);
     expect(scrollContainer.scrollTo).not.toHaveBeenCalled();
     expect(followToBottom).toHaveBeenCalledOnce();
     expect(followToBottom).toHaveBeenCalledWith(scrollContainer);
     expect(animate).toHaveBeenCalledWith(
       expect.any(Array),
-      expect.objectContaining({ duration: 280, easing: MESSAGE_SEND_TRANSITION_EASING }),
+      expect.objectContaining({ duration: spring.slow.settleMs, easing: 'ease-in' }),
     );
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();
     expect(target.style.opacity).toBe('');
@@ -162,7 +162,9 @@ describe('message send transition', () => {
     await vi.advanceTimersByTimeAsync(MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS);
     await transition;
 
-    expect(MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS).toBe(600);
+    expect(MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS).toBe(
+      spring.slow.settleMs * 2 + spring.slow.exit.duration,
+    );
     expect(cancel).toHaveBeenCalledOnce();
     expect(target.style.visibility).toBe('collapse');
     expect(document.querySelector('[data-message-send-transition]')).toBeNull();

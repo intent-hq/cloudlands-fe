@@ -8,9 +8,10 @@
    */
   import type { FilePatch, PatchLastApply } from '$shared/types/notes-primitives';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
-  import { faCheck, faRotateLeft, faSpinner, faPlusMinus } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { faCheck, faRotateLeft, faPlusMinus } from '@fortawesome/free-solid-svg-icons';
+  import { slide } from '$lib/motion';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DiffViewer from './DiffViewer.svelte';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -69,10 +70,9 @@
   );
 
   let buttonState = $derived.by(() => {
-    if (applying) return { label: m.ui_patchBlock_applying_label(), icon: faSpinner, spin: true };
-    if (isApplied)
-      return { label: m.ui_patchBlock_revert_label(), icon: faRotateLeft, spin: false };
-    return { label: m.ui_patchBlock_apply_label(), icon: faCheck, spin: false };
+    if (applying) return { label: m.ui_patchBlock_applying_label(), icon: null };
+    if (isApplied) return { label: m.ui_patchBlock_revert_label(), icon: faRotateLeft };
+    return { label: m.ui_patchBlock_apply_label(), icon: faCheck };
   });
 
   let showActionButton = $derived(!!(onApply || onRevert));
@@ -94,9 +94,11 @@
     <!-- Header row -->
     <div class="flex min-h-9 items-center gap-2 px-3 py-1.5">
       {#if linkedAgentId}
-        <button
-          type="button"
-          class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
+        <Button
+          variant="plain"
+          size="icon-compact"
+          iconOnly
+          class="size-4! shrink-0 rounded-sm! transition-opacity hover:opacity-80"
           onclick={(event) => {
             if (!workspaceId) return;
             appStore.dispatch(
@@ -109,11 +111,14 @@
           title={m.ui_patchBlock_viewAgent_tooltip()}
         >
           <AgentAvatar agentId={linkedAgentId} variant="compact" />
-        </button>
+        </Button>
       {/if}
-      <button
-        type="button"
-        class="flex min-w-0 flex-1 items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+      <Button
+        variant="plain"
+        size="compact"
+        class="h-auto! min-w-0 flex-1 shrink items-center justify-start gap-2 px-0! py-0! text-muted-foreground transition-colors hover:text-foreground"
+        truncateLabel={false}
+        labelClass="flex min-w-0 flex-1 items-center gap-2"
         onclick={toggleExpanded}
       >
         {#if !linkedAgentId}
@@ -129,7 +134,7 @@
             {m.ui_patchBlock_applied_label()}
           </span>
         {/if}
-      </button>
+      </Button>
       {#if showActionButton}
         <Button
           variant="ghost-light"
@@ -138,7 +143,11 @@
           onclick={handleAction}
           disabled={applying}
         >
-          <Fa icon={buttonState.icon} size="xs" class={buttonState.spin ? 'animate-spin' : ''} />
+          {#if applying}
+            <IntentMarkLoader size={12} />
+          {:else if buttonState.icon}
+            <Fa icon={buttonState.icon} size="xs" />
+          {/if}
           {buttonState.label}
         </Button>
       {/if}
@@ -146,7 +155,7 @@
 
     <!-- Expanded diff view -->
     {#if expanded}
-      <div transition:slide={{ duration: 150 }} class="border-t border-border p-2">
+      <div transition:slide={{ tier: 'moderate' }} class="border-t border-border p-2">
         {#if patches.length > 1}
           <div class="mb-2 flex gap-1">
             {#each patches as patch, i (`patch-${i}-${patch.filePath}`)}

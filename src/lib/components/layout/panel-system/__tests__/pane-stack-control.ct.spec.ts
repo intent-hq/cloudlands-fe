@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import PaneStackControlHost from './mocks/PaneStackControlHost.svelte';
 
 const panelTypes = [
@@ -21,9 +21,7 @@ const panelTypes = [
   'task',
 ] as const;
 
-test('shows one selector for every stacked active pane type and none for one pane', async ({
-  mount,
-}) => {
+test('keeps the title selector available for single and stacked panes', async ({ mount }) => {
   const component = await mount(PaneStackControlHost, {
     props: { paneTypes: ['agent'], stackCount: 1, initialActiveTabId: 'agent-pane' },
   });
@@ -31,7 +29,7 @@ test('shows one selector for every stacked active pane type and none for one pan
   for (const type of panelTypes) {
     const fallback = type === 'note' ? 'browser' : 'note';
     await component.update({ props: { paneTypes: [type], stackCount: 1 } });
-    await expect(component.getByTestId('pane-stack-selector-trigger')).toHaveCount(0);
+    await expect(component.getByTestId('pane-stack-selector-trigger')).toHaveCount(1);
     await component.update({ props: { paneTypes: [type, fallback], stackCount: 2 } });
     await expect(component.getByTestId('pane-stack-selector-trigger')).toHaveCount(1);
     await expect(component.locator('[data-panel-content-header]')).toHaveAttribute(
@@ -41,65 +39,82 @@ test('shows one selector for every stacked active pane type and none for one pan
   }
 });
 
-test('keeps glyph geometry, action spacing, attention, and motion safe at 100% and 200%', async ({
-  mount,
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(PaneStackControlHost, {
-    props: {
-      paneTypes: ['agent', 'note'],
-      stackCount: 2,
-      initialActiveTabId: 'agent-pane',
-      attentionTabIds: ['note-pane'],
-      width: 190,
-    },
-  });
+for (const zoom of [1, 2]) {
+  test(`keeps the selector and actions reachable with attention at ${zoom * 100}%`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(PaneStackControlHost, {
+      props: {
+        paneTypes: ['agent', 'note'],
+        stackCount: 2,
+        initialActiveTabId: 'agent-pane',
+        attentionTabIds: ['note-pane'],
+        width: 190,
+        zoom,
+      },
+    });
 
-  for (const zoom of [1, 2]) {
-    await component.update({ props: { zoom } });
     const trigger = component.getByTestId('pane-stack-selector-trigger');
     await expect(trigger).toHaveAttribute('data-attention', '');
     const geometry = await component.locator('[data-panel-content-header]').evaluate((header) => {
-      const identity = header.querySelector<HTMLElement>('[data-pane-stack-active]')!;
+      const identity = header.querySelector<HTMLElement>('[data-panel-header-identity]')!;
       const actions = header.querySelector<HTMLElement>('[data-panel-header-actions]')!;
-      const glyph = header.querySelector<SVGElement>('[data-pane-stack-glyph]')!;
       const headerRect = header.getBoundingClientRect();
-      const scale = headerRect.width / (header as HTMLElement).offsetWidth;
       const identityRect = identity.getBoundingClientRect();
       const actionsRect = actions.getBoundingClientRect();
-      const glyphRect = glyph.getBoundingClientRect();
       return {
-        glyphWidth: glyphRect.width / scale,
-        glyphHeight: glyphRect.height / scale,
-        noCollision: identityRect.right <= actionsRect.left,
-        actionsInside: actionsRect.right <= headerRect.right,
-        lineCount: glyph.querySelectorAll('[data-pane-stack-line]').length,
+        rectangles: {
+          header: headerRect.toJSON(),
+          identity: identityRect.toJSON(),
+          actions: actionsRect.toJSON(),
+        },
+        // Skinny agent headers intentionally wrap; shared x ranges alone are not a collision.
+        noCollision:
+          identityRect.right <= actionsRect.left ||
+          actionsRect.right <= identityRect.left ||
+          identityRect.bottom <= actionsRect.top ||
+          actionsRect.bottom <= identityRect.top,
+        contained: [identityRect, actionsRect].every(
+          (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left >= headerRect.left &&
+            rect.right <= headerRect.right &&
+            rect.top >= headerRect.top &&
+            rect.bottom <= headerRect.bottom,
+        ),
       };
     });
 
-    expect(geometry).toEqual({
-      glyphWidth: 14,
-      glyphHeight: 14,
-      noCollision: true,
-      actionsInside: true,
-      lineCount: 2,
+    await testInfo.attach(`header-geometry-${zoom}`, {
+      body: JSON.stringify(geometry),
+      contentType: 'application/json',
     });
-  }
+    await testInfo.attach(`header-${zoom}`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    expect(geometry).toMatchObject({
+      noCollision: true,
+      contained: true,
+    });
 
-  await component.update({
-    props: {
-      paneTypes: panelTypes.slice(0, 7),
-      stackCount: 7,
-      attentionTabIds: [],
-    },
+    await component.update({
+      props: {
+        paneTypes: panelTypes.slice(0, 7),
+        stackCount: 7,
+        attentionTabIds: [],
+      },
+    });
+    await trigger.click();
+    const menu = page.getByRole('menu', { name: 'Panes in this stack' });
+    await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(7);
+    await menu.locator('[data-pane-stack-item]').first().click();
+    await expect(component).toHaveAttribute('data-active-tab', 'changes-pane');
   });
-  await expect(component.locator('[data-pane-stack-glyph]')).toHaveAttribute(
-    'data-pane-stack-visible-lines',
-    '6',
-  );
-  await expect(component.locator('[data-pane-stack-line]')).toHaveCount(6);
-});
+}
 
 test('switches agent panes with keyboard-accessible menu identity and current state', async ({
   mount,
@@ -131,4 +146,54 @@ test('switches agent panes with keyboard-accessible menu identity and current st
   await menu.getByRole('menuitem', { name: 'Preview browser. Needs attention.' }).click();
   await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
   await expect(menu).toHaveCount(0);
+  await trigger.click();
+  await expect(menu.locator('[data-pane-stack-item="browser-pane"]')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+});
+
+test('offers new panes first without losing the selected pane as choices change', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const component = await mount(PaneStackControlHost, {
+    props: { paneTypes: ['note'], stackCount: 1, initialActiveTabId: 'note-pane' },
+  });
+  const trigger = component.getByTestId('pane-stack-selector-trigger');
+  await trigger.click();
+  const menu = page.getByRole('menu', { name: 'Panes in this stack' });
+  await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await component.update({ props: { paneTypes: ['note', 'browser'], stackCount: 2 } });
+  await trigger.press('Enter');
+  await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(2);
+  await expect(menu.locator('[data-pane-stack-item="note-pane"]')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.keyboard.press('Home');
+  await expect(menu.getByRole('menuitem', { name: 'Preview browser', exact: true })).toBeFocused();
+  await testInfo.attach('newest-pane-first', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Enter');
+  await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
+  await component.update({ props: { paneTypes: ['browser'], stackCount: 1 } });
+  await trigger.press('Enter');
+  await expect(menu.locator('[data-pane-stack-item]')).toHaveCount(1);
+  await expect(menu.locator('[data-pane-stack-item="browser-pane"]')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await expect(component).toHaveAttribute('data-active-tab', 'browser-pane');
+  await testInfo.attach('remaining-selected-pane', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
 });

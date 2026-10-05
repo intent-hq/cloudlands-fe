@@ -9,8 +9,8 @@
  * (daemon error verbatim + retry against the same file).
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { ImportProgress, WorkspaceImportState } from './workspace-import-types';
 
 export const initialState: WorkspaceImportState = {

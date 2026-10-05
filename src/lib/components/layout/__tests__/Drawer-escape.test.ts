@@ -2,13 +2,13 @@
  * Drawer.svelte Escape handling via the canonical Sheet stack.
  *
  * Migrated from a `svelte:window` Escape listener. Also hosts the
- * stacked-ordering regression: a Drawer opened on top of a Modal closes
- * first (LIFO), the Modal only on the next Escape.
+ * stacked-ordering regression: a Drawer opened on top of a dialog closes
+ * first (LIFO), the dialog only on the next Escape.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import Drawer from '../Drawer.svelte';
-import Modal from '$lib/components/modals/Modal.svelte';
+import { FormDialog } from '$lib/components/patterns/confirm';
 
 describe('Drawer Escape handling (canonical Sheet stack)', () => {
   afterEach(() => {
@@ -44,11 +44,16 @@ describe('Drawer Escape handling (canonical Sheet stack)', () => {
     expect(onclose).not.toHaveBeenCalled();
   });
 
-  it('drawer stacked on a Modal: Escape closes the drawer first, then the modal (LIFO)', async () => {
+  it('drawer stacked on a dialog: Escape closes the drawer first, then the dialog (LIFO)', async () => {
     const onModalClose = vi.fn();
     const onDrawerClose = vi.fn();
-    render(Modal, {
-      props: { open: true, title: 'Lower Modal', onClose: onModalClose },
+    render(FormDialog, {
+      props: {
+        open: true,
+        title: 'Lower Modal',
+        onSubmit: vi.fn(),
+        onCancel: onModalClose,
+      },
     });
     render(Drawer, {
       props: { isOpen: true, title: 'Top Drawer', onclose: onDrawerClose },

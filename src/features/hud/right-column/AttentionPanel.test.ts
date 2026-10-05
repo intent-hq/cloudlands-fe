@@ -102,7 +102,7 @@ describe('AttentionPanel row structure (mock parity)', () => {
       expect(row).toBeTruthy();
     });
     if (!row) throw new Error('Expected an attention row');
-    expect(chipTexts(row)[1]).toBe('QUESTION');
+    expect(chipTexts(row)[1]).toBe('Question');
     expect(row.querySelector('.hud-attention-msg')?.textContent).toBe(
       'Q: Which auth flow should the endpoint use?',
     );
@@ -145,8 +145,8 @@ describe('AttentionPanel row structure (mock parity)', () => {
     await waitFor(() => {
       flushSync();
       kinds = rows().map((row) => chipTexts(row)[1]);
-      expect(kinds).toContain('DISCUSSION REQUIRED');
-      expect(kinds).toContain('BLOCKED');
+      expect(kinds).toContain('Discussion required');
+      expect(kinds).toContain('Blocked');
     });
     const texts = rows().map((row) => row.querySelector('.hud-attention-msg')?.textContent);
     expect(texts).toContain('Need a call on the rollout order');
@@ -166,7 +166,7 @@ describe('AttentionPanel row structure (mock parity)', () => {
     await waitFor(() => {
       flushSync();
       [row] = rows();
-      expect(row && chipTexts(row)[1]).toBe('FAILED');
+      expect(row && chipTexts(row)[1]).toBe('Failed');
     });
     if (!row) throw new Error('Expected a failed-agent row');
     expect(row.style.borderLeftColor).toBe(HUD_STATE_COLORS.failed);
@@ -180,7 +180,7 @@ describe('AttentionPanel row structure (mock parity)', () => {
     await waitFor(() => {
       flushSync();
       [row] = rows();
-      expect(row && chipTexts(row)[1]).toBe('ATTENTION');
+      expect(row && chipTexts(row)[1]).toBe('Attention');
     });
     if (!row) throw new Error('Expected a generic attention row');
     // Unknown raise time (sinceTs null) → no elapsed timer at all, instead

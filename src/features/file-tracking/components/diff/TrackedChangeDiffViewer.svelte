@@ -1,5 +1,4 @@
 <script lang="ts">
-  /* eslint-disable max-lines */
   /**
    * TrackedChangeDiffViewer - Diff viewer for TrackedChange objects with hunk staging
    *
@@ -10,25 +9,28 @@
    */
   import { untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import { invoke } from '$lib/electron-bridge';
+  import { fileContentKey } from '$features/file/utils/file-content-key';
 
   import { selectOriginalFileContent } from '$store/renderer/slices/files/files-selectors';
   import { loadFileContentRequested } from '$store/renderer/slices/files/files-slice';
-  import type { FileReadResponse } from '$store/renderer/slices/files/files-types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import type { TrackedChange } from '$features/file-tracking/types';
   import DiffViewer from './DiffViewer.svelte';
   import type { LineStageIndicator, PureDiffLineAnnotation } from './types';
-  import { batchedGitBranchBaseDiff, batchedGitDiff, dedupedShowFile } from './diff-ipc-batcher';
-  import { gitlinkSidesFromHunks, gitlinkSidesFromShas, isGitlinkDiffChunk } from './gitlink';
-  import { appClient } from '$lib/client';
+  import {
+    gitReadRequested,
+    releaseGitRead,
+    gitReadsInvalidated,
+  } from '$store/renderer/slices/git/git-slice';
+  import { selectGitRead } from '$store/renderer/slices/git/git-selectors';
   import { LineType, type DiffChunk } from '$shared/types';
   import { hashContent } from './DiffViewer.svelte';
   import * as Diff from 'diff';
   import { getChangedLineNumbersFromContent } from './line-staging';
   import Fa from 'svelte-fa';
   import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -62,6 +64,10 @@
     branchBaseCommitSha?: string;
     /** When true, use provided content from change.content instead of fetching from git */
     useProvidedContent?: boolean;
+    /** False for node-owned transcript paths, including lazy and refresh reads. */
+    allowHeadReads?: boolean;
+    /** Consult current provenance before each asynchronous head read. */
+    canReadHeadFiles?: () => boolean;
     /**
      * Starting line number for partial/snippet diffs (1-based). When > 1,
      * blank lines are prepended so real file line numbers are rendered in the gutter.
@@ -82,7 +88,7 @@
     virtualizer?: import('@pierre/diffs').Virtualizer;
     /**
      * Secondary git root scoping the committed-content fetches (multi git
-     * root tracking, v6.15). Absent → primary-root behavior, byte-identical.
+     * root tracking). Absent → primary-root behavior, byte-identical.
      */
     gitRootId?: string;
     /**
@@ -109,6 +115,8 @@
     branchBaseRef,
     branchBaseCommitSha,
     useProvidedContent = false,
+    allowHeadReads = true,
+    canReadHeadFiles,
     lineOffset = 1,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     lineStageIndicators,
@@ -126,27 +134,33 @@
   const instanceId = Math.random().toString(36).substring(2, 8);
 
   // State
-  let loading = $state(true);
-  let error: string | null = $state(null);
-  let oldContent = $state('');
-  let newContent = $state('');
+  const readConsumerId = `tracked-diff:${crypto.randomUUID()}`;
+  const read$ = selectGitRead(workspaceId, readConsumerId);
+  const diffResult = $derived($read$?.result?.kind === 'trackedDiff' ? $read$.result : undefined);
+  const loading = $derived($read$?.loading ?? true);
+  const error = $derived($read$?.error ?? null);
+  const contentTooLarge = $derived(
+    (diffResult?.oldContent.length ?? 0) + (diffResult?.newContent.length ?? 0) >
+      MAX_CONTENT_SIZE_BYTES,
+  );
+  const oldContent = $derived(contentTooLarge ? '' : (diffResult?.oldContent ?? ''));
+  const newContent = $derived(contentTooLarge ? '' : (diffResult?.newContent ?? ''));
   // Pre-rendered unified diff patch for the committed branch — sourced from
   // the daemon's `git.diffs` with `commitHash` (PROTOCOL §5.6) so the diff
   // body renders from hunks instead of dead legacy `git:show-file` content
   // round-trips. When set, DiffViewer's `patch` parser branch takes over.
-  let committedPatch = $state('');
-  let resolvedFilePath = $state(''); // The actual relative path used for git operations
-  let contentTooLarge = $state(false);
-  let noChangesAtStage = $state(false);
-  let lastRefreshKey = $state<number | undefined>(undefined);
-  // Track the last change identity to prevent effect loops
-  let lastChangeId = $state<string | undefined>(undefined);
-  let lastChangeFile = $state<string | undefined>(undefined);
-  // Guard against duplicate loadDiffContent calls
-  let isLoadingDiff = $state(false);
+  const resolvedFilePath = $derived(
+    resolveRelativeFilePath(change?.relativePath || change?.file || ''),
+  );
+  const committedPatch = $derived(
+    diffResult?.chunk?.chunks.length
+      ? chunksToUnifiedPatch(diffResult.chunk, resolvedFilePath)
+      : '',
+  );
+  const noChangesAtStage = $derived(!oldContent && !newContent && !committedPatch);
   // Set when the loaded diff is a gitlink (submodule) entry — its path is a
   // directory, so working-tree file reads must be skipped (#1739).
-  let isGitlinkChange = $state(false);
+  const isGitlinkChange = $derived(Boolean(change?.gitlink) || Boolean(diffResult?.gitlink));
 
   // For partial/snippet diffs, prepend blank lines so pierre's gutter shows
   // real file line numbers. Combined with foldUnchanged, the padding collapses
@@ -184,7 +198,7 @@
 
   // Get workspace info
   const workspace = $derived($workspace$);
-  // When a secondary git root scopes this diff (v6.15), its path is the base
+  // When a secondary git root scopes this diff (`gitRootId`), its path is the base
   // for absolute↔relative path resolution instead of the workspace worktree.
   const workspacePath = $derived(
     gitRootPath || workspace?.worktreePath || workspace?.repositoryPath || '',
@@ -217,35 +231,6 @@
     if (relativePath.startsWith('/')) return relativePath;
     if (!workspacePath) return null;
     return `${workspacePath}/${relativePath}`;
-  }
-
-  async function loadWorkingTreeFileContent(wsId: string, filePath: string): Promise<string> {
-    const absolutePath = getAbsoluteFilePath(filePath);
-    if (!absolutePath) return '';
-
-    try {
-      const response = await invoke<FileReadResponse>('file:read', {
-        workspaceId: wsId,
-        path: absolutePath,
-      });
-      if (response.success === false) {
-        logger.warn('[loadWorkingTreeFileContent] Failed to read disk content', {
-          instanceId,
-          filePath,
-          error: response.error,
-        });
-        return '';
-      }
-      const data = response.data;
-      return typeof data === 'string' ? data : (data?.content ?? '');
-    } catch (err) {
-      logger.warn('[loadWorkingTreeFileContent] Failed to read disk content', {
-        instanceId,
-        filePath,
-        error: err instanceof Error ? err.message : err,
-      });
-      return '';
-    }
   }
 
   // Hash the unpadded content so the @pierre/diffs worker AST cache hits on
@@ -298,25 +283,6 @@
     return ext ? langMap[ext] : undefined;
   }
 
-  function checkContentSize(old: string, new_: string): boolean {
-    const totalSize = (old?.length || 0) + (new_?.length || 0);
-    if (totalSize > MAX_CONTENT_SIZE_BYTES) {
-      contentTooLarge = true;
-      return false;
-    }
-    return true;
-  }
-
-  function isRawGitDiff(content: string): boolean {
-    if (!content) return false;
-    const firstLine = content.split('\n')[0] || '';
-    return (
-      firstLine.startsWith('diff --git') ||
-      firstLine.startsWith('---') ||
-      firstLine.startsWith('@@')
-    );
-  }
-
   /**
    * Serialize a daemon `DiffChunk` into a git-style unified diff patch the
    * pure `DiffViewer` (`patch` prop, parsed via `@pierre/diffs.parsePatchFiles`)
@@ -342,282 +308,11 @@
     return lines.join('\n') + '\n';
   }
 
-  // forceRefresh: when true, ignore useProvidedContent and fetch fresh from git
-  // This is used after staging/unstaging operations to show the updated diff
-  async function loadDiffContent(forceRefresh = false) {
-    // Guard against duplicate concurrent calls (onMount + $effect can race)
-    if (isLoadingDiff) {
-      logger.debug('[loadDiffContent] Skipping - already loading');
-      return;
-    }
-    isLoadingDiff = true;
-
-    loading = true;
-    error = null;
-    contentTooLarge = false;
-    noChangesAtStage = false;
-    // A change carrying git.status gitlink metadata (mode 160000, #1739) is
-    // classified upfront — its path is a directory, so no working-tree read
-    // may fire even before the diff load resolves.
-    isGitlinkChange = Boolean(change?.gitlink);
-    oldContent = '';
-    newContent = '';
-    committedPatch = '';
-
-    try {
-      if (!change) {
-        error = m.ui_trackedDiff_noChange_error();
-        return;
-      }
-
-      const stagedValue = change.stage === 'staged';
-      let filePath = change.relativePath || change.file;
-
-      // Convert absolute path to relative
-      // Handle both with and without trailing slash on workspacePath
-      filePath = resolveRelativeFilePath(filePath);
-
-      // Store the resolved path for patch generation
-      resolvedFilePath = filePath;
-
-      // Check if content is already provided
-      const oldContentValue = change.content?.oldContent || '';
-      const newContentValue = change.content?.newContent || '';
-      const hasProvidedContent =
-        change.content?.oldContent !== undefined &&
-        change.content?.newContent !== undefined &&
-        (oldContentValue.length > 0 || newContentValue.length > 0);
-      const contentIsRawDiff = isRawGitDiff(oldContentValue) || isRawGitDiff(newContentValue);
-
-      logger.debug('[loadDiffContent] Checking content', {
-        instanceId,
-        stage: change.stage,
-        commitHash: change.commitHash,
-        changeId: change.id,
-        hasProvidedContent,
-        contentIsRawDiff,
-        oldContentLength: oldContentValue.length,
-        newContentLength: newContentValue.length,
-        forceRefresh,
-      });
-
-      // Use provided content when:
-      // 1. useProvidedContent prop is true (e.g., for inline diffs in chat showing exact tool call snippets)
-      // 2. For committed changes (can't fetch fresh from git)
-      // For staged/unstaged without useProvidedContent, fetch fresh to show current state
-      // When forceRefresh is true, always fetch fresh (except for committed changes which can't be refreshed)
-      const shouldUseProvidedContent =
-        !forceRefresh &&
-        hasProvidedContent &&
-        !contentIsRawDiff &&
-        (useProvidedContent || change.stage === 'committed');
-      const shouldUseBranchBaseDiff =
-        !forceRefresh &&
-        !useProvidedContent &&
-        !change.commitHash &&
-        change.stage === 'committed' &&
-        Boolean(branchBaseRef || branchBaseCommitSha);
-
-      if (shouldUseProvidedContent) {
-        logger.info('[loadDiffContent] Using provided content', {
-          reason: useProvidedContent ? 'useProvidedContent prop' : 'committed change',
-          oldContentLength: oldContentValue.length,
-          newContentLength: newContentValue.length,
-          oldContentPreview: oldContentValue.substring(0, 100),
-          newContentPreview: newContentValue.substring(0, 100),
-        });
-        if (!checkContentSize(oldContentValue, newContentValue)) return;
-        oldContent = oldContentValue;
-        newContent = newContentValue;
-        logger.info('[loadDiffContent] Content set', {
-          oldContentLength: oldContent.length,
-          newContentLength: newContent.length,
-        });
-      } else if (shouldUseBranchBaseDiff) {
-        logger.info('[loadDiffContent] Fetching branch-base diff content', {
-          baseRef: branchBaseRef,
-          baseCommitSha: branchBaseCommitSha,
-          filePath,
-        });
-
-        const wsIdForBranchBase = workspaceId || workspace?.id || '';
-        const diffChunk = await batchedGitBranchBaseDiff(
-          wsIdForBranchBase,
-          { baseRef: branchBaseRef, baseCommitSha: branchBaseCommitSha },
-          filePath,
-        );
-
-        oldContent = diffChunk?.oldContent || '';
-        newContent = diffChunk?.newContent || '';
-
-        if (!newContent && !oldContent) {
-          noChangesAtStage = true;
-        }
-      } else if (change.stage === 'committed' && change.commitHash) {
-        // Daemon-backed committed-diff source (PROTOCOL §5.6): fetch the
-        // per-file hunks for `<commitHash>^..<commitHash>` and render them as
-        // a unified-diff patch. Replaces the dead legacy `git:show-file` IPC
-        // pair that previously sourced raw old/new file contents.
-        logger.info('[loadDiffContent] Fetching committed-commit hunks', {
-          commitHash: change.commitHash,
-          filePath,
-        });
-
-        const wsIdForCommit = workspaceId || workspace?.id || '';
-        const chunks = await appClient.git.diffs(wsIdForCommit, {
-          commitHash: change.commitHash,
-          path: filePath,
-          ...(gitRootId ? { gitRootId } : {}),
-        });
-        const chunk = chunks.find((c) => c.file === filePath) ?? chunks[0];
-        if (chunk && chunk.chunks.length > 0) {
-          committedPatch = chunksToUnifiedPatch(chunk, filePath);
-          logger.info('[loadDiffContent] Committed hunks rendered to patch', {
-            chunkCount: chunk.chunks.length,
-            patchLength: committedPatch.length,
-          });
-        } else {
-          noChangesAtStage = true;
-        }
-      } else {
-        logger.debug('[loadDiffContent] Fetching via git:diff', {
-          instanceId,
-          stage: change.stage,
-          stagedValue,
-        });
-        const wsIdForDiff = workspaceId || workspace?.id || '';
-
-        // Helper: fill oldContent/newContent from git at a given `staged`
-        // flag via the batcher + show-file dedup cache. Returns true when the
-        // diff chunk (or its fallback) populated both sides.
-        const tryLoadAtStage = async (stagedFlag: boolean): Promise<boolean> => {
-          // gitlink metadata lets the batcher skip the content reads that can
-          // only fail on a status-marked submodule entry (#1739).
-          const diffChunk = await batchedGitDiff(wsIdForDiff, stagedFlag, filePath, {
-            gitlink: change.gitlink,
-            gitRootId,
-            gitRootPath,
-          });
-
-          if (diffChunk) {
-            // Gitlink (submodule) entry (intent-hq/monorepo#1739): no blob
-            // content exists for it, so skip the show-file / file:read
-            // fallbacks (they can only fail) and render the pseudo-diff
-            // composed from the `Subproject commit <sha>` hunk lines. One
-            // side may legitimately be empty (added/removed submodule).
-            if (isGitlinkDiffChunk(diffChunk)) {
-              isGitlinkChange = true;
-              const sides = gitlinkSidesFromHunks(diffChunk.chunks ?? []);
-              oldContent = sides.oldContent;
-              newContent = sides.newContent;
-              return true;
-            }
-
-            // Status-marked gitlink whose hunks didn't structurally classify:
-            // render the pin change from the git.status pin SHAs instead of
-            // falling through to content reads that can only fail.
-            if (change.gitlink) {
-              const sides = gitlinkSidesFromShas(change.gitlink);
-              oldContent = sides.oldContent;
-              newContent = sides.newContent;
-              return oldContent.length > 0 || newContent.length > 0;
-            }
-
-            const hasValidOld = diffChunk.oldContent !== undefined && diffChunk.oldContent !== '';
-            const hasValidNew = diffChunk.newContent !== undefined && diffChunk.newContent !== '';
-
-            if (hasValidOld && hasValidNew) {
-              oldContent = diffChunk.oldContent || '';
-              newContent = diffChunk.newContent || '';
-              return true;
-            }
-
-            // Fallback: fetch content manually via show-file / file:read.
-            // Old side always comes from a git ref; new side comes from the
-            // working copy for unstaged changes.
-            const gitRef = stagedFlag ? 'HEAD' : ':0';
-            const showOptions = gitRootId ? { gitRootId } : undefined;
-            const oldResult = await dedupedShowFile(wsIdForDiff, gitRef, filePath, showOptions);
-            if (oldResult?.success) oldContent = oldResult.data || '';
-
-            if (stagedFlag) {
-              const indexResult = await dedupedShowFile(wsIdForDiff, ':0', filePath, showOptions);
-              if (indexResult?.success) newContent = indexResult.data || '';
-            } else {
-              const wsId = workspaceId || workspace?.id;
-              newContent = wsId ? await loadWorkingTreeFileContent(wsId, filePath) : '';
-            }
-            return true;
-          }
-          return false;
-        };
-
-        const loadedAtRequested = await tryLoadAtStage(stagedValue);
-
-        if (!loadedAtRequested) {
-          // git:diff returned no changes for the requested stage
-          // Try the opposite stage (e.g., if unstaged returned nothing, try staged)
-          // This handles cases where the tracked change has stale stage info
-          const oppositeStaged = !stagedValue;
-          logger.info('[loadDiffContent] No changes at requested stage, trying opposite stage', {
-            instanceId,
-            originalStage: change.stage,
-            triedStaged: stagedValue,
-            tryingStaged: oppositeStaged,
-          });
-
-          const loadedAtOpposite = await tryLoadAtStage(oppositeStaged);
-          if (loadedAtOpposite) {
-            logger.info('[loadDiffContent] Found changes at opposite stage', {
-              instanceId,
-              stage: oppositeStaged ? 'staged' : 'unstaged',
-              oldContentLength: oldContent.length,
-              newContentLength: newContent.length,
-            });
-          } else if (change.gitlink) {
-            // Status-marked gitlink with no diff chunk at either stage (e.g. a
-            // dirty submodule worktree with an unchanged pin): render the pin
-            // presentation from the git.status SHAs (#1739).
-            const sides = gitlinkSidesFromShas(change.gitlink);
-            oldContent = sides.oldContent;
-            newContent = sides.newContent;
-            if (!oldContent && !newContent) noChangesAtStage = true;
-          } else {
-            // Neither stage has changes - fall back to provided content if available
-            // This handles cases where changes have been committed, reverted, or modified
-            if (hasProvidedContent && !contentIsRawDiff) {
-              logger.info(
-                '[loadDiffContent] git:diff returned no changes, falling back to provided content',
-                {
-                  instanceId,
-                  oldContentLength: oldContentValue.length,
-                  newContentLength: newContentValue.length,
-                },
-              );
-              if (checkContentSize(oldContentValue, newContentValue)) {
-                oldContent = oldContentValue;
-                newContent = newContentValue;
-              } else {
-                noChangesAtStage = true;
-              }
-            } else {
-              noChangesAtStage = true;
-            }
-          }
-        }
-      }
-
-      if (!checkContentSize(oldContent, newContent)) {
-        oldContent = '';
-        newContent = '';
-      }
-    } catch (err) {
-      logger.error('Failed to load diff content', err as Error);
-      error = err instanceof Error ? err.message : m.ui_trackedDiff_loadFailed_error();
-    } finally {
-      loading = false;
-      isLoadingDiff = false;
-    }
+  let forceRefresh = $state(false);
+  let localRefresh = $state(0);
+  function loadDiffContent(force = false) {
+    forceRefresh = force;
+    localRefresh++;
   }
 
   /**
@@ -1033,14 +728,38 @@
   // Load on mount and refresh after a retained workspace surface is reactivated.
   $effect(() => {
     if (!active) return;
-    logger.info('[onMount] Component mounted', {
-      instanceId,
-      changeId: change?.id,
-      file: change?.file,
-      stage: change?.stage,
-      commitHash: change?.commitHash,
-    });
-    untrack(() => void loadDiffContent());
+    void refreshKey;
+    void localRefresh;
+    void change.id;
+    const requestId = crypto.randomUUID();
+    appStore.dispatch(
+      gitReadRequested(
+        workspaceId,
+        readConsumerId,
+        requestId,
+        {
+          kind: 'trackedDiff',
+          filePath: resolvedFilePath,
+          workspacePath,
+          stage: change.stage,
+          commitHash: change.commitHash,
+          gitRootId,
+          gitRootPath,
+          gitlink: change.gitlink,
+          baseRef: branchBaseRef,
+          baseCommitSha: branchBaseCommitSha,
+          providedOld: change.content?.oldContent,
+          providedNew: change.content?.newContent,
+          useProvidedContent,
+          forceRefresh,
+          allowHeadReads,
+        },
+        canReadHeadFiles,
+      ),
+    );
+    return () => {
+      appStore.dispatch(releaseGitRead(workspaceId, readConsumerId, requestId));
+    };
   });
 
   $effect(() => {
@@ -1048,10 +767,11 @@
     const wsId = workspaceId;
     const filePath = resolveRelativeFilePath(change?.relativePath || change?.file || '');
     const absolutePath = getAbsoluteFilePath(filePath);
-    const fileKey = `${wsId}:${filePath}`;
+    const contentKey = gitRootId ? fileContentKey(absolutePath ?? filePath, gitRootId) : filePath;
+    const fileKey = `${wsId}:${contentKey}`;
 
     effectiveWorkspaceIdStore.set(wsId);
-    filePathStore.set(filePath);
+    filePathStore.set(contentKey);
 
     if (fileKey !== lastObservedWorkingTreeKey) {
       lastObservedWorkingTreeKey = fileKey;
@@ -1068,15 +788,22 @@
       absolutePath &&
       change?.stage !== 'committed' &&
       !useProvidedContent &&
+      allowHeadReads &&
       !loading &&
       !isGitlinkChange
     ) {
-      appStore.dispatch(loadFileContentRequested(wsId, filePath, absolutePath));
+      appStore.dispatch(
+        gitRootId
+          ? loadFileContentRequested(wsId, contentKey, absolutePath, {
+              gitRoot: { id: gitRootId, relativePath: filePath },
+            })
+          : loadFileContentRequested(wsId, filePath, absolutePath),
+      );
     }
   });
 
   $effect(() => {
-    if (!active || useProvidedContent) return;
+    if (!active || useProvidedContent || !allowHeadReads) return;
     const content = $workingTreeFileContentStore;
     if (content === null || content === lastObservedWorkingTreeContent) return;
 
@@ -1088,58 +815,7 @@
       instanceId,
       filePath: change?.relativePath || change?.file,
     });
-    loadDiffContent();
-  });
-
-  // Watch for refreshKey changes
-  $effect(() => {
-    if (!active) return;
-    if (refreshKey !== undefined && refreshKey !== lastRefreshKey) {
-      const isFirst = lastRefreshKey === undefined;
-      lastRefreshKey = refreshKey;
-      if (!isFirst) {
-        logger.debug('[refreshKey effect] RefreshKey changed, reloading', {
-          instanceId,
-          refreshKey,
-          lastRefreshKey,
-        });
-        loadDiffContent();
-      }
-    }
-  });
-
-  // Watch for change prop changes - only reload when the actual change identity changes
-  // Skip the initial run since onMount already handles loading
-  $effect(() => {
-    if (!active) return;
-    const currentId = change?.id;
-    const currentFile = change?.file;
-
-    // Read lastChangeId/lastChangeFile without tracking to avoid loops
-    const prevId = untrack(() => lastChangeId);
-    const prevFile = untrack(() => lastChangeFile);
-
-    // Skip if this is the initial run (prevId undefined) - onMount handles that
-    if (prevId === undefined && prevFile === undefined) {
-      // Just record the current values for future comparison
-      lastChangeId = currentId;
-      lastChangeFile = currentFile;
-      return;
-    }
-
-    // Only reload if the change actually changed (not just object reference)
-    if (currentId !== prevId || currentFile !== prevFile) {
-      logger.debug('[change effect] Change identity changed, reloading', {
-        instanceId,
-        currentId,
-        currentFile,
-        prevId,
-        prevFile,
-      });
-      lastChangeId = currentId;
-      lastChangeFile = currentFile;
-      loadDiffContent();
-    }
+    appStore.dispatch(gitReadsInvalidated(workspaceId, gitRootId));
   });
 
   // Manage hover button - append to number element when hovering a changed line
@@ -1196,7 +872,7 @@
         e.preventDefault();
 
         // Prevent multiple simultaneous operations
-        if (isProcessingLineAction || loading) {
+        if (!allowHeadReads || isProcessingLineAction || loading) {
           return;
         }
 
@@ -1217,7 +893,7 @@
           }
           // Reload diff content immediately after operation, forcing fresh fetch from git
           // forceRefresh=true bypasses useProvidedContent to get the actual new state
-          await loadDiffContent(true);
+          loadDiffContent(true);
         } finally {
           isProcessingLineAction = false;
         }
@@ -1293,24 +969,35 @@
           </span>
           {#if modifiedCount > 0}
             {#if change.stage === 'unstaged' && onStageHunk}
-              <button class="hunk-action-btn hunk-stage-btn" onclick={stageSelectedLines}>
+              <Button
+                variant="plain"
+                size="compact"
+                class="hunk-action-btn hunk-stage-btn h-auto! gap-1 rounded-sm! bg-success/15 px-2! py-[0.2rem]! text-success hover:bg-success/25"
+                onclick={stageSelectedLines}
+              >
                 <span class="icon">+</span>
                 {m.ui_trackedDiff_stage_label()}
-              </button>
+              </Button>
             {:else if change.stage === 'staged' && onUnstageHunk}
-              <button class="hunk-action-btn hunk-unstage-btn" onclick={unstageSelectedLines}>
+              <Button
+                variant="plain"
+                size="compact"
+                class="hunk-action-btn hunk-unstage-btn h-auto! gap-1 rounded-sm! bg-danger/15 px-2! py-[0.2rem]! text-danger hover:bg-danger/25"
+                onclick={unstageSelectedLines}
+              >
                 <span class="icon">−</span>
                 {m.ui_trackedDiff_unstage_label()}
-              </button>
+              </Button>
             {/if}
           {/if}
-          <button
-            class="hunk-action-btn"
-            style="background: transparent; color: hsl(var(--muted-foreground));"
+          <Button
+            variant="plain"
+            size="compact"
+            class="hunk-action-btn h-auto! rounded-sm! px-2! py-[0.2rem]! text-muted-foreground"
             onclick={() => (selectedLines = null)}
           >
             ✕
-          </button>
+          </Button>
         </div>
       {/if}
 

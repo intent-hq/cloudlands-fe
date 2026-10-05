@@ -30,7 +30,7 @@ import {
 } from './hud-selectors';
 import type { DaemonHealthState } from '../daemon-health/daemon-health-types';
 import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { WorkspaceTask } from '$shared/types';
 import {
   agentSessionReducer,
@@ -289,6 +289,139 @@ describe('selectWorkspaceTabStatuses', () => {
       'question',
     ]);
     expect(status.hiddenCategoryCount).toBe(3);
+  });
+});
+
+describe('HUD agent scope goes through the shared classifier (§5.5 row-scope bins)', () => {
+  // Both the card row's `topLevel` / `isBackground` and the tab-status
+  // relevance gate fold the §5.1 summary row and the tracked session into one
+  // `AgentScopeInputs`, so they bin a row exactly like `classifyAgentScope`.
+  const PARENT = { id: 'coordinator', name: 'Coordinator', status: 'active' };
+
+  /** ws-1 with the `probe` summary row (+ `extraRows`) and its optional tracked session. */
+  function scopeState(
+    summary: Record<string, unknown>,
+    session: Record<string, unknown> | null,
+    extraRows: Array<Record<string, unknown>> = [],
+  ): StoreState {
+    const agents = [{ id: 'probe', name: 'Probe', status: 'active', ...summary }, ...extraRows];
+    const base = mockState([
+      makeWorkspace('ws-1', {
+        displayStatus: 'in_progress',
+        agentSummary: {
+          count: agents.length,
+          agentIds: agents.map((agent) => String(agent.id)),
+          agents,
+        } as Workspace['agentSummary'],
+      }),
+    ]);
+    return {
+      ...base,
+      agentSessions: {
+        byAgentId: session
+          ? {
+              probe: {
+                status: 'active',
+                isResponding: true,
+                workspaceId: 'ws-1',
+                messages: [],
+                ...session,
+              },
+            }
+          : {},
+        agentIdsByWorkspace: {},
+      },
+    } as StoreState;
+  }
+
+  const probeRow = (state: StoreState) =>
+    selectHudWorkspaceCards.select(state)[0].agents.find((agent) => agent.id === 'probe')!;
+  /** Names the tab-status gate let through as running (`probe` responds in every tracked session). */
+  const gatedRunning = (state: StoreState) =>
+    selectWorkspaceTabStatuses
+      .select(state)
+      ['ws-1']?.categories.find((item) => item.category === 'running')?.agentNames ?? [];
+
+  it('an unparented foreground row is top-level and passes the tab-status gate', () => {
+    const state = scopeState({}, {});
+    expect(probeRow(state)).toMatchObject({ topLevel: true, isBackground: false });
+    expect(gatedRunning(state)).toEqual(['Probe']);
+  });
+
+  it('a summary-row-only child (parentAgentId, nothing on the session) is delegated', () => {
+    const noSession = scopeState({ parentAgentId: 'coordinator' }, null, [PARENT]);
+    expect(probeRow(noSession)).toMatchObject({ topLevel: false, isBackground: false });
+    expect(gatedRunning(noSession)).toEqual([]);
+    const plainSession = scopeState({ parentAgentId: 'coordinator' }, {}, [PARENT]);
+    expect(probeRow(plainSession).topLevel).toBe(false);
+    expect(gatedRunning(plainSession)).toEqual([]);
+  });
+
+  it.each([
+    ['parentAgentId', { parentAgentId: 'coordinator' }],
+    ['metadata.createdByAgentId', { metadata: { createdByAgentId: 'coordinator' } }],
+    ['agentMetadata.createdByAgentId', { agentMetadata: { createdByAgentId: 'coordinator' } }],
+  ])('a session-only child via %s is delegated', (_location, session) => {
+    const state = scopeState({}, session, [PARENT]);
+    expect(probeRow(state).topLevel).toBe(false);
+    expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it.each([
+    ['summary parentAgentId', { parentAgentId: 'probe' }, {}],
+    ['session parentAgentId', {}, { parentAgentId: 'probe' }],
+    ['metadata.createdByAgentId', {}, { metadata: { createdByAgentId: 'probe' } }],
+    ['agentMetadata.createdByAgentId', {}, { agentMetadata: { createdByAgentId: 'probe' } }],
+  ])(
+    'a self-referencing %s is dropped before classification (top-level)',
+    (_f, summary, session) => {
+      const state = scopeState(summary, session);
+      expect(probeRow(state).topLevel).toBe(true);
+      expect(gatedRunning(state)).toEqual(['Probe']);
+    },
+  );
+
+  it('a self-referencing parentAgentId still falls through to a real createdByAgentId', () => {
+    const state = scopeState(
+      { parentAgentId: 'probe' },
+      { metadata: { createdByAgentId: 'coordinator' } },
+      [PARENT],
+    );
+    expect(probeRow(state).topLevel).toBe(false);
+    expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it('a dangling parent (id absent from the summary) still marks the row delegated', () => {
+    const state = scopeState({ parentAgentId: 'left-the-summary' }, {});
+    expect(probeRow(state).topLevel).toBe(false);
+    expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it.each([
+    ['summary isBackground', { isBackground: true }, {}],
+    ['session isBackground', {}, { isBackground: true }],
+    ['metadata.isBackground', {}, { metadata: { isBackground: true } }],
+    ['agentMetadata.isBackground', {}, { agentMetadata: { isBackground: true } }],
+  ])('%s bins an unparented row as background (own bin, gated off)', (_f, summary, session) => {
+    const state = scopeState(summary, session);
+    expect(probeRow(state)).toMatchObject({ topLevel: false, isBackground: true });
+    expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it.each([
+    ['summary', { isBackground: false }, { isBackground: true }],
+    ['session', {}, { isBackground: false, metadata: { isBackground: true } }],
+    ['metadata', {}, { metadata: { isBackground: false }, agentMetadata: { isBackground: true } }],
+  ])('an explicit foreground %s overrides older background values', (_f, summary, session) => {
+    const state = scopeState(summary, session);
+    expect(probeRow(state)).toMatchObject({ topLevel: true, isBackground: false });
+    expect(gatedRunning(state)).toEqual(['Probe']);
+  });
+
+  it('a background CHILD is delegated, and stays background', () => {
+    const state = scopeState({ parentAgentId: 'coordinator', isBackground: true }, {}, [PARENT]);
+    expect(probeRow(state)).toMatchObject({ topLevel: false, isBackground: true });
+    expect(gatedRunning(state)).toEqual([]);
   });
 });
 
@@ -702,18 +835,36 @@ describe('selectHudAttnCount', () => {
     expect(selectHudAttnCount.select(state)).toBe(1);
   });
 
-  it('does not count a pending request while the agent runs a live turn (mid-turn gate)', () => {
-    // Mid-turn rehydration can deliver the persisted attention fields while
-    // the agent is still streaming — nothing must blink until the turn ends.
+  it('counts a pending request while the agent runs a live turn (attention trumps running)', () => {
+    // An automatic delivery restarts a top-level foreground agent without
+    // clearing the request, so it is still pending while the agent streams and
+    // must blink, bucket needs-attention, and still count on the running axis.
     const state = attnState({
       root: {
         status: 'active',
+        workspaceId: 'ws-1',
         attentionRequestKind: 'discussion',
         isResponding: true,
         messages: [],
       },
     });
-    expect(selectHudAttnCount.select(state)).toBe(0);
+    expect(selectHudAttnCount.select(state)).toBe(1);
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.find((agent) => agent.id === 'root')).toMatchObject({
+      bucket: 'needs-attention',
+      attentionKind: 'discussion',
+    });
+    const tabCategories = selectWorkspaceTabStatuses.select(state)['ws-1'].categories;
+    expect(tabCategories).toContainEqual({
+      category: 'discussion',
+      count: 1,
+      agentNames: ['Coordinator'],
+    });
+    expect(tabCategories).toContainEqual({
+      category: 'running',
+      count: 1,
+      agentNames: ['Coordinator'],
+    });
   });
 
   it('counts a wire needs_attention rollup once when no per-agent signal covers it', () => {
@@ -1020,6 +1171,33 @@ describe('selectHudAttentionItems', () => {
     });
     expect(selectHudAttentionItems.select(failed)).toEqual([]);
     expect(selectHudAttnCount.select(failed)).toBe(0);
+  });
+
+  it('a muted top-level agent (§5.5 notificationsMuted) raises no ATTENTION row or count', () => {
+    const attention = gatedItemsState({
+      root: {
+        status: 'active',
+        notificationsMuted: true,
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Sandbox network is down',
+        messages: [],
+      },
+    });
+    expect(selectHudAttentionItems.select(attention)).toEqual([]);
+    expect(selectHudAttnCount.select(attention)).toBe(0);
+    const failed = gatedItemsState({
+      root: { status: 'error', notificationsMuted: true, messages: [] },
+    });
+    expect(selectHudAttentionItems.select(failed)).toEqual([]);
+    expect(selectHudAttnCount.select(failed)).toBe(0);
+    // An explicit `false` behaves like an unmuted session.
+    const unmuted = gatedItemsState({
+      root: { status: 'error', notificationsMuted: false, messages: [] },
+    });
+    expect(selectHudAttentionItems.select(unmuted).map((item) => item.kind)).toEqual([
+      'agent_failed',
+    ]);
+    expect(selectHudAttnCount.select(unmuted)).toBe(1);
   });
 
   it('a failed delegated sub-agent raises no row; a failed top-level agent still does', () => {
@@ -3250,6 +3428,46 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.attentionSnippet).toEqual({
       kind: 'failed',
       text: 'Provider stream disconnected (upstream 529)',
+    });
+  });
+
+  it('failed card snippet skips a muted failed agent (§5.5 notificationsMuted)', () => {
+    // The muted root failed first in agent order; the unmuted child's
+    // stopReason is the one the strip surfaces.
+    const withUnmutedSibling = gatedState(
+      {
+        root: {
+          status: 'error',
+          notificationsMuted: true,
+          stopReason: 'Muted provider error',
+          messages: [],
+        },
+        child: { status: 'error', stopReason: 'Child sandbox crashed', messages: [] },
+      },
+      [],
+      'failed',
+    );
+    expect(selectHudWorkspaceCards.select(withUnmutedSibling)[0].attentionSnippet).toEqual({
+      kind: 'failed',
+      text: 'Child sandbox crashed',
+    });
+    // Only a muted agent failed: the strip keeps the generic failed line and
+    // never leaks the muted agent's stopReason.
+    const onlyMuted = gatedState(
+      {
+        root: {
+          status: 'error',
+          notificationsMuted: true,
+          stopReason: 'Muted provider error',
+          messages: [],
+        },
+      },
+      [],
+      'failed',
+    );
+    expect(selectHudWorkspaceCards.select(onlyMuted)[0].attentionSnippet).toEqual({
+      kind: 'failed',
+      text: '',
     });
   });
 

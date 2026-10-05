@@ -1,19 +1,19 @@
 /**
  * pr-monitor slice — per-workspace live PR-monitor list (PROTOCOL §6.9).
  *
- * The companion `prMonitorSaga` owns the active workspace's `prMonitor:*`
+ * The companion `prMonitorSaga` shares selected-tab and mounted-chat leases on `prMonitor:*`
  * events.subscribe + `prMonitor.list` seed round-trip and writes every fold
  * result back via `prMonitorsUpdated`, so components render purely from
  * selectors and never touch the live backend transport. Cancel/flush triggers
  * (`cancelPrMonitorRequested` / `flushPrMonitorRequested`) have no reducer
  * case — the daemon's `prMonitor:*` events converge the list.
  */
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from '@augmentcode/themis/utils/collections/collection-utils';
+} from '@themislib/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
@@ -45,6 +45,17 @@ const { setWorkspaceState, clearWorkspaceState } = createWorkspaceScopedHelpers(
 );
 
 // ── Actions ──
+
+/** Refcounted view-time leases, shared with the selected-workspace preload. */
+export const prMonitorsSubscribeRequested = createAction<[workspaceId: string]>(
+  'prMonitor/subscribeRequested',
+);
+export const prMonitorsUnsubscribeRequested = createAction<[workspaceId: string]>(
+  'prMonitor/unsubscribeRequested',
+);
+export const prMonitorsActiveWorkspaceChanged = createAction<[workspaceId: string | null]>(
+  'prMonitor/activeWorkspaceChanged',
+);
 
 /** Service → reducer: full monitor list after a seed or event fold. */
 export const prMonitorsUpdated =

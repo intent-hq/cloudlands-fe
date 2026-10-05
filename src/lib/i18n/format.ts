@@ -15,11 +15,13 @@ import { getActiveLocale } from './locale';
 export const {
   formatNumber,
   formatInteger,
+  formatCompactNumber,
   formatCurrency,
   formatBytesBinary,
   formatRelativeTime,
   formatCompactRelativeTime,
   formatCompactDuration,
+  formatSalientDuration,
   formatTime,
   formatDate,
   formatShortDate,

@@ -1,9 +1,10 @@
+import { agentNodeUpdates, currentAgentCheckpoint } from '$shared/utils/agent-node';
 import { deepEqual, shallowEqual } from 'fast-equals';
-import type { AgentSession, AgentMessage, SessionStats } from '$shared/types';
+import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
-import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type {
   AgentHistorySegment,
   AgentSessionForkOptions,
@@ -11,7 +12,9 @@ import type {
   AgentSessionLaunchOptions,
   AgentSessionSendMessageOptions,
   AgentSessionState,
+  FeOwnedSessionState,
   StoredAgentSession,
+  WireAgentSession,
 } from './agent-session-types';
 import {
   deduplicateAgentMessages,
@@ -33,8 +36,10 @@ import {
   chatInitialized,
   chatTranscriptSnapshotApplied,
   streamCompleted,
+  streamStatusReceived,
   streamTimedOut,
 } from '../chat-state/chat-state-slice';
+import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 
 export {
   computeMessageContentHash,
@@ -277,6 +282,25 @@ function removeHistorySegmentsFor(
   return next;
 }
 
+/** Drop the detail-hydrated marker for `agentId`; no-op when absent. */
+function removeDetailHydrated(state: AgentSessionState, agentId: string): AgentSessionState {
+  if (!state.detailHydrated || !(agentId in state.detailHydrated)) return state;
+  const { [agentId]: _, ...rest } = state.detailHydrated;
+  return { ...state, detailHydrated: rest };
+}
+
+/** Drop the detail-hydrated marker of every agent in `agentIds`; no-op when none is present. */
+function removeDetailHydratedFor(
+  state: AgentSessionState,
+  agentIds: Iterable<string>,
+): AgentSessionState {
+  let next = state;
+  for (const agentId of agentIds) {
+    next = removeDetailHydrated(next, agentId);
+  }
+  return next;
+}
+
 /**
  * Reuse prior message object identities when a full replacement contains rows
  * structurally equal to ones already in the store, so a background
@@ -473,11 +497,12 @@ type CanonicalAgentSessionUpdates = {
   stopReasonTimestamp?: string | null;
   sessionCorrupted?: boolean;
   lastAgentResponse?: string;
-  processQueueHint?: AgentSession['processQueueHint'];
+  processQueueHint?: FeOwnedSessionState['processQueueHint'];
   isWaitingForOtherAgents?: boolean;
   waitingForAgentIds?: string[];
   waitingOnHooks?: AgentSession['waitingOnHooks'];
   waitingOnPrMonitors?: AgentSession['waitingOnPrMonitors'];
+  waitingOnScriptMonitors?: AgentSession['waitingOnScriptMonitors'];
   liveTurnOpen?: boolean;
   liveTurnOpenedAt?: string | undefined;
 };
@@ -490,6 +515,7 @@ const RUNNING_STATUSES: ReadonlySet<string> = new Set([
   'Processing',
   'responding',
   'Responding',
+  'resuming',
 ]);
 
 /** Wire statuses that mean the turn/session ended (lowercase IPC + PascalCase enum). */
@@ -501,7 +527,175 @@ const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   'failed',
   'error',
   'deleted',
+  'halted',
 ]);
+
+// ============================================================================
+// FE-owned field carry-forward (session upserts)
+// ============================================================================
+
+/**
+ * How one FE-owned field survives `applySessionUpsert`. The incoming wire
+ * snapshot never carries FE-owned fields, so the stored value always comes
+ * from the policy: `existing` is the stored session before the upsert (or
+ * undefined for a new session) and `incoming` the wire snapshot being applied.
+ * Returning `undefined` drops the field.
+ */
+type FeOwnedFieldPolicy<K extends keyof FeOwnedSessionState> = (
+  existing: Readonly<FeOwnedSessionState> | undefined,
+  incoming: AgentSession,
+) => FeOwnedSessionState[K] | undefined;
+
+function isTerminalWireStatus(incoming: AgentSession): boolean {
+  return typeof incoming.status === 'string' && TERMINAL_STATUSES.has(incoming.status);
+}
+
+/** Only `isActive: false` or a terminal status closes the sticky live-turn slot. */
+function incomingClosesLiveTurn(incoming: AgentSession): boolean {
+  return incoming.isActive === false || isTerminalWireStatus(incoming);
+}
+
+/**
+ * Exhaustive carry-forward table over `FeOwnedSessionState` — the mapped `-?`
+ * type makes a missing entry a compile error, so a new FE-owned field cannot
+ * be added without declaring how it survives an `agent.get` refetch
+ * (cloudlands-fe#2443 shipped without the processQueueHint block and the
+ * slot-wait warning flickered off on every refresh; intent-hq/intent#1815 was
+ * the same omission for liveTurnOpen).
+ */
+export const FE_OWNED_FIELD_POLICY: { [K in keyof FeOwnedSessionState]-?: FeOwnedFieldPolicy<K> } =
+  {
+    // Latch: an upsert must not clear it. An incoming snapshot itself
+    // overflowing the cap also latches (its overflow rows were just dropped
+    // client-side). No hole accounting here — a re-delivered snapshot must
+    // not double-count.
+    tailCapPruned: (existing, incoming) =>
+      existing?.tailCapPruned === true || (incoming.messages?.length ?? 0) > MAX_MESSAGES_PER_AGENT
+        ? true
+        : undefined,
+    // Sticky: a racy `turnInFlight: false` snapshot cannot close the slot.
+    liveTurnOpen: (existing, incoming) =>
+      existing?.liveTurnOpen === true && !incomingClosesLiveTurn(incoming) ? true : undefined,
+    // Rides with liveTurnOpen (ordering signal for the monorepo#1815 guard).
+    liveTurnOpenedAt: (existing, incoming) =>
+      existing?.liveTurnOpen === true && !incomingClosesLiveTurn(incoming)
+        ? existing.liveTurnOpenedAt
+        : undefined,
+    // Set from agent:process:queued, so a snapshot refresh triggered by an
+    // unrelated agent event must not drop it while the agent is still parked
+    // — otherwise the chat slot-wait warning flickers off. Carry it forward
+    // unless the snapshot itself shows the wait is over (same signals as
+    // canonicalSessionUpdates).
+    processQueueHint: (existing, incoming) => {
+      if (existing?.processQueueHint?.waiting !== true) return undefined;
+      const waitOver =
+        incoming.isStreaming === true ||
+        incoming.isResponding === false ||
+        incoming.isActive === false ||
+        isTerminalWireStatus(incoming);
+      return waitOver ? undefined : existing.processQueueHint;
+    },
+  };
+
+const FE_OWNED_FIELD_KEYS = Object.keys(FE_OWNED_FIELD_POLICY) as Array<keyof FeOwnedSessionState>;
+
+function applyFeOwnedFieldPolicy<K extends keyof FeOwnedSessionState>(
+  target: FeOwnedSessionState,
+  key: K,
+  existing: Readonly<FeOwnedSessionState> | undefined,
+  incoming: AgentSession,
+): void {
+  const policy = FE_OWNED_FIELD_POLICY[key] as FeOwnedFieldPolicy<K>;
+  const value = policy(existing, incoming);
+  if (value === undefined) delete target[key];
+  else target[key] = value;
+}
+
+function restoreFeOwnedField<K extends keyof FeOwnedSessionState>(
+  target: FeOwnedSessionState,
+  key: K,
+  saved: Readonly<FeOwnedSessionState>,
+): void {
+  const value = saved[key];
+  if (value === undefined) delete target[key];
+  else target[key] = value;
+}
+
+/**
+ * Comparison key for the FE-owned fields, driven by the same key set as the
+ * policy table so a drop-only refresh of any FE-owned field is never swallowed
+ * as a no-op. `false` collapses to absent (like the wire booleans in
+ * `toSessionComparisonSnapshot`) so a false↔absent flip is not a change.
+ */
+function feOwnedFieldsComparisonKey(session: Readonly<FeOwnedSessionState>): string {
+  return JSON.stringify(
+    FE_OWNED_FIELD_KEYS.map((key) => (session[key] === false ? undefined : session[key])),
+  );
+}
+
+// ============================================================================
+// Detail-only field carry-forward (list-projection upserts)
+// ============================================================================
+
+/**
+ * Session fields served only by the detail reads (`agent.get` /
+ * `agent.getSession`) and stripped from `agent.list` rows (§5.5 list
+ * projection, intent-hq/intent#5383). A list row omits them whether or not
+ * the session has a value, so a list-projection upsert keeps whatever an
+ * earlier detail read stored instead of clearing it. A detail read stays
+ * authoritative: it omits e.g. `metadata.pendingProposals` exactly when the
+ * set is empty, so its omissions must clear. Older daemons still serve these
+ * fields on list rows — a value present on the incoming row always wins.
+ * `contextReferences` / `fileBlocks` ride the wire row untyped.
+ */
+const DETAIL_ONLY_SESSION_FIELDS: readonly string[] = [
+  'harnessFeatures',
+  'effortLevels',
+  'stats',
+  'contextReferences',
+  'fileBlocks',
+];
+const DETAIL_ONLY_METADATA_FIELDS = ['pendingProposals', 'proposalResolutions'] as const;
+
+function carryForwardDetailFields(
+  target: StoredAgentSession,
+  existing: Readonly<StoredAgentSession>,
+  incoming: AgentSession,
+): void {
+  const targetRecord = target as unknown as Record<string, unknown>;
+  const existingRecord = existing as unknown as Record<string, unknown>;
+  const incomingRecord = incoming as unknown as Record<string, unknown>;
+  for (const key of DETAIL_ONLY_SESSION_FIELDS) {
+    if (incomingRecord[key] !== undefined || existingRecord[key] === undefined) continue;
+    targetRecord[key] = existingRecord[key];
+  }
+  const existingMetadata = existing.metadata;
+  if (!existingMetadata) return;
+  let metadata = target.metadata;
+  for (const key of DETAIL_ONLY_METADATA_FIELDS) {
+    if (incoming.metadata?.[key] !== undefined) continue;
+    const value = existingMetadata[key];
+    if (value === undefined) continue;
+    metadata = { ...metadata, [key]: value };
+  }
+  if (metadata !== target.metadata) target.metadata = metadata;
+}
+
+/**
+ * Comparison key for the detail-only fields so a detail read that only fills
+ * them in over a slim list row is never swallowed as a no-op (the two rows
+ * share `updatedAt`). `harnessFeatures` has its own key below.
+ */
+function detailFieldsComparisonKey(session: Readonly<StoredAgentSession>): string {
+  const record = session as unknown as Record<string, unknown>;
+  const metadata = session.metadata;
+  return JSON.stringify([
+    ...DETAIL_ONLY_SESSION_FIELDS.filter((key) => key !== 'harnessFeatures').map(
+      (key) => record[key],
+    ),
+    ...DETAIL_ONLY_METADATA_FIELDS.map((key) => metadata?.[key]),
+  ]);
+}
 
 type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
@@ -568,6 +762,8 @@ function canonicalSessionUpdates(
   // empty), so an idle event always clears a stale list; other canonical
   // event types that don't carry the field leave the existing value alone.
   if (Array.isArray(fields.waitingOnHooks)) updates.waitingOnHooks = fields.waitingOnHooks;
+  if (Array.isArray(fields.waitingOnScriptMonitors))
+    updates.waitingOnScriptMonitors = fields.waitingOnScriptMonitors;
   if (Array.isArray(fields.waitingOnPrMonitors)) {
     updates.waitingOnPrMonitors = fields.waitingOnPrMonitors;
   }
@@ -600,17 +796,28 @@ function canonicalSessionUpdates(
     updates.liveTurnOpenedAt = undefined;
   }
 
-  // Defensively clear processQueueHint when agent transitions to normal running state
-  // or terminal state. This handles reconnect cases where agent:process:resumed may
-  // not arrive, and prevents stale hints after failed/idle transitions.
+  // Clear processQueueHint only on genuine evidence the turn got past admission
+  // (streaming started), on a terminal status, or when the session goes idle
+  // (`isResponding`/`isActive` false — the reconnect safety net for a missed
+  // `agent:process:resumed`). `isResponding === true` / `isActive === true` are
+  // NOT clearing signals: an agent parked waiting for a slot (§6.5) IS
+  // responding — its turn is open — so an ordinary status tick landing while it
+  // is still queued would wipe the hint and flicker the chat warning off.
   if (
-    fields.isResponding === true ||
-    fields.isActive === true ||
+    fields.isStreaming === true ||
+    fields.isResponding === false ||
+    fields.isActive === false ||
     (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
   ) {
     updates.processQueueHint = undefined;
   }
 
+  if (fields.status === AgentStatus.Halted) {
+    updates.isActive = false;
+    updates.isStreaming = false;
+    updates.isProcessing = false;
+    updates.isResponding = false;
+  }
   return updates;
 }
 
@@ -642,6 +849,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
         // default to [] so a stale list from a prior idle is cleared.
         waitingOnHooks: data.waitingOnHooks ?? [],
         waitingOnPrMonitors: data.waitingOnPrMonitors ?? [],
+        waitingOnScriptMonitors: data.waitingOnScriptMonitors ?? [],
       },
     ];
   }
@@ -677,13 +885,52 @@ function canonicalFieldsFromWorkspaceEvent(event: {
       },
     ];
   }
-  if (event.type === 'agent:status-changed' || event.type === 'agent:session-updated') {
+  if (
+    event.type === 'agent:status-changed' ||
+    event.type === 'agent:session-updated' ||
+    event.type === 'agent:updated'
+  ) {
     return [agentId, data];
   }
   if (event.type === 'agent:subscriptions-changed') {
     return [agentId, data];
   }
   return null;
+}
+
+/**
+ * `agent:updated` question-marker projection (PROTOCOL §6.5 "Pending-question
+ * `agent:updated` payloads"): a committed marker mutation carries the mutated
+ * value in `event.data` — a set is the message id, a clear is a WRITTEN empty
+ * string, and a legacy marker-less session omits the field. Mirror exactly the
+ * string fields present so the store reflects the marker in the same
+ * synchronous step the event is applied (the follow-up `agent.get` refresh is
+ * async and can land after a later `agent:queue:updated` shrink, which would
+ * otherwise reopen a just-answered question set for one event interval).
+ * Omitted / non-string fields are left untouched — never fabricated.
+ */
+type PendingQuestionMarkerFields = Partial<
+  Pick<AgentMetadata, 'pendingQuestionsMessageId' | 'dismissedQuestionsMessageId'>
+>;
+
+export function pendingQuestionMarkersFromWorkspaceEvent(event: {
+  type?: string;
+  data?: any;
+}): [string, PendingQuestionMarkerFields] | null {
+  if (event.type !== 'agent:updated') return null;
+  const data = event.data;
+  if (!data || typeof data !== 'object') return null;
+  const agentId = data.agentId;
+  if (typeof agentId !== 'string' || agentId.length === 0) return null;
+  const fields: PendingQuestionMarkerFields = {};
+  if (typeof data.pendingQuestionsMessageId === 'string') {
+    fields.pendingQuestionsMessageId = data.pendingQuestionsMessageId;
+  }
+  if (typeof data.dismissedQuestionsMessageId === 'string') {
+    fields.dismissedQuestionsMessageId = data.dismissedQuestionsMessageId;
+  }
+  if (Object.keys(fields).length === 0) return null;
+  return [agentId, fields];
 }
 
 function userMessageFromWorkspaceEvent(event: WorkspaceEvent): [string, AgentMessage] | null {
@@ -782,6 +1029,7 @@ type SessionComparisonSnapshot = Pick<
   | 'acpSessionId'
   | 'createdAt'
   | 'updatedAt'
+  | 'retiredAt'
   | 'lastActivity'
   | 'hasUnread'
   | 'currentTurnNumber'
@@ -801,6 +1049,7 @@ type SessionComparisonSnapshot = Pick<
   attentionRequestReason: string | undefined;
   attentionRequestTimestamp: string | undefined;
   specialist: string | undefined;
+  chiefPromptVersion: number | undefined;
   completionReport: string | undefined;
   taskNoteId: string | undefined;
   dismissedQuestionsMessageId: string | undefined;
@@ -811,11 +1060,11 @@ type SessionComparisonSnapshot = Pick<
   sandboxBranch: string | undefined;
   waitingForAgentIdsKey: string | undefined;
   turnInFlight: boolean | undefined;
-  liveTurnOpen: boolean | undefined;
-  liveTurnOpenedAt: string | undefined;
-  tailCapPruned: boolean | undefined;
+  feOwnedFieldsKey: string;
   harnessVersion: string | undefined;
   harnessFeaturesKey: string | undefined;
+  detailFieldsKey: string;
+  nodeFieldsKey: string;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
@@ -844,6 +1093,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     acpSessionId: session.acpSessionId,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
+    retiredAt: session.retiredAt,
     lastActivity: session.lastActivity,
     hasUnread: session.hasUnread,
     currentTurnNumber: session.currentTurnNumber,
@@ -857,6 +1107,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     attentionRequestReason: attentionRequest?.reason,
     attentionRequestTimestamp: attentionRequest?.timestamp,
     specialist: typeof metadata?.specialist === 'string' ? metadata.specialist : undefined,
+    chiefPromptVersion: metadata?.chiefPromptVersion,
     completionReport:
       typeof metadata?.completionReport === 'string' ? metadata.completionReport : undefined,
     taskNoteId: typeof metadata?.taskNoteId === 'string' ? metadata.taskNoteId : undefined,
@@ -877,10 +1128,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
       ? session.waitingForAgentIds.join(',')
       : undefined,
     turnInFlight: session.turnInFlight === true ? true : undefined,
-    liveTurnOpen: session.liveTurnOpen === true ? true : undefined,
-    liveTurnOpenedAt:
-      typeof session.liveTurnOpenedAt === 'string' ? session.liveTurnOpenedAt : undefined,
-    tailCapPruned: session.tailCapPruned === true ? true : undefined,
+    feOwnedFieldsKey: feOwnedFieldsComparisonKey(session),
     // Harness stamp (§5.5, additive): normally immutable, but a daemon
     // upgrade backfills harnessVersion on legacy rows and first activation
     // materializes harnessFeatures — those upserts must not be swallowed
@@ -892,6 +1140,8 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
           .map(([k, v]) => `${k}=${v}`)
           .join(',')
       : undefined,
+    detailFieldsKey: detailFieldsComparisonKey(session),
+    nodeFieldsKey: JSON.stringify(agentNodeUpdates(session)),
     messageCount: messages.length,
     wireMessageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
@@ -917,6 +1167,8 @@ function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): bool
 type SessionUpsertStorageOptions = {
   preserveExplicitRuntimeFlags: boolean;
   allowActiveTurnRuntimeFlagClear: boolean;
+  /** The incoming snapshot is an `agent.list` row (see `DETAIL_ONLY_SESSION_FIELDS`). */
+  listProjection: boolean;
 };
 
 function applySessionUpsert(
@@ -927,17 +1179,17 @@ function applySessionUpsert(
   const finalSession = toStoredSession(session);
   const agentId = String(finalSession.id);
   const wsId = String(session.workspaceId);
-  const existing = getSession(state, agentId);
+  const prior = getSession(state, agentId);
+  const existing = prior?.workspaceId === session.workspaceId ? prior : undefined;
 
-  // The latch is FE-owned: wire sessions never carry it, so an upsert must
-  // not clear it. An incoming snapshot itself overflowing the cap also
-  // latches (its overflow rows were just dropped client-side). No hole
-  // accounting here — a re-delivered snapshot must not double-count.
-  if (
-    existing?.tailCapPruned === true ||
-    (session.messages?.length ?? 0) > MAX_MESSAGES_PER_AGENT
-  ) {
-    finalSession.tailCapPruned = true;
+  // FE-owned fields never ride the wire snapshot: each one's stored value
+  // comes from its FE_OWNED_FIELD_POLICY entry, never from `session`.
+  for (const key of FE_OWNED_FIELD_KEYS) {
+    applyFeOwnedFieldPolicy(finalSession, key, existing, session);
+  }
+
+  if (existing && options.listProjection) {
+    carryForwardDetailFields(finalSession, existing, session);
   }
 
   if (existing) {
@@ -1008,15 +1260,6 @@ function applySessionUpsert(
     ) {
       finalSession.lastAgentResponse = existing.lastAgentResponse;
     }
-    if (existing.liveTurnOpen === true && finalSession.liveTurnOpen === undefined) {
-      const incomingClosed =
-        session.isActive === false ||
-        (typeof session.status === 'string' && TERMINAL_STATUSES.has(session.status));
-      if (!incomingClosed) {
-        finalSession.liveTurnOpen = true;
-        finalSession.liveTurnOpenedAt = existing.liveTurnOpenedAt;
-      }
-    }
 
     // Guard (monorepo#1815): an agents.list snapshot fetched while the daemon
     // still reported a failure can land AFTER the live crash-recovery edges
@@ -1052,6 +1295,67 @@ function applySessionUpsert(
     }
   }
 
+  // Placement survives wakes. A legacy-shaped or in-flight pre-placement
+  // snapshot must not erase known path provenance and re-enable head actions.
+  if (existing) {
+    const previousNodeFields = agentNodeUpdates(existing);
+    for (const key of [
+      'nodeId',
+      'leaseId',
+      'placement',
+      'effectiveIsolation',
+      'nodeState',
+      'nodePath',
+    ] as const) {
+      if (
+        !Object.prototype.hasOwnProperty.call(session, key) &&
+        previousNodeFields[key] !== undefined
+      ) {
+        Object.assign(finalSession, { [key]: previousNodeFields[key] });
+      }
+    }
+  }
+  finalSession.checkpoint = currentAgentCheckpoint(existing?.checkpoint, finalSession.checkpoint);
+  if (finalSession.status === AgentStatus.Halted) {
+    finalSession.isStreaming = false;
+    finalSession.isProcessing = false;
+    finalSession.isResponding = false;
+    finalSession.isActive = false;
+    finalSession.turnInFlight = false;
+    finalSession.liveTurnOpen = false;
+    finalSession.liveTurnOpenedAt = undefined;
+  }
+
+  const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
+  if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
+    return state;
+  }
+
+  const ownedState = prior && !existing ? removeFromWorkspaceIndex(state, agentId) : state;
+  let next = setSession(ownedState, agentId, finalSession);
+  next = registerInWorkspaceIndex(next, agentId, wsId);
+  return next;
+}
+
+/**
+ * Reinstate a previously stored session (soft-hide undo, failed delete,
+ * `agent:delete-cancelled`). Unlike a wire snapshot, the saved session already
+ * carries its FE-owned fields, so they are copied back verbatim instead of
+ * running the carry-forward policy — that policy seeds from `existing`, which
+ * a restore after `removeSession` never has.
+ */
+function applyStoredSessionRestore(
+  state: AgentSessionState,
+  session: StoredAgentSession,
+): AgentSessionState {
+  const finalSession = toStoredSession(session);
+  const agentId = String(finalSession.id);
+  const wsId = String(session.workspaceId);
+  for (const key of FE_OWNED_FIELD_KEYS) {
+    restoreFeOwnedField(finalSession, key, session);
+  }
+
+  const existing = getSession(state, agentId);
   const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
   if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
     return state;
@@ -1091,8 +1395,18 @@ export const initialState: AgentSessionState = {
 // Actions
 // ============================================================================
 
-/** Upsert a session — normalize dates, order/prune messages to `MAX_MESSAGES_PER_AGENT`, register in workspace index */
-export const upsertSession = createAction<[session: AgentSession]>('agentSessions/upsertSession');
+export const setAgentBackgroundPending = createAction<[agentId: string, pending: boolean]>(
+  'agentSessions/setAgentBackgroundPending',
+);
+
+/**
+ * Upsert a wire session — normalize dates, order/prune messages to
+ * `MAX_MESSAGES_PER_AGENT`, register in workspace index. The payload rejects
+ * FE-owned keys (`WireAgentSession`): a stored row is not an incoming snapshot.
+ */
+export const upsertSession = createAction<[session: WireAgentSession]>(
+  'agentSessions/upsertSession',
+);
 
 /** Remove a session by agentId (from byAgentId and agentIdsByWorkspace) */
 export const removeSession = createAction<[agentId: string]>('agentSessions/removeSession');
@@ -1141,6 +1455,7 @@ export const updateSession = createAction<
   [
     agentId: string,
     updates: Partial<AgentSession> & Pick<StoredAgentSession, 'liveTurnOpen' | 'liveTurnOpenedAt'>,
+    options?: { reasoningEffortSource: 'control' | 'encoder' },
   ]
 >('agentSessions/updateSession');
 
@@ -1211,6 +1526,25 @@ export const agentSessionRetryWithModelRequested = createAsyncAction<
   [agentId: string, wsId: string, model: string],
   void
 >('agentSessions/retryWithModel', 'agentSessions/retryWithModelRequested');
+
+/**
+ * Saga-owned retry-on-another-provider side effect trigger (#4455).
+ *
+ * The quota-exceeded banner offers sibling providers, not models, but
+ * `agent.setModel` is the only FE→daemon path that can move a LIVE agent to
+ * another provider — and it requires a concrete modelId. So the saga first
+ * resolves a model on `providerId` from that provider's `models.list`
+ * catalog, switches the session with it, and only then redrives the failed
+ * turn through the retry-with-model path with that model as an explicit
+ * override (the plain last-message retry would re-send the exhausted
+ * provider's recorded model). Kept as its own action (rather than reusing
+ * retry-with-model) because the caller genuinely does not know a model id —
+ * picking one is the saga's job.
+ */
+export const agentSessionRetryWithProviderRequested = createAsyncAction<
+  [agentId: string, wsId: string, providerId: string],
+  void
+>('agentSessions/retryWithProvider', 'agentSessions/retryWithProviderRequested');
 
 /**
  * Saga-owned retry-from-stalled side effect trigger (monorepo#3402): cancels
@@ -1298,12 +1632,49 @@ export type BulkUpsertSessionsOptions = {
    * splitting one hydration into multiple reducer commits.
    */
   staleRuntimeFlagClearAgentIds?: string[];
+  /**
+   * The sessions are `agent.list` rows (§5.5 list projection): the fields in
+   * `DETAIL_ONLY_SESSION_FIELDS` / `DETAIL_ONLY_METADATA_FIELDS` are absent
+   * regardless of the session's state, so an omitted one keeps the value a
+   * previous detail read stored. Never set this for `agent.get` /
+   * `agent.getSession` / create-response rows — their omissions are authoritative.
+   */
+  listProjection?: boolean;
 };
 
-/** Bulk upsert sessions (initial load / snapshot reconciliation / batched upsert storage) */
+/**
+ * Bulk upsert wire sessions (initial load / snapshot reconciliation / batched
+ * upsert storage). Like `upsertSession`, the payload rejects FE-owned keys.
+ */
 export const bulkUpsertSessions = createAction<
-  [sessions: AgentSession[], options?: BulkUpsertSessionsOptions]
+  [sessions: WireAgentSession[], options?: BulkUpsertSessionsOptions]
 >('agentSessions/bulkUpsertSessions');
+
+/**
+ * Reinstate saved stored sessions verbatim (FE-owned fields included), or apply
+ * a local patch to one (`[{ ...existing, ...patch }]`). Skips the wire-snapshot
+ * carry-forward policy entirely.
+ *
+ * The type boundary is enforced in the data-loss direction only: the wire
+ * upserts reject a `StoredAgentSession` (`WireAgentSession`), but this action's
+ * `StoredAgentSession[]` input is structurally satisfied by a wire `AgentSession`
+ * too — the wire→restore distinction is semantic, so only pass rows previously
+ * read from this slice.
+ */
+export const restoreStoredSessions = createAction<[sessions: StoredAgentSession[]]>(
+  'agentSessions/restoreStoredSessions',
+);
+
+/**
+ * Record that `agentId`'s detail projection (`agent.get` / `agent.getSession`)
+ * was read: the detail-only fields the `agent.list` row omits (PROTOCOL §5.5)
+ * are now authoritative on the stored row, so an absent `harnessFeatures`
+ * means "no snapshot", not "not loaded yet". Dispatched by the read seams
+ * after the detail upsert; cleared with the session.
+ */
+export const markAgentDetailHydrated = createAction<[agentId: string]>(
+  'agentSessions/markAgentDetailHydrated',
+);
 
 /** Remove all sessions for a workspace */
 export const removeWorkspaceSessions = createAction<[wsId: string]>(
@@ -1347,7 +1718,7 @@ export const setHistoryOldestReached = createAction<[agentId: string, oldestReac
  * newest end ⇒ contiguous, mirroring the append overlap rule).
  */
 export const seedHistoryAround = createAction<
-  [agentId: string, messages: AgentMessage[], startOrdinalEstimate: number]
+  [agentId: string, messages: AgentMessage[], startOrdinalEstimate?: number]
 >('agentSessions/seedHistoryAround');
 
 /** Drop an agent's scrollback history segment entirely. */
@@ -1360,6 +1731,12 @@ export const clearHistorySegment = createAction<[agentId: string]>(
 // ============================================================================
 
 export const agentSessionReducer = createReducer<AgentSessionState>(initialState);
+agentSessionReducer.with(setAgentBackgroundPending, (state, { payload: [agentId, pending] }) => {
+  if (pending)
+    return { ...state, backgroundModePending: { ...state.backgroundModePending, [agentId]: true } };
+  const { [agentId]: _removed, ...rest } = state.backgroundModePending ?? {};
+  return { ...state, backgroundModePending: rest };
+});
 agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   if (!state.byAgentId[agentId]) return state;
 
@@ -1367,7 +1744,12 @@ agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   let next: AgentSessionState = { ...state, byAgentId: rest };
   next = removeFromWorkspaceIndex(next, agentId);
   next = removeHistorySegment(next, agentId);
+  next = removeDetailHydrated(next, agentId);
   return next;
+});
+agentSessionReducer.with(markAgentDetailHydrated, (state, { payload: [agentId] }) => {
+  if (!state.byAgentId[agentId] || state.detailHydrated?.[agentId]) return state;
+  return { ...state, detailHydrated: { ...state.detailHydrated, [agentId]: true } };
 });
 agentSessionReducer.with(addMessage, (state, { payload: [agentId, message] }) =>
   addMessageToSession(state, agentId, message),
@@ -1433,6 +1815,14 @@ agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] })
   return next;
 });
 agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
+  if (['agent:updated', 'agent:status-changed', 'hub:checkpoint'].includes(event.type)) {
+    const agentId = event.data?.agentId;
+    const existing = typeof agentId === 'string' ? getSession(state, agentId) : undefined;
+    if (existing && existing.workspaceId === event.workspaceId) {
+      const fields = agentNodeUpdates(event.data, existing);
+      if (Object.keys(fields).length) state = updateSessionFields(state, agentId, fields);
+    }
+  }
   const userMessage = userMessageFromWorkspaceEvent(event);
   if (userMessage) {
     return addMessageToSession(state, userMessage[0], userMessage[1]);
@@ -1445,6 +1835,23 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
     if (!existing) return state;
     if (existing.stats && shallowEqual(existing.stats, stats)) return state;
     return updateSessionFields(state, agentId, { stats });
+  }
+
+  const markers = pendingQuestionMarkersFromWorkspaceEvent(event);
+  if (markers) {
+    const [agentId, fields] = markers;
+    const existing = getSession(state, agentId);
+    if (!existing || (event.workspaceId && existing.workspaceId !== event.workspaceId))
+      return state;
+    const metadata = existing.metadata ?? {};
+    if (
+      Object.entries(fields).every(
+        ([key, value]) => metadata[key as keyof typeof metadata] === value,
+      )
+    ) {
+      return state;
+    }
+    return updateSessionFields(state, agentId, { metadata: { ...metadata, ...fields } });
   }
 
   const canonical = canonicalFieldsFromWorkspaceEvent(event);
@@ -1463,6 +1870,7 @@ agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   // already open) must not wipe the current turn's live tool. The first
   // tool-arm ping of the new turn repopulates the field.
   const existing = getSession(state, agentId);
+  if (existing && event.workspaceId && existing.workspaceId !== event.workspaceId) return state;
   const opensLiveTurn = updates.liveTurnOpen === true && existing?.liveTurnOpen !== true;
   const merged: Partial<Omit<StoredAgentSession, 'messages'>> = {
     ...(updates as Partial<Omit<StoredAgentSession, 'messages'>>),
@@ -1477,19 +1885,29 @@ agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) =>
 });
 agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, options] }) => {
   let next = state;
+  const listProjection = options?.listProjection === true;
   const defaultStorageOptions: SessionUpsertStorageOptions = {
     preserveExplicitRuntimeFlags: options?.preserveExplicitRuntimeFlags ?? true,
     allowActiveTurnRuntimeFlagClear: options?.allowActiveTurnRuntimeFlagClear ?? false,
+    listProjection,
   };
   const staleClearIds = new Set(options?.staleRuntimeFlagClearAgentIds ?? []);
   for (const session of sessions) {
-    const storageOptions = staleClearIds.has(String(session.id))
+    const storageOptions: SessionUpsertStorageOptions = staleClearIds.has(String(session.id))
       ? {
           preserveExplicitRuntimeFlags: false,
           allowActiveTurnRuntimeFlagClear: true,
+          listProjection,
         }
       : defaultStorageOptions;
     next = applySessionUpsert(next, session, storageOptions);
+  }
+  return next;
+});
+agentSessionReducer.with(restoreStoredSessions, (state, { payload: [sessions] }) => {
+  let next = state;
+  for (const session of sessions) {
+    next = applyStoredSessionRestore(next, session);
   }
   return next;
 });
@@ -1502,8 +1920,11 @@ agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) =
   }
 
   const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-  return removeHistorySegmentsFor(
-    { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
+  return removeDetailHydratedFor(
+    removeHistorySegmentsFor(
+      { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
+      agentIds,
+    ),
     agentIds,
   );
 });
@@ -1521,8 +1942,8 @@ agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }
   }
   if (!byAgentIdChanged && !(wsId in state.agentIdsByWorkspace)) return state;
   const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-  return removeHistorySegmentsFor(
-    { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
+  return removeDetailHydratedFor(
+    removeHistorySegmentsFor({ ...state, byAgentId, agentIdsByWorkspace: restWorkspaces }, doomed),
     doomed,
   );
 });
@@ -1530,10 +1951,24 @@ agentSessionReducer.with(clearAllSessions, () => initialState);
 // -----------------------------------------------------------------------
 // Cross-slice: handle workspace-agents actions directly (replaces bridge saga)
 // -----------------------------------------------------------------------
+// Streaming means the process was admitted, so every reducer path that sets
+// isStreaming=true also drops the FE-owned processQueueHint. These paths
+// (setAgentStreaming, chatSendStarted via agent:stream:start,
+// chatStreamingReconciled) bypass canonicalSessionUpdates, so a missed
+// agent:process:resumed would otherwise leave the slot-wait warning up while
+// the agent streams.
+function streamingStartedFields(
+  existing: StoredAgentSession | undefined,
+): Pick<StoredAgentSession, 'processQueueHint'> | Record<string, never> {
+  return existing?.processQueueHint ? { processQueueHint: undefined } : {};
+}
 agentSessionReducer.with(setAgentStreaming, (state, { payload: [agentId, isStreaming] }) => {
   const session = getSession(state, agentId);
-  if (!session || session.isStreaming === isStreaming) return state;
-  return updateSessionFields(state, agentId, { isStreaming });
+  if (!session) return state;
+  return updateSessionFields(state, agentId, {
+    isStreaming,
+    ...(isStreaming ? streamingStartedFields(session) : {}),
+  });
 });
 agentSessionReducer.with(updateAgentDigest, (state, { payload: [, agentId, digest] }) => {
   const session = getSession(state, agentId);
@@ -1553,7 +1988,11 @@ agentSessionReducer.with(renameAgent, (state, { payload: [, agentId, name] }) =>
 agentSessionReducer.with(chatSendStarted, (state, { payload: { agentId, wsId, timestampIso } }) => {
   const existing = getSession(state, agentId);
   if (existing) {
-    return updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true });
+    return updateSessionFields(state, agentId, {
+      isStreaming: true,
+      isProcessing: true,
+      ...streamingStartedFields(existing),
+    });
   }
   if (!wsId) return state;
   // Session not yet loaded (e.g. restored workspace where disk load is still in flight).
@@ -1610,7 +2049,30 @@ agentSessionReducer.with(chatReset, (state, { payload: [agentId] }) =>
   ),
 );
 agentSessionReducer.with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
-  updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
+  updateSessionFields(state, agentId, {
+    isStreaming: true,
+    isProcessing: true,
+    ...streamingStartedFields(getSession(state, agentId)),
+  }),
+);
+// Prompt turns never emit agent:stream:start, and the daemon's turn-start
+// budget re-check runs AFTER the send path already set isStreaming=true
+// (chatSendStarted), so a queue hint that lands during that window has no
+// streaming edge left to clear it. The daemon emits every agent:stream:chunk,
+// agent:tool:call and agent:stream:status of a turn after admission, so the
+// first of them is concrete evidence the turn got past the gate — drop the
+// hint there too. Canonical isResponding alone still never clears it (see
+// canonicalSessionUpdates).
+agentSessionReducer.with(agentStreamUpdateReceived, (state, { payload: [update] }) => {
+  if (update.eventType !== 'chunk' && update.eventType !== 'content-blocks') return state;
+  return updateSessionFields(
+    state,
+    update.agentId,
+    streamingStartedFields(getSession(state, update.agentId)),
+  );
+});
+agentSessionReducer.with(streamStatusReceived, (state, { payload: [agentId] }) =>
+  updateSessionFields(state, agentId, streamingStartedFields(getSession(state, agentId))),
 );
 agentSessionReducer.with(chatInitialized, (state, { payload: [agentId, data] }) => {
   const session = getSession(state, agentId);
@@ -1794,7 +2256,9 @@ agentSessionReducer.with(
       // An estimated 0 start is still an estimate — exact only via the
       // walk's nextToken === null (setHistoryOldestReached).
       oldestReached: false,
-      startOrdinalEstimate: Math.max(0, Math.round(startOrdinalEstimate)),
+      ...(startOrdinalEstimate === undefined
+        ? {}
+        : { startOrdinalEstimate: Math.max(0, Math.round(startOrdinalEstimate)) }),
     });
   },
 );
@@ -1806,14 +2270,18 @@ agentSessionReducer.with(clearHistorySegment, (state, { payload: [agentId] }) =>
 // transcript — is dropped in the SAME dispatch the chat-state reducer resets
 // the walk cursors and fetching flags in (atomic walk reset; the scrollback
 // saga's clearHistorySegment chain still runs and is idempotent here).
-agentSessionReducer.with(chatTranscriptSnapshotApplied, (state, { payload: [agentId, meta] }) => {
-  if (meta.resumed !== false) return state;
-  // Fresh (non-resumed) transcript: clear the FE-owned cap-pruned latch with
-  // the segment — both described the discarded transcript. Only touch the
-  // session when actually latched so an unlatched apply stays a state no-op.
-  const next =
-    getSession(state, agentId)?.tailCapPruned === true
-      ? updateSessionFields(state, agentId, { tailCapPruned: false })
-      : state;
-  return removeHistorySegment(next, agentId);
-});
+agentSessionReducer.with(
+  chatTranscriptSnapshotApplied,
+  (state, { payload: [agentId, meta, replayed] }) => {
+    // Local replay retains the walk cursor, so its history and cap latch must survive too.
+    if (replayed || meta.resumed !== false) return state;
+    // Fresh (non-resumed) transcript: clear the FE-owned cap-pruned latch with
+    // the segment — both described the discarded transcript. Only touch the
+    // session when actually latched so an unlatched apply stays a state no-op.
+    const next =
+      getSession(state, agentId)?.tailCapPruned === true
+        ? updateSessionFields(state, agentId, { tailCapPruned: false })
+        : state;
+    return removeHistorySegment(next, agentId);
+  },
+);

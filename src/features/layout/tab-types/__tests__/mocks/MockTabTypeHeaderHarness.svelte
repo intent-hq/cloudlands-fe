@@ -8,25 +8,35 @@
     tab,
     workspaceId = 'ws-1',
     isActive = true,
+    renderPrimary = false,
   }: {
     component: Component<Record<string, unknown>>;
     tab: Record<string, unknown>;
     workspaceId?: string;
     isActive?: boolean;
+    renderPrimary?: boolean;
   } = $props();
 
   const header = createPanelHeaderContext();
+  let menuOpen = $state(false);
 </script>
 
 <Content {tab} {workspaceId} {isActive} />
 
+{#if renderPrimary && header.actions.current?.primary}
+  <div data-testid="header-primary-actions">
+    {@render header.actions.current.primary()}
+  </div>
+{/if}
+
 {#if header.actions.current}
-  <Menu.Root>
+  <Menu.Root bind:open={menuOpen}>
     <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
     <Menu.Content portal={false} data-testid="header-actions">
       {@render header.actions.current.display?.()}
       <Menu.Separator />
       {@render header.actions.current.actions?.()}
+      {@render header.actions.current.additional?.(menuOpen)}
     </Menu.Content>
   </Menu.Root>
 {/if}

@@ -38,6 +38,7 @@ import {
 import { createMentionSuggestionRenderer } from '$lib/components/chat/input/mention-suggestion-renderer';
 import { getMentionSystem, type SearchContext } from '$lib/services/mentions';
 import { toPromptToken } from '$lib/services/mentions/format';
+import { memberMentionLabel } from '$lib/utils/member-mention-token';
 import { m } from '$shared/paraglide/messages.js';
 
 // Import note primitives extensions
@@ -230,6 +231,7 @@ const SelectionPreservation = Extension.create({
 });
 
 interface EditorConfigOptions {
+  ariaLabel?: string;
   element: HTMLElement;
   content: string;
   editable: boolean;
@@ -253,6 +255,7 @@ interface EditorConfigOptions {
  */
 export function createEditorConfig(options: EditorConfigOptions): EditorOptions {
   const {
+    ariaLabel = m.workspace_noteWithComments_editor_ariaLabel(),
     element,
     content,
     editable,
@@ -385,7 +388,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         createWorkspacesLink({
           openOnClick: false,
           HTMLAttributes: {
-            class: 'text-primary underline cursor-pointer',
+            class: 'text-primary-ink underline cursor-pointer',
           },
         }),
         TaskList.configure({
@@ -501,7 +504,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                       class: 'mention-chip',
                       tabindex: '0',
                     },
-                    label, // Display without @ prefix for cleaner appearance
+                    node.attrs.type === 'member' ? memberMentionLabel(label) : label,
                   ];
                 },
                 renderText: mentionRenderText,
@@ -800,7 +803,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         createWorkspacesLink({
           openOnClick: false,
           HTMLAttributes: {
-            class: 'text-primary underline cursor-pointer',
+            class: 'text-primary-ink underline cursor-pointer',
           },
         }),
         TaskList.configure({
@@ -920,7 +923,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
                       class: 'mention-chip',
                       tabindex: '0',
                     },
-                    label, // Display without @ prefix for cleaner appearance
+                    node.attrs.type === 'member' ? memberMentionLabel(label) : label,
                   ];
                 },
                 renderText: mentionRenderText,
@@ -1059,6 +1062,9 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
     },
     editorProps: {
       attributes: {
+        role: 'textbox',
+        'aria-multiline': 'true',
+        'aria-label': ariaLabel,
         class:
           'tiptap-editor h-full !outline-none focus:!outline-none border-none prose prose-sm dark:prose-invert max-w-none',
       },

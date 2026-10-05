@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import './app-layout.css';
   import { m } from '$shared/paraglide/messages.js';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
@@ -7,7 +8,7 @@
 
   import {
     initializeReleaseNotes,
-    closeReleaseNotesModal,
+    dismissReleaseNotes,
   } from '$store/renderer/slices/release-notes/release-notes-slice';
   import {
     selectShowReleaseNotesModal,
@@ -32,6 +33,7 @@
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
+  import { registerWorkspaceSpacesShortcut } from '$features/workspace/utils/workspace-spaces-shortcut';
   import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -44,11 +46,13 @@
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
   import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
+  import ShareWorkspaceDialogHost from '$lib/components/modals/ShareWorkspaceDialogHost.svelte';
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import NodeVersionToast from '$lib/components/NodeVersionToast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
+  import { ConfirmHost } from '$lib/components/patterns/confirm';
   import LinkTooltip from '$lib/components/ui/tooltip/LinkTooltip.svelte';
   import LinkActionMenu from '$features/navigation/LinkActionMenu.svelte';
   import OffscreenWebviewHost from '$lib/components/browser/OffscreenWebviewHost.svelte';
@@ -79,9 +83,16 @@
   import {
     toggleTerminalOverlay,
     openTerminalOverlay,
+    createPanelTerminalRequested,
   } from '$store/renderer/slices/terminals/terminals-slice';
+  import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+  import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
+    selectHidesAgentLifecycleActions,
+    selectIsCollaboratorOnlyClient,
+    selectIsWorkspaceCollaborator,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -106,8 +117,10 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+  import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
+  import { dismissSplashElement } from '$features/backend/splash-gate';
   import { onDestroy, onMount, untrack } from 'svelte';
 
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
@@ -144,6 +157,15 @@
   } from '$features/quit-confirmation/quit-confirmation-service';
   import QuitConfirmationModal from '$lib/components/modals/QuitConfirmationModal.svelte';
   import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
+  import {
+    installInviteConsentService,
+    respondToInviteConsent,
+  } from '$features/invite-consent/invite-consent-service';
+  import CollaborationSignInHost from '$features/collaboration-auth/renderer/CollaborationSignInHost.svelte';
+  import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
+  import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
+  import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
+  import InviteProgressHost from '$features/invite-progress/InviteProgressHost.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
@@ -157,6 +179,9 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  // Workspace creation (repo picker) is administrator-only (multiplayer w3).
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const canCreateWorkspace$ = selectWorkspaceCreationVisible();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
@@ -227,6 +252,10 @@
   // Quit confirmation modal state (main-process quit/restart interception)
   let showQuitConfirmationModal = $state(false);
   let quitConfirmationPayload = $state<QuitConfirmationShowPayload | null>(null);
+
+  // Invite consent modal state (main-process intent://invite GitHub identity prompt)
+  let showInviteConsentModal = $state(false);
+  let inviteConsentPayload = $state<InviteConsentShowPayload | null>(null);
 
   // The root route is a minimal empty state and fresh windows boot at
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
@@ -310,31 +339,10 @@
 
   onMount(() => {
     // Hide the splash screen from app.html now that Svelte has mounted
-    const splash = document.getElementById('splash');
-    if (splash) {
-      splash.classList.add('mounted');
-      // Remove from DOM after fade-out transition completes
-      splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-    }
+    dismissSplashElement(document.getElementById('splash'));
 
     // Remove the static drag region from app.html now that Svelte's own drag region is active
     document.getElementById('app-drag-region')?.remove();
-
-    // ===== PERF: Animation pause when tab hidden =====
-    // Adds/removes 'animations-paused' class on body to pause CSS animations
-    // when the page is not visible, reducing GPU usage
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        document.body.classList.add('animations-paused');
-      } else {
-        document.body.classList.remove('animations-paused');
-      }
-    };
-    // Set initial state
-    if (document.hidden) {
-      document.body.classList.add('animations-paused');
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // ===== Link tooltip on hover =====
     // Attach tooltip handler to document.body so hovering over any <a> in the
@@ -361,6 +369,18 @@
       onDismiss: () => {
         showQuitConfirmationModal = false;
         quitConfirmationPayload = null;
+      },
+    });
+
+    // Initialize invite-consent service (in-app modal for the invite GitHub identity check)
+    const disposeInviteConsent = installInviteConsentService({
+      onShow: (payload) => {
+        inviteConsentPayload = payload;
+        showInviteConsentModal = true;
+      },
+      onDismiss: () => {
+        showInviteConsentModal = false;
+        inviteConsentPayload = null;
       },
     });
 
@@ -463,7 +483,7 @@
 
     // Direct workspace routes open their tab without mirroring route identity into Redux.
     if (workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId));
+      appStore.dispatch(openWorkspaceTab(workspaceId, $page.state?.presenceFollowRequestId));
       appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
     }
     // Register global palette shortcuts (config-driven later)
@@ -513,7 +533,31 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
+      onCreateAgent: (workspaceId) => {
+        // `agent.create` is refused (-32003) for a collaborator connection.
+        if (selectHidesAgentLifecycleActions.select(appStore.state, workspaceId)) return;
+        appStore.dispatch(createAgentRequested(workspaceId));
+      },
+      onCreateNote: (workspaceId) => appStore.dispatch(createNoteRequested(workspaceId)),
+      onCreateTerminal: (workspaceId) =>
+        appStore.dispatch(createPanelTerminalRequested(workspaceId)),
+      ...(hasCapability('browserPanel')
+        ? {
+            onCreateBrowser: (workspaceId: string) =>
+              appStore.dispatch(
+                openTabInRightmostColumnRequested(workspaceId, {
+                  type: 'browser',
+                  title: m.layout_tabTypes_browser_title(),
+                  browserUrl: 'about:blank',
+                  closable: true,
+                }),
+              ),
+          }
+        : {}),
       onWorkspaceTabMoved: (detail) => dispatchWindowEvent(WORKSPACE_TAB_MOVED_EVENT, detail),
+      ...(hasCapability('windowChrome')
+        ? { closeWindow: () => invoke(IPC_CHANNELS.WINDOW.CLOSE) }
+        : {}),
       resolveBinding: getEffectiveShortcut,
     });
 
@@ -575,16 +619,9 @@
       action: openCommandPalette,
     });
     // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
-    const toggleAllSpaces = () => {
-      appStore.dispatch(togglePanel('all-workspaces'));
-    };
-    register({
-      key: 'o',
-      meta: true,
-      shortcutId: 'global.toggle-spaces',
-      description: 'Toggle All Spaces (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      skipInEditableElements: true,
-      action: toggleAllSpaces,
+    registerWorkspaceSpacesShortcut(paletteShortcuts, {
+      toggleSpaces: () => appStore.dispatch(togglePanel('all-workspaces')),
+      resolveBinding: getEffectiveShortcut,
     });
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
     // F12 - Go to Definition (dispatches event for Monaco editor to handle)
@@ -621,15 +658,11 @@
       description: 'Go to Line (Mac)',
       action: openGoToLineAction,
     });
-    // Cmd+Shift+F (Mac) / Ctrl+Shift+F (Win/Linux) -> search
-    register({
-      key: 'f',
-      meta: isMac,
-      ctrl: !isMac,
-      shift: true,
-      shortcutId: 'global.search',
-      description: 'Search in files', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      action: openSearch,
+    // Mod+F yields to local find; Mod+Shift+F opens global search directly.
+    registerGlobalSearchShortcuts(paletteShortcuts, {
+      isMac,
+      openSearch,
+      resolveBinding: () => getEffectiveShortcut('global.search'),
     });
     // Alt/Option + Z -> toggle word wrap (like VS Code)
     register({
@@ -642,6 +675,8 @@
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
     // Registered globally so it works on workspace and non-workspace pages alike.
     const toggleTerminal = () => {
+      // Collaborators (multiplayer w3) are refused on terminal methods: no root
+      // overlay for a collaborator-only client, none for a collaborator workspace.
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
@@ -649,6 +684,7 @@
         selectedWorkspaceId: $currentWorkspaceTabId,
         routeWorkspaceId: currentWorkspaceId,
       });
+      if (selectIsWorkspaceCollaborator.select(appStore.state, terminalContextId)) return;
       appStore.dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
@@ -822,22 +858,21 @@
         'sveltekit:navigation-error',
         handleNavigationError as EventListener,
       );
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
       disposeInterruptedAgents();
       disposeQuitConfirmation();
+      disposeInviteConsent();
     };
   });
 
-  // Both modal actions go through the service so it stops the cross-window
-  // watcher before sending the resolution request.
+  // Return the daemon result so recovery can retain unresolved rows and retry.
   async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
-    await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
+    return await resolveInterruptedAgents(new LiveAppClient(), resumeIds, abandonIds);
   }
 
   async function handleAbandonAllAgents(abandonIds: string[]) {
-    await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
+    return await resolveInterruptedAgents(new LiveAppClient(), [], abandonIds);
   }
 
   function handleGitHubAuthSuccess() {
@@ -852,9 +887,9 @@
       });
     }
 
-    import('svelte-sonner')
-      .then(({ toast }) => {
-        toast.success(m.layout_appShell_githubConnected_toast(), {
+    import('$lib/components/patterns/notify')
+      .then(({ notify }) => {
+        notify.success(m.layout_appShell_githubConnected_toast(), {
           duration: 3000,
         });
       })
@@ -970,7 +1005,9 @@
             </div>
 
             <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->
-            <RootQuakeTerminalOverlay />
+            {#if !$isCollaboratorOnlyClient$}
+              <RootQuakeTerminalOverlay />
+            {/if}
           </main>
         </div>
       </div>
@@ -1010,6 +1047,7 @@
   <AuggieSetupGate />
 
   <Toast />
+  <ConfirmHost />
 
   <!-- Once-per-session Node.js requirement warning (renders nothing itself) -->
   <NodeVersionToast />
@@ -1059,7 +1097,7 @@
 
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
-    open={$showCreateModal$}
+    open={$showCreateModal$ && $canCreateWorkspace$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 
@@ -1072,6 +1110,9 @@
   <!-- Redux-owned Import-from-file wizard host (opened from the File menu) -->
   <ImportWorkspaceModalHost />
 
+  <!-- Redux-owned owner-side Share dialog host (sidebar kebab + tab context menu) -->
+  <ShareWorkspaceDialogHost />
+
   <SetupPromptDialog />
 
   <!-- Interrupted-agent recovery owns the startup modal slot. Keeping release
@@ -1081,7 +1122,7 @@
     <ReleaseNotesModal
       open={$showReleaseNotesModal$}
       releaseNotes={$releaseNotes$}
-      onClose={() => appStore.dispatch(closeReleaseNotesModal())}
+      onClose={() => appStore.dispatch(dismissReleaseNotes())}
     />
   {/if}
 
@@ -1100,9 +1141,9 @@
     agents={interruptedAgents}
     onResumeSelected={handleResumeSelectedAgents}
     onAbandonAll={handleAbandonAllAgents}
-    onClose={() => {
+    onClose={(reason) => {
       showInterruptedAgentsModal = false;
-      notifyInterruptedAgentsModalClosed();
+      notifyInterruptedAgentsModalClosed(reason);
     }}
   />
 
@@ -1110,11 +1151,29 @@
   <QuitConfirmationModal
     bind:open={showQuitConfirmationModal}
     payload={quitConfirmationPayload}
+    workspaceDetails={$workspaceItems}
     onRespond={(proceed) => {
       quitConfirmationPayload = null;
       respondToQuitConfirmation(proceed);
     }}
   />
+
+  <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
+  <CollaborationSignInHost />
+  <InviteConsentModal
+    bind:open={showInviteConsentModal}
+    payload={inviteConsentPayload}
+    onRespond={(action) => {
+      if (action === 'cancel') inviteConsentPayload = null;
+      respondToInviteConsent(action);
+    }}
+  />
+
+  <!-- Invite notice (intent://invite join failed / plaintext credential warning) -->
+  <InviteNoticeHost />
+
+  <!-- Invite progress (spinner + Cancel during the silent phases of an intent://invite join) -->
+  <InviteProgressHost />
 
   {#if import.meta.env.DEV}
     <DebugPanel />

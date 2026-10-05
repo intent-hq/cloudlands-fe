@@ -1,0 +1,315 @@
+<script lang="ts">
+  import { onMount, type Snippet } from 'svelte';
+  import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
+  import DiagramActionsMenu from './DiagramActionsMenu.svelte';
+
+  interface Props {
+    kind: 'mermaid' | 'custom';
+    children: Snippet;
+    header?: Snippet;
+    actions?: Snippet;
+    actionsInTopMargin?: boolean;
+    /** Chat Mermaid owns one inline toolbar instead of this surface's action row. */
+    rendererOwnsActions?: boolean;
+    selected?: boolean;
+    exportable?: boolean;
+    fileName?: string;
+  }
+
+  let {
+    kind,
+    children,
+    header,
+    actions,
+    actionsInTopMargin = false,
+    rendererOwnsActions = false,
+    selected = false,
+    exportable = true,
+    fileName,
+  }: Props = $props();
+  let contentElement: HTMLDivElement | undefined = $state();
+  let noteWidth = $state<number>();
+  let controlsWidth = $state<number>();
+  // Renderer settlement covers its scene. Note consumers also need the queued
+  // presentation measurement and its Svelte style update to have completed.
+  let presentationSettled = $state(false);
+  let initializing = $state(false);
+
+  onMount(() => {
+    const lane = contentElement?.closest<HTMLElement>('.node-mermaidBlock, .node-diagram_block');
+    const prose = lane?.parentElement;
+    if (!lane || !prose?.matches('.tiptap-editor.ProseMirror') || !contentElement) {
+      presentationSettled = true;
+      return;
+    }
+    const content = contentElement;
+    initializing = true;
+    let intrinsic = 0;
+    let revision = 0;
+    let disposed = false;
+    let cancelRead: (() => void) | undefined;
+    let cancelWrite: (() => void) | undefined;
+    const measureWidth = () => {
+      cancelRead = undefined;
+      const measuredRevision = revision;
+      const custom = content.querySelector<HTMLElement>('[data-diagram-intrinsic-width]');
+      const svg = content.querySelector<SVGSVGElement>('.mermaid-svg > svg');
+      // Read authored/layout dimensions, never the fitted screen rectangle: fitting
+      // into this presentation must not feed back into its preferred width.
+      if (custom?.dataset.diagramSettled === 'true') {
+        intrinsic = Number(custom.dataset.diagramIntrinsicWidth);
+      } else if (svg?.dataset.layoutSettled === 'true') {
+        intrinsic = svg.viewBox.baseVal.width + 16;
+      } else if (!custom && !svg) {
+        intrinsic = 0;
+      }
+      const laneWidth = lane.clientWidth;
+      const proseWidth = prose.clientWidth;
+      const nextNoteWidth = Math.min(laneWidth, Math.max(proseWidth, intrinsic));
+      const nextControlsWidth = Math.min(laneWidth, proseWidth);
+      const childSettled = custom
+        ? custom.dataset.diagramSettled === 'true'
+        : svg
+          ? svg.dataset.layoutSettled === 'true'
+          : !content.querySelector('[data-render-settled="false"]');
+      cancelWrite = scheduleLayoutWrite(() => {
+        if (disposed || revision !== measuredRevision) return;
+        cancelWrite = undefined;
+        const widthChanged = noteWidth !== nextNoteWidth;
+        noteWidth = nextNoteWidth;
+        controlsWidth = nextControlsWidth;
+        // Publish the marker in the same Svelte DOM flush as these dimensions.
+        presentationSettled = childSettled;
+        if (initializing && childSettled && laneWidth > 0 && proseWidth > 0) {
+          // Let the fitted width reach the child before the first visible frame.
+          if (widthChanged) cancelRead ??= scheduleLayoutRead(measureWidth);
+          else initializing = false;
+        }
+      });
+    };
+    const updateWidth = () => {
+      revision += 1;
+      presentationSettled = false;
+      cancelWrite?.();
+      cancelWrite = undefined;
+      // SVG mutations arrive throughout layout. Measure once with the other
+      // note diagrams, before any presentation writes dirty the document again.
+      cancelRead ??= scheduleLayoutRead(measureWidth);
+    };
+    const resize = new ResizeObserver(updateWidth);
+    resize.observe(lane);
+    resize.observe(prose);
+    const mutation = new MutationObserver(updateWidth);
+    mutation.observe(content, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        'data-diagram-settled',
+        'data-diagram-intrinsic-width',
+        'data-layout-settled',
+        'data-render-settled',
+      ],
+    });
+    updateWidth();
+    return () => {
+      disposed = true;
+      resize.disconnect();
+      mutation.disconnect();
+      cancelRead?.();
+      cancelWrite?.();
+    };
+  });
+</script>
+
+<section
+  class="diagram-presentation"
+  class:selected
+  class:initializing
+  class:renderer-owns-actions={rendererOwnsActions}
+  inert={initializing}
+  data-diagram-presentation
+  data-diagram-presentation-settled={presentationSettled}
+  data-diagram-presentation-initializing={initializing}
+  data-diagram-kind={kind}
+  style:width={noteWidth === undefined ? undefined : `${noteWidth}px`}
+  style:min-width={noteWidth === undefined ? undefined : '0'}
+  style={controlsWidth === undefined ? undefined : `--diagram-controls-width: ${controlsWidth}px`}
+>
+  {#if header}
+    <header class="diagram-presentation-header" data-diagram-presentation-header>
+      {@render header()}
+    </header>
+  {/if}
+
+  {#if !rendererOwnsActions && (actions || exportable)}
+    <div
+      class="diagram-presentation-actions"
+      class:actions-in-top-margin={actionsInTopMargin}
+      data-diagram-presentation-actions
+    >
+      {@render actions?.()}
+      {#if exportable}
+        <DiagramActionsMenu
+          container={contentElement}
+          {fileName}
+          compactTrigger={actionsInTopMargin}
+        />
+      {/if}
+    </div>
+  {/if}
+
+  <div
+    bind:this={contentElement}
+    class="diagram-presentation-content"
+    data-diagram-presentation-content
+  >
+    {@render children()}
+  </div>
+</section>
+
+<style>
+  .diagram-presentation {
+    position: relative;
+    box-sizing: border-box;
+    width: fit-content;
+    max-width: 100%;
+    min-width: min(100%, 16rem);
+    margin: 24px auto;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    color: hsl(var(--card-foreground));
+    box-shadow: none;
+  }
+
+  .diagram-presentation.initializing {
+    opacity: 0;
+  }
+
+  :global([data-diagram-presentation] [data-diagram-presentation]) {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  .diagram-presentation-header {
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-ui);
+  }
+
+  .diagram-presentation[data-diagram-kind='custom']:has(:global(.stateful-diagram))
+    > .diagram-presentation-header {
+    /* A scene's wider canvas must not unwrap the header and move its local footer. */
+    width: min(100%, var(--diagram-controls-width, 100%));
+    margin-inline: auto;
+    box-sizing: border-box;
+  }
+
+  .diagram-presentation-content {
+    min-width: 0;
+    padding: var(--space-3);
+    overflow: hidden;
+    background: transparent;
+  }
+
+  .diagram-presentation.renderer-owns-actions {
+    /* SVG fitting must not resize its host across the renderer's layout breakpoints. */
+    width: 100%;
+    /* The renderer's single toolbar provides the upper separation from prose.
+       Do not stack an outer margin and content inset on top of that row. */
+    margin-top: 0;
+  }
+
+  .renderer-owns-actions > .diagram-presentation-content {
+    padding-top: 0;
+  }
+
+  .diagram-presentation[data-diagram-kind='custom']:has(:global(.stateful-diagram)) {
+    width: 100%;
+  }
+
+  .diagram-presentation[data-diagram-kind='custom']:has(:global(.stateful-diagram))
+    > .diagram-presentation-content {
+    /* Keep canvas paint contained without intercepting the note's sticky scrollport. */
+    overflow: clip;
+  }
+
+  .diagram-presentation-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+
+  .diagram-presentation:hover .diagram-presentation-actions,
+  .diagram-presentation:focus-within .diagram-presentation-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .diagram-presentation-actions.actions-in-top-margin {
+    /* Note controls fit in the existing margin and content inset, above SVG paint.
+       Keep them out of flow even while hidden; do not move the canvas on focus. */
+    position: absolute;
+    bottom: calc(100% - var(--space-3));
+    inset-inline: 0;
+    width: min(100%, var(--diagram-controls-width, 100%));
+    margin-inline: auto;
+    box-sizing: border-box;
+  }
+
+  .diagram-presentation-actions :global(button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--control-height-small);
+    min-height: var(--control-height-small);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid hsl(var(--border) / 0.5);
+    border-radius: var(--radius-small);
+    background: hsl(var(--card) / 0.48);
+    color: hsl(var(--muted-foreground));
+    font-family: var(--font-ui);
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    box-shadow: none;
+    cursor: pointer;
+    transition:
+      color var(--motion-fast) var(--ease-standard),
+      border-color var(--motion-fast) var(--ease-standard),
+      background-color var(--motion-fast) var(--ease-standard);
+  }
+
+  .diagram-presentation-actions :global(button:hover) {
+    border-color: hsl(var(--border));
+    background: hsl(var(--muted) / 0.42);
+    color: hsl(var(--foreground));
+  }
+
+  .diagram-presentation-actions :global(button:active) {
+    background: hsl(var(--muted) / 0.58);
+  }
+
+  .diagram-presentation-actions :global(button:focus-visible) {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-color: hsl(var(--ring) / 0.7);
+  }
+
+  :global(.catalog-reduced-motion) .diagram-presentation-actions,
+  :global(.catalog-reduced-motion) .diagram-presentation-actions :global(button) {
+    transition: none;
+  }
+
+  @container style(--motion-reduced: 1) {
+    .diagram-presentation-actions,
+    .diagram-presentation-actions :global(button) {
+      transition: none;
+    }
+  }
+</style>

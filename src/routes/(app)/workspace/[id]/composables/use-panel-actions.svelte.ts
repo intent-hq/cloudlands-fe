@@ -145,8 +145,7 @@ export function usePanelActions(options: UsePanelActionsOptions) {
           source: 'progress-card-action',
         },
       });
-      appStore.dispatch(launchAction);
-      const agent = await launchAction.promise;
+      const agent = await appStore.dispatch(launchAction);
 
       // Add to recently created agents to prevent drawer from auto-closing
       markAgentRecentlyCreated(agent.id);

@@ -9,8 +9,8 @@
  *   session-scoped dismissal per connection
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
-import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import { createAction } from '@themislib/themis/utils/store/create-action';
+import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { SetupEvaluation, SetupPromptState } from './setup-prompt-types';
 
 // ---------------------------------------------------------------------------

@@ -6,10 +6,12 @@ const registry = {
   content: [
     "import { createStoreGuardMiddleware } from '../../store/utils/store-guard-middleware';",
     "import { createBatchingMiddleware } from './middlewares/batch';",
+    "import { createActionRingBufferMiddleware } from './middlewares/action-ring-buffer';",
     "import { createReferenceChangeDetectorMiddleware } from './middlewares/state-reference-checks';",
     "import { createStructuredCloneCheckerMiddleware } from './middlewares/structured-clone-checker';",
     'createStoreGuardMiddleware()',
     'createBatchingMiddleware()',
+    'createActionRingBufferMiddleware()',
     'createReferenceChangeDetectorMiddleware()',
     'createStructuredCloneCheckerMiddleware()',
   ].join('\n'),
@@ -18,7 +20,7 @@ const registry = {
 const configuredStore = {
   path: 'src/store/renderer/configured-store.ts',
   content: [
-    "import { Store } from '@augmentcode/themis/svelte-store';",
+    "import { Store } from '@themislib/themis/svelte-store';",
     "import { middleware } from './middleware';",
     "import { reducers } from './reducer';",
     'class RendererStore extends Store {}',
@@ -27,7 +29,7 @@ const configuredStore = {
 };
 
 describe('renderer side-effect boundary guard', () => {
-  it('allows the four approved middleware and reusable non-middleware utilities', () => {
+  it('allows the five approved middleware and reusable non-middleware utilities', () => {
     const files = [
       registry,
       {
@@ -63,14 +65,14 @@ describe('renderer side-effect boundary guard', () => {
       {
         path: 'src/features/tasks/task-service.ts',
         content: [
-          "import type { StoreMiddleware as Middleware } from '@augmentcode/themis/types';",
+          "import type { StoreMiddleware as Middleware } from '@themislib/themis/types';",
           'export function buildTaskEffects(): Middleware { return (() => undefined) as never; }',
           'export const createTaskService = (): Middleware => (() => undefined) as never;',
         ].join('\n'),
       },
       {
         path: 'src/features/tasks/task-types.ts',
-        content: "export type { StoreMiddleware as TaskEffects } from '@augmentcode/themis/types';",
+        content: "export type { StoreMiddleware as TaskEffects } from '@themislib/themis/types';",
       },
       {
         path: 'src/features/tasks/barrel-task-service.ts',
@@ -95,7 +97,7 @@ describe('renderer side-effect boundary guard', () => {
       registry,
       {
         path: 'src/features/tasks/task-types.ts',
-        content: "export type { StoreMiddleware } from '@augmentcode/themis/types';",
+        content: "export type { StoreMiddleware } from '@themislib/themis/types';",
       },
       {
         path: 'src/features/tasks/task-effects.ts',
@@ -130,7 +132,7 @@ describe('renderer side-effect boundary guard', () => {
       registry,
       {
         path: 'src/features/tasks/task-types.ts',
-        content: "export type { StoreMiddleware as TaskEffects } from '@augmentcode/themis/types';",
+        content: "export type { StoreMiddleware as TaskEffects } from '@themislib/themis/types';",
       },
       {
         path: 'src/features/tasks/task-effects.ts',
@@ -187,7 +189,7 @@ describe('renderer side-effect boundary guard', () => {
       registry,
       {
         path: 'src/features/tasks/task-store-barrel.ts',
-        content: "export { Store as RendererStore } from '@augmentcode/themis/svelte-store';",
+        content: "export { Store as RendererStore } from '@themislib/themis/svelte-store';",
       },
       {
         path: 'src/features/tasks/task-store.ts',
@@ -224,7 +226,7 @@ describe('renderer side-effect boundary guard', () => {
     [
       'a function declaration parameter',
       [
-        "import { Store } from '@augmentcode/themis/svelte-store';",
+        "import { Store } from '@themislib/themis/svelte-store';",
         'function install(store: Store) {',
         '  store.addMiddleware(otherMiddleware);',
         '}',
@@ -233,7 +235,7 @@ describe('renderer side-effect boundary guard', () => {
     [
       'an arrow function parameter',
       [
-        "import { Store } from '@augmentcode/themis/svelte-store';",
+        "import { Store } from '@themislib/themis/svelte-store';",
         'const install = (store: Store) => {',
         '  store.addMiddleware(otherMiddleware);',
         '};',
@@ -242,7 +244,7 @@ describe('renderer side-effect boundary guard', () => {
     [
       'a class method parameter',
       [
-        "import { Store } from '@augmentcode/themis/svelte-store';",
+        "import { Store } from '@themislib/themis/svelte-store';",
         'class Installer {',
         '  install(store: Store) {',
         '    store.addMiddleware(otherMiddleware);',
@@ -253,7 +255,7 @@ describe('renderer side-effect boundary guard', () => {
     [
       'a namespace-qualified parameter type',
       [
-        "import * as themis from '@augmentcode/themis/svelte-store';",
+        "import * as themis from '@themislib/themis/svelte-store';",
         'function install(store: themis.Store) {',
         '  store.addMiddleware(otherMiddleware);',
         '}',
@@ -320,6 +322,27 @@ describe('renderer side-effect boundary guard', () => {
     ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
   });
 
+  it('pins the user MCP bridge seeder to its reviewed registration', () => {
+    const seeder = (channels: string[]) => ({
+      path: 'src/store/renderer/seeders/user-mcp-bridge-seeder.ts',
+      content: [
+        "import { registerMockIpcHandler } from '$shared/ipc-mock-router';",
+        ...channels.map(
+          (channel) => `registerMockIpcHandler('${channel}', async () => undefined);`,
+        ),
+      ].join('\n'),
+    });
+    expect(
+      findRendererSideEffectBoundaryViolations([registry, seeder(['user-mcp:authenticate'])]),
+    ).toEqual([]);
+    expect(
+      findRendererSideEffectBoundaryViolations([
+        registry,
+        seeder(['user-mcp:authenticate', 'user-mcp:unreviewed']),
+      ]),
+    ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
+  });
+
   it('rejects expansion of an approved bridge path', () => {
     const violations = findRendererSideEffectBoundaryViolations([
       registry,
@@ -342,9 +365,7 @@ describe('renderer side-effect boundary guard', () => {
       { ...registry, content: `${registry.content}\ninstallTaskEffects()` },
     ]);
     expect(violations).toEqual([
-      expect.stringContaining(
-        'registry must contain exactly the four approved middleware factories',
-      ),
+      expect.stringContaining('registry must contain exactly the 5 approved middleware factories'),
     ]);
   });
 
@@ -358,7 +379,7 @@ describe('renderer side-effect boundary guard', () => {
   ])('rejects an approved factory that is %s in the registry', (_change, content) => {
     expect(findRendererSideEffectBoundaryViolations([{ ...registry, content }])).toEqual([
       expect.stringContaining(
-        'src/store/renderer/middleware.ts: registry must contain exactly the four approved middleware factories',
+        'src/store/renderer/middleware.ts: registry must contain exactly the 5 approved middleware factories',
       ),
     ]);
   });

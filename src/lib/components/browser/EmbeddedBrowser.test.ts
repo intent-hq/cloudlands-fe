@@ -44,21 +44,15 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
   ensureAgentSessionLoaded: vi.fn(),
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
-}));
-
-// The owner-chip navigation helper transitively imports selector modules
-// that register against the real store at load time.
-vi.mock('$lib/utils/workspace-navigation', () => ({
-  navigateToAgent: vi.fn(),
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn() },
 }));
 
 import EmbeddedBrowser from './EmbeddedBrowser.svelte';
 import { m } from '$shared/paraglide/messages.js';
-import { navigateToAgent } from '$lib/utils/workspace-navigation';
-import { toast } from '$lib/components/ui/toast';
+import { notify } from '$lib/components/patterns/notify';
 import { elementPickerScript } from './element-picker-script';
+import { tabStateReducer } from '$store/renderer/slices/tab-state/tab-state-slice';
 
 class ToolbarResizeObserver {
   static instances: ToolbarResizeObserver[] = [];
@@ -91,6 +85,46 @@ afterEach(() => {
 });
 
 describe('EmbeddedBrowser', () => {
+  const mountedLeases = () =>
+    mocks.dispatch.mock.calls.reduce(
+      (state, [action]) => tabStateReducer(state, action),
+      tabStateReducer(undefined, { type: '@@INIT' }),
+    ).mountedBrowserTabLeases;
+
+  it('leases the live webview until unmount, not just while the panel is active', async () => {
+    const { container, rerender, unmount } = render(EmbeddedBrowser, {
+      props: { url: 'https://example.test/', workspaceId: 'workspace-1', tabId: 'tab-1' },
+    });
+    await waitFor(() => expect(Object.keys(mountedLeases()['tab-1'])).toHaveLength(1));
+    const initialLeases = mountedLeases();
+    const webview = container.querySelector('webview');
+    const leaseCalls = () =>
+      mocks.dispatch.mock.calls.filter(
+        ([action]) =>
+          action.type === 'tabState/acquireBrowserTabMount' ||
+          action.type === 'tabState/releaseBrowserTabMount',
+      );
+    await rerender({ isActive: false });
+    await rerender({ isActive: true });
+    expect(container.querySelector('webview')).toBe(webview);
+    expect(mountedLeases()).toEqual(initialLeases);
+    expect(leaseCalls()).toHaveLength(1);
+
+    unmount();
+    await waitFor(() => expect(mountedLeases()).toEqual({}));
+  });
+
+  it('does not release another mounted instance when an older instance unmounts', async () => {
+    const props = { url: 'about:blank', workspaceId: 'workspace-1', tabId: 'tab-1' };
+    const older = render(EmbeddedBrowser, { props });
+    const newer = render(EmbeddedBrowser, { props });
+    await waitFor(() => expect(Object.keys(mountedLeases()['tab-1'])).toHaveLength(2));
+    older.unmount();
+    await waitFor(() => expect(Object.keys(mountedLeases()['tab-1'])).toHaveLength(1));
+    newer.unmount();
+    await waitFor(() => expect(mountedLeases()).toEqual({}));
+  });
+
   it('mounts a blank webview for about:blank', () => {
     const { container } = render(EmbeddedBrowser, {
       props: { url: 'about:blank', workspaceId: 'workspace-1' },
@@ -217,51 +251,19 @@ describe('EmbeddedBrowser', () => {
     );
   });
 
-  describe('owner chip', () => {
+  describe('viewport modes', () => {
     const renderWithOwner = (extraProps: Record<string, unknown> = {}) =>
       render(EmbeddedBrowser, {
         props: {
           url: 'about:blank',
           workspaceId: 'workspace-1',
           ownerAgentId: 'agent-1',
-          ownerAgentName: 'Coordinator',
           ...extraProps,
         },
       });
 
-    it('renders the owning agent avatar with its live state', () => {
+    it('defaults owned tabs to fit without a device frame or dimensions', () => {
       const { container } = renderWithOwner();
-
-      const chip = container.querySelector('[data-browser-owner-chip="agent-1"]');
-      expect(chip).not.toBeNull();
-      expect(chip!.querySelector('[data-agent-avatar-with-state]')).not.toBeNull();
-      expect(chip!.querySelector('[data-avatar-state="idle"]')).not.toBeNull();
-    });
-
-    it('exposes the agent name for hover/assistive tech', () => {
-      const { container } = renderWithOwner();
-
-      const trigger = container.querySelector('[data-browser-owner-chip] button');
-      expect(trigger!.getAttribute('aria-label')).toContain('Coordinator');
-    });
-
-    it('navigates to the owning agent on click', async () => {
-      const { container } = renderWithOwner();
-
-      await fireEvent.click(container.querySelector('[data-browser-owner-chip] button')!);
-      expect(navigateToAgent).toHaveBeenCalledWith('agent-1');
-    });
-
-    it('is absent for unowned tabs', () => {
-      const { container } = render(EmbeddedBrowser, {
-        props: { url: 'about:blank', workspaceId: 'workspace-1' },
-      });
-
-      expect(container.querySelector('[data-browser-owner-chip]')).toBeNull();
-    });
-
-    it('shows no device frame or dimensions in fit mode', () => {
-      const { container } = renderWithOwner({ viewport: { mode: 'fit' } });
 
       expect(screen.getByTestId('browser-viewport-trigger').textContent).toContain('Fit');
       expect(container.querySelector('[data-browser-device-frame]')).toBeNull();
@@ -288,7 +290,6 @@ describe('EmbeddedBrowser', () => {
         url: 'about:blank',
         workspaceId: 'workspace-1',
         ownerAgentId: 'agent-1',
-        ownerAgentName: 'Coordinator',
       };
       const rendered = render(EmbeddedBrowser, { props: { ...props, viewport: { mode: 'fit' } } });
       const webview = rendered.container.querySelector('webview');
@@ -368,6 +369,568 @@ describe('EmbeddedBrowser', () => {
       expect(container.querySelector('input')).toBeNull();
     });
 
+    // intent-hq/intent#5710: an explicit daemon.localhost / client.localhost
+    // alias typed into the address bar resolves through browser:resolve-url
+    // like browser.exec does; bare loopback and every other URL keep loading
+    // literally (intent-hq/monorepo#2404).
+    describe('address-bar loopback alias resolution', () => {
+      const RESOLVE_CHANNEL = 'browser:resolve-url';
+
+      type AddressWebview = HTMLElement & {
+        loadURL: ReturnType<typeof vi.fn>;
+        getURL: () => string;
+      };
+
+      const typeAddress = async (rendered: ReturnType<typeof renderPage>, typed: string) => {
+        await fireEvent.click(rendered.getByRole('button', { name: 'Edit browser address' }));
+        const input = rendered.getByRole('textbox', { name: 'Browser address' });
+        await fireEvent.input(input, { target: { value: typed } });
+        await fireEvent.submit(input.closest('form')!);
+      };
+
+      const submitAddress = async (typed: string, props?: Parameters<typeof renderPage>[0]) => {
+        const rendered = renderPage(props);
+        const webview = rendered.container.querySelector('webview') as AddressWebview;
+        webview.loadURL = vi.fn().mockResolvedValue(undefined);
+        webview.getURL = () => 'https://example.test/docs';
+        mocks.dispatch.mockClear();
+
+        await typeAddress(rendered, typed);
+        return { ...rendered, webview };
+      };
+
+      const failLoad = (webview: Element, validatedURL: string, errorCode = -102) =>
+        fireEvent(
+          webview,
+          Object.assign(new Event('did-fail-load'), {
+            errorCode,
+            errorDescription: 'ERR_CONNECTION_REFUSED',
+            validatedURL,
+          }),
+        );
+
+      // A resolver call the test settles by hand, standing in for the slow
+      // remote reachability probe.
+      const deferredResolver = () => {
+        let settle!: (result: unknown) => void;
+        const pending = new Promise((resolve) => {
+          settle = resolve;
+        });
+        mocks.invoke.mockImplementation((channel: string) =>
+          channel === RESOLVE_CHANNEL ? pending : Promise.resolve(undefined),
+        );
+        return settle;
+      };
+
+      const resolveCalls = () =>
+        mocks.invoke.mock.calls.filter(([channel]) => channel === RESOLVE_CHANNEL);
+
+      const recentUrlEntries = () =>
+        mocks.dispatch.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type === 'browser/addRecentUrl')
+          .map((action) => action.payload[1]);
+
+      it('resolves an explicit daemon alias and loads the tunneled URL', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+
+        const { webview, queryByText } = await submitAddress('daemon.localhost:3000');
+
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        expect(resolveCalls()).toEqual([
+          [RESOLVE_CHANNEL, { url: 'http://daemon.localhost:3000' }],
+        ]);
+        expect(recentUrlEntries()).toEqual(['http://daemon.localhost:3000']);
+        expect(queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+      });
+
+      it('reports the typed alias as the requested URL when the tunnel navigation commits', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'http://127.0.0.1:41234/' }),
+        );
+        expect(onNavigate).toHaveBeenCalledWith(
+          'http://127.0.0.1:41234/',
+          'http://daemon.localhost:3000/',
+        );
+
+        // The alias belongs to that one navigation: a later page reports none.
+        onNavigate.mockClear();
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'http://127.0.0.1:41234/docs' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['http://127.0.0.1:41234/docs']);
+      });
+
+      // An HTTP redirect on the resolved load commits a different URL than the
+      // one requested: the alias must describe the page actually shown.
+      it('rebases the alias onto a same-origin redirect target before reporting it', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), {
+            url: 'http://127.0.0.1:41234/login?next=%2F#top',
+          }),
+        );
+        expect(onNavigate).toHaveBeenCalledWith(
+          'http://127.0.0.1:41234/login?next=%2F#top',
+          'http://daemon.localhost:3000/login?next=%2F#top',
+        );
+      });
+
+      it('drops the alias when the resolved load redirects to another origin', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://127.0.0.1:41234/',
+                rewritten: true,
+                requestedUrl: 'http://daemon.localhost:3000',
+                tunneled: true,
+              }
+            : undefined,
+        );
+        const onNavigate = vi.fn();
+
+        const { webview } = await submitAddress('daemon.localhost:3000', { onNavigate });
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'https://accounts.example/sign-in' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['https://accounts.example/sign-in']);
+      });
+
+      it('reports no requested URL for a plainly typed address', async () => {
+        const onNavigate = vi.fn();
+        const { webview } = await submitAddress('https://example.test/page', { onNavigate });
+        onNavigate.mockClear();
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate'), { url: 'https://example.test/page' }),
+        );
+        expect(onNavigate).toHaveBeenCalledTimes(1);
+        expect(onNavigate.mock.calls[0]).toEqual(['https://example.test/page']);
+      });
+
+      it('loads the rewritten URL and shows the resolver error when the alias is unreachable', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://10.0.0.5:3000/',
+                rewritten: true,
+                requestedUrl: 'http://client.localhost:3000',
+                error: 'not reachable from this machine',
+              }
+            : undefined,
+        );
+
+        const { webview, queryByText } = await submitAddress('client.localhost:3000');
+
+        await waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('http://10.0.0.5:3000/'));
+        await waitFor(() =>
+          expect(queryByText(m.browser_embedded_resolveFailed_error())).not.toBeNull(),
+        );
+        expect(recentUrlEntries()).toEqual(['http://client.localhost:3000']);
+      });
+
+      it('keeps the resolver error when the rewritten URL then fails to load', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://10.0.0.5:3000/',
+                rewritten: true,
+                requestedUrl: 'http://client.localhost:3000',
+                error: 'not reachable from this machine',
+              }
+            : undefined,
+        );
+        const resolverMessage = m.browser_embedded_resolveFailed_error();
+
+        const { webview, queryByText } = await submitAddress('client.localhost:3000');
+        await waitFor(() => expect(queryByText(resolverMessage)).not.toBeNull());
+
+        await failLoad(webview, 'http://10.0.0.5:3000/');
+        expect(queryByText(resolverMessage)).not.toBeNull();
+        expect(queryByText(m.browser_embedded_loadFailed_error())).toBeNull();
+      });
+
+      it('lets the next navigation report its own load failure', async () => {
+        mocks.invoke.mockImplementation(async (channel: string) =>
+          channel === RESOLVE_CHANNEL
+            ? {
+                url: 'http://10.0.0.5:3000/',
+                rewritten: true,
+                requestedUrl: 'http://client.localhost:3000',
+                error: 'not reachable from this machine',
+              }
+            : undefined,
+        );
+        const resolverMessage = m.browser_embedded_resolveFailed_error();
+
+        const rendered = await submitAddress('client.localhost:3000');
+        await waitFor(() => expect(rendered.queryByText(resolverMessage)).not.toBeNull());
+
+        await typeAddress(rendered, '127.0.0.1:5173');
+        await waitFor(() =>
+          expect(rendered.webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:5173'),
+        );
+        await failLoad(rendered.webview, 'http://127.0.0.1:5173/');
+
+        expect(rendered.queryByText(resolverMessage)).toBeNull();
+        expect(
+          rendered.queryByText(m.browser_embedded_localhostRefusedPort_error({ port: '5173' })),
+        ).not.toBeNull();
+      });
+
+      it('drops an alias resolution that finishes after a newer address was submitted', async () => {
+        const settle = deferredResolver();
+        const rendered = await submitAddress('daemon.localhost:3000');
+        expect(resolveCalls()).toHaveLength(1);
+
+        await typeAddress(rendered, 'https://example.org/next');
+        await waitFor(() =>
+          expect(rendered.webview.loadURL).toHaveBeenCalledWith('https://example.org/next'),
+        );
+
+        settle({
+          url: 'http://127.0.0.1:41234/',
+          rewritten: true,
+          requestedUrl: 'http://daemon.localhost:3000',
+          tunneled: true,
+          error: 'tunnel failed',
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        expect(rendered.webview.loadURL).toHaveBeenCalledTimes(1);
+        expect(rendered.webview.loadURL).not.toHaveBeenCalledWith('http://127.0.0.1:41234/');
+        expect(rendered.queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+      });
+
+      it.each([
+        ['a link click', 'did-navigate', {}],
+        ['SPA history', 'did-navigate-in-page', { isMainFrame: true }],
+      ])(
+        'drops an alias resolution that finishes after %s in the page',
+        async (_label, eventName, extra) => {
+          const settle = deferredResolver();
+          const rendered = await submitAddress('daemon.localhost:3000');
+          expect(resolveCalls()).toHaveLength(1);
+
+          await fireEvent(
+            rendered.webview,
+            Object.assign(new Event(eventName), { url: 'https://example.test/clicked', ...extra }),
+          );
+
+          settle({
+            url: 'http://127.0.0.1:41234/',
+            rewritten: true,
+            requestedUrl: 'http://daemon.localhost:3000',
+            tunneled: true,
+            error: 'tunnel failed',
+          });
+          await new Promise((resolve) => setTimeout(resolve, 20));
+
+          expect(rendered.webview.loadURL).not.toHaveBeenCalled();
+          expect(rendered.queryByText(m.browser_embedded_resolveFailed_error())).toBeNull();
+        },
+      );
+
+      it('keeps an alias resolution when only an iframe navigated meanwhile', async () => {
+        const settle = deferredResolver();
+        const rendered = await submitAddress('daemon.localhost:3000');
+
+        await fireEvent(
+          rendered.webview,
+          Object.assign(new Event('did-navigate-in-page'), {
+            url: 'https://ads.example.test/frame',
+            isMainFrame: false,
+          }),
+        );
+
+        settle({
+          url: 'http://127.0.0.1:41234/',
+          rewritten: true,
+          requestedUrl: 'http://daemon.localhost:3000',
+          tunneled: true,
+        });
+        await waitFor(() =>
+          expect(rendered.webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:41234/'),
+        );
+      });
+
+      it('drops an alias resolution that finishes after the browser unmounted', async () => {
+        const settle = deferredResolver();
+        const { webview, unmount } = await submitAddress('daemon.localhost:3000');
+        expect(resolveCalls()).toHaveLength(1);
+
+        unmount();
+        settle({
+          url: 'http://127.0.0.1:41234/',
+          rewritten: true,
+          requestedUrl: 'http://daemon.localhost:3000',
+          tunneled: true,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        expect(webview.loadURL).not.toHaveBeenCalled();
+      });
+
+      it('loads a bare loopback address literally without resolving it', async () => {
+        const { webview } = await submitAddress('127.0.0.1:5173');
+
+        await waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('http://127.0.0.1:5173'));
+        expect(resolveCalls()).toEqual([]);
+        expect(recentUrlEntries()).toEqual(['http://127.0.0.1:5173']);
+      });
+
+      it('loads a non-loopback address literally without resolving it', async () => {
+        const { webview } = await submitAddress('https://example.org/path');
+
+        await waitFor(() =>
+          expect(webview.loadURL).toHaveBeenCalledWith('https://example.org/path'),
+        );
+        expect(resolveCalls()).toEqual([]);
+        expect(recentUrlEntries()).toEqual(['https://example.org/path']);
+      });
+    });
+
+    describe('destroyed guest webContents', () => {
+      type GuestWebview = HTMLElement & {
+        getURL: () => string;
+        getWebContentsId: () => number;
+        reload: ReturnType<typeof vi.fn>;
+        executeJavaScript: ReturnType<typeof vi.fn>;
+      };
+
+      // Electron resolves every <webview> method against the element's
+      // cached guest id and throws when it is unset or the guest is gone.
+      const noGuest = () => {
+        throw new Error('The WebView must be attached to the DOM');
+      };
+
+      // The live guest sits on the rendered page URL so did-stop-loading's
+      // URL reconciliation sees no navigation.
+      const holdLiveGuest = (webview: GuestWebview, webContentsId: number) => {
+        webview.getWebContentsId = () => webContentsId;
+        webview.getURL = () => 'https://example.test/docs';
+      };
+
+      const attachGuest = (container: HTMLElement, webContentsId: number) => {
+        const webview = container.querySelector('webview') as GuestWebview;
+        webview.reload = vi.fn();
+        webview.executeJavaScript = vi.fn().mockResolvedValue(undefined);
+        holdLiveGuest(webview, webContentsId);
+        webview.dispatchEvent(new Event('dom-ready'));
+        webview.dispatchEvent(new Event('did-stop-loading'));
+        return webview;
+      };
+
+      // A guest that closed itself: the element stays connected and keeps
+      // reporting the id it had at dom-ready, while every guest method throws.
+      const closeGuest = (webview: GuestWebview) => {
+        webview.getURL = noGuest;
+        webview.dispatchEvent(new Event('destroyed'));
+      };
+
+      const destroyGuest = async (container: HTMLElement) => {
+        const webview = attachGuest(container, 10);
+        closeGuest(webview);
+        await waitFor(() => expect(container.querySelector('webview')).toBeNull());
+        return webview;
+      };
+
+      const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+      it('shows a page-closed error and drops the dead webview', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        expect(queryByText(pageClosedMessage)).toBeNull();
+
+        await destroyGuest(container);
+
+        expect(queryByText(pageClosedMessage)).not.toBeNull();
+        expect(container.querySelector('webview')).toBeNull();
+      });
+
+      it('logs the closed page URL without userinfo, query or fragment', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const { container } = renderPage();
+        const webview = attachGuest(container, 10);
+        const closeUrl =
+          'https://u:pw@auth.example.test/cb?code=SECRETCODE&state=s1#access_token=TOK';
+        webview.dispatchEvent(Object.assign(new Event('did-navigate'), { url: closeUrl }));
+
+        closeGuest(webview);
+        await waitFor(() => expect(container.querySelector('webview')).toBeNull());
+
+        const logged = warn.mock.calls.find(([msg]) => String(msg).includes('guest was destroyed'));
+        expect(logged).toBeDefined();
+        const data = logged![1] as { url: string };
+        expect(data.url).toBe('https://auth.example.test/cb');
+        for (const call of warn.mock.calls) {
+          const serialized = JSON.stringify(call);
+          expect(serialized).not.toContain('SECRETCODE');
+          expect(serialized).not.toContain('TOK');
+          expect(serialized).not.toContain('u:pw');
+        }
+        warn.mockRestore();
+      });
+
+      // Reparenting (panel drag) destroys and re-creates the guest; the old
+      // guest's `destroyed` reaches the re-connected element with no ordering
+      // guarantee against the new guest's attach or dom-ready. None of these
+      // orderings is a close.
+      it('keeps the webview when destroyed arrives mid-reparent before the new guest attaches', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const webview = attachGuest(container, 10);
+
+        // disconnectedCallback → reset() cleared guestInstanceId.
+        webview.getWebContentsId = noGuest;
+        webview.getURL = noGuest;
+        webview.dispatchEvent(new Event('destroyed'));
+
+        // The replacement guest attaches and becomes ready.
+        holdLiveGuest(webview, 11);
+        webview.dispatchEvent(new Event('dom-ready'));
+
+        await settle();
+        expect(queryByText(pageClosedMessage)).toBeNull();
+        expect(container.querySelector('webview')).toBe(webview);
+      });
+
+      it('keeps the webview when destroyed arrives after the replacement guest attached', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const webview = attachGuest(container, 10);
+
+        // The new guest is attached (new id) but has not reached dom-ready.
+        holdLiveGuest(webview, 11);
+        webview.dispatchEvent(new Event('destroyed'));
+        webview.dispatchEvent(new Event('dom-ready'));
+
+        await settle();
+        expect(queryByText(pageClosedMessage)).toBeNull();
+        expect(container.querySelector('webview')).toBe(webview);
+      });
+
+      it('keeps the live replacement when the old destroyed arrives after its dom-ready', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const webview = attachGuest(container, 10);
+
+        // The replacement guest is attached and ready before the old
+        // guest's `destroyed` is delivered.
+        holdLiveGuest(webview, 11);
+        webview.dispatchEvent(new Event('dom-ready'));
+        webview.dispatchEvent(new Event('destroyed'));
+
+        await settle();
+        expect(queryByText(pageClosedMessage)).toBeNull();
+        expect(container.querySelector('webview')).toBe(webview);
+
+        // The replacement closing itself later is still detected.
+        closeGuest(webview);
+        await waitFor(() => expect(container.querySelector('webview')).toBeNull());
+        expect(queryByText(pageClosedMessage)).not.toBeNull();
+      });
+
+      it('does not reload the same URL on its own after the guest closes', async () => {
+        const { container } = renderPage();
+        await destroyGuest(container);
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(container.querySelector('webview')).toBeNull();
+      });
+
+      it('mounts a fresh webview and clears the banner on a new address', async () => {
+        const { container, getByRole, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const dead = await destroyGuest(container);
+
+        await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+        const input = getByRole('textbox', { name: 'Browser address' });
+        await fireEvent.input(input, { target: { value: 'https://example.test/next' } });
+        await fireEvent.submit(input.closest('form')!);
+
+        await waitFor(() => expect(container.querySelector('webview')).not.toBeNull());
+        const fresh = container.querySelector('webview')!;
+        expect(fresh).not.toBe(dead);
+        expect(fresh.getAttribute('src')).toBe('https://example.test/next');
+        expect(queryByText(pageClosedMessage)).toBeNull();
+      });
+
+      it('mounts a fresh webview for the same URL when the refresh button is used', async () => {
+        const { container, queryByText } = renderPage();
+        const pageClosedMessage = m.browser_embedded_pageClosed_error();
+        const dead = await destroyGuest(container);
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Refresh page' }));
+
+        await waitFor(() => expect(container.querySelector('webview')).not.toBeNull());
+        const fresh = container.querySelector('webview')!;
+        expect(fresh).not.toBe(dead);
+        expect(fresh.getAttribute('src')).toBe('https://example.test/docs');
+        // The dead element was never reloaded in place.
+        expect(dead.reload).not.toHaveBeenCalled();
+        expect(queryByText(pageClosedMessage)).toBeNull();
+      });
+    });
+
     it('discards an edited address on Escape or blur', async () => {
       const { getByRole, queryByRole } = renderPage();
       const edit = () => fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
@@ -423,31 +986,57 @@ describe('EmbeddedBrowser', () => {
       expect(input.selectionEnd).toBe(input.value.length);
     });
 
-    it('updates the identity title and unowned favicon from webview events', async () => {
-      const { container, getByRole } = renderPage();
-      const webview = container.querySelector('webview')!;
-      expect(getByRole('button', { name: 'Edit browser address' }).textContent).toContain(
-        'example.test',
-      );
-
-      const titleEvent = new Event('page-title-updated');
-      Object.defineProperty(titleEvent, 'title', { value: 'Reference docs' });
-      webview.dispatchEvent(titleEvent);
-      const faviconEvent = new Event('page-favicon-updated');
-      Object.defineProperty(faviconEvent, 'favicons', {
-        value: ['https://example.test/favicon.ico'],
-      });
-      webview.dispatchEvent(faviconEvent);
-
-      await waitFor(() =>
+    it.each([undefined, 'agent-owner'])(
+      'updates page identity from webview events for owner %s',
+      async (ownerAgentId) => {
+        const { container, getByRole } = renderPage({ ownerAgentId });
+        const webview = container.querySelector('webview')!;
         expect(getByRole('button', { name: 'Edit browser address' }).textContent).toContain(
-          'Reference docs',
-        ),
-      );
-      expect(container.querySelector('[data-browser-page-favicon]')?.getAttribute('src')).toBe(
-        'https://example.test/favicon.ico',
-      );
-    });
+          'example.test',
+        );
+
+        const titleEvent = new Event('page-title-updated');
+        Object.defineProperty(titleEvent, 'title', { value: 'Reference docs' });
+        webview.dispatchEvent(titleEvent);
+        const faviconEvent = new Event('page-favicon-updated');
+        Object.defineProperty(faviconEvent, 'favicons', {
+          value: ['https://example.test/favicon.ico'],
+        });
+        webview.dispatchEvent(faviconEvent);
+
+        await waitFor(() =>
+          expect(getByRole('button', { name: 'Edit browser address' }).textContent).toContain(
+            'Reference docs',
+          ),
+        );
+        expect(container.querySelector('[data-browser-page-favicon]')?.getAttribute('src')).toBe(
+          'https://example.test/favicon.ico',
+        );
+      },
+    );
+
+    it.each(['https://example.test/favicon.ico', 'https://example.test/new-favicon.ico'])(
+      'replaces a failed favicon and retries a later favicon update to %s',
+      async (nextFaviconUrl) => {
+        const { container } = renderPage();
+        const webview = container.querySelector('webview')!;
+        const updateFavicon = (url: string) =>
+          fireEvent(webview, Object.assign(new Event('page-favicon-updated'), { favicons: [url] }));
+
+        await updateFavicon('https://example.test/favicon.ico');
+        await fireEvent.error(container.querySelector('[data-browser-page-favicon]')!);
+
+        expect(container.querySelector('[data-browser-page-favicon]')).toBeNull();
+        expect(container.querySelector('[data-browser-page-favicon-fallback]')).not.toBeNull();
+
+        await updateFavicon(nextFaviconUrl);
+        const favicon = container.querySelector('[data-browser-page-favicon]')!;
+        expect(favicon.getAttribute('src')).toBe(nextFaviconUrl);
+        await fireEvent.load(favicon);
+        expect(container.querySelector('[data-browser-page-favicon]')).toBe(favicon);
+        expect(container.querySelector('[data-browser-page-favicon-fallback]')).toBeNull();
+      },
+    );
 
     it('exposes the page title and distinct hostname together', async () => {
       const { container, getByRole } = renderPage({ url: 'https://app.example.com/dashboard' });
@@ -481,19 +1070,81 @@ describe('EmbeddedBrowser', () => {
       await waitFor(() => expect(identity.textContent?.trim()).toBe('Local report'));
     });
 
-    it('keeps the webview source current across full and in-page navigation', async () => {
-      const { container } = renderPage();
-      const webview = container.querySelector('webview')!;
-      const navigate = new Event('did-navigate');
-      Object.defineProperty(navigate, 'url', { value: 'https://next.test/docs' });
-      webview.dispatchEvent(navigate);
-      await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs'));
+    it.each(['did-navigate', 'did-navigate-in-page'])(
+      'persists %s without issuing another guest navigation',
+      async (eventName) => {
+        const onNavigate = vi.fn();
+        const { container, getByRole, rerender } = renderPage({ onNavigate });
+        const webview = container.querySelector('webview')!;
+        const sourceWrites: MutationRecord[] = [];
+        const observer = new MutationObserver((records) => sourceWrites.push(...records));
+        observer.observe(webview, { attributes: true, attributeFilter: ['src'] });
+        const loadURL = vi.fn().mockResolvedValue(undefined);
+        Object.assign(webview, { loadURL });
+        const navigate = new Event(eventName);
+        Object.defineProperty(navigate, 'isMainFrame', { value: true });
+        Object.defineProperty(navigate, 'url', { value: 'https://next.test/docs' });
+        webview.dispatchEvent(navigate);
+        await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('https://next.test/docs'));
+        await rerender({ url: 'https://next.test/docs' });
+        await fireEvent.click(getByRole('button', { name: 'Edit browser address' }));
+        expect((getByRole('textbox', { name: 'Browser address' }) as HTMLInputElement).value).toBe(
+          'https://next.test/docs',
+        );
+        observer.disconnect();
+        expect(sourceWrites).toHaveLength(0);
+        expect(loadURL).not.toHaveBeenCalled();
+        expect(container.querySelector('webview')).toBe(webview);
+      },
+    );
 
-      const inPage = new Event('did-navigate-in-page');
-      Object.defineProperty(inPage, 'url', { value: 'https://next.test/docs#api' });
-      webview.dispatchEvent(inPage);
-      await waitFor(() => expect(webview.getAttribute('src')).toBe('https://next.test/docs#api'));
-    });
+    // intent#4767: iframe history changes must not replace the tab's URL or src.
+    it.each(['about:blank', 'https://iframe.test/widget#section'])(
+      'ignores subframe in-page navigation to %s',
+      async (url) => {
+        const mainUrl = 'https://example.test/docs';
+        const onNavigate = vi.fn();
+        const { container } = renderPage({ url: mainUrl, onNavigate });
+        const webview = container.querySelector('webview')!;
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate-in-page'), { url, isMainFrame: false }),
+        );
+
+        expect(onNavigate).not.toHaveBeenCalled();
+        expect(webview.getAttribute('src')).toBe(mainUrl);
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event('did-navigate-in-page'), {
+            url: `${mainUrl}#next`,
+            isMainFrame: true,
+          }),
+        );
+        expect(onNavigate).toHaveBeenCalledExactlyOnceWith(`${mainUrl}#next`);
+        // Guest navigation must not be mirrored back as another application navigation.
+        expect(webview.getAttribute('src')).toBe(mainUrl);
+      },
+    );
+
+    it.each(['did-navigate', 'did-navigate-in-page'])(
+      'preserves deliberate main-frame blank navigation via %s',
+      async (eventType) => {
+        const onNavigate = vi.fn();
+        const { container } = renderPage({ onNavigate });
+        const webview = container.querySelector('webview')!;
+        const initialSrc = webview.getAttribute('src');
+
+        await fireEvent(
+          webview,
+          Object.assign(new Event(eventType), { url: 'about:blank', isMainFrame: true }),
+        );
+
+        expect(onNavigate).toHaveBeenCalledExactlyOnceWith('about:blank');
+        expect(webview.getAttribute('src')).toBe(initialSrc);
+      },
+    );
 
     it('shows the URL placeholder for a blank page and edits its full URL', async () => {
       const { getByRole } = render(EmbeddedBrowser, {
@@ -781,7 +1432,7 @@ describe('EmbeddedBrowser', () => {
 
       await waitFor(() => expect(webview.capturePage).toHaveBeenCalledTimes(1));
       expect(captureActions()).toHaveLength(0);
-      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(notify.error).toHaveBeenCalledTimes(1);
     });
 
     it('targets the owner when no agent tab appears in focus history', async () => {

@@ -1,3 +1,4 @@
+import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -1210,15 +1211,19 @@ describe('connections-store', () => {
 
   it('add captures the pairing tcAddress and it round-trips through disk', async () => {
     const store = await import('../connections-store');
-    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
-    expect(rec.tcAddress).toBe('tc.example.ts.net');
+    const rec = await store.add({ ...sampleConn, host: TC_ADDRESS, tcAddress: TC_ADDRESS });
+    expect(rec.tcAddress).toBe(TC_ADDRESS);
     await store.__drainWriteChainForTesting();
 
     vi.resetModules();
     mockElectron();
     const reloaded = await import('../connections-store');
     const remote = (await reloaded.list()).find((c) => c.id === rec.id);
-    expect(remote?.tcAddress).toBe('tc.example.ts.net');
+    expect(remote?.tcAddress).toBe(TC_ADDRESS);
+    expect(remote?.host).toBe(TC_ADDRESS);
+    expect(remote?.hosts).toEqual([TC_ADDRESS]);
+    await reloaded.setTcAddress(rec.id, `  ${TC_ADDRESS}\n`);
+    expect((await reloaded.list()).find((c) => c.id === rec.id)?.tcAddress).toBe(TC_ADDRESS);
   });
 
   it('records default to a null tcAddress until one is captured', async () => {
@@ -1230,12 +1235,12 @@ describe('connections-store', () => {
 
   it('re-pair keeps the known tcAddress when the new pairing URI omits tc=', async () => {
     const store = await import('../connections-store');
-    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    const rec = await store.add({ ...sampleConn, tcAddress: TC_ADDRESS });
 
     // Same host:port → same identity; an older QR without tc= must not clear it.
     const repaired = await store.add({ ...sampleConn, token: 'token-2' });
     expect(repaired.id).toBe(rec.id);
-    expect(repaired.tcAddress).toBe('tc.example.ts.net');
+    expect(repaired.tcAddress).toBe(TC_ADDRESS);
 
     // A pairing URI that does carry tc= overwrites.
     const updated = await store.add({ ...sampleConn, token: 'token-3', tcAddress: 'tc2.ts.net' });
@@ -1246,11 +1251,11 @@ describe('connections-store', () => {
     const store = await import('../connections-store');
     const rec = await store.add(sampleConn);
 
-    await expect(store.setTcAddress(rec.id, 'tc.example.ts.net')).resolves.toBe(true);
-    expect((await store.list())[1].tcAddress).toBe('tc.example.ts.net');
+    await expect(store.setTcAddress(rec.id, TC_ADDRESS)).resolves.toBe(true);
+    expect((await store.list())[1].tcAddress).toBe(TC_ADDRESS);
 
     // The routine every-reconnect same-address capture is a no-op.
-    await expect(store.setTcAddress(rec.id, 'tc.example.ts.net')).resolves.toBe(false);
+    await expect(store.setTcAddress(rec.id, TC_ADDRESS)).resolves.toBe(false);
 
     // A successful status without the field conclusively clears the address.
     await expect(store.setTcAddress(rec.id, null)).resolves.toBe(true);
@@ -1273,12 +1278,12 @@ describe('connections-store', () => {
       const unsubscribe = store.onConnectionsMutated(listener);
 
       vi.setSystemTime(1_700_000_001_000);
-      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.setTcAddress(rec.id, TC_ADDRESS);
       await store.__drainWriteChainForTesting();
 
       const file = path.join(tmpDir, 'backend-connections.json');
       const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
-      expect(parsed.connections[0].tcAddress).toBe('tc.example.ts.net');
+      expect(parsed.connections[0].tcAddress).toBe(TC_ADDRESS);
       // A tc address change is a syncable edit: the LWW clock advances so the
       // rotation propagates to the user's other devices.
       expect(parsed.connections[0].updatedAt).toBe(1_700_000_001_000);
@@ -1286,7 +1291,7 @@ describe('connections-store', () => {
 
       // The unchanged every-reconnect case skips the write: no clock bump,
       // no sync notification.
-      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.setTcAddress(rec.id, TC_ADDRESS);
       await store.__drainWriteChainForTesting();
       expect(listener).toHaveBeenCalledTimes(1);
       unsubscribe();
@@ -1294,7 +1299,7 @@ describe('connections-store', () => {
       // The captured address is part of the sync surface.
       const records = await store.listSyncRecords();
       const synced = records.find((r) => r.host === sampleConn.host);
-      expect(synced?.tcAddress).toBe('tc.example.ts.net');
+      expect(synced?.tcAddress).toBe(TC_ADDRESS);
     } finally {
       vi.useRealTimers();
     }
@@ -1309,7 +1314,7 @@ describe('connections-store', () => {
       // Same-millisecond capture (the routine post-connect case): the stamp
       // is forced strictly past the record's clock, or reconcile would treat
       // equal live clocks as in-sync and never propagate the address.
-      await store.setTcAddress(rec.id, 'tc.example.ts.net');
+      await store.setTcAddress(rec.id, TC_ADDRESS);
       await store.__drainWriteChainForTesting();
 
       const file = path.join(tmpDir, 'backend-connections.json');
@@ -1322,11 +1327,11 @@ describe('connections-store', () => {
 
   it('sync records carry tcAddress and applyRemoteSyncRecord round-trips it', async () => {
     const store = await import('../connections-store');
-    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    const rec = await store.add({ ...sampleConn, tcAddress: TC_ADDRESS });
 
     const records = await store.listSyncRecords();
     const synced = records.find((r) => r.host === sampleConn.host);
-    expect(synced?.tcAddress).toBe('tc.example.ts.net');
+    expect(synced?.tcAddress).toBe(TC_ADDRESS);
 
     // A newer remote copy updates the stored address in place…
     await store.applyRemoteSyncRecord({ ...synced!, tcAddress: 'tc2.ts.net', updatedAt: 9e12 });
@@ -1346,22 +1351,22 @@ describe('connections-store', () => {
       port: 8443,
       fingerprint: 'AA:BB',
       hostname: null,
-      tcAddress: 'tc.example.ts.net',
+      tcAddress: TC_ADDRESS,
       detectHosts: true,
       token: 'tok',
       updatedAt: 1_700_000_000_000,
     });
     const pulled = (await store.list()).find((c) => c.host === '10.0.0.9');
-    expect(pulled?.tcAddress).toBe('tc.example.ts.net');
+    expect(pulled?.tcAddress).toBe(TC_ADDRESS);
   });
 
   it('an identity change via updateMetadata clears the captured tcAddress', async () => {
     const store = await import('../connections-store');
-    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    const rec = await store.add({ ...sampleConn, tcAddress: TC_ADDRESS });
 
     // A metadata-only edit keeps the address…
     await store.updateMetadata(rec.id, { label: 'Renamed', accent: 'blue' });
-    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe('tc.example.ts.net');
+    expect((await store.list()).find((c) => c.id === rec.id)?.tcAddress).toBe(TC_ADDRESS);
 
     // …but a new endpoint may be a different machine: the old daemon's tunnel
     // address must not sync fleet-wide under the new identity.
@@ -1376,7 +1381,7 @@ describe('connections-store', () => {
 
   it('a fingerprint change via updateMetadata or replaceSecret clears the captured tcAddress', async () => {
     const store = await import('../connections-store');
-    const rec = await store.add({ ...sampleConn, tcAddress: 'tc.example.ts.net' });
+    const rec = await store.add({ ...sampleConn, tcAddress: TC_ADDRESS });
     await store.updateMetadata(rec.id, {
       label: sampleConn.label,
       accent: 'blue',
@@ -1620,7 +1625,7 @@ describe('connections-store keychain sync surface', () => {
       // setTcAddress forced the clock one past add's stamp; a setHosts in the
       // SAME millisecond (the every-connect system.status capture writes
       // both back to back) must land strictly after it, not at Date.now().
-      await store.setTcAddress(rec.id, 'tc7f2a91.tailcat.net');
+      await store.setTcAddress(rec.id, TC_ADDRESS);
       await store.setHosts(rec.id, ['10.0.0.5']);
       await store.__drainWriteChainForTesting();
       const file = path.join(tmpDir, 'backend-connections.json');

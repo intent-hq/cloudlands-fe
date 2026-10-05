@@ -7,7 +7,7 @@ import {
 } from '$shared/specialist-file-types';
 import { store as appStore } from '$store/renderer/store';
 import type { StoreState } from '$store/renderer/types';
-import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
+import { selectContextSelectedModel } from '$store/renderer/slices/provider-catalog/workspace-catalog-selectors';
 import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { selectSpecialistProposalAppliedState } from '$store/renderer/slices/specialist-proposal-history/specialist-proposal-history-selectors';
 import type {
@@ -30,7 +30,6 @@ import {
   saveFileSpecialist,
   type FileSpecialist,
 } from '$store/renderer/slices/specialists/specialists-slice';
-import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { getProposalId } from './proposal-id';
 
@@ -66,8 +65,7 @@ function stringField(
   return typeof value === 'string' ? value : fallback;
 }
 
-function getCurrentWorkspacePath(state: StoreState): string | undefined {
-  const workspaceId = selectCurrentWorkspaceTabId.select(state);
+function getCurrentWorkspacePath(state: StoreState, workspaceId?: string): string | undefined {
   if (!workspaceId) return undefined;
   const workspace = selectWorkspaceById.select(state, workspaceId);
   return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
@@ -84,18 +82,26 @@ function buildCurrentSpecialistPayload(
   fileSpec: FileSpecialist | undefined,
   scope: SpecialistFileScope,
   workspacePath: string | undefined,
+  workspaceId?: string,
 ): FileSpecialistWritePayload {
   return {
     id,
     name: current.name,
     description: current.description,
     codingAgent:
-      fileSpec?.codingAgent ?? current.codingAgent ?? selectEffectiveCodingAgent.select(state, id),
-    model: fileSpec?.model ?? current.defaultModel ?? selectEffectiveModel.select(state, id),
+      fileSpec?.codingAgent ??
+      current.codingAgent ??
+      selectEffectiveCodingAgent.select(state, id, workspaceId),
+    model:
+      fileSpec?.model ??
+      current.defaultModel ??
+      selectEffectiveModel.select(state, id, workspaceId),
     roleReminder: fileSpec?.roleReminder ?? current.roleReminder,
-    behaviorPrompt: fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id),
+    behaviorPrompt:
+      fileSpec?.behaviorPrompt ?? selectEffectiveBehaviorPrompt.select(state, id, workspaceId),
     scope,
     workspacePath,
+    workspaceId,
   };
 }
 
@@ -124,7 +130,8 @@ export async function applySpecialistProposalWork(
   const state = appStore.state;
   const payload = getPayload(proposal);
   const operation = payload.operation ?? payload.action ?? 'edit';
-  const existingSpecialists = selectSpecialists.select(state);
+  const readWorkspaceId = payload.scope === 'project' ? detail.workspaceId : undefined;
+  const existingSpecialists = selectSpecialists.select(state, readWorkspaceId);
   const requestedId = typeof payload.id === 'string' ? payload.id : '';
   const current = requestedId
     ? existingSpecialists.find((specialist) => specialist.id === requestedId)
@@ -136,12 +143,14 @@ export async function applySpecialistProposalWork(
       name || 'specialist',
       existingSpecialists.map((specialist) => specialist.id),
     );
-  const fileSpec = selectGetFileSpecialist.select(state, id);
+  const fileSpec = selectGetFileSpecialist.select(state, id, readWorkspaceId);
   const scope = getScope(payload.scope, fileSpec?.source);
-  const workspacePath = scope === 'project' ? getCurrentWorkspacePath(state) : undefined;
+  const workspaceId = scope === 'project' ? detail.workspaceId : undefined;
+  const workspacePath =
+    scope === 'project' ? getCurrentWorkspacePath(state, workspaceId) : undefined;
   const reverse: SpecialistReverseAction =
     operation === 'create'
-      ? { kind: 'delete', id, scope, workspacePath }
+      ? { kind: 'delete', id, scope, workspacePath, workspaceId }
       : current
         ? {
             kind: 'save',
@@ -152,27 +161,26 @@ export async function applySpecialistProposalWork(
               fileSpec,
               scope,
               workspacePath,
+              workspaceId,
             ),
           }
-        : { kind: 'delete', id, scope, workspacePath };
+        : { kind: 'delete', id, scope, workspacePath, workspaceId };
 
   if (operation === 'delete') {
-    const deleteAction = deleteFileSpecialistAction({ id, scope, workspacePath });
-    appStore.dispatch(deleteAction);
-    await deleteAction.promise;
+    await appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath, workspaceId }));
     return { reverse };
   }
 
   const fallbackModel = current
-    ? selectEffectiveModel.select(state, current.id)
-    : selectSelectedModel.select(state);
+    ? selectEffectiveModel.select(state, current.id, workspaceId)
+    : selectContextSelectedModel.select(state, workspaceId);
   // Writes emit bare model ids only (PROTOCOL §5.11): a legacy compound
   // proposal/fallback model splits into the bare id plus its provider, the
   // prefix winning as the codingAgent (`|| fallback` so a malformed empty
   // prefix never propagates as a "real" provider id).
   const rawModel = stringField(proposal, detail, 'model', fallbackModel).trim();
   const { providerId: modelProviderId, modelId: model } = splitLegacyCompoundId(rawModel);
-  const defaultProviderId = selectEffectiveDefaultProviderId.select(state);
+  const defaultProviderId = selectEffectiveDefaultProviderId.select(state, workspaceId);
   const providerId = modelProviderId || defaultProviderId;
   const description = stringField(
     proposal,
@@ -184,7 +192,7 @@ export async function applySpecialistProposalWork(
     proposal,
     detail,
     'prompt',
-    current ? selectEffectiveBehaviorPrompt.select(state, current.id) : '',
+    current ? selectEffectiveBehaviorPrompt.select(state, current.id, workspaceId) : '',
   );
 
   const saveAction = saveFileSpecialist({
@@ -196,15 +204,15 @@ export async function applySpecialistProposalWork(
     codingAgent:
       modelProviderId ||
       (payload.codingAgent ??
-        (current ? selectEffectiveCodingAgent.select(state, current.id) : providerId)),
+        (current ? selectEffectiveCodingAgent.select(state, current.id, workspaceId) : providerId)),
     model,
     roleReminder: payload.roleReminder ?? current?.roleReminder,
     behaviorPrompt: prompt,
     scope,
     workspacePath,
+    workspaceId,
   });
-  appStore.dispatch(saveAction);
-  await saveAction.promise;
+  await appStore.dispatch(saveAction);
   if (operation === 'create') await navigateToCreatedSpecialist(id);
 
   return { reverse };
@@ -212,16 +220,12 @@ export async function applySpecialistProposalWork(
 
 export async function undoSpecialistProposalWork(reverse: SpecialistReverseAction): Promise<void> {
   if (reverse.kind === 'delete') {
-    const { id, scope, workspacePath } = reverse;
-    const deleteAction = deleteFileSpecialistAction({ id, scope, workspacePath });
-    appStore.dispatch(deleteAction);
-    await deleteAction.promise;
+    const { id, scope, workspacePath, workspaceId } = reverse;
+    await appStore.dispatch(deleteFileSpecialistAction({ id, scope, workspacePath, workspaceId }));
     return;
   }
 
-  const saveAction = saveFileSpecialist(reverse.specialist);
-  appStore.dispatch(saveAction);
-  await saveAction.promise;
+  await appStore.dispatch(saveFileSpecialist(reverse.specialist));
 }
 
 export function undoSpecialistProposal(proposalId: string): boolean {

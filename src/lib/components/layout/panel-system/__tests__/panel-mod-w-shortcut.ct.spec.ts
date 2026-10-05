@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import PanelModWShortcutHarness from './mocks/PanelModWShortcutHarness.svelte';
 
@@ -7,7 +7,7 @@ const state = (component: Locator) => component.getByTestId('mod-w-state');
 function measureGeometry(component: Locator) {
   return component.evaluate(() => {
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
-    const canvas = inset.querySelector('.panel-canvas-resize-handle')?.parentElement as HTMLElement;
+    const canvas = inset.querySelector('.panel-canvas-frame') as HTMLElement;
     const panels = [...document.querySelectorAll<HTMLElement>('[data-panel-id]')];
     const track = document.querySelector<HTMLElement>('.panel-navigator-track');
     const thumb = document.querySelector<HTMLElement>('[data-panel-navigator-thumb]');
@@ -49,12 +49,7 @@ for (const { platform, isMac, modifier } of [
       await component.getByTestId('shortcut-input').focus();
 
       await page.keyboard.press(`${modifier}+w`);
-      await expect(layoutState).toHaveAttribute('data-empty-panel-ids', 'p2');
-      await expect(layoutState).toHaveAttribute('data-column-count', '3');
-      await expect(layoutState).toHaveAttribute('data-panel-ids', 'p1,p2,p3');
-      await expect(layoutState).toHaveAttribute('data-root-sizes', '20,50,30');
-
-      await page.keyboard.press(`${modifier}+w`);
+      await expect(layoutState).toHaveAttribute('data-empty-panel-ids', '');
       await expect(layoutState).toHaveAttribute('data-column-count', '2');
       await expect(layoutState).toHaveAttribute('data-panel-ids', 'p1,p3');
       await expect(layoutState).toHaveAttribute('data-focused-panel', 'p3');

@@ -40,6 +40,16 @@ export const selectReconnectAttempts = store.createSelector(
   (state) => state.daemonHealth.reconnectAttempts,
 );
 
+/** The host's guest connection cap refused the last connect (HTTP 503). */
+export const selectConnectionLimited = store.createSelector(
+  (state) => state.daemonHealth.connectionLimited,
+);
+
+/** Main's scheduled wait before the next attempt while the cap refuses us; null otherwise. */
+export const selectConnectionLimitRetryAfterMs = store.createSelector(
+  (state) => state.daemonHealth.connectionLimitRetryAfterMs,
+);
+
 /** Connected-daemon-vs-pin version comparison derived for the health UI. */
 export interface DaemonVersionComparison {
   /** Semver ordering of the daemon version relative to the pin ('unknown' when unparsable). */
@@ -69,6 +79,74 @@ export const selectDaemonVersionComparison = store.createSelector(
       pinnedVersion,
     };
   },
+);
+
+/**
+ * First protocol version (major, minor) whose daemon serves the
+ * provider-generic `sourceControl.*` auth methods (`authStatus`, `connect`,
+ * `cancelAuth`, `revoke`, `getUser`) the GitLab connection flows call.
+ */
+const SOURCE_CONTROL_AUTH_MIN_PROTOCOL = { major: 10, minor: 5 } as const;
+
+/**
+ * True when a daemon reporting `protocolVersion` serves the `sourceControl.*`
+ * auth methods. Compares (major, minor) only — patch segments never change
+ * method availability. Only a whole `major.minor[.patch]` string counts;
+ * missing or malformed versions are unsupported: a daemon too old to report
+ * the field also predates the methods.
+ */
+export function supportsSourceControlAuthProtocol(protocolVersion?: string | null): boolean {
+  if (!protocolVersion) return false;
+  const match = protocolVersion.trim().match(/^([0-9]+)\.([0-9]+)(?:\.[0-9]+)?$/);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const { major: minMajor, minor: minMinor } = SOURCE_CONTROL_AUTH_MIN_PROTOCOL;
+  return major > minMajor || (major === minMajor && minor >= minMinor);
+}
+
+/**
+ * True when the connected daemon (per the last system.status poll) serves the
+ * `sourceControl.*` auth methods behind the GitLab connection flows. False
+ * before the first poll — the GitLab surfaces stay hidden until the daemon
+ * has proven the capability rather than offering a connect that would fail.
+ */
+export const selectDaemonSupportsSourceControlAuth = store.createSelector((state): boolean =>
+  supportsSourceControlAuthProtocol(state.daemonHealth.stats?.protocolVersion),
+);
+
+/**
+ * First protocol version (major, minor) whose daemon serves the
+ * provider-neutral identity seam: `Principal.identity` on `principal.me` /
+ * `workspace.members.list`, the `identity.provider` setting and
+ * `principal:identity-changed`, `pinProvider` / `pinHost` on
+ * `workspace.invite.create`, and `sourceControl.identityProof.*` with the
+ * `provider` / `host` / `proofId` params of `invite.prove`.
+ */
+const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 8 } as const;
+
+/**
+ * True when a daemon reporting `protocolVersion` serves the identity seam
+ * above. Same comparison rules as `supportsSourceControlAuthProtocol`.
+ */
+export function supportsIdentitySeamProtocol(protocolVersion?: string | null): boolean {
+  if (!protocolVersion) return false;
+  const match = protocolVersion.trim().match(/^([0-9]+)\.([0-9]+)(?:\.[0-9]+)?$/);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const { major: minMajor, minor: minMinor } = IDENTITY_SEAM_MIN_PROTOCOL;
+  return major > minMajor || (major === minMajor && minor >= minMinor);
+}
+
+/**
+ * True when the connected daemon (per the last system.status poll) serves the
+ * identity seam. False before the first poll — the identity choice, provider
+ * pins and provider-aware member rows stay hidden until the daemon has proven
+ * the capability, and the GitHub-only shapes are sent instead.
+ */
+export const selectDaemonSupportsIdentitySeam = store.createSelector((state): boolean =>
+  supportsIdentitySeamProtocol(state.daemonHealth.stats?.protocolVersion),
 );
 
 /**
@@ -166,4 +244,14 @@ export const selectUnslothStatus = store.createSelector(
 /** True while an unsloth.stop request is in flight. */
 export const selectUnslothStopping = store.createSelector(
   (state) => state.daemonHealth.unslothStopping,
+);
+
+/** Last agent.memoryUsage result (fetched while the agent memory breakdown is open), if any. */
+export const selectAgentMemoryUsage = store.createSelector(
+  (state) => state.daemonHealth.agentMemoryUsage,
+);
+
+/** True when the last agent.memoryUsage fetch failed. */
+export const selectAgentMemoryUsageError = store.createSelector(
+  (state) => state.daemonHealth.agentMemoryUsageError,
 );

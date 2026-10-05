@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   /**
    * PathSettingField — reusable settings-row path field.
    *
@@ -92,37 +93,39 @@
   }
 </script>
 
-<div class="flex items-center gap-2 flex-1 max-w-md">
-  <input
+<div class="flex max-w-md flex-1 items-center gap-2">
+  <Input
     {id}
     type="text"
     readonly
     {value}
     {placeholder}
     aria-label={ariaLabel}
-    class="flex-1 min-w-0 px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground transition-all focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+    class="min-w-0 flex-1"
   />
-  <button
+  <Button
+    variant="ghost"
+    size="icon-xs"
     type="button"
     onclick={handleBrowseClick}
     aria-label={resolvedBrowseAriaLabel}
     title={resolvedBrowseAriaLabel}
-    class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer shrink-0"
+    class="shrink-0"
   >
     <Fa icon={faFolderOpen} size="sm" />
-  </button>
-  <button
+  </Button>
+  <Button
+    variant="ghost"
+    size="icon-xs"
     type="button"
     onclick={() => commit('')}
     disabled={!value}
     aria-label={resolvedClearAriaLabel}
     title={resolvedClearAriaLabel}
-    class="p-1.5 rounded transition-colors shrink-0 {value
-      ? 'text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer'
-      : 'text-muted-foreground/40 cursor-not-allowed'}"
+    class="shrink-0"
   >
     <Fa icon={faRotateLeft} size="sm" />
-  </button>
+  </Button>
 </div>
 
 {#if confirm}

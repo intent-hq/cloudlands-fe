@@ -12,9 +12,6 @@
  *      call with the requested channel.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
 
 // Mock backend transport so unrelated Store initialization probes resolve quietly
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -140,51 +137,7 @@ describe('update-channel regression (intent-hq/monorepo#1672)', () => {
   });
 });
 
-/**
- * Single-writer guard: the update-channel persistence saga must be the
- * ONLY renderer call site of autoUpdateClient.setChannel. UI surfaces
- * (Settings channel selector, settings proposals) dispatch setUpdateChannel
- * only — a direct setChannel there would duplicate the saga's write on
- * every user change. Combined with the exactly-once dispatch tests above,
- * this proves the real UI path issues one write.
- */
-describe('setChannel single-writer source guard', () => {
-  const SRC_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../../..');
-  const ALLOWED = 'store/renderer/slices/user-preferences/sagas/update-channel-saga.ts';
-
-  async function findSetChannelCallSites(dir: string, hits: string[]): Promise<void> {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || entry.name === '__tests__') continue;
-        await findSetChannelCallSites(full, hits);
-      } else if (/\.(ts|svelte)$/.test(entry.name) && !/\.(test|spec)\.ts$/.test(entry.name)) {
-        const content = await fs.readFile(full, 'utf8');
-        if (content.includes('autoUpdateClient.setChannel')) {
-          hits.push(path.relative(SRC_ROOT, full));
-        }
-      }
-    }
-  }
-
-  it('the persistence saga is the only renderer call site of autoUpdateClient.setChannel', async () => {
-    const hits: string[] = [];
-    await findSetChannelCallSites(SRC_ROOT, hits);
-    expect(hits).toEqual([ALLOWED]);
-  });
-
-  it('Settings selector and settings proposals dispatch the Redux action instead', async () => {
-    const [settingsPage, proposalActions] = await Promise.all([
-      fs.readFile(path.join(SRC_ROOT, 'routes/(app)/settings/+page.svelte'), 'utf8'),
-      fs.readFile(
-        path.join(SRC_ROOT, 'lib/components/chat/proposals/settings-proposal-actions.ts'),
-        'utf8',
-      ),
-    ]);
-    expect(settingsPage).toContain('setUpdateChannel(');
-    expect(settingsPage).not.toContain('autoUpdateClient.setChannel');
-    expect(proposalActions).toContain('setUpdateChannel(');
-    expect(proposalActions).not.toContain('autoUpdateClient.setChannel');
-  });
-});
+// The single-writer call-site guard (the persistence saga is the ONLY renderer
+// caller of autoUpdateClient.setChannel; Settings and settings proposals
+// dispatch setUpdateChannel instead) is the `lint:update-channel-writer`
+// architecture gate: scripts/check-update-channel-writer.mjs.

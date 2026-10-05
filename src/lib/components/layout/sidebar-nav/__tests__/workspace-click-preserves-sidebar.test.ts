@@ -1,3 +1,5 @@
+// @verify-changed-triggers: ../cards/ActiveWorkspacesCard.svelte, ../cards/AllWorkspacesCard.svelte
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 

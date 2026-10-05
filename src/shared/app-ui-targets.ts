@@ -95,6 +95,16 @@ const APP_UI_TARGETS: AppUiTarget[] = [
     description: 'Saved remote device settings.',
   }),
   settingsTarget({
+    id: 'guest-sessions',
+    tab: 'collaboration',
+    hashAliases: ['collaboration', 'guest-sessions', 'sharing'],
+    scrollSelector: '#collaboration',
+    highlightSelector: '#collaboration',
+    label: 'Settings: Collaboration',
+    route: '/settings?tab=collaboration#collaboration',
+    description: 'Host membership, workspace guests and joined hosts.',
+  }),
+  settingsTarget({
     id: 'websocket-api',
     tab: 'devices',
     hashAliases: ['websocket-api', 'remote-access'],

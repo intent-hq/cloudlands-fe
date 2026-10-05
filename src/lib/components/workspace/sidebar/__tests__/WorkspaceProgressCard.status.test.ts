@@ -7,6 +7,8 @@ import { tick } from 'svelte';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import type { LiveClient, WorkspaceBrowserClient } from '$shared/types/browser-clients';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import type { WorkspaceProgressAction } from '$store/renderer/slices/workspace/workspace-types';
 import type { BrowserClientsState } from '$store/renderer/slices/browser-clients/browser-clients-types';
 import {
@@ -20,13 +22,18 @@ const mocks = vi.hoisted(() => {
   const storeState = {
     panelLayout: {
       byWorkspaceId: {
-        'ws-1': { columnCount: 2 },
+        'ws-1': { columnCount: 2, panels: {} } as {
+          columnCount: number;
+          panels: Record<string, unknown>;
+          hiddenTabs?: unknown;
+        },
       },
     },
     workspace: {
       pendingTitleMutations: {} as Record<string, { token: number }>,
     },
     browserClients: undefined as unknown,
+    userPreferences: undefined as { labsMultiplayerEnabled?: boolean } | undefined,
   };
   const dispatch = vi.fn((action: { type: string; payload?: unknown[] }) => {
     if (
@@ -46,6 +53,7 @@ const mocks = vi.hoisted(() => {
     return action;
   });
   const update = vi.fn();
+  const archive = vi.fn();
   const clipboardWrite = vi.fn();
   const toastSuccess = vi.fn();
   const toastError = vi.fn();
@@ -90,9 +98,12 @@ const mocks = vi.hoisted(() => {
       { select: getter },
     );
   const notifySelectors = () => selectorSubscribers.forEach((notify) => notify());
+  const role = { hidesOwnerActions: false };
   return {
+    role,
     dispatch,
     update,
+    archive,
     clipboardWrite,
     toastSuccess,
     toastError,
@@ -108,8 +119,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
 vi.mock('$store/renderer/store', async () => {
@@ -127,6 +138,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),
+  selectHidesOwnerWorkspaceActions: mocks.selector(() => mocks.role.hidesOwnerActions),
+  selectCanShareWorkspace: mocks.selector(
+    () =>
+      mocks.storeState.userPreferences?.labsMultiplayerEnabled === true &&
+      !mocks.role.hidesOwnerActions &&
+      (mocks.workspaceEntity.canManage === true || mocks.workspaceEntity.myRole === 'owner'),
+  ),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -149,12 +167,18 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectWorkspacePresencePeople: mocks.selector(() => []),
+  selectWorkspacePresenceFocusTargets: mocks.selector(() => ({})),
+}));
+
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectAcceptChangesStatus: mocks.selector(() => null),
   selectAcceptChangesStatusLoading: mocks.selector(() => false),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
   removeWorkspaceEntity: Object.assign(
     vi.fn((id: string) => ({ type: 'workspace/removeWorkspaceEntity', payload: [id] })),
@@ -207,15 +231,21 @@ vi.mock('$store/renderer/slices/workspace-transfer/workspace-transfer-slice', ()
   })),
 }));
 
-vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
-  requestDeleteWorkspace: vi.fn((id: string) => ({
-    type: 'workspaceOperations/delete',
-    payload: [id],
-  })),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-operations/workspace-operations-slice',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-operations/workspace-operations-slice')
+    >()),
+    requestDeleteWorkspace: vi.fn((id: string) => ({
+      type: 'workspaceOperations/delete',
+      payload: [id],
+    })),
+  }),
+);
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: mocks.update, archive: vi.fn(), unarchive: vi.fn() },
+  workspaceClient: { update: mocks.update, archive: mocks.archive, unarchive: vi.fn() },
 }));
 
 vi.mock('$features/accept-changes/accept-changes.client', () => ({
@@ -279,6 +309,7 @@ async function renderProgressCard(overrides: Partial<Workspace> = {}) {
     status: WorkspaceStatusEnum.Active,
     statusMessage: undefined,
     statusImageAssetId: undefined,
+    myRole: undefined,
     ...overrides,
   } as Workspace;
   const WorkspaceProgressCard = (await import('../WorkspaceProgressCard.svelte')).default;
@@ -317,6 +348,7 @@ describe('WorkspaceProgressCard status message', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.update.mockReset();
+    mocks.archive.mockReset();
     mocks.notes.length = 0;
     mocks.taskState.initialized = true;
     mocks.taskState.loading = false;
@@ -329,6 +361,9 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
     mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.storeState.userPreferences = undefined;
+    mocks.role.hidesOwnerActions = false;
+    delete mocks.workspaceEntity.canManage;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -368,6 +403,19 @@ describe('WorkspaceProgressCard status message', () => {
     expect(archiveIndex).toBe(transferIndex + 1);
   });
 
+  it('routes archive through the workspace-operations saga instead of calling the RPC directly', async () => {
+    const { requestArchiveWorkspace } =
+      await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+    const { container } = await renderProgressCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Archive Workspace' }));
+    await tick();
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(requestArchiveWorkspace('ws-1'));
+    expect(mocks.archive).not.toHaveBeenCalled();
+  });
+
   it('dispatches the transfer payload and dismisses the menu', async () => {
     const { container } = await renderProgressCard();
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
@@ -382,6 +430,103 @@ describe('WorkspaceProgressCard status message', () => {
     expect(
       container.querySelector('[data-workspace-actions-trigger]')?.getAttribute('aria-expanded'),
     ).toBe('false');
+  });
+
+  it('offers Share when current sharing authority admits a member with collaborator metadata (#6390)', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    mocks.workspaceEntity.myRole = 'collaborator';
+    mocks.workspaceEntity.canManage = true;
+    const { container } = await renderProgressCard();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    await fireEvent.click(screen.getByRole('button', { name: 'Share…' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
+  });
+
+  it('offers Share to the workspace owner ahead of Transfer and opens the share dialog once the Multiplayer lab is on', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    const share = screen.getByRole('button', { name: 'Share…' });
+    const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
+    const menuItems = Array.from(share.parentElement!.children);
+    const shareIndex = menuItems.indexOf(share);
+
+    expect(share.dataset.iconName).toBe('user-plus');
+    expect(menuItems[shareIndex - 1]?.getAttribute('data-testid')).toBe('menu-divider');
+    expect(menuItems.indexOf(transfer)).toBe(shareIndex + 1);
+
+    await fireEvent.click(share);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspaceShare/openDialog',
+      payload: [{ workspaceId: 'ws-1', workspaceTitle: 'Active Workspace' }],
+    });
+    expect(
+      container.querySelector('[data-workspace-actions-trigger]')?.getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
+  it.each([
+    ['by default (no preference persisted)', undefined],
+    ['while the Multiplayer lab is off', { labsMultiplayerEnabled: false }],
+  ])('does not offer Share to the owner %s', async (_label, userPreferences) => {
+    mocks.storeState.userPreferences = userPreferences;
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
+  });
+
+  it.each([
+    ['a collaborator', { myRole: 'collaborator' as const }],
+    ['no reported role', { myRole: undefined }],
+  ])('does not offer Share to %s even with the Multiplayer lab on', async (_label, overrides) => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    const { container } = await renderProgressCard(overrides);
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+  });
+
+  it('does not offer Share while the owner-only actions are hidden, even when the row reports myRole owner (guest window / unsettled identity)', async () => {
+    mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
+    mocks.role.hidesOwnerActions = true;
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+  });
+
+  it('offers Transfer, Archive and Delete to the workspace owner', async () => {
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Archive Workspace' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete Workspace…' })).toBeTruthy();
+  });
+
+  it('hides Transfer, Archive and Delete from a collaborator while keeping the rest of the menu', async () => {
+    mocks.role.hidesOwnerActions = true;
+    const { container } = await renderProgressCard({ myRole: 'collaborator' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Archive Workspace' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete Workspace…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Toggle Sidebar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move sidebar to right' })).toBeTruthy();
   });
 
   it('omits the transfer action when workspace data becomes unavailable', async () => {
@@ -612,6 +757,13 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('true');
   });
 
+  it('uses daemon aggregate progress without initializing individual task rows', async () => {
+    mocks.taskState.initialized = false;
+    mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
+    await renderProgressCard({ taskStats: { total: 2, completed: 1, inProgress: 1 } });
+    expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('false');
+  });
+
   it('keeps the progress bar mounted across task refetches after initialization', async () => {
     mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
     const { container } = await renderProgressCard();
@@ -837,8 +989,24 @@ describe('WorkspaceProgressCard driving browser client', () => {
       ownClientId: OWN,
       liveClients: createLiveClientCollection(clients),
       liveClientsLoaded: true,
-      byWorkspaceId: { 'ws-1': { ...emptyWorkspaceBrowserClientsState, browserClient } },
+      byWorkspaceId: {
+        'ws-1': {
+          ...emptyWorkspaceBrowserClientsState,
+          browserClient,
+          liveClients: createLiveClientCollection(clients),
+          liveClientsLoaded: true,
+        },
+      },
     } satisfies BrowserClientsState;
+  }
+
+  const browserTab: PanelTab = { id: 'tab-web', type: 'browser', title: 'Web', closable: true };
+
+  /** Put `tabs` in the workspace's single panel (the indicator needs a browser tab). */
+  function seedPanelTabs(tabs: PanelTab[]): void {
+    mocks.storeState.panelLayout.byWorkspaceId['ws-1'].panels = {
+      main: { id: 'main', tabs, activeTabId: tabs[0]?.id ?? null },
+    };
   }
 
   const drivingIndicator = (container: HTMLElement) =>
@@ -859,6 +1027,7 @@ describe('WorkspaceProgressCard driving browser client', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.storeState.browserClients = browserClientsInitialState;
+    seedPanelTabs([browserTab]);
   });
 
   it('shows nothing and offers no switch when this app is the only eligible client', async () => {
@@ -963,6 +1132,73 @@ describe('WorkspaceProgressCard driving browser client', () => {
     expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
     expect(screen.getByRole('button', SET_PRIMARY)).toBeTruthy();
+  });
+
+  it('hides the indicator without browser tabs but keeps the switch, and shows it once a tab opens', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OTHER, name: 'desktop' },
+    });
+    seedPanelTabs([]);
+    const { container } = await renderDrivingCard();
+    const { store } = await import('$store/renderer/store');
+    const emitState = () => (store as unknown as { emitState: () => void }).emitState();
+
+    expect(drivingIndicator(container)).toBeNull();
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+    expect(screen.getByRole('button', SET_PRIMARY)).toBeTruthy();
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    // A browser tab opening in the layout (no reload) reveals the indicator …
+    seedPanelTabs([browserTab]);
+    emitState();
+    await tick();
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('elsewhere');
+
+    // … and closing the last one hides it again.
+    seedPanelTabs([]);
+    emitState();
+    await tick();
+    expect(drivingIndicator(container)).toBeNull();
+  });
+
+  it('counts a hidden agent-owned browser tab as a tab to drive', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop'), liveClient(OTHER, 'desktop')], {
+      source: 'default',
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    seedPanelTabs([]);
+    mocks.storeState.panelLayout.byWorkspaceId['ws-1'].hiddenTabs = createCollection('id', [
+      { ...browserTab, ownerAgentId: 'agent-1' },
+    ]);
+    try {
+      const { container } = await renderDrivingCard();
+      expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('here');
+    } finally {
+      mocks.storeState.panelLayout.byWorkspaceId['ws-1'].hiddenTabs = undefined;
+    }
+  });
+
+  it('never renders the indicator with one connected client even with browser tabs', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'default',
+      resolved: { clientId: OWN, name: 'laptop' },
+    });
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)).toBeNull();
+  });
+
+  it('surfaces an offline pinned client without any browser tabs', async () => {
+    seedBrowserClients([liveClient(OWN, 'laptop')], {
+      source: 'workspace',
+      clientId: OTHER,
+      resolved: null,
+    });
+    seedPanelTabs([]);
+    const { container } = await renderDrivingCard();
+
+    expect(drivingIndicator(container)?.dataset.sidebarDrivingClient).toBe('offline');
   });
 
   it('hides the switch while this app does not yet know its own client id', async () => {

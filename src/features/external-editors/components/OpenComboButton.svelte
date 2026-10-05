@@ -8,7 +8,7 @@
   import { Button } from '$lib/components/ui/button';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { invoke } from '$lib/electron-bridge';
   import {
     fetchEditors,
@@ -77,6 +77,10 @@
     compact?: boolean;
     /** Render as a labeled submenu inside an existing action menu. */
     embedded?: boolean;
+    /** Render a children trigger as inline sentence text. */
+    inline?: boolean;
+    /** Render an icon-only children trigger as a fixed icon-sized transparent control. */
+    iconOnly?: boolean;
     children?: Snippet;
   }
 
@@ -93,6 +97,8 @@
     branchName,
     compact = false,
     embedded = false,
+    inline = false,
+    iconOnly = false,
     children = undefined,
   }: Props = $props();
 
@@ -208,6 +214,12 @@
   const hasOpenCapableAction = $derived(
     actions.some((a) => a.id !== 'copy' && a.id !== 'copy-branch'),
   );
+  const openActions = $derived(
+    actions.filter((action) => action.id !== 'copy' && action.id !== 'copy-branch'),
+  );
+  const copyActions = $derived(
+    actions.filter((action) => action.id === 'copy' || action.id === 'copy-branch'),
+  );
 
   const currentAction = $derived.by(() => {
     if (!hasOpenCapableAction) {
@@ -253,13 +265,13 @@
       // Handle special actions first
       if (actionId === 'copy') {
         await navigator.clipboard.writeText(toNativePath(filePath));
-        toast.success(m.ui_openCombo_pathCopied_label());
+        notify.success(m.ui_openCombo_pathCopied_label());
         return;
       }
       if (actionId === 'copy-branch') {
         if (branchName) {
           await navigator.clipboard.writeText(branchName);
-          toast.success(m.ui_openCombo_branchCopied_label());
+          notify.success(m.ui_openCombo_branchCopied_label());
         }
         return;
       }
@@ -275,7 +287,7 @@
         } else if (result?.error && result.error !== 'No application selected') {
           // Surface bridge-absent / spawn failures as a toast so the "Other"
           // action fails loudly instead of silently no-oping.
-          toast.error(result.error);
+          notify.error(result.error);
         }
         return;
       }
@@ -310,7 +322,7 @@
       }
     } catch (error) {
       logger.error(`Failed to execute action ${actionId}:`, error);
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_openCombo_openFailed_error({ name: actionId }),
@@ -319,6 +331,13 @@
   }
 
   function handlePrimaryClick(event: MouseEvent) {
+    event.stopPropagation();
+    executeAction(currentAction.id);
+  }
+
+  function handleInlineKeyDown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
     event.stopPropagation();
     executeAction(currentAction.id);
   }
@@ -337,53 +356,91 @@
   // to prevent duplicate toasts when multiple OpenComboButton instances exist
 </script>
 
-{#if embedded}
-  <Menu.Sub>
-    <Menu.SubTrigger>
-      <Fa icon={faArrowUpRightFromSquare} size="xs" class="w-4 text-muted-foreground opacity-70" />
-      <span>{m.ui_openCombo_openInApp_tooltip()}</span>
-    </Menu.SubTrigger>
-    <Menu.SubContent class="w-60">
-      {#each actions as action (action.id)}
-        <Menu.Item onclick={() => handleActionClick(action.id)}>
+{#snippet actionRows(items: ActionConfig[])}
+  <Menu.RadioGroup value={currentAction.id}>
+    {#each items as action (action.id)}
+      <Menu.RadioItem
+        value={action.id}
+        closeOnSelect
+        disabled={!filePath}
+        onSelect={() => handleActionClick(action.id)}
+        textValue={action.label}
+      >
+        {#snippet leading()}
           {#if action.iconBase64}
             <img src="data:image/png;base64,{action.iconBase64}" alt="" class="size-4" />
           {:else if action.icon}
             {@const Icon = action.icon}
             <Icon size={16} />
-          {:else if action.faIcon}
-            <Fa icon={action.faIcon} class="size-4 text-muted-foreground opacity-70" />
           {:else}
             <Fa
-              icon={resolveEditorFallbackIcon(action.category)}
-              class="size-4 text-muted-foreground opacity-70"
+              icon={action.faIcon ?? resolveEditorFallbackIcon(action.category)}
+              class="size-4 text-muted-foreground"
             />
           {/if}
-          <span class="min-w-0 flex-1 truncate">{action.label}</span>
-          {#if action.shortcut}
-            <kbd class="type-caption ml-4 text-muted-foreground" aria-hidden="true">
-              {action.shortcut}
-            </kbd>
-          {/if}
-        </Menu.Item>
-      {/each}
-    </Menu.SubContent>
-  </Menu.Sub>
+        {/snippet}
+        <span class="min-w-0 flex-1 truncate">{action.label}</span>
+        {#if action.shortcut}
+          <kbd class="type-caption ml-4 text-muted-foreground" aria-hidden="true"
+            >{action.shortcut}</kbd
+          >
+        {/if}
+      </Menu.RadioItem>
+    {/each}
+  </Menu.RadioGroup>
+{/snippet}
+
+{#if embedded}
+  {#if openActions.length}
+    <Menu.Sub>
+      <Menu.SubTrigger icon={faArrowUpRightFromSquare}>
+        <span>{m.ui_openCombo_openInApp_tooltip()}</span>
+      </Menu.SubTrigger>
+      <Menu.SubContent class="w-60">
+        {@render actionRows(openActions)}
+      </Menu.SubContent>
+    </Menu.Sub>
+    <Menu.Separator />
+  {/if}
+  {@render actionRows(copyActions)}
 {:else}
-  <div class="inline-flex items-center {className}">
-    <DropdownMenu bind:open={dropdownOpen} align="end" portal={usePortal} {side}>
+  <div class="{inline && children ? 'contents' : 'inline-flex items-center'} {className}">
+    <DropdownMenu
+      bind:open={dropdownOpen}
+      align="end"
+      portal={usePortal}
+      {side}
+      class={inline && children ? 'contents!' : ''}
+    >
       {#snippet trigger({ props })}
-        {#if children}
+        {#if inline && children}
+          <!-- A native button is an atomic inline box, which strands punctuation
+               after a wrapped path. This semantic button stays in the text flow. -->
+          <span
+            role="button"
+            tabindex="0"
+            onclick={actions.length > 1 ? undefined : handlePrimaryClick}
+            onkeydown={actions.length > 1 ? undefined : handleInlineKeyDown}
+            {...actions.length > 1 ? props : {}}
+            class="cursor-pointer break-words rounded-sm text-inherit underline decoration-muted-foreground/20 underline-offset-2 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={primaryTitle}>{@render children()}</span
+          >
+        {:else if children}
           <!-- With a single action there is no dropdown to show; run it directly. -->
-          <button
+          <Button
             type="button"
             onclick={actions.length > 1 ? undefined : handlePrimaryClick}
-            class="cursor-pointer"
-            title={primaryTitle}
             {...actions.length > 1 ? props : {}}
+            variant={iconOnly ? 'plain' : 'ghost'}
+            size={iconOnly ? 'icon-sm' : undefined}
+            wrapContent={!iconOnly}
+            class={iconOnly
+              ? 'cursor-pointer text-muted-foreground hover:text-foreground focus-visible:text-foreground'
+              : 'cursor-pointer'}
+            title={primaryTitle}
           >
             {@render children()}
-          </button>
+          </Button>
         {:else if compact}
           <!-- Compact mode: single icon button with dropdown -->
           <Button
@@ -398,11 +455,14 @@
         {:else}
           <!-- Full mode: icon + "Open" text + dropdown chevron -->
           <div
-            class="inline-flex gap-px items-stretch rounded-md borderx border-border overflow-hidden"
+            class="inline-flex items-stretch rounded-md border border-border"
+            data-open-combo-control
           >
-            <button
+            <Button
               type="button"
-              class="flex items-center gap-1.5 px-2 py-1 text-xs {bgClass} transition-colors cursor-pointer"
+              variant="ghost"
+              size="sm"
+              class="gap-1.5 px-2 {actions.length > 1 ? 'rounded-r-none' : ''} {bgClass}"
               onpointerdown={keepPrimaryActionOutsideDropdown}
               onkeydown={keepPrimaryActionOutsideDropdown}
               onclick={handlePrimaryClick}
@@ -425,74 +485,38 @@
                   class="w-3.5 h-3.5 opacity-60"
                 />
               {/if}
-              <span class="text-subtle"
+              <span class="text-muted-foreground"
                 >{hasOpenCapableAction ? m.ui_openCombo_open_label() : currentAction.label}</span
               >
-            </button>
+            </Button>
             {#if actions.length > 1}
-              <button
+              <Button
                 {...props}
                 type="button"
-                class="flex items-center h-full min-h-full px-1.5 py-2 {bgClass} border-lx border-border transition-colors cursor-pointer"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={m.ui_openCombo_openInApp_tooltip()}
+                class="rounded-l-none border-l border-border {bgClass}"
               >
-                <Fa icon={faChevronDown} class="w-2! h-2! text-ghost" />
-              </button>
+                <Fa icon={faChevronDown} class="size-3! text-muted-foreground" />
+              </Button>
             {/if}
           </div>
         {/if}
       {/snippet}
 
       {#snippet content()}
-        <div class="max-w-60">
+        <div class="w-60 max-w-full">
           {#if headerText}
-            <div class="px-2 py-1.5 text-sm text-subtle">
+            <div class="type-caption px-2 py-1.5 text-subtle">
               {headerText}
             </div>
           {/if}
-          <!-- <div class="w-full h-px bg-border mb-1"></div> -->
-          {#each actions as action (action.id)}
-            {#if action.id === 'copy'}
-              <!-- <div class="my-1 w-full h-px bg-border"></div> -->
-            {/if}
-            <button
-              type="button"
-              class="flex flex-col w-full px-2 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
-              onclick={() => handleActionClick(action.id)}
-            >
-              <div class="w-full flex items-center gap-2">
-                {#if action.iconBase64}
-                  <!-- Use dynamic icon extracted from app bundle -->
-                  <img
-                    src="data:image/png;base64,{action.iconBase64}"
-                    alt={action.label}
-                    class="w-5 h-5"
-                  />
-                {:else if action.icon}
-                  {@const Icon = action.icon}
-                  <Icon size={16} />
-                {:else if action.faIcon}
-                  <Fa icon={action.faIcon} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
-                {:else}
-                  <Fa
-                    icon={resolveEditorFallbackIcon(action.category)}
-                    class="w-4 h-4 ml-0.5 mr-0.5 opacity-30"
-                  />
-                {/if}
-                <span class="flex-1">{action.label}</span>
-                {#if action.shortcut}
-                  <span class="text-xs text-subtle">{action.shortcut}</span>
-                {/if}
-              </div>
-              {#if action.description}
-                <div
-                  class="w-full pt-2 pb-1.5 px-0.5 font-mxono whitespace-break-spaces break-words text-xs text-subtle truncate"
-                  title={action.description}
-                >
-                  {action.description}
-                </div>
-              {/if}
-            </button>
-          {/each}
+          {#if openActions.length}
+            {@render actionRows(openActions)}
+            <Menu.Separator />
+          {/if}
+          {@render actionRows(copyActions)}
         </div>
       {/snippet}
     </DropdownMenu>

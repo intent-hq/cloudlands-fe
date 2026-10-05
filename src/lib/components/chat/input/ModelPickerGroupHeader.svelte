@@ -23,7 +23,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class={cn(
-      'group/header type-caption flex cursor-pointer select-none items-center gap-2 px-3 font-medium text-muted-foreground',
+      'group/header type-caption flex cursor-pointer select-none items-center gap-2 px-2 font-medium text-muted-foreground',
       groupIndex > 0 && 'pt-1.5',
     )}
     role="button"
@@ -42,11 +42,8 @@
     <span class="ml-auto flex items-center gap-0.5">
       <Button
         variant="ghost-light"
-        size="xs"
-        class={cn(
-          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:opacity-100',
-          refreshing && 'opacity-50! cursor-not-allowed',
-        )}
+        size="icon-xs"
+        class={cn('focus-visible:opacity-100', refreshing && 'opacity-50! cursor-not-allowed')}
         onclick={(e) => {
           e.stopPropagation();
           onRefresh(group.key);
@@ -57,14 +54,15 @@
       >
         <Fa
           icon={faArrowsRotate}
-          size={10}
-          class={cn('text-subtle transition-transform duration-500', refreshing && 'animate-spin')}
+          class="size-3 text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
         />
       </Button>
       <Fa
         icon={faChevronDown}
-        class={cn('text-subtle transition-transform duration-150', collapsed && 'rotate-90')}
-        size={12}
+        class={cn(
+          'size-4 shrink-0 text-subtle transition-transform duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+          collapsed && 'rotate-90',
+        )}
       />
     </span>
   </div>
