@@ -282,7 +282,6 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    /* border-bottom: 1px solid hsl(var(--border) / 0.5); */
     position: relative;
     z-index: var(--layer-chrome);
     padding-top: 2px;
@@ -314,24 +313,5 @@
 
   .titlebar-fixed-controls {
     padding-right: var(--titlebar-control-shift);
-  }
-
-  /* Track the panel width directly (no easing) while it is being resized */
-  :global(body.panel-resizing) [data-titlebar-workspace-controls] {
-    transition: none;
-  }
-
-  /* Current workspace tab - connects to sidebar below */
-  .current-workspace-tab {
-    background: hsl(var(--background));
-    border-top-left-radius: 0.375rem;
-    border-top-right-radius: 0.375rem;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    padding: 0.375rem 0.5rem;
-    /* Extend to the bottom of the title bar - use negative margin to compensate for title bar padding */
-    align-self: stretch;
-    margin-bottom: -2px;
-    padding-bottom: calc(0.375rem + 2px);
   }
 </style>
