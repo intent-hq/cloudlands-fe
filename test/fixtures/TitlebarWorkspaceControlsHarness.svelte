@@ -17,8 +17,8 @@
 
   const TooltipProvider = TooltipPrimitive.Provider;
   let { withAssistant = false }: { withAssistant?: boolean } = $props();
-  const panelItem$ = selectPanelItem();
   const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const panelItem$ = selectPanelItem();
   // No principal hydration saga runs here. Model the admitted legacy owner
   // whose workspace launcher is measured, without relaxing production guards.
   const previousPrincipal = store.state.principal;
