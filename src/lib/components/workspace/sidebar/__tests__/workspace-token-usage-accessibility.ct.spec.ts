@@ -853,6 +853,7 @@ for (const locale of ['en', 'de'] as const) {
     const before = (await target.boundingBox())!;
     const point = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
     await page.mouse.move(point.x, point.y);
+    await expect(target).toHaveAttribute('data-preview-active', 'true');
     await expect(details.locator('.token-summary .animated-number-value')).toHaveText('1');
     await page.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
@@ -1075,6 +1076,7 @@ test('retargets animated values smoothly with final-only accessibility and stabl
       }),
     ),
   });
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   const initialGeometry = await geometry();
   await expect(animatedNumbers).toHaveCount(12);
   expect(
@@ -1663,8 +1665,8 @@ test('renders the full reference table as a wide overlay from the real workspace
             control.borderTopWidth === '0px' &&
             control.borderBottomWidth === '0px',
         ) &&
-        Math.abs(segmentWidth - (box.width - (segmentCount - 1))) <= 0.04 &&
-        gaps.every((gap) => Math.abs(gap - 1) <= 0.01) &&
+        Math.abs(segmentWidth - box.width) <= 0.04 &&
+        gaps.every((gap) => Math.abs(gap) <= 0.01) &&
         overflowX === 'hidden' &&
         borderRadius === '2px' &&
         firstRadius === '2px' &&

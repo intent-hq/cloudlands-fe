@@ -496,11 +496,6 @@ describe('WorkspaceTokenUsage', () => {
         listRow.classList.contains('breakdown-stack-item'),
       ),
     ).toBe(true);
-    expect(
-      [...modelRows, ...agentRows].every((listRow) =>
-        (listRow as HTMLElement).style.width.includes('100% - 1px'),
-      ),
-    ).toBe(true);
     for (const section of [agentSection, modelSection]) {
       const navigatorRow = section.querySelector('.navigator-row')!;
       const selection = navigatorRow.querySelector('.navigator-selection')!;

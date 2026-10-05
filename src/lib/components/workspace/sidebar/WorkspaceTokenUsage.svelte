@@ -816,7 +816,7 @@
                           <li
                             class="breakdown-stack-item h-full"
                             role="presentation"
-                            style={`width: ${segmentWidth(share(row.tokens, agentTokenTotal), agentRows.length)}`}
+                            style={`flex: ${row.tokens} 1 0%`}
                           >
                             <Button
                               variant="plain"
@@ -898,7 +898,7 @@
                           <li
                             class="breakdown-stack-item h-full"
                             role="presentation"
-                            style={`width: ${segmentWidth(share(row.tokens, modelTokenTotal), modelRows.length)}`}
+                            style={`flex: ${row.tokens} 1 0%`}
                           >
                             <Button
                               variant="plain"
@@ -990,11 +990,22 @@
     padding-inline-start: 0.875rem;
   }
   .breakdown-stack-item {
+    position: relative;
     min-width: 0;
+    /* Keep fractional hit areas from extending into the previous segment. */
+    clip-path: inset(0);
+  }
+  .breakdown-stack-item + .breakdown-stack-item::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 1px;
+    background: hsl(var(--border));
+    pointer-events: none;
   }
   .breakdown-stack {
     border-radius: 2px;
-    gap: 1px;
     background: hsl(var(--border));
   }
   .composition-strip {
