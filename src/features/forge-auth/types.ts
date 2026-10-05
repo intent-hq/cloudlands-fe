@@ -33,6 +33,8 @@ export interface ForgeUser {
 export interface ForgeAuthStatus {
   provider: ForgeProvider;
   host: string;
+  /** Complete logical HTTPS root, including a case-sensitive installation prefix. */
+  instanceBaseUrl?: string;
   isConfigured: boolean;
   oauthUrl: string;
   configuredButNeedsUpdate: boolean;
@@ -51,13 +53,15 @@ export interface ForgeAuthStatus {
 export interface ForgeConnectParams {
   provider: ForgeProvider;
   host?: string;
+  instanceBaseUrl?: string;
   /** Credential acquisition path: device grant (default) or a PAT. */
   method?: 'device' | 'pat';
   token?: string;
 }
 
 /** Stable `error.data.code` values the connect flow keys UI decisions on. */
-export type ForgeConnectErrorCode = 'device-grant-unsupported' | 'source-control-unauthorized';
+export type ForgeConnectErrorCode =
+  'device-grant-unsupported' | 'source-control-unauthorized' | 'gitlab-instance-unsupported';
 
 /** Seam envelope for `sourceControl.connect`. */
 export interface ForgeConnectResult {
@@ -72,4 +76,6 @@ export interface ForgeConnectResult {
 export interface ForgeAuthResult {
   success: boolean;
   error?: string;
+  /** True only when the original pending operation was retired before its effect. */
+  cancelled?: boolean;
 }

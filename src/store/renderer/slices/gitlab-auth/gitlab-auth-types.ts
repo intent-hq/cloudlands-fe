@@ -8,10 +8,14 @@ export type GitLabAuthState = {
   statusReady: boolean;
   /** GitLab instance host the connection targets (defaults to gitlab.com) */
   host: string;
+  /** Null until an explicit root or the daemon's configured root is known. */
+  instanceBaseUrl: string | null;
   /** Whether a GitLab credential is configured daemon-side */
   isConfigured: boolean;
   /** Whether a connect (device grant or PAT) is in progress */
   isAuthenticating: boolean;
+  isCancelling: boolean;
+  cancelOutcome: 'cancelled' | 'already-started' | 'failed' | null;
   /** Device-grant codes while a flow is pending (null otherwise) */
   deviceFlow: ForgeDeviceFlowInfo | null;
   /**

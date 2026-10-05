@@ -1,6 +1,6 @@
 import { Store } from '@themislib/themis/svelte-store';
 import { runSaga, stdChannel } from 'redux-saga';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ForgeConnectResult } from '$features/forge-auth/types';
 
 const mocks = vi.hoisted(() => ({
@@ -185,7 +185,7 @@ describe('gitlabAuthSaga', () => {
       );
       mocks.cancelAuth.mockImplementation(async () => {
         daemonGrantPending = false;
-        return { success: true };
+        return { success: true, cancelled: true };
       });
       const saved = {
         ...initialState,
@@ -211,7 +211,12 @@ describe('gitlabAuthSaga', () => {
           ['gitlab', HOST],
           ['gitlab', HOST],
         ]);
-        expect(run.state()).toMatchObject({ ...saved, isAuthenticating: false, deviceFlow: null });
+        expect(run.state()).toMatchObject({
+          ...saved,
+          isAuthenticating: false,
+          deviceFlow: null,
+          cancelOutcome: 'cancelled',
+        });
         expect(mocks.revoke).not.toHaveBeenCalled();
         expect(mocks.getStatus).not.toHaveBeenCalled();
       } finally {
@@ -245,7 +250,7 @@ describe('gitlabAuthSaga', () => {
       }
       mocks.cancelAuth.mockImplementation(async () => {
         daemonGrantPending = false;
-        return { success: true };
+        return { success: true, cancelled: true };
       });
       const saved = { ...initialState, host: HOST, isConfigured: true, user: WIRE_USER };
       const run = harness(saved, true);
@@ -264,7 +269,7 @@ describe('gitlabAuthSaga', () => {
           await settle();
           // Once all attempts are cancelled, each response can install a new slot.
           expect(daemonGrantPending).toBe(false);
-          expect(run.state()).toEqual(saved);
+          expect(run.state()).toEqual({ ...saved, cancelOutcome: 'cancelled' });
         }
         expect(mocks.cancelAuth.mock.calls).toEqual(Array(4).fill(['gitlab', HOST]));
         expect(mocks.revoke).not.toHaveBeenCalled();
@@ -293,7 +298,7 @@ describe('gitlabAuthSaga', () => {
       }
       mocks.cancelAuth.mockImplementation(async () => {
         daemonGrantPending = false;
-        return { success: true };
+        return { success: true, cancelled: true };
       });
       mocks.getStatus.mockResolvedValue({
         ...UNCONFIGURED_STATUS,
@@ -350,7 +355,7 @@ describe('gitlabAuthSaga', () => {
         .mockReturnValueOnce(newStart.promise);
       mocks.cancelAuth.mockImplementation(async () => {
         daemonGrantPending = false;
-        return { success: true };
+        return { success: true, cancelled: true };
       });
       const run = harness({ ...initialState, host: HOST }, true);
       try {
@@ -404,7 +409,7 @@ describe('gitlabAuthSaga', () => {
         .mockReturnValueOnce(thirdStart.promise);
       mocks.cancelAuth
         .mockReset()
-        .mockResolvedValueOnce({ success: true })
+        .mockResolvedValueOnce({ success: true, cancelled: true })
         .mockReturnValueOnce(cleanup.promise);
       mocks.getStatus.mockResolvedValue({
         ...UNCONFIGURED_STATUS,
@@ -460,7 +465,7 @@ describe('gitlabAuthSaga', () => {
     async (outcome) => {
       const pending = Promise.withResolvers<ForgeConnectResult>();
       mocks.connect.mockReturnValue(pending.promise);
-      mocks.cancelAuth.mockResolvedValue({ success: true });
+      mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: true });
       const saved = {
         ...initialState,
         host: HOST,
@@ -478,7 +483,7 @@ describe('gitlabAuthSaga', () => {
         else pending.resolve({ success: false, code: 'device-grant-unsupported' });
         await settle();
         expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
-        expect(run.state()).toEqual(saved);
+        expect(run.state()).toEqual({ ...saved, cancelOutcome: 'cancelled' });
         expect(mocks.revoke).not.toHaveBeenCalled();
       } finally {
         run.task.cancel();
@@ -503,7 +508,7 @@ describe('gitlabAuthSaga', () => {
         .mockReset()
         .mockReturnValueOnce(oldStart.promise)
         .mockReturnValueOnce(newStart.promise);
-      mocks.cancelAuth.mockResolvedValue({ success: true });
+      mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: true });
       mocks.getStatus.mockResolvedValue({
         ...UNCONFIGURED_STATUS,
         host,
@@ -552,7 +557,7 @@ describe('gitlabAuthSaga', () => {
       .mockReset()
       .mockReturnValueOnce(oldStart.promise)
       .mockResolvedValueOnce({ success: true });
-    mocks.cancelAuth.mockResolvedValue({ success: true });
+    mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: true });
     mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
     const run = harness(initialState, true);
     try {
@@ -596,7 +601,7 @@ describe('gitlabAuthSaga', () => {
         .mockReturnValueOnce(newStart.promise);
       mocks.cancelAuth
         .mockReset()
-        .mockResolvedValueOnce({ success: true })
+        .mockResolvedValueOnce({ success: true, cancelled: true })
         .mockReturnValueOnce(cleanup.promise);
       mocks.getStatus.mockResolvedValue({
         ...UNCONFIGURED_STATUS,
@@ -638,7 +643,7 @@ describe('gitlabAuthSaga', () => {
 
   it('cancels a hydrated pending grant while off without dropping the saved connection', async () => {
     mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, deviceFlow: PENDING_FLOW });
-    mocks.cancelAuth.mockResolvedValue({ success: true });
+    mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: true });
     const run = harness();
     try {
       run.channel.put(initializeGitLabAuth());
@@ -1153,7 +1158,7 @@ describe('gitlabAuthSaga', () => {
         resolveStatus = resolve;
       }),
     );
-    mocks.cancelAuth.mockResolvedValue({ success: true });
+    mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: true });
     const run = harness(initialState, true);
     run.channel.put(startGitLabDeviceAuth(HOST));
     await settle();
@@ -1167,7 +1172,9 @@ describe('gitlabAuthSaga', () => {
       'gitlabAuth/setHost',
       'gitlabAuth/setAuthenticating',
       'gitlabAuth/setDeviceFlowInfo',
+      'gitlabAuth/setCancelling',
       'gitlabAuth/authCancelled',
+      'gitlabAuth/setCancelOutcome',
     ]);
     expect(run.state().isConfigured).toBe(false);
     run.task.cancel();
@@ -1214,7 +1221,7 @@ describe('gitlabAuthSaga', () => {
       statusFor(host ?? OTHER_HOST),
     );
     mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
-    mocks.cancelAuth.mockResolvedValue({ success: true });
+    mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: true });
     const run = harness(
       {
         ...initialState,
@@ -1558,6 +1565,425 @@ describe('gitlabAuthSaga PAT handling under Redux action logging', () => {
       for (const stop of unobserve) stop.unsubscribe();
       store.dispose();
       vi.restoreAllMocks();
+    }
+  });
+});
+
+describe('full-instance and PAT cancellation ownership', () => {
+  const root = 'https://git.example.com:8443/Forge';
+  const status = { ...CONFIGURED_STATUS, host: 'git.example.com:8443', instanceBaseUrl: root };
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+  it.each(['initialize', 'focus', 'reconcile', 'pat-status'])(
+    'does not let an old %s read restore identity after a full-root revoke reconciliation',
+    async (reader) => {
+      const old = Promise.withResolvers<unknown>();
+      mocks.getStatus.mockReturnValueOnce(old.promise).mockResolvedValue({
+        ...status,
+        isConfigured: false,
+        method: null,
+        user: null,
+      });
+      mocks.connect.mockResolvedValue({ success: true });
+      const run = harness({ ...initialState, host: status.host, instanceBaseUrl: root }, true);
+      try {
+        if (reader === 'initialize') run.dispatch(initializeGitLabAuth(root) as never);
+        else if (reader === 'focus') run.dispatch(checkGitLabAuthStatus() as never);
+        else if (reader === 'reconcile')
+          run.dispatch(gitlabAuthChanged('authorized', status.host) as never);
+        else run.dispatch(connectGitLabWithToken(root, 'private-token') as never);
+        await settle();
+        run.dispatch(gitlabAuthChanged('revoked', status.host) as never);
+        await settle();
+        expect(run.state()).toMatchObject({
+          instanceBaseUrl: root,
+          isConfigured: false,
+          user: null,
+        });
+        const count = run.dispatched.length;
+        old.resolve(status);
+        await settle();
+        expect(run.state()).toMatchObject({
+          instanceBaseUrl: root,
+          isConfigured: false,
+          user: null,
+        });
+        expect(run.dispatched.slice(count).map((a) => (a as { type: string }).type)).not.toContain(
+          'gitlabAuth/authCompleted',
+        );
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+  it('keeps a begun PAT outcome across ambiguous authority events and a refused cancellation', async () => {
+    const connect = Promise.withResolvers<ForgeConnectResult>();
+    mocks.connect.mockReturnValue(connect.promise);
+    mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: false });
+    mocks.getStatus
+      .mockResolvedValueOnce({ ...status, isConfigured: false, user: null, method: null })
+      .mockResolvedValue(status);
+    const run = harness(initialState, true);
+    try {
+      run.dispatch(connectGitLabWithToken(root, 'private-token') as never);
+      await settle();
+      run.dispatch(gitlabAuthChanged('revoked', status.host) as never);
+      await settle();
+      run.dispatch(cancelGitLabAuth() as never);
+      await settle();
+      expect(run.state()).toMatchObject({
+        isAuthenticating: true,
+        cancelOutcome: 'already-started',
+      });
+      connect.resolve({ success: true });
+      await settle();
+      await settle();
+      expect(run.state()).toMatchObject({
+        instanceBaseUrl: root,
+        isConfigured: true,
+        user: WIRE_USER,
+        isAuthenticating: false,
+      });
+      expect(mocks.revoke).not.toHaveBeenCalled();
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+  it('hydrates the exact configured prefix and rechecks that same prefix', async () => {
+    mocks.getStatus.mockResolvedValue(status);
+    const run = harness(initialState, true);
+    try {
+      run.dispatch(initializeGitLabAuth() as never);
+      await settle();
+      expect(run.state()).toMatchObject({
+        host: status.host,
+        instanceBaseUrl: root,
+        isConfigured: true,
+      });
+      run.dispatch(checkGitLabAuthStatus() as never);
+      await settle();
+      expect(mocks.getStatus).toHaveBeenLastCalledWith('gitlab', root);
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+  it('does not accept the identity of a differently cased instance prefix', async () => {
+    mocks.getStatus.mockResolvedValue({ ...status, instanceBaseUrl: root.toLowerCase() });
+    const run = harness(initialState, true);
+    try {
+      run.dispatch(initializeGitLabAuth(root) as never);
+      await settle();
+      expect(run.state()).toMatchObject({
+        instanceBaseUrl: root,
+        isConfigured: false,
+        statusReady: false,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+  it.each([false, true])(
+    'reports cancellation=%s without masking an already-begun PAT outcome',
+    async (cancelled) => {
+      const pending = Promise.withResolvers<ForgeConnectResult>();
+      mocks.connect.mockReturnValue(pending.promise);
+      mocks.cancelAuth.mockResolvedValue({ success: true, cancelled });
+      mocks.getStatus.mockResolvedValue(status);
+      const run = harness(initialState, true);
+      try {
+        run.dispatch(connectGitLabWithToken(root, 'private-token') as never);
+        await settle();
+        run.dispatch(cancelGitLabAuth() as never);
+        await settle();
+        expect(mocks.cancelAuth).toHaveBeenLastCalledWith('gitlab', root);
+        expect(run.state()).toMatchObject({
+          isAuthenticating: !cancelled,
+          cancelOutcome: cancelled ? 'cancelled' : 'already-started',
+          isCancelling: false,
+        });
+        pending.resolve({ success: true });
+        await settle();
+        await settle();
+        expect(run.state().isConfigured).toBe(!cancelled);
+        expect(run.state().isAuthenticating).toBe(false);
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+  it.each(['authorized', 'revoked'] as const)(
+    'does not derive prefix identity from a bare %s event',
+    async (event) => {
+      mocks.getStatus.mockResolvedValue(status);
+      const run = harness(initialState, true);
+      try {
+        run.dispatch(initializeGitLabAuth(root) as never);
+        await settle();
+        mocks.getStatus.mockResolvedValue(null);
+        run.dispatch(gitlabAuthChanged(event, status.host) as never);
+        await settle();
+        expect(mocks.getStatus).toHaveBeenLastCalledWith('gitlab', root);
+        expect(run.state()).toMatchObject({
+          instanceBaseUrl: root,
+          isConfigured: true,
+          user: WIRE_USER,
+        });
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+});
+
+describe('full-root device flow terminal reconciliation', () => {
+  const roots = ['https://gitlab.com', 'https://git.example.com:8443/Forge'];
+  const terminal = [
+    { flowStatus: 'denied', event: 'denied', error: () => m.gitlabAuth_service_denied_error() },
+    {
+      flowStatus: 'expired',
+      event: 'expired',
+      error: () => m.gitlabAuth_service_codeExpired_error(),
+    },
+    { flowStatus: 'error', event: 'error', error: () => m.gitlabAuth_service_failed_error() },
+  ] as const;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  async function start(root = roots[1]) {
+    const status = {
+      ...UNCONFIGURED_STATUS,
+      host: new URL(root).host,
+      instanceBaseUrl: root,
+      deviceFlow: PENDING_FLOW,
+    };
+    mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
+    mocks.getStatus.mockResolvedValue(status);
+    const run = harness(initialState, true);
+    run.channel.put(startGitLabDeviceAuth(root));
+    await settle();
+    return { run, status, root };
+  }
+
+  it.each(roots.flatMap((root) => terminal.map((outcome) => ({ root, ...outcome }))))(
+    'settles selected $root device $flowStatus without waiting for the auth timeout',
+    async ({ root, flowStatus, event, error }) => {
+      const { run, status } = await start(root);
+      try {
+        expect(run.state()).toMatchObject({ isAuthenticating: true, deviceFlow: PENDING_INFO });
+        mocks.getStatus.mockResolvedValue({
+          ...status,
+          deviceFlow: { ...PENDING_FLOW, status: flowStatus },
+        });
+        run.channel.put(gitlabAuthChanged(event, status.host));
+        await settle();
+        expect(mocks.getStatus).toHaveBeenLastCalledWith('gitlab', root);
+        expect(run.state()).toMatchObject({
+          instanceBaseUrl: root,
+          isAuthenticating: false,
+          deviceFlow: null,
+          error: error(),
+        });
+        const reads = mocks.getStatus.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(900_001);
+        expect(mocks.getStatus).toHaveBeenCalledTimes(reads);
+        expect(run.state().error).toBe(error());
+        expect(mocks.cancelAuth).not.toHaveBeenCalled();
+        expect(mocks.revoke).not.toHaveBeenCalled();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(terminal)(
+    'keeps the selected pending grant when an ambiguous $event event concerns another root',
+    async ({ event }) => {
+      const { run, status, root } = await start();
+      try {
+        const before = run.state();
+        run.channel.put(gitlabAuthChanged(event, status.host));
+        await settle();
+        expect(mocks.getStatus).toHaveBeenLastCalledWith('gitlab', root);
+        expect(run.state()).toEqual({ ...before, statusReady: true, deviceGrantSupported: true });
+        const reads = mocks.getStatus.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(mocks.getStatus).toHaveBeenCalledTimes(reads + 1);
+        expect(run.state()).toMatchObject({
+          isAuthenticating: true,
+          deviceFlow: PENDING_INFO,
+          error: null,
+        });
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(roots)('preserves successful authorization for %s', async (root) => {
+    const { run, status } = await start(root);
+    try {
+      mocks.getStatus.mockResolvedValue({
+        ...CONFIGURED_STATUS,
+        host: status.host,
+        instanceBaseUrl: root,
+        method: 'device',
+      });
+      run.channel.put(gitlabAuthChanged('authorized', status.host));
+      await settle();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(run.state()).toMatchObject({
+        instanceBaseUrl: root,
+        isConfigured: true,
+        isAuthenticating: false,
+        deviceFlow: null,
+        error: null,
+        method: 'device',
+        user: WIRE_USER,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('clears an expired grant without discarding an independently valid credential', async () => {
+    const { run, status, root } = await start();
+    try {
+      mocks.getStatus.mockResolvedValue({
+        ...CONFIGURED_STATUS,
+        host: status.host,
+        instanceBaseUrl: root,
+        deviceFlow: { ...PENDING_FLOW, status: 'expired' },
+      });
+      run.channel.put(gitlabAuthChanged('expired', status.host));
+      await settle();
+      expect(run.state()).toMatchObject({
+        isConfigured: true,
+        user: WIRE_USER,
+        method: 'pat',
+        isAuthenticating: false,
+        deviceFlow: null,
+        error: m.gitlabAuth_service_codeExpired_error(),
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it.each(['other-authority', 'other-root'] as const)(
+    'ignores a terminal status from the %s',
+    async (wrong) => {
+      const { run, status, root } = await start();
+      try {
+        const before = run.state();
+        const reads = mocks.getStatus.mock.calls.length;
+        mocks.getStatus.mockResolvedValue({
+          ...status,
+          instanceBaseUrl: root.toLowerCase(),
+          deviceFlow: { ...PENDING_FLOW, status: 'denied' },
+        });
+        run.channel.put(
+          gitlabAuthChanged('denied', wrong === 'other-authority' ? OTHER_HOST : status.host),
+        );
+        await settle();
+        expect(run.state()).toEqual(before);
+        expect(mocks.getStatus).toHaveBeenCalledTimes(reads + (wrong === 'other-root' ? 1 : 0));
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it.each(['new-flow', 'new-root', 'cancel', 'owner-retired', 'new-status'] as const)(
+    'does not apply a held terminal read after %s',
+    async (replacement) => {
+      const { run, status, root } = await start();
+      const old = Promise.withResolvers<unknown>();
+      try {
+        mocks.getStatus.mockReturnValueOnce(old.promise);
+        run.channel.put(gitlabAuthChanged('denied', status.host));
+        await settle();
+        const newFlow = { ...PENDING_INFO, userCode: 'NEXT-1234' };
+        mocks.connect.mockResolvedValue({ success: true, deviceFlow: newFlow });
+        mocks.getStatus.mockResolvedValue({
+          ...status,
+          instanceBaseUrl: replacement === 'new-root' ? root.toLowerCase() : root,
+          deviceFlow: { ...newFlow, status: 'pending' },
+        });
+        if (replacement === 'new-flow') run.channel.put(startGitLabDeviceAuth(root));
+        else if (replacement === 'new-root')
+          run.channel.put(initializeGitLabAuth(root.toLowerCase()));
+        else if (replacement === 'cancel') {
+          mocks.cancelAuth.mockResolvedValue({ success: true, cancelled: true });
+          run.channel.put(cancelGitLabAuth());
+        } else if (replacement === 'owner-retired') {
+          run.task.cancel();
+          await run.task.toPromise();
+        } else run.channel.put(gitlabAuthChanged('authorized', status.host));
+        await settle();
+        const before = run.state();
+        old.resolve({ ...status, deviceFlow: { ...PENDING_FLOW, status: 'denied' } });
+        await settle();
+        expect(run.state()).toEqual(before);
+        expect(run.state().error).toBeNull();
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it('does not turn an older terminal grant into failure of an in-flight PAT', async () => {
+    const root = roots[1];
+    const pending = Promise.withResolvers<ForgeConnectResult>();
+    mocks.connect.mockReturnValue(pending.promise);
+    mocks.getStatus.mockResolvedValue({
+      ...UNCONFIGURED_STATUS,
+      host: new URL(root).host,
+      instanceBaseUrl: root,
+      deviceFlow: { ...PENDING_FLOW, status: 'denied' },
+    });
+    const run = harness(initialState, true);
+    try {
+      run.channel.put(connectGitLabWithToken(root, 'replacement-token'));
+      await settle();
+      run.channel.put(gitlabAuthChanged('denied', new URL(root).host));
+      await settle();
+      expect(run.state()).toMatchObject({ isAuthenticating: true, deviceFlow: null, error: null });
+      mocks.getStatus.mockResolvedValue({
+        ...CONFIGURED_STATUS,
+        host: new URL(root).host,
+        instanceBaseUrl: root,
+      });
+      pending.resolve({ success: true });
+      await settle();
+      await settle();
+      expect(run.state()).toMatchObject({
+        isConfigured: true,
+        isAuthenticating: false,
+        user: WIRE_USER,
+        method: 'pat',
+        error: null,
+      });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
     }
   });
 });

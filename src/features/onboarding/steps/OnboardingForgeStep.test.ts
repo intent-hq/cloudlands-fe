@@ -15,6 +15,7 @@ import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import type { GitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-types';
 import {
   gitlabAuthReducer,
+  initialState as gitlabDefaults,
   setGitLabAuthError,
   setGitLabAuthStatus,
   takeGitLabPatToken,
@@ -43,13 +44,20 @@ const mocks = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAdmittedLegacyPrincipal } =
+    await import('../../../test/fixtures/admitted-legacy-principal');
   return createAppStoreMockModule({
-    state: () => ({
-      userPreferences: mocks.userPreferences.value,
-      githubAuth: mocks.githubAuth.value,
-      gitlabAuth: mocks.gitlabAuth.value,
-      daemonHealth: { stats: mocks.daemonHealthStats.value },
-    }),
+    state: () => {
+      const admitted = createAdmittedLegacyPrincipal();
+      admitted.principal.snapshot!.capabilities.gitlabCheckout = true;
+      return {
+        ...admitted,
+        userPreferences: mocks.userPreferences.value,
+        githubAuth: mocks.githubAuth.value,
+        gitlabAuth: mocks.gitlabAuth.value,
+        daemonHealth: { ...admitted.daemonHealth, stats: mocks.daemonHealthStats.value },
+      };
+    },
     dispatch: mocks.dispatch,
   });
 });
@@ -79,14 +87,9 @@ const idleGitHub = (): GitHubAuthState => ({
 });
 
 const idleGitLab = (): GitLabAuthState => ({
-  host: 'gitlab.com',
-  isConfigured: false,
-  isAuthenticating: false,
-  deviceFlow: null,
+  ...gitlabDefaults,
+  statusReady: true,
   deviceGrantSupported: true,
-  user: null,
-  error: null,
-  method: null,
 });
 
 // system.status stats of a daemon whose protocol serves sourceControl.* auth.
@@ -127,6 +130,24 @@ beforeEach(() => {
 });
 
 describe('OnboardingForgeStep', () => {
+  it('shows the full GitLab instance and updates a distinct prefix on the same host', async () => {
+    const instanceBaseUrl = 'https://git.example.test:8443/Parent/Forge';
+    const connected = {
+      ...idleGitLab(),
+      host: 'git.example.test:8443',
+      instanceBaseUrl,
+      isConfigured: true,
+      user: { id: '7', login: 'saved' },
+    };
+    mocks.gitlabAuth.value = connected;
+    const { getByText, queryByText } = render(OnboardingForgeStep, { props: baseProps() });
+    expect(getByText(instanceBaseUrl)).toBeTruthy();
+    mocks.gitlabAuth.value = { ...connected, instanceBaseUrl: `${instanceBaseUrl}/Other` };
+    await setPreference(true);
+    expect(getByText(`${instanceBaseUrl}/Other`)).toBeTruthy();
+    expect(queryByText(instanceBaseUrl)).toBeNull();
+  });
+
   it('keeps GitLab setup off for a fresh profile while GitHub and Skip work', async () => {
     const props = baseProps();
     const { container } = render(OnboardingForgeStep, { props });
@@ -324,7 +345,7 @@ describe('OnboardingForgeStep', () => {
     expect(dispatched('githubAuth/cancelAuth')).toHaveLength(1);
   });
 
-  it('GitLab: choosing it shows the host input; connect dispatches startDeviceAuth with the normalized host', async () => {
+  it('GitLab: choosing it shows the instance input; connect preserves the normalized full root', async () => {
     mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
 
@@ -340,21 +361,21 @@ describe('OnboardingForgeStep', () => {
     await fireEvent.click(findButton(panel as HTMLElement, 'Connect GitLab')!);
 
     expect(dispatched('gitlabAuth/startDeviceAuth')).toEqual([
-      expect.objectContaining({ payload: ['gitlab.example.com'] }),
+      expect.objectContaining({ payload: ['https://gitlab.example.com/group'] }),
     ]);
   });
 
-  it('GitLab: an empty host falls back to gitlab.com on the wire', async () => {
+  it('GitLab: clearing the address cannot connect to a different default instance', async () => {
     mocks.userPreferences.value = { ...preferenceDefaults, labsGitLabEnabled: true };
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
     await fireEvent.click(findButton(container, 'Connect GitLab')!);
     const panel = container.querySelector('[data-testid="forge-step-gitlab"]')!;
     const host = panel.querySelector<HTMLInputElement>('input[type="text"]')!;
     await fireEvent.input(host, { target: { value: '   ' } });
-    await fireEvent.click(findButton(panel as HTMLElement, 'Connect GitLab')!);
-    expect(dispatched('gitlabAuth/startDeviceAuth')).toEqual([
-      expect.objectContaining({ payload: ['gitlab.com'] }),
-    ]);
+    const connect = findButton(panel as HTMLElement, 'Connect GitLab')!;
+    expect(connect.disabled).toBe(true);
+    expect(host.getAttribute('aria-invalid')).toBe('true');
+    expect(dispatched('gitlabAuth/startDeviceAuth')).toHaveLength(0);
   });
 
   it('GitLab pending device grant: renders the code card; "use a token" cancels and shows the PAT field', async () => {
@@ -394,6 +415,7 @@ describe('OnboardingForgeStep', () => {
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       host: 'gitlab.example.com',
+      instanceBaseUrl: 'https://gitlab.example.com',
       deviceGrantSupported: false,
     };
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
@@ -415,7 +437,7 @@ describe('OnboardingForgeStep', () => {
     const connectActions = dispatched('gitlabAuth/connectWithToken');
     expect(connectActions).toEqual([
       expect.objectContaining({
-        payload: { host: 'gitlab.example.com', tokenRef: expect.any(Number) },
+        payload: { host: 'https://gitlab.example.com', tokenRef: expect.any(Number) },
       }),
     ]);
     expect(JSON.stringify(connectActions)).not.toContain('glpat-secret');
@@ -431,6 +453,7 @@ describe('OnboardingForgeStep', () => {
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       host: 'gitlab.example.com',
+      instanceBaseUrl: 'https://gitlab.example.com',
       deviceGrantSupported: false,
     };
     const { container } = render(OnboardingForgeStep, { props: baseProps() });
@@ -485,6 +508,7 @@ describe('OnboardingForgeStep', () => {
     mocks.gitlabAuth.value = {
       ...idleGitLab(),
       host: 'gitlab.example.com',
+      instanceBaseUrl: 'https://gitlab.example.com',
       isConfigured: true,
       method: 'pat',
       user: { id: 7, login: 'jdoe', displayName: 'J. Doe' },

@@ -136,6 +136,7 @@ vi.mock('$lib/components/workspace/initializer/AddRemoteSetupModal.svelte', asyn
 }));
 
 import RepoSelector from '../RepoSelector.svelte';
+import type { GitLabProjectPickerProps } from '../gitlab-picker-types';
 import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 
 beforeEach(() => {
@@ -171,6 +172,94 @@ function tabButton(label: string): HTMLButtonElement {
 }
 
 const githubInput = () => screen.queryByPlaceholderText('owner/repo') as HTMLInputElement | null;
+
+function gitlabProps(): GitLabProjectPickerProps {
+  return {
+    scopeKey: 'owner/connection-a/checkout-a',
+    instanceBaseUrl: 'https://git.example.test:8443/Forge',
+    selectedProjectPath: 'group/subgroup/api',
+    query: '',
+    page: {
+      status: 'ready',
+      items: [{ projectPath: 'group/subgroup/api', name: 'API', namespace: 'group/subgroup' }],
+      hasMore: false,
+    },
+    copy: {
+      searchLabel: 'Search GitLab projects',
+      searchPlaceholder: 'Project or namespace',
+      listLabel: 'GitLab projects',
+      loadingLabel: 'Loading projects',
+      emptyLabel: 'No projects',
+      emptySearchLabel: 'No matching projects',
+      loadMoreLabel: 'Load more projects',
+      loadingMoreLabel: 'Loading more projects',
+    },
+    onSearch: vi.fn(),
+    onMore: vi.fn(),
+    onSelect: vi.fn(),
+    onOpenChange: vi.fn(),
+  };
+}
+
+describe('RepoSelector qualified GitLab tab', () => {
+  afterEach(() => {
+    cleanup();
+    mocks.dispatch.mockReset();
+  });
+
+  it('keeps the GitLab tab absent until the consumer supplies the gated view', async () => {
+    await openDropdown();
+    expect(screen.queryByRole('tab', { name: 'GitLab' })).toBeNull();
+  });
+
+  it('restores a qualified project without treating its path as GitHub or local', async () => {
+    const gitlab = gitlabProps();
+    await openDropdown({ gitlab, gitlabSelected: true });
+    expect(tabButton('GitLab').className).toContain(ACTIVE_TAB_CLASS);
+    expect(
+      screen.getByRole('button', { name: 'Select a repository: group/subgroup/api' }),
+    ).toBeTruthy();
+    expect(screen.getByText(gitlab.instanceBaseUrl!)).toBeTruthy();
+    expect(githubInput()).toBeNull();
+    expect(gitlab.onOpenChange).toHaveBeenCalledWith(true, gitlab.scopeKey);
+    expect(
+      mocks.dispatch.mock.calls.some(([action]) => action.type === 'githubRepoSearch/search'),
+    ).toBe(false);
+  });
+
+  it('uses the qualified callback and closes without persisting a legacy path', async () => {
+    const gitlab = gitlabProps();
+    const onchange = vi.fn();
+    await openDropdown({ gitlab, onchange });
+    await fireEvent.click(tabButton('GitLab'));
+    await fireEvent.click(screen.getByRole('option', { name: 'API group/subgroup/api' }));
+    expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', gitlab.scopeKey);
+    expect(onchange).not.toHaveBeenCalled();
+    expect(mocks.dispatch.mock.calls.some(([action]) => action.type === 'wi/last')).toBe(false);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, gitlab.scopeKey);
+  });
+
+  it('removes the open GitLab view if the consumer withdraws the capability', async () => {
+    const gitlab = gitlabProps();
+    const view = await openDropdown({ gitlab, gitlabSelected: true });
+    await view.rerender({ gitlab: undefined });
+    await waitFor(() => expect(screen.queryByRole('option')).toBeNull());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, gitlab.scopeKey);
+  });
+
+  it('keeps visibility stable when a search installs a new scoped page', async () => {
+    const gitlab = gitlabProps();
+    const view = await openDropdown({ gitlab, gitlabSelected: true });
+    const nextScope = 'owner/connection-a/checkout-a/query-2';
+    await view.rerender({ gitlab: { ...gitlab, scopeKey: nextScope, query: 'api' } });
+    expect(gitlab.onOpenChange).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole('option', { name: 'API group/subgroup/api' }));
+    expect(gitlab.onSelect).toHaveBeenCalledWith('group/subgroup/api', nextScope);
+    expect(gitlab.onOpenChange).toHaveBeenLastCalledWith(false, nextScope);
+  });
+});
 
 describe('RepoSelector open tab derived from the value prop', () => {
   afterEach(() => {

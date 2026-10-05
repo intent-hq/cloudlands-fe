@@ -59,6 +59,8 @@
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
+  import GitLabProjectPicker from './GitLabProjectPicker.svelte';
+  import type { GitLabProjectPickerProps } from './gitlab-picker-types';
   import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
   import { pickDirectory } from '$lib/directory-picker-service';
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
@@ -170,6 +172,9 @@
     triggerIcon?: any;
     triggerAriaLabel?: string;
     onClear?: () => void;
+    /** Qualified GitLab state supplied by the checkout owner; absent hides the tab. */
+    gitlab?: GitLabProjectPickerProps;
+    gitlabSelected?: boolean;
   }
 
   let {
@@ -189,6 +194,8 @@
     triggerAriaLabel,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onClear,
+    gitlab,
+    gitlabSelected = false,
   }: Props = $props();
 
   function onchangeWithTracking(detail: RepoChangeDetail) {
@@ -288,8 +295,29 @@
   // ═══════════════════════════════════════════════════════════════════════════
   // TABBED INTERFACE STATE
   // ═══════════════════════════════════════════════════════════════════════════
-  type TabId = 'local' | 'github' | 'new' | 'remote';
+  type TabId = 'local' | 'github' | 'gitlab' | 'new' | 'remote';
   let activeTab = $state<TabId>('github');
+  const gitlabTabLabel = 'GitLab'; // i18n-ignore (brand name)
+
+  // Report visibility changes, not page/query revisions. The consumer owns the
+  // draft's lease; loading a scoped result must not reopen and recapture it.
+  $effect(() => {
+    if (!isOpen || activeTab !== 'gitlab') return;
+    return untrack(() => {
+      const opened = gitlab;
+      if (!opened) return;
+      opened.onOpenChange?.(true, opened.scopeKey);
+      return () =>
+        untrack(() => {
+          const current = gitlab ?? opened;
+          current.onOpenChange?.(false, current.scopeKey);
+        });
+    });
+  });
+
+  $effect(() => {
+    if (isOpen && activeTab === 'gitlab' && !gitlab) isOpen = false;
+  });
 
   // ═══════════════════════════════════════════════════════════════════════════
   // FOLDER-PICKER STATE
@@ -612,7 +640,9 @@
       selectedRepoType,
     });
 
-    if (currentValue) {
+    if (gitlabSelected && gitlab) {
+      activeTab = 'gitlab';
+    } else if (currentValue) {
       // Use the stored repo type to determine the tab
       activeTab = selectedRepoType;
 
@@ -634,7 +664,7 @@
     // Focus input - always autofocus for better UX
     // Use requestAnimationFrame for better timing
     requestAnimationFrame(() => {
-      if (isOpen && inputElement) {
+      if (isOpen && activeTab !== 'gitlab' && inputElement) {
         inputElement.focus();
         inputElement.select();
       }
@@ -1510,12 +1540,19 @@
     return parts[parts.length - 1] || selectedValue;
   }
 
-  const triggerDisplayValue = $derived(displayValue ?? formatDisplayValue());
+  const triggerDisplayValue = $derived(
+    gitlabSelected
+      ? (gitlab?.selectedProjectPath ?? displayValue ?? '')
+      : (displayValue ?? formatDisplayValue()),
+  );
+  const hasTriggerValue = $derived(gitlabSelected ? !!triggerDisplayValue : !!selectedValue);
   const pickerId = $props.id();
   const suggestionsId = `${pickerId}-github-suggestions`;
   // Owner avatar next to the trigger label; GitHub picks only, never local repos
   const triggerAvatarOwner = $derived(
-    getGitHubPickOwner({ selectedValue, selectedRepoType, confirmedGithubUrl }, parseGitHubUrl),
+    gitlabSelected
+      ? null
+      : getGitHubPickOwner({ selectedValue, selectedRepoType, confirmedGithubUrl }, parseGitHubUrl),
   );
 </script>
 
@@ -1538,18 +1575,18 @@
         {/if} -->
             {#if triggerIcon}
               <Fa icon={triggerIcon} size="xs" />
-            {:else if showEmptyIcon && !selectedValue}
+            {:else if showEmptyIcon && !hasTriggerValue}
               <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
             {/if}
             {#if !triggerIcon && triggerAvatarOwner}
               <!-- Decorative: the adjacent label already names the owner. -->
               <GitHubAvatar identity={triggerAvatarOwner} class="w-4 h-4 rounded-full shrink-0" />
             {/if}
-            {#if !triggerIcon && (selectedValue || emptyLabel)}
+            {#if !triggerIcon && (hasTriggerValue || emptyLabel)}
               <span class="flex-1 text-left truncate">
-                {#if selectedValue}
+                {#if hasTriggerValue}
                   <span class={triggerValueClass}>{triggerDisplayValue}</span>
-                  {#if isNewRepo && !displayValue}
+                  {#if isNewRepo && !displayValue && !gitlabSelected}
                     <span class="text-sm text-subtle ml-1"
                       >{m.workspace_repoSelector_new_label()}</span
                     >
@@ -1600,7 +1637,7 @@
           aria-label={m.workspace_repoSelector_whichRepo_label()}
           class="flex shrink-0 gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1"
         >
-          {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
+          {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, ...(gitlab ? [{ id: 'gitlab' as TabId, label: gitlabTabLabel }] : []), { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
             <Tabs.Trigger
               value={tab.id}
               class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
@@ -1615,7 +1652,15 @@
         <Tabs.Content value={activeTab} class="mt-0 min-h-0 flex flex-col">
           <!-- Input section - changes based on tab -->
           <div class="shrink-0 px-3 mb-3">
-            {#if activeTab === 'local'}
+            {#if activeTab === 'gitlab' && gitlab}
+              <GitLabProjectPicker
+                {...gitlab}
+                onSelect={(projectPath, scopeKey) => {
+                  gitlab?.onSelect(projectPath, scopeKey);
+                  isOpen = false;
+                }}
+              />
+            {:else if activeTab === 'local'}
               <!-- Local repo: folder picker button -->
               <Button
                 type="button"
@@ -1901,7 +1946,7 @@
           </div>
 
           <!-- Non-git folder prompt - shows when user selects a folder that isn't a git repo -->
-          {#if showNonGitFolderPrompt && nonGitFolderPath}
+          {#if activeTab !== 'gitlab' && showNonGitFolderPrompt && nonGitFolderPath}
             <div class="mx-3 mb-3 p-3 bg-sidebar rounded-lg">
               <div class="flex items-start gap-3">
                 <Fa icon={faFolder} class="text-ghost shrink-0 mt-0.5" />
@@ -1926,7 +1971,7 @@
           {/if}
 
           <!-- Recent repos section - only show for local and github tabs when there are repos -->
-          {#if activeTab !== 'new' && activeTab !== 'remote' && (isLoading || filteredRepos().length > 0)}
+          {#if (activeTab === 'local' || activeTab === 'github') && (isLoading || filteredRepos().length > 0)}
             <div class="min-h-16 overflow-y-auto flex-1 px-4 pb-3 pt-2">
               <Header size={5} class="mb-2">{m.workspace_repoSelector_recent_label()}</Header>
               {#if isLoading && recentRepos.length === 0}

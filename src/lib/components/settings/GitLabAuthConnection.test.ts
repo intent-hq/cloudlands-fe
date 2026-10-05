@@ -16,6 +16,7 @@ import {
   userPreferencesReducer,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
+import { initialState as gitlabDefaults } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
@@ -28,12 +29,19 @@ const mocks = vi.hoisted(() => {
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAdmittedLegacyPrincipal } =
+    await import('../../../test/fixtures/admitted-legacy-principal');
   return createAppStoreMockModule({
-    state: () => ({
-      userPreferences: mocks.userPreferences.value,
-      gitlabAuth: mocks.gitlabAuth.value,
-      daemonHealth: { stats: mocks.daemonHealthStats.value },
-    }),
+    state: () => {
+      const admitted = createAdmittedLegacyPrincipal();
+      admitted.principal.snapshot!.capabilities.gitlabCheckout = true;
+      return {
+        ...admitted,
+        userPreferences: mocks.userPreferences.value,
+        gitlabAuth: mocks.gitlabAuth.value,
+        daemonHealth: { ...admitted.daemonHealth, stats: mocks.daemonHealthStats.value },
+      };
+    },
     dispatch: mocks.dispatch,
   });
 });
@@ -45,14 +53,9 @@ vi.mock('svelte-fa', async () => ({
 import GitLabAuthConnection from './GitLabAuthConnection.svelte';
 
 const idleGitLab = (): GitLabAuthState => ({
-  host: 'gitlab.com',
-  isConfigured: false,
-  isAuthenticating: false,
-  deviceFlow: null,
+  ...gitlabDefaults,
+  statusReady: true,
   deviceGrantSupported: true,
-  user: null,
-  error: null,
-  method: null,
 });
 
 // system.status stats of a daemon whose protocol serves sourceControl.* auth.
@@ -92,6 +95,29 @@ beforeEach(() => {
 });
 
 describe('GitLabAuthConnection daemon capability gate', () => {
+  it('shows the full connected instance and restores it for reconnecting', async () => {
+    await setPreference(true);
+    const instanceBaseUrl = 'https://git.example.test:8443/Parent/Forge';
+    mocks.gitlabAuth.value = {
+      ...idleGitLab(),
+      host: 'git.example.test:8443',
+      instanceBaseUrl,
+      isConfigured: true,
+      user: { id: '7', login: 'saved' },
+    };
+    const { getByTestId, getByRole, getByLabelText } = render(GitLabAuthConnection);
+    expect(getByTestId('gitlab-connection-host').textContent).toBe(instanceBaseUrl);
+
+    mocks.gitlabAuth.value = {
+      ...idleGitLab(),
+      host: 'git.example.test:8443',
+      instanceBaseUrl,
+    };
+    await setPreference(true);
+    await fireEvent.click(getByRole('button', { name: 'Connect', exact: true }));
+    expect((getByLabelText('GitLab instance URL') as HTMLInputElement).value).toBe(instanceBaseUrl);
+  });
+
   it('hides new GitLab setup for a fresh profile', () => {
     const { container } = render(GitLabAuthConnection);
     expect(findButton(container, 'Connect')).toBeUndefined();
