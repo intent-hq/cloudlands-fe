@@ -1774,6 +1774,8 @@ function createAdditionalBackendClient(
   config: BackendConnectionConfig,
   invitedCredential?: guestSessionsStore.InvitedCredentialLease,
 ): JsonRpcClient {
+  // The hello provider/result and socket must retain the same credential context.
+  const clientConfig = Object.freeze({ ...config });
   // A fresh pool member starts with clean cert/auth/protocol-mismatch guards
   // for its backend — its own connect + `client.hello` re-detects any failure.
   clearBackendFailureState(id);
@@ -1888,7 +1890,7 @@ function createAdditionalBackendClient(
           },
         }
       : {}),
-    config,
+    config: clientConfig,
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
     // half-open socket. `host.status` is the transport-agnostic capability
     // probe (PROTOCOL.md §5.14) — answered on BOTH UDS and WSS.
@@ -1909,7 +1911,7 @@ function createAdditionalBackendClient(
     // it alone advertises `capabilities.browserExec` plus the app's name and
     // host identification (the auxiliary setup/transfer/quit clients stay
     // clientId-only).
-    helloParams: async () => ({ ...(await buildMainClientHelloParams(config)) }),
+    helloParams: async () => ({ ...(await buildMainClientHelloParams(clientConfig)) }),
     onHelloResult: (result, producer) =>
       poolWork(
         'hello-result',
@@ -1925,7 +1927,9 @@ function createAdditionalBackendClient(
             typeof clientId === 'string' &&
             clientId.length > 0
           ) {
-            void poolWork('persist-client-id', owner, () => persistClientId(clientId, config));
+            void poolWork('persist-client-id', owner, () =>
+              persistClientId(clientId, clientConfig),
+            );
           }
           // T15: `protocolVersion` from the handshake feeds the protocol-compat
           // check — record it for local, compare it against local for a remote,
@@ -3525,9 +3529,10 @@ async function requestGuestWorkspaceLeave(id: string, workspaceId: string): Prom
   };
   if (pooled && pooled.getStatus() === 'connected') return request(pooled);
   const { config } = await buildConfigForConnection(id);
+  const clientConfig = Object.freeze({ ...config });
   const client = new JsonRpcClient({
-    config,
-    helloParams: async () => ({ clientId: await getOrCreateClientId(config) }),
+    config: clientConfig,
+    helloParams: async () => ({ clientId: await getOrCreateClientId(clientConfig) }),
   });
   client.on('error', () => {});
   let timer: NodeJS.Timeout | undefined;

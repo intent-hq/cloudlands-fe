@@ -110,6 +110,19 @@ describe('client-identity (§5.17 stable clientId)', () => {
     expect(await restarted.getOrCreateClientId()).toBe(seed);
   });
 
+  it('captures the transport context before asynchronous preferences work', async () => {
+    const identity = await import('./client-identity');
+    const original = { transport: 'wss' as const, host: 'one', token: 'first-principal' };
+    const mutable = { ...original };
+    const pendingWrite = identity.persistClientId('first-canonical', mutable);
+    mutable.token = 'second-principal';
+    await pendingWrite;
+    const pendingRead = identity.getOrCreateClientId(mutable);
+    mutable.token = original.token;
+    expect(await pendingRead).toBe(await identity.getOrCreateClientId());
+    expect(await identity.getOrCreateClientId(original)).toBe('first-canonical');
+  });
+
   it('preserves concurrent canonical writes and normalizes certificate formatting', async () => {
     const identity = await import('./client-identity');
     const first = { transport: 'wss' as const, host: 'one', token: 'one', fingerprint: 'AA:BB' };

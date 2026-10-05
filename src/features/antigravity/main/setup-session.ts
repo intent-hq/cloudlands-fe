@@ -28,11 +28,12 @@ export class AntigravitySetupSession {
     private readonly isCurrent: () => boolean,
     private readonly openExternal: (url: string) => Promise<void>,
   ) {
+    const clientConfig = Object.freeze({ ...config });
     this.client = new JsonRpcClient({
-      config,
+      config: clientConfig,
       requestTimeoutMs: 10_000,
       helloParams: async () => ({
-        clientId: await getOrCreateClientId(config),
+        clientId: await getOrCreateClientId(clientConfig),
         name: 'Intent Antigravity setup', // i18n-ignore (wire client identity)
         capabilities: { antigravitySetup: 1 },
       }),

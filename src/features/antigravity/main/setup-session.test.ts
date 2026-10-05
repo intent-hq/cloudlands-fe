@@ -60,7 +60,13 @@ function session(current = () => true) {
 
 describe('Antigravity private setup session', () => {
   it('uses the setup transport identity without browser authority', async () => {
-    session();
+    const config = { transport: 'uds' as const, socketPath: '/fixture/socket' };
+    new AntigravitySetupSession(
+      config,
+      () => true,
+      vi.fn(async () => undefined),
+    );
+    config.socketPath = '/another/socket';
     const hello = await mocks.helloParams?.();
     expect(mocks.identity).toHaveBeenLastCalledWith({
       transport: 'uds',

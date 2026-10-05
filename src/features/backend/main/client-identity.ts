@@ -194,8 +194,9 @@ function contextKey(config: BackendConnectionConfig, key: string): string {
 /** Without a transport context, return only the unchanged install/legacy seed. */
 export async function getOrCreateClientId(config?: BackendConnectionConfig): Promise<string> {
   if (config) {
+    const capturedConfig = { ...config };
     const state = await getContexts();
-    const canonical = state.canonicalIds[contextKey(config, state.key)];
+    const canonical = state.canonicalIds[contextKey(capturedConfig, state.key)];
     if (canonical) return canonical;
   }
   return getInstallClientId();
@@ -206,8 +207,9 @@ export async function persistClientId(
   clientId: string,
   config: BackendConnectionConfig,
 ): Promise<void> {
+  const capturedConfig = { ...config };
   const state = await getContexts();
-  state.canonicalIds[contextKey(config, state.key)] = clientId;
+  state.canonicalIds[contextKey(capturedConfig, state.key)] = clientId;
   // Snapshot each write so concurrently completed hellos retain both entries.
   // local-prefs serializes disk writes; the session keeps its ID on I/O failure.
   await setLocalPref(CONTEXT_PREF_KEY, { key: state.key, canonicalIds: { ...state.canonicalIds } });
