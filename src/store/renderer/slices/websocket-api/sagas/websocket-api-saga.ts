@@ -200,6 +200,7 @@ function* runRequest(action: RequestAction): SagaGenerator<void> {
       if (typeof enabled !== 'boolean') throw new Error(m.settings_wsApi_startListenerError());
       if (enabled !== intent.enabled) error = m.settings_wsApi_startListenerError();
       values = { enabled };
+      yield* put(settingsFormRequestProgressed(request, values));
       if (enabled) values = yield* loadMobile(request, context);
       else receiveWebsocketCredentials(request, { token: '', qrDataUrl: '', pairingUri: '' });
     } else if (intent.kind === 'load') {

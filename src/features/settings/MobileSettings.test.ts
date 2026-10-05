@@ -237,6 +237,41 @@ it('enables and disables remote access on the connected machine and refreshes it
   expect(invoke.mock.calls.every(([, payload]) => !payload.localMachine)).toBe(true);
 });
 
+it('keeps acknowledged remote access enabled when refreshing settings fails', async () => {
+  enabled = false;
+  render(MobileSettings);
+  const toggle = screen.getByRole('switch', {
+    name: m.settings_wsApi_enable_label(),
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (channel, payload) => {
+    if (payload?.method === 'settings.list') throw new Error('Settings unavailable');
+    return original(channel, payload);
+  });
+
+  await fireEvent.click(toggle);
+  await waitFor(() => expect(mocks.error).toHaveBeenCalledOnce());
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  await tick();
+  expect(invoke).toHaveBeenCalledWith('backend:request', {
+    method: 'settings.update',
+    params: { changes: [{ path: 'server.wsApi.enabled', value: true }] },
+  });
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
+  expect(copyButton().disabled).toBe(true);
+  expect(qrButton().disabled).toBe(true);
+  expect(pairing).not.toHaveBeenCalled();
+
+  await fireEvent.click(toggle);
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+  expect(invoke).toHaveBeenCalledWith('backend:request', {
+    method: 'settings.update',
+    params: { changes: [{ path: 'server.wsApi.enabled', value: false }] },
+  });
+  expect(invoke.mock.calls.every(([, payload]) => !payload.localMachine)).toBe(true);
+});
+
 it('keeps pairing disabled when the connected machine rolls back enabling remote access', async () => {
   enabled = false;
   const original = invoke.getMockImplementation()!;
