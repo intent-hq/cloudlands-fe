@@ -15,9 +15,11 @@ import { composeNoteEdits } from './note-edit-plan';
 
 /** Output is externally staged, with one bounded write in flight. Invoking commit
  * transfers the complete output to the sink for publication; its completion must
- * acknowledge actual publication. After that invocation cancellation cannot retract
- * output or restore an earlier clipboard. abort only discards private staging,
- * including after an uncertain commit failure; it must never undo public output.
+ * acknowledge actual publication. Commit dispatch is not native invocation: abort
+ * must promptly invalidate pending preparation, then await physical settlement.
+ * Main-observed cancellation before native invocation prevents publication; afterward
+ * it cannot retract output. An uncertain acknowledgement never permits replay.
+ * abort only discards private staging; it must never undo public output.
  * A renderer string accumulator is not an implementation of this interface. */
 export interface NoteSourceSink {
   write(text: string): Promise<void>;
@@ -78,6 +80,24 @@ export function createNoteSourceCopyOwner(
         committed = false,
         sealed = false;
       let failure: unknown;
+      let committing = false;
+      let abortStarted = false;
+      let aborting: Promise<void> | undefined;
+      let abortFailure: unknown;
+      const abortSink = () => {
+        if (!sink || abortStarted) return;
+        abortStarted = true; // Reserve before executable sink code can reenter cancellation.
+        // Invoke immediately, observe rejection immediately, retain the promise
+        // through final cleanup. Never queue invalidation behind commit settlement.
+        try {
+          aborting = sink.abort().catch((error: unknown) => {
+            abortFailure = error;
+          });
+        } catch (error) {
+          abortFailure = error;
+          aborting = Promise.resolve();
+        }
+      };
       let sink: NoteSourceSink | undefined, operation: NoteSourceOperation | undefined;
       const expiresAt = new Date(now() + 600_000).toISOString();
       const deadline = Date.parse(expiresAt);
@@ -164,6 +184,7 @@ export function createNoteSourceCopyOwner(
           !n.state ||
           n.state.deleted ||
           !sameNoteScope(n.state.scope, document.scope);
+        if (revoked && committing) abortSink();
         return !revoked;
       };
       const check = () => {
@@ -172,6 +193,7 @@ export function createNoteSourceCopyOwner(
       };
       cancelActive = () => {
         revoked = true;
+        if (committing) abortSink();
       };
       const unsubscribe = port.subscribe(eligible);
       try {
@@ -328,11 +350,10 @@ export function createNoteSourceCopyOwner(
         // and the subscription remain live across cleanup, preventing revival.
         await operation.cancel();
         check();
-        // This invocation is the one-way publication handoff. Ownership was
-        // checked above without an intervening await. Hold DATA and observe the
-        // real acknowledgement, even if the panel closes while it is pending.
-        // A post-handoff ownership check cannot turn published output into an
-        // unperformed operation or justify restoring an older clipboard.
+        // Forward owner loss while main prepares publication. Main orders received
+        // cancellation against native invocation; IPC dispatch alone is not that
+        // boundary. Observe the acknowledgement without claiming rollback afterward.
+        committing = true;
         await sink.commit();
         committed = true;
       } catch (error) {
@@ -342,7 +363,10 @@ export function createNoteSourceCopyOwner(
           try {
             await operation?.cancel();
           } finally {
-            if (!committed) await sink?.abort();
+            committing = false;
+            if (!committed) abortSink();
+            await aborting;
+            if (abortFailure !== undefined) throw abortFailure;
           }
         } catch (error) {
           failure ??= error;

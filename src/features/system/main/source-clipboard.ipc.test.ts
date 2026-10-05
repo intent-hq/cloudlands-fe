@@ -164,3 +164,83 @@ it('rejects a corrupted receipt without retrying or rolling back the clipboard',
   await sink.abort();
   expect(mocks.publish).toHaveBeenCalledExactlyOnceWith('a');
 });
+
+it('forwards renderer cancellation during held main hydration before native invocation', async () => {
+  let entered!: () => void, resume!: () => void;
+  const reading = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const held = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const open = fs.open.bind(fs);
+  const spy = vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await open(...args);
+    const read = handle.readFile.bind(handle);
+    vi.spyOn(handle, 'readFile').mockImplementation(async () => {
+      entered();
+      await held;
+      return read({ encoding: 'utf8' });
+    });
+    return handle;
+  });
+  try {
+    const sink = await openNoteSourceClipboardSink(input(1));
+    await sink.write('a');
+    const refused = expect(sink.commit()).rejects.toThrow('REVOKED');
+    await reading;
+    let aborted = false;
+    const abort = sink.abort().then(() => {
+      aborted = true;
+    });
+    await vi.waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        c.SOURCE_CLIPBOARD_ABORT,
+        expect.objectContaining({ token: expect.any(String) }),
+      ),
+    );
+    expect(aborted).toBe(false);
+    expect(mocks.publish).not.toHaveBeenCalled();
+    expect(await fs.readdir(directory)).toHaveLength(1);
+    expect(client.listenerCount('status')).toBe(1);
+    resume();
+    await refused;
+    await abort;
+    expect(mocks.publish).not.toHaveBeenCalled();
+    expect(await fs.readdir(directory)).toEqual([]);
+    expect(client.listenerCount('status')).toBe(0);
+  } finally {
+    resume();
+    spy.mockRestore();
+  }
+});
+
+it('retains native acknowledgement ownership after renderer cancellation without rollback or replay', async () => {
+  let resume!: () => void;
+  const held = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  mocks.publish.mockReturnValue(held);
+  const sink = await openNoteSourceClipboardSink(input(1));
+  await sink.write('a');
+  let committed = false,
+    aborted = false;
+  const commit = Promise.resolve(sink.commit()).then(() => {
+    committed = true;
+  });
+  await vi.waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith('a'));
+  const abort = sink.abort().then(() => {
+    aborted = true;
+  });
+  await expect(sink.commit()).rejects.toThrow('BUSY');
+  expect(committed).toBe(false);
+  expect(aborted).toBe(false);
+  expect(await fs.readdir(directory)).toHaveLength(1);
+  expect(client.listenerCount('status')).toBe(1);
+  resume();
+  await Promise.all([commit, abort]);
+  await sink.abort();
+  expect(mocks.publish).toHaveBeenCalledExactlyOnceWith('a');
+  expect(await fs.readdir(directory)).toEqual([]);
+  expect(client.listenerCount('status')).toBe(0);
+});

@@ -337,9 +337,9 @@ it('holds DATA and the exclusive copy owner until asynchronous publication ackno
   const publish = f.sink.commit.getMockImplementation();
   if (!publish) throw new Error('Missing fixture publisher');
   f.sink.commit.mockImplementation(async () => {
+    await publish(); // Native invocation occurred; only its acknowledgement is held.
     entered.resolve();
     await held.promise;
-    await publish();
   });
   let settled = false;
   const pending = f.owner.copyDocument().then(() => {
@@ -347,19 +347,19 @@ it('holds DATA and the exclusive copy owner until asynchronous publication ackno
   });
   await entered.promise;
   expect(settled).toBe(false);
-  expect(f.visible()).toBeUndefined();
+  expect(f.visible()).toBe(f.complete);
   expect(f.read().resourceLedger.used.physicalReads).toBe(1);
   expect(f.listeners.size).toBe(1);
   await expect(f.owner.copyDocument()).rejects.toThrow('already in progress');
   f.owner.cancelCopy();
   f.transition(false);
   f.transition(true);
-  expect(f.sink.abort).not.toHaveBeenCalled();
+  expect(f.sink.abort).toHaveBeenCalledOnce();
   held.resolve();
   await pending;
   expect(f.visible()).toBe(f.complete);
   expect(f.sink.commit).toHaveBeenCalledOnce();
-  expect(f.sink.abort).not.toHaveBeenCalled();
+  expect(f.sink.abort).toHaveBeenCalledOnce();
   expect(f.read().resourceLedger.used.physicalReads).toBe(0);
   expect(f.listeners.size).toBe(0);
 });
@@ -898,4 +898,77 @@ it('drains actual Live/Redux capture through the default platform adapter into m
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+it.each(['cancel', 'owner'])(
+  'forwards %s loss during pending commit and retains DATA through abort settlement',
+  async (loss) => {
+    const f = fixture(),
+      entered = deferred(),
+      commitHeld = deferred(),
+      abortHeld = deferred();
+    f.sink.commit.mockImplementation(async () => {
+      entered.resolve();
+      await commitHeld.promise;
+      throw new Error('Main refused cancelled preparation');
+    });
+    f.sink.abort.mockImplementation(async () => {
+      await abortHeld.promise;
+    });
+    const pending = f.owner.copyDocument();
+    const refused = expect(pending).rejects.toThrow('Main refused cancelled preparation');
+    await entered.promise;
+    if (loss === 'cancel') f.owner.cancelCopy();
+    else {
+      f.transition(false);
+      f.transition(true);
+    }
+    expect(f.sink.abort).toHaveBeenCalledOnce();
+    expect(f.read().resourceLedger.used.physicalReads).toBe(1);
+    expect(f.listeners.size).toBe(1);
+    commitHeld.resolve();
+    await Promise.resolve();
+    expect(f.read().resourceLedger.used.physicalReads).toBe(1);
+    await expect(f.owner.copyDocument()).rejects.toThrow('already in progress');
+    abortHeld.resolve();
+    await refused;
+    expect(f.sink.abort).toHaveBeenCalledOnce();
+    expect(f.sink.commit).toHaveBeenCalledOnce();
+    expect(f.visible()).toBeUndefined();
+    expect(f.read().resourceLedger.used.physicalReads).toBe(0);
+    expect(f.listeners.size).toBe(0);
+  },
+);
+
+it('reserves abort ownership before synchronous sink cancellation reentry', async () => {
+  const f = fixture(),
+    entered = deferred(),
+    held = deferred(),
+    abortHeld = deferred();
+  f.sink.commit.mockImplementation(async () => {
+    entered.resolve();
+    await held.promise;
+    throw new Error('Cancelled preparation');
+  });
+  f.sink.abort.mockImplementation(async () => {
+    f.owner.cancelCopy();
+    f.transition(false);
+    f.transition(true);
+    await abortHeld.promise;
+    throw new Error('Abort acknowledgement lost');
+  });
+  const refused = expect(f.owner.copyDocument()).rejects.toThrow('Cancelled preparation');
+  await entered.promise;
+  f.owner.cancelCopy();
+  expect(f.sink.abort).toHaveBeenCalledOnce();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(1);
+  // Observe early abort rejection while commit is still physically pending.
+  abortHeld.resolve();
+  await Promise.resolve();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(1);
+  held.resolve();
+  await refused;
+  expect(f.sink.abort).toHaveBeenCalledOnce();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(0);
+  expect(f.listeners.size).toBe(0);
 });
