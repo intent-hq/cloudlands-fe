@@ -1,0 +1,23 @@
+{
+  "backendCommit": "491660c1bfe9b03bb4fde51dd12bac3a56a87cd2",
+  "producerSource": {
+    "crates/intent-store/src/tests/note_pages/staged_canonical_effect_capture.rs": "a892f6625b20faf5f60d2152fe036b58d6c84c8853ba99b808eadadbe1e369cf",
+    "crates/intent-store/src/tests/note_pages/staged_commit_groups.rs": "1ea9b71650a24e73742d50ac2a264b76bfbc0f8f6dade26150bba3ebce583083"
+  },
+  "capture": "staged-canonical-effects.capture.txt",
+  "captureSha256": "894964b0bd5903ab7d9d52f05dfe917165de5f29294d0cb617464c0cb9afa9f7",
+  "producerTest": "staged_canonical_effect_details_capture_original_pages",
+  "producerScope": "Test-only controlled canonical-phase Store writer and actual receipt reader. One phase/two effects plus annotation; final effects64/detail16, wire8192, defaultsource16384. No native, Services canonical parser, WSS, adoption, capability, or remote CI claim.",
+  "recordedFlow": "Existing Store staged writer plus controlled apply_recorded_phase edits. Original effects and reachable detail requests/responses replay through LiveNotePagesClient and admitted receipt transcript, using the recorded clock. No response rewriting.",
+  "lengths": {
+    "base": 9802,
+    "input": 9803,
+    "output": 10
+  },
+  "frames": 10,
+  "effectsMaxItems": 64,
+  "detailMaxItems": 16,
+  "maxWireBytes": 8192,
+  "frontendScope": "One phase, two source effects. Row/detail consistency and bounded resource lifetime only. Existing native adoption guards and needsReconcile remain; changed extents refuse before production traversal. No native or live daemon authority is inferred.",
+  "backendEvidenceSha256": "3483854541fb92040c62a3394ef3fe2dd48cca6a357317253b24f2259a009a59"
+}

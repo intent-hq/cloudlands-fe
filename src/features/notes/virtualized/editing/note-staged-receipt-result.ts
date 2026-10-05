@@ -1,3 +1,4 @@
+import { validateNoteStagedCanonicalEffects } from './note-staged-canonical-effects';
 import { v4 as uuid } from 'uuid';
 import {
   pageResourcesRequested,
@@ -143,6 +144,7 @@ export async function readNoteStagedReceiptResult(
     const ready = await lease.ready;
     observeIO = true;
     checkIO();
+
     // Bound native semantic scratch before copying/hashing. Original replay aliases
     // establish native group provenance; opaque receipt IDs are never parsed as IDs.
     let units = 0,
@@ -203,7 +205,6 @@ export async function readNoteStagedReceiptResult(
     )
       throw new Error('Native capture differs from staged write');
     const mappingProgress = progress(),
-      effectsProgress = progress(),
       inverseProgress = progress();
     let mapping = 0;
     while (
@@ -225,30 +226,16 @@ export async function readNoteStagedReceiptResult(
       /* finite exact expected prefix; repeats exceed expected records */
     }
     if (mapping !== composed.length) throw new Error('Incomplete staged mapping');
-    let annotations: string | undefined;
-    while (
-      !(await ready.consumeNext('effects', (page) => {
-        effectsProgress(page.nextCursor);
-        if (page.outputKind !== 'effects' || page.convertedCount !== 0)
-          throw new Error('Canonical staged effects unsupported');
-        for (const v of page.items) {
-          const item = record(v);
-          if (
-            item.kind !== 'annotationInvalidation' ||
-            item.sourceRevision !== receipt.afterRevision ||
-            !token(item.attributionGeneration) ||
-            !token(item.commentRevision)
-          )
-            throw new Error('Canonical staged effects unsupported');
-          const key = JSON.stringify([item.attributionGeneration, item.commentRevision]);
-          if (annotations !== undefined && annotations !== key)
-            throw new Error('Annotation identity changed');
-          annotations = key;
-        }
-      }))
-    ) {
-      /* drain all effects; any source-effect phase refuses */
-    }
+    const effects = await validateNoteStagedCanonicalEffects(
+      client,
+      receipt,
+      document.baseLength,
+      document.length,
+      ready,
+      checkIO,
+    );
+    if (effects.sourceEffects || effects.convertedCount || effects.createdTasks)
+      throw new Error('Canonical staged effects unsupported');
     const verifyProvenance = async (root: string, expected: Record<string, unknown>) => {
       const ids = new Set<string>(),
         refs = new Set<string>();

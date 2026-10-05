@@ -860,7 +860,7 @@ function receiptFixture(
     return page;
   };
   rpc.mockImplementation((m, p) => (m === 'note.operation.read' ? readPage(p) : f.transport(m, p)));
-  return { doc, inverse, readPage };
+  return { doc, inverse, readPage, details, encode };
 }
 function publishSavedState(f: ReturnType<typeof setup>) {
   const n = f.read();
@@ -1557,3 +1557,71 @@ it('denies the conservative combined snapshot peak before commit without increas
   f.clean();
   expect(f.port.read().resourceLedger.pending).toHaveLength(0);
 });
+
+it.each(['same-length', 'changed-length'])(
+  'preserves canonical adoption refusal and native history for %s output',
+  async (mode) => {
+    const f = setup();
+    const inserted = mode === 'same-length' ? 'Z' : 'ZZ';
+    const detail = {
+      inputState: 'e:0:in',
+      outputState: 'e:0:out',
+      range: { start: 0, end: 1 },
+      removed: 'a',
+      inserted,
+    };
+    const fixture = receiptFixture(f, (kind, page) => {
+      if (kind === 'effects')
+        page.items = [
+          {
+            kind: 'sourceEffect',
+            reason: 'phantom-scrub',
+            inputState: detail.inputState,
+            outputState: detail.outputState,
+            range: detail.range,
+            insertedLength: inserted.length,
+            beforeDigest: createHash('sha256').update('a').digest('hex'),
+            afterDigest: createHash('sha256').update(inserted).digest('hex'),
+            detailRef: 'canonical-root',
+          },
+        ];
+    });
+    fixture.details.set('canonical-root', [fixture.encode('canonical-root', detail)]);
+    const transport = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (m, p) => {
+      const result = await transport(m, p);
+      return m === 'note.operation.commit'
+        ? { ...(result as object), sourceLength: fixture.doc.length + inserted.length - 1 }
+        : result;
+    });
+    await f.run();
+    const retainedReceipt = f.read().receipts[0];
+    f.startSaga();
+    publishSavedState(f);
+    if (mode === 'same-length') {
+      await vi.waitFor(() =>
+        expect(
+          rpc.mock.calls.some(
+            ([, p]) => (p as { ref?: string }).ref === 'canonical-root:range:children',
+          ),
+        ).toBe(true),
+      );
+    } else {
+      // Existing continuation admission refuses changed extents before traversal.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(rpc.mock.calls.some(([method]) => method === 'note.operation.read')).toBe(false);
+    }
+    await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+    expect(f.read().needsReconcile).toBe(true);
+    expect(f.read().document).toBe(fixture.doc);
+    expect(f.read().document!.history).toBe(fixture.doc.history);
+    expect(f.read().receipts[0]).toBe(retainedReceipt);
+    expect(f.read().committedDocumentSave?.receipt).toBe(retainedReceipt);
+    expect(
+      rpc.mock.calls.some(([, p]) =>
+        ['inverse', 'inverseText'].includes(String((p as { kind?: string }).kind)),
+      ),
+    ).toBe(false);
+    f.clean();
+  },
+);
