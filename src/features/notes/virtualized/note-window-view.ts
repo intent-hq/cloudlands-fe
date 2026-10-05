@@ -88,6 +88,10 @@ export interface NoteReadingSurface {
     consume: (page: NoteRenderedSearchPage) => Promise<void>,
   ): Promise<void>;
   cancelRenderedSearch?(): void;
+  /** Explicit clean marker source operation; callback text is borrowed until
+   * settlement and never establishes server marker provenance by itself. */
+  readMarkerSource?(position: number, consume: (text: string) => Promise<void>): Promise<void>;
+  cancelMarkerSource?(): void;
   selectionChanged(selection: NoteSourceSelection): void;
   fullOperation: NoteWindowViewOptions['fullOperation'];
   editing?: NoteViewEditing;

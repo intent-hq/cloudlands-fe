@@ -75,6 +75,14 @@ type NoteSelectionStageRecord =
       role: 'selection-owner' | 'inline-span';
       detail: NoteStageTextReference;
     };
+type NoteMarkerStageRecord = {
+  kind: 'projection';
+  ordinal: number;
+  sourceRange: { start: number; end: number };
+  role: 'selection-owner' | 'marker-occurrence';
+  canonicalId?: string;
+  detail: NoteStageTextReference;
+};
 const streams = ['text', 'dirty', 'selection', 'mutation', 'live'] as const;
 const encoder = new TextEncoder();
 const size = (s: string) => encoder.encode(s).length;
@@ -117,6 +125,17 @@ export function createNoteSourceOperation(
   return createSourceStage(send, input, current, now, 'read', 'source');
 }
 
+/** Clean native marker correspondence upload. Backend seal alone establishes
+ * original occurrence ownership; this adapter cannot authorize a marker. */
+export function createNoteMarkerSourceOperation(
+  send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  input: NoteSourceOperationInput,
+  current: () => boolean,
+  now: () => number = Date.now,
+) {
+  return createSourceStage(send, input, current, now, 'read', 'source', true);
+}
+
 export function createNoteSelectionOperation(
   send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
   input: NoteSelectionOperationInput,
@@ -156,6 +175,7 @@ function createSourceStage(
   now: () => number,
   action: 'read' | 'mutate',
   output: 'source' | 'selectionMarkdown' | 'search',
+  marker = false,
 ) {
   const scope = Object.freeze({
     backendId: input.scope.backendId,
@@ -344,16 +364,22 @@ function createSourceStage(
     },
     async append(
       stream: 'text' | 'dirty' | 'selection' | 'live',
-      original: readonly (NoteSourceStageRecord | NoteSelectionStageRecord)[],
+      original: readonly (
+        NoteSourceStageRecord | NoteSelectionStageRecord | NoteMarkerStageRecord
+      )[],
     ) {
       return exclusive(async () => {
         check();
         if (
           !begun ||
           sealed ||
-          !(output === 'source' ? ['text', 'dirty'] : ['text', 'selection', 'live']).includes(
-            stream,
-          ) ||
+          !(
+            marker
+              ? ['text', 'live']
+              : output === 'source'
+                ? ['text', 'dirty']
+                : ['text', 'selection', 'live']
+          ).includes(stream) ||
           original.length < 1 ||
           original.length > 128
         )
@@ -385,6 +411,35 @@ function createSourceStage(
               anchorAffinity: r.anchorAffinity,
               headAffinity: r.headAffinity,
               direction: r.direction,
+            };
+          }
+          if (marker && stream === 'live' && r.kind === 'projection') {
+            const id = 'canonicalId' in r ? r.canonicalId : undefined;
+            if (
+              ![r.ordinal, r.sourceRange.start, r.sourceRange.end].every(uint) ||
+              r.ordinal !== manifest[4].records + index ||
+              r.ordinal > 1 ||
+              r.sourceRange.end <= r.sourceRange.start ||
+              r.role !== (r.ordinal === 0 ? 'selection-owner' : 'marker-occurrence') ||
+              (r.ordinal === 0 ? id !== undefined : !token(id)) ||
+              !token(r.detail.textId) ||
+              !uint(r.detail.length) ||
+              !uint(r.detail.utf8Bytes) ||
+              !digest(r.detail.sha256)
+            )
+              throw new Error('Invalid captured marker projection');
+            return {
+              kind: r.kind,
+              ordinal: r.ordinal,
+              role: r.role,
+              sourceRange: { start: r.sourceRange.start, end: r.sourceRange.end },
+              ...(id === undefined ? {} : { canonicalId: id }),
+              detail: {
+                textId: r.detail.textId,
+                length: r.detail.length,
+                utf8Bytes: r.detail.utf8Bytes,
+                sha256: r.detail.sha256,
+              },
             };
           }
           if (output !== 'source' && stream === 'live' && r.kind === 'projection') {
@@ -442,7 +497,7 @@ function createSourceStage(
         if (textBytes > 16384) throw new Error('Staged text chunk exceeded');
         const m = manifest[streams.indexOf(stream)];
         if (
-          output !== 'source' &&
+          (output !== 'source' || marker) &&
           ((stream === 'selection' && m.records + records.length > 1) ||
             (stream === 'live' && m.records + records.length > 2))
         )
@@ -470,6 +525,14 @@ function createSourceStage(
       return exclusive(async () => {
         check();
         if (!begun || sealed) throw new Error('Staged seal unavailable');
+        if (
+          marker &&
+          (manifest[1].records !== 0 ||
+            manifest[2].records !== 0 ||
+            manifest[3].records !== 0 ||
+            manifest[4].records !== 2)
+        )
+          throw new Error('Incomplete captured marker manifest');
         if (output !== 'source' && (manifest[2].records !== 1 || manifest[4].records !== 2))
           throw new Error('Incomplete captured selection manifest');
         payloadDigest = await hash({ headerDigest, manifest });
