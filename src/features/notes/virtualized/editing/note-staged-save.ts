@@ -343,10 +343,10 @@ export async function stageNoteDocumentSave(
           {
             id: continuityOwner,
             cost: {
-              // Replacement can overlap old/new native snapshots (2*4N),
-              // old/new journal snapshots (2*2N), and traversal/composition
-              // bookkeeping (4N). Charge the combined peak before callbacks.
-              // Logical DATA allowances, not a measured JavaScript heap bound.
+              // Sequential replacement peak: max(8N native + 4N retained journal,
+              // 4N native + 8N journals), plus 4N traversal/composition.
+              // The original-operation witness sponsor is charged separately.
+              // Logical DATA allowance, not a measured JavaScript heap or GC bound.
               payloadBytes: 24 * units,
               stringUnits: 24 * units,
               objectNodes: 16 * 32768,
