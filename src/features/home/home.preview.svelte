@@ -124,7 +124,7 @@
         id: WorkspaceId(item.id),
       }) as Workspace,
   );
-  const assistantFixtures: AgentSession[] = Array.from({ length: 36 }, (_, index) => {
+  const assistantFixtures: AgentSession[] = Array.from({ length: 240 }, (_, index) => {
     const name =
       [
         'Plan the next release',

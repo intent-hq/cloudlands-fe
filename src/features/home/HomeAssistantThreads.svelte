@@ -29,6 +29,7 @@
   bind:selectedKeys
   onActivate={(thread) => chooseThread(thread.agentId)}
   ariaLabel={m.layout_chiefCard_threadPicker_ariaLabel()}
+  rowHeight={36}
   class="min-h-0 flex-1"
 >
   {#snippet row({ item: thread })}

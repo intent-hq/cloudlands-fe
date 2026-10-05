@@ -287,6 +287,8 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
   await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
     'Review open pull requests',
   );
+  const draft = component.locator('.home-surface [contenteditable="true"]').first();
+  await draft.fill('Keep this draft while I check workspaces');
   await testInfo.attach('home-sidebar-assistant', {
     body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-assistant.png') }),
     contentType: 'image/png',
@@ -303,6 +305,7 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
   await expect(threads.getByRole('option', { selected: true })).toHaveText(
     'Review open pull requests',
   );
+  await expect(draft).toHaveText('Keep this draft while I check workspaces');
   await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
   await expect(threads.getByRole('option')).toHaveCount(2);
   await expect(threads.getByRole('option', { selected: true })).toHaveText('Plan the next release');
@@ -349,11 +352,24 @@ test('Home sidebar scrolls long thread history and keeps narrow tabs usable', as
   expect(await threads.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
     true,
   );
+  await threads.getByRole('option', { name: /^Find the workspaces/ }).click();
+  await expect(
+    component
+      .locator('[data-chief-header-row]')
+      .getByRole('button', { name: 'New Assistant thread', exact: true }),
+  ).toBeVisible();
+  await testInfo.attach('home-sidebar-long-title', {
+    body: await page.screenshot({ path: testInfo.outputPath('home-sidebar-long-title.png') }),
+    contentType: 'image/png',
+  });
   await threads.getByRole('option').first().focus();
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await expect(threads.getByRole('option').last()).toBeInViewport();
   await expect(threads.getByRole('option').last()).toHaveAttribute('aria-selected', 'true');
+  await expect(component.locator('[data-chief-header-row]').getByRole('heading')).toHaveText(
+    'Assistant conversation 240',
+  );
   expect(await sidebar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
     true,
   );

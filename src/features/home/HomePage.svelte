@@ -37,6 +37,7 @@
   import { fly, animatedHeight } from '$lib/motion';
   import ChiefCard from '$lib/components/layout/sidebar-nav/cards/ChiefCard.svelte';
   import HomeAssistantThreads from './HomeAssistantThreads.svelte';
+  import HomeAssistantPanels from './HomeAssistantPanels.svelte';
   import HomeActivityTime from './HomeActivityTime.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import HomeWorkspaceStatus from './HomeWorkspaceStatus.svelte';
@@ -716,17 +717,19 @@
   <Screen class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
     {#if assistantActivated && !$collaborator$}
       <div
-        class="min-h-0 flex-1 overflow-hidden home-panel bg-background"
+        class="min-h-0 flex-1 overflow-hidden"
         hidden={destination !== 'assistant'}
         inert={destination !== 'assistant'}
       >
-        <ChiefCard
-          expanded
-          embedded
-          pageLayout
-          threadPicker={false}
-          isActive={destination === 'assistant'}
-        />
+        <HomeAssistantPanels isActive={destination === 'assistant'}>
+          <ChiefCard
+            expanded
+            embedded
+            pageLayout
+            threadPicker={false}
+            isActive={destination === 'assistant'}
+          />
+        </HomeAssistantPanels>
       </div>
     {/if}
     {#if destination === 'workspaces'}
