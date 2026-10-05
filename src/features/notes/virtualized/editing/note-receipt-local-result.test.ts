@@ -299,3 +299,22 @@ it('rechecks original expiry after resource retirement', async () => {
   await expect(f.run()).rejects.toThrow('during retirement');
   f.clean();
 });
+it('refuses staged identity before inline semantic proof, allocation or receipt IO', async () => {
+  const f = await fixture();
+  await expect(
+    readNoteLocalReceiptResult(
+      f.port,
+      { readReceipt: f.readReceipt },
+      {
+        ...f.receipt,
+        headerDigest: 'b'.repeat(64),
+        viewId: 'view',
+      },
+      f.operation,
+      5,
+      () => true,
+    ),
+  ).rejects.toThrow('Unsupported receipt input');
+  expect(f.readReceipt).not.toHaveBeenCalled();
+  f.clean();
+});

@@ -8,14 +8,16 @@ interface NoteReceiptEnvelope {
   scope: NoteCommitReceipt['scope'];
   operationId: string;
   payloadDigest: string;
-  beforeRevision: string;
-  afterRevision: string;
   sourceLength: number;
   items: unknown[];
   nextCursor: string | null;
   expiresAt: string;
 }
+type ReceiptPageIdentity =
+  | { beforeRevision: string; afterRevision: string; headerDigest?: never; viewId?: never }
+  | { headerDigest: string; viewId: string; beforeRevision?: never; afterRevision?: never };
 export type NoteReceiptPage = NoteReceiptEnvelope &
+  ReceiptPageIdentity &
   ({ outputKind: 'mapping' } | { outputKind: 'effects'; convertedCount: number });
 export interface NoteReceiptReadRequest {
   kind: 'mapping' | 'effects';
@@ -27,6 +29,8 @@ export interface NoteReceiptReadRequest {
 }
 const token = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && new TextEncoder().encode(value).length <= 256;
+const digest = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const uint = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
 const record = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -54,17 +58,18 @@ export async function readNoteReceiptPage(
     beforeRevision: receipt.beforeRevision,
     afterRevision: receipt.afterRevision,
     expiresAt: receipt.receiptExpiresAt,
+    headerDigest: receipt.headerDigest,
+    viewId: receipt.viewId,
   };
+  const staged = 'headerDigest' in receipt || 'viewId' in receipt;
   const { kind, baseLength, cursor, maxItems, maxWireBytes } = request;
   if (
     receipt.kind !== 'noteCommitReceipt' ||
     receipt.outcome !== 'committed' ||
-    'headerDigest' in receipt ||
-    'viewId' in receipt ||
+    (staged && (!digest(identity.headerDigest) || !token(identity.viewId))) ||
     !Object.values(scope).every(token) ||
     !token(identity.operationId) ||
-    typeof identity.payloadDigest !== 'string' ||
-    !/^[0-9a-f]{64}$/.test(identity.payloadDigest) ||
+    !digest(identity.payloadDigest) ||
     !token(identity.beforeRevision) ||
     !token(identity.afterRevision) ||
     !['mapping', 'effects'].includes(kind) ||
@@ -77,7 +82,7 @@ export async function readNoteReceiptPage(
     maxWireBytes > 65536 ||
     (cursor !== undefined && !token(cursor))
   )
-    throw new Error('Invalid inline receipt read');
+    throw new Error('Invalid receipt read');
   const ref = kind === 'mapping' ? receipt.mappingRef : receipt.effectsRef;
   if (!token(ref)) throw new Error('Invalid receipt root reference');
   const deadline = parseSourceDeadline(identity.expiresAt);
@@ -85,7 +90,9 @@ export async function readNoteReceiptPage(
   const result = await send({
     ...scope,
     operationId: identity.operationId,
-    payloadDigest: identity.payloadDigest,
+    ...(staged
+      ? { headerDigest: identity.headerDigest }
+      : { payloadDigest: identity.payloadDigest }),
     kind,
     ref,
     ...(cursor === undefined ? {} : { cursor }),
@@ -100,13 +107,18 @@ export async function readNoteReceiptPage(
     page.outputKind !== kind ||
     page.operationId !== identity.operationId ||
     page.payloadDigest !== identity.payloadDigest ||
-    page.beforeRevision !== identity.beforeRevision ||
-    page.afterRevision !== identity.afterRevision ||
+    (staged
+      ? page.headerDigest !== identity.headerDigest ||
+        page.viewId !== identity.viewId ||
+        'beforeRevision' in page ||
+        'afterRevision' in page
+      : page.beforeRevision !== identity.beforeRevision ||
+        page.afterRevision !== identity.afterRevision ||
+        'headerDigest' in page ||
+        'viewId' in page) ||
     page.expiresAt !== identity.expiresAt ||
     page.sourceLength !== baseLength ||
     Object.entries(scope).some(([key, value]) => returnedScope[key] !== value) ||
-    'headerDigest' in page ||
-    'viewId' in page ||
     'note' in page ||
     'content' in page ||
     !Array.isArray(page.items) ||
@@ -115,7 +127,7 @@ export async function readNoteReceiptPage(
     (page.nextCursor !== null && !token(page.nextCursor)) ||
     new TextEncoder().encode(JSON.stringify(result)).length > maxWireBytes
   )
-    throw new Error('Mismatched or oversized inline receipt page');
+    throw new Error('Mismatched or oversized receipt page');
   if (!beforeSourceDeadline(now(), deadline)) throw new Error('Receipt expired');
   return result as NoteReceiptPage;
 }

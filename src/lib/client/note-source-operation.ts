@@ -17,13 +17,16 @@ export interface NoteSourceOperationInput {
     selection: 'all';
   };
 }
+export type NoteStagedSaveInput = Omit<NoteSourceOperationInput, 'header'> & {
+  header: Omit<NoteSourceOperationInput['header'], 'action'> & { action: 'mutate' };
+};
 interface NoteStageTextReference {
   textId: string;
   length: number;
   utf8Bytes: number;
   sha256: string;
 }
-export type NoteSourceStageRecord =
+type NoteSourceStageRecord =
   | { kind: 'text'; id: string; offset: number; text: string }
   | {
       kind: 'splice';
@@ -72,6 +75,26 @@ export function createNoteSourceOperation(
   current: () => boolean,
   now: () => number = Date.now,
 ) {
+  return createSourceStage(send, input, current, now, 'read');
+}
+
+/** Dirty-only save staging. The caller proves native grouping and owns commit.
+ * There is no mutation, selection or live projection fallback. */
+export function createNoteStagedSaveOperation(
+  send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  input: NoteStagedSaveInput,
+  current: () => boolean,
+  now: () => number = Date.now,
+) {
+  return createSourceStage(send, input, current, now, 'mutate');
+}
+function createSourceStage(
+  send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  input: NoteSourceOperationInput | NoteStagedSaveInput,
+  current: () => boolean,
+  now: () => number,
+  action: 'read' | 'mutate',
+) {
   const scope = Object.freeze({
     backendId: input.scope.backendId,
     workspaceId: input.scope.workspaceId,
@@ -79,7 +102,7 @@ export function createNoteSourceOperation(
     noteInstanceId: input.scope.noteInstanceId,
   });
   const h = input.header;
-  if (h.action !== 'read' || h.output !== 'source' || h.selection !== 'all' || 'query' in h)
+  if (h.action !== action || h.output !== 'source' || h.selection !== 'all' || 'query' in h)
     throw new Error('Unsupported staged output');
   const header = Object.freeze({
     baseRevision: h.baseRevision,
@@ -180,6 +203,27 @@ export function createNoteSourceOperation(
     }
   };
   return {
+    sealedSave() {
+      check();
+      if (
+        action !== 'mutate' ||
+        !sealed ||
+        !headerDigest ||
+        !payloadDigest ||
+        viewLength === undefined
+      )
+        throw new Error('Staged save identity unavailable');
+      return Object.freeze({
+        scope,
+        baseRevision: header.baseRevision,
+        operationId,
+        expiresAt,
+        headerDigest,
+        payloadDigest,
+        viewLength,
+        manifest: Object.freeze(manifest.map((m) => Object.freeze({ ...m }))),
+      });
+    },
     async begin() {
       return exclusive(async () => {
         check();

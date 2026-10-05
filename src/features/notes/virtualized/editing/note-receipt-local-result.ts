@@ -50,6 +50,8 @@ export async function readNoteLocalReceiptResult(
   signal?: AbortSignal,
 ) {
   if (
+    'headerDigest' in originalReceipt ||
+    'viewId' in originalReceipt ||
     !uint(baseLength) ||
     originalOperation.splices.length < 1 ||
     originalOperation.splices.length > 32

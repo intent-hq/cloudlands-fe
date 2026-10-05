@@ -11,6 +11,7 @@ import type {
   NoteReadPage,
   NoteSplice,
   NoteSpliceOperation,
+  NoteStagedSaveOperation,
   SourceRange,
 } from '$lib/client/note-pages';
 export interface NoteDraft {
@@ -71,7 +72,7 @@ export interface NotePageSession {
   };
   pending: {
     document?: NoteDocumentSaveCapture;
-    operation: NoteSpliceOperation;
+    operation: NoteSpliceOperation | NoteStagedSaveOperation;
     throughSequence: number;
     status: 'saving' | 'unknown' | 'pending' | 'conflict' | 'rejected';
   } | null;

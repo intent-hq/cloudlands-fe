@@ -1,4 +1,11 @@
 import { expect, it, vi } from 'vitest';
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+  onBackendNotification: vi.fn(),
+  onBackendReconnected: vi.fn(),
+}));
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { LiveNotePagesClient } from '$lib/client/live/live-note-pages-client';
 import * as a from '$store/renderer/slices/note-pages/note-pages-slice';
 import type { NoteCommitReceipt } from '$lib/client/note-pages';
 import {
@@ -421,6 +428,108 @@ it('cancels a long drained prefix without renewing identity or retiring its next
   expect(consumed).toBe(120);
   await expect(ready.consumeNext('mapping', sink)).rejects.toThrow();
   expect(readReceipt).toHaveBeenCalledTimes(121);
+  expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
+  expect(f.listeners.size).toBe(0);
+});
+
+it('drains a retained staged receipt through the real Live client under DATA ownership', async () => {
+  const f = fixture(),
+    rpc = vi.mocked(backendRequest);
+  const staged = { ...receipt, headerDigest: 'b'.repeat(64), viewId: 'sealed-view' };
+  const frame = (kind: 'mapping' | 'effects', cursor: string | null) => {
+    const { beforeRevision: _before, afterRevision: _after, ...envelope } = page(kind, cursor);
+    return { ...envelope, headerDigest: staged.headerDigest, viewId: staged.viewId };
+  };
+  const io = deferred<unknown>(),
+    entered = deferred<void>();
+  rpc.mockReset();
+  rpc.mockImplementationOnce(async () => {
+    expect(f.read().resourceLedger.used.physicalReads).toBe(1);
+    entered.resolve(undefined);
+    return io.promise;
+  });
+  const lease = reserveNoteReceiptTranscript(
+    f.port,
+    new LiveNotePagesClient(),
+    staged,
+    3,
+    f.ownerCurrent,
+  );
+  const ready = await lease.ready,
+    seen: string[] = [];
+  const read = ready.consumeNext('mapping', (p) => {
+    seen.push(p.outputKind);
+  });
+  await entered.promise;
+  // Original stage lifetime is not a selector. Receipt lifetime remains in force.
+  expect(rpc).toHaveBeenLastCalledWith('note.operation.read', {
+    ...receipt.scope,
+    operationId: receipt.operationId,
+    headerDigest: staged.headerDigest,
+    kind: 'mapping',
+    ref: receipt.mappingRef,
+    maxItems: 64,
+    maxWireBytes: 8192,
+  });
+  io.resolve(frame('mapping', 'next'));
+  expect(await read).toBe(false);
+  rpc.mockResolvedValueOnce(frame('mapping', null));
+  expect(
+    await ready.consumeNext('mapping', (p) => {
+      seen.push(p.outputKind);
+    }),
+  ).toBe(true);
+  expect(rpc).toHaveBeenLastCalledWith('note.operation.read', {
+    ...receipt.scope,
+    operationId: receipt.operationId,
+    headerDigest: staged.headerDigest,
+    kind: 'mapping',
+    ref: receipt.mappingRef,
+    cursor: 'next',
+    maxItems: 64,
+    maxWireBytes: 8192,
+  });
+  rpc.mockResolvedValueOnce(frame('effects', null));
+  expect(
+    await ready.consumeNext('effects', (p) => {
+      seen.push(p.outputKind);
+    }),
+  ).toBe(true);
+  expect(seen).toEqual(['mapping', 'mapping', 'effects']);
+  expect(rpc).toHaveBeenCalledTimes(3);
+  await lease.release();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(0);
+  expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
+  expect(f.listeners.size).toBe(0);
+});
+it('retains staged receipt IO after owner loss and rejects its late Live-client page', async () => {
+  const f = fixture(),
+    rpc = vi.mocked(backendRequest),
+    io = deferred<unknown>();
+  const staged = { ...receipt, headerDigest: 'b'.repeat(64), viewId: 'sealed-view' };
+  rpc.mockReset();
+  rpc.mockReturnValueOnce(io.promise);
+  const lease = reserveNoteReceiptTranscript(
+    f.port,
+    new LiveNotePagesClient(),
+    staged,
+    3,
+    f.ownerCurrent,
+  );
+  const ready = await lease.ready,
+    sink = vi.fn();
+  const read = ready.consumeNext('mapping', sink),
+    observed = expect(read).rejects.toThrow('superseded');
+  f.transition(false);
+  f.transition(true);
+  const released = lease.release();
+  expect(f.read().resourceLedger.used.physicalReads).toBe(1);
+  const { beforeRevision: _before, afterRevision: _after, ...envelope } = page();
+  io.resolve({ ...envelope, headerDigest: staged.headerDigest, viewId: staged.viewId });
+  await observed;
+  await released;
+  expect(sink).not.toHaveBeenCalled();
+  expect(rpc).toHaveBeenCalledOnce();
   expect(f.read().resourceLedger.used.payloadBytes).toBe(0);
   expect(f.listeners.size).toBe(0);
 });

@@ -211,9 +211,24 @@ export const pageDocumentPublished = createAction<
     splices: NoteSplice[],
   ]
 >('notePages/documentPublished');
-export const pageSaveDraftsRequested = createAction<[workspaceId: string, noteId: string]>(
-  'notePages/saveDraftsRequested',
-);
+export const pageSaveDraftsRequested = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    staged?: { editorSessionId: string; selectionGeneration: number; panelId: string },
+  ]
+>('notePages/saveDraftsRequested');
+export const pageStagedSaveRetryStarted = createAction<
+  [workspaceId: string, noteId: string, operation: NoteSpliceOperation]
+>('notePages/stagedSaveRetryStarted');
+export const pageStagedSaveStopped = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    operation: NoteSpliceOperation,
+    phase: 'cancelled' | 'expired',
+  ]
+>('notePages/stagedSaveStopped');
 export const pageSavePreparationFailed = createAction<
   [workspaceId: string, noteId: string, generation: number, error: string]
 >('notePages/savePreparationFailed');
@@ -817,6 +832,18 @@ notePagesReducer.with(
       return { ...n, drafts: n.drafts.filter((d) => d.sequence > through), error: null };
     }),
 );
+notePagesReducer.with(pageStagedSaveRetryStarted, (s, { payload: [ws, id, operation] }) =>
+  update(s, ws, id, (n) =>
+    n.pending?.operation === operation && n.pending.status !== 'saving'
+      ? { ...n, pending: { ...n.pending, status: 'saving' } }
+      : n,
+  ),
+);
+notePagesReducer.with(pageStagedSaveStopped, (s, { payload: [ws, id, operation, phase] }) =>
+  update(s, ws, id, (n) =>
+    n.pending?.operation === operation ? { ...n, pending: null, error: `Staged save ${phase}` } : n,
+  ),
+);
 notePagesReducer.with(pageSaveUnknown, (s, { payload: [ws, id, operationId] }) =>
   update(s, ws, id, (n) =>
     n.pending?.operation.operationId === operationId
@@ -831,7 +858,10 @@ notePagesReducer.with(pageSaveSettled, (s, { payload: [ws, id, outcome] }) =>
       !pending ||
       !sameNoteScope(pending.operation.scope, outcome.scope) ||
       pending.operation.operationId !== outcome.operationId ||
-      pending.operation.payloadDigest !== outcome.payloadDigest
+      pending.operation.payloadDigest !== outcome.payloadDigest ||
+      ('headerDigest' in pending.operation
+        ? pending.operation.headerDigest !== outcome.headerDigest
+        : 'headerDigest' in outcome || 'viewId' in outcome)
     )
       return n;
     if (outcome.outcome !== 'committed')

@@ -87,6 +87,7 @@ export function captureNoteDocumentSave(
   throughSequence: number,
 ): { operation: NoteSpliceOperation; document: NoteDocumentSaveCapture } | undefined {
   const doc = note.document;
+  if ('headerDigest' in operation) return undefined;
   if (
     !doc ||
     ![doc.generation, doc.baseLength, doc.length, doc.cursor, throughSequence].every(

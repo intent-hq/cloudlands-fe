@@ -1,11 +1,18 @@
 import { readNoteReceiptPage, type NoteReceiptReadRequest } from '../note-receipt-reader';
-import { createNoteSourceOperation, type NoteSourceOperationInput } from '../note-source-operation';
+import {
+  createNoteSourceOperation,
+  type NoteSourceOperationInput,
+  createNoteStagedSaveOperation,
+  type NoteStagedSaveInput,
+} from '../note-source-operation';
 import { NotePageReader } from '../note-page-reader';
 import type {
   NotePagesClient,
   NoteCommitReceipt,
   NotePageState,
   NoteSpliceOperation,
+  NoteStagedSaveOperation,
+  NoteSaveStageState,
   NoteSaveOutcome,
 } from '../note-pages';
 import { backendRequest, onBackendNotification, onBackendReconnected } from './backend-transport';
@@ -50,6 +57,7 @@ function pageState(value: unknown, workspaceId: string, noteId: string): NotePag
   return value as NotePageState;
 }
 function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
+  const staged = 'headerDigest' in op;
   const p = object(value);
   scope(p.scope, op.scope.workspaceId, op.scope.noteId);
   const s = object(p.scope);
@@ -58,11 +66,13 @@ function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
     s.noteInstanceId !== op.scope.noteInstanceId ||
     p.operationId !== op.operationId ||
     p.payloadDigest !== op.payloadDigest ||
+    (staged ? p.headerDigest !== op.headerDigest : 'headerDigest' in p || 'viewId' in p) ||
     bytes(value) > 4096
   )
     throw new Error('Mismatched note save receipt');
   if (p.kind === 'noteCommitReceipt' && p.outcome === 'committed') {
     if (
+      (staged && !token(p.viewId)) ||
       p.beforeRevision !== op.baseRevision ||
       !token(p.afterRevision) ||
       !token(p.mappingRef) ||
@@ -83,6 +93,61 @@ function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
 }
 
 export class LiveNotePagesClient extends NotePageReader implements NotePagesClient {
+  createSaveOperation(input: NoteStagedSaveInput, current: () => boolean) {
+    return createNoteStagedSaveOperation(
+      (method, params) => backendRequest(method, params),
+      input,
+      current,
+    );
+  }
+  async stagedStatus(op: NoteStagedSaveOperation): Promise<NoteSaveOutcome | NoteSaveStageState> {
+    const value = await backendRequest('note.operationStatus', {
+      ...op.scope,
+      operationId: op.operationId,
+      headerDigest: op.headerDigest,
+      payloadDigest: op.payloadDigest,
+    });
+    const p = object(value);
+    if (p.kind !== 'noteStageState') return outcome(value, op);
+    const s = object(p.scope);
+    if (
+      bytes(value) > 4096 ||
+      Object.entries(op.scope).some(([k, v]) => s[k] !== v) ||
+      p.operationId !== op.operationId ||
+      p.headerDigest !== op.headerDigest ||
+      p.baseRevision !== op.baseRevision ||
+      p.expiresAt !== op.expiresAt ||
+      !['staging', 'sealed', 'cancelled', 'expired'].includes(String(p.phase)) ||
+      (p.payloadDigest !== undefined && p.payloadDigest !== op.payloadDigest) ||
+      (p.phase === 'sealed' &&
+        (p.payloadDigest !== op.payloadDigest || p.viewLength !== op.viewLength)) ||
+      !Array.isArray(p.streams) ||
+      p.streams.length !== 5 ||
+      p.streams.some((entry, i) => {
+        const r = object(entry),
+          m = op.manifest[i];
+        return (
+          !m ||
+          r.stream !== m.stream ||
+          r.nextSequence !== m.chunks ||
+          r.lastDigest !== m.lastDigest
+        );
+      })
+    )
+      throw new Error('Mismatched staged save status');
+    return value as NoteSaveStageState;
+  }
+  async commitStaged(op: NoteStagedSaveOperation) {
+    return outcome(
+      await backendRequest('note.operation.commit', {
+        ...op.scope,
+        operationId: op.operationId,
+        headerDigest: op.headerDigest,
+        payloadDigest: op.payloadDigest,
+      }),
+      op,
+    );
+  }
   createSourceOperation(input: NoteSourceOperationInput, current: () => boolean) {
     return createNoteSourceOperation(
       (method, params) => backendRequest(method, params),
@@ -101,14 +166,17 @@ export class LiveNotePagesClient extends NotePageReader implements NotePagesClie
     );
   }
   async applySplices(op: NoteSpliceOperation) {
+    if ('headerDigest' in op) throw new Error('Staged operation cannot use inline save');
     const { scope, ...params } = op;
     return outcome(await backendRequest('note.applySplices', { ...scope, ...params }), op);
   }
   async operationStatus(op: NoteSpliceOperation) {
+    if ('headerDigest' in op) throw new Error('Use staged status recovery');
     return outcome(
       await backendRequest('note.operationStatus', {
         ...op.scope,
         operationId: op.operationId,
+        ...('headerDigest' in op ? { headerDigest: op.headerDigest } : {}),
         payloadDigest: op.payloadDigest,
       }),
       op,

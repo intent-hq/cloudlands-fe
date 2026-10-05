@@ -100,7 +100,7 @@ it.each([
   await expect(readNoteReceiptPage(send, receipt, { ...request, ...delta })).rejects.toThrow();
   expect(send).not.toHaveBeenCalled();
 });
-it('rejects staged receipts and missing scope before transport', async () => {
+it('rejects incomplete staged receipts and missing scope before transport', async () => {
   const send = vi.fn();
   await expect(
     readNoteReceiptPage(send, { ...receipt, headerDigest: 'staged' }, request),
@@ -145,7 +145,7 @@ it.each(['digest', 'a'.repeat(63), 'a'.repeat(65), 'A'.repeat(64), 'g'.repeat(64
   async (payloadDigest) => {
     const send = vi.fn();
     await expect(readNoteReceiptPage(send, { ...receipt, payloadDigest }, request)).rejects.toThrow(
-      'Invalid inline receipt read',
+      'Invalid receipt read',
     );
     expect(send).not.toHaveBeenCalled();
   },
@@ -179,4 +179,95 @@ it('refuses a page that expires during validation before returning it', async ()
   await expect(readNoteReceiptPage(send, r, request, now)).rejects.toThrow('Receipt expired');
   expect(send).toHaveBeenCalledOnce();
   expect(now).toHaveBeenCalledTimes(3);
+});
+
+const stagedReceipt = { ...receipt, headerDigest: 'b'.repeat(64), viewId: 'sealed-view' };
+const stagedPage = () => {
+  const { beforeRevision: _before, afterRevision: _after, ...envelope } = page();
+  return { ...envelope, headerDigest: stagedReceipt.headerDigest, viewId: stagedReceipt.viewId };
+};
+it.each(['mapping', 'effects'] as const)(
+  'reads retained staged %s by header only, with receipt lifetime and frozen input extent',
+  async (kind) => {
+    const response = {
+      ...stagedPage(),
+      outputKind: kind,
+      ...(kind === 'effects' ? { convertedCount: 4 } : {}),
+    };
+    const send = vi.fn().mockResolvedValue(response);
+    expect(
+      await readNoteReceiptPage(send, stagedReceipt, { ...request, kind, cursor: 'next' }),
+    ).toBe(response);
+    expect(send).toHaveBeenCalledExactlyOnceWith({
+      ...receipt.scope,
+      operationId: receipt.operationId,
+      headerDigest: stagedReceipt.headerDigest,
+      kind,
+      ref: kind === 'mapping' ? receipt.mappingRef : receipt.effectsRef,
+      cursor: 'next',
+      maxItems: 1,
+      maxWireBytes: 4096,
+    });
+  },
+);
+it.each([
+  { headerDigest: undefined },
+  { headerDigest: 'B'.repeat(64) },
+  { viewId: undefined },
+  { viewId: '' },
+  { payloadDigest: 'bad' },
+])('refuses incomplete or malformed staged receipt before dispatch: %j', async (delta) => {
+  const send = vi.fn();
+  await expect(
+    readNoteReceiptPage(send, { ...stagedReceipt, ...delta }, request),
+  ).rejects.toThrow();
+  expect(send).not.toHaveBeenCalled();
+});
+it.each([
+  { headerDigest: 'c'.repeat(64) },
+  { headerDigest: undefined },
+  { viewId: 'other' },
+  { viewId: undefined },
+  { payloadDigest: 'c'.repeat(64) },
+  { beforeRevision: 'r1' },
+  { afterRevision: 'r2' },
+  { expiresAt: '2099-01-01T00:00:00Z' },
+  { sourceLength: receipt.sourceLength },
+])('rejects staged identity mixing or changed retained identity: %j', async (delta) => {
+  await expect(
+    readNoteReceiptPage(
+      vi.fn().mockResolvedValue({ ...stagedPage(), ...delta }),
+      stagedReceipt,
+      request,
+    ),
+  ).rejects.toThrow();
+});
+it('captures both staged digests, view, root and deadline before transport', async () => {
+  const captured = { ...stagedReceipt },
+    response = stagedPage();
+  const send = vi.fn(async (_params: Record<string, unknown>) => {
+    captured.headerDigest = 'c'.repeat(64);
+    captured.payloadDigest = 'd'.repeat(64);
+    captured.viewId = 'other';
+    captured.mappingRef = 'other';
+    captured.receiptExpiresAt = '2100-01-01T00:00:00Z';
+    return response;
+  });
+  expect(await readNoteReceiptPage(send, captured, request)).toBe(response);
+  expect(send.mock.calls[0][0]).toMatchObject({
+    headerDigest: stagedReceipt.headerDigest,
+    ref: receipt.mappingRef,
+  });
+});
+it('applies the original receipt deadline after staged page validation', async () => {
+  const r = { ...stagedReceipt, receiptExpiresAt: '1970-01-01T00:00:01.000000001Z' };
+  const now = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(1000).mockReturnValueOnce(1001);
+  await expect(
+    readNoteReceiptPage(
+      vi.fn().mockResolvedValue({ ...stagedPage(), expiresAt: r.receiptExpiresAt }),
+      r,
+      request,
+      now,
+    ),
+  ).rejects.toThrow('Receipt expired');
 });

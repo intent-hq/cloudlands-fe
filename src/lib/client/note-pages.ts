@@ -1,3 +1,4 @@
+import type { NoteStagedSaveInput, createNoteStagedSaveOperation } from './note-source-operation';
 import type { NoteReceiptPage, NoteReceiptReadRequest } from './note-receipt-reader';
 /** Prepared note paging contract; never interchangeable with a complete Note. */
 export interface NoteScope {
@@ -260,6 +261,33 @@ export interface NoteSpliceOperation {
   payloadDigest: string;
   splices: NoteSplice[];
 }
+export interface NoteStagedSaveOperation extends NoteSpliceOperation {
+  /** Sealed manifest identity. splices are a local comparison only, never the staged wire payload. */
+  headerDigest: string;
+  viewLength: number;
+  manifest: readonly {
+    stream: string;
+    chunks: number;
+    records: number;
+    lastDigest: string | null;
+  }[];
+  documentGeneration: number;
+  documentCursor: number;
+  baseLength: number;
+  nativeFence: number;
+}
+export interface NoteSaveStageState {
+  kind: 'noteStageState';
+  scope: NoteScope;
+  operationId: string;
+  headerDigest: string;
+  payloadDigest?: string;
+  phase: 'staging' | 'sealed' | 'cancelled' | 'expired';
+  baseRevision: string;
+  expiresAt: string;
+  viewLength?: number;
+  streams: { stream: string; nextSequence: number; lastDigest: string | null }[];
+}
 export interface NoteCommitReceipt {
   kind: 'noteCommitReceipt';
   outcome: 'committed';
@@ -277,7 +305,7 @@ export interface NoteCommitReceipt {
   headerDigest?: string;
   viewId?: string;
 }
-/** Inline saves only. Staged writes are owned by the full-document operation integration. */
+/** Settled write outcomes; staging states remain separate from commit outcomes. */
 export type NoteSaveOutcome =
   | NoteCommitReceipt
   | {
@@ -285,6 +313,7 @@ export type NoteSaveOutcome =
       scope: NoteScope;
       operationId: string;
       payloadDigest: string;
+      headerDigest?: string;
       outcome: 'pending' | 'unknown' | 'conflict' | 'rejected';
       error?: { code: string; currentRevision?: string };
     };
@@ -301,6 +330,12 @@ export interface NotePagesClient {
     onState: (state: NotePageState) => void,
     onReset: (error?: string) => void,
   ): () => void;
+  createSaveOperation?(
+    input: NoteStagedSaveInput,
+    current: () => boolean,
+  ): ReturnType<typeof createNoteStagedSaveOperation>;
+  stagedStatus?(operation: NoteStagedSaveOperation): Promise<NoteSaveOutcome | NoteSaveStageState>;
+  commitStaged?(operation: NoteStagedSaveOperation): Promise<NoteSaveOutcome>;
   applySplices(operation: NoteSpliceOperation): Promise<NoteSaveOutcome>;
   operationStatus(operation: NoteSpliceOperation): Promise<NoteSaveOutcome>;
   readReceipt(

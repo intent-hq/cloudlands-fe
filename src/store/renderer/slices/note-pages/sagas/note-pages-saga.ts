@@ -1,3 +1,7 @@
+import {
+  stageNoteDocumentSave,
+  retryStagedDocumentSave,
+} from '$features/notes/virtualized/editing/note-staged-save';
 import { v4 as uuid } from 'uuid';
 import { notePageRequestKey } from '$features/notes/virtualized/note-assembly-reservation';
 import { noteWindowSaga } from './note-window-saga';
@@ -213,6 +217,7 @@ function* save(action: ReturnType<typeof actions.pageSaveRequested>) {
   const [ws, id, operation, through] = action.payload;
   const n = yield* session(ws, id);
   const client = appClient.notes.pages;
+  if ('headerDigest' in operation) return;
   if (!client || n?.pending || n?.status !== 'ready' || n.needsReconcile) return;
   yield* put(actions.pageSaveStarted(ws, id, operation, through));
   const pending = (yield* session(ws, id))?.pending;
@@ -232,7 +237,38 @@ function* save(action: ReturnType<typeof actions.pageSaveRequested>) {
   }
 }
 function* saveDrafts(action: ReturnType<typeof actions.pageSaveDraftsRequested>) {
-  const [ws, id] = action.payload;
+  const [ws, id, staged] = action.payload;
+  if (staged) {
+    const redux = yield* getContext<
+      | {
+          getState(): { notePages: NotePagesState };
+          dispatch(action: Parameters<typeof actions.notePagesReducer>[1]): void;
+          subscribe(listener: () => void): () => void;
+        }
+      | undefined
+    >('reduxStore');
+    const client = appClient.notes.pages;
+    if (!redux || !client) return;
+    const generation = (yield* session(ws, id))?.generation;
+    try {
+      yield* call(
+        stageNoteDocumentSave,
+        {
+          read: () => redux.getState().notePages,
+          dispatch: (a: Parameters<typeof actions.notePagesReducer>[1]) => redux.dispatch(a),
+          subscribe: (fn: () => void) => redux.subscribe(fn),
+        },
+        client,
+        ws,
+        id,
+        staged,
+      );
+    } catch (error) {
+      if (generation !== undefined)
+        yield* put(actions.pageSavePreparationFailed(ws, id, generation, message(error)));
+    }
+    return;
+  }
   let before: NotePageSession | undefined = yield* session(ws, id);
   if (
     !before?.state ||
@@ -302,6 +338,29 @@ function* retry(action: ReturnType<typeof actions.pageSaveRetryRequested>) {
   const pending = (yield* session(ws, id))?.pending;
   const client = appClient.notes.pages;
   if (!client || !pending) return;
+  if ('headerDigest' in pending.operation) {
+    const redux = yield* getContext<
+      | {
+          getState(): { notePages: NotePagesState };
+          dispatch(action: Parameters<typeof actions.notePagesReducer>[1]): void;
+          subscribe(listener: () => void): () => void;
+        }
+      | undefined
+    >('reduxStore');
+    if (redux)
+      yield* call(
+        retryStagedDocumentSave,
+        {
+          read: () => redux.getState().notePages,
+          dispatch: (a: Parameters<typeof actions.notePagesReducer>[1]) => redux.dispatch(a),
+          subscribe: (fn: () => void) => redux.subscribe(fn),
+        },
+        client,
+        ws,
+        id,
+      );
+    return;
+  }
   // Status first, never mint a replacement operation ID after a lost acknowledgement.
   try {
     const result = yield* call([client, client.operationStatus], pending.operation);
