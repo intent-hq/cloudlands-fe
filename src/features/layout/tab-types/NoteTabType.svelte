@@ -98,6 +98,10 @@
   const noteViewMode = $derived($noteViewModeStore);
   const notePageSession = selectNotePageSession(noteViewWorkspaceIdStore, noteViewNoteIdStore);
   const pagedSurface = $derived($notePageSession?.status === 'legacy' ? undefined : readingSurface);
+  $effect(() => {
+    const surface = pagedSurface;
+    return () => surface?.cancelCopy?.();
+  });
   // The tab owns negotiation across legacy/paged renderer changes. Keeping this
   // owner alive lets reconnect renegotiate an older daemon without a full reopen.
   $effect(() => {

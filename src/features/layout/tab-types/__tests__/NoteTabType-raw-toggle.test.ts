@@ -543,6 +543,124 @@ $$\frac{1}{2}$$
     await waitFor(() => expect(surface.copyDocument).toHaveBeenCalledTimes(1));
     expect(clipboard.writeText).not.toHaveBeenCalled();
   });
+  it('retires an actual staged copy owner on tab unmount while its sink is held', async () => {
+    const a = await import('$store/renderer/slices/note-pages/note-pages-slice');
+    const { createNoteDocumentSession } =
+      await import('$features/notes/virtualized/editing/note-document-edit-session');
+    const { createNoteSourceCopyOwner } =
+      await import('$features/notes/virtualized/editing/note-source-copy');
+    const scope = {
+      backendId: 'backend',
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      noteInstanceId: 'incarnation',
+    };
+    let state = a.notePagesReducer(undefined, a.pagePanelOpened('ws-1', 'note-1', 'tab-copy'));
+    state = {
+      ...state,
+      byWorkspaceId: {
+        'ws-1': {
+          notes: {
+            'note-1': {
+              ...state.byWorkspaceId['ws-1'].notes['note-1'],
+              status: 'ready',
+              document: createNoteDocumentSession(scope, 'r1', 3),
+              state: {
+                kind: 'notePageState',
+                scope,
+                sourceRevision: 'r1',
+                stateGeneration: '1',
+                commentRevision: '1',
+                attributionGeneration: '1',
+                attributionState: 'ready',
+                deleted: false,
+                invalidation: 'all',
+              },
+            },
+          },
+        },
+      },
+    };
+    const limits = {
+      payloadBytes: 10000000,
+      stringUnits: 10000000,
+      objectNodes: 100000,
+      domNodes: 0,
+      physicalReads: 1,
+      assemblies: 1,
+    };
+    state = a.notePagesReducer(state, a.pageResourceLimitsConfigured(limits));
+    const listeners = new Set<() => void>();
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const sink = {
+      write: vi.fn(async () => {
+        await held;
+      }),
+      commit: vi.fn(),
+      abort: vi.fn(async () => {}),
+    };
+    const stage = {
+      begin: vi.fn(async () => {}),
+      append: vi.fn(async () => {}),
+      seal: vi.fn(async () => 3),
+      read: vi.fn(async (consume: (text: string) => Promise<void>) => {
+        await consume('abc');
+        return true;
+      }),
+      cancel: vi.fn(async () => {}),
+    };
+    const owner = createNoteSourceCopyOwner({
+      workspaceId: 'ws-1',
+      noteId: 'note-1',
+      editorSessionId: 'editor',
+      selectionGeneration: () => 3,
+      current: () => true,
+      client: { createSourceOperation: () => stage },
+      openSink: async () => sink,
+      port: {
+        read: () => state,
+        dispatch(action) {
+          state = a.notePagesReducer(state, action);
+          listeners.forEach((fn) => fn());
+        },
+        subscribe(fn) {
+          listeners.add(fn);
+          return () => {
+            listeners.delete(fn);
+          };
+        },
+      },
+    });
+    const surface = {
+      ...owner,
+      resourceLimits: limits,
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3000000 });
+    const clipboard = { writeText: vi.fn(async () => {}) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    const { unmount } = render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'tab-copy', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy full note' }));
+    await waitFor(() => expect(sink.write).toHaveBeenCalledWith('abc'));
+    unmount();
+    expect(state.resourceLedger.used.physicalReads).toBe(1);
+    finish();
+    await waitFor(() => expect(sink.abort).toHaveBeenCalledOnce());
+    expect(sink.commit).not.toHaveBeenCalled();
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+    expect(mockState.loadContent).not.toHaveBeenCalled();
+    expect(state.resourceLedger.used.physicalReads).toBe(0);
+    expect(listeners.size).toBe(0);
+  });
+
   it('explicit legacy capability restores complete-note loading instead of a partial editor', async () => {
     mockState.pageSession.set({ status: 'legacy' });
     mockState.note.set({ ...mockState.defaultNote, content: '', contentLength: 3_000_000 });

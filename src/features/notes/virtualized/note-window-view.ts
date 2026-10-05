@@ -53,6 +53,9 @@ export interface NoteReadingSurface {
   /** Supplied by the document-operation owner only after rollout prerequisites pass.
    * Never use visible editor text as the implementation of this operation. */
   copyDocument(): Promise<void>;
+  /** Revoke an outstanding whole-source copy when this surface retires. Physical
+   * IO and unpublished sink cleanup keep their resource lease until settled. */
+  cancelCopy?(): void;
   selectionChanged(selection: NoteSourceSelection): void;
   fullOperation: NoteWindowViewOptions['fullOperation'];
   editing?: NoteViewEditing;

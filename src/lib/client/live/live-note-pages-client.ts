@@ -1,4 +1,5 @@
 import { readNoteReceiptPage, type NoteReceiptReadRequest } from '../note-receipt-reader';
+import { createNoteSourceOperation, type NoteSourceOperationInput } from '../note-source-operation';
 import { NotePageReader } from '../note-page-reader';
 import type {
   NotePagesClient,
@@ -82,6 +83,13 @@ function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
 }
 
 export class LiveNotePagesClient extends NotePageReader implements NotePagesClient {
+  createSourceOperation(input: NoteSourceOperationInput, current: () => boolean) {
+    return createNoteSourceOperation(
+      (method, params) => backendRequest(method, params),
+      input,
+      current,
+    );
+  }
   constructor() {
     super((method, params) => backendRequest(method, params));
   }
