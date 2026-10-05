@@ -1,6 +1,6 @@
 import type { NoteDocumentSession } from '$features/notes/virtualized/editing/note-document-edit-session';
-import { sameNoteScope, type NoteSplice } from '$lib/client/note-pages';
-import type { NoteDraft, NotePageSession } from './note-pages-types';
+import { sameNoteScope, type NoteSpliceOperation, type NoteSplice } from '$lib/client/note-pages';
+import type { NoteDraft, NotePageSession, NoteDocumentSaveCapture } from './note-pages-types';
 
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 const selection = (s: NoteDocumentSession['selection']): NoteDraft['selection'] => ({
@@ -33,6 +33,7 @@ export function prepareNoteDocumentPublication(
     after.baseLength !== before.baseLength ||
     !Number.isSafeInteger(after.generation) ||
     after.generation < before.generation ||
+    (splices.length > 0 && after.generation === before.generation) ||
     !Number.isSafeInteger(after.cursor) ||
     after.cursor < 0 ||
     after.cursor > after.history.length ||
@@ -76,4 +77,107 @@ export function prepareNoteDocumentPublication(
     if (held + checkpoint > limit.bytes) return undefined;
   }
   return held + checkpoint <= limit.bytes ? { draft } : undefined;
+}
+
+/** Capture only an exact whole dirty document prefix. A save of an earlier prefix
+ * is still legal, but it requires the general later-edit rebase, not this token. */
+export function captureNoteDocumentSave(
+  note: NotePageSession,
+  operation: NoteSpliceOperation,
+  throughSequence: number,
+): { operation: NoteSpliceOperation; document: NoteDocumentSaveCapture } | undefined {
+  const doc = note.document;
+  if (
+    !doc ||
+    ![doc.generation, doc.baseLength, doc.length, doc.cursor, throughSequence].every(
+      (value) => Number.isSafeInteger(value) && value >= 0,
+    ) ||
+    doc.cursor > doc.history.length ||
+    !sameNoteScope(doc.scope, operation.scope) ||
+    doc.baseRevision !== operation.baseRevision ||
+    note.drafts.length === 0 ||
+    note.drafts.at(-1)?.sequence !== throughSequence ||
+    operation.splices.length === 0 ||
+    operation.splices.length > 32 ||
+    operation.splices.length !== doc.dirty.length ||
+    !/^[0-9a-f]{64}$/.test(operation.payloadDigest) ||
+    operation.splices.some(
+      (s, i) =>
+        s.start !== doc.dirty[i].start ||
+        s.end !== doc.dirty[i].end ||
+        s.text !== doc.dirty[i].text,
+    )
+  )
+    return undefined;
+  let textBytes = 0;
+  for (const s of operation.splices) {
+    textBytes += new TextEncoder().encode(s.text).length;
+    if (textBytes > 16_384) return undefined;
+  }
+  const captured = Object.freeze({
+    ...operation,
+    scope: Object.freeze({ ...operation.scope }),
+    splices: operation.splices.map((s) =>
+      Object.freeze({ start: s.start, end: s.end, text: s.text }),
+    ),
+  });
+  Object.freeze(captured.splices);
+  return {
+    operation: captured,
+    document: {
+      generation: doc.generation,
+      baseLength: doc.baseLength,
+      length: doc.length,
+      cursor: doc.cursor,
+      throughSequence,
+    },
+  };
+}
+
+/** Re-evaluated throughout receipt IO and at the atomic reducer boundary. Content
+ * identity is separate from selection: navigation may update selection/history.after. */
+export function currentNoteDocumentSave(
+  note: NotePageSession | undefined,
+  capture: NonNullable<NotePageSession['committedDocumentSave']>,
+): boolean {
+  const doc = note?.document;
+  const { operation, document: saved, receipt } = capture;
+  return !!(
+    note &&
+    doc &&
+    note.committedDocumentSave === capture &&
+    note.status === 'ready' &&
+    note.needsReconcile &&
+    !note.pending &&
+    !note.drafts.length &&
+    Object.keys(note.panels).length &&
+    note.state &&
+    !note.state.deleted &&
+    note.receipts.includes(receipt) &&
+    sameNoteScope(note.state.scope, operation.scope) &&
+    sameNoteScope(doc.scope, operation.scope) &&
+    sameNoteScope(receipt.scope, operation.scope) &&
+    note.state.sourceRevision === receipt.afterRevision &&
+    receipt.beforeRevision === operation.baseRevision &&
+    doc.baseRevision === operation.baseRevision &&
+    receipt.operationId === operation.operationId &&
+    receipt.payloadDigest === operation.payloadDigest &&
+    doc.generation === saved.generation &&
+    Number.isSafeInteger(doc.generation + 1) &&
+    doc.baseLength === saved.baseLength &&
+    doc.length === saved.length &&
+    doc.length === receipt.sourceLength &&
+    doc.cursor === saved.cursor &&
+    note.history.length === 1 &&
+    note.history[0].sequence === saved.throughSequence &&
+    note.history[0].baseRevision === operation.baseRevision &&
+    sameNoteScope(note.history[0].scope, operation.scope) &&
+    doc.dirty.length === operation.splices.length &&
+    doc.dirty.every(
+      (s, i) =>
+        s.start === operation.splices[i].start &&
+        s.end === operation.splices[i].end &&
+        s.text === operation.splices[i].text,
+    )
+  );
 }

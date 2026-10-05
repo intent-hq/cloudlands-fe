@@ -1,9 +1,16 @@
+import { beforeSourceDeadline, deadlineNanoseconds } from '$shared/source-session-expiry';
+import type { readNoteLocalReceiptResult } from '$features/notes/virtualized/editing/note-receipt-local-result';
 import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
 import {
   createNoteDocumentSession,
+  reconcileNoteDocumentSave,
   type NoteDocumentSession,
 } from '$features/notes/virtualized/editing/note-document-edit-session';
-import { prepareNoteDocumentPublication } from './note-document-publication';
+import {
+  captureNoteDocumentSave,
+  currentNoteDocumentSave,
+  prepareNoteDocumentPublication,
+} from './note-document-publication';
 import type { NoteWindow } from '$features/notes/virtualized/note-window-reader';
 import {
   createNoteResourceLedger,
@@ -242,6 +249,16 @@ export const pageSessionDiscarded = createAction<[workspaceId: string, noteId: s
 export const pageMappingAccepted = createAction<
   [workspaceId: string, noteId: string, operationId: string, drafts: NoteDraft[]]
 >('notePages/mappingAccepted');
+export const pageDocumentSaveReconciled = createAction<
+  [
+    workspaceId: string,
+    noteId: string,
+    capture: NonNullable<NotePageSession['committedDocumentSave']>,
+    before: NoteDocumentSession,
+    proof: Awaited<ReturnType<typeof readNoteLocalReceiptResult>>,
+    observedAt: number,
+  ]
+>('notePages/documentSaveReconciled');
 export const notePagesReducer = createReducer<NotePagesState>(initialNotePagesState);
 notePagesReducer.with(pageResourceLimitsConfigured, (state, { payload: [limit] }) => {
   if (Object.keys(state.resourceLedger.owners).length || state.resourceLedger.pending.length)
@@ -768,7 +785,17 @@ notePagesReducer.with(pageSaveStarted, (s, { payload: [ws, id, operation, throug
       operation.baseRevision !== n.state.sourceRevision
     )
       return n;
-    return { ...n, error: null, pending: { operation, throughSequence, status: 'saving' } };
+    const capture = captureNoteDocumentSave(n, operation, throughSequence);
+    return {
+      ...n,
+      error: null,
+      pending: {
+        operation: capture?.operation ?? operation,
+        throughSequence,
+        status: 'saving',
+        ...(capture ? { document: capture.document } : {}),
+      },
+    };
   }),
 );
 notePagesReducer.with(pageSavePreparationFailed, (s, { payload: [ws, id, generation, error] }) =>
@@ -816,9 +843,68 @@ notePagesReducer.with(pageSaveSettled, (s, { payload: [ws, id, outcome] }) =>
       pending: null,
       drafts: n.drafts.filter((d) => d.sequence > pending.throughSequence),
       receipts: [...n.receipts, outcome],
+      committedDocumentSave: pending.document
+        ? {
+            operation: pending.operation,
+            document: pending.document,
+            receipt: outcome,
+          }
+        : undefined,
       needsReconcile: true,
     };
   }),
+);
+notePagesReducer.with(
+  pageDocumentSaveReconciled,
+  (s, { payload: [ws, id, capture, before, proof, observedAt] }) =>
+    update(s, ws, id, (n) => {
+      if (n.document !== before || !currentNoteDocumentSave(n, capture)) return n;
+      const receipt = capture.receipt;
+      const deadline = deadlineNanoseconds(receipt.receiptExpiresAt);
+      if (
+        !proof.exactLocalResult ||
+        proof.baseLength !== before.baseLength ||
+        proof.sourceLength !== before.length ||
+        !sameNoteScope(proof.receipt.scope, receipt.scope) ||
+        Object.keys(receipt).some(
+          (key) =>
+            key !== 'scope' &&
+            proof.receipt[key as keyof typeof receipt] !== receipt[key as keyof typeof receipt],
+        ) ||
+        deadline === undefined ||
+        !beforeSourceDeadline(observedAt, deadline)
+      )
+        return n;
+      const document = reconcileNoteDocumentSave(before, {
+        generation: capture.document.generation,
+        baseRevision: receipt.beforeRevision,
+        sourceRevision: receipt.afterRevision,
+        sourceLength: receipt.sourceLength,
+        exactLocalResult: true,
+      });
+      return {
+        ...invalidate(n),
+        document,
+        drafts: [],
+        needsReconcile: false,
+        error: null,
+        committedDocumentSave: undefined,
+        receipts: n.receipts.filter((r) => r !== receipt),
+        history: [
+          {
+            ...n.history[0],
+            baseRevision: receipt.afterRevision,
+            splices: [],
+            selection: {
+              anchor: document.selection.anchor,
+              head: document.selection.head,
+              anchorAffinity: document.selection.anchorAffinity < 0 ? 'before' : 'after',
+              headAffinity: document.selection.headAffinity < 0 ? 'before' : 'after',
+            },
+          },
+        ],
+      };
+    }),
 );
 notePagesReducer.with(pageMappingAccepted, (s, { payload: [ws, id, operationId, drafts] }) =>
   update(s, ws, id, (n) => {

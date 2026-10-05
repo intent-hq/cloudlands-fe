@@ -11,7 +11,10 @@ import {
 import { createReduxNoteDocumentOwner } from '$features/notes/virtualized/editing/note-document-redux-owner';
 import { createNoteTransactionRelay } from '$features/notes/virtualized/note-transaction-relay';
 import { composeNoteEdits } from '$features/notes/virtualized/editing/note-edit-plan';
-import { prepareNoteDocumentPublication } from './note-document-publication';
+import {
+  captureNoteDocumentSave,
+  prepareNoteDocumentPublication,
+} from './note-document-publication';
 import {
   notePagesReducer,
   pagePanelOpened,
@@ -25,6 +28,7 @@ import {
   pageSaveStarted,
   pageSaveSettled,
   pageMappingAccepted,
+  pageDocumentSaveReconciled,
 } from './note-pages-slice';
 const schema = new Schema({
   nodes: {
@@ -41,6 +45,7 @@ function fixture(
   sourceLength = 1000,
   rendered = raw,
   mapping = 'identity',
+  revision = 'r1',
 ) {
   const owner = {
     kind: 'boundary',
@@ -51,7 +56,7 @@ function fixture(
   } as const;
   const w = {
     scope,
-    sourceRevision: 'r1',
+    sourceRevision: revision,
     snapshotId: 'snap1',
     sourceLength,
     range: owner.sourceRange,
@@ -444,3 +449,312 @@ it.each([false, true])(
     expect(f.owner.current()).toBe(false);
   },
 );
+
+it.each(['none', 'edit', 'undo'] as const)(
+  'retains the pre-IO document save capture across receipt settlement (later=%s)',
+  (later) => {
+    const f = mounted();
+    f.edit('X');
+    const doc = f.read().document!;
+    const operation = {
+      scope: { ...scope },
+      baseRevision: 'r1',
+      operationId: 'captured-save',
+      payloadDigest: 'a'.repeat(64),
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      splices: doc.dirty.map((s) => ({ ...s })),
+    };
+    f.dispatch(pageSaveStarted('w', 'n', operation, 1));
+    const pending = f.read().pending!;
+    expect(pending.document).toEqual({
+      generation: doc.generation,
+      baseLength: doc.baseLength,
+      length: doc.length,
+      cursor: doc.cursor,
+      throughSequence: 1,
+    });
+    expect(pending.operation).not.toBe(operation);
+    operation.splices[0].text = 'caller mutation';
+    expect(pending.operation.splices[0].text).toBe('X');
+    if (later === 'edit') f.edit('Y');
+    if (later === 'undo') {
+      const plan = moveNoteDocumentHistory(doc, 'undo')!;
+      f.dispatch(
+        pageDocumentPublished('w', 'n', f.read().generation, doc, plan.state, plan.splices),
+      );
+    }
+    const current = f.read().document!;
+    const receipt = {
+      kind: 'noteCommitReceipt' as const,
+      outcome: 'committed' as const,
+      scope,
+      operationId: pending.operation.operationId,
+      payloadDigest: pending.operation.payloadDigest,
+      beforeRevision: 'r1',
+      afterRevision: 'r2',
+      sourceLength: doc.length,
+      mappingRef: 'm',
+      effectsRef: 'e',
+      inverseRef: 'i',
+      receiptExpiresAt: '2099-01-02T00:00:00Z',
+      invalidation: 'all' as const,
+    };
+    f.dispatch(pageSaveSettled('w', 'n', receipt));
+    expect(f.read().committedDocumentSave).toEqual({
+      operation: pending.operation,
+      document: pending.document,
+      receipt,
+    });
+    expect(f.read().document).toBe(current);
+    expect(f.read().needsReconcile).toBe(true);
+    expect(f.read().drafts).toHaveLength(later === 'none' ? 0 : 1);
+    expect(f.read().committedDocumentSave!.document.generation === current.generation).toBe(
+      later === 'none',
+    );
+  },
+);
+it('does not capture a newer document as the saved prefix after later typing during preparation', () => {
+  const f = mounted();
+  f.edit('X');
+  const operation = {
+    scope,
+    baseRevision: 'r1',
+    operationId: 'earlier-save',
+    payloadDigest: 'a'.repeat(64),
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    splices: f.read().document!.dirty.map((s) => ({ ...s })),
+  };
+  f.edit('Y');
+  f.dispatch(pageSaveStarted('w', 'n', operation, 1));
+  expect(f.read().pending?.operation).toBe(operation);
+  expect(f.read().pending?.document).toBeUndefined();
+  expect(f.read().drafts).toHaveLength(2);
+});
+
+it('refuses a same-generation same-length source publication without changing document or drafts', () => {
+  const f = mounted();
+  f.edit('X');
+  const note = f.read(),
+    before = note.document!;
+  const after = { ...before, dirty: [{ start: 101, end: 101, text: 'Y' }] };
+  const splices = [{ start: 101, end: 102, text: 'Y' }];
+  expect(prepareNoteDocumentPublication(note, before, after, splices)).toBeUndefined();
+  f.dispatch(pageDocumentPublished('w', 'n', note.generation, before, after, splices));
+  expect(f.read()).toBe(note);
+  expect(f.read().document).toBe(before);
+  expect(f.read().drafts).toBe(note.drafts);
+});
+it('preserves same-generation directional selection and grouped history updates while a save is pending', () => {
+  const f = mounted();
+  f.edit('X');
+  const before = f.read().document!;
+  const operation = {
+    scope,
+    baseRevision: 'r1',
+    operationId: 'selection-save',
+    payloadDigest: 'a'.repeat(64),
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    splices: before.dirty,
+  };
+  f.dispatch(pageSaveStarted('w', 'n', operation, 1));
+  const pending = f.read().pending;
+  const selection = {
+    anchor: 103,
+    head: 101,
+    anchorAffinity: -1 as const,
+    headAffinity: 1 as const,
+  };
+  const after = {
+    ...before,
+    selection,
+    history: before.history.map((entry, i) =>
+      i === before.cursor - 1 ? { ...entry, after: selection } : entry,
+    ),
+  };
+  f.dispatch(pageDocumentPublished('w', 'n', f.read().generation, before, after, []));
+  expect(f.read().document).toBe(after);
+  expect(after.generation).toBe(before.generation);
+  expect(after.history.at(-1)?.after).toEqual(selection);
+  expect(f.read().pending).toBe(pending);
+  expect(f.read().drafts).toHaveLength(1);
+});
+it.each(['generation', 'baseLength', 'length', 'cursor'] as const)(
+  'refuses unsafe capture token %s',
+  (field) => {
+    const f = mounted();
+    f.edit('X');
+    const note = f.read(),
+      doc = note.document!;
+    const operation = {
+      scope,
+      baseRevision: 'r1',
+      operationId: 'bad-capture',
+      payloadDigest: 'a'.repeat(64),
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      splices: doc.dirty,
+    };
+    for (const value of [-1, Number.MAX_SAFE_INTEGER + 1, Infinity]) {
+      expect(
+        captureNoteDocumentSave({ ...note, document: { ...doc, [field]: value } }, operation, 1),
+      ).toBeUndefined();
+    }
+    expect(captureNoteDocumentSave(note, operation, 2)).toBeUndefined();
+    expect(captureNoteDocumentSave(note, operation, Number.MAX_SAFE_INTEGER + 1)).toBeUndefined();
+  },
+);
+
+function committedFixture(later = false) {
+  const f = mounted();
+  f.edit('X');
+  const saved = f.read().document!;
+  f.dispatch(
+    pageSaveStarted(
+      'w',
+      'n',
+      {
+        scope,
+        baseRevision: 'r1',
+        operationId: 'save',
+        payloadDigest: 'a'.repeat(64),
+        expiresAt: '2099-01-01T00:00:00Z',
+        splices: saved.dirty,
+      },
+      1,
+    ),
+  );
+  if (later) f.edit('Y');
+  const receipt = {
+    kind: 'noteCommitReceipt' as const,
+    outcome: 'committed' as const,
+    scope,
+    operationId: 'save',
+    payloadDigest: 'a'.repeat(64),
+    beforeRevision: 'r1',
+    afterRevision: 'r2',
+    sourceLength: saved.length,
+    mappingRef: 'm',
+    effectsRef: 'e',
+    inverseRef: 'i',
+    receiptExpiresAt: '2099-01-02T00:00:00Z',
+    invalidation: 'all' as const,
+  };
+  f.dispatch(pageSaveSettled('w', 'n', receipt));
+  f.dispatch(
+    pageStateReceived('w', 'n', f.read().generation, {
+      ...f.read().state!,
+      sourceRevision: 'r2',
+      stateGeneration: '2',
+    }),
+  );
+  const capture = f.read().committedDocumentSave!;
+  const proof = {
+    receipt,
+    baseLength: saved.baseLength,
+    sourceLength: saved.length,
+    exactLocalResult: true as const,
+  };
+  return { ...f, capture, proof };
+}
+it('atomically adopts an exact receipt and preserves chronological undo/redo and selection', () => {
+  const f = committedFixture();
+  const before = f.read().document!;
+  const history = before.history,
+    selection = before.selection;
+  f.dispatch(pageDocumentSaveReconciled('w', 'n', f.capture, before, f.proof, Date.now()));
+  const after = f.read().document!;
+  expect(after.baseRevision).toBe('r2');
+  expect(after.baseLength).toBe(before.length);
+  expect(after.dirty).toEqual([]);
+  expect(after.replay).toEqual([]);
+  expect(after.history).toBe(history);
+  expect(after.selection).toBe(selection);
+  expect(f.read().needsReconcile).toBe(false);
+  expect(f.read().committedDocumentSave).toBeUndefined();
+  expect(f.read().receipts).toEqual([]);
+  expect(f.read().drafts).toEqual([]);
+  expect(f.read().history[0]).toMatchObject({ sequence: 1, baseRevision: 'r2', splices: [] });
+  expect(f.read().windows.panel.value).toBeNull();
+  const undo = moveNoteDocumentHistory(after, 'undo')!;
+  expect(undo.splices).toEqual([{ start: 101, end: 102, text: '' }]);
+  const redo = moveNoteDocumentHistory(undo.state, 'redo')!;
+  expect(redo.splices).toEqual([{ start: 101, end: 101, text: 'X' }]);
+  expect(redo.state.selection).toEqual(selection);
+});
+it.each(['later', 'document', 'capture', 'revision', 'expiry', 'dirty', 'deadline'] as const)(
+  'refuses atomic receipt adoption without touching retained work (%s)',
+  (kind) => {
+    const f = committedFixture(kind === 'later');
+    const before = f.read().document!;
+    let capture = f.capture;
+    let expected = before;
+    let proof = f.proof;
+    if (kind === 'document') expected = { ...before };
+    if (kind === 'capture') capture = { ...capture };
+    if (kind === 'revision')
+      f.dispatch(
+        pageStateReceived('w', 'n', f.read().generation, {
+          ...f.read().state!,
+          sourceRevision: 'r3',
+          stateGeneration: '3',
+        }),
+      );
+    if (kind === 'expiry')
+      proof = { ...proof, receipt: { ...proof.receipt, receiptExpiresAt: '2000-01-01T00:00:00Z' } };
+    if (kind === 'dirty') {
+      // Caller-owned action payload corruption cannot turn equal lengths into proof.
+      before.dirty = before.dirty.map((s) => ({ ...s, text: 'Z' }));
+    }
+    const note = f.read();
+    f.dispatch(
+      pageDocumentSaveReconciled(
+        'w',
+        'n',
+        capture,
+        expected,
+        proof,
+        kind === 'deadline' ? Date.parse(proof.receipt.receiptExpiresAt) : Date.now(),
+      ),
+    );
+    expect(f.read()).toBe(note);
+    expect(f.read().needsReconcile).toBe(true);
+    expect(f.read().committedDocumentSave).toBe(f.capture);
+  },
+);
+
+it('remounts a fresh saved-base authority and preserves native undo redo after atomic adoption', () => {
+  const f = committedFixture();
+  const before = f.read().document!;
+  f.dispatch(pageDocumentSaveReconciled('w', 'n', f.capture, before, f.proof, Date.now()));
+  expect(f.owner.current()).toBe(false);
+  // Controlled new-revision source closure, not a claimed daemon capture. The
+  // original generation-zero projection is reconstructed from saved bytes.
+  const fresh = fixture('aXbc', 100, 1001, 'aXbc', 'identity', 'r2');
+  const owner = createReduxNoteDocumentOwner(fresh.authority, f.read, f.dispatch);
+  expect(owner.initial.doc.textContent).toBe('aXbc');
+  expect(owner.initial.coordinates?.length).toBe(1001);
+  const undo = owner.history!('undo')!;
+  expect(undo.initial.doc.textContent).toBe('abc');
+  expect(undo.current()).toBe(true);
+  undo.commit();
+  expect(undo.adopted()).toBe(true);
+  expect(f.read().drafts.map((d) => d.sequence)).toEqual([2]);
+  expect(f.read().drafts[0].splices).toEqual([{ start: 101, end: 102, text: '' }]);
+  const remounted = createReduxNoteDocumentOwner(fresh.authority, f.read, f.dispatch);
+  expect(remounted.initial.doc.textContent).toBe('abc');
+  const redo = remounted.history!('redo')!;
+  expect(redo.initial.doc.textContent).toBe('aXbc');
+  redo.commit();
+  expect(redo.adopted()).toBe(true);
+  expect(f.read().drafts.map((d) => d.sequence)).toEqual([2, 3]);
+  // The source-free planner correctly retains replacement X after deleting a
+  // base byte then reinserting X; it cannot infer an unchanged base byte.
+  const finalSplices = composeNoteEdits(f.read().document!.baseLength, f.read().drafts);
+  expect(finalSplices).toEqual([{ start: 101, end: 102, text: 'X' }]);
+  const savedSource = 'p'.repeat(100) + 'aXbc' + 'q'.repeat(897);
+  expect(
+    finalSplices
+      .toReversed()
+      .reduce((text, s) => text.slice(0, s.start) + s.text + text.slice(s.end), savedSource),
+  ).toBe(savedSource);
+  expect(f.read().document!.selection).toEqual(before.selection);
+});

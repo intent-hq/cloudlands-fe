@@ -122,6 +122,26 @@ const canonical = (value: unknown): string => {
   return encoded;
 };
 
+/** Hash the exact inline wire payload, including the original operation deadline.
+ * Receipt verification may outlive that deadline; this computes identity only
+ * and does not authorize a new write or renew an operation. Caller bounds input. */
+export async function noteSavePayloadDigest(operation: Omit<NoteSpliceOperation, 'payloadDigest'>) {
+  const { scope, baseRevision, operationId, expiresAt, splices } = operation;
+  const encoded = encoder.encode(
+    canonical({
+      method: 'note.applySplices',
+      ...scope,
+      baseRevision,
+      operationId,
+      expiresAt,
+      splices,
+    }),
+  );
+  if (encoded.byteLength > 65_536) throw new Error('Oversized note save payload');
+  const digest = await crypto.subtle.digest('SHA-256', encoded);
+  return Array.from(new Uint8Array(digest), (n) => n.toString(16).padStart(2, '0')).join('');
+}
+
 export interface NoteSaveInput {
   scope: NoteScope;
   sourceLength: number;
@@ -181,7 +201,6 @@ export async function prepareNoteSave(
     expiresAt,
     splices,
   };
-  const encoded = encoder.encode(canonical(payload));
   // Reserve the largest legal escaped RPC ID before allocating the digest. The
   // transport still owns validation of its actual serialized frame and ID.
   const params = {
@@ -197,10 +216,13 @@ export async function prepareNoteSave(
     65_536
   )
     throw new Error('Note edit requires a staged save');
-  const digest = await crypto.subtle.digest('SHA-256', encoded);
-  const payloadDigest = Array.from(new Uint8Array(digest), (n) =>
-    n.toString(16).padStart(2, '0'),
-  ).join('');
+  const payloadDigest = await noteSavePayloadDigest({
+    scope,
+    baseRevision,
+    operationId,
+    expiresAt,
+    splices,
+  });
   for (const splice of splices) Object.freeze(splice);
   Object.freeze(splices);
   Object.freeze(scope);

@@ -27,6 +27,13 @@ export interface NoteDraft {
     headAffinity: 'before' | 'after';
   };
 }
+export interface NoteDocumentSaveCapture {
+  generation: number;
+  baseLength: number;
+  length: number;
+  cursor: number;
+  throughSequence: number;
+}
 export interface NotePageSession {
   panels: Record<string, SourceRange[]>;
   windows: Record<
@@ -55,7 +62,15 @@ export interface NotePageSession {
   document?: NoteDocumentSession;
   history: NoteDraft[];
   receipts: NoteCommitReceipt[];
+  /** Captured before IO; retained after its matching receipt, never reconstructed
+   * from later drafts or the refreshed source. This alone is not a rebase proof. */
+  committedDocumentSave?: {
+    operation: NoteSpliceOperation;
+    document: NoteDocumentSaveCapture;
+    receipt: NoteCommitReceipt;
+  };
   pending: {
+    document?: NoteDocumentSaveCapture;
     operation: NoteSpliceOperation;
     throughSequence: number;
     status: 'saving' | 'unknown' | 'pending' | 'conflict' | 'rejected';

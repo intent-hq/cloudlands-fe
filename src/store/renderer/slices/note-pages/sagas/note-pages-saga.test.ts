@@ -1,9 +1,15 @@
+import { readNoteReceiptPage } from '$lib/client/note-receipt-reader';
 import { composeNoteEdits } from '$features/notes/virtualized/editing/note-edit-plan';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { MockNotePagesClient } from '$lib/client/mock/mock-note-pages-client';
-import type { NotePageState, NoteSourcePage, NotePagingCapabilities } from '$lib/client/note-pages';
+import type {
+  NoteSpliceOperation,
+  NotePageState,
+  NoteSourcePage,
+  NotePagingCapabilities,
+} from '$lib/client/note-pages';
 import * as a from '../note-pages-slice';
 import { notePagesSaga } from './note-pages-saga';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
@@ -66,17 +72,45 @@ function run(client: MockNotePagesClient) {
       assemblies: 1,
     }),
   );
+  const listeners = new Set<() => void>();
   const dispatch = (action: Parameters<typeof a.notePagesReducer>[1]) => {
     state = a.notePagesReducer(state, action);
+    for (const listener of [...listeners]) listener();
     channel.put(action);
     return action;
   };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ notePages: state }) },
+    {
+      channel,
+      dispatch,
+      getState: () => ({ notePages: state }),
+      context: {
+        reduxStore: {
+          getState: () => ({ notePages: state }),
+          dispatch,
+          subscribe: (listener: () => void) => {
+            listeners.add(listener);
+            return () => {
+              listeners.delete(listener);
+            };
+          },
+        },
+      },
+    },
     notePagesSaga,
   );
   tasks.push(task);
-  return { dispatch, state: () => state, task };
+  return {
+    dispatch,
+    state: () => state,
+    task,
+    subscribe: (fn: () => void) => {
+      listeners.add(fn);
+      return () => {
+        listeners.delete(fn);
+      };
+    },
+  };
 }
 
 it('reserves physical reads across notes and wakes another note after real settlement', async () => {
@@ -825,7 +859,7 @@ it('finishes every visible panel window after saturated physical reads drain', a
 async function draftSaveHarness() {
   const { webcrypto } = await import('node:crypto');
   vi.stubGlobal('crypto', webcrypto);
-  const save = vi.fn(async () => {
+  const save = vi.fn(async (_operation: NoteSpliceOperation) => {
     throw new Error('acknowledgement lost');
   });
   const client = new MockNotePagesClient({
@@ -961,4 +995,201 @@ it('keeps oversized edits dirty and only clears a proven local insertion/inverse
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.error).toContain('staged save');
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.drafts[0].splices[0].text).toHaveLength(16_385);
   vi.unstubAllGlobals();
+});
+
+it('uses captured save identity for IO and lost-ACK state despite caller mutation', async () => {
+  const r = await draftSaveHarness();
+  r.draft(1, 0, 1, 'X');
+  const operation = {
+    scope: { ...scope },
+    baseRevision: 'r:7',
+    operationId: 'captured-before-io',
+    payloadDigest: 'a'.repeat(64),
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    splices: r.state().byWorkspaceId['ws-a'].notes.spec.document!.dirty.map((s) => ({ ...s })),
+  };
+  r.save.mockImplementation(async (sent) => {
+    expect(sent).not.toBe(operation);
+    expect(sent.operationId).toBe('captured-before-io');
+    operation.operationId = 'caller-mutated-id';
+    operation.splices[0].text = 'caller-mutated-text';
+    expect(sent.splices[0].text).toBe('X');
+    throw new Error('acknowledgement lost');
+  });
+  r.dispatch(a.pageSaveRequested('ws-a', 'spec', operation, 1));
+  await vi.waitFor(() =>
+    expect(r.state().byWorkspaceId['ws-a'].notes.spec.pending?.status).toBe('unknown'),
+  );
+  expect(r.save).toHaveBeenCalledOnce();
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.pending?.operation.operationId).toBe(
+    'captured-before-io',
+  );
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.pending?.document?.generation).toBe(1);
+});
+
+it.each([
+  'success',
+  'status',
+  'lateState',
+  'effects',
+  'later',
+  'dirty',
+  'loss',
+  'selection',
+  'releaseRace',
+] as const)('composes actual save saga, receipt DATA and atomic adoption (%s)', async (mode) => {
+  const r = await draftSaveHarness();
+  const current = () => r.state().byWorkspaceId['ws-a']?.notes.spec;
+  const held = deferred<void>();
+  const ack = deferred<void>();
+  let captured: NoteSpliceOperation | undefined;
+  const originalRead = r.client.read.bind(r.client);
+  vi.spyOn(r.client, 'read').mockImplementation(async (ws, id, q) => {
+    const value = await originalRead(ws, id, q);
+    return { ...value, sourceRevision: current()?.state?.sourceRevision ?? 'r:7' };
+  });
+  const commit = async (operation: NoteSpliceOperation) => {
+    captured = operation;
+    await ack.promise;
+    if (mode !== 'lateState')
+      r.client.push({ ...tuple, sourceRevision: 'r:8', stateGeneration: '11' });
+    return {
+      kind: 'noteCommitReceipt',
+      outcome: 'committed',
+      scope,
+      operationId: operation.operationId,
+      payloadDigest: operation.payloadDigest,
+      beforeRevision: 'r:7',
+      afterRevision: 'r:8',
+      sourceLength: 3,
+      mappingRef: 'map',
+      effectsRef: 'effects',
+      inverseRef: 'inverse',
+      receiptExpiresAt: '2099-01-01T00:00:00Z',
+      invalidation: 'all',
+    } as const;
+  };
+  vi.spyOn(r.client, 'applySplices').mockImplementation(async (operation) => {
+    captured = operation;
+    if (mode === 'status') throw new Error('Lost acknowledgement');
+    return commit(operation);
+  });
+  const status = vi.spyOn(r.client, 'operationStatus').mockImplementation(commit);
+  const read = vi.spyOn(r.client, 'readReceipt').mockImplementation(async (receipt, q) => {
+    if (q.kind === 'mapping') await held.promise;
+    return readNoteReceiptPage(
+      async () => ({
+        kind: 'noteOperationPage',
+        outputKind: q.kind,
+        scope,
+        operationId: receipt.operationId,
+        payloadDigest: receipt.payloadDigest,
+        beforeRevision: 'r:7',
+        afterRevision: 'r:8',
+        sourceLength: 3,
+        expiresAt: receipt.receiptExpiresAt,
+        nextCursor: null,
+        ...(q.kind === 'effects' ? { convertedCount: 0 } : {}),
+        items:
+          q.kind === 'mapping'
+            ? [{ start: 0, end: 1, insertedLength: 1 }]
+            : mode === 'effects'
+              ? [{ kind: 'sourceEffect', start: 0, end: 1, insertedLength: 1 }]
+              : [],
+      }),
+      receipt,
+      q,
+    );
+  });
+  r.draft(1, 0, 1, 'B');
+  r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
+  await vi.waitFor(() => expect(captured).toBeDefined());
+  const savedCapture = current().pending!.document;
+  if (mode === 'selection')
+    r.dispatch(
+      a.pageDocumentSelectionChanged('ws-a', 'spec', current().generation, current().document!, {
+        anchor: 2,
+        head: 1,
+        anchorAffinity: 1,
+        headAffinity: -1,
+      }),
+    );
+  if (mode === 'later') r.draft(2, 1, 1, '!');
+  const before = current().document!;
+  expect(current().pending!.document).toBe(savedCapture);
+  if (mode === 'selection')
+    expect(before.selection).toEqual({ anchor: 2, head: 1, anchorAffinity: 1, headAffinity: -1 });
+  if (mode === 'status') {
+    await vi.waitFor(() => expect(current().pending?.status).toBe('unknown'));
+    r.dispatch(a.pageSaveRetryRequested('ws-a', 'spec'));
+    await vi.waitFor(() => expect(status).toHaveBeenCalledTimes(1));
+    expect(status.mock.calls[0][0]).toBe(captured);
+  }
+  ack.resolve();
+  if (mode === 'lateState') {
+    await vi.waitFor(() => expect(current().committedDocumentSave).toBeDefined());
+    await flush();
+    expect(read).not.toHaveBeenCalled();
+    r.client.push({ ...tuple, sourceRevision: 'r:8', stateGeneration: '11' });
+  }
+  if (mode === 'later') {
+    await vi.waitFor(() => expect(current().committedDocumentSave).toBeDefined());
+    expect(read).not.toHaveBeenCalled();
+    expect(current().needsReconcile).toBe(true);
+    expect(current().document).toBe(before);
+    expect(current().drafts).toHaveLength(1);
+    r.dispatch(workspaceUnmounted('ws-a'));
+    await flush();
+    return;
+  }
+  await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  expect(captured?.splices).toEqual([{ start: 0, end: 1, text: 'B' }]);
+  expect(current().needsReconcile).toBe(true);
+  expect(r.state().resourceLedger.used.physicalReads).toBeGreaterThan(0);
+  if (mode === 'loss') r.dispatch(workspaceUnmounted('ws-a'));
+  if (mode === 'dirty') {
+    // Explicit hostile payload corruption checks the dirty-operation guard
+    // independently of legitimate reducer generation monotonicity.
+    before.dirty = [{ start: 0, end: 1, text: 'C' }];
+  }
+  let observed = false;
+  const originalDispatch = r.dispatch;
+  // A resource-release transition may invalidate ownership before adoption.
+  // Model it using a current-state subscription in the actual harness below.
+  const stop =
+    mode === 'releaseRace'
+      ? r.subscribe(() => {
+          if (
+            !observed &&
+            read.mock.calls.length === 2 &&
+            r.state().resourceLedger.used.physicalReads === 0
+          ) {
+            observed = true;
+            originalDispatch(a.pageSessionDiscarded('ws-a', 'spec'));
+          }
+        })
+      : () => {};
+  held.resolve();
+  if (mode === 'success' || mode === 'status' || mode === 'lateState' || mode === 'selection') {
+    await vi.waitFor(() => expect(current().needsReconcile).toBe(false));
+    expect(current().document!.baseRevision).toBe('r:8');
+    expect(current().document!.dirty).toEqual([]);
+    expect(current().document!.history).toBe(before.history);
+    expect(current().document!.selection).toBe(before.selection);
+    expect(current().history[0]).toMatchObject({ sequence: 1, baseRevision: 'r:8', splices: [] });
+    expect(current().committedDocumentSave).toBeUndefined();
+  } else {
+    await vi.waitFor(() => expect(r.state().resourceLedger.used.physicalReads).toBe(0));
+    await flush();
+    if (mode === 'releaseRace') expect(observed).toBe(true);
+    if (mode === 'effects' || mode === 'dirty') {
+      expect(current().needsReconcile).toBe(true);
+      expect(current().document).toBe(before);
+      expect(current().committedDocumentSave).toBeDefined();
+    }
+  }
+  stop();
+  r.dispatch(workspaceUnmounted('ws-a'));
+  await flush();
+  expect(r.state().resourceLedger.used.payloadBytes).toBe(0);
 });

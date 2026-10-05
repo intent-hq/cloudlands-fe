@@ -5,9 +5,12 @@ import {
   composeNoteEdits,
   prepareNoteSave,
 } from '$features/notes/virtualized/editing/note-edit-plan';
+import { readNoteLocalReceiptResult } from '$features/notes/virtualized/editing/note-receipt-local-result';
+import { currentNoteDocumentSave } from '../note-document-publication';
+import type { NotePagesState } from '../note-pages-types';
 import type { NotePageSession } from '../note-pages-types';
 import { eventChannel, buffers } from 'redux-saga';
-import { call, put, race, take, takeEvery, fork } from 'typed-redux-saga';
+import { call, put, race, take, takeEvery, fork, getContext } from 'typed-redux-saga';
 import { rejectedNoteSave } from '$lib/client/note-page-errors';
 import { appClient } from '$lib/client';
 import type {
@@ -215,13 +218,17 @@ function* save(action: ReturnType<typeof actions.pageSaveRequested>) {
   const pending = (yield* session(ws, id))?.pending;
   if (pending?.operation.operationId !== operation.operationId) return;
   try {
-    const result = yield* call([client, client.applySplices], operation);
+    const result = yield* call([client, client.applySplices], pending.operation);
     yield* put(actions.pageSaveSettled(ws, id, result));
-    if (result.outcome === 'committed') yield* put(actions.pageRefreshRequested(ws, id));
+    if (
+      result.outcome === 'committed' &&
+      (yield* session(ws, id))?.state?.sourceRevision !== result.afterRevision
+    )
+      yield* put(actions.pageRefreshRequested(ws, id));
   } catch (error) {
-    const outcome = rejectedNoteSave(error, operation);
+    const outcome = rejectedNoteSave(error, pending.operation);
     if (outcome) yield* put(actions.pageSaveSettled(ws, id, outcome));
-    else yield* put(actions.pageSaveUnknown(ws, id, operation.operationId));
+    else yield* put(actions.pageSaveUnknown(ws, id, pending.operation.operationId));
   }
 }
 function* saveDrafts(action: ReturnType<typeof actions.pageSaveDraftsRequested>) {
@@ -299,9 +306,72 @@ function* retry(action: ReturnType<typeof actions.pageSaveRetryRequested>) {
   try {
     const result = yield* call([client, client.operationStatus], pending.operation);
     yield* put(actions.pageSaveSettled(ws, id, result));
-    if (result.outcome === 'committed') yield* put(actions.pageRefreshRequested(ws, id));
+    if (
+      result.outcome === 'committed' &&
+      (yield* session(ws, id))?.state?.sourceRevision !== result.afterRevision
+    )
+      yield* put(actions.pageRefreshRequested(ws, id));
   } catch {
     yield* put(actions.pageSaveUnknown(ws, id, pending.operation.operationId));
+  }
+}
+/** Receipt traversal owns physical settlement even if the saga is cancelled.
+ * Redux subscription observation remains live until the promise's outer finally. */
+function* reconcileSave(
+  action: ReturnType<typeof actions.pageSaveSettled | typeof actions.pageStateReceived>,
+) {
+  const [ws, id] = action.payload;
+  const capture = (yield* session(ws, id))?.committedDocumentSave;
+  const client = appClient.notes.pages;
+  if (!capture || !client) return;
+  const redux = yield* getContext<
+    | {
+        getState(): { notePages: NotePagesState };
+        dispatch: (
+          action: ReturnType<
+            typeof actions.pageResourcesRequested | typeof actions.pageResourcesReleased
+          >,
+        ) => unknown;
+        subscribe(listener: () => void): () => void;
+      }
+    | undefined
+  >('reduxStore');
+  if (!redux) return;
+  const read = () => redux.getState().notePages.byWorkspaceId[ws]?.notes[id];
+  const current = () => currentNoteDocumentSave(read(), capture);
+  if (!current()) return;
+  const abort = new AbortController();
+  try {
+    const proof = yield* call(
+      readNoteLocalReceiptResult,
+      {
+        read: () => redux.getState().notePages,
+        dispatch: (action: Parameters<typeof redux.dispatch>[0]) => {
+          redux.dispatch(action);
+        },
+        subscribe: (changed: () => void) => redux.subscribe(changed),
+      },
+      client,
+      capture.receipt,
+      capture.operation,
+      capture.document.baseLength,
+      current,
+      abort.signal,
+    );
+    // No async cleanup remains. The reducer repeats this CAS after middleware.
+    const before = (yield* session(ws, id))?.document;
+    if (!before || !current()) return;
+    yield* put(actions.pageDocumentSaveReconciled(ws, id, capture, before, proof, Date.now()));
+    const after = yield* session(ws, id);
+    if (after?.document?.baseRevision !== capture.receipt.afterRevision || after.needsReconcile)
+      return;
+    for (const panel of Object.keys(after.windows))
+      yield* put(actions.pageWindowRequested(ws, id, panel, after.document.selection.head));
+  } catch {
+    // Unsupported effects, later edits, stale ownership and IO failure retain the
+    // receipt, document/history and reconciliation gate for a supported retry.
+  } finally {
+    abort.abort();
   }
 }
 type ObservedAction = { type: string; payload?: unknown };
@@ -345,6 +415,11 @@ function* ownSession(
 }
 export function* notePagesSaga() {
   yield* fork(noteWindowSaga);
+  yield* takeSingleFlightInContext(
+    [actions.pageSaveSettled, actions.pageStateReceived],
+    (a) => key(a.payload[0], a.payload[1]),
+    reconcileSave,
+  );
   yield* takeEvery(actions.pageRequested, read);
   yield* takeSingleFlightInContext(
     actions.pageSaveDraftsRequested,
