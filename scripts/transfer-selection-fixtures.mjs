@@ -70,7 +70,14 @@ export async function loadTransferSelectionFixtures({
   }
   const contract = await readRequiredJson(path.join(root, 'contract.json'));
   const artifact = await readRequiredJson(generatedPath);
-  shared.assertGenerated(contract, artifact, expectedSource);
+  try {
+    shared.assertGenerated(contract, artifact, expectedSource);
+  } catch (error) {
+    throw new Error(
+      `invalid transfer-selection fixtures ${path.join(root, 'contract.json')} and ${generatedPath}: ${error.message}`,
+      { cause: error },
+    );
+  }
   return { contract, artifact, paths: { root, generated: generatedPath, validator } };
 }
 
