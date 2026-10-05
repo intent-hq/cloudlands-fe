@@ -1,3 +1,4 @@
+import type { NoteReceiptPage, NoteReceiptReadRequest } from './note-receipt-reader';
 /** Prepared note paging contract; never interchangeable with a complete Note. */
 export interface NoteScope {
   backendId: string;
@@ -302,6 +303,10 @@ export interface NotePagesClient {
   ): () => void;
   applySplices(operation: NoteSpliceOperation): Promise<NoteSaveOutcome>;
   operationStatus(operation: NoteSpliceOperation): Promise<NoteSaveOutcome>;
+  readReceipt(
+    receipt: NoteCommitReceipt,
+    request: NoteReceiptReadRequest,
+  ): Promise<NoteReceiptPage>;
 }
 export function sameNoteScope(a: NoteScope, b: NoteScope): boolean {
   return (

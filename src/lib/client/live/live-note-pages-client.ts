@@ -1,6 +1,8 @@
+import { readNoteReceiptPage, type NoteReceiptReadRequest } from '../note-receipt-reader';
 import { NotePageReader } from '../note-page-reader';
 import type {
   NotePagesClient,
+  NoteCommitReceipt,
   NotePageState,
   NoteSpliceOperation,
   NoteSaveOutcome,
@@ -82,6 +84,13 @@ function outcome(value: unknown, op: NoteSpliceOperation): NoteSaveOutcome {
 export class LiveNotePagesClient extends NotePageReader implements NotePagesClient {
   constructor() {
     super((method, params) => backendRequest(method, params));
+  }
+  readReceipt(receipt: NoteCommitReceipt, request: NoteReceiptReadRequest) {
+    return readNoteReceiptPage(
+      (params) => backendRequest('note.operation.read', params),
+      receipt,
+      request,
+    );
   }
   async applySplices(op: NoteSpliceOperation) {
     const { scope, ...params } = op;

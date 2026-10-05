@@ -1,5 +1,7 @@
+import type { NoteReceiptPage, NoteReceiptReadRequest } from '../note-receipt-reader';
 import type {
   NotePagesClient,
+  NoteCommitReceipt,
   NotePagingCapabilities,
   NotePageRequest,
   NoteReadPage,
@@ -12,6 +14,10 @@ export class MockNotePagesClient implements NotePagesClient {
   constructor(
     private readonly fixture: {
       capabilities: NotePagingCapabilities | null;
+      receiptRead?: (
+        receipt: NoteCommitReceipt,
+        request: NoteReceiptReadRequest,
+      ) => Promise<NoteReceiptPage>;
       read: (ws: string, note: string, request: NotePageRequest) => Promise<NoteReadPage>;
       save?: (operation: NoteSpliceOperation) => Promise<NoteSaveOutcome>;
       status?: (operation: NoteSpliceOperation) => Promise<NoteSaveOutcome>;
@@ -28,6 +34,12 @@ export class MockNotePagesClient implements NotePagesClient {
   }
   read(ws: string, note: string, request: NotePageRequest) {
     return this.fixture.read(ws, note, request);
+  }
+  readReceipt(receipt: NoteCommitReceipt, request: NoteReceiptReadRequest) {
+    return (
+      this.fixture.receiptRead?.(receipt, request) ??
+      Promise.reject(new Error('No mock receipt page configured'))
+    );
   }
   applySplices(operation: NoteSpliceOperation) {
     return (

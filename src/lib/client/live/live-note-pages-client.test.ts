@@ -202,3 +202,49 @@ it.each([
   ).rejects.toThrow();
   expect(rpc).toHaveBeenCalledTimes(1);
 });
+
+it('routes inline receipt pages through note.operation.read without staged or legacy fields', async () => {
+  const receipt = {
+    kind: 'noteCommitReceipt' as const,
+    outcome: 'committed' as const,
+    scope,
+    operationId: 'op',
+    payloadDigest: 'digest',
+    beforeRevision: 'r1',
+    afterRevision: 'r2',
+    sourceLength: 5,
+    mappingRef: 'mapping',
+    effectsRef: 'effects',
+    inverseRef: 'inverse',
+    receiptExpiresAt: '2099-01-01T00:00:00Z',
+    invalidation: 'all' as const,
+  };
+  rpc.mockResolvedValueOnce({
+    kind: 'noteOperationPage',
+    scope,
+    operationId: 'op',
+    payloadDigest: 'digest',
+    beforeRevision: 'r1',
+    afterRevision: 'r2',
+    outputKind: 'effects',
+    sourceLength: 3,
+    items: [],
+    nextCursor: null,
+    expiresAt: receipt.receiptExpiresAt,
+  });
+  await new LiveNotePagesClient().readReceipt(receipt, {
+    kind: 'effects',
+    baseLength: 3,
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+  expect(rpc).toHaveBeenCalledExactlyOnceWith('note.operation.read', {
+    ...scope,
+    operationId: 'op',
+    payloadDigest: 'digest',
+    kind: 'effects',
+    ref: 'effects',
+    maxItems: 1,
+    maxWireBytes: 4096,
+  });
+});
