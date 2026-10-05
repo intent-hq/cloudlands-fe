@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import type { Locator } from '@playwright/test';
 import type { QueuedMessage } from '$shared/types';
 import QueuedMessageImagesHost from './QueuedMessageImagesHost.svelte';
 
@@ -15,6 +16,11 @@ const queued = (
   messageMetadata: { fromPrincipalId: 'image-author' },
   imageBlocks,
 });
+
+async function queueScreenshot(component: Locator) {
+  const queue = component.getByTestId('queued-messages-container');
+  return (await queue.count()) ? queue.screenshot() : component.screenshot();
+}
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -33,11 +39,22 @@ test.beforeEach(async ({ page }) => {
       canvas.width = size;
       canvas.height = size;
       const context = canvas.getContext('2d')!;
-      context.fillStyle = id === 'first' ? '#487bb5' : id === 'second' ? '#d49b35' : '#59a581';
+      context.fillStyle =
+        id === 'first'
+          ? '#487bb5'
+          : id === 'second'
+            ? '#d49b35'
+            : id === 'fourth'
+              ? '#9359a5'
+              : '#59a581';
       context.fillRect(0, 0, size, size);
       context.fillStyle = '#ffffff';
       context.font = `${size / 2}px sans-serif`;
-      context.fillText(id === 'first' ? '1' : id === 'second' ? '2' : '3', size / 4, size * 0.7);
+      context.fillText(
+        id === 'first' ? '1' : id === 'second' ? '2' : id === 'fourth' ? '4' : '3',
+        size / 4,
+        size * 0.7,
+      );
       return canvas.toDataURL();
     };
     Object.defineProperty(HTMLImageElement.prototype, 'src', {
@@ -62,7 +79,7 @@ test('pending image groups survive out-of-order ACKs, confirmation, editing, rem
   const rows = component.getByTestId('queued-message-row');
   const capture = async (name: string) =>
     info.attach(name + '.png', {
-      body: await component.screenshot(),
+      body: await queueScreenshot(component),
       contentType: 'image/png',
     });
   const texts = async () =>
@@ -198,7 +215,7 @@ for (const first of ['image only', 'file'] as const) {
           (confirmed ? 'confirmed-' : 'optimistic-') +
             first.replace(' ', '-') +
             '-with-text-and-images.png',
-          { body: await component.screenshot(), contentType: 'image/png' },
+          { body: await queueScreenshot(component), contentType: 'image/png' },
         );
       },
     );
@@ -227,7 +244,7 @@ test('separate later image-only messages survive disclosure and removal of an ea
   await disclosure.click();
   await expect(images).toHaveCount(0);
   await info.attach('collapsed-image-only.png', {
-    body: await component.screenshot(),
+    body: await queueScreenshot(component),
     contentType: 'image/png',
   });
   await disclosure.click();
@@ -248,7 +265,7 @@ test('separate later image-only messages survive disclosure and removal of an ea
     )
     .toEqual([48, 64, 64]);
   await info.attach('later-image-only-messages.png', {
-    body: await component.screenshot(),
+    body: await queueScreenshot(component),
     contentType: 'image/png',
   });
 });
@@ -282,7 +299,7 @@ for (const failure of ['lookup', 'image'] as const) {
     await expect(thumbnails.nth(1).getByTestId('queued-image-placeholder')).toBeVisible();
     await expect(thumbnails.nth(2).getByTestId('queued-image-placeholder')).toBeVisible();
     await info.attach(`before-${failure}-reconnect.png`, {
-      body: await component.screenshot(),
+      body: await queueScreenshot(component),
       contentType: 'image/png',
     });
     await page.evaluate(() => {
@@ -306,7 +323,7 @@ for (const failure of ['lookup', 'image'] as const) {
       requests.every((request: { workspaceId: string }) => request.workspaceId === 'queue-images'),
     ).toBe(true);
     await info.attach(`after-${failure}-reconnect.png`, {
-      body: await component.screenshot(),
+      body: await queueScreenshot(component),
       contentType: 'image/png',
     });
     await info.attach('image-request-log.json', {
@@ -361,7 +378,7 @@ test('a retry displays ordered groups with parent controls and edits the full pa
   await expect(groups.getByTestId('queued-message-actions')).toHaveCount(0);
   await expect(row.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(1);
   await info.attach('retry-ordered-groups.png', {
-    body: await component.screenshot(),
+    body: await queueScreenshot(component),
     contentType: 'image/png',
   });
   const thumbnail = groups.nth(1).getByTestId('queued-image-thumbnail');
@@ -381,7 +398,7 @@ test('a retry displays ordered groups with parent controls and edits the full pa
   await row.getByTestId('queued-message-content').first().press('F2');
   await expect(row.getByRole('textbox')).toHaveValue(retry.content);
   await info.attach('retry-parent-full-editor.png', {
-    body: await component.screenshot(),
+    body: await queueScreenshot(component),
     contentType: 'image/png',
   });
   await row.getByRole('textbox').press('Escape');
@@ -397,7 +414,7 @@ test('a retry displays ordered groups with parent controls and edits the full pa
   await expect(row.getByTestId('queued-message-text')).toHaveText('Replacement retry message');
   await expect.poll(widths).toEqual([32, 48, 64]);
   await info.attach('retry-replacement-single-message.png', {
-    body: await component.screenshot(),
+    body: await queueScreenshot(component),
     contentType: 'image/png',
   });
   await row.getByTestId('queued-message-content').press('Control+Enter');
@@ -454,7 +471,7 @@ for (const failure of ['lookup', 'image'] as const) {
       await expect(thumbnails.nth(1).getByTestId('queued-image-placeholder')).toBeVisible();
       await expect(thumbnails.nth(2).getByTestId('queued-image-placeholder')).toBeVisible();
       await info.attach('retry-before-' + failure + '-recovery.png', {
-        body: await component.screenshot(),
+        body: await queueScreenshot(component),
         contentType: 'image/png',
       });
       await page.evaluate(() => {
@@ -472,7 +489,7 @@ for (const failure of ['lookup', 'image'] as const) {
       await expect(thumbnails.nth(2).getByTestId('queued-image-placeholder')).toBeVisible();
       await expect(groups).toHaveCount(3);
       await info.attach('retry-after-' + failure + '-recovery.png', {
-        body: await component.screenshot(),
+        body: await queueScreenshot(component),
         contentType: 'image/png',
       });
       await info.attach('retry-group-request-log.json', {
@@ -482,7 +499,7 @@ for (const failure of ['lookup', 'image'] as const) {
       await row.getByTestId('queued-message-content').first().press('Delete');
       await expect(row).toHaveCount(0);
       await info.attach('retry-parent-removed.png', {
-        body: await component.screenshot(),
+        body: await queueScreenshot(component),
         contentType: 'image/png',
       });
     },
