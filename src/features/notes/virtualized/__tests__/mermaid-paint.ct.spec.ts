@@ -25,6 +25,11 @@ for (const dark of [false, true]) {
       );
       const camera = component;
       for (const scale of [1, 2]) {
+        // Exercise both host parities: centering must not introduce a different
+        // source raster phase from the standalone image at either zoom.
+        await component.getByTestId('native-paint-construction').evaluate((host, width) => {
+          (host as HTMLElement).style.width = `${width}px`;
+        }, 899 + scale);
         const result = await camera.evaluate(
           (element, scale) =>
             (
@@ -32,7 +37,17 @@ for (const dark of [false, true]) {
             ).paint('far', scale),
           scale,
         );
+        const beforeScreenshot = await camera.evaluate((element) =>
+          (element as HTMLElement & { paintSnapshot(phase: string): unknown }).paintSnapshot(
+            'before-screenshot',
+          ),
+        );
         const native = await camera.screenshot({ animations: 'disabled', scale: 'css' });
+        const afterScreenshot = await camera.evaluate((element) =>
+          (element as HTMLElement & { paintSnapshot(phase: string): unknown }).paintSnapshot(
+            'after-screenshot',
+          ),
+        );
         const comparison = await page.evaluate(
           async ({ actual, expected }) => {
             const decode = async (src: string) => {
@@ -81,10 +96,20 @@ for (const dark of [false, true]) {
           contentType: 'image/png',
         });
         await info.attach(`paint-${scale}-costs.json`, {
-          body: JSON.stringify({ ...result, png: undefined, comparison, sourceUnits: code.length }),
+          body: JSON.stringify({
+            ...result,
+            png: undefined,
+            comparison,
+            beforeScreenshot,
+            afterScreenshot,
+            sourceUnits: code.length,
+          }),
           contentType: 'application/json',
         });
         expect(result.nativeLabelVisible).toBe(true);
+        expect(result.nativeSourceOriginPixelAligned).toBe(true);
+        expect(Number.isInteger(result.x * scale)).toBe(true);
+        expect(Number.isInteger(result.y * scale)).toBe(true);
         expect(result.decodedPixels).toBe(256 * 256);
         expect(result.png.length).toBeLessThan(1024 * 1024);
         expect(result.label).toContain(kind === 'large-comment' ? 'Finish' : 'Node 199');
@@ -94,3 +119,32 @@ for (const dark of [false, true]) {
     });
   }
 }
+
+test('rejects a half-pixel native source origin even when 2x maps it to an integer', async ({
+  mount,
+}) => {
+  const component = await mount(MermaidPaintProbe, {
+    props: { code: 'flowchart LR\nA[first] --> B[last]' },
+  });
+  await expect(component.locator('.mermaid-renderer')).toHaveAttribute(
+    'data-render-settled',
+    'true',
+    { timeout: 15_000 },
+  );
+  const sourceOrigin = await component.getByTestId('native-paint-construction').evaluate((host) => {
+    const svg = host.querySelector('.mermaid-svg > svg')!;
+    const element = host as HTMLElement;
+    element.style.position = 'relative';
+    element.style.left = `${238.5 - svg.getBoundingClientRect().left}px`;
+    return svg.getBoundingClientRect().left;
+  });
+  expect(sourceOrigin).toBe(238.5);
+  expect(Number.isInteger(sourceOrigin * 2)).toBe(true);
+  await expect(
+    component.evaluate((element) =>
+      (
+        element as HTMLElement & { paint(target: 'far', scale: number): Promise<PaintResult> }
+      ).paint('far', 2),
+    ),
+  ).rejects.toThrow('Native Mermaid source origin must use integral CSS pixels');
+});

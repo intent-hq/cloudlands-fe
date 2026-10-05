@@ -10,6 +10,7 @@ export interface MermaidPaintProbe {
   label: string;
   nativeNodes: number;
   nativeLabelVisible: boolean;
+  nativeSourceOriginPixelAligned: boolean;
   geometry: Record<string, unknown>;
   serializedSvgUnits: number;
   imageUrlUnits: number;
@@ -38,12 +39,65 @@ export async function probeNativeMermaidPaint(
   const labels = svg.querySelectorAll('.node .nodeLabel, .messageText');
   const label = labels[target === 'first' ? 0 : labels.length - 1];
   if (!label) throw new Error('Native Mermaid label is missing');
+  const firstLabel = labels[0];
+  let capturedBinding: string | undefined;
+  const snapshot = (phase: string) => {
+    const currentLabels = svg.querySelectorAll('.node .nodeLabel, .messageText');
+    if (
+      svg !== construction.querySelector('.mermaid-svg > svg') ||
+      !svg.isConnected ||
+      !svg.contains(label) ||
+      !svg.contains(firstLabel) ||
+      currentLabels[0] !== firstLabel ||
+      currentLabels[target === 'first' ? 0 : currentLabels.length - 1] !== label
+    )
+      throw new Error(`Native Mermaid identity changed at ${phase}`);
+    const typography = (element: Element) => {
+      const style = getComputedStyle(element);
+      const font =
+        style.font ||
+        `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      return {
+        text: element.textContent,
+        family: style.fontFamily,
+        size: style.fontSize,
+        weight: style.fontWeight,
+        style: style.fontStyle,
+        font,
+        loaded: document.fonts.check(font, element.textContent ?? ''),
+      };
+    };
+    const binding = {
+      svgId: svg.id,
+      viewBox: svg.getAttribute('viewBox'),
+      width: svg.getAttribute('width'),
+      height: svg.getAttribute('height'),
+      fontsStatus: document.fonts.status,
+      firstLabel: typography(firstLabel),
+      selectedLabel: typography(label),
+    };
+    const serialized = JSON.stringify(binding);
+    if (capturedBinding !== undefined && capturedBinding !== serialized)
+      throw new Error(`Native Mermaid layout or font changed at ${phase}`);
+    capturedBinding = serialized;
+    return { phase, ...binding, rect: svg.getBoundingClientRect().toJSON() };
+  };
+  const snapshots = [snapshot('settled-measurement')];
+  Object.assign(viewport, { paintSnapshot: snapshot });
   const sourceRect = svg.getBoundingClientRect(),
     labelRect = label.getBoundingClientRect();
+  // SVG image rasterization starts at CSS origin zero. Multiplying first would
+  // wrongly admit a half-pixel native origin (238.5 * 2 is an integer).
+  const nativeSourceOriginPixelAligned =
+    Number.isInteger(sourceRect.left) && Number.isInteger(sourceRect.top);
+  if (!nativeSourceOriginPixelAligned)
+    throw new Error('Native Mermaid source origin must use integral CSS pixels');
   const hostRect = construction.getBoundingClientRect();
   // The camera margin is measured in output pixels, including at higher zoom.
-  const x = Math.max(0, labelRect.left - sourceRect.left - 50 / scale);
-  const y = Math.max(0, labelRect.top - sourceRect.top - 50 / scale);
+  // Compare pixel-grid tile origins. Fractional output-pixel translations can
+  // round glyph positions differently in CSS zoom and SVG viewBox rasterization.
+  const x = Math.floor(Math.max(0, labelRect.left - sourceRect.left - 50 / scale) * scale) / scale;
+  const y = Math.floor(Math.max(0, labelRect.top - sourceRect.top - 50 / scale) * scale) / scale;
   // Pan through the renderer's own scroll viewport before moving the camera.
   // Translating only the outer host leaves a far node clipped by inner overflow.
   scroller.scrollLeft = x;
@@ -80,12 +134,14 @@ export async function probeNativeMermaidPaint(
       },
     },
   });
+  snapshots.push(snapshot('before-export'));
   try {
     await copyDiagramSvg(svg.parentElement!);
   } finally {
     if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
     else Reflect.deleteProperty(navigator, 'clipboard');
   }
+  snapshots.push(snapshot('after-export'));
   if (!xml) throw new Error('Native SVG export did not finish');
   const width = 256,
     height = 256;
@@ -99,6 +155,7 @@ export async function probeNativeMermaidPaint(
   try {
     image.src = url;
     await image.decode();
+    snapshots.push(snapshot('after-decode'));
     if (image.naturalWidth !== width || image.naturalHeight !== height)
       throw new Error('Tile decode exceeded requested pixel dimensions');
     const context = canvas.getContext('2d');
@@ -137,7 +194,9 @@ export async function probeNativeMermaidPaint(
     return {
       png,
       nativeLabelVisible,
+      nativeSourceOriginPixelAligned,
       geometry: {
+        snapshots,
         beforeCamera,
         backdrops: backdrops.map((layer) => ({ color: layer.color, rect: layer.rect.toJSON() })),
         label: shown.toJSON(),

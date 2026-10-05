@@ -902,6 +902,9 @@ for (const mode of ['insert700', 'type700']) {
     mount,
     page,
   }, info) => {
+    // This parity case sends 700 real key events to each editor before checking
+    // source and eviction history. CI can spend over 16s on the first editor.
+    if (mode === 'type700') test.setTimeout(60_000);
     const prefix = '- outer\n  17. parent\n      - ',
       source = prefix + 'abcdefghijklmnopqrstuvwxy'.repeat(4000) + '\n- after',
       at = 30000;
