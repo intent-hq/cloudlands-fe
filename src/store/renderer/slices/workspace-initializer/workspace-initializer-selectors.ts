@@ -1,3 +1,7 @@
+import {
+  selectCanCreateWorkspace,
+  selectPrincipalActionContext,
+} from '../principal/principal-selectors';
 import { store } from '../../store';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -64,3 +68,18 @@ export const selectNewWorkspaceDefaultSpecialist = store.createSelector((state):
     orchestratorId: selectOrchestratorSpecialist.select(state)?.id ?? null,
   }),
 );
+
+/** A probe is requested on mount and renewed after connection/identity admission changes. */
+export const selectWorkspaceInitializerGitCheckContext = store.createSelector((state) => {
+  const request = state.workspaceInitializer.gitCheckRequest;
+  const context = selectPrincipalActionContext.select(state);
+  return request && context && selectCanCreateWorkspace.select(state)
+    ? JSON.stringify([context, request])
+    : null;
+});
+
+export const selectWorkspaceInitializerGitAvailability = store.createSelector((state) => {
+  const context = selectWorkspaceInitializerGitCheckContext.select(state);
+  const result = state.workspaceInitializer.gitCheck;
+  return context && result?.context === context ? result.available : null;
+});

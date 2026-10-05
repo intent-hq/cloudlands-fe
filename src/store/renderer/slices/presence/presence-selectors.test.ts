@@ -24,7 +24,6 @@ import {
   selectAgentTypingPeople,
   selectOwnPresenceReport,
   selectPresenceMembershipKeys,
-  selectWorkspacePresenceFocusTargets,
   selectWorkspacePresencePeople,
 } from './presence-selectors';
 import type { PresencePerson, PresenceState } from './presence-types';
@@ -199,34 +198,6 @@ describe('presence selectors', () => {
         ['away', undefined],
       ]);
       expect('identity' in people[2]).toBe(false);
-    });
-
-    it('resolves where each online member looks: their agent chat first, else their note, nothing for the bare tab', () => {
-      const focused = presenceRosterReceived({
-        workspaceId: 'ws-1',
-        members: [
-          member('viewer', {
-            focus: [
-              { workspaceId: 'ws-1' },
-              { workspaceId: 'ws-1', noteId: 'note-1' },
-              { workspaceId: 'ws-1', agentId: 'agent-1' },
-            ],
-          }),
-          member('reader', {
-            focus: [
-              { workspaceId: 'ws-2', agentId: 'agent-9' },
-              { workspaceId: 'ws-1', noteId: 'note-2' },
-            ],
-          }),
-          member('idle', { focus: [{ workspaceId: 'ws-1' }] }),
-        ],
-      });
-      const state = stateWith(reduce(focused, presenceOwnPrincipalReceived('me')));
-      expect(selectWorkspacePresenceFocusTargets.select(state, 'ws-1')).toEqual({
-        viewer: { kind: 'agent', agentId: 'agent-1' },
-        reader: { kind: 'note', noteId: 'note-2' },
-      });
-      expect(selectWorkspacePresenceFocusTargets.select(state, 'ws-9')).toEqual({});
     });
 
     it('shows nothing for an unshared workspace even when its roster and membership are known', () => {

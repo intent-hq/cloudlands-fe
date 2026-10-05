@@ -197,6 +197,8 @@ export const WorkspaceCreateSchema = z.object({
       // not send one. Kept optional for legacy callers only.
       agentId: z.string().optional(),
       name: z.string().optional(),
+      nameExplicitlySet: z.boolean().optional(),
+      rememberSpecialist: z.boolean().optional(),
       model: z.string().optional(),
       provider: z.string().optional(), // Provider ID (e.g., 'auggie', 'claude-code', 'codex')
       prompt: z.string().optional(),

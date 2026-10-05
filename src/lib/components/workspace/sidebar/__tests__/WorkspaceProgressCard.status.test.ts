@@ -177,7 +177,8 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
   selectAcceptChangesStatusLoading: mocks.selector(() => false),
 }));
 
-vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
+vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$store/renderer/slices/workspace/workspace-slice')>()),
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
   removeWorkspaceEntity: Object.assign(
     vi.fn((id: string) => ({ type: 'workspace/removeWorkspaceEntity', payload: [id] })),
@@ -754,6 +755,13 @@ describe('WorkspaceProgressCard status message', () => {
 
     expect(container.querySelector('[data-workspace-task-progress]')).toBeTruthy();
     expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('true');
+  });
+
+  it('uses daemon aggregate progress without initializing individual task rows', async () => {
+    mocks.taskState.initialized = false;
+    mocks.taskState.progress = { total: 2, completed: 1, inProgress: 1 };
+    await renderProgressCard({ taskStats: { total: 2, completed: 1, inProgress: 1 } });
+    expect(screen.getByTestId('mock-flame-graph').dataset.loading).toBe('false');
   });
 
   it('keeps the progress bar mounted across task refetches after initialization', async () => {

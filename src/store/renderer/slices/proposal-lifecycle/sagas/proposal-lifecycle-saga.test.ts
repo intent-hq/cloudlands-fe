@@ -52,6 +52,7 @@ import {
   recordSpecialistApplied,
 } from '../../specialist-proposal-history/specialist-proposal-history-slice';
 import type { ProposalActionDetail } from '$shared/types/proposal';
+import type { ProposalLifecycleState } from '../proposal-lifecycle-types';
 import type { SpecialistReverseAction } from '../../specialist-proposal-history/specialist-proposal-history-types';
 import {
   handleApplyProposal,
@@ -364,6 +365,63 @@ describe('persistence', () => {
     });
   });
 
+  it.each(['transferring', 'imported'] as const)(
+    'keeps unfinished %s checkpoints across history eviction, expiry, and reload',
+    async (phase) => {
+      const now = Date.now();
+      const transfer = {
+        workspaceId: 'ws-1',
+        sourceWorkspacePath: '/repo/ws-1',
+        sourceConnectionId: 'source',
+        destinationConnectionId: 'target',
+        phase,
+      };
+      const state = emptyState();
+      state.proposalLifecycle = Object.fromEntries(
+        Array.from({ length: 301 }, (_, i) => [
+          `completed-${i}`,
+          { status: 'applied', completedAt: now - i, lastAction: 'apply', result: { transfer } },
+        ]),
+      );
+      state.proposalLifecycle['first-attempt'] = {
+        status: 'applying',
+        startedAt: now,
+        lastAction: 'apply',
+        result: { transfer },
+      };
+      state.proposalLifecycle['old-unresolved'] = {
+        status: 'failed',
+        completedAt: now - 31 * 24 * 60 * 60 * 1000,
+        lastAction: 'apply',
+        result: { transfer },
+      };
+      state.proposalLifecycle['old-completed'] = {
+        status: 'applied',
+        completedAt: now - 31 * 24 * 60 * 60 * 1000,
+        lastAction: 'apply',
+        result: { transfer },
+      };
+      await run(persistProposalLifecycleSaga, undefined, state);
+      const stored = mocks.setJSON.mock.calls.at(-1)![1];
+      expect(Object.keys(stored.entries)).toHaveLength(302);
+      expect(stored.entries['completed-299']).toBeDefined();
+      expect(stored.entries['completed-300']).toBeUndefined();
+      expect(stored.entries['old-completed']).toBeUndefined();
+      mocks.getJSON.mockReturnValue(stored);
+      const dispatched = await run(hydrateProposalLifecycleSaga, undefined, emptyState());
+      const restored = (dispatched[0] as ReturnType<typeof hydrateProposalLifecycle>).payload[0];
+      expect(restored['first-attempt']).toMatchObject({
+        status: 'failed',
+        lastAction: 'apply',
+        result: { transfer },
+      });
+      expect(restored['old-unresolved']).toMatchObject({
+        status: 'failed',
+        result: { transfer },
+      });
+    },
+  );
+
   it('persists a dismissal when resolution reconciliation completes', async () => {
     vi.useFakeTimers();
     mocks.getJSON.mockReturnValue(undefined);
@@ -396,5 +454,191 @@ describe('persistence', () => {
     task.cancel();
     await task.toPromise();
     vi.useRealTimers();
+  });
+});
+
+describe('workspace transfer proposals', () => {
+  const detail: ProposalActionDetail = {
+    proposal: {
+      kind: 'workspace-transfer',
+      applyToolCallId: 'transfer-p',
+      payload: {
+        operation: 'workspace.transfer',
+        workspaceId: 'ws-1',
+        sourceWorkspacePath: '/repo/ws-1',
+      },
+      preview: { title: 'Transfer project' },
+    },
+    editedFields: { sourceConnectionId: 'source', destinationConnectionId: 'target' },
+    selectedBulkItemIds: [],
+  };
+  const action = () =>
+    applyProposalRequested({ proposalId: 'transfer-p', kind: 'workspace-transfer', detail });
+  async function harness(initialLifecycle: ProposalLifecycleState = {}) {
+    const { createCollection } =
+      await import('@themislib/themis/utils/collections/collection-utils');
+    const { proposalLifecycleReducer } = await import('../proposal-lifecycle-slice');
+    let lifecycle = initialLifecycle;
+    const state = () => ({
+      ...emptyState(),
+      proposalLifecycle: lifecycle,
+      connections: {
+        windowBackendId: 'source',
+        connections: createCollection('id', [
+          { id: 'source', label: 'Source' },
+          { id: 'target', label: 'Target' },
+        ]),
+      },
+    });
+    return {
+      run: () =>
+        runSaga(
+          {
+            dispatch: (a: { type: string }) => {
+              lifecycle = proposalLifecycleReducer(lifecycle, a);
+            },
+            getState: state,
+          },
+          handleApplyProposal,
+          action(),
+        ).toPromise(),
+      get entry() {
+        return lifecycle['transfer-p'];
+      },
+    };
+  }
+  it('starts only on approval and only retries finalize after import succeeds', async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: 'offline' })
+      .mockResolvedValueOnce({ success: true });
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    try {
+      const h = await harness();
+      expect(invoke).not.toHaveBeenCalled();
+      await h.run();
+      expect(h.entry.status).toBe('failed');
+      expect(h.entry.result?.transfer?.phase).toBe('imported');
+      await h.run();
+      expect(h.entry.status).toBe('applied');
+      expect(invoke.mock.calls).toEqual([
+        [
+          'transfer:start',
+          {
+            proposalId: 'transfer-p',
+            workspaceId: 'ws-1',
+            sourceWorkspacePath: '/repo/ws-1',
+            sourceConnectionId: 'source',
+            destination: { kind: 'server', connectionId: 'target' },
+          },
+        ],
+        [
+          'transfer:finalize',
+          { proposalId: 'transfer-p', archiveSource: true, restartAgents: false },
+        ],
+        [
+          'transfer:finalize',
+          { proposalId: 'transfer-p', archiveSource: true, restartAgents: false },
+        ],
+      ]);
+      await h.run();
+      expect(invoke).toHaveBeenCalledTimes(3);
+      expect(mocks.setJSON).toHaveBeenCalled();
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+  it('retries only finalize after restoring the first import checkpoint alongside a full history', async () => {
+    let importedSnapshot: unknown;
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockImplementationOnce(() => {
+        importedSnapshot = mocks.setJSON.mock.calls.at(-1)![1];
+        return { success: false, error: 'offline' };
+      })
+      .mockResolvedValueOnce({ success: true });
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    try {
+      const history: ProposalLifecycleState = Object.fromEntries(
+        Array.from({ length: 301 }, (_, i) => [
+          `completed-${i}`,
+          { status: 'applied', completedAt: Date.now() - i, lastAction: 'apply' },
+        ]),
+      );
+      const first = await harness(history);
+      await first.run();
+      mocks.getJSON.mockReturnValue(importedSnapshot);
+      const dispatched = await run(hydrateProposalLifecycleSaga, undefined, emptyState());
+      const restored = (dispatched[0] as ReturnType<typeof hydrateProposalLifecycle>).payload[0];
+      const reloaded = await harness(restored);
+      expect(reloaded.entry).toMatchObject({
+        status: 'failed',
+        result: { transfer: { phase: 'imported', destinationConnectionId: 'target' } },
+      });
+      await reloaded.run();
+      expect(reloaded.entry.status).toBe('applied');
+      expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
+        'transfer:start',
+        'transfer:finalize',
+        'transfer:finalize',
+      ]);
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+
+  it('ignores simultaneous approvals while the relay is running', async () => {
+    let finish!: (value: { success: boolean }) => void;
+    const invoke = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+      .mockResolvedValue({ success: true });
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke } });
+    try {
+      const h = await harness();
+      const first = h.run();
+      await h.run();
+      expect(invoke).toHaveBeenCalledTimes(1);
+      finish({ success: true });
+      await first;
+      expect(invoke).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+  it('rejects a browser bridge with an actionable desktop error', async () => {
+    const invoke = vi.fn();
+    const previousWindow = globalThis.window;
+    vi.stubGlobal('window', { electronAPI: { invoke, versions: { electron: '0.0.0-browser' } } });
+    try {
+      const h = await harness();
+      await h.run();
+      expect(h.entry.status).toBe('failed');
+      expect(h.entry.error).toContain('desktop');
+      expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      vi.stubGlobal('window', previousWindow);
+    }
+  });
+  it('restores an interrupted checkpoint as retryable instead of pending approval', () => {
+    const result = {
+      transfer: {
+        workspaceId: 'ws-1',
+        sourceWorkspacePath: '/repo/ws-1',
+        sourceConnectionId: 'source',
+        destinationConnectionId: 'target',
+        phase: 'imported',
+      },
+    };
+    expect(
+      validateProposalLifecycleEntries({
+        entries: { p: { status: 'applying', startedAt: 10, lastAction: 'apply', result } },
+      }).p,
+    ).toMatchObject({ status: 'failed', result, lastAction: 'apply' });
   });
 });

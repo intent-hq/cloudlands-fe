@@ -7,6 +7,7 @@
  * window's shared workspaces (a read-through view of `workspace.members.list`).
  */
 
+import { shareMembershipChanged } from '../workspace-share/workspace-share-slice';
 import {
   addItem,
   getItem,
@@ -238,6 +239,7 @@ const clearLeaveFeedback = (state: GuestSessionsState): GuestSessionsState => ({
   ...state,
   inheritedWorkspaceKeys: [],
   leaveConfirmations: {},
+  hostedRosters: {},
 });
 guestSessionsReducer.with(principalContextChanged, clearLeaveFeedback);
 guestSessionsReducer.with(backendReconnected, clearLeaveFeedback);
@@ -315,6 +317,22 @@ function isWithheld(state: GuestSessionsState, workspaceId: string): boolean {
   return state.hostedRosters[workspaceId]?.status === 'withheld';
 }
 
+guestSessionsReducer.with(shareMembershipChanged, (state, { payload: [{ workspaceId }] }) => {
+  const roster = state.hostedRosters[workspaceId];
+  if (!roster || roster.status === 'withheld') return state;
+  return {
+    ...state,
+    hostedRosters: {
+      ...state.hostedRosters,
+      [workspaceId]: {
+        ...roster,
+        status: 'loading',
+        invalidation: (roster.invalidation ?? 0) + 1,
+      },
+    },
+  };
+});
+
 guestSessionsReducer.with(hostedRosterLoading, (state, { payload: [workspaceId] }) =>
   isWithheld(state, workspaceId)
     ? state
@@ -323,6 +341,7 @@ guestSessionsReducer.with(hostedRosterLoading, (state, { payload: [workspaceId] 
         hostedRosters: {
           ...state.hostedRosters,
           [workspaceId]: {
+            ...state.hostedRosters[workspaceId],
             status: 'loading',
             members: state.hostedRosters[workspaceId]?.members ?? [],
           },
@@ -346,6 +365,9 @@ guestSessionsReducer.with(
       hostedRosters: {
         ...state.hostedRosters,
         [workspaceId]: {
+          ...(state.hostedRosters[workspaceId]?.invalidation === undefined
+            ? {}
+            : { invalidation: state.hostedRosters[workspaceId].invalidation }),
           status: 'loaded',
           members,
           ...(guestCount === undefined ? {} : { guestCount }),
@@ -367,6 +389,7 @@ guestSessionsReducer.with(hostedRosterFailed, (state, { payload: [workspaceId] }
         hostedRosters: {
           ...state.hostedRosters,
           [workspaceId]: {
+            ...state.hostedRosters[workspaceId],
             status: 'error',
             members: state.hostedRosters[workspaceId]?.members ?? [],
           },

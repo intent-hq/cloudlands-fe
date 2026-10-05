@@ -1,6 +1,14 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+  unlinkSync,
+  renameSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -39,6 +47,7 @@ function initRepo(): string {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'Test');
+  git('config', 'core.fileMode', 'true');
   writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_A));
   writeFileSync(join(dir, '.release-please-manifest.json'), baseManifest(VERSION_A));
   writeFileSync(join(dir, 'CHANGELOG.md'), '# Changelog\n\n## 2.28.0\n\n- old entry\n');
@@ -109,6 +118,73 @@ afterEach(() => {
 });
 
 describe('release-pr-fast-path', () => {
+  it('accepts metadata in release-only mode', () => {
+    const dir = initRepo();
+    releaseBump(dir);
+    commit(dir);
+    expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(true);
+  });
+
+  it.each(['package.json', 'CHANGELOG.md', '.release-please-manifest.json'])(
+    'rejects a mode change to %s in release-only mode',
+    (file) => {
+      const dir = initRepo();
+      releaseBump(dir);
+      chmodSync(join(dir, file), 0o755);
+      commit(dir);
+      expect(evaluate(dir).fastPath).toBe(true);
+      expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+    },
+  );
+
+  it('rejects changed symlink targets in release-only mode', () => {
+    const dir = initRepo();
+    unlinkSync(join(dir, 'CHANGELOG.md'));
+    symlinkSync('old-target', join(dir, 'CHANGELOG.md'));
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_B));
+    unlinkSync(join(dir, 'CHANGELOG.md'));
+    symlinkSync('new-target', join(dir, 'CHANGELOG.md'));
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
+  it('excludes sidecar pins from direct release eligibility without changing CI fast paths', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'intentd.version'), basePinFile(PIN_B));
+    commit(dir);
+    expect(evaluate(dir).fastPath).toBe(true);
+    expect(evaluateFastPath('base', 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
+  it('rejects nested package version changes accompanying the release version', () => {
+    const dir = initRepo();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_A, { version: VERSION_A }));
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    writeFileSync(join(dir, 'package.json'), basePackageJson(VERSION_B, { version: VERSION_B }));
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
+  it('rejects another manifest package version changing alongside the root version', () => {
+    const dir = initRepo();
+    writeFileSync(
+      join(dir, '.release-please-manifest.json'),
+      `{ ".": "${VERSION_A}", "other": "${VERSION_A}" }\n`,
+    );
+    commit(dir);
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    releaseBump(dir);
+    writeFileSync(
+      join(dir, '.release-please-manifest.json'),
+      `{ ".": "${VERSION_B}", "other": "${VERSION_B}" }\n`,
+    );
+    commit(dir);
+    expect(evaluateFastPath(base, 'HEAD', dir, { releaseOnly: true }).fastPath).toBe(false);
+  });
+
   it('matches a true release-shaped diff (version + manifest + changelog)', () => {
     const dir = initRepo();
     releaseBump(dir);

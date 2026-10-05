@@ -179,7 +179,8 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
       event.data.notificationsMuted === true ||
       event.data.isWaitingForOtherAgents ||
       (event.data.waitingOnHooks?.length ?? 0) > 0 ||
-      (event.data.waitingOnPrMonitors?.length ?? 0) > 0
+      (event.data.waitingOnPrMonitors?.length ?? 0) > 0 ||
+      (event.data.waitingOnScriptMonitors?.length ?? 0) > 0
     ) {
       return;
     }

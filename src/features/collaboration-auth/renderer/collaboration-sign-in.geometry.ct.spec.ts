@@ -65,3 +65,32 @@ test('narrow device-capable GitLab keeps token entry secondary and restores focu
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 });
+
+test('GitHub-only sign-in has no forge chooser or experiment promotion', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 620 });
+  await mount(Preview, {
+    hooksConfig: { geometrySnapshot: { scene: 'collaboration-sign-in', state: 'github-only' } },
+  });
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole('button', { name: /^GitHub$/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^GitLab$/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Review GitLab experiment' })).toHaveCount(0);
+  const signIn = page.getByRole('button', { name: 'Sign in with GitHub' });
+  await expect(signIn).toBeVisible();
+  await signIn.focus();
+  await expect(signIn).toBeFocused();
+  expect(await dialog.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(false);
+});
+
+test('enabling GitLab makes both forge choices available', async ({ mount, page }) => {
+  await mount(Preview, {
+    hooksConfig: { geometrySnapshot: { scene: 'collaboration-sign-in', state: 'github-choice' } },
+  });
+  await expect(page.getByRole('button', { name: /^GitHub$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^GitLab$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Review GitLab experiment' })).toHaveCount(0);
+});

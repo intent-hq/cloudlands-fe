@@ -1,3 +1,8 @@
+import {
+  NativeReviewPreparedViewSchema,
+  type NativeReviewSession,
+} from '$shared/types/native-review-operation';
+import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/types';
 
@@ -6,6 +11,9 @@ import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from '$shared/typ
 // client emits and how it folds success / error into a MutationResult.
 vi.mock('./backend-transport', () => ({
   backendRequest: vi.fn(),
+  captureBackendRepositoryRoute: vi.fn(),
+  captureBackendRepositorySelection: vi.fn(),
+  prepareBackendNativeReview: vi.fn(),
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-1' })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
@@ -19,7 +27,13 @@ vi.mock('$lib/client', async () => {
   return { appClient: { workspaces: new LiveWorkspacesClient() } };
 });
 
-import { backendRequest } from './backend-transport';
+import {
+  backendRequest,
+  captureBackendRepositoryRoute,
+  captureBackendRepositorySelection,
+  prepareBackendNativeReview,
+} from './backend-transport';
+import repositoryFixture from '$shared/types/__fixtures__/repository-context.json';
 import { BackendError } from './backend-transport-types';
 import { LiveWorkspacesClient } from './live-workspaces-client';
 import { CreateWorkspaceRequestSchema } from '$shared/schemas';
@@ -165,6 +179,9 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     async (reasoningEffort) => {
       const initialAgent = {
         name: 'Developer',
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
+        specialist: 'developer',
         model: 'gpt-fixture',
         provider: 'codex',
         prompt: 'Build the thing',
@@ -198,6 +215,35 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
         workspace: { id: 'ws-effort' },
         initialAgent: agent,
       });
+    },
+  );
+
+  it.each([undefined, 'エージェント', 'Agente'])(
+    'preserves General name omission or explicit custom name %j on the wire',
+    async (name) => {
+      const initialAgent = {
+        ...(name !== undefined ? { name } : {}),
+        nameExplicitlySet: name !== undefined,
+        rememberSpecialist: true,
+        provider: 'codex',
+      };
+      const agent = {
+        id: 'agent-general',
+        workspaceId: 'ws-general',
+        name: name ?? 'Agent',
+        provider: 'codex',
+        status: 'idle',
+      };
+      mockedRequest.mockResolvedValueOnce({
+        workspace: { id: 'ws-general', title: 'General', branch: 'general', status: 'Active' },
+        initialAgent: agent,
+      });
+      const request = { idempotencyKey: 'general-create', repositoryPath: '/repo', initialAgent };
+      const result = await new LiveWorkspacesClient().create(request);
+      expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.create', request, {
+        timeoutMs: 120_000,
+      });
+      expect(result).toMatchObject({ success: true, initialAgent: agent });
     },
   );
 
@@ -1231,4 +1277,146 @@ describe('LiveWorkspacesClient browser client pin (REV-2 PROTOCOL §5.17, fake t
       );
     },
   );
+});
+
+describe('LiveWorkspacesClient bound inventory', () => {
+  it('uses the captured inventory route and retires the delivered view without legacy reads', async () => {
+    let retire = () => {};
+    const release = vi.fn(async () => {});
+    const read = vi.fn(async () => ({
+      operationId: 'own',
+      current: true,
+      settlement: { status: 'fulfilled' as const, value: repositoryFixture },
+    }));
+    vi.mocked(captureBackendRepositoryRoute).mockResolvedValue({
+      request: read as never,
+      release,
+      onRetired(handler) {
+        retire = handler;
+        return () => {};
+      },
+    });
+    mockedRequest.mockClear();
+    const handler = vi.fn();
+    const request = { workspaceId: 'workspace-1', binding: 'guest-original', requestId: 'read-1' };
+    const close = await new LiveWorkspacesClient().observeRepositoryContext(request, handler);
+    await vi.waitFor(() =>
+      expect(handler).toHaveBeenCalledWith({
+        type: 'received',
+        response: { request, context: repositoryFixture },
+      }),
+    );
+    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(read).toHaveBeenCalledWith('workspace.repositoryContext', {
+      workspaceId: 'workspace-1',
+    });
+    retire();
+    expect(handler).toHaveBeenLastCalledWith({ type: 'retired', request });
+    close();
+    expect(release).toHaveBeenCalledOnce();
+  });
+});
+
+it('opens selection editing through its explicit facade without a generic mutation', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const session = {
+    preview: {
+      root,
+      scope: { daemonId: 'A', authorityScopeId: 's', authorityGeneration: '1' },
+      snapshot: {
+        root,
+        rootIncarnation: '1',
+        selectionRevision: '0',
+        selection: { kind: 'neverSaved' as const },
+      },
+      expiresAfterMs: 300000 as const,
+    },
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(captureBackendRepositorySelection).mockResolvedValueOnce(session);
+  mockedRequest.mockClear();
+  const result = await new LiveWorkspacesClient().beginRepositorySelectionEdit(
+    { root, editId: 'edit', admission: 'guest' },
+    vi.fn(),
+  );
+  expect(captureBackendRepositorySelection).toHaveBeenCalledWith(root);
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await result.release();
+  expect(session.release).toHaveBeenCalledOnce();
+});
+
+it('uses the native preparation facade without any generic mutation or selection grant', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const input = {
+    workspaceId: root.workspaceId,
+    action: 'create-pr' as const,
+    review: { root, choice: { kind: 'saved' as const } },
+  };
+  const session = {
+    preview: {
+      ...nativeFixture.prepare,
+      reviewPreparation: { ...nativeFixture.prepare.reviewPreparation, root },
+      root,
+      expiresAfterMs: 300000 as const,
+    },
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(prepareBackendNativeReview).mockResolvedValueOnce(session as never);
+  mockedRequest.mockClear();
+  const opened = await new LiveWorkspacesClient().beginNativeReview(
+    { root, attemptId: 'original', admission: 'A', hostContext: 'A' },
+    input,
+    vi.fn(),
+  );
+  expect(prepareBackendNativeReview).toHaveBeenCalledWith(input);
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await opened.release();
+  expect(session.release).toHaveBeenCalledOnce();
+});
+
+it('forwards a companion only through its original Live session without a second backend preparation', async () => {
+  const root = { workspaceId: 'ws', kind: 'primary' as const };
+  const child: NativeReviewSession = {
+    preview: NativeReviewPreparedViewSchema.parse({
+      ...nativeFixture.prepare,
+      root,
+      expiresAfterMs: 300000,
+    }),
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  const parent: NativeReviewSession = {
+    ...child,
+    prepareCompanion: vi.fn(async () => child),
+    release: vi.fn(async () => {}),
+  };
+  vi.mocked(prepareBackendNativeReview).mockClear().mockResolvedValueOnce(parent);
+  mockedRequest.mockClear();
+  const opened = await new LiveWorkspacesClient().beginNativeReview(
+    { root, attemptId: 'marked', admission: 'member', hostContext: 'host-A' },
+    {
+      workspaceId: 'ws',
+      action: 'commit',
+      review: {
+        root,
+        choice: { kind: 'saved' },
+        targetBranch: 'trunk',
+        companion: { kind: 'create-pr' },
+      },
+    },
+    vi.fn(),
+  );
+  expect(await opened.prepareCompanion!()).toBe(child);
+  expect(prepareBackendNativeReview).toHaveBeenCalledOnce();
+  expect(parent.prepareCompanion).toHaveBeenCalledOnce();
+  expect(mockedRequest).not.toHaveBeenCalled();
+  await opened.release();
 });

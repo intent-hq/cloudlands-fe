@@ -15,13 +15,25 @@ function queued(id: string, position: number): QueuedMessage {
     content: `message ${id}`,
     queuedAt: '2026-01-01T00:00:00.000Z',
     position,
+    messageMetadata: { fromPrincipalId: 'self' },
   };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('queued message reduced motion', () => {
   it('creates no animations through edit, cancel, save, reorder, and removal', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     vi.spyOn(window, 'matchMedia').mockReturnValue({
       matches: true,
       media: '(prefers-reduced-motion: reduce)',
@@ -36,7 +48,9 @@ describe('queued message reduced motion', () => {
     const onedit = vi.fn().mockResolvedValue({ success: true });
     const first = queued('one', 0);
     const second = queued('two', 1);
-    const view = render(QueuedMessageList, { props: { messages: [first, second], onedit } });
+    const view = render(QueuedMessageList, {
+      props: { messages: [first, second], ownPrincipalId: 'self', onedit },
+    });
 
     await fireEvent.dblClick(screen.getAllByTestId('queued-message-content')[0]);
     const textarea = await waitFor(() => view.container.querySelector('textarea'));

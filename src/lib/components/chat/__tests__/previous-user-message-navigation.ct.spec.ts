@@ -143,12 +143,16 @@ test('previous-message action leaves bottom and stays at successive user message
         node.getBoundingClientRect().top - (container as HTMLElement).getBoundingClientRect().top,
       await scroll.elementHandle(),
     );
+    const position = await scroll.evaluate((node) => ({
+      scrollTop: node.scrollTop,
+      bottomDistance: node.scrollHeight - node.clientHeight - node.scrollTop,
+    }));
     await testInfo.attach(`previous-${current - 1}`, {
-      body: JSON.stringify({ offset, scrollTop: await scroll.evaluate((node) => node.scrollTop) }),
+      body: JSON.stringify({ offset, ...position }),
       contentType: 'application/json',
     });
     expect(Math.abs(offset)).toBeLessThanOrEqual(3);
-    await down.expectAtBottom(false);
+    expect(position.bottomDistance).toBeGreaterThan(2);
   }
   const readingPosition = await scroll.evaluate((node) => node.scrollTop);
   await component
@@ -291,11 +295,14 @@ test('keyboard message navigation releases follow and can return to bottom', asy
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(ChatMessageNavigatorIntegrationHost);
+  await expect(component.locator('.tiptap-editor')).toBeEditable();
+  await component.evaluate(() => document.fonts.ready);
   const scroll = component.getByTestId('chat-transcript-scroll-viewport');
   const down = bottomArrow(component);
   await down.expectAtBottom(true);
   const bottom = await scroll.evaluate((node) => node.scrollTop);
-  for (let step = 0; step < 3; step++) {
+  const navigationSteps = 6;
+  for (let step = 0; step < navigationSteps; step++) {
     await page.evaluate(() =>
       window.dispatchEvent(
         new CustomEvent('navigate-message', { detail: { direction: 'previous' } }),
@@ -304,9 +311,23 @@ test('keyboard message navigation releases follow and can return to bottom', asy
     await page.waitForTimeout(200);
   }
   await page.waitForTimeout(500);
+  const target = component.locator('[data-message-id="user-23"]');
   const readingPosition = await scroll.evaluate((node) => node.scrollTop);
-  expect(readingPosition).toBeLessThan(bottom - 20);
-  for (let step = 0; step < 3; step++) {
+  await testInfo.attach('keyboard-reading-position', {
+    body: JSON.stringify({
+      bottom,
+      readingPosition,
+      bottomDistance: await scroll.evaluate(
+        (node) => node.scrollHeight - node.clientHeight - node.scrollTop,
+      ),
+    }),
+    contentType: 'application/json',
+  });
+  expect(readingPosition).toBeLessThan(bottom);
+  await expect(target).toBeInViewport({ ratio: 1 });
+  await down.expectAtBottom(false);
+  await component.screenshot({ path: testInfo.outputPath('keyboard-reading-position.png') });
+  for (let step = 0; step < navigationSteps; step++) {
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent('navigate-message', { detail: { direction: 'next' } })),
     );
@@ -703,6 +724,56 @@ test('loading failure leaves transcript intact and the arrow retries', async ({ 
   await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail","reply-tail"]');
 });
 
+test('discard replay preserves pending navigation and the landed reading position', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatMessageNavigatorIntegrationHost, {
+    props: {
+      messages: automatedTail,
+      historyStartLoaded: false,
+      discardSnapshot: true,
+      deferPages: true,
+      totalMessages: automatedTail.length + 5,
+      conversationPages: [
+        conversationPage([
+          historyMessage('replayed-human', 'user', 'Retain this navigation target', 899),
+          ...automatedTail,
+        ]),
+      ],
+    },
+  });
+  const source = component.locator('[data-message-id="reply-tail"]');
+  await source.hover();
+  await source.getByRole('button', { name: 'Previous user message' }).press('Enter');
+  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+  const replay = () =>
+    component.getByTestId('replay-discard').evaluate((node: HTMLButtonElement) => node.click());
+  await replay();
+  await releasePage(component);
+  await expectAtMessage(component, 'replayed-human');
+  await expect(component.getByTestId('navigation-state')).toContainText('replayed-human');
+  await replay();
+  // Let the discard effect's next-tick re-anchor and the quiet spacer reconcile run.
+  await page.waitForTimeout(500);
+  await expectAtMessage(component, 'replayed-human');
+  await bottomArrow(component).expectAtBottom(false);
+  await expect(component.getByTestId('page-requests')).toHaveText('["reply-tail"]');
+  await component
+    .getByTestId('discard-transcript')
+    .evaluate((node: HTMLButtonElement) => node.click());
+  await expect(component.getByTestId('navigation-state')).not.toContainText('replayed-human');
+  await bottomArrow(component).expectAtBottom(true);
+  await expect
+    .poll(() =>
+      component
+        .getByTestId('chat-transcript-scroll-viewport')
+        .evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+    )
+    .toBeLessThanOrEqual(2);
+});
+
 for (const cancel of ['wheel', 'discard', 'newer-navigation'] as const) {
   test(`pending unloaded navigation is cancelled by ${cancel}`, async ({ mount, page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -761,7 +832,7 @@ for (const input of ['PageUp', 'PageDown', 'Home', 'End', 'scrollbar'] as const)
         historyStartLoaded: false,
         // One unloaded page keeps real scrolling without invoking the ordinal
         // seek saga, which this focused navigation host does not start.
-        totalMessages: 200,
+        totalMessages: automatedTail.length + 5,
         deferPages: true,
         conversationPages: [
           conversationPage([

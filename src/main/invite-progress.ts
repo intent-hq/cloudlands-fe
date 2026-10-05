@@ -53,6 +53,8 @@ type InviteProgressLabels = Pick<InviteProgressShowPayload, 'hostLabel' | 'works
 export interface InviteProgressHandle {
   /** Move the dialog to a new phase / labels; the `requestId` is kept. No-op once the request ended. */
   update(phase: InviteProgressPhase, labels?: InviteProgressLabels): void;
+  /** Replay readiness without dismissing a live renderer request. False once abandoned. */
+  replay(): boolean;
   /**
    * Settles when the user presses Cancel while this request is active. Never
    * settles on any unavailable-renderer path or after `dismiss()`.
@@ -144,6 +146,7 @@ export function resetInviteProgressStateForTests(): void {
 /** A handle whose renderer path is unavailable: never cancels, inert otherwise. */
 const UNAVAILABLE_HANDLE: InviteProgressHandle = {
   update() {},
+  replay: () => false,
   cancelled: new Promise<void>(() => {}),
   dismiss() {},
 };
@@ -263,7 +266,12 @@ export function showInviteProgress(
     return UNAVAILABLE_HANDLE;
   }
 
-  return { update, cancelled, dismiss };
+  return {
+    update,
+    cancelled,
+    dismiss,
+    replay: () => !ended && send(INVITE_PROGRESS_CHANNELS.SHOW, payload),
+  };
 }
 
 /** Detach the renderer-death listeners; tolerate an already-destroyed target. */

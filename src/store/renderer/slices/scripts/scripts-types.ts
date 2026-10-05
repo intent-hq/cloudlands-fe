@@ -2,6 +2,8 @@
  * Scripts slice types — safe to import from any process.
  */
 
+import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { ScriptReadChange } from '$features/scripts/utils/script-change';
 import type { ScriptWithState } from '$features/scripts/types';
 
 // Re-export types that consumers need
@@ -50,6 +52,8 @@ export type ScriptOperationState = {
 export type ScriptsWorkspaceState = {
   /** Script definitions with runtime state keyed by script ID */
   scripts: Record<string, ScriptWithState>;
+  /** Event journals exist only while an authoritative list read is pending. */
+  pendingReads?: Record<string, Collection<ScriptReadChange & { sequence: string }, 'sequence'>>;
   /** Raw-chunk output ring buffers keyed by script ID */
   outputBuffers: Record<string, ScriptOutputBuffer>;
   retainedOutputs?: Record<string, ScriptRetainedOutput>;

@@ -1,3 +1,4 @@
+import { CHAT_PAGE_SIZE } from '$shared/constants';
 /**
  * Live agents domain backed by the intentd daemon.
  *
@@ -74,7 +75,7 @@ function rememberAgentWorkspace(agentId: string, workspaceId: string): void {
 }
 
 /** Coerce a raw daemon agent object into the renderer `AgentSession` shape. */
-function normalizeAgent(raw: Record<string, unknown>): AgentSession {
+export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   const now = new Date().toISOString();
   const id = String(raw.id ?? '');
   const acpSessionId = raw.acpSessionId ? String(raw.acpSessionId) : null;
@@ -270,7 +271,7 @@ export class LiveAgentsClient implements AgentsClient {
   // agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 50,
+    limit = CHAT_PAGE_SIZE,
     pageToken?: string,
     aroundMessageId?: string,
     aroundIndex?: number,
@@ -428,7 +429,12 @@ export class LiveAgentsClient implements AgentsClient {
     };
     if (request.model !== undefined) params.model = request.model;
     if (request.reasoningEffort !== undefined) params.reasoningEffort = request.reasoningEffort;
-    if (request.specialist !== undefined && request.specialist !== null) {
+    if (request.rememberSpecialist !== undefined)
+      params.rememberSpecialist = request.rememberSpecialist;
+    if (
+      request.specialist !== undefined &&
+      (request.specialist !== null || request.rememberSpecialist)
+    ) {
       params.specialistId = request.specialist;
     }
     if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
@@ -513,6 +519,7 @@ export class LiveAgentsClient implements AgentsClient {
     message: string,
     options?: {
       workspaceId?: string;
+      messageId?: string;
       imageBlocks?: ImageBlock[];
       fileBlocks?: FileBlock[];
       messageMetadata?: Record<string, unknown>;
@@ -531,12 +538,15 @@ export class LiveAgentsClient implements AgentsClient {
         content: message,
         ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       };
+      if (options?.messageId !== undefined) params.messageId = options.messageId;
       if (options?.imageBlocks !== undefined) params.imageBlocks = options.imageBlocks;
       if (options?.fileBlocks !== undefined) params.fileBlocks = options.fileBlocks;
       if (options?.messageMetadata !== undefined) params.messageMetadata = options.messageMetadata;
       const result = await backendRequest<
-        { queuedMessage?: QueuedMessage; turnId?: unknown } | undefined
+        | { success?: boolean; error?: string; queuedMessage?: QueuedMessage; turnId?: unknown }
+        | undefined
       >('agent.queueMessage', params);
+      if (result?.success === false) return { success: false, error: result.error };
       const queuedMessage = result?.queuedMessage;
       const turnId =
         typeof result?.turnId === 'string'
@@ -549,6 +559,17 @@ export class LiveAgentsClient implements AgentsClient {
       if (turnId !== undefined) mutation.turnId = turnId;
       return mutation;
     } catch (error) {
+      // Correlated callers retain recoverable content in their catch path and
+      // reconcile before retrying. Only request/method/parameter validation or
+      // access refusal proves rejection; a generic server error can follow enqueue.
+      const rpcCode =
+        error && typeof error === 'object' ? (error as { rpcCode?: unknown }).rpcCode : undefined;
+      const rejected =
+        rpcCode === -32600 ||
+        rpcCode === -32601 ||
+        rpcCode === -32602 ||
+        isForbiddenErrorResponse(error);
+      if (options?.messageId !== undefined && !rejected) throw error;
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
@@ -592,8 +613,9 @@ export class LiveAgentsClient implements AgentsClient {
     // a missing entry (already drained/removed) rejects with -32602, folded
     // into `{ success: false, error }` — callers surface it non-destructively
     // (the entry is gone; nothing to roll back). The delivered arm carries
-    // `turnId` (the entry's preserved turn-correlation id — this path emits
-    // NO `agent:queue:processing` event, the RPC response replaces it, §5.5),
+    // `turnId` (the entry's preserved turn-correlation id). The processing event
+    // carries the authoritative consumed entries; this response remains a legacy
+    // promotion fallback (§5.5),
     // surfaced on the MutationResult (monorepo#1057).
     try {
       const result = await backendRequest<{
@@ -618,6 +640,36 @@ export class LiveAgentsClient implements AgentsClient {
       // Same error shaping as `runMutation` (which this method bypassed to
       // extract `turnId`): fold JSON-RPC "Internal error" + `data.detail`
       // into an actionable message.
+      return { success: false, error: mutationErrorMessage(error) };
+    }
+  }
+  async sendQueuedMessagesNow(params: {
+    agentId: string;
+    workspaceId: string;
+    messageIds: string[];
+  }): Promise<MutationResult> {
+    try {
+      const result = await backendRequest<{
+        success: boolean;
+        queued: boolean;
+        quarantined?: boolean;
+        messageIds: string[];
+        turnId?: string;
+      }>('agent.sendQueuedMessagesNow', {
+        agentId: params.agentId,
+        workspaceId: params.workspaceId,
+        messageIds: params.messageIds,
+      });
+      return {
+        success: result.success,
+        queued: result.queued,
+        messageIds: result.messageIds,
+        ...(result.quarantined !== undefined ? { quarantined: result.quarantined } : {}),
+        ...(!result.queued && !result.quarantined && result.turnId
+          ? { turnId: result.turnId }
+          : {}),
+      };
+    } catch (error) {
       return { success: false, error: mutationErrorMessage(error) };
     }
   }
@@ -786,17 +838,35 @@ export class LiveAgentsClient implements AgentsClient {
     agentId: string;
     workspaceId: string;
     specialist: string | null;
+    rememberSpecialist?: boolean;
     model?: string | null;
     systemPrompt?: string | null;
   }): Promise<MutationResult> {
     const changes: Record<string, unknown> = { specialist: params.specialist };
+    if (params.rememberSpecialist !== undefined)
+      changes.rememberSpecialist = params.rememberSpecialist;
     if (params.model !== undefined) changes.model = params.model;
     if (params.systemPrompt !== undefined) changes.systemPrompt = params.systemPrompt;
-    return runMutation('agent.update', {
-      agentId: params.agentId,
-      workspaceId: params.workspaceId,
-      changes,
-    });
+    const request = { agentId: params.agentId, workspaceId: params.workspaceId, changes };
+    try {
+      await backendRequest('agent.update', request);
+      return { success: true };
+    } catch (error) {
+      // Older daemons reject unknown change keys before applying any fields.
+      // Retry only that refusal; all validation/storage failures keep rollback.
+      if (
+        params.rememberSpecialist !== undefined &&
+        (error as { rpcCode?: number })?.rpcCode === -32602 &&
+        mutationErrorMessage(error).includes(
+          'agent.update: unknown field `rememberSpecialist` in `changes`',
+        )
+      ) {
+        const legacyChanges = { ...changes };
+        delete legacyChanges.rememberSpecialist;
+        return runMutation('agent.update', { ...request, changes: legacyChanges });
+      }
+      return { success: false, error: mutationErrorMessage(error) };
+    }
   }
   async rename(
     agentId: string,

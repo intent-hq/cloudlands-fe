@@ -7,10 +7,12 @@
  * divider anchor, or the queued messages the panel should see.
  */
 import { vi } from 'vitest';
+import { readable, type Readable } from 'svelte/store';
 import type { AgentMessage } from '$shared/types';
 
 export const scaffold = {
   dispatch: vi.fn(),
+  authorityState: {} as object,
   agentMessages: [] as AgentMessage[],
   agentSession: { id: 'agent-1', workspaceId: 'ws-1', status: 'active', messages: [] } as unknown,
   dividerAnchorId: null as string | null,
@@ -19,6 +21,7 @@ export const scaffold = {
 
 export function resetScaffold() {
   scaffold.dispatch.mockReset();
+  scaffold.authorityState = {};
   scaffold.agentMessages = [];
   scaffold.agentSession = { id: 'agent-1', workspaceId: 'ws-1', status: 'active', messages: [] };
   scaffold.dividerAnchorId = null;
@@ -43,7 +46,7 @@ export async function appStore() {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ browser: { byWorkspaceId: {} } }),
+    state: () => ({ browser: { byWorkspaceId: {} }, ...scaffold.authorityState }),
     dispatch: scaffold.dispatch,
   });
 }
@@ -75,6 +78,7 @@ export function chatStateSelectors() {
     selectChatError: null,
     selectChatFailureCorrelation: undefined,
     selectChatLastChunkTime: null,
+    selectChatLastAttemptedMessage: null,
     selectChatLiveStreamPhase: null,
     selectChatModelUnavailable: null,
     selectChatQuotaExceeded: null,
@@ -121,7 +125,10 @@ export function providerCatalogSelectors() {
       selectProviderCatalogEntries: [],
     }),
     selectProviderAuthFailureGuidance: { select: () => null },
-    selectProviderDisplayName: { select: (_state: unknown, id: string) => id },
+    selectProviderDisplayName: Object.assign(
+      (id: string | Readable<string>) => (typeof id === 'string' ? readable(id) : id),
+      { select: (_state: unknown, id: string) => id },
+    ),
     selectNormalizedProviderId: { select: (_state: unknown, id: string) => id },
   };
 }

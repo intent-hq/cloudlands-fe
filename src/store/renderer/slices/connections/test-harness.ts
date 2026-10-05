@@ -3,6 +3,7 @@ import { select } from 'typed-redux-saga';
 import { createAppStoreMock } from '../../utils/test-helpers/store-mock';
 import { connectionsReducer, initialState } from './connections-slice';
 import type { ConnectionsState } from './connections-types';
+import { initialState as guestSessions } from '../guest-sessions/guest-sessions-slice';
 import { settingsEventsReducer } from '../settings-events/settings-events-slice';
 
 /** Component tests use the production reducer/watchers; only the transport is mocked. */
@@ -17,7 +18,11 @@ export function createConnectionsHarness(
   let apiTask: Task | undefined;
   const channel = stdChannel();
   const store = createAppStoreMock({
-    state: () => ({ connections: { ...state, ...overrides() }, settingsEvents: forms }),
+    state: () => ({
+      connections: { ...state, ...overrides() },
+      settingsEvents: forms,
+      guestSessions,
+    }),
     dispatch: (action) => {
       observeDispatch(action);
       state = connectionsReducer(state, action);

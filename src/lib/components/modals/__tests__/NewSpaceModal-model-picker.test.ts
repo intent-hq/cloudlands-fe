@@ -46,6 +46,12 @@ const mocks = vi.hoisted(() => {
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerGitAvailability: () => ({
+    subscribe(run: (value: boolean) => void) {
+      run(true);
+      return () => {};
+    },
+  }),
   selectWorkspaceInitializerHydrated: () => mocks.readable(true),
   selectCompactWorkspaceInitializerFormState: () => mocks.readable(null),
   selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(''),
@@ -594,6 +600,8 @@ describe('NewSpaceModal model-picker composition', () => {
       await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
       expect(mocks.create.mock.calls[0][0].initialAgent).toEqual({
         name: 'Coordinator',
+        nameExplicitlySet: false,
+        rememberSpecialist: true,
         model: explicitModel ? 'gpt5.6' : undefined,
         provider: 'auggie',
         specialist: 'spec-writer',
@@ -745,6 +753,7 @@ vi.mock('$store/renderer/slices/provider-catalog/workspace-catalog-selectors', a
   const availability =
     await import('$store/renderer/slices/agent-availability/agent-availability-selectors');
   return {
+    selectWorkspaceCatalogEpoch: () => mocks.readable(0),
     selectContextProviderEntries: catalog.selectProviderCatalogEntries,
     selectContextDefaultProvider: providers.selectActiveProviderId,
     selectContextSelectedModel: models.selectSelectedModel,

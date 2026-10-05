@@ -1358,10 +1358,28 @@ describe('agent-session-slice reducer', () => {
             status: 'idle',
             waitingOnHooks: [{ hookId: 'h1', name: 'watch-ci' }],
             waitingOnPrMonitors: [{ monitorId: 'm1', repo: 'o/r', prNumber: 1 }],
+            waitingOnScriptMonitors: [
+              {
+                monitorId: 's1',
+                scriptId: 'checks',
+                runId: 'run-1',
+                scriptName: 'Checks',
+                expiresAt: '2026-10-02T10:10:00Z',
+              },
+            ],
           },
         } as any),
       );
 
+      expect(state.byAgentId['a1'].waitingOnScriptMonitors).toEqual([
+        {
+          monitorId: 's1',
+          scriptId: 'checks',
+          runId: 'run-1',
+          scriptName: 'Checks',
+          expiresAt: '2026-10-02T10:10:00Z',
+        },
+      ]);
       expect(state.byAgentId['a1'].waitingOnHooks).toEqual([{ hookId: 'h1', name: 'watch-ci' }]);
       expect(state.byAgentId['a1'].waitingOnPrMonitors).toEqual([
         { monitorId: 'm1', repo: 'o/r', prNumber: 1 },
@@ -1382,6 +1400,7 @@ describe('agent-session-slice reducer', () => {
       );
       expect(state.byAgentId['a1'].waitingOnHooks).toEqual([]);
       expect(state.byAgentId['a1'].waitingOnPrMonitors).toEqual([]);
+      expect(state.byAgentId['a1'].waitingOnScriptMonitors).toEqual([]);
     });
 
     it('folds the agent:subscriptions-changed waiting snapshot onto the session', () => {
@@ -6764,6 +6783,15 @@ describe('history segment (scrollback)', () => {
       expect(segment.startOrdinalEstimate).toBe(500);
     });
 
+    it('message-ID landings retain both sides without inventing an ordinal', () => {
+      let state = withSession('a1', [makeUniqueMessage('tail-1', 'user', ts(1000))]);
+      state = agentSessionReducer(state, seedHistoryAround('a1', [histMsg(500), histMsg(501)]));
+      const segment = getHistory(state, 'a1')!;
+      expect(segment.messages.map((m) => m.id)).toEqual(['hist-500', 'hist-501']);
+      expect(segment.gapToTail).toBe(true);
+      expect(segment.startOrdinalEstimate).toBeUndefined();
+    });
+
     it('landing rows overlapping the tail keep the segment contiguous (no gap)', () => {
       const tailRow = makeUniqueMessage('tail-1', 'user', ts(1000));
       let state = withSession('a1', [tailRow]);
@@ -6872,6 +6900,26 @@ describe('history segment (scrollback)', () => {
         }),
       );
       expect(getHistory(state, 'a1')).toBeUndefined();
+    });
+
+    it('local discard replay preserves loaded history before the next page', () => {
+      let state = withSession();
+      const loaded = [histMsg(10), histMsg(11), histMsg(12), histMsg(13), histMsg(14)];
+      state = agentSessionReducer(state, prependHistoryMessages('a1', loaded));
+      const before = state;
+      state = agentSessionReducer(
+        state,
+        chatTranscriptSnapshotApplied(
+          'a1',
+          { truncated: true, totalMessages: 20, resumed: false },
+          true,
+        ),
+      );
+      expect.soft(getHistory(state, 'a1')?.messages).toEqual(loaded);
+      const older = [histMsg(5), histMsg(6), histMsg(7), histMsg(8), histMsg(9)];
+      const next = agentSessionReducer(state, prependHistoryMessages('a1', older));
+      expect(getHistory(next, 'a1')?.messages).toEqual([...older, ...loaded]);
+      expect(state).toBe(before);
     });
 
     it('a resumed:true or plain snapshot keeps the segment', () => {
@@ -7136,6 +7184,18 @@ describe('tailCapPruned latch (live tail growth past the client cap)', () => {
       upsertSession(makeSession('a1', 'ws-1', { messages: state.byAgentId['a1'].messages })),
     );
     expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+
+    // Local replay must retain the latch belonging to the current transcript.
+    const afterReplay = agentSessionReducer(
+      state,
+      chatTranscriptSnapshotApplied(
+        'a1',
+        { resumed: false, truncated: false, totalMessages: 1 },
+        true,
+      ),
+    );
+    expect(afterReplay.byAgentId['a1'].tailCapPruned).toBe(true);
+    expect(afterReplay).toBe(state);
 
     // chatReset clears it (full transcript reset).
     const afterReset = agentSessionReducer(state, chatReset('a1'));

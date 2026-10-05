@@ -1,3 +1,4 @@
+import { workspaceInitializerGitSaga } from './workspace-initializer-git-saga';
 import {
   selectCanAdministerHost,
   selectHostAdministrationContext,
@@ -369,6 +370,7 @@ function* hydrateOwnerInitializer({ payload: context }: SelectorChannelPayload<s
 }
 
 export function* workspaceInitializerSaga() {
+  yield* fork(workspaceInitializerGitSaga);
   yield* fork(watchDebouncedOnboardingForm);
   yield* fork(watchOnboardingReset);
   yield* takeLatestFromSelector(selectHostAdministrationContext, hydrateOwnerInitializer);

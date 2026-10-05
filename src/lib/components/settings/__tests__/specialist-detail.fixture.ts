@@ -1,3 +1,5 @@
+import { appClient } from '$lib/client';
+import { agentRulesSaga } from '$store/renderer/slices/user-preferences/sagas/agent-rules-saga';
 import { store } from '$store/renderer/store';
 import { specialistsSaga } from '$store/renderer/slices/specialists/sagas/specialists-saga';
 import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
@@ -78,3 +80,18 @@ export function interceptSpecialistEditorLaunches(
 }
 
 export const startSpecialistCatalogPreview = () => store.runSaga(specialistsSaga);
+
+export function startRulesPreview() {
+  const getUserRule = appClient.settings.getUserRule;
+  appClient.settings.getUserRule = async () => ({
+    enabled: true,
+    content:
+      'Use the shared project conventions. Explain changes clearly and verify the result before finishing.',
+    updatedAt: 1750000000000,
+  });
+  const stop = store.runSaga(agentRulesSaga);
+  return () => {
+    stop();
+    appClient.settings.getUserRule = getUserRule;
+  };
+}

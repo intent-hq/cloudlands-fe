@@ -1,11 +1,18 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import fixture from '$shared/types/__fixtures__/repository-resource-read.json';
+import {
+  RepositoryResourceCaptureSchema,
+  RepositoryResourceResultSchema,
+  type RepositoryResourceSession,
+} from '$shared/types/repository-resource-read';
 import type { GitHubIssueDetails, GitHubPullRequestDetails } from '$lib/client';
 
 const integrations = vi.hoisted(() => ({
   githubPullRequest: vi.fn(),
   githubIssue: vi.fn(),
+  captureRepositoryResource: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -58,6 +65,8 @@ function deferred<T>() {
 function anchorFor(url: string, rect: Partial<DOMRect> = {}): HTMLAnchorElement {
   const anchor = document.createElement('a');
   anchor.href = url;
+  anchor.dataset.testHoverAnchor = '';
+  document.body.append(anchor);
   anchor.getBoundingClientRect = () =>
     ({ left: 100, top: 200, width: 40, height: 16, bottom: 216, right: 140, ...rect }) as DOMRect;
   return anchor;
@@ -85,6 +94,7 @@ describe('link tooltip GitHub preview state', () => {
 
   afterEach(() => {
     hideLinkTooltip();
+    document.querySelectorAll('[data-test-hover-anchor]').forEach((anchor) => anchor.remove());
     vi.useRealTimers();
   });
 
@@ -236,5 +246,162 @@ describe('link tooltip GitHub preview state', () => {
     failing.reject({ data: { code: 'rate-limited' } });
     await flush();
     expect(state.preview).toEqual({ status: 'ready', data: { kind: 'pr', ...pr(2) } });
+  });
+});
+
+describe('original GitLab hover lifetime', () => {
+  function session(result = RepositoryResourceResultSchema.parse(fixture.mergeRequest)) {
+    let retire: (() => void) | undefined;
+    const source: RepositoryResourceSession = {
+      capture: RepositoryResourceCaptureSchema.parse(fixture.capture),
+      onRetired: (listener) => {
+        retire = listener;
+        return () => {
+          retire = undefined;
+        };
+      },
+      detail: vi.fn().mockResolvedValue(result),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    return { source, retire: () => retire?.() };
+  }
+  const mrUrl = fixture.mergeRequest.outcome.snapshot.details.url;
+  const issueUrl = fixture.issue.outcome.issue.url;
+  async function mountHover(url = mrUrl) {
+    const surface = document.createElement('div');
+    surface.dataset.workspaceSurface = 'workspace-A';
+    document.body.append(surface);
+    const anchor = anchorFor(url);
+    surface.append(anchor);
+    showLinkTooltip(anchor, url);
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+    return { surface, anchor };
+  }
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.resetAllMocks();
+    hideLinkTooltip();
+  });
+  afterEach(() => {
+    hideLinkTooltip();
+    document
+      .querySelectorAll('[data-test-hover-anchor], [data-workspace-surface]')
+      .forEach((node) => node.remove());
+    vi.useRealTimers();
+  });
+
+  it('uses the exact workspace and configured full instance while keeping the original URL', async () => {
+    const h = session();
+    integrations.captureRepositoryResource.mockResolvedValue(h.source);
+    const original = mrUrl + '/diffs?view=parallel#note_42';
+    await mountHover(original);
+    expect(integrations.captureRepositoryResource).toHaveBeenCalledWith('workspace-A');
+    expect(h.source.detail).toHaveBeenCalledWith(fixture.mergeRequest.target);
+    expect(state.url).toBe(original);
+    expect(state.preview).toMatchObject({
+      status: 'ready',
+      data: { provider: 'gitlab', kind: 'pr', resource: fixture.mergeRequest.target },
+    });
+    expect(integrations.githubPullRequest).not.toHaveBeenCalled();
+    expect(integrations.githubIssue).not.toHaveBeenCalled();
+    hideLinkTooltip();
+    hideLinkTooltip();
+    expect(h.source.release).toHaveBeenCalledTimes(1);
+  });
+  it.each(['success', 'error'])(
+    'discards an older MR %s after hovering issue with the same IID',
+    async (outcome) => {
+      const first = session();
+      const second = session(RepositoryResourceResultSchema.parse(fixture.issue));
+      const slow = deferred<ReturnType<typeof RepositoryResourceResultSchema.parse>>();
+      vi.mocked(first.source.detail).mockReturnValue(slow.promise);
+      integrations.captureRepositoryResource
+        .mockResolvedValueOnce(first.source)
+        .mockResolvedValueOnce(second.source);
+      await mountHover();
+      expect(state.preview.status).toBe('loading');
+      await mountHover(issueUrl);
+      expect(first.source.release).toHaveBeenCalledTimes(1);
+      expect(state.preview).toMatchObject({
+        status: 'ready',
+        data: { kind: 'issue', resource: fixture.issue.target },
+      });
+      if (outcome === 'success')
+        slow.resolve(RepositoryResourceResultSchema.parse(fixture.mergeRequest));
+      else slow.reject(new Error('private obsolete error'));
+      await flush();
+      expect(state.preview).toMatchObject({ status: 'ready', data: { kind: 'issue' } });
+    },
+  );
+  it.each(['unmount', 'workspace', 'href', 'retirement'])(
+    'removes settled private content after %s',
+    async (reason) => {
+      const h = session();
+      integrations.captureRepositoryResource.mockResolvedValue(h.source);
+      const { surface, anchor } = await mountHover();
+      expect(state.preview.status).toBe('ready');
+      if (reason === 'unmount') anchor.remove();
+      else if (reason === 'workspace') surface.dataset.workspaceSurface = 'workspace-B';
+      else if (reason === 'href') anchor.href = issueUrl;
+      else {
+        h.retire();
+        h.retire();
+      }
+      await flush();
+      expect(state.preview).toEqual({ status: 'idle' });
+      expect(h.source.release).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('releases a capture that arrives after unmount without making a detail request', async () => {
+    const h = session();
+    const pending = deferred<RepositoryResourceSession>();
+    integrations.captureRepositoryResource.mockReturnValue(pending.promise);
+    const { anchor } = await mountHover();
+    anchor.remove();
+    await flush();
+    pending.resolve(h.source);
+    await flush();
+    expect(h.source.detail).not.toHaveBeenCalled();
+    expect(h.source.release).toHaveBeenCalledTimes(1);
+    expect(state.preview.status).toBe('idle');
+  });
+  it('does not capture without workspace context or for a work-item alias', async () => {
+    await hover(mrUrl);
+    await mountHover(mrUrl.replace('merge_requests', 'work_items'));
+    expect(integrations.captureRepositoryResource).not.toHaveBeenCalled();
+  });
+  it('releases an unconfigured host without a credential or detail request', async () => {
+    const h = session();
+    integrations.captureRepositoryResource.mockResolvedValue(h.source);
+    await mountHover(mrUrl.replace('gitlab.example.test', 'foreign.test'));
+    expect(h.source.detail).not.toHaveBeenCalled();
+    expect(h.source.release).toHaveBeenCalledTimes(1);
+    expect(state.preview.status).toBe('idle');
+  });
+  it.each([
+    'authentication',
+    'project-denied',
+    'resource-denied',
+    'optional-restricted',
+    'optional-unavailable',
+    'rate-limited',
+    'transient',
+    'unavailable',
+    'unknown',
+  ] as const)('keeps the sanitized %s distinction', async (code) => {
+    const h = session(
+      RepositoryResourceResultSchema.parse({
+        ...fixture.mergeRequest,
+        outcome: { kind: 'failure', code, status: null },
+      }),
+    );
+    integrations.captureRepositoryResource.mockResolvedValue(h.source);
+    await mountHover();
+    expect(state.preview).toMatchObject({
+      status: 'error',
+      reason: code,
+      resource: fixture.mergeRequest.target,
+    });
   });
 });

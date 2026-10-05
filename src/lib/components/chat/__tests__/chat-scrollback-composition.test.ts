@@ -258,12 +258,28 @@ describe('shouldRequestOlderHistory', () => {
     ).toBe(false);
   });
 
-  it('does not fire away from the top, while unscrollable, fetching, or exhausted', () => {
+  it('does not fire away from the top, while fetching, or exhausted', () => {
     expect(shouldRequestOlderHistory({ ...base, scrollTop: 500 })).toBe(false);
-    expect(shouldRequestOlderHistory({ ...base, canScroll: false })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, fetching: true })).toBe(false);
     expect(shouldRequestOlderHistory({ ...base, exhausted: true })).toBe(false);
   });
+
+  it.each([5, 0])(
+    'fills an unscrollable viewport with %i resident tail rows when older history exists',
+    (tailCount) => {
+      // Five short rows, or an empty resident window with known older history,
+      // must start the shared older-page path without requiring a scroll event.
+      expect(
+        shouldRequestOlderHistory({
+          ...base,
+          scrollTop: 0,
+          canScroll: false,
+          tailCount,
+          totalMessages: 120,
+        }),
+      ).toBe(true);
+    },
+  );
 
   it('extends the near-top threshold by the virtual spacer height (thumb drag)', () => {
     // Thumb dragged INTO the estimated region: scrollTop is far beyond the
@@ -657,13 +673,13 @@ describe('classifyScrollbackGesture (far-flick seek)', () => {
 
   it('inside the spacer but within the near threshold stays serial', () => {
     // 300 rows above the segment start (< 400).
-    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 300 * 100 })).toBe('serial');
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 5 * 100 })).toBe('serial');
     // Exactly at the threshold is NOT deeper than it — serial.
-    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 400 * 100 })).toBe('serial');
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 10 * 100 })).toBe('serial');
   });
 
   it('deeper than the near threshold seeks', () => {
-    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 401 * 100 })).toBe('seek');
+    expect(classifyScrollbackGesture({ ...base, scrollTop: 100_000 - 11 * 100 })).toBe('seek');
     expect(classifyScrollbackGesture({ ...base, scrollTop: 0 })).toBe('seek');
   });
 
@@ -688,8 +704,8 @@ describe('classifyScrollbackGesture (far-flick seek)', () => {
     expect(result).toBe('seek');
   });
 
-  it('threshold constants: 2-3 pages of 200 rows', () => {
-    expect(SCROLLBACK_PAGE_ROWS).toBe(200);
+  it('threshold constants: 2-3 pages of five rows', () => {
+    expect(SCROLLBACK_PAGE_ROWS).toBe(5);
     expect(SCROLLBACK_SEEK_NEAR_PAGES).toBeGreaterThanOrEqual(2);
     expect(SCROLLBACK_SEEK_NEAR_PAGES).toBeLessThanOrEqual(3);
   });
@@ -876,11 +892,11 @@ describe('classifySettledPosition (settle-point driver)', () => {
 
   it('far inside the spacer → seek', () => {
     expect(classifySettledPosition(base)).toBe('seek');
-    expect(classifySettledPosition({ ...base, scrollTop: 100_000 - 401 * 100 })).toBe('seek');
+    expect(classifySettledPosition({ ...base, scrollTop: 100_000 - 11 * 100 })).toBe('seek');
   });
 
   it('near the segment start → serial (the walk reaches it quickly)', () => {
-    const scrollTop = 100_000 - 300 * 100; // 300 rows above the start (< 400)
+    const scrollTop = 100_000 - 5 * 100; // 300 rows above the start (< 400)
     expect(
       classifySettledPosition({
         ...base,
@@ -891,7 +907,7 @@ describe('classifySettledPosition (settle-point driver)', () => {
   });
 
   it('threshold boundary: exactly at nearPages x pageSize is serial, one row deeper seeks', () => {
-    const atThreshold = 100_000 - 400 * 100;
+    const atThreshold = 100_000 - 10 * 100;
     expect(
       classifySettledPosition({
         ...base,

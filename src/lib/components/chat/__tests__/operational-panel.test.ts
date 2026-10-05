@@ -771,6 +771,42 @@ it('refreshes navigation evidence after an anchor correction changes the read sc
   expect(panel.locate(entry.key)!.observation!.revision).toBeGreaterThan(previous);
 });
 
+it('anchors a visible group header before a moving child in the same scrollport', () => {
+  const scroll = document.documentElement;
+  Object.defineProperty(document, 'scrollingElement', { configurable: true, value: scroll });
+  scroll.scrollTop = 100;
+  const groupEntry = { key: 'group', kind: 'group' as const, estimatedHeight: 140 };
+  const root = node(80);
+  const group = node(80);
+  const header = node(80);
+  header.setAttribute('data-operational-disclosure-row', '');
+  vi.mocked(group.getBoundingClientRect).mockReturnValue(new DOMRect(0, 80, 600, 140));
+  root.append(group);
+  group.append(header);
+  const children = node(108);
+  const child = node(108);
+  group.append(children);
+  children.append(child);
+  panel.attach('message', root, [groupEntry], vi.fn());
+  panel.watch(group, groupEntry.key);
+  panel.attach('details', children, [entry], vi.fn());
+  panel.watch(child, entry.key);
+  frame();
+  frame();
+  // Collapsing details below the visible header must not move the reader.
+  for (const element of [children, child])
+    vi.mocked(element.getBoundingClientRect).mockReturnValue(new DOMRect(0, 98, 600, 28));
+  panel.refreshGeometry();
+  frame();
+  expect(scroll.scrollTop).toBe(100);
+  // Real movement above the header still needs a scroll correction.
+  for (const element of [root, group, header])
+    vi.mocked(element.getBoundingClientRect).mockReturnValue(new DOMRect(0, 120, 600, 28));
+  panel.refreshGeometry();
+  frame();
+  expect(scroll.scrollTop).toBe(140);
+});
+
 it('retains zero-height current rows without shifting later navigation or scroll anchors', () => {
   const root = node();
   const empty = node();

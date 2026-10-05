@@ -143,6 +143,8 @@ export class GuestSessionOperationError extends Error {
 }
 
 export interface HostedRoster {
+  /** Canonical membership/invite events invalidate an in-flight read. */
+  invalidation?: number;
   /**
    * Load state of one hosted workspace's roster. `withheld` is terminal: the
    * caller no longer manages the workspace (daemon `-32003 Forbidden`, or the

@@ -35,7 +35,7 @@ export async function assertSettingsContentLayout(root: Locator, stacked: boolea
       };
     }),
   );
-  expect(geometry).toHaveLength(10);
+  expect(geometry).toHaveLength(9);
   for (const { id, row, label, description, control } of geometry) {
     expect(control.x, `${id} left containment`).toBeGreaterThanOrEqual(row.x);
     expect(control.right, `${id} right containment`).toBeLessThanOrEqual(row.right + 1);

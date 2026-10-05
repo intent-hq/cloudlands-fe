@@ -12,6 +12,7 @@
     type TrafficColumn,
     type TrafficTab,
   } from './traffic-view';
+  import { trafficTabLabel } from './traffic-labels';
   import TrafficTable from './TrafficTable.svelte';
   import PayloadDetails from './PayloadDetails.svelte';
   import * as m from '$shared/paraglide/messages.js';
@@ -20,14 +21,8 @@
     bridge,
   }: { consoleState: DevConsoleState; bridge: ReturnType<typeof connectDevConsole> | undefined } =
     $props();
-  let direction = $state<TrafficTab>('outbound');
-  const tabs: TrafficTab[] = ['outbound', 'inbound', 'events'];
-  const tabLabel = (value: TrafficTab) =>
-    value === 'outbound'
-      ? m.devConsole_outbound_label()
-      : value === 'inbound'
-        ? m.devConsole_inbound_label()
-        : m.devConsole_events_label();
+  let direction = $state<TrafficTab>('all');
+  const tabs: TrafficTab[] = ['all', 'outbound', 'inbound', 'events'];
   let filter = $state(''),
     column = $state<TrafficColumn>('timestamp'),
     descending = $state(false);
@@ -169,7 +164,7 @@
               tab(next);
               document.getElementById(`tab-${next}`)?.focus();
             }
-          }}>{tabLabel(value)}</Button
+          }}>{trafficTabLabel(value)}</Button
         >{/each}
     </div>
     <span class="connection"
@@ -221,6 +216,7 @@
     {#key direction}<TrafficTable
         bind:this={table}
         {rows}
+        combined={direction === 'all'}
         {selected}
         onselect={selectRecord}
         {column}

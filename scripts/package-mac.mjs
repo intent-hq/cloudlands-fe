@@ -2,11 +2,12 @@
 /**
  * Native Mac command contract:
  *   pnpm run dist:mac [--x64 | --arm64] [--publish never | always | onTag]
+ *   pnpm run dist:mac [--x64 | --arm64] --isolated-test --publish never
  * Omitted architecture uses the Node host architecture. Use one native macOS
  * runner per architecture; cross-building and universal artifacts are unsupported.
  * Other electron-builder options (including signing overrides) pass through.
  * Prepackaged app inputs are rejected because they skip native/signing hooks.
- * Config files, inheritance and project-root overrides are unsupported: staging
+ * Arbitrary config files, inheritance and project-root overrides are unsupported: staging
  * uses this repository's electron-builder.yml and native resource directories.
  * INTENTD_BIN retains copy-sidecar's local/pre-fetched sidecar contract.
  */
@@ -20,6 +21,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const builderRequire = createRequire(createRequire(import.meta.url).resolve('electron-builder'));
 
 export function resolveMacArguments(argv, platform = process.platform, hostArch = process.arch) {
+  const isolated = argv.includes('--isolated-test');
+  argv = argv.filter((arg) => arg !== '--isolated-test');
   const architectures = argv.filter((arg) => ['--x64', '--arm64'].includes(arg));
   if (architectures.length > 1) throw new Error('Select exactly one native Mac architecture.');
   const arch = native.assertNativeMacArch(
@@ -53,6 +56,9 @@ export function resolveMacArguments(argv, platform = process.platform, hostArch 
   // this fixed staging pipeline to inline overrides of the repository config.
   // Inspect parsed fields so all config aliases receive the same validation.
   const config = parsed.config;
+  if (isolated && (config !== undefined || (parsed.publish && parsed.publish !== 'never'))) {
+    throw new Error('Isolated Mac builds require the fixed test config and no publishing.');
+  }
   if (
     config !== undefined &&
     (config === null ||
@@ -84,6 +90,7 @@ export function resolveMacArguments(argv, platform = process.platform, hostArch 
   ) {
     throw new Error(`Mac packaging supports only the native ${arch} Mac target.`);
   }
+  if (isolated) builderArgs.push('--config', 'electron-builder.isolated-test.cjs');
   return { arch, builderArgs };
 }
 
@@ -97,6 +104,13 @@ export function packageMac(
   } = {},
 ) {
   const { arch, builderArgs } = resolveMacArguments(argv, platform, hostArch);
+  if (
+    argv.includes('--isolated-test') &&
+    (!/^manual-[1-9][0-9]{0,19}-[1-9][0-9]{0,2}$/.test(env.INTENT_ISOLATED_TEST_BUILD_ID || '') ||
+      !/^[a-f0-9]{40}$/.test(env.INTENT_ISOLATED_TEST_BACKEND_SHA || ''))
+  ) {
+    throw new Error('Isolated package identity is missing or invalid');
+  }
   const sidecarTarget = arch === 'x64' ? 'x86_64-apple-darwin' : 'aarch64-apple-darwin';
   if (env.INTENTD_TARGET?.trim() && env.INTENTD_TARGET.trim() !== sidecarTarget) {
     throw new Error(`INTENTD_TARGET must be ${sidecarTarget} for this native Mac build.`);

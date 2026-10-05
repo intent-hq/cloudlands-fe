@@ -4,7 +4,8 @@
  * `messageMetadata`) and the transcript surface (`isAutomatedChatMessage`
  * in previous-user-message.ts, reads `metadata`) so the rules cannot drift.
  *
- * User-typed messages never carry an origin tag; daemon-origin messages
+ * Authenticated human stamps take precedence over semantic type/source hints.
+ * Without a stamp, daemon-origin messages
  * (agent-to-agent sends, event-notification wakes, hook wakes, PR-monitor
  * wakes, system wakes) carry metadata with a `type` string, a daemon-stamped
  * `fromAgentId`, or `source: 'system'` (PROTOCOL §5.5). Benign fields that
@@ -18,14 +19,16 @@ import { isCollaborationIdentity } from '$features/collaboration-auth/identity';
 import { m } from '$shared/paraglide/messages.js';
 
 /**
- * True when a metadata object marks its message as user-authored. A message
- * is NON-user iff the metadata is an object and any of: `type` is a string
+ * True when daemon-served metadata identifies a human author. Authenticated
+ * principal stamps win; automatic ingress strips these stamps. Without one,
+ * a message is NON-user iff its metadata is an object and any of: `type` is a string
  * (except the user-authored `question_answers` wizard tag), `fromAgentId`
  * is a non-empty string, or `source === 'system'`.
  */
 export function isUserAuthoredMetadata(metadata: unknown): boolean {
   if (!metadata || typeof metadata !== 'object') return true;
   const md = metadata as Record<string, unknown>;
+  if (typeof md.fromPrincipalId === 'string' && md.fromPrincipalId.trim()) return true;
   // Explicit contract pin for dismissal notifications (`agent.dismissQuestions`,
   // `{ type: 'questions_dismissed', source: 'system', dismissedQuestionsMessageId }`).
   // Redundant with the generic string-`type` rule below, kept as belt-and-braces.
@@ -105,22 +108,31 @@ function withoutOwnAuthor(
   return author.principalId === ownPrincipalId ? null : author;
 }
 
-/**
- * Display label: profile name plus a complete qualified identity when supplied.
- * All-null human profiles leave the caller its existing unknown-human label.
- */
+/** Chat identity text uses only the author's own served profile fields. */
 export function getMessageAuthorLabel(author: MessageAuthor): string | null {
   const safe = asMessageAuthor(author);
   if (!safe) return null;
-  const name = safe.displayName?.trim() ? safe.displayName : safe.login?.trim() ? safe.login : null;
-  if (!safe.identity) return name;
-  const { provider, host, externalUserId } = safe.identity;
-  // i18n-ignore (qualified account identifiers are data, not translated prose)
-  const handle = `${provider}@${host} · ${externalUserId}`;
-  return m.presence_person_forge_label({
-    name: name ?? m.chat_chatMessage_authorUnknown_label(),
-    handle,
-  });
+  const clean = (value: string | null) =>
+    value
+      ?.replace(/\p{Cc}/gu, ' ')
+      .replace(/\p{White_Space}+/gu, ' ')
+      .trim() || null;
+  const name = clean(safe.displayName);
+  const login = clean(safe.login);
+  const handle = login ? `@${login}` : null;
+  return name && handle ? m.presence_person_forge_label({ name, handle }) : (name ?? handle);
+}
+
+/** Readable forge context for chat avatar hover/focus, never account numbers. */
+export function getMessageAuthorTooltip(author: MessageAuthor): string {
+  const name = getMessageAuthorLabel(author) ?? m.chat_chatMessage_authorUnknown_label();
+  const identity = asMessageAuthor(author)?.identity;
+  if (!identity) return name;
+  const handle =
+    identity.provider === 'github'
+      ? m.workspace_share_pinProvider_github_label()
+      : m.workspace_share_pinProvider_gitlab_label({ host: identity.host });
+  return m.presence_person_forge_label({ name, handle });
 }
 
 /**

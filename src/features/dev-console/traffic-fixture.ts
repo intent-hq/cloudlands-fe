@@ -1,6 +1,7 @@
 /** Synthetic traffic for the development-only preview and real-browser behavior tests. */
 import type {
   DevConsoleRecord,
+  DevConsoleFrame,
   DevConsolePayload,
   DevConsoleUpdate,
 } from '$shared/types/dev-console';
@@ -10,11 +11,11 @@ function payload(value: unknown, truncate = false): DevConsolePayload {
   return {
     text: truncate ? text.slice(0, 2048) : text,
     state: truncate ? 'truncated' : 'complete',
-    originalBytes: text.length,
-    retainedBytes: truncate ? 2048 : text.length,
+    originalBytes: new TextEncoder().encode(text).length,
+    retainedBytes: new TextEncoder().encode(truncate ? text.slice(0, 2048) : text).length,
   };
 }
-export type PayloadScenario = 'traffic' | 'nested' | 'oversized';
+export type PayloadScenario = 'traffic' | 'nested' | 'oversized' | 'streams';
 
 // Deliberately noncanonical whitespace: Copy payload must preserve captured bytes.
 export const nestedRequestText =
@@ -106,14 +107,18 @@ export function createTrafficFixture(count = 240, scenario: PayloadScenario = 't
       sessionId: 'fixture-session',
       revision: ++revision,
       recordIds: records.map((r) => r.id),
-      upserts: records.map(({ payload: p, response: r, ...row }) => {
+      upserts: records.map(({ payload: p, response: r, frames: _frames, ...row }) => {
         const { text: _p, ...pmeta } = p;
         const response = r ? (({ text: _r, ...meta }) => meta)(r) : undefined;
         return { ...row, payload: pmeta, response };
       }),
       fullCapture,
       retainedPayloadBytes: records.reduce(
-        (sum, r) => sum + r.payload.retainedBytes + (r.response?.retainedBytes ?? 0),
+        (sum, r) =>
+          sum +
+          (r.frames
+            ? r.frames.reduce((bytes, frame) => bytes + frame.payload.retainedBytes, 0)
+            : r.payload.retainedBytes + (r.response?.retainedBytes ?? 0)),
         0,
       ),
       evictedRecords: 12,
@@ -151,6 +156,140 @@ export function createTrafficFixture(count = 240, scenario: PayloadScenario = 't
       response: index === 0 ? captured(nestedResponseText) : undefined,
     }));
   }
+  if (scenario === 'streams') {
+    records = records.map((record, index) => {
+      const method = index === 0 ? 'chat.subscribe' : 'host.execStream';
+      const request = payload(
+        index === 0 ? { agentId: 'demo-agent' } : { command: 'cat', requestId: 'demo-exec' },
+      );
+      const response = payload(
+        index === 0 ? { subscriptionId: 'demo-chat' } : { requestId: 'demo-exec' },
+      );
+      return {
+        ...record,
+        method,
+        rpcMethod: method,
+        status: 'success',
+        streamState: 'open',
+        payload: request,
+        response,
+        durationMs: 5,
+        frameCount: 2,
+        droppedFrames: 0,
+        totalBytes: (request.originalBytes ?? 0) + (response.originalBytes ?? 0),
+        frames: [
+          {
+            sequence: 0,
+            side: 'request',
+            rpcMethod: method,
+            timestamp: record.timestamp,
+            intervalMs: 0,
+            intervalFromRequest: true,
+            payload: request,
+          },
+          {
+            sequence: 1,
+            side: 'response',
+            rpcMethod: method,
+            timestamp: record.timestamp + 5,
+            intervalMs: 5,
+            intervalFromRequest: true,
+            payload: response,
+          },
+        ],
+      };
+    });
+  }
+  let streamSequence = 0;
+  function stream() {
+    const seq = streamSequence++;
+    records = records.map((record) => {
+      if (!record.frames) return record;
+      const frames = [...record.frames];
+      const elapsed = 40 + seq * 75;
+      function add(side: DevConsoleFrame['side'], method: string, value: unknown, offset: number) {
+        const timestamp = record.timestamp + elapsed + offset;
+        const previous = frames.findLast((frame) => frame.side === side);
+        frames.push({
+          sequence: frames.length,
+          side,
+          rpcMethod: method,
+          timestamp,
+          intervalFromRequest: !previous,
+          intervalMs: timestamp - (previous?.timestamp ?? record.timestamp),
+          payload: payload(value),
+        });
+      }
+      if (record.method === 'chat.subscribe') {
+        add(
+          'response',
+          'subscription.push',
+          seq === 0
+            ? {
+                subscriptionId: 'demo-chat',
+                kind: 'snapshot',
+                seq,
+                snapshot: {
+                  agentId: 'demo-agent',
+                  messages: [],
+                  truncated: false,
+                  totalMessages: 0,
+                  nextToken: null,
+                },
+              }
+            : {
+                subscriptionId: 'demo-chat',
+                kind: 'delta',
+                seq,
+                delta: {
+                  updated: [
+                    {
+                      agentId: 'demo-agent',
+                      messageId: 'demo-message',
+                      role: 'assistant',
+                      block: { type: 'text', id: 'demo-message:0', text: `Live message ${seq}` },
+                    },
+                  ],
+                },
+              },
+          0,
+        );
+      } else {
+        add(
+          'request',
+          'host.execStream.write',
+          { requestId: 'demo-exec', stdin: `input ${seq}\n` },
+          0,
+        );
+        add('response', 'host.execStream.write', { ok: true }, 3);
+        add(
+          'response',
+          'events.event',
+          {
+            subscriptionId: 'demo-events',
+            event: {
+              type: 'host:exec:stdout',
+              id: `event-${seq}`,
+              workspaceId: 'demo-workspace',
+              timestamp: '2026-10-02T10:00:00Z',
+              actor: { type: 'system' },
+              data: { requestId: 'demo-exec', chunk: btoa(`output ${seq}\n`) },
+            },
+          },
+          8,
+        );
+      }
+      return {
+        ...record,
+        frames,
+        frameCount: frames.length,
+        durationMs: elapsed + (record.method === 'chat.subscribe' ? 0 : 8),
+        totalBytes: frames.reduce((sum, frame) => sum + (frame.payload.originalBytes ?? 0), 0),
+      };
+    });
+    update();
+  }
+  if (scenario === 'streams') stream();
   function reply() {
     records = records.map((record) =>
       record.method === 'fixture.pending'
@@ -192,5 +331,5 @@ export function createTrafficFixture(count = 240, scenario: PayloadScenario = 't
       },
     };
   };
-  return { connect, append, reply };
+  return { connect, append, reply, stream };
 }

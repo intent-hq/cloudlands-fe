@@ -22,6 +22,8 @@
   import type { Workspace } from '$shared/types';
   import {
     selectHostedRoster,
+    selectHostedPendingInviteCount,
+    selectCanManageHostedWorkspace,
     selectHostedRemovingPrincipalIds,
     selectIsHostedWorkspaceClearing,
     selectHostedFailedRemovals,
@@ -31,6 +33,7 @@
     removeHostedMemberRequested,
   } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -44,6 +47,7 @@
   const workspaceId = untrack(() => workspace.id);
   const context = selectPrincipalActionContext.select(appStore.state);
   const roster$ = selectHostedRoster(workspaceId);
+  const pendingCount$ = selectHostedPendingInviteCount(workspaceId);
   const removingIds$ = selectHostedRemovingPrincipalIds(workspaceId);
   const clearing$ = selectIsHostedWorkspaceClearing(workspaceId);
   const failedRemovals$ = selectHostedFailedRemovals(workspaceId);
@@ -80,9 +84,9 @@
   });
 </script>
 
-<section class="px-6 py-5" data-testid="hosted-workspace-roster" data-workspace-id={workspace.id}>
-  <div class="flex items-center justify-between gap-3">
-    <h3 class="min-w-0 truncate type-body font-medium text-foreground">{workspace.title}</h3>
+<section class="py-3" data-testid="hosted-workspace-roster" data-workspace-id={workspace.id}>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h3 class="min-w-0 break-words type-body font-medium text-foreground">{workspace.title}</h3>
     {#if $roster$.status !== 'withheld'}
       <Button
         variant="ghost"
@@ -98,12 +102,36 @@
       </Button>
     {/if}
   </div>
-  {#if $roster$.guestCount != null && $roster$.guestLimit != null}
+  {#if collaborators.length > 0 && $roster$.guestLimit != null}
     <p class="type-caption text-muted-foreground" data-testid="hosted-guest-seats">
       {m.workspace_share_guests_label({
-        count: formatInteger($roster$.guestCount),
+        count: formatInteger(collaborators.length),
         limit: formatInteger($roster$.guestLimit),
       })}
+    </p>
+  {/if}
+  {#if $pendingCount$ !== null && $pendingCount$ > 0}
+    <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+      <p class="type-caption text-muted-foreground">
+        {m.collaboration_lists_pending_label({ count: formatInteger($pendingCount$) })}
+      </p>
+      <Button
+        variant="ghost"
+        size="sm"
+        onclick={() => {
+          if (
+            context === selectPrincipalActionContext.select(appStore.state) &&
+            selectCanManageHostedWorkspace.select(appStore.state, workspace.id)
+          )
+            appStore.dispatch(
+              openShareDialog({ workspaceId: workspace.id, workspaceTitle: workspace.title }),
+            );
+        }}>{m.collaboration_lists_manageSharing_label()}</Button
+      >
+    </div>
+  {:else if $pendingCount$ === null && $roster$.status === 'loaded' && collaborators.length === 0}
+    <p role="status" class="mt-2 type-body text-muted-foreground">
+      {m.collaboration_lists_sharingUnknown_label()}
     </p>
   {/if}
   {#if $roster$.status === 'loading' && $roster$.members.length === 0}
@@ -118,11 +146,12 @@
     >
       {m.settings_guestSessions_roster_withheld()}
     </p>
-  {:else if $roster$.status === 'error' && $roster$.members.length === 0}
+  {:else if $roster$.status === 'error'}
     <p class="mt-2 type-body text-danger" role="alert">
       {m.settings_guestSessions_roster_error()}
     </p>
-  {:else}
+  {/if}
+  {#if collaborators.length > 0}
     <ListView
       virtualize={false}
       items={collaborators}
@@ -132,7 +161,7 @@
       class="mt-2 overflow-visible"
     >
       {#snippet row({ item: member })}
-        <div class="flex items-center justify-between gap-3 py-2">
+        <div class="flex flex-wrap items-center justify-between gap-3 py-2">
           <div class="flex min-w-0 items-center gap-2">
             <PrincipalAvatar
               avatarUrl={member.avatarUrl}
@@ -141,8 +170,8 @@
               testid="hosted-roster-avatar"
             />
             <div class="min-w-0">
-              <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
-              <p class="truncate type-caption text-muted-foreground">
+              <p class="break-words type-body text-foreground">{memberLabel(member)}</p>
+              <p class="break-words type-caption text-muted-foreground">
                 {m.settings_guestSessions_role_collaborator_label()}
                 {#if member.login && member.displayName}
                   · @{member.login}

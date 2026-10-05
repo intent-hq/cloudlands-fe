@@ -1891,6 +1891,26 @@ describe('NotificationService handleAgentIdle suppression via the bounded idle g
     expect(mockNotificationInstances.length).toBe(0);
   });
 
+  it('suppresses via the waitingOnScriptMonitors fast path without consulting the idle gate', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(
+      buildIdleEvent({
+        waitingOnScriptMonitors: [
+          {
+            monitorId: 'mon-1',
+            scriptId: 'checks',
+            runId: 'run-1',
+            scriptName: 'Checks',
+            expiresAt: '2026-10-02T10:10:00Z',
+          },
+        ],
+      }),
+    );
+
+    expect(idleGateCalls()).toEqual([]);
+    expect(mockNotificationInstances.length).toBe(0);
+  });
+
   it('does not suppress when waitingOnPrMonitors is empty', async () => {
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ waitingOnPrMonitors: [] }));

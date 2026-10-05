@@ -14,6 +14,9 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { notify } from '$lib/components/patterns/notify';
 import { store } from '../../../store';
 import { providerCatalogLoaded } from '../../provider-catalog/provider-catalog-slice';
+import { modelNameCacheSaga } from './model-name-cache-saga';
+import { MODEL_NAMES_STORAGE_KEY } from '../model-name-cache';
+import { selectLearnedModelDisplayName } from '../provider-models-selectors';
 import { modelReloadSaga } from '../../model/sagas/model-reload-saga';
 import { hydrateDefaultProvider, reloadModelsForProvider } from '../../model/model-slice';
 import { selectAvailableModels, selectLoadError } from '../../model/model-selectors';
@@ -897,4 +900,68 @@ describe('registered model reload owner: picker catalogs', () => {
       ['models.list', { providerId: 'codex' }],
     ]);
   });
+});
+
+it('serves learned names during delayed and failed catalog discovery, then learns the accepted wire response', async () => {
+  const storage = new Map<string, string>();
+  vi.mocked(window.localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
+  vi.mocked(window.localStorage.setItem).mockImplementation((key, value) => {
+    storage.set(key, value);
+  });
+  vi.mocked(window.localStorage.removeItem).mockImplementation((key) => {
+    storage.delete(key);
+  });
+  window.localStorage.setItem(
+    MODEL_NAMES_STORAGE_KEY,
+    JSON.stringify({
+      version: 1,
+      names: { codex: { remembered: 'Saved display name' } },
+    }),
+  );
+  const stopNames = store.runSaga(modelNameCacheSaga);
+  const name = (id: string) => selectLearnedModelDisplayName.select(store.state, 'codex', id);
+  try {
+    expect(name('remembered')).toBe('Saved display name');
+    expect(request).not.toHaveBeenCalled();
+    let fail!: (error: Error) => void;
+    request.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    store.dispatch(providerModelsRequested('codex', 'background', 'A'));
+    expect(request.mock.calls).toEqual([
+      ['models.list', { providerId: 'codex', workspaceId: 'A' }],
+    ]);
+    expect(name('remembered')).toBe('Saved display name');
+    expect(cache('codex', 'A')).toBeUndefined();
+    fail(new Error('Catalog unavailable'));
+    await settle();
+    expect(status('codex', 'A')?.status).toBe('error');
+    expect(name('remembered')).toBe('Saved display name');
+    expect(name('new-model')).toBeUndefined();
+    request.mockResolvedValueOnce({
+      providerId: 'codex',
+      source: 'codex',
+      models: [{ id: 'new-model', name: 'Discovered label', effortLevels: ['high'] }],
+    });
+    store.dispatch(providerModelsRequested('codex', 'retry', 'A'));
+    await settle();
+    expect(request.mock.calls[1]).toEqual([
+      'models.list',
+      {
+        providerId: 'codex',
+        workspaceId: 'A',
+        forceRefresh: true,
+      },
+    ]);
+    expect(name('new-model')).toBe('Discovered label');
+    expect(JSON.parse(window.localStorage.getItem(MODEL_NAMES_STORAGE_KEY)!)).toEqual({
+      version: 1,
+      names: { codex: { remembered: 'Saved display name', 'new-model': 'Discovered label' } },
+    });
+  } finally {
+    stopNames();
+    window.localStorage.removeItem(MODEL_NAMES_STORAGE_KEY);
+  }
 });

@@ -16,9 +16,15 @@ afterEach(() => {
 });
 
 describe('production scoped readers across a daemon downgrade', () => {
-  it.each(['text', 'chunks'] as const)(
-    'rejects %s without sending any scoped read to the replacement daemon',
-    async (kind) => {
+  it.each(
+    (['text', 'chunks'] as const).flatMap((kind) =>
+      ['11.1', '12.0', '13.0'].flatMap((protocolVersion) =>
+        ['11.0', '14.0'].map((nextVersion) => ({ kind, protocolVersion, nextVersion })),
+      ),
+    ),
+  )(
+    'rejects $kind after $protocolVersion to $nextVersion without sending any scoped read to the replacement daemon',
+    async ({ kind, protocolVersion, nextVersion }) => {
       vi.useFakeTimers();
       const requests: Array<{ connection: number; method: string }> = [];
       let connections = 0;
@@ -39,7 +45,7 @@ describe('production scoped readers across a daemon downgrade', () => {
           const first = this.connection === 1;
           const result =
             method === 'client.hello'
-              ? { clientId: 'client', protocolVersion: first ? '11.1' : '11.0' }
+              ? { clientId: 'client', protocolVersion: first ? protocolVersion : nextVersion }
               : method === 'file.readChunk'
                 ? { content: btoa(first ? 'R' : 'P'), bytesRead: 1, size: 2 }
                 : first
@@ -67,9 +73,9 @@ describe('production scoped readers across a daemon downgrade', () => {
         transport.request(method, params, options),
       );
       if (kind === 'text') {
-        const warm = transport.request('workspace.get');
+        const warm = new LiveFilesClient().read('ws', 'same.txt', { gitRootId: 'root-a' });
         await vi.advanceTimersByTimeAsync(10);
-        await warm;
+        expect(await warm).toMatchObject({ originalContent: 'root' });
         sockets[0].onclose?.();
       }
       const result = (

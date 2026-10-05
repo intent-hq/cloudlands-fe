@@ -14,6 +14,7 @@
 import { createWriteStream, promises as fs } from 'node:fs';
 import type { WriteStream } from 'node:fs';
 import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
+import { m } from '$shared/paraglide/messages.js';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
@@ -139,9 +140,51 @@ export function registerWorkspaceTransferHandlers(): void {
     // primary client, which may point at a different daemon.
     let source: JsonRpcClient;
     try {
-      source = getBackendClientForIpcEvent(event).client;
+      const bound = getBackendClientForIpcEvent(event);
+      source = bound.client;
+      if (params.proposalId) {
+        if (
+          !params.sourceWorkspacePath ||
+          params.sourceConnectionId !== bound.backendId ||
+          params.destination.kind !== 'server' ||
+          params.destination.connectionId === bound.backendId
+        ) {
+          return {
+            success: false,
+            error: m.chat_transfer_source_error(),
+            failurePhase: 'preflight',
+          };
+        }
+        const { workspace } = await source.request<{
+          workspace: {
+            id: string;
+            worktreePath?: string;
+            repositoryPath?: string;
+            archived?: boolean;
+            status?: string;
+            pendingDeleteAt?: string;
+          };
+        }>('workspace.get', { workspaceId: params.workspaceId });
+        if (
+          !workspace ||
+          workspace.id !== params.workspaceId ||
+          (workspace.worktreePath ?? workspace.repositoryPath) !== params.sourceWorkspacePath ||
+          workspace.pendingDeleteAt ||
+          workspace.status === 'Deleted'
+        ) {
+          return {
+            success: false,
+            error: m.chat_transfer_source_error(),
+            failurePhase: 'preflight',
+          };
+        }
+      }
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        ...(params.proposalId ? { failurePhase: 'preflight' } : {}),
+      };
     }
     return getRelay().start(params, source, event.sender.id);
   });

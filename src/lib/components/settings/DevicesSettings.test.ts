@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
+import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
 import {
   cleanup,
   fireEvent,
@@ -87,6 +87,24 @@ vi.mock('$lib/components/ui/toast', () => ({
 }));
 
 import DevicesSettings from './DevicesSettings.svelte';
+import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { selectCollaborationCapabilities } from '$store/renderer/slices/principal/principal-selectors';
+
+function enablePersonalDevices() {
+  store.dispatch(setLabsMultiplayerEnabled(true));
+  const { context, invalidation, presentationVersion } = store.state.principal;
+  store.dispatch(
+    principalReceived(
+      { context: context!, invalidation, presentationVersion },
+      withHostPrincipal(store.state).principal.snapshot!,
+    ),
+  );
+  expect(selectCollaborationCapabilities.select(store.state)).toMatchObject({
+    personalPairing: true,
+    authenticatedDevices: true,
+  });
+}
 
 let stopSettings: (() => void) | undefined;
 let stopConnections: (() => void) | undefined;
@@ -102,13 +120,18 @@ function connectionsSnapshot() {
   };
 }
 
-function render(component: typeof DevicesSettings, props?: ComponentProps<typeof DevicesSettings>) {
+function render(
+  component: typeof DevicesSettings,
+  props?: ComponentProps<typeof DevicesSettings>,
+  personalDevices = false,
+) {
   // Keep fixture setup at the public action boundary; run both production owners.
   stopConnections ??= store.runSaga(connectionsSaga);
   stopSettings ??= store.runSaga(settingsHydrationSaga);
   if (mocks.loaded) store.dispatch(connectionsListReceived(connectionsSnapshot()));
   if (mocks.loaded) admitLegacyPrincipal();
   if (mocks.keychainSync) store.dispatch(keychainSyncStateReceived(mocks.keychainSync));
+  if (personalDevices) enablePersonalDevices();
   return renderComponent(component, props);
 }
 
@@ -237,6 +260,40 @@ describe('DevicesSettings', () => {
     stopConnections = undefined;
     dispatchSpy.mockRestore();
     store.dispose();
+  });
+
+  it('keeps personal identity, roster, retry and pairing off Devices with Multiplayer enabled', async () => {
+    render(DevicesSettings, undefined, true);
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: m.settings_personalDevices_title() })).toBeNull();
+      expect(screen.queryByText(m.settings_personalDevices_empty_label())).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: m.settings_personalDevices_pair_label() }),
+      ).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    });
+    expect(screen.getByText('Studio Mac')).toBeTruthy();
+    expect(screen.getByText('This machine (local)')).toBeTruthy();
+    await openAction('Connect');
+    expect(mocks.open).toHaveBeenCalledWith(remote.id);
+    await fireEvent.click(screen.getByRole('button', { name: 'Add device' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('preserves local administration and legacy pairing with personal capabilities enabled', async () => {
+    mocks.settingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: true },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    render(DevicesSettings, undefined, true);
+    await openAction('Edit', m.layout_daemonStatus_localConnection_label());
+    expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    expect(screen.getByRole('spinbutton', { name: 'Port' })).toBeTruthy();
+    await fireEvent.click(
+      await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() }),
+    );
+    await waitFor(() => expect(mocks.pairingInfo).toHaveBeenCalled());
   });
 
   it('shows named remotes without duplicating their address or visible status text', () => {

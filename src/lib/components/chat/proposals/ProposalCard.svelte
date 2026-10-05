@@ -28,6 +28,7 @@
     isSpecialistEditProposal,
     isWorkspaceCreateProposal,
   } from '$shared/types/proposal';
+  import WorkspaceTransferProposalCard from '$features/workspace-transfer/components/WorkspaceTransferProposalCard.svelte';
   import BulkProposalItems from './BulkProposalItems.svelte';
   import SettingsChangeCard from './SettingsChangeCard.svelte';
   import SpecialistChangeCard from './SpecialistChangeCard.svelte';
@@ -873,6 +874,14 @@
     {m.chat_shared_discarded_label()}
     {proposal.preview.title}
   </div>
+{:else if proposal.kind === 'workspace-transfer'}
+  <WorkspaceTransferProposalCard
+    {proposal}
+    {disabled}
+    {onApply}
+    {onDiscard}
+    {suppressLocalDiscard}
+  />
 {:else if settingsProposal}
   <SettingsChangeCard
     proposal={settingsProposal}

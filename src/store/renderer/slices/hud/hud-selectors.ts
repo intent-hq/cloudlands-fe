@@ -851,7 +851,9 @@ function agentBucketOf(state: StoreState, info: WorkspaceAgentInfo): HudAgentBuc
     (session.isWaitingForOtherAgents === true ||
       (Array.isArray(session.waitingForAgentIds) && session.waitingForAgentIds.length > 0) ||
       (Array.isArray(session.waitingOnHooks) && session.waitingOnHooks.length > 0) ||
-      (Array.isArray(session.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0));
+      (Array.isArray(session.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0) ||
+      (Array.isArray(session.waitingOnScriptMonitors) &&
+        session.waitingOnScriptMonitors.length > 0));
   // STAB-125 turn-liveness (§5.5, additive AgentLite field — structural read,
   // same convention as chat-read-service): `turnInFlight: true` is the
   // daemon's authoritative "an active worker is draining a turn NOW" signal,
@@ -1030,7 +1032,9 @@ function cardAgentsOf(workspace: Workspace, state: StoreState): HudCardAgent[] {
         session?.isWaitingForOtherAgents === true ||
         waitingForAgentIds.length > 0 ||
         (Array.isArray(session?.waitingOnHooks) && session.waitingOnHooks.length > 0) ||
-        (Array.isArray(session?.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0),
+        (Array.isArray(session?.waitingOnPrMonitors) && session.waitingOnPrMonitors.length > 0) ||
+        (Array.isArray(session?.waitingOnScriptMonitors) &&
+          session.waitingOnScriptMonitors.length > 0),
       waitingForAgentIds,
     };
   });

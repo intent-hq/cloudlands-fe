@@ -14,7 +14,7 @@
 
 import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import type { AgentMessage, MessageAuthor } from './agent-message';
+import type { AgentMessage, MessageAuthor, SubmissionCorrelation } from './agent-message';
 import { AgentStatus } from './agent.types';
 import type { AgentNodeFields } from './agent-node';
 import type { AgentMetadata } from '../types';
@@ -35,7 +35,9 @@ export interface QueuedMessageContextItem {
  * A message queued to be sent to an agent.
  * Stored in backend to survive workspace switches.
  */
-export interface QueuedMessage {
+export interface QueuedMessage extends SubmissionCorrelation {
+  /** Exact full-snapshot permission to predict same-principal append, not mutation authority. */
+  mergeEligible?: boolean;
   /** Unique identifier for this queued message */
   id: string;
   /**
@@ -69,6 +71,11 @@ export interface QueuedMessage {
    * and skips it during queue drain. Only included in responses when true.
    */
   editing?: boolean;
+  /** Original active edit identity when a held entry was absorbed into this survivor. */
+  editingMessageId?: string;
+  /** Server hold marker; readiness resumes at holdUntil. */
+  holdKind?: string;
+  holdUntil?: string;
   /**
    * Optional terminal-failure requeue marker (STAB-112). When true, this message
    * was requeued after a terminal provider failure and should be visually distinguished
@@ -455,6 +462,14 @@ export interface AgentSession extends AgentNodeFields {
    */
   waitingOnHooks?: Array<{ hookId: string; name: string; nextRunAt?: string; expiresAt?: string }>;
 
+  /** Active script-run watches (§5.8a), omitted by the daemon when empty. */
+  waitingOnScriptMonitors?: Array<{
+    monitorId: string;
+    scriptId: string;
+    runId: string;
+    scriptName: string;
+    expiresAt: string;
+  }>;
   /**
    * Idle-visibility for PR-monitor-owning agents — the `waitingOnHooks`
    * companion for centralized PR monitoring (§5.42): light metadata for the

@@ -37,14 +37,22 @@ import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-s
 import {
   bulkUpsertSessions,
   clearAllSessions,
+  agentSessionRetryLastMessageRequested,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { agentMutationSaga } from '$store/renderer/slices/agent-session/sagas/agent-mutation-saga';
-import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
+import {
+  sendMessage,
+  chatQueueProcessingReceived,
+  chatSendFailed,
+  chatReset,
+} from '$store/renderer/slices/chat-state/chat-state-slice';
+import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
 import QuestionWizard from '../QuestionWizard.svelte';
 import {
   buildAnswerMessageMetadata,
   flattenAnswersToMessage,
+  getAnsweredQuestionsMessageIds,
   type QuestionAnswer,
 } from '../answer-message';
 import { derivePendingQuestions } from '../pending-questions';
@@ -256,6 +264,93 @@ describe('wizard completion → agent.sendMessage wire shape', () => {
   });
   afterEach(() => {
     appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+  });
+
+  it('retries a merged queued turn with both question-answer contributions on the wire', async () => {
+    const first = buildAnswerMessageMetadata('question-one');
+    const second = buildAnswerMessageMetadata('question-two');
+    const canonicalMetadata = {
+      ...first,
+      fromPrincipalId: 'principal-owner',
+      mergedMessageMetadata: [first, second],
+    };
+    const merged = {
+      id: 'merged-answer',
+      turnId: 'merged-answer',
+      position: 0,
+      queuedAt: '2026-10-02T00:00:00Z',
+      content: 'Q: Storage\nA: Keychain\n\nQ: Scope\nA: Desktop',
+      messageMetadata: canonicalMetadata,
+    };
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === 'agent.queueMessage')
+        return { success: true, turnId: merged.id, queuedMessage: merged };
+      if (method === 'agent.get') return { agent: daemonPendingAgent };
+      if (method === 'agent.sendMessage')
+        return { success: true, queued: false, messageId: 'retried-answer' };
+      return {};
+    });
+    const session = appStore.state.agentSessions.byAgentId[AGENT];
+    appStore.dispatch(
+      bulkUpsertSessions([
+        { ...session, isStreaming: true, isProcessing: true, isResponding: true },
+      ]),
+    );
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: 'Q: Scope\nA: Desktop', messageMetadata: second }),
+    );
+    await vi.waitFor(
+      () => {
+        expect(
+          appStore.state.chatState.byAgentId[AGENT]?.queuedRetryRecords[merged.id]?.record.text,
+        ).toBe(merged.content);
+      },
+      { timeout: 15000, interval: 50 },
+    );
+    expect(
+      backendRequestMock.mock.calls.find(([method]) => method === 'agent.queueMessage'),
+    ).toEqual([
+      'agent.queueMessage',
+      { agentId: AGENT, workspaceId: WS, content: 'Q: Scope\nA: Desktop', messageMetadata: second },
+    ]);
+    // The real processing/failure reducers promote the queued record used by Try again.
+    appStore.dispatch(chatQueueProcessingReceived(AGENT, merged.turnId));
+    appStore.dispatch(replaceAgentQueue(AGENT, [], WS));
+    appStore.dispatch(
+      bulkUpsertSessions([
+        { ...session, isStreaming: false, isProcessing: false, isResponding: false },
+      ]),
+    );
+    appStore.dispatch(chatSendFailed(AGENT, 'provider failed', merged.turnId));
+    await appStore.dispatch(agentSessionRetryLastMessageRequested(AGENT, WS));
+    const retryCall = backendRequestMock.mock.calls.find(
+      ([method]) => method === 'agent.sendMessage',
+    );
+    expect(retryCall).toEqual([
+      'agent.sendMessage',
+      {
+        agentId: AGENT,
+        workspaceId: WS,
+        content: merged.content,
+        model: 'opus4.7',
+        contextReferences: undefined,
+        imageBlocks: undefined,
+        fileBlocks: undefined,
+        noteIds: undefined,
+        stdinContext: undefined,
+        priority: undefined,
+        assistantMessageId: expect.any(String),
+        userAppMessageId: expect.any(String),
+        assistantAppMessageId: expect.any(String),
+        messageMetadata: canonicalMetadata,
+      },
+    ]);
+    expect(getAnsweredQuestionsMessageIds({ metadata: retryCall![1].messageMetadata })).toEqual([
+      'question-one',
+      'question-two',
+    ]);
+    expect(appStore.state.chatState.byAgentId[AGENT].error).toBeNull();
   });
 
   it('sends ONE flattened plain-text user message tagged with the answer metadata', async () => {
