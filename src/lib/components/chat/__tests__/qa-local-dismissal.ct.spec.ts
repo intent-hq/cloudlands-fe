@@ -12,13 +12,13 @@ test('dismisses the answered wizard before preparation or ACK and restores the c
   const component = await mount(ChatPanelComposerGeometryHost, { props });
   const choice = component.getByRole('checkbox', { name: /Start with the smallest change/ });
   await choice.click();
-  await page.screenshot({ path: info.outputPath('before-answer.png') });
+  await page.screenshot({ animations: 'disabled', path: info.outputPath('before-answer.png') });
   await component.getByRole('button', { name: 'Continue', exact: true }).click();
   const answer = component
     .locator('[data-message-role="user"]')
     .filter({ hasText: 'A: Start with the smallest change' });
   await expect(answer).toBeVisible();
-  await page.screenshot({ path: info.outputPath('answer-before-ack.png') });
+  await page.screenshot({ animations: 'disabled', path: info.outputPath('answer-before-ack.png') });
   await expect(choice).toHaveCount(0);
   const editor = component.getByTestId('message-input').locator('.tiptap-editor');
   await expect(editor).toBeVisible();
@@ -48,7 +48,10 @@ test('does not resurface between stream evidence and transcript or a late ACK', 
   });
   await expect(component.getByRole('checkbox')).toHaveCount(0);
   await expect(component.getByTestId('message-input')).toBeVisible();
-  await page.screenshot({ path: info.outputPath('evidence-before-transcript.png') });
+  await page.screenshot({
+    animations: 'disabled',
+    path: info.outputPath('evidence-before-transcript.png'),
+  });
 });
 
 test('shows a newer set during queue fallback and admits each answered set once', async ({
@@ -77,7 +80,10 @@ test('shows a newer set during queue fallback and admits each answered set once'
   await expect(queue).toHaveCount(2);
   await expect(queue.nth(0)).toContainText('A: Start with the smallest change');
   await expect(queue.nth(1)).toContainText('A: Compare two approaches');
-  await page.screenshot({ path: info.outputPath('two-question-answers-queued.png') });
+  await page.screenshot({
+    animations: 'disabled',
+    path: info.outputPath('two-question-answers-queued.png'),
+  });
 });
 
 for (const outcome of ['rejected', 'uncertain'] as const) {
@@ -102,6 +108,9 @@ for (const outcome of ['rejected', 'uncertain'] as const) {
     } else await expect(component.getByRole('checkbox')).toHaveCount(0);
     await expect(editor).toBeVisible();
     await expect(editor).toHaveText('Keep this newer draft');
-    await page.screenshot({ path: info.outputPath(`${outcome}-recovery.png`) });
+    await page.screenshot({
+      animations: 'disabled',
+      path: info.outputPath(`${outcome}-recovery.png`),
+    });
   });
 }
