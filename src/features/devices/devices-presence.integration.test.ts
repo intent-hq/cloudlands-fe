@@ -34,8 +34,7 @@ import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/p
 import { presenceTypingPulse } from '$store/renderer/slices/presence/presence-slice';
 import { MemberProvider } from '$lib/services/mentions/providers/member-provider';
 import { personalDevicesSaga } from './personal-devices-saga';
-import { selectPersonalDevices } from './personal-devices-selectors';
-import { personalDevicesRefreshRequested } from './personal-devices-slice';
+import { selectPersonalDevicesContext } from './personal-devices-selectors';
 import DevicesPresenceHarness from './__tests__/DevicesPresenceHarness.svelte';
 
 const wire = vi.hoisted(() => ({
@@ -211,18 +210,14 @@ async function start(enabled = true, hostRole: HostRole = 'member') {
 }
 async function loaded() {
   await waitFor(() => expect(personIds()).toEqual(['owner', 'host', 'offline-guest']));
-  await waitFor(() =>
-    expect(selectPersonalDevices.select(store.state)).toHaveLength(role === 'guest' ? 1 : 2),
-  );
+  await waitFor(() => expect(selectPersonalDevicesContext.select(store.state)).not.toBeNull());
   await waitFor(() => {
     for (const id of ['owner', 'host', 'offline-guest']) expect(avatar(id)).not.toBeNull();
   });
   expect(avatar('offline-host')).toBeNull();
 }
 async function openPairing() {
-  await fireEvent.click(
-    await screen.findByRole('button', { name: m.settings_personalDevices_pair_label() }),
-  );
+  await fireEvent.click(await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() }));
   await waitFor(() => expect(calls('pairing.getSelfInfo').length).toBeGreaterThan(0));
 }
 
@@ -306,7 +301,7 @@ describe('Devices and workspace presence share one admission', () => {
     expect(wire.request).not.toHaveBeenCalled();
     expect(wire.invoke).not.toHaveBeenCalled();
     expect(personIds()).toEqual([]);
-    expect(selectPersonalDevices.select(store.state)).toEqual([]);
+    expect(selectPersonalDevicesContext.select(store.state)).toBeNull();
     firehose = 'delayed-firehose';
     lease.resolve({ subscriptionId: firehose });
     await boot;
@@ -337,7 +332,7 @@ describe('Devices and workspace presence share one admission', () => {
       await waitFor(() => expect(store.state.principal.invalidation).toBe(before + 1));
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       expect(personIds()).toEqual([]);
-      expect(selectPersonalDevices.select(store.state)).toEqual([]);
+      expect(selectPersonalDevicesContext.select(store.state)).toBeNull();
       expect(await mentions()).toEqual([]);
       await fireEvent.click(oldCopy);
       expect(clipboard).not.toHaveBeenCalled();
@@ -353,12 +348,13 @@ describe('Devices and workspace presence share one admission', () => {
   );
 
   it.each(['rekey', 'unlink'] as const)(
-    'drops old list, member, snapshot and pairing replies during %s',
+    'drops old member, snapshot and pairing replies during %s',
     async (change) => {
       const pending = new Map(
-        ['client.list', 'workspace.members.list', 'presence.snapshot', 'pairing.getSelfInfo'].map(
-          (method) => [method, deferred()],
-        ),
+        ['workspace.members.list', 'presence.snapshot', 'pairing.getSelfInfo'].map((method) => [
+          method,
+          deferred(),
+        ]),
       );
       for (const [method, read] of pending) held.set(method, read.promise);
       await start();
@@ -373,7 +369,6 @@ describe('Devices and workspace presence share one admission', () => {
       });
       await waitFor(() => expect(store.state.principal.snapshot).toBeNull());
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-      pending.get('client.list')!.resolve({ clients: [device('old-only', 'owner')] });
       pending.get('workspace.members.list')!.resolve({ members: [member('old-only', 'guest')] });
       pending.get('presence.snapshot')!.resolve({
         workspaceId,
@@ -382,7 +377,7 @@ describe('Devices and workspace presence share one admission', () => {
       pending.get('pairing.getSelfInfo')!.resolve(pairing(role));
       await settle();
       expect(personIds()).toEqual([]);
-      expect(selectPersonalDevices.select(store.state)).toEqual([]);
+      expect(selectPersonalDevicesContext.select(store.state)).toBeNull();
       expect(wire.qr).not.toHaveBeenCalled();
       expect(clipboard).not.toHaveBeenCalled();
       expect(store.state.identity.currentIdentity).toEqual(change === 'rekey' ? identity : null);
@@ -437,7 +432,7 @@ describe('Devices and workspace presence share one admission', () => {
     emit('principal:identity-changed', { principalId: 'self', identity: null });
     await waitFor(() => expect(store.state.principal.error).toBe('incompatible-response'));
     expect(personIds()).toEqual([]);
-    expect(selectPersonalDevices.select(store.state)).toEqual([]);
+    expect(selectPersonalDevicesContext.select(store.state)).toBeNull();
     connect('different-host');
     await waitFor(() => expect(store.state.principal.snapshot?.principal.id).toBe('replacement'));
     expect(store.state.principal.snapshot?.principal.hostRole).toBe('guest');
@@ -453,7 +448,7 @@ describe('Devices and workspace presence share one admission', () => {
     store.dispatch(connectionStatusChanged('disconnected'));
     await settle();
     expect(personIds()).toEqual([]);
-    expect(selectPersonalDevices.select(store.state)).toEqual([]);
+    expect(selectPersonalDevicesContext.select(store.state)).toBeNull();
     stale.resolve(principal('owner', 'old-connection-only'));
     held.clear();
     await settle();
@@ -536,11 +531,9 @@ describe('Devices and workspace presence share one admission', () => {
     principalReply = { ...principal(role), hostRole: undefined };
     emit('principal:identity-changed', { principalId: 'self', identity: null });
     await waitFor(() => expect(store.state.principal.error).toBe('incompatible-response'));
-    expect(selectPersonalDevices.select(store.state)).toEqual([]);
+    expect(selectPersonalDevicesContext.select(store.state)).toBeNull();
     expect(await mentions()).toEqual([]);
-    expect(
-      screen.queryByRole('button', { name: m.settings_personalDevices_pair_label() }),
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeNull();
   });
 
   it('refreshes an offline promotion from an unchanged-roster guest notification without a global membership event', async () => {
@@ -642,11 +635,10 @@ describe('Devices and workspace presence share one admission', () => {
         ['presence:report', { focus: [], typing: null }],
       ]),
     );
-    expect(selectPersonalDevices.select(store.state)).toEqual([]);
+    expect(selectPersonalDevicesContext.select(store.state)).toBeNull();
     expect(store.state.guestSessions).toBe(saved);
     const reads = calls('presence.snapshot').length;
     emit('presence:changed', roster());
-    store.dispatch(personalDevicesRefreshRequested());
     // Observe the unchanged 250ms production debounce after the allowed cleanup.
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(calls('presence.snapshot')).toHaveLength(reads);

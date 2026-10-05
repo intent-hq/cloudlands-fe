@@ -7013,6 +7013,7 @@
   "devConsole_unknown_label": "未知",
   "devConsole_events_label": "事件清單",
   "files_secondaryRoot_unsupported_error": "此守護程序無法讀取次要 Git 根目錄中的檔案。請更新後重新連線。",
+  "settings_personalDevices_mobile_description": "將行動裝置與此執行個體配對。在 Intent Mobile 中掃描 QR 碼或使用配對連結。",
   "settings_personalDevices_title": "已登入的裝置",
   "settings_personalDevices_identity_description": "{host} 上的 {person} · {role}",
   "settings_personalDevices_pair_label": "以我的身分配對另一台裝置",

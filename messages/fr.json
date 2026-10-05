@@ -7013,6 +7013,7 @@
   "devConsole_unknown_label": "Inconnu",
   "devConsole_events_label": "Événements",
   "files_secondaryRoot_unsupported_error": "Ce daemon ne peut pas lire les fichiers des racines Git secondaires. Mettez-le à jour et reconnectez-vous.",
+  "settings_personalDevices_mobile_description": "Associez votre appareil mobile à cette instance. Scannez le code QR dans Intent Mobile ou utilisez le lien d’association.",
   "settings_personalDevices_title": "Appareils connectés à votre compte",
   "settings_personalDevices_identity_description": "{person} sur {host} · {role}",
   "settings_personalDevices_pair_label": "Associer un autre appareil à mon compte",
