@@ -11,6 +11,7 @@ export interface PendingQueueDisplayRow {
   content: string;
   imageBlocks: NonNullable<QueuedMessage['imageBlocks']>;
   fileBlocks: NonNullable<QueuedMessage['fileBlocks']>;
+  deliveryGroups?: QueuedMessage['deliveryGroups'];
   contextItems: NonNullable<QueuedMessage['contextItems']>;
   contributions: PendingSubmission[];
   /** Only withholds controls; false never grants authority. */
@@ -25,6 +26,7 @@ function confirmedRow(message: QueuedMessage, blocked: boolean): PendingQueueDis
     content: message.content,
     imageBlocks: [...(message.imageBlocks ?? [])],
     fileBlocks: [...(message.fileBlocks ?? [])],
+    deliveryGroups: message.deliveryGroups,
     contextItems: [...(message.contextItems ?? [])],
     contributions: [],
     blocksMutations: blocked,

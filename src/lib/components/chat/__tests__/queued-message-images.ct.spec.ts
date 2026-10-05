@@ -315,3 +315,176 @@ for (const failure of ['lookup', 'image'] as const) {
     });
   });
 }
+
+const groupedRetry = () => ({
+  ...queued(
+    'retry-parent',
+    [reference('second'), reference('third')],
+    'Text before images\n\nMultiple images',
+  ),
+  requeuedAfterFailure: true,
+  deliveryGroups: [
+    { content: 'Text before images' },
+    { content: '', imageBlocks: [reference('first')] },
+    {
+      content: 'Multiple images',
+      imageBlocks: [reference('second'), reference('third')],
+      fileBlocks: [{ type: 'file' as const, attachmentId: 'document', fileName: 'notes.txt' }],
+    },
+  ],
+});
+
+test('a retry displays ordered groups with parent controls and edits the full parent content', async ({
+  mount,
+  page,
+}, info) => {
+  const retry = groupedRetry();
+  const component = await mount(QueuedMessageImagesHost, { props: { messages: [retry] } });
+  const row = component.getByTestId('queued-message-row');
+  const groups = row.getByTestId('queued-message-delivery-group');
+  const widths = () =>
+    row
+      .getByTestId('queued-image-thumbnail')
+      .locator('img')
+      .evaluateAll((nodes: HTMLImageElement[]) => nodes.map((image) => image.naturalWidth));
+  await expect(row).toHaveCount(1);
+  await expect(groups).toHaveCount(3);
+  await expect(groups.nth(0).getByTestId('queued-message-text')).toHaveText('Text before images');
+  await expect(groups.nth(0).getByTestId('queued-image-thumbnail')).toHaveCount(0);
+  await expect(groups.nth(1).getByTestId('queued-message-text')).toHaveText('');
+  await expect(groups.nth(1).getByTestId('queued-image-thumbnail')).toHaveCount(1);
+  await expect(groups.nth(2).getByTestId('queued-message-text')).toHaveText('Multiple images');
+  await expect(groups.nth(2).getByTestId('queued-image-thumbnail')).toHaveCount(2);
+  await expect(groups.nth(2).getByTestId('queued-file-chip')).toHaveText('notes.txt');
+  await expect.poll(widths).toEqual([32, 48, 64]);
+  await expect(row.getByTestId('queued-message-actions')).toHaveCount(1);
+  await expect(groups.getByTestId('queued-message-actions')).toHaveCount(0);
+  await expect(row.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(1);
+  await info.attach('retry-ordered-groups.png', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+  const thumbnail = groups.nth(1).getByTestId('queued-image-thumbnail');
+  await thumbnail.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Image preview' });
+  await expect(dialog).toBeVisible();
+  await expect
+    .poll(() => dialog.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBe(32);
+  await info.attach('retry-carry-over-lightbox.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await page.keyboard.press('Escape');
+  await expect(thumbnail).toBeFocused();
+  await row.getByTestId('queued-message-content').first().press('F2');
+  await expect(row.getByRole('textbox')).toHaveValue(retry.content);
+  await info.attach('retry-parent-full-editor.png', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+  await row.getByRole('textbox').press('Escape');
+  await expect(groups).toHaveCount(3);
+  await expect.poll(widths).toEqual([32, 48, 64]);
+  await row.getByTestId('queued-message-content').first().press('F2');
+  await row.getByRole('textbox').press('Enter');
+  await expect(groups).toHaveCount(3);
+  await row.getByTestId('queued-message-content').first().press('F2');
+  await row.getByRole('textbox').fill('Replacement retry message');
+  await row.getByRole('textbox').press('Enter');
+  await expect(groups).toHaveCount(0);
+  await expect(row.getByTestId('queued-message-text')).toHaveText('Replacement retry message');
+  await expect.poll(widths).toEqual([32, 48, 64]);
+  await info.attach('retry-replacement-single-message.png', {
+    body: await component.screenshot(),
+    contentType: 'image/png',
+  });
+  await row.getByTestId('queued-message-content').press('Control+Enter');
+  await expect(row).toHaveCount(0);
+  const sent = JSON.parse((await component.getByTestId('sent-images').textContent())!);
+  expect(sent.id).toBe('retry-parent');
+  expect(sent.deliveryGroups).toBeUndefined();
+  expect(sent.imageBlocks.map((block: { attachmentId: string }) => block.attachmentId)).toEqual([
+    'first',
+    'second',
+    'third',
+  ]);
+  await info.attach('retry-parent-sent.json', {
+    body: JSON.stringify(sent, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+for (const failure of ['lookup', 'image'] as const) {
+  test(
+    'retry group images recover from ' + failure + ' failure without changing parent groups',
+    async ({ mount, page }, info) => {
+      if (failure === 'image')
+        await page.evaluate(() => {
+          document.documentElement.dataset.queueImageFailure = 'second';
+        });
+      const retry = {
+        ...groupedRetry(),
+        imageBlocks: [],
+        deliveryGroups: [
+          { content: 'Text before images' },
+          { content: '', imageBlocks: [reference('first')] },
+          {
+            content: 'Recovering and missing images',
+            imageBlocks: [reference('second'), reference('missing')],
+          },
+        ],
+      };
+      const component = await mount(QueuedMessageImagesHost, {
+        props: { messages: [retry], lookupFails: failure === 'lookup' },
+      });
+      const row = component.getByTestId('queued-message-row');
+      const groups = row.getByTestId('queued-message-delivery-group');
+      await expect(groups).toHaveCount(3);
+      const thumbnails = row.getByTestId('queued-image-thumbnail');
+      await expect
+        .poll(() =>
+          thumbnails
+            .first()
+            .locator('img')
+            .evaluate((image: HTMLImageElement) => image.naturalWidth),
+        )
+        .toBe(32);
+      await expect(thumbnails.nth(1).getByTestId('queued-image-placeholder')).toBeVisible();
+      await expect(thumbnails.nth(2).getByTestId('queued-image-placeholder')).toBeVisible();
+      await info.attach('retry-before-' + failure + '-recovery.png', {
+        body: await component.screenshot(),
+        contentType: 'image/png',
+      });
+      await page.evaluate(() => {
+        delete document.documentElement.dataset.queueImageFailure;
+      });
+      await component.getByRole('button', { name: 'Reconnect backend', exact: true }).click();
+      await expect
+        .poll(() =>
+          thumbnails
+            .nth(1)
+            .locator('img')
+            .evaluate((image: HTMLImageElement) => image.naturalWidth),
+        )
+        .toBe(48);
+      await expect(thumbnails.nth(2).getByTestId('queued-image-placeholder')).toBeVisible();
+      await expect(groups).toHaveCount(3);
+      await info.attach('retry-after-' + failure + '-recovery.png', {
+        body: await component.screenshot(),
+        contentType: 'image/png',
+      });
+      await info.attach('retry-group-request-log.json', {
+        body: (await component.getByTestId('image-requests').textContent())!,
+        contentType: 'application/json',
+      });
+      await row.getByTestId('queued-message-content').first().press('Delete');
+      await expect(row).toHaveCount(0);
+      await info.attach('retry-parent-removed.png', {
+        body: await component.screenshot(),
+        contentType: 'image/png',
+      });
+    },
+  );
+}

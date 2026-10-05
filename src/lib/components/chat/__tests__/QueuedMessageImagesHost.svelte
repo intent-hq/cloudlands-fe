@@ -154,7 +154,20 @@
     ownPrincipalId="image-author"
     onedit={async (id, content, editing) => {
       messages = messages.map((message) =>
-        message.id === id ? { ...message, content, editing } : message,
+        message.id === id
+          ? {
+              ...message,
+              content,
+              editing,
+              ...(content !== message.content && !editing && message.deliveryGroups?.length
+                ? {
+                    deliveryGroups: undefined,
+                    imageBlocks: message.deliveryGroups.flatMap((group) => group.imageBlocks ?? []),
+                    fileBlocks: message.deliveryGroups.flatMap((group) => group.fileBlocks ?? []),
+                  }
+                : {}),
+            }
+          : message,
       );
       return { success: true };
     }}

@@ -490,7 +490,10 @@
   $effect(() => {
     if (!workspaceId) return;
     for (const message of displayMessages) {
-      for (const block of message.imageBlocks ?? []) {
+      for (const block of [
+        ...(message.imageBlocks ?? []),
+        ...(message.deliveryGroups?.flatMap((group) => group.imageBlocks ?? []) ?? []),
+      ]) {
         const attachmentId = block.attachmentId;
         if (!attachmentId || referenceImageObservers.has(attachmentId)) continue;
         referenceImageObservers.set(
@@ -1035,32 +1038,42 @@
                         </Tooltip>
                       {/if}
                       <div class="queued-message-body min-w-0 flex-1">
-                        <QueuedMessageAttachments
-                          {message}
-                          {queuedImageSrc}
-                          {openImageLightbox}
-                          {handleReferenceImageError}
-                          {openQueuedFileAttachment}
-                        />
-                        <Button
-                          variant="plain"
-                          size="compact"
-                          class="type-body h-auto min-h-0 w-full min-w-0 cursor-default justify-start whitespace-normal p-0 text-left font-normal!"
-                          truncateLabel={false}
-                          labelClass="block!"
-                          data-testid="queued-message-content"
-                          data-mode="display"
-                          aria-label={memberMentionsToText(message.content)}
-                          ondblclick={() => startEdit(message)}
-                          onkeydown={(event) => handleDisplayKeydown(event, message)}
-                        >
-                          <span
-                            class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
-                            data-testid="queued-message-text"
+                        {#each message.deliveryGroups?.length ? message.deliveryGroups : [message] as group, index (index)}
+                          <div
+                            class="mb-1 last:mb-0"
+                            class:contents={!message.deliveryGroups?.length}
+                            data-testid={message.deliveryGroups?.length
+                              ? 'queued-message-delivery-group'
+                              : undefined}
                           >
-                            {memberMentionsToText(message.content)}
-                          </span>
-                        </Button>
+                            <QueuedMessageAttachments
+                              message={group}
+                              {queuedImageSrc}
+                              {openImageLightbox}
+                              {handleReferenceImageError}
+                              {openQueuedFileAttachment}
+                            />
+                            <Button
+                              variant="plain"
+                              size="compact"
+                              class="type-body h-auto min-h-0 w-full min-w-0 cursor-default justify-start whitespace-normal p-0 text-left font-normal!"
+                              truncateLabel={false}
+                              labelClass="block!"
+                              data-testid="queued-message-content"
+                              data-mode="display"
+                              aria-label={memberMentionsToText(group.content)}
+                              ondblclick={() => startEdit(message)}
+                              onkeydown={(event) => handleDisplayKeydown(event, message)}
+                            >
+                              <span
+                                class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
+                                data-testid="queued-message-text"
+                              >
+                                {memberMentionsToText(group.content)}
+                              </span>
+                            </Button>
+                          </div>
+                        {/each}
                         {#if message.requeuedAfterFailure && !isSending(message.id)}
                           <div
                             class="type-caption mt-0.5 flex items-start gap-1 text-warning-ink"
