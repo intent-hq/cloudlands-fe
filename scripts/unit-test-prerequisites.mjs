@@ -88,7 +88,7 @@ export function requiresTransferSelectionFixtures(args, { root = repo } = {}) {
       (consumer) =>
         consumer.toLocaleLowerCase().includes(file.toLocaleLowerCase()) ||
         consumer.toLocaleLowerCase().includes(normalized.toLocaleLowerCase()) ||
-        (isAbsolute(file) && resolve(root, consumer).startsWith(file)),
+        (isAbsolute(file) && resolve(root, consumer).startsWith(resolve(file))),
     );
   });
 }

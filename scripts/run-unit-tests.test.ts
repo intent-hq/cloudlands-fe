@@ -249,6 +249,37 @@ describe('test:unit package-script boundary', () => {
 });
 
 describe('canonical fixture preflight before Vitest', () => {
+  it.each(['parent', 'dot segments', 'repeated separators', 'ancestor prefix'])(
+    'preflights absolute ancestor filters with %s and preserves argv',
+    (form) => {
+      const { root, fixtureRoot } = fixture(false, true);
+      const selection =
+        form === 'dot segments'
+          ? `${root}/../`
+          : form === 'repeated separators'
+            ? `${dirname(root)}//`
+            : form === 'ancestor prefix'
+              ? dirname(root).slice(0, -1)
+              : dirname(root);
+      const args = [selection, '--maxWorkers=1'];
+      const env = { TRANSFER_SELECTION_FIXTURE_ROOT: fixtureRoot };
+      rmSync(join(fixtureRoot, 'public-sessions.json'));
+      const missing = run(root, args, env);
+      expect(missing.children, missing.output).toEqual([{ child: 'prepare', args: [] }]);
+      expect(missing.status).toBe(1);
+      expect(missing.output).toContain(join(fixtureRoot, 'public-sessions.json'));
+
+      copyFileSync(canonical.paths.generated, join(fixtureRoot, 'public-sessions.json'));
+      rmSync(join(root, 'children.jsonl'));
+      const valid = run(root, args, env);
+      expect(valid.status, valid.output).toBe(0);
+      expect(valid.children).toEqual([
+        { child: 'prepare', args: [] },
+        { child: 'vitest', args: ['run', '--config', 'vitest.config.ts', ...args] },
+      ]);
+    },
+  );
+
   it.each([
     { args: ['--maxWorkers=', '1'], filters: [] },
     { args: ['-t=', 'unrelated-name'], filters: [] },
