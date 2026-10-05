@@ -84,6 +84,7 @@ describe('NotificationSettings', () => {
       soundEnabled: false,
       soundPath: '/old.mp3',
     });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(nativeInvoke).not.toHaveBeenCalled();
   });
 

@@ -109,6 +109,8 @@
               id: 'notification-sound',
               label: m.settings_notifications_sound_label(),
               description: m.settings_notifications_sound_description(),
+              error: () =>
+                pickerFailed ? m.settings_notifications_chooseSound_error() : undefined,
             },
             {
               kind: 'switch',
@@ -139,8 +141,9 @@
       <Switch
         checked={$soundEnabled}
         onCheckedChange={(value) => appStore.dispatch(setSoundEnabled(value))}
-        aria-labelledby={labelId}
-        aria-describedby={descriptionId}
+        ariaLabelledby={labelId}
+        ariaDescribedby={descriptionId}
+        size="compact"
       />
       {#if canPickSound}
         <Button
@@ -171,14 +174,9 @@
       {/if}
     </div>
     {#if $soundPath}
-      <p class="type-caption max-w-full truncate text-muted-foreground" title={$soundPath}>
+      <p class="type-caption max-w-48 truncate text-muted-foreground" title={$soundPath}>
         <span aria-hidden="true">{soundFilename}</span>
         <span class="sr-only">{$soundPath}</span>
-      </p>
-    {/if}
-    {#if pickerFailed}
-      <p role="alert" class="type-caption text-destructive">
-        {m.settings_notifications_chooseSound_error()}
       </p>
     {/if}
   </div>
