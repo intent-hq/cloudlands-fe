@@ -7,6 +7,7 @@
  * divider anchor, or the queued messages the panel should see.
  */
 import { vi } from 'vitest';
+import { readable, type Readable } from 'svelte/store';
 import type { AgentMessage } from '$shared/types';
 
 export const scaffold = {
@@ -124,7 +125,10 @@ export function providerCatalogSelectors() {
       selectProviderCatalogEntries: [],
     }),
     selectProviderAuthFailureGuidance: { select: () => null },
-    selectProviderDisplayName: { select: (_state: unknown, id: string) => id },
+    selectProviderDisplayName: Object.assign(
+      (id: string | Readable<string>) => (typeof id === 'string' ? readable(id) : id),
+      { select: (_state: unknown, id: string) => id },
+    ),
     selectNormalizedProviderId: { select: (_state: unknown, id: string) => id },
   };
 }

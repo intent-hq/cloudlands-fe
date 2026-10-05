@@ -13,6 +13,7 @@
  * map is dropped on backend reconnect, when a restarted daemon may serve
  * different adapters/catalogs.
  */
+import type { LearnedModelNames } from './model-name-cache';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 
@@ -52,6 +53,8 @@ export interface ProviderModelsCacheEntry extends ProviderModelsFetchResult {
 }
 
 export interface ProviderModelsState {
+  /** Persistent display-only labels, retained across catalog invalidation. */
+  learnedNames: LearnedModelNames;
   /** Cached entries keyed by normalized provider id. */
   byProviderId: Record<string, ProviderModelsCacheEntry>;
   byWorkspaceId?: Record<string, Record<string, ProviderModelsCacheEntry>>;

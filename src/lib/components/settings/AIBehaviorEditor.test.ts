@@ -74,7 +74,7 @@ const mocks = vi.hoisted(() => {
       { path?: string; worktreePath?: string; repositoryPath?: string } | undefined,
     workspaceSelectCalls: [] as string[],
     // Model ids the loaded `availableModels` catalog knows about — drives the
-    // selectModelDisplayName lookup that gates default-effort clearing.
+    // selectModelCatalogEntry lookup that gates default-effort clearing.
     catalogModels: { value: [] as string[] },
     // Raw store state for the unmocked selectors (e.g. the default provider
     // read by selectEffectiveDefaultProviderId).
@@ -245,11 +245,17 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
         ? mocks.effortLevels.value[providerId ? `${providerId}:${modelId}` : modelId]
         : undefined,
   },
-  selectModelDisplayName: {
+  selectModelCatalogEntry: {
     select: (_state: unknown, providerId: string, modelId: string) =>
       mocks.catalogModels.value.includes(`${providerId}:${modelId}`) ||
       mocks.catalogModels.value.includes(modelId)
-        ? modelId
+        ? {
+            value: modelId,
+            label: modelId,
+            effortLevels:
+              mocks.effortLevels.value[`${providerId}:${modelId}`] ??
+              mocks.effortLevels.value[modelId],
+          }
         : undefined,
   },
 }));
