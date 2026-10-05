@@ -1,3 +1,7 @@
+import {
+  prepareNoteSaveContinuationPublication,
+  type NoteSaveContinuation,
+} from './note-save-continuation-publication';
 import { beforeSourceDeadline, deadlineNanoseconds } from '$shared/source-session-expiry';
 import type { readNoteLocalReceiptResult } from '$features/notes/virtualized/editing/note-receipt-local-result';
 import type { NoteAssemblyLease } from '$features/notes/virtualized/note-assembly-reservation';
@@ -272,6 +276,7 @@ export const pageDocumentSaveReconciled = createAction<
     before: NoteDocumentSession,
     proof: Awaited<ReturnType<typeof readNoteLocalReceiptResult>>,
     observedAt: number,
+    continuation?: NoteSaveContinuation,
   ]
 >('notePages/documentSaveReconciled');
 export const notePagesReducer = createReducer<NotePagesState>(initialNotePagesState);
@@ -886,9 +891,11 @@ notePagesReducer.with(pageSaveSettled, (s, { payload: [ws, id, outcome] }) =>
 );
 notePagesReducer.with(
   pageDocumentSaveReconciled,
-  (s, { payload: [ws, id, capture, before, proof, observedAt] }) =>
+  (s, { payload: [ws, id, capture, before, proof, observedAt, continuation] }) =>
     update(s, ws, id, (n) => {
-      if (n.document !== before || !currentNoteDocumentSave(n, capture)) return n;
+      if (n.document !== before) return n;
+      if (!continuation && !currentNoteDocumentSave(n, capture)) return n;
+      if (continuation && !Object.hasOwn(s.resourceLedger.owners, continuation.owner)) return n;
       if (
         'headerDigest' in capture.operation &&
         !Object.hasOwn(s.resourceLedger.owners, capture.operation.witnessOwner)
@@ -899,7 +906,7 @@ notePagesReducer.with(
       if (
         !proof.exactLocalResult ||
         proof.baseLength !== before.baseLength ||
-        proof.sourceLength !== before.length ||
+        proof.sourceLength !== (continuation ? capture.document.length : before.length) ||
         !sameNoteScope(proof.receipt.scope, receipt.scope) ||
         Object.keys(receipt).some(
           (key) =>
@@ -910,6 +917,22 @@ notePagesReducer.with(
         !beforeSourceDeadline(observedAt, deadline)
       )
         return n;
+      if (continuation) {
+        try {
+          const prepared = prepareNoteSaveContinuationPublication(n, capture, continuation);
+          if (!prepared) return n;
+          return {
+            ...invalidate(n),
+            ...prepared,
+            needsReconcile: false,
+            error: null,
+            committedDocumentSave: undefined,
+            receipts: n.receipts.filter((r) => r !== receipt),
+          };
+        } catch {
+          return n;
+        }
+      }
       const document = reconcileNoteDocumentSave(before, {
         generation: capture.document.generation,
         baseRevision: receipt.beforeRevision,

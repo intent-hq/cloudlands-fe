@@ -1,4 +1,8 @@
 import {
+  retainNoteStagedSaveContinuity,
+  noteStagedSaveContinuity,
+} from './note-staged-save-continuity';
+import {
   captureNoteNativeHistoryWitness,
   currentNoteNativeHistoryWitness,
   type NoteNativeHistoryWitness,
@@ -154,19 +158,28 @@ export async function stageNoteDocumentSave(
     throw new Error('Staged save unavailable');
   const operationId = uuid(),
     owner = `staged-save:${operationId}`,
-    witnessOwner = `staged-native:${operationId}`;
+    witnessOwner = `staged-native:${operationId}`,
+    continuityOwner = `${witnessOwner}:continuity`;
   const expiresAt = new Date(Date.now() + 600000).toISOString();
   const deadline = Date.parse(expiresAt);
   let nativeWitness: NoteNativeHistoryWitness | undefined;
+  let scratchRequired = false,
+    witnessRequired = false,
+    continuityRequired = false;
   let lost = false,
     handedOff = false;
   let admittedOperation: NoteStagedSaveOperation | undefined;
+  let retireContinuity: (() => void) | undefined;
+  let stopContinuity: (() => void) | undefined;
   let stage: ReturnType<NonNullable<NotePagesClient['createSaveOperation']>> | undefined;
   const current = () => {
     const n = read(),
       d = n?.document;
     lost ||=
       Date.now() >= deadline ||
+      (scratchRequired && !Object.hasOwn(port.read().resourceLedger.owners, owner)) ||
+      (witnessRequired && !Object.hasOwn(port.read().resourceLedger.owners, witnessOwner)) ||
+      (continuityRequired && !Object.hasOwn(port.read().resourceLedger.owners, continuityOwner)) ||
       !n ||
       n.status !== 'ready' ||
       !n.state ||
@@ -198,6 +211,7 @@ export async function stageNoteDocumentSave(
   const unsubscribe = port.subscribe(current);
   let primary: unknown;
   try {
+    scratchRequired = true;
     port.dispatch(
       a.pageResourcesRequested(
         owner,
@@ -218,6 +232,7 @@ export async function stageNoteDocumentSave(
       ),
     );
     check();
+    witnessRequired = true;
     port.dispatch(
       a.pageResourcesRequested(
         witnessOwner,
@@ -320,6 +335,52 @@ export async function stageNoteDocumentSave(
       throw new Error('Staged save admission changed');
     // Commit dispatch may mutate the daemon even if its acknowledgement is lost.
     // Keep this exact identity in Redux and recover via status, never a new ID.
+    continuityRequired = true;
+    port.dispatch(
+      a.pageResourcesRequested(
+        continuityOwner,
+        [
+          {
+            id: continuityOwner,
+            cost: {
+              // Replacement can overlap old/new native snapshots (2*4N),
+              // old/new journal snapshots (2*2N), and traversal/composition
+              // bookkeeping (4N). Charge the combined peak before callbacks.
+              // Logical DATA allowances, not a measured JavaScript heap bound.
+              payloadBytes: 24 * units,
+              stringUnits: 24 * units,
+              objectNodes: 16 * 32768,
+              physicalReads: 0,
+              assemblies: 0,
+              domNodes: 0,
+            },
+          },
+        ],
+        1,
+      ),
+    );
+    if (!Object.hasOwn(port.read().resourceLedger.owners, continuityOwner))
+      throw new Error('Continuation admission denied');
+    retireContinuity = retainNoteStagedSaveContinuity(
+      admittedOperation,
+      doc,
+      read()!,
+      captured.through,
+      options.panelId,
+      () =>
+        Object.hasOwn(port.read().resourceLedger.owners, witnessOwner) &&
+        Object.hasOwn(port.read().resourceLedger.owners, continuityOwner),
+      continuityOwner,
+    );
+    stopContinuity = port.subscribe(() => {
+      const n = read();
+      if (admittedOperation) noteStagedSaveContinuity(admittedOperation, n);
+    });
+    // Admission and subscription callbacks are executable: recheck AFTER both,
+    // immediately before the irreversible commit handoff. Loss stays latched.
+    check();
+    if (!noteStagedSaveContinuity(admittedOperation, read()))
+      throw new Error('Staged save continuity lost before commit');
     handedOff = true;
     try {
       const outcome = await client.commitStaged(admittedOperation);
@@ -358,8 +419,11 @@ export async function stageNoteDocumentSave(
               n?.committedDocumentSave?.operation !== admittedOperation))
         ) {
           stopped = true;
+          stopContinuity?.();
+          retireContinuity?.();
           if (installed) stop();
           port.dispatch(a.pageResourcesReleased(witnessOwner));
+          port.dispatch(a.pageResourcesReleased(continuityOwner));
         }
       };
       stop = port.subscribe(retire);

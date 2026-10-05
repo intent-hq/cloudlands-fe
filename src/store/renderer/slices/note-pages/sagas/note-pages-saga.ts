@@ -1,3 +1,4 @@
+import { reconcileNoteStagedSaveContinuation } from '$features/notes/virtualized/editing/note-staged-save-continuation';
 import {
   stageNoteDocumentSave,
   retryStagedDocumentSave,
@@ -403,7 +404,6 @@ function* reconcileSave(
     currentNoteDocumentSave(read(), capture) &&
     panels.length > 0 &&
     panels.every((panel) => panel in (read()?.panels ?? {}));
-  if (!current()) return;
   const abort = new AbortController();
   try {
     const port = {
@@ -413,6 +413,26 @@ function* reconcileSave(
       },
       subscribe: (changed: () => void) => redux.subscribe(changed),
     };
+    if (!current()) {
+      if ('headerDigest' in capture.operation)
+        yield* call(
+          reconcileNoteStagedSaveContinuation,
+          port,
+          client,
+          ws,
+          id,
+          capture,
+          abort.signal,
+        );
+      const continued = yield* session(ws, id);
+      if (
+        continued?.document?.baseRevision === capture.receipt.afterRevision &&
+        !continued.needsReconcile
+      )
+        for (const panel of Object.keys(continued.windows))
+          yield* put(actions.pageWindowRequested(ws, id, panel, continued.document.selection.head));
+      return;
+    }
     const capturedDocument = read()?.document;
     if (!capturedDocument) return;
     const proof =

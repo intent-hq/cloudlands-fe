@@ -1,3 +1,4 @@
+import { noteStagedSaveContinuity } from './note-staged-save-continuity';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { Schema } from '@tiptap/pm/model';
@@ -190,9 +191,9 @@ function setup(text = 'X', single = false) {
   };
   dispatch(
     a.pageResourceLimitsConfigured({
-      payloadBytes: 10_000_000,
-      stringUnits: 10_000_000,
-      objectNodes: 400_000,
+      payloadBytes: 20_000_000,
+      stringUnits: 20_000_000,
+      objectNodes: 1_000_000,
       physicalReads: 2,
       assemblies: 2,
       domNodes: 0,
@@ -725,9 +726,9 @@ function receiptFixture(
 ) {
   f.dispatch(
     a.pageResourceLimitsConfigured({
-      payloadBytes: 10_000_000,
-      stringUnits: 10_000_000,
-      objectNodes: 400_000,
+      payloadBytes: 20_000_000,
+      stringUnits: 20_000_000,
+      objectNodes: 1_000_000,
       physicalReads: 2,
       assemblies: 2,
       domNodes: 0,
@@ -1105,8 +1106,8 @@ it('refuses unadmitted native witness before any RPC and retires both reservatio
   const f = setup();
   f.dispatch(
     a.pageResourceLimitsConfigured({
-      payloadBytes: 10_000_000,
-      stringUnits: 10_000_000,
+      payloadBytes: 20_000_000,
+      stringUnits: 20_000_000,
       objectNodes: 10_000,
       physicalReads: 2,
       assemblies: 2,
@@ -1152,8 +1153,8 @@ it('retains the native witness allocation after discard until the physical inver
   expect(f.port.read().resourceLedger.resources).not.toHaveProperty(operation.witnessOwner);
   f.clean();
 });
-it.each(['edit', 'undo'] as const)(
-  'retains later native %s and every draft when the staged commit acknowledgement is pending',
+it.each(['undo'] as const)(
+  'retains unsupported native %s crossing the saved prefix while commit acknowledgement is pending',
   async (change) => {
     const f = setup();
     receiptFixture(f);
@@ -1171,8 +1172,7 @@ it.each(['edit', 'undo'] as const)(
     const running = f.run();
     await vi.waitFor(() => expect(entered).toBe(true));
     const before = f.read().document!;
-    if (change === 'edit') f.edit('Q');
-    else {
+    if (change === 'undo') {
       const undo = moveNoteDocumentHistory(before, 'undo')!;
       f.dispatch(
         a.pageDocumentPublished('w', 'n', f.read().generation, before, undo.state, undo.splices),
@@ -1249,4 +1249,311 @@ it('refuses further nested provenance reads after transcript allocation loss and
   expect(rpc.mock.calls).toHaveLength(calls);
   expect(f.read().needsReconcile).toBe(true);
   f.clean();
+});
+
+async function pendingContinuation() {
+  const f = setup();
+  const fixture = receiptFixture(f);
+  const transport = rpc.getMockImplementation()!;
+  const held = deferred();
+  let entered = false;
+  rpc.mockImplementation(async (m, raw) => {
+    const response = await transport(m, raw);
+    if (m === 'note.operation.commit') {
+      entered = true;
+      await held.promise;
+    }
+    return response;
+  });
+  const running = f.run();
+  await vi.waitFor(() => expect(entered).toBe(true));
+  const move = (direction: 'undo' | 'redo') => {
+    const before = f.read().document!;
+    const result = moveNoteDocumentHistory(before, direction)!;
+    f.dispatch(
+      a.pageDocumentPublished('w', 'n', f.read().generation, before, result.state, result.splices),
+    );
+    expect(f.read().document).toBe(result.state);
+  };
+  const settle = async () => {
+    held.resolve();
+    await running;
+    f.startSaga();
+    publishSavedState(f);
+  };
+  return { f, fixture, move, settle };
+}
+it.each(['forward', 'undo', 'redo'] as const)(
+  'adopts saved prefix while preserving later native %s and its chronological drafts',
+  async (mode) => {
+    const { f, fixture, move, settle } = await pendingContinuation();
+    f.edit('😀Q');
+    if (mode !== 'forward') move('undo');
+    if (mode === 'redo') move('redo');
+    const later = f.read().document!;
+    const drafts = f.read().drafts.slice(3);
+    const savedText = 'aZYXbc';
+    await settle();
+    await vi.waitFor(() => expect(f.read().needsReconcile).toBe(false));
+    const adopted = f.read().document!;
+    expect(adopted.history).toBe(later.history);
+    expect(adopted.selection).toBe(later.selection);
+    expect(adopted.cursor).toBe(later.cursor);
+    expect(adopted.generation).toBe(later.generation + 1);
+    expect(adopted.baseRevision).toBe('r-final');
+    expect(adopted.baseLength).toBe(fixture.doc.length);
+    expect(f.read().drafts).toEqual(drafts.map((draft) => ({ ...draft, baseRevision: 'r-final' })));
+    expect(f.read().history[0].sequence).toBe(drafts.at(-1)!.sequence);
+    const fresh = nativeFixture(savedText, 0, savedText.length);
+    fresh.w.sourceRevision = 'r-final';
+    const base = createNoteEditAuthority(
+      fresh.w,
+      fresh.projection,
+      [fresh.owner],
+      fresh.authority.doc,
+    );
+    expect(materializeNoteDocumentAuthority(adopted, base).source).toBe(
+      mode === 'undo' ? savedText : 'a😀QZYXbc',
+    );
+    if (mode === 'undo') {
+      expect(adopted.dirty).toEqual([]);
+      expect(
+        materializeNoteDocumentAuthority(moveNoteDocumentHistory(adopted, 'redo')!.state, base)
+          .source,
+      ).toBe('a😀QZYXbc');
+    } else {
+      expect(
+        materializeNoteDocumentAuthority(moveNoteDocumentHistory(adopted, 'undo')!.state, base)
+          .source,
+      ).toBe(savedText);
+    }
+    expect(f.read().receipts).toEqual([]);
+    f.clean();
+  },
+);
+it.each(['prefix-undo-revival', 'branch-revival', 'journal-revival', 'append-saved'] as const)(
+  'permanently refuses unsupported observed continuation path %s',
+  async (mode) => {
+    const { f, move, settle } = await pendingContinuation();
+    if (mode === 'append-saved') f.edit('Q', f.read().document!.history.at(-1)!.id);
+    else if (mode === 'prefix-undo-revival') {
+      move('undo');
+      move('redo');
+    } else {
+      f.edit('Q');
+      const retained = f.read();
+      if (mode === 'journal-revival') f.replace({ ...retained, drafts: retained.drafts.slice(1) });
+      else {
+        move('undo');
+        f.replace({
+          ...f.read(),
+          document: { ...f.read().document!, history: f.read().document!.history.slice(0, -1) },
+        });
+      }
+      f.replace(retained);
+    }
+    const later = f.read().document!;
+    const drafts = f.read().drafts.filter((d) => d.sequence > 3);
+    await settle();
+    expect(f.read().needsReconcile).toBe(true);
+    expect(f.read().document).toBe(later);
+    expect(f.read().drafts).toEqual(drafts);
+    expect(rpc.mock.calls.filter(([m]) => m === 'note.operation.read')).toEqual([]);
+    f.clean();
+  },
+);
+it.each(['discard', 'owner-revival', 'data-denial'] as const)(
+  'retains continuation snapshot ownership through %s',
+  async (mode) => {
+    const { f, settle } = await pendingContinuation();
+    f.edit('Q');
+    const hold = deferred();
+    let entered = false;
+    const transport = rpc.getMockImplementation()!;
+    rpc.mockImplementation(async (m, p) => {
+      if (m === 'note.operation.read' && !entered) {
+        entered = true;
+        await hold.promise;
+      }
+      return transport(m, p);
+    });
+    let stop = () => {};
+    if (mode === 'data-denial') {
+      let denied = false;
+      stop = f.port.subscribe(() => {
+        const owner = Object.keys(f.port.read().resourceLedger.owners).find((id) =>
+          id.startsWith('staged-continuation:'),
+        );
+        if (owner && !denied) {
+          denied = true;
+          f.dispatch(a.pageResourcesReleased(owner));
+        }
+      });
+    }
+    await settle();
+    if (mode === 'data-denial') {
+      expect(entered).toBe(false);
+      expect(f.read().needsReconcile).toBe(true);
+    } else {
+      await vi.waitFor(() => expect(entered).toBe(true));
+      const charged = f.port.read().resourceLedger.used.payloadBytes;
+      expect(charged).toBeGreaterThan(4 * 262144);
+      if (mode === 'discard') f.dispatch(a.pageSessionDiscarded('w', 'n'));
+      else {
+        const n = f.read();
+        f.replace({ ...n, panels: {} });
+        f.replace(n);
+      }
+      expect(f.port.read().resourceLedger.used.physicalReads).toBeGreaterThan(0);
+      expect(f.port.read().resourceLedger.used.payloadBytes).toBeGreaterThan(0);
+      hold.resolve();
+      await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+      if (mode !== 'discard') expect(f.read().needsReconcile).toBe(true);
+    }
+    stop();
+    f.clean();
+  },
+);
+
+it('permanently refuses witness sponsor loss and restoration before receipt traversal', async () => {
+  const { f, settle } = await pendingContinuation();
+  f.edit('Q');
+  const operation = f.read().pending!.operation;
+  if (!('witnessOwner' in operation)) throw new Error('Expected staged operation');
+  const resource = f.port.read().resourceLedger.resources[operation.witnessOwner];
+  f.dispatch(a.pageResourcesReleased(operation.witnessOwner));
+  f.dispatch(
+    a.pageResourcesRequested(
+      operation.witnessOwner,
+      [{ id: operation.witnessOwner, cost: resource.cost }],
+      1,
+    ),
+  );
+  expect(f.port.read().resourceLedger.owners).toHaveProperty(operation.witnessOwner);
+  await settle();
+  expect(f.read().needsReconcile).toBe(true);
+  expect(rpc.mock.calls.filter(([m]) => m === 'note.operation.read')).toEqual([]);
+  f.clean();
+});
+
+it.each(['native-token', 'checkpoint', 'revision', 'continuity-resource'] as const)(
+  'latches observed pending continuation mutation and restoration of %s',
+  async (kind) => {
+    const { f, settle } = await pendingContinuation();
+    f.edit('Q');
+    const n = f.read();
+    if (kind === 'native-token') {
+      const token = n.document!.history.at(-1)!.forwardReplay[0].tokens[0];
+      const text = token.text;
+      token.text += 'mutated';
+      f.replace(n);
+      token.text = text;
+      f.replace(n);
+    } else if (kind === 'checkpoint') {
+      const checkpoint = n.history[0],
+        sequence = checkpoint.sequence;
+      checkpoint.sequence++;
+      f.replace(n);
+      checkpoint.sequence = sequence;
+      f.replace(n);
+    } else if (kind === 'revision') {
+      f.replace({ ...n, state: { ...n.state!, sourceRevision: 'other' } });
+      f.replace(n);
+    } else {
+      const owner = Object.keys(f.port.read().resourceLedger.owners).find((id) =>
+        id.endsWith(':continuity'),
+      )!;
+      const resource = f.port.read().resourceLedger.resources[owner];
+      f.dispatch(a.pageResourcesReleased(owner));
+      f.dispatch(a.pageResourcesRequested(owner, [{ id: owner, cost: resource.cost }], 1));
+    }
+    await settle();
+    expect(f.read().needsReconcile).toBe(true);
+    expect(f.read().document).toBe(n.document);
+    expect(rpc.mock.calls.filter(([m]) => m === 'note.operation.read')).toEqual([]);
+    f.clean();
+  },
+);
+
+it('never replaces the pinned continuation witness while receipt IO retains it', async () => {
+  const { f, settle } = await pendingContinuation();
+  f.edit('Q');
+  const operation = f.read().pending!.operation;
+  if (!('headerDigest' in operation)) throw new Error('Expected staged operation');
+  const continuity = noteStagedSaveContinuity(operation, f.read())!;
+  const witness = continuity.witness;
+  const hold = deferred();
+  let entered = false;
+  const transport = rpc.getMockImplementation()!;
+  rpc.mockImplementation(async (method, params) => {
+    if (method === 'note.operation.read' && !entered) {
+      entered = true;
+      await hold.promise;
+    }
+    return transport(method, params);
+  });
+  await settle();
+  await vi.waitFor(() => expect(entered).toBe(true));
+  const n = f.read();
+  // Even an otherwise witness-admissible source state must not replace the
+  // borrowed snapshot or regain adoption after restoration during physical IO.
+  f.replace({ ...n, document: { ...n.document!, generation: n.document!.generation + 1 } });
+  expect(continuity.witness).toBe(witness);
+  f.replace(n);
+  expect(f.port.read().resourceLedger.used.physicalReads).toBeGreaterThan(0);
+  hold.resolve();
+  await vi.waitFor(() => expect(f.port.read().resourceLedger.used.physicalReads).toBe(0));
+  expect(f.read().needsReconcile).toBe(true);
+  expect(f.read().document).toBe(n.document);
+  f.clean();
+});
+
+it.each(['panel', 'document', 'scratch', 'native', 'continuity'] as const)(
+  'refuses commit after continuation-admission callback loses and restores %s',
+  async (kind) => {
+    const f = setup();
+    let changed = false;
+    const stop = f.port.subscribe(() => {
+      const owners = Object.keys(f.port.read().resourceLedger.owners);
+      if (changed || !owners.some((id) => id.endsWith(':continuity'))) return;
+      changed = true;
+      const n = f.read();
+      if (kind === 'panel') {
+        f.replace({ ...n, panels: {} });
+        f.replace(n);
+      } else if (kind === 'document') {
+        f.replace({ ...n, document: { ...n.document!, generation: n.document!.generation + 1 } });
+        f.replace(n);
+      } else {
+        const id = owners.find((id) =>
+          kind === 'scratch'
+            ? id.startsWith('staged-save:')
+            : kind === 'continuity'
+              ? id.endsWith(':continuity')
+              : id.startsWith('staged-native:') && !id.endsWith(':continuity'),
+        )!;
+        const resources = f.port.read().resourceLedger.owners[id].map((key) => ({
+          id: key,
+          cost: f.port.read().resourceLedger.resources[key].cost,
+        }));
+        f.dispatch(a.pageResourcesReleased(id));
+        f.dispatch(a.pageResourcesRequested(id, resources, 1));
+      }
+    });
+    await expect(f.run()).rejects.toThrow(/superseded|continuity lost/);
+    expect(changed).toBe(true);
+    expect(rpc.mock.calls.filter(([method]) => method === 'note.operation.commit')).toEqual([]);
+    stop();
+    f.clean();
+  },
+);
+it('denies the conservative combined snapshot peak before commit without increasing production limits', async () => {
+  const f = setup();
+  f.dispatch(
+    a.pageResourceLimitsConfigured({ ...f.port.read().resourceLedger.limit, objectNodes: 600_000 }),
+  );
+  await expect(f.run()).rejects.toThrow(/Continuation admission denied/);
+  expect(rpc.mock.calls.filter(([method]) => method === 'note.operation.commit')).toEqual([]);
+  f.clean();
+  expect(f.port.read().resourceLedger.pending).toHaveLength(0);
 });
