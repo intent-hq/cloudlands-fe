@@ -752,7 +752,7 @@ describe('WorkspaceTokenUsage', () => {
   });
 
   it.each([false, true])(
-    'persists sequential mouse selections independently (message-only: %s)',
+    'persists token selections independently with message-only entries present: %s',
     async (messageOnly) => {
       const usage = makeSelectionMatrixUsage();
       if (messageOnly) {
@@ -775,11 +775,12 @@ describe('WorkspaceTokenUsage', () => {
       const details = screen.getByTestId('token-usage-details');
       const status = details.querySelector('.preview-status')!;
       const agent = screen.getByRole('radio', {
-        name: messageOnly ? /By agent, Messages:/ : /By agent, Beta:/,
+        name: /By agent, Beta:/,
       });
       const model = screen.getByRole('radio', {
-        name: messageOnly ? /By model, Model Messages:/ : /By model, Model B:/,
+        name: /By model, Model B:/,
       });
+      expect(within(details).getAllByRole('radio')).toHaveLength(4);
       for (const radio of [agent, model]) {
         await fireEvent.pointerEnter(radio, { pointerType: 'mouse' });
         await fireEvent.pointerDown(radio, { pointerType: 'mouse', button: 0 });
@@ -789,13 +790,9 @@ describe('WorkspaceTokenUsage', () => {
         await fireEvent.pointerLeave(radio, { pointerType: 'mouse' });
       }
 
-      expect(visibleText(status)).toBe(
-        messageOnly
-          ? 'Active scope By model Model Messages 0 processed'
-          : 'Active scope By model Model B 50 processed',
-      );
+      expect(visibleText(status)).toBe('Active scope By model Model B 50 processed');
       expect(visibleText(details.querySelector('.message-composition-label')!)).toBe(
-        messageOnly ? '9 human messages and 1 agent message' : '4 human and 3 agent messages',
+        '4 human and 3 agent messages',
       );
       for (const radio of [agent, model]) {
         expect(radio.getAttribute('aria-checked')).toBe('true');
@@ -1015,21 +1012,8 @@ describe('WorkspaceTokenUsage', () => {
     ).toBeTruthy();
     expect(agentSection.querySelectorAll('.breakdown-item-control')).toHaveLength(2);
     expect(modelSection.querySelectorAll('.breakdown-item-control')).toHaveLength(2);
-    expect(within(agentSection).getAllByRole('radio')).toHaveLength(3);
-    expect(within(modelSection).getAllByRole('radio')).toHaveLength(3);
-    const messageOnlyAgent = within(agentSection).getByRole('radio', {
-      name: 'By agent, Zero token agent: 0 tokens, 0%',
-    });
-    const messageOnlyModel = within(modelSection).getByRole('radio', {
-      name: 'By model, Model Zero: 0 tokens, 0%',
-    });
-    expect(messageOnlyAgent.getAttribute('aria-describedby')).toBe(
-      'workspace-token-usage-details-ws-1-agent-message-only-0',
-    );
-    expect(
-      document.getElementById('workspace-token-usage-details-ws-1-agent-message-only-0')
-        ?.textContent,
-    ).toMatch(/1 human message and 1 agent message/);
+    expect(within(agentSection).getAllByRole('radio')).toHaveLength(2);
+    expect(within(modelSection).getAllByRole('radio')).toHaveLength(2);
     expect(alphaControl.getAttribute('aria-checked')).toBe('false');
     expect(
       within(modelSection)
@@ -1087,16 +1071,6 @@ describe('WorkspaceTokenUsage', () => {
     expect(messageCounts()).toBe('2 human and 2 agent messages');
     await fireEvent.pointerDown(modelA, { pointerType: 'touch' });
     expect(visibleText(status)).toBe('Active scope By agent Beta 800 processed');
-
-    await fireEvent.pointerDown(messageOnlyAgent, { pointerType: 'touch' });
-    await fireEvent.pointerDown(messageOnlyModel, { pointerType: 'touch' });
-    expect(messageOnlyAgent.getAttribute('aria-checked')).toBe('true');
-    expect(messageOnlyModel.getAttribute('aria-checked')).toBe('true');
-    expect(visibleText(status)).toBe('Active scope By model Model Zero 0 processed');
-    expect(messageCounts()).toBe('1 human message and 1 agent message');
-    expect(details.querySelector('.composition-strip')).toBeNull();
-    expect(agentSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
-    expect(modelSection.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
   });
 
   it('shows the unknown model bucket in the by-model section', async () => {
@@ -1360,12 +1334,7 @@ describe('WorkspaceTokenUsage', () => {
     expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe(
       `Cost $${amount.toFixed(2)}`,
     );
-    for (const group of within(details).getAllByRole('radiogroup')) {
-      const control = within(group).getByRole('radio', { name: /0 tokens, 0%/ });
-      expect(control.getAttribute('aria-checked')).toBe('true');
-      expect(control.tabIndex).toBe(0);
-      expect(control.closest('.breakdown-stack')).toBeNull();
-    }
+    expect(within(details).queryAllByRole('radiogroup')).toHaveLength(0);
     expect(
       details.querySelectorAll('.composition-strip-segment, .breakdown-stack-item'),
     ).toHaveLength(0);
@@ -1397,36 +1366,22 @@ describe('WorkspaceTokenUsage', () => {
   });
 
   it.each([2.5, 0])(
-    'retains a separate cost-only cell in a mixed matrix (cost %s)',
+    'keeps navigation on token-bearing cells in a mixed matrix (cost %s)',
     async (amount) => {
       mocks.state.usage = makeUsage({ ...costOnlyUsage(amount, true), isStale: false });
       await renderExpandedTokenUsage();
       const details = screen.getByTestId('token-usage-details');
-      const costAgent = within(screen.getByTestId('token-usage-by-agent')).getByRole('radio', {
-        name: /Agent cost: 0 tokens, 0%/,
-      });
-      const costModel = within(screen.getByTestId('token-usage-by-model')).getByRole('radio', {
-        name: /Cost Model: 0 tokens, 0%/,
-      });
       expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
       expect(visibleText(details.querySelector('.token-summary')!)).toBe('Token usage 100');
-      expect(details.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
-
-      await fireEvent.click(costAgent);
-      expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
-      await fireEvent.click(costModel);
-      expect(costAgent.getAttribute('aria-checked')).toBe('true');
-      expect(costModel.getAttribute('aria-checked')).toBe('true');
-      expect(visibleText(screen.getByTestId('token-usage-total-cost'))).toBe(
-        `Cost $${amount.toFixed(2)}`,
-      );
-      expect(visibleText(details.querySelector('.token-summary')!)).toBe('Token usage 0');
-      expect(details.querySelectorAll('.composition-strip-segment')).toHaveLength(0);
-      expect(details.querySelectorAll('.breakdown-stack-item')).toHaveLength(2);
-      expect(visibleText(screen.getByTestId('token-usage-disclosure'))).toBe('100 100 tokens used');
-
-      await fireEvent.click(screen.getByRole('radio', { name: /Token Model: 100 tokens/ }));
-      expect(costAgent.getAttribute('aria-checked')).toBe('true');
+      for (const group of within(details).getAllByRole('radiogroup')) {
+        const control = within(group).getByRole('radio');
+        await fireEvent.focus(control);
+        await fireEvent.keyDown(control, { key: 'End' });
+        expect(document.activeElement).toBe(control);
+        expect(control.getAttribute('aria-checked')).toBe('true');
+        expect(control.tabIndex).toBe(0);
+      }
+      expect(visibleText(details.querySelector('.token-summary')!)).toBe('Token usage 100');
       expect(screen.queryByTestId('token-usage-total-cost')).toBeNull();
     },
   );

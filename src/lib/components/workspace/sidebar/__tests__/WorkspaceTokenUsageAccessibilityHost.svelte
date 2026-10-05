@@ -314,14 +314,16 @@
   if (wrappedMessages) {
     const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
     const tokens = { ...zero, inputTokens: 100 };
+    const small = { ...zero, inputTokens: 1 };
+    const total = { ...zero, inputTokens: 103 };
     const messages = ['freezero', 'longname', 'tailzero'];
     store.dispatch(
       tokenUsageReceived(
         workspaceId,
         parseTokenUsage({
-          totals: tokens,
-          byAgentId: { alpha: tokens, ...Object.fromEntries(messages.map((id) => [id, zero])) },
-          byModel: { 'token-model': tokens, 'zero-model': zero },
+          totals: total,
+          byAgentId: { alpha: tokens, ...Object.fromEntries(messages.map((id) => [id, small])) },
+          byModel: { 'token-model': total },
           byAgentModel: [
             {
               agentId: 'alpha',
@@ -332,8 +334,8 @@
             },
             ...messages.map((agentId) => ({
               agentId,
-              model: 'zero-model',
-              totals: zero,
+              model: 'token-model',
+              totals: small,
               humanMessages: 0,
               agentMessages: 1,
             })),
