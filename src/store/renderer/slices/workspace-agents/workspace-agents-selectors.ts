@@ -247,6 +247,29 @@ export function resolveCanonicalInitialAgent(agents: AgentSession[]): AgentSessi
   );
 }
 
+/** First-open defaults use list order, preferring the existing top-level coordinator. */
+export function resolveExistingWorkspaceDefaultAgent(
+  agents: AgentSession[],
+  workspaceId: string,
+): AgentSession | null {
+  const eligible = agents.filter(
+    (agent) =>
+      String(agent.workspaceId) === workspaceId &&
+      agent.status !== 'deleted' &&
+      !agent.pendingDeleteAt &&
+      !agent.retiredAt &&
+      classifyAgentScope(agent) === 'topLevel' &&
+      !agent.parentSessionId,
+  );
+  return (
+    eligible.find(
+      (agent) => (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer',
+    ) ??
+    eligible[0] ??
+    null
+  );
+}
+
 /** Resolve the primary agent that should fill an otherwise empty restored layout. */
 export function resolveEmptyLayoutAgent(
   agents: AgentSession[],
