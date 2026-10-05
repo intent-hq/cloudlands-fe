@@ -1,5 +1,4 @@
 import { store } from '../../store';
-export const selectNoteResourceLedger = store.createSelector((s) => s.notePages.resourceLedger);
 export const selectNoteResourceHeld = store.createSelector((s, owner: string) =>
   Object.hasOwn(s.notePages.resourceLedger.owners, owner),
 );

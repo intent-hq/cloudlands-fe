@@ -66,7 +66,7 @@ export interface NoteWindow {
 class WindowAdmissionError extends Error {}
 /** A complete required canonical closure failed its control budget. Only a truly
  * smaller source extent may be retried; required maps are never dropped. */
-export class NoteWindowControlBudgetError extends Error {
+class NoteWindowControlBudgetError extends Error {
   constructor(
     readonly requiredBytes: number,
     readonly sourceBytes = 0,

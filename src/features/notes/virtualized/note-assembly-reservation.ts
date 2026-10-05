@@ -13,7 +13,7 @@ export interface NoteAssemblyLease {
  * separate admission. Retain the allowance until the LAST data lease disappears.
  * This conservative allowance remains subject to producer/runtime acceptance. */
 const transcript = NOTE_WINDOW_LIMITS.requests * NOTE_WINDOW_LIMITS.wireBytes;
-export const NOTE_ASSEMBLY_DATA_COST: NoteResourceCost = {
+const NOTE_ASSEMBLY_DATA_COST: NoteResourceCost = {
   payloadBytes: 8 * transcript,
   stringUnits: 8 * transcript,
   objectNodes: 8 * transcript,

@@ -80,4 +80,3 @@ export function createNoteResourceOwner(state: ResourceStateAdapter) {
     },
   };
 }
-export type NoteResourceOwner = ReturnType<typeof createNoteResourceOwner>;

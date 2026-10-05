@@ -40,6 +40,20 @@
     "playwright/app-stubs/*.ts",
     // Explicit CT root keeps its exact-source fixture imports reachable for analysis.
     "src/lib/components/markdown/__tests__/mermaid-label-contrast-exact-source.ct.spec.ts",
+    // Manually launched persisted Mermaid proof. Its generated registry and build
+    // outputs import these exact entries; Knip cannot follow generated paths.
+    "src/features/notes/virtualized/primitives/mermaid/__tests__/build-persisted-mermaid.mjs",
+    "src/features/notes/virtualized/primitives/mermaid/__tests__/persisted-mermaid-adapter.ts",
+    "src/features/notes/virtualized/primitives/mermaid/__tests__/persisted-mermaid-main.cjs",
+    "src/features/notes/virtualized/primitives/mermaid/__tests__/persisted-mermaid.config.ts",
+    "src/features/notes/virtualized/primitives/mermaid/__tests__/persisted-mermaid.native.ts",
+    // CommonJS helpers loaded by createRequire in the actual capture/store tests.
+    "src/features/notes/virtualized/primitives/mermaid/__tests__/test-paint-capture.cjs",
+    "src/features/notes/virtualized/primitives/mermaid/__tests__/test-paint-store.cjs",
+    // Prepared cross-process interfaces supplied to separately built host/session
+    // compositions. Preserve their exports without treating them as active routes.
+    "src/features/notes/primitive-host/shared/contract.ts",
+    "src/shared/source-session-ipc.ts",
     // Loaded via <script src> in operate-patterns.visual.html (visual test harness)
     "src/lib/components/ui/card/operate-patterns.visual.ts",
     // Loaded via <script type="module"> in test/fixtures/browser-lifetime/index.html

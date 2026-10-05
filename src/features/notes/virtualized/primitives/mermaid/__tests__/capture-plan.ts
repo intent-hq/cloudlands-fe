@@ -1,6 +1,6 @@
 // TEST ONLY compositor camera. This is not an artifact wire/profile contract.
-export const CAMERA_SIZE = 256;
-export const BAND_HEIGHT = 64;
+const CAMERA_SIZE = 256;
+const BAND_HEIGHT = 64;
 export interface Box {
   left: number;
   top: number;
