@@ -479,6 +479,18 @@ function cleanExplicitPaths(
 }
 
 export class LiveGitClient implements GitClient {
+  async originUrl(repoPath: string): Promise<string | null> {
+    try {
+      const result = await backendRequest<{ url?: unknown }>('git.getRemoteUrl', {
+        repoPath,
+        remoteName: 'origin',
+      });
+      return typeof result?.url === 'string' ? result.url : null;
+    } catch {
+      return null;
+    }
+  }
+
   async status(
     workspaceId: string,
     options?: { forceRefresh?: boolean },

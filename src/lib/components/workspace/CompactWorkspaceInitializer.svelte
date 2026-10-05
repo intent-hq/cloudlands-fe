@@ -167,6 +167,11 @@
     selectCheckoutCanCreate,
   } from '$store/renderer/slices/repository-checkout/repository-checkout-selectors';
   import { selectLabsGitLabEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectGitLabAuthInstanceBaseUrl,
+    selectGitLabAuthIsConfigured,
+    selectGitLabStatusReady,
+  } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -523,6 +528,9 @@
   let isValidPath = $state(savedState?.isValidPath ?? false);
   const checkoutFormId = uuidv4();
   const labsGitLab$ = selectLabsGitLabEnabled();
+  const gitlabInstance$ = selectGitLabAuthInstanceBaseUrl();
+  const gitlabConfigured$ = selectGitLabAuthIsConfigured();
+  const gitlabStatusReady$ = selectGitLabStatusReady();
   const checkoutForm$ = selectCheckoutForm(checkoutFormId);
   const checkoutProjects$ = selectCheckoutProjects(checkoutFormId);
   const checkoutBranches$ = selectCheckoutBranches(checkoutFormId);
@@ -573,8 +581,9 @@
     appStore.dispatch(projectSelected(checkoutFormId, scopeKey, path));
   }
   const gitlabPicker = $derived<GitLabProjectPickerProps>({
+    authenticated: $gitlabStatusReady$ && $gitlabConfigured$,
     scopeKey: checkoutScope,
-    instanceBaseUrl: $checkoutForm$?.capture?.instanceBaseUrl,
+    instanceBaseUrl: $gitlabInstance$,
     query: $checkoutForm$?.projectQuery ?? '',
     page: checkoutPickerPage($checkoutForm$, $checkoutProjects$, 'projects'),
     copy: checkoutPickerCopy('projects'),
