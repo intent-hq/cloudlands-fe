@@ -1,3 +1,4 @@
+import { composeNoteEdits } from '$features/notes/virtualized/editing/note-edit-plan';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
@@ -850,21 +851,33 @@ async function draftSaveHarness() {
   client.push(tuple);
   await flush();
   await flush();
-  const draft = (sequence: number, start: number, end: number, text: string) =>
-    r.dispatch(
-      a.pageDraftChanged('ws-a', 'spec', {
-        scope,
-        sequence,
-        baseRevision: 'r:7',
-        splices: [{ start, end, text }],
-        selection: {
-          anchor: start + text.length,
-          head: start + text.length,
-          anchorAffinity: 'after',
-          headAffinity: 'after',
-        },
-      }),
-    );
+  await vi.waitFor(() => {
+    const window = r.state().byWorkspaceId['ws-a'].notes.spec.windows.p;
+    expect(window.error).toBeNull();
+    expect(window.value).toBeDefined();
+  });
+  // Controlled document-owner publication: legacy pageDraftChanged deliberately
+  // gates an already initialized document. Native transaction/history behavior is
+  // covered by the document-owner suites; this fixture drives save scheduling.
+  const draft = (sequence: number, start: number, end: number, text: string) => {
+    const note = r.state().byWorkspaceId['ws-a'].notes.spec;
+    const before = note.document!;
+    const splices = [{ start, end, text }];
+    const after = {
+      ...before,
+      generation: before.generation + 1,
+      length: before.length + text.length - end + start,
+      dirty: composeNoteEdits(before.baseLength, [{ splices: before.dirty }, { splices }]),
+      selection: {
+        anchor: start + text.length,
+        head: start + text.length,
+        anchorAffinity: 1 as const,
+        headAffinity: 1 as const,
+      },
+    };
+    r.dispatch(a.pageDocumentPublished('ws-a', 'spec', note.generation, before, after, splices));
+    expect(r.state().byWorkspaceId['ws-a'].notes.spec.history.at(-1)?.sequence).toBe(sequence);
+  };
   return { ...r, save, client, draft };
 }
 
@@ -884,7 +897,7 @@ it('builds one base-revision save from local typing and retains its lost-ack ide
   expect(r.save).toHaveBeenCalledTimes(1);
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.pending?.operation).toBe(pending.operation);
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.drafts).toHaveLength(3);
-  expect(r.state().byWorkspaceId['ws-a'].notes.spec.history).toHaveLength(3);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.history).toHaveLength(1);
   vi.unstubAllGlobals();
 });
 
@@ -940,7 +953,7 @@ it('keeps oversized edits dirty and only clears a proven local insertion/inverse
   await flush();
   expect(r.save).not.toHaveBeenCalled();
   expect(r.state().byWorkspaceId['ws-a'].notes.spec.drafts).toHaveLength(0);
-  expect(r.state().byWorkspaceId['ws-a'].notes.spec.history).toHaveLength(2);
+  expect(r.state().byWorkspaceId['ws-a'].notes.spec.history).toHaveLength(1);
   r.draft(3, 0, 1, 'x'.repeat(16_385));
   r.dispatch(a.pageSaveDraftsRequested('ws-a', 'spec'));
   await flush();
