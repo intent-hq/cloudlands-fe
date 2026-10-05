@@ -74,7 +74,7 @@ function* hydrateEnabled(manager: HardwareConsoleManager, lifecycle: Integration
     hydrated = true;
   } catch (error) {
     logger.error('Enabled-flag hydration failed; dispatching default (enabled)', { error });
-    yield* put(hydrateHardwareConsoleEnabled(true));
+    yield* put(hydrateHardwareConsoleEnabled(true, false));
   }
 
   lifecycle.hydrationSettled = true;

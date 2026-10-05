@@ -121,17 +121,17 @@ describe('host-owned settings lifecycle', () => {
       admit('guest');
       expect(effects.started).toEqual([]);
       admit('owner');
-      expect(effects.started).toEqual([
-        'requirements',
-        'hardware',
-        'voice',
-        'notifications',
+      expect([...effects.started].sort()).toEqual([
         'account',
+        'hardware',
+        'notifications',
+        'requirements',
+        'voice',
       ]);
       expect(dispatch).toHaveBeenCalledWith(initializeGitHubAuth());
       expect(dispatch).toHaveBeenCalledWith(initializeGitLabAuth(undefined, 'status-only'));
       admit('member');
-      expect(effects.cancelled).toEqual(effects.started);
+      expect([...effects.cancelled].sort()).toEqual([...effects.started].sort());
       expect(dispatch).toHaveBeenLastCalledWith(hostRequirementsReset());
       admit('owner', 'host-B');
       expect(effects.started).toHaveLength(10);

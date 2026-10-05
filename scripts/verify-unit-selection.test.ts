@@ -1,5 +1,6 @@
 // @vitest-environment node
 // @verify-changed-triggers: scripts/verify-changed.mjs, scripts/verify-unit-selection.mjs
+// @verify-changed-triggers: scripts/generate-build-config.cjs, scripts/unit-test-prerequisites.mjs
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
@@ -13,7 +14,12 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseArgs, runCli, runVerificationPlan } from './verify-changed.mjs';
+import {
+  createVerificationPlan,
+  parseArgs,
+  runCli,
+  runVerificationPlan,
+} from './verify-changed.mjs';
 
 const plannerUrl = new URL('./verify-changed.mjs', import.meta.url).href;
 const roots: string[] = [];
@@ -185,6 +191,64 @@ describe('resolved unit selections with installed Vitest', () => {
     expect(bodies()).toEqual([]);
   });
 
+  it.each(['missing', 'obsolete'])(
+    'prepares %s build config before discovery and budget rejection',
+    async (state) => {
+      const { root, write, bodies } = fixture();
+      write(
+        'scripts/generate-build-config.cjs',
+        readFileSync('scripts/generate-build-config.cjs', 'utf8'),
+      );
+      mkdirSync(join(root, 'src/main'), { recursive: true });
+      if (state === 'obsolete') {
+        write('src/main/build-config.generated.ts', 'export const BUILD_CONFIG = {};');
+      }
+      write(
+        'vitest.config.ts',
+        `import { BUILD_CONFIG } from './src/main/build-config.generated';
+if (BUILD_CONFIG.ISOLATED_TEST_BUILD_ID !== 'manual-123-1') throw new Error('stale build config');
+export default { test: { environment: 'node', maxWorkers: 1 } };`,
+      );
+      vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+      vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', 'a'.repeat(40));
+      const planned = createVerificationPlan(['direct.test.ts', 'declared.test.ts'], {
+        root,
+        ctTests: [],
+        declaredSuites: [],
+      });
+      const selected = {
+        ...planned,
+        checks: planned.checks.filter((entry) => entry.id === 'vitest-direct'),
+      };
+      expect(selected.checks).toHaveLength(1);
+      const lines: string[] = [];
+      await expect(
+        runVerificationPlan(selected, root, {
+          maxUnitFiles: 1,
+          log: (line: string) => lines.push(line),
+        }),
+      ).rejects.toThrow(/2.*--max-unit-files 1/);
+      expect(lines).toContain('verify:changed: resolved unit files: 2 unique');
+      expect(bodies()).toEqual([]);
+      expect(existsSync(join(root, 'imports.jsonl'))).toBe(false);
+      await runVerificationPlan(selected, root, { maxUnitFiles: 2, log() {} });
+      expect(bodies()).toEqual(['declared.test.ts', 'direct.test.ts']);
+      rmSync(join(root, 'imports.jsonl'));
+      rmSync(join(root, 'bodies.jsonl'));
+      vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', '');
+      const discover = vi.fn();
+      await expect(
+        runVerificationPlan(selected, root, {
+          maxUnitFiles: 2,
+          resolveUnitSelections: discover,
+          log() {},
+        }),
+      ).rejects.toThrow(/failed/);
+      expect(discover).not.toHaveBeenCalled();
+      expect(existsSync(join(root, 'imports.jsonl'))).toBe(false);
+      expect(bodies()).toEqual([]);
+    },
+  );
   it('fails before discovery when prerequisites fail, and before bodies on an invalid config', async () => {
     const { root, write, bodies } = fixture();
     const lines: string[] = [];
@@ -240,7 +304,12 @@ it('invariant', () => appendFileSync('bodies.jsonl', JSON.stringify('scripts/inv
   });
 
   it('forwards resolved-plan and the budget through the CLI after environment checks', async () => {
-    const { root, bodies } = fixture();
+    const { root, bodies, write } = fixture();
+    write(
+      'scripts/generate-build-config.cjs',
+      readFileSync('scripts/generate-build-config.cjs', 'utf8'),
+    );
+    mkdirSync(join(root, 'src/main'), { recursive: true });
     const calls: string[] = [];
     const lines: string[] = [];
     const options = {

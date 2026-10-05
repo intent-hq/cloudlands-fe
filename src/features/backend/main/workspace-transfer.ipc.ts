@@ -60,9 +60,10 @@ function broadcastProgress(event: TransferProgressEvent): void {
  */
 async function createTargetClient(connectionId: string): Promise<TargetClientHandle> {
   const { config } = await buildConfigForConnection(connectionId);
+  const clientConfig = Object.freeze({ ...config });
   const client = new JsonRpcClient({
-    config,
-    helloParams: async () => ({ clientId: await getOrCreateClientId() }),
+    config: clientConfig,
+    helloParams: async () => ({ clientId: await getOrCreateClientId(clientConfig) }),
   });
   client.on('error', (error: Error) => {
     logger.warn('Transfer target client transport error', { error: error.message });

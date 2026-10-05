@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.205.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.204.0...v2.205.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* add agent node placement and hub controls ([#3015](https://github.com/intent-hq/cloudlands-fe/issues/3015)) ([ed88004](https://github.com/intent-hq/cloudlands-fe/commit/ed88004df0cabf5d171e077cabf7ed1c0983b14f))
+
+
+### 🐛 Bug Fixes
+
+* keep hardware window cycling available in shared windows ([#3197](https://github.com/intent-hq/cloudlands-fe/issues/3197)) ([f66fd7e](https://github.com/intent-hq/cloudlands-fe/commit/f66fd7ec7621b60f62e32a3780137e9e4f62c6a3))
+* keep opened browser tabs registered with the daemon ([#3194](https://github.com/intent-hq/cloudlands-fe/issues/3194)) ([f84cd63](https://github.com/intent-hq/cloudlands-fe/commit/f84cd636d1840835dc5260f68b4baf1fdb48fc3e))
+
 ## [2.204.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.203.7...v2.204.0) (2026-10-05)
 
 
