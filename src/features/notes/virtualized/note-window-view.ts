@@ -36,6 +36,10 @@ import {
   type NoteMarkerCapture,
   type NoteMarkerCaptureInput,
 } from './editing/note-marker-capture';
+import {
+  captureNoteMarkerSelection,
+  isNoteMarkerSelectionCapture,
+} from './editing/note-marker-selection-capture';
 import type { NoteSourceSelection } from './note-source-selection';
 export type { NoteSourceSelection } from './note-source-selection';
 
@@ -250,6 +254,118 @@ export class NoteWindowView {
       true,
     );
   }
+  /** Selection output uses the read-only marker lease, never an editing authority.
+   * Every executable owner check precedes the producer's final native proof. */
+  borrowMarkerSelectionMarkdown(
+    identity: NoteSelectionMarkdownIdentity,
+    operationCurrent: () => boolean,
+  ) {
+    let snapshot:
+      | { editor: Editor; projection: SourceProjection; identity: NoteSelectionMarkdownIdentity }
+      | undefined;
+    let marker: ReturnType<NoteWindowView['borrowMarkerOccurrence']> | undefined;
+    {
+      const editor = this.editor,
+        projection = this.committedProjection;
+      const paragraph = editor?.state.doc.firstChild;
+      if (!editor || !projection || !paragraph || paragraph.childCount !== 3)
+        // i18n-ignore (internal typed refusal; not rendered UI text)
+        throw new UnsupportedNoteMarkerCapture('Unsupported marker selection context');
+      const position = 1 + paragraph.child(0).nodeSize;
+      snapshot = { editor, projection, identity };
+      marker = this.borrowMarkerOccurrence(identity, position, operationCurrent);
+    }
+    let captured: ReturnType<typeof captureNoteMarkerSelection> | undefined;
+    let lost = false,
+      released = false;
+    const listeners = new Set<() => void>();
+    const lose = () => {
+      if (lost) return;
+      lost = true;
+      captured = undefined;
+      snapshot = undefined;
+      marker?.retire();
+      for (const listener of [...listeners]) {
+        try {
+          listener();
+        } catch (error) {
+          logger.error('Failed to notify marker selection loss', error);
+        }
+      }
+    };
+    const prove = () => {
+      const s = snapshot,
+        borrowed = marker;
+      if (!s || !borrowed) throw new Error('Marker selection borrow retired');
+      return captureNoteMarkerSelection(s.editor.view, {
+        projection: s.projection,
+        identity: s.identity,
+        selection: this.getSelection(),
+        current: borrowed.current,
+      });
+    };
+    const current = () => {
+      if (lost || released || !captured || !snapshot) return false;
+      try {
+        const s = snapshot;
+        // The helper calls marker.current before its final mapping validation.
+        // Do not add an executable owner callback after that proof.
+        const proof = prove();
+        if (
+          !isNoteMarkerSelectionCapture(proof) ||
+          JSON.stringify(proof) !== JSON.stringify(captured) ||
+          this.editor !== s.editor ||
+          this.committedProjection !== s.projection ||
+          snapshot !== s
+        )
+          lose();
+      } catch {
+        lose();
+      }
+      return !lost && !released;
+    };
+    let unsubscribe: (() => void) | undefined;
+    const release = () => {
+      if (released) return;
+      released = true;
+      const stop = unsubscribe;
+      unsubscribe = undefined;
+      stop?.();
+      lose();
+      listeners.clear();
+      const drop = marker;
+      marker = undefined;
+      drop?.release();
+    };
+    try {
+      captured = prove();
+      if (!isNoteMarkerSelectionCapture(captured))
+        throw new Error('Invalid marker selection capture');
+      unsubscribe = marker.subscribe(lose);
+      // subscribe executes ownership checks; renew proof afterward.
+      if (!current()) throw new Error('Stale marker selection capture');
+      const capture = captured;
+      if (!capture) throw new Error('Marker selection capture lost');
+      return Object.freeze({
+        capture,
+        current,
+        release,
+        subscribe: (f: () => void) => {
+          if (!current()) {
+            f();
+            return () => {};
+          }
+          listeners.add(f);
+          return () => {
+            listeners.delete(f);
+          };
+        },
+      });
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
   /** Read-only correspondence for one mounted atom. This is not canonical marker
    * provenance or edit authority. Caller admits capture/proof DATA before entry;
    * the existing window lease remains held until explicit physical settlement. */
@@ -262,7 +378,7 @@ export class NoteWindowView {
       window = this.window,
       projection = this.committedProjection,
       lease = this.currentLease;
-    const contextCurrent = window ? markerContextWitness(window.context) : undefined;
+    let contextCurrent = window ? markerContextWitness(window.context) : undefined;
     const boundaries = window?.context.filter((item) => item.kind === 'boundary');
     const boundary = boundaries?.[0];
 
@@ -369,6 +485,7 @@ export class NoteWindowView {
       if (lost) return;
       lost = true;
       snapshot = undefined;
+      contextCurrent = undefined;
       captured = undefined;
       checkOperation = undefined;
       for (const f of [...listeners]) notify(f);
@@ -473,6 +590,7 @@ export class NoteWindowView {
       return Object.freeze({
         capture,
         current,
+        retire: lose,
         release,
         subscribe: (f: () => void) => {
           if (!current()) {

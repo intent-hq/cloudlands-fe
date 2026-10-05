@@ -2,6 +2,7 @@ import { readNoteReceiptPage, type NoteReceiptReadRequest } from '../note-receip
 import {
   createNoteSourceOperation,
   createNoteMarkerSourceOperation,
+  createNoteMarkerSelectionOperation,
   createNoteRenderedSearchOperation,
   type NoteRenderedSearchOperationInput,
   createNoteSelectionOperation,
@@ -154,6 +155,16 @@ export class LiveNotePagesClient extends NotePageReader implements NotePagesClie
         payloadDigest: op.payloadDigest,
       }),
       op,
+    );
+  }
+  createMarkerSelectionOperation(
+    input: NoteSelectionOperationInput,
+    current: () => boolean,
+  ): ReturnType<typeof createNoteMarkerSelectionOperation> {
+    return createNoteMarkerSelectionOperation(
+      (method, params) => backendRequest(method, params),
+      input,
+      current,
     );
   }
   createSourceOperation(

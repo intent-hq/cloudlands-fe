@@ -79,7 +79,7 @@ type NoteMarkerStageRecord = {
   kind: 'projection';
   ordinal: number;
   sourceRange: { start: number; end: number };
-  role: 'selection-owner' | 'marker-occurrence';
+  role: 'selection-owner' | 'inline-span' | 'marker-occurrence';
   canonicalId?: string;
   detail: NoteStageTextReference;
 };
@@ -133,7 +133,19 @@ export function createNoteMarkerSourceOperation(
   current: () => boolean,
   now: () => number = Date.now,
 ) {
-  return createSourceStage(send, input, current, now, 'read', 'source', true);
+  return createSourceStage(send, input, current, now, 'read', 'source', 'source');
+}
+
+/** Four-record native selection closure: paragraph, text, original marker, text.
+ * expectedOutput comes from the actual configured serializer. This adapter never
+ * treats the source marker literal or live node-view filler as visible output. */
+export function createNoteMarkerSelectionOperation(
+  send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  input: NoteSelectionOperationInput,
+  current: () => boolean,
+  now: () => number = Date.now,
+) {
+  return createSourceStage(send, input, current, now, 'read', 'selectionMarkdown', 'selection');
 }
 
 export function createNoteSelectionOperation(
@@ -175,7 +187,7 @@ function createSourceStage(
   now: () => number,
   action: 'read' | 'mutate',
   output: 'source' | 'selectionMarkdown' | 'search',
-  marker = false,
+  marker: false | 'source' | 'selection' = false,
 ) {
   const scope = Object.freeze({
     backendId: input.scope.backendId,
@@ -186,6 +198,7 @@ function createSourceStage(
   // Keep selection output fragmented within the supported native paragraph;
   // whole-source streaming retains its existing page budget.
   const readBytes = output === 'selectionMarkdown' ? 1024 : 4096;
+  const liveRecords = marker === 'selection' ? 4 : 2;
   const h = input.header;
   if (
     h.action !== action ||
@@ -374,7 +387,7 @@ function createSourceStage(
           !begun ||
           sealed ||
           !(
-            marker
+            marker === 'source'
               ? ['text', 'live']
               : output === 'source'
                 ? ['text', 'dirty']
@@ -415,13 +428,20 @@ function createSourceStage(
           }
           if (marker && stream === 'live' && r.kind === 'projection') {
             const id = 'canonicalId' in r ? r.canonicalId : undefined;
+            const markerOrdinal = marker === 'selection' ? 2 : 1;
+            const role =
+              r.ordinal === 0
+                ? 'selection-owner'
+                : r.ordinal === markerOrdinal
+                  ? 'marker-occurrence'
+                  : 'inline-span';
             if (
               ![r.ordinal, r.sourceRange.start, r.sourceRange.end].every(uint) ||
               r.ordinal !== manifest[4].records + index ||
-              r.ordinal > 1 ||
+              r.ordinal >= liveRecords ||
               r.sourceRange.end <= r.sourceRange.start ||
-              r.role !== (r.ordinal === 0 ? 'selection-owner' : 'marker-occurrence') ||
-              (r.ordinal === 0 ? id !== undefined : !token(id)) ||
+              r.role !== role ||
+              (r.ordinal === markerOrdinal ? !token(id) : id !== undefined) ||
               !token(r.detail.textId) ||
               !uint(r.detail.length) ||
               !uint(r.detail.utf8Bytes) ||
@@ -499,7 +519,7 @@ function createSourceStage(
         if (
           (output !== 'source' || marker) &&
           ((stream === 'selection' && m.records + records.length > 1) ||
-            (stream === 'live' && m.records + records.length > 2))
+            (stream === 'live' && m.records + records.length > liveRecords))
         )
           throw new Error('Captured selection record count exceeded');
         const chunk = { stream, sequence: m.chunks, previousDigest: m.lastDigest, records };
@@ -528,12 +548,15 @@ function createSourceStage(
         if (
           marker &&
           (manifest[1].records !== 0 ||
-            manifest[2].records !== 0 ||
+            manifest[2].records !== (marker === 'selection' ? 1 : 0) ||
             manifest[3].records !== 0 ||
-            manifest[4].records !== 2)
+            manifest[4].records !== liveRecords)
         )
           throw new Error('Incomplete captured marker manifest');
-        if (output !== 'source' && (manifest[2].records !== 1 || manifest[4].records !== 2))
+        if (
+          output !== 'source' &&
+          (manifest[2].records !== 1 || manifest[4].records !== liveRecords)
+        )
           throw new Error('Incomplete captured selection manifest');
         payloadDigest = await hash({ headerDigest, manifest });
         const p = await rpc('note.operation.seal', { ...identity(), manifest, payloadDigest });
