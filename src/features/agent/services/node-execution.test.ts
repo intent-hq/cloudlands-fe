@@ -37,6 +37,15 @@ describe('canonical node execution contract', () => {
     expect(request).toHaveBeenCalledExactlyOnceWith('client.hello', {});
   });
 
+  it('still requires platform capability when a complete request includes architecture', async () => {
+    const placement = { target: 'local', checkout: 'shared', arch: 'aarch64' } as const;
+    expect(AgentPlacementSchema.safeParse(placement).success).toBe(false);
+    await expect(fixture(caps).client.preparePlacement(placement)).rejects.toThrow();
+    await expect(
+      fixture({ ...caps, agentPlatformRouting: 1 }).client.preparePlacement(placement),
+    ).resolves.toEqual(placement);
+  });
+
   it.each([undefined, {}, { agentNodes: true }, { agentNodes: 2 }, { agentNodes: 1 }])(
     'refuses unsupported local isolation without a shared fallback: %j',
     async (capabilities) => {

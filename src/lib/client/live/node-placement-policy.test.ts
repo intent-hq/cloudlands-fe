@@ -111,17 +111,45 @@ describe('creation boundary policy', () => {
     const request = vi.fn(async () => ({ server: { capabilities: {} } }));
     expect(await prepareNodeRequest('agent.create', input, request, () => false)).toBe(input);
   });
-  it('task-only delegation uses the workspace default without guessing a specialist', async () => {
-    const request = fixture({ target: 'local', checkout: 'isolated' });
-    expect(
-      await prepareNodeRequest(
-        'agent.delegate',
-        { workspaceId: 'ws', taskNoteId: 'task' },
-        request,
-        () => false,
-      ),
-    ).toMatchObject({ placement: { target: 'local', checkout: 'isolated' } });
-    expect(request.mock.calls.some(([method]) => method === 'specialist.get')).toBe(false);
+  it.each([
+    { target: 'local', checkout: 'shared' },
+    { target: 'remote', checkout: 'isolated' },
+  ])('leaves task-only specialist and workspace resolution to the daemon: %j', async (defaults) => {
+    const request = fixture(defaults, { target: 'remote', checkout: 'isolated' });
+    const input = { workspaceId: 'ws', taskNoteId: 'task' };
+    expect(await prepareNodeRequest('agent.delegate', input, request, () => true)).toBe(input);
+    expect(request.mock.calls.map(([method]) => method)).toEqual(['client.hello']);
+  });
+  it('keeps omission per batch task while resolving explicit specialist and task overrides', async () => {
+    const request = fixture(
+      { target: 'local', checkout: 'shared' },
+      { target: 'remote', checkout: 'isolated' },
+    );
+    const input = {
+      workspaceId: 'ws',
+      workspacePath: '/project/checkout',
+      tasks: [
+        'implicit-string',
+        { taskNoteId: 'implicit-object' },
+        { taskNoteId: 'selected', specialist: 'builder' },
+        { taskNoteId: 'explicit', placement: { target: 'local', checkout: 'worktree' } },
+      ],
+    };
+    expect(await prepareNodeRequest('agent.delegate', input, request, () => true)).toEqual({
+      ...input,
+      tasks: [
+        { taskNoteId: 'implicit-string' },
+        { taskNoteId: 'implicit-object' },
+        {
+          taskNoteId: 'selected',
+          specialist: 'builder',
+          placement: { target: 'remote', checkout: 'isolated' },
+        },
+        input.tasks[3],
+      ],
+    });
+    expect(request.mock.calls.filter(([method]) => method === 'specialist.get')).toHaveLength(1);
+    expect(request.mock.calls.some(([method]) => method === 'workspace.get')).toBe(false);
   });
   it('rejects a remote specialist with Labs off without replacing its isolation', async () => {
     const request = fixture(

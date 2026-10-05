@@ -41,6 +41,14 @@ export const AgentPlacementRequestSchema = z
   );
 export type AgentPlacementRequest = z.infer<typeof AgentPlacementRequestSchema>;
 
+/** Agent projections include platform fields, but always resolve target and checkout. */
+const AgentResolvedPlacementSchema = AgentPlacementRequestSchema.and(
+  z.object({
+    target: z.enum(['local', 'remote']),
+    checkout: z.enum(['shared', 'worktree', 'isolated']),
+  }),
+);
+
 export const AgentCheckpointSchema = z.object({
   id: z.string().min(1),
   assignmentEpoch: decimalU64,
@@ -51,7 +59,7 @@ export const AgentCheckpointSchema = z.object({
 export const AgentNodeFieldsSchema = z.object({
   nodeId: z.string().min(1).optional(),
   leaseId: z.string().min(1).optional(),
-  placement: AgentPlacementSchema.optional(),
+  placement: AgentResolvedPlacementSchema.optional(),
   effectiveIsolation: z
     .enum(['pending', 'isolated', 'shared', 'worktree', 'direct', 'cow'])
     .optional(),
@@ -64,4 +72,4 @@ export const AgentNodeFieldsSchema = z.object({
 export type AgentNodeFields = z.infer<typeof AgentNodeFieldsSchema>;
 export type AgentCheckpoint = z.infer<typeof AgentCheckpointSchema>;
 
-export type AgentPlacement = z.infer<typeof AgentPlacementSchema>;
+export type AgentPlacement = z.infer<typeof AgentResolvedPlacementSchema>;

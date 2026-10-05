@@ -46,7 +46,7 @@ export async function prepareNodeRequest(
       );
       tasks.push({ ...entry, ...(resolved.placement ? { placement: resolved.placement } : {}) });
     }
-    // Every task now carries its own resolved override; the call default is no longer needed.
+    // Explicit call overrides were copied to each task; unresolved tasks retain omission.
     const { placement: _placement, ...rest } = params;
     return { ...rest, tasks };
   }
@@ -79,6 +79,10 @@ export async function prepareNodeRequest(
       return workspace;
     };
     const specialistId = creation.specialistId ?? creation.specialist;
+    // Task-only delegation resolves its specialist on the daemon. Promoting the
+    // workspace default here would make it outrank that specialist's runsOn.
+    if (method === 'agent.delegate' && (typeof specialistId !== 'string' || !specialistId))
+      return input;
     if (typeof specialistId === 'string' && specialistId) {
       readDefaults = true;
       const suppliedPath = creation.workspacePath ?? params.workspacePath;
