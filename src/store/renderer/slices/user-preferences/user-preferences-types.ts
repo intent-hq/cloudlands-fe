@@ -15,4 +15,6 @@ export type AgentRulesEditorState = {
 /** Editor state is renderer-only, not part of the persisted preferences contract. */
 export type UserPreferencesStoreState = UserPreferencesState & {
   agentRulesEditor: AgentRulesEditorState;
+  /** Backend whose persisted setup completion has been read; null before hydration. */
+  providerSetupHydratedBackendId: string | null;
 };

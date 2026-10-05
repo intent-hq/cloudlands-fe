@@ -6,6 +6,7 @@ import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-stat
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 
 const mocks = vi.hoisted(() => ({
+  backendRequest: vi.fn(),
   workspaces: {
     list: vi.fn(),
     get: vi.fn(),
@@ -35,6 +36,10 @@ const mocks = vi.hoisted(() => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+}));
+
 vi.mock('$lib/client', () => ({
   appClient: {
     workspaces: mocks.workspaces,
@@ -61,6 +66,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import { AgentStatus, GitFileStatus, type AgentSession } from '$shared/types';
+import { LiveGitClient } from '$lib/client/live/live-git-client';
 import {
   loadOlderCommitsRequested,
   loadWorkspaceDataRequested,
@@ -1575,7 +1581,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(refreshPRStatusRequested(WS, true, true));
     await settle();
 
-    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
+    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS, { automatic: false }]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
       {
@@ -1596,6 +1602,10 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(refreshPRStatusRequested(WS, false, false));
     await settle();
 
+    expect(mocks.git.prRefresh.mock.calls).toEqual([
+      [WS, { automatic: true }],
+      [WS, { automatic: true }],
+    ]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
       {
@@ -1609,6 +1619,49 @@ describe('lifecycleReadSaga', () => {
       },
     ]);
     await stop(run.task);
+  });
+
+  it('preserves automatic provenance across windows, reconnect, failure retry, and cached replies', async () => {
+    const client = new LiveGitClient();
+    mocks.git.prRefresh.mockImplementation((...args: Parameters<LiveGitClient['prRefresh']>) =>
+      client.prRefresh(...args),
+    );
+    mocks.backendRequest.mockRejectedValueOnce(new Error('temporarily unavailable'));
+    mocks.backendRequest.mockResolvedValue({
+      outcome: 'skipped',
+      prNumber: 42,
+      prUrl: 'https://github.com/acme/repo/pull/42',
+      prStatus: 'Open',
+      pullRequests: [{ number: 42, status: 'Open' }],
+    });
+    const firstWindow = start();
+    const secondWindow = start();
+    firstWindow.channel.put(refreshPRStatusRequested(WS, true, false));
+    await settle();
+    firstWindow.channel.put(backendReconnected());
+    firstWindow.channel.put(refreshPRStatusRequested(WS, true, false));
+    secondWindow.channel.put(refreshPRStatusRequested(WS, true, false));
+    secondWindow.channel.put(refreshPRStatusRequested('ws-other', true, false));
+    await settle();
+    expect(mocks.backendRequest.mock.calls).toEqual([
+      ['pr.refresh', { workspaceId: WS, automatic: true }],
+      ['pr.refresh', { workspaceId: WS, automatic: true }],
+      ['pr.refresh', { workspaceId: WS, automatic: true }],
+      ['pr.refresh', { workspaceId: 'ws-other', automatic: true }],
+    ]);
+    expect(
+      firstWindow.actions
+        .filter((a) => a.type === 'prStatus/refreshCompleted')
+        .map((a) => (a.payload as { success: boolean }).success),
+    ).toEqual([false, true]);
+    secondWindow.channel.put(refreshPRStatusRequested(WS, true, true));
+    await settle();
+    expect(mocks.backendRequest).toHaveBeenLastCalledWith('pr.refresh', {
+      workspaceId: WS,
+      automatic: false,
+    });
+    await stop(firstWindow.task);
+    await stop(secondWindow.task);
   });
 
   it('skips a non-forced PR refresh within the freshness TTL', async () => {
@@ -1638,7 +1691,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(refreshPRStatusRequested(WS, false, false));
     await settle();
 
-    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
+    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS, { automatic: true }]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
       {
@@ -1649,7 +1702,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('runs a forced PR refresh even within the freshness TTL', async () => {
+  it('keeps forced hydration automatic even within the freshness TTL', async () => {
     const current = state();
     current.prStatus.byWorkspaceId[WS] = {
       lastRefreshTime: NOW.getTime() - 1_000,
@@ -1660,7 +1713,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(refreshPRStatusRequested(WS, true, false));
     await settle();
 
-    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
+    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS, { automatic: true }]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
       {
@@ -4077,7 +4130,6 @@ describe('lifecycleReadSaga', () => {
   });
 });
 
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
 import { backendRequest as lifecycleRequest } from '$lib/client/live/backend-transport';
 import { LiveScriptsClient } from '$lib/client/live/live-scripts-client';
 

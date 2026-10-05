@@ -1071,6 +1071,7 @@
     void $agentHistoryMessages$;
     void $agentSession$?.metadata?.pendingQuestionsMessageId;
     void $pendingQuestionRecovery$;
+    void $submissionDisplay$;
     return deriveMarkedQuestionRecoveryState(appStore.state, agentId);
   });
   const pendingQuestionRecoveryLoading = $derived(
@@ -1104,6 +1105,7 @@
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     void $agentSession$?.metadata?.pendingQuestionsMessageId;
     void $pendingQuestionRecovery$;
+    void $submissionDisplay$;
     void $queuedMessages$;
     return deriveWizardPendingQuestions(
       appStore.state,
@@ -1222,7 +1224,7 @@
   // the text — resolves the pending set, so the wizard unmounts and the
   // composer restores; an untagged user message leaves the Q&A pending.
   function handleQuestionWizardComplete(answers: QuestionAnswer[]) {
-    if (!workspace || !isActive || !pendingQuestions) return;
+    if (!workspace || !isActive || !pendingQuestions) return false;
     const text = flattenAnswersToMessage(answers);
     logger.info('Question wizard completed', { answerCount: answers.length });
     if (
@@ -1235,8 +1237,9 @@
         messageMetadata: buildAnswerMessageMetadata(pendingQuestions.messageId),
       })
     )
-      return;
+      return false;
     void performLocalSendCleanup({ followBottom: true });
+    return true;
   }
 
   const pendingProposalRefs = $derived(

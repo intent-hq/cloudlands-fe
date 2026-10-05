@@ -8,6 +8,7 @@ export type SettingsTab =
   | 'providers'
   | 'connections'
   | 'devices'
+  | 'mobile'
   | 'collaboration'
   | 'setup'
   | 'advanced'

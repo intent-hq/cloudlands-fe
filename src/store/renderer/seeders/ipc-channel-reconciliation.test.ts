@@ -549,6 +549,11 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'backend:request',
   'backend:subscribe',
   'backend:unsubscribe',
+  // Onboarding preparation invokes the real preload directly so main captures
+  // the sender's daemon connection before discovery. Without preload it skips;
+  // web onboarding independently uses the captured BackendTransport. Covered by
+  // provider-adapter-preparation.client.test.ts, including mock-router bypass.
+  'providers:prepare-adapters',
   // Resource details capture the original real preload bridge. Without it,
   // capture rejects before IPC; the mock client independently reports unavailable.
   // Mock bridging would bypass the original-connection admission and retirement.

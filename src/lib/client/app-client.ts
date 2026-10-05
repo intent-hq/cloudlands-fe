@@ -1463,9 +1463,10 @@ export interface GitClient {
    * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,
    * relink-after-merge, stale-link clearing) for one workspace on demand and
    * returns the post-refresh linkage state. An active PR is not required.
-   * Errors fold to `null`.
+   * Automatic callers opt into daemon idle admission; omitted options preserve
+   * explicit refresh semantics. Errors fold to `null`.
    */
-  prRefresh(workspaceId: string): Promise<PrRefreshResult | null>;
+  prRefresh(workspaceId: string, options?: { automatic: boolean }): Promise<PrRefreshResult | null>;
   /**
    * Path-based branch listing (`git.getBranches`, §5.6). Used by the
    * workspace initializer to populate the branch picker against an arbitrary

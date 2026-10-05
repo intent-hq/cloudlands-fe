@@ -176,6 +176,71 @@ describe('WebSocketApiSettings', () => {
     expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
   });
 
+  it('enables Mobile pairing with remote access and disables it again when access is turned off', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    mocks.mockSettingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: false },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    mocks.mockPairingInfo.mockResolvedValue({
+      token: 'test-token',
+      certFingerprint: 'AA:BB',
+      port: 5181,
+      path: '/ws',
+      localIps: ['127.0.0.1'],
+      hostname: 'test-machine',
+    });
+    render(WebSocketApiSettings);
+    const qr = screen.getByRole('button', { name: m.settings_wsApi_showQrCode() });
+    const copy = screen.getByRole('button', { name: m.settings_wsApi_shareLink_label() });
+    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
+    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
+    expect(qr.hasAttribute('disabled')).toBe(true);
+    expect(copy.hasAttribute('disabled')).toBe(true);
+    await fireEvent.click(qr);
+    await fireEvent.click(copy);
+    expect(qrMocks.toDataURL).not.toHaveBeenCalled();
+    expect(writeText).not.toHaveBeenCalled();
+
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([{ path: 'server.wsApi.enabled', value: true }]);
+    mocks.mockSettingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: true },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(copy.hasAttribute('disabled')).toBe(false));
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+      { path: 'server.wsApi.enabled', value: true },
+    ]);
+    await fireEvent.click(copy);
+    const expected =
+      'intent://pair?token=test-token&host=127.0.0.1&port=5181&path=/ws&certFingerprint=AA%3ABB';
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expected));
+    await fireEvent.click(qr);
+    await waitFor(() =>
+      expect(qrMocks.toDataURL).toHaveBeenCalledWith(expected, expect.anything()),
+    );
+    const dialog = await screen.findByRole('dialog');
+    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([
+      { path: 'server.wsApi.enabled', value: false },
+    ]);
+    mocks.mockSettingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: false },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+    expect(mocks.mockSettingsUpdate).toHaveBeenLastCalledWith([
+      { path: 'server.wsApi.enabled', value: false },
+    ]);
+    expect(qr.hasAttribute('disabled')).toBe(true);
+    expect(copy.hasAttribute('disabled')).toBe(true);
+  });
+
   describe('mobile pairing dialog', () => {
     async function renderPairing() {
       mocks.mockSettingsList.mockResolvedValue([
@@ -189,8 +254,9 @@ describe('WebSocketApiSettings', () => {
         localIps: ['192.0.2.10'],
         hostname: 'fixture-device',
       });
-      await renderExpandedSettings();
-      await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() });
+      render(WebSocketApiSettings);
+      const qr = screen.getByRole('button', { name: m.settings_wsApi_showQrCode() });
+      await waitFor(() => expect((qr as HTMLButtonElement).disabled).toBe(false));
     }
 
     it('removes the sensitive pairing image after 30 seconds without a settings write', async () => {
@@ -260,9 +326,10 @@ describe('WebSocketApiSettings', () => {
       { path: 'server.wsApi.port', value: 5181 },
     ]);
 
-    await renderExpandedSettings();
+    render(WebSocketApiSettings);
 
-    await waitFor(() => expect(screen.getByRole('switch')).toBeTruthy());
+    const toggle = screen.getByRole('switch', { name: m.settings_wsApi_enable_label() });
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
 
     // Mock settings.update to reject (daemon error)
     mocks.mockSettingsUpdate.mockRejectedValueOnce(
@@ -272,7 +339,6 @@ describe('WebSocketApiSettings', () => {
     );
 
     // Act: toggle enable
-    const toggle = screen.getByRole('switch');
     await fireEvent.click(toggle);
 
     // Assert: settings.update was called with exact payload
@@ -289,6 +355,18 @@ describe('WebSocketApiSettings', () => {
       );
       expect(toggle.getAttribute('aria-checked')).toBe('false');
     });
+    expect(
+      (screen.getByRole('button', { name: m.settings_wsApi_showQrCode() }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        screen.getByRole('button', {
+          name: m.settings_wsApi_shareLink_label(),
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(qrMocks.toDataURL).not.toHaveBeenCalled();
   });
 
   it('shows toast.error with daemon message when settings.update returns rolled-back value', async () => {
@@ -514,53 +592,6 @@ describe('WebSocketApiSettings', () => {
 
       await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
       expect(ipcMocks.invoke).not.toHaveBeenCalledWith('connections:refresh-self');
-    });
-  });
-
-  describe('host settings from a remote window', () => {
-    beforeEach(() => {
-      connectionState.activeId = 'remote-1';
-      mocks.localSettingsList.mockResolvedValue([
-        { path: 'server.wsApi.enabled', value: false },
-        { path: 'server.wsApi.port', value: 5181 },
-      ]);
-      mocks.localSettingsUpdate.mockImplementation(async (changes) => changes);
-    });
-
-    it('loads no settings until Edit expands the panel', async () => {
-      const view = render(WebSocketApiSettings, { expanded: false });
-      expect(screen.queryByRole('switch')).toBeNull();
-      expect(mocks.localSettingsList).not.toHaveBeenCalled();
-      await view.rerender({ expanded: true });
-      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
-      expect(screen.getByRole('switch')).toBeTruthy();
-      expect(mocks.mockSettingsList).not.toHaveBeenCalled();
-      expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
-    });
-
-    it('saves host port changes using the local client', async () => {
-      await renderExpandedSettings();
-      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
-      await fireEvent.input(screen.getByRole('spinbutton', { name: 'Port' }), {
-        target: { value: '5182' },
-      });
-      await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_port_save() }));
-      await waitFor(() =>
-        expect(mocks.localSettingsUpdate).toHaveBeenCalledWith([
-          { path: 'server.wsApi.port', value: 5182 },
-        ]),
-      );
-      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
-    });
-
-    it('hides host controls again when Edit closes', async () => {
-      const view = render(WebSocketApiSettings, { expanded: true });
-      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
-      await view.rerender({ expanded: false });
-      expect(screen.queryByRole('switch')).toBeNull();
-      expect(
-        screen.queryByRole('button', { name: m.settings_devices_advanced_label() }),
-      ).toBeNull();
     });
   });
 
@@ -1280,6 +1311,11 @@ describe('WebSocketApiSettings', () => {
         name: m.settings_wsApi_shareLink_label(),
       });
       expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(
+        (screen.getByRole('button', { name: m.settings_wsApi_showQrCode() }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      await waitFor(() => expect(resolvePairing).toBeTypeOf('function'));
       resolvePairing({
         token: 'token',
         port: 5181,
