@@ -8,6 +8,7 @@ import {
   encoderHudHidden,
   encoderHudShown,
   hardwareConsoleReducer,
+  hardwareConsoleSettingsHydrationStarted,
   hardwareConsoleEncoderBehaviorSaveFailed,
   hydrateHardwareConsoleActionMapping,
   hydrateHardwareConsoleCycleScopes,
@@ -35,6 +36,23 @@ import {
 } from './hardware-console-slice';
 
 describe('hardwareConsoleReducer', () => {
+  it('distinguishes loaded settings from fallback defaults and resets publication on readmission', () => {
+    let state = hardwareConsoleReducer(initialState, hydrateHardwareConsoleEnabled(false));
+    state = hardwareConsoleReducer(state, hydrateHardwareConsoleActionMapping({}));
+    expect(state.enabledHydrationSucceeded).toBe(true);
+    expect(state.actionMappingHydrationSucceeded).toBe(true);
+    state = hardwareConsoleReducer(state, hardwareConsoleSettingsHydrationStarted());
+    expect(state.enabledHydrationSucceeded).toBe(false);
+    expect(state.actionMappingHydrationSucceeded).toBe(false);
+    expect(state.enabled).toBe(false);
+    state = hardwareConsoleReducer(state, hydrateHardwareConsoleEnabled(true, false));
+    state = hardwareConsoleReducer(state, hydrateHardwareConsoleActionMapping({}, false));
+    expect(state.enabledHydrated).toBe(true);
+    expect(state.actionMappingHydrated).toBe(true);
+    expect(state.enabledHydrationSucceeded).toBe(false);
+    expect(state.actionMappingHydrationSucceeded).toBe(false);
+  });
+
   it('returns initial state', () => {
     const state = hardwareConsoleReducer(undefined, { type: '@@INIT' });
 

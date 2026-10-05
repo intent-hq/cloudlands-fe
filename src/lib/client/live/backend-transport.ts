@@ -1,3 +1,5 @@
+import type { CheckoutCaptureQuery } from '$shared/types/repository-checkout';
+import type { NativeReviewInput } from '$shared/types/native-review-operation';
 import { hostExecutionAuthorizationMessage } from '$features/providers/host-execution-errors';
 import { BackendError } from './backend-transport-types';
 /**
@@ -9,8 +11,55 @@ import { BackendError } from './backend-transport-types';
  * (`electron-ipc-transport.ts`) when `window.electronAPI` exists. See
  * `backend-transport-types.ts` for the transport interface.
  */
+import { m } from '$shared/paraglide/messages.js';
+import {
+  assertRemoteRequestEnabled,
+  needsPlacementPolicy,
+  prepareNodeRequest,
+} from './node-placement-policy';
 import { resolveBackendTransport } from './backend-transport-factory';
 import type { BackendNotification, BackendRequestOptions } from './backend-transport-types';
+import type { RepositoryRootIdentity } from '$shared/types/repository-context';
+
+/** Separate explicit resource lifetime, bound to this exact transport. */
+export function captureBackendRepositoryResource(workspaceId: string) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositoryResource)
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_RESOURCE_UNAVAILABLE',
+        message: 'REPOSITORY_RESOURCE_UNAVAILABLE',
+      }),
+    );
+  return transport.captureRepositoryResource(workspaceId);
+}
+
+/** Capture once before enqueue; a missing bound path never uses ordinary routing. */
+export function captureBackendRepositoryRoute(root: RepositoryRootIdentity) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositoryRoute) {
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+        message: 'Repository route unavailable',
+      }),
+    );
+  }
+  return transport.captureRepositoryRoute(root);
+}
+
+/** A new explicit edit captures this transport once, before confirmation. */
+export function captureBackendRepositorySelection(root: RepositoryRootIdentity) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositorySelection)
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_SELECTION_UNAVAILABLE',
+        message: 'REPOSITORY_SELECTION_UNAVAILABLE',
+      }),
+    );
+  return transport.captureRepositorySelection(root);
+}
 
 export type { BackendNotification } from './backend-transport-types';
 export { electronAPI } from './electron-ipc-transport';
@@ -29,7 +78,44 @@ export async function backendRequest<T = unknown>(
   options?: BackendRequestOptions,
 ): Promise<T> {
   try {
-    return await resolveBackendTransport().request<T>(method, params, options);
+    const transport = resolveBackendTransport();
+    if (needsPlacementPolicy(method, params)) {
+      const { store } = await import('$store/renderer/store');
+      // Read the strict boolean afresh without importing renderer selector declarations
+      // into the main-process compilation graph shared by this client boundary.
+      const remoteEnabled = () => store.state.userPreferences?.labsRemoteAgentsEnabled === true;
+      const generation = store.state.daemonHealth.connectionGeneration;
+      const checkConnection = () => {
+        if (
+          transport !== resolveBackendTransport() ||
+          generation !== store.state.daemonHealth.connectionGeneration
+        )
+          throw new Error(m.agent_placement_backendChanged());
+      };
+      const request = async (name: string, data?: unknown): Promise<unknown> => {
+        checkConnection();
+        const result = await transport.request(name, data);
+        checkConnection();
+        return result;
+      };
+      const observeCapabilities = async () => {
+        checkConnection();
+        if (!transport.observeNodeCapabilities) throw new Error(m.agent_placement_unavailable());
+        const result = await transport.observeNodeCapabilities();
+        checkConnection();
+        return result;
+      };
+      params = await prepareNodeRequest(
+        method,
+        params,
+        request,
+        remoteEnabled,
+        observeCapabilities,
+      );
+      checkConnection();
+      assertRemoteRequestEnabled(method, params, remoteEnabled());
+    }
+    return await transport.request<T>(method, params, options);
   } catch (error) {
     if (error instanceof BackendError) {
       const message = hostExecutionAuthorizationMessage(
@@ -45,6 +131,21 @@ export async function backendRequest<T = unknown>(
     }
     throw error;
   }
+}
+
+/** Observe node capabilities on one current transport without issuing client.hello. */
+export async function observeBackendNodeCapabilities(): Promise<unknown> {
+  const transport = resolveBackendTransport();
+  const { store } = await import('$store/renderer/store');
+  const generation = store.state.daemonHealth.connectionGeneration;
+  if (!transport.observeNodeCapabilities) throw new Error(m.agent_placement_unavailable());
+  const result = await transport.observeNodeCapabilities();
+  if (
+    transport !== resolveBackendTransport() ||
+    generation !== store.state.daemonHealth.connectionGeneration
+  )
+    throw new Error(m.agent_placement_backendChanged());
+  return result;
 }
 
 /** Subscribe to daemon events (`events.subscribe`). Returns its raw result. */
@@ -116,4 +217,30 @@ export function onBackendNotification(handler: (n: BackendNotification) => void)
  */
 export function onBackendReconnected(handler: () => void): () => void {
   return resolveBackendTransport().onReconnected(handler);
+}
+
+/** One captured transport; no ordinary request fallback or subsequent re-resolution. */
+export function prepareBackendNativeReview(input: NativeReviewInput) {
+  const transport = resolveBackendTransport();
+  if (!transport.prepareNativeReview)
+    return Promise.reject(
+      new BackendError({
+        code: 'NATIVE_REVIEW_UNAVAILABLE',
+        message: 'NATIVE_REVIEW_UNAVAILABLE',
+      }),
+    );
+  return transport.prepareNativeReview(input);
+}
+
+/** Pre-workspace browsing requires the original admitted transport. */
+export function captureBackendRepositoryCheckout(query: CheckoutCaptureQuery) {
+  const transport = resolveBackendTransport();
+  if (!transport.captureRepositoryCheckout)
+    return Promise.reject(
+      new BackendError({
+        code: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+        message: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+      }),
+    );
+  return transport.captureRepositoryCheckout(query);
 }

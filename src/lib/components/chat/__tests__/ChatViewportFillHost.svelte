@@ -11,6 +11,7 @@
   import {
     bulkUpsertSessions,
     replaceMessages,
+    updateMessage,
     seedHistoryAround,
     setHistoryOldestReached,
   } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -32,6 +33,10 @@
     scenario = 'short',
     compact = false,
     retained = false,
+    refreshSnapshot = false,
+    controlled = false,
+    releasedPages = 0,
+    expanded = false,
   }: {
     height?: number;
     active?: boolean;
@@ -47,6 +52,10 @@
       | 'gap-error'
       | 'gap-stalled'
       | 'seek';
+    expanded?: boolean;
+    controlled?: boolean;
+    releasedPages?: number;
+    refreshSnapshot?: boolean;
     retained?: boolean;
     compact?: boolean;
   } = $props();
@@ -78,6 +87,10 @@
       placeholders: number;
     }[]
   >([]);
+  const pendingPages: (() => void)[] = [];
+  $effect(() => {
+    for (let i = 0; i < releasedPages; i++) pendingPages[i]?.();
+  });
   let inFlight = 0;
   let maxInFlight = $state(0);
   const message = (index: number, large = false): AgentMessage =>
@@ -113,7 +126,12 @@
         },
       ];
       maxInFlight = Math.max(maxInFlight, ++inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (controlled) {
+        await new Promise<void>((resolve) => {
+          pendingPages.push(resolve);
+          if (pendingPages.length <= releasedPages) resolve();
+        });
+      } else await new Promise((resolve) => setTimeout(resolve, 100));
       inFlight--;
       if (fixture === 'seek') {
         const anchor = Number(params.aroundMessageId?.replace('m-', ''));
@@ -218,6 +236,25 @@
           Array.from({ length: 5 }, (_, i) => message(95 + i)),
         ),
       ),
+    );
+  });
+  $effect(() => {
+    if (!refreshSnapshot) return;
+    untrack(() =>
+      store.dispatch(
+        chatTranscriptSnapshotApplied('primary', {
+          truncated: true,
+          totalMessages: total,
+          oldestMessageId: `m-${total - initialCount}`,
+          nextToken: `before-${total - initialCount}`,
+        }),
+      ),
+    );
+  });
+  $effect(() => {
+    if (!expanded) return;
+    untrack(() =>
+      store.dispatch(updateMessage('primary', `m-${total - 3}`, message(total - 3, true))),
     );
   });
   async function seekMiddle() {

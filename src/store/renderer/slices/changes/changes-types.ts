@@ -1,3 +1,5 @@
+import type { NativeReviewOwner } from '$shared/types/native-review-operation';
+
 /**
  * Changes Redux Slice — Types
  *
@@ -29,12 +31,29 @@ interface PendingPRContext {
   targetBranch: string;
 }
 
-export interface PendingAutoAction {
-  action: 'commit' | 'create-pr' | 'merge';
-  workspaceId: string;
-  /** For PR auto-create: the target branch from the executor context */
-  targetBranch?: string;
+/** Public intent captured by the explicit sidebar action before native preparation. */
+export interface NativeSidebarReviewIntent {
+  readonly owner: NativeReviewOwner;
+  readonly targetBranch: string;
+  readonly commitMessage: string;
+  readonly prTitle: string;
+  readonly prBody: string;
+  readonly contextKey: string;
+  readonly destinationKey: string;
 }
+
+export type PendingAutoAction =
+  | {
+      action: 'commit' | 'create-pr' | 'merge';
+      workspaceId: string;
+      /** For PR auto-create: the target branch from the executor context */
+      targetBranch?: string;
+    }
+  | {
+      action: 'native-review';
+      workspaceId: string;
+      intent: NativeSidebarReviewIntent;
+    };
 
 export interface AcceptChangesState {
   commitMessage: string;

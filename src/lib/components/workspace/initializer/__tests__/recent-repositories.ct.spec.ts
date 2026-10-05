@@ -72,7 +72,7 @@ for (const tab of ['Pick a repo', 'Copy local repo']) {
         while (text && !text.textContent?.trim()) text = walker.nextNode();
         const range = document.createRange();
         range.selectNodeContents(text!);
-        const label = title.firstElementChild!;
+        const label = title.querySelector('[data-recent-repo-label]')!;
         return {
           x: row.x,
           right: row.right,

@@ -185,7 +185,10 @@ describe('backend.ipc client identity wiring (§5.17)', () => {
     expect(typeof onHelloResult).toBe('function');
 
     onHelloResult({ clientId: 'cli-9b21', protocolVersion: '2.2', server: {} });
-    expect(mockPersistClientId).toHaveBeenCalledWith('cli-9b21');
+    expect(mockPersistClientId).toHaveBeenCalledWith(
+      'cli-9b21',
+      expect.objectContaining({ transport: 'uds' }),
+    );
 
     onHelloResult(undefined);
     onHelloResult(null);
@@ -1284,5 +1287,40 @@ describe('collaboration auth captures only a negotiated local connection', () =>
     api.disconnectBackendClient('local');
     expect(api.captureLocalIdentityConnection().supported).toBe(false);
     expect(old.current()).toBe(false);
+  });
+});
+
+describe('production bound repository registration', () => {
+  it('registers capture/request/release separately from the legacy request and keeps the absent feed unavailable', async () => {
+    const { EventEmitter } = await import('node:events');
+    const { stampWindowWithBackend } = await import('../../../../main/window-backend');
+    const { registerBackendHandlers, getBackendClient } = await import('../backend.ipc');
+    const client = getBackendClient();
+    Object.assign(client, { getRepositoryConnection: () => ({ incarnation: {}, identity: {} }) });
+    const sender = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false });
+    const window = Object.assign(new EventEmitter(), {
+      webContents: sender,
+      isDestroyed: () => false,
+    });
+    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(window as never);
+    stampWindowWithBackend(window as never, 'local');
+    registerBackendHandlers();
+    const registered = vi.mocked(ipcMain.handle).mock.calls;
+    const capture = registered.find(([channel]) => channel === 'backend:repository:capture')?.[1];
+    expect(capture).toBeDefined();
+    expect(registered.some(([channel]) => channel === 'backend:repository:request')).toBe(true);
+    expect(registered.some(([channel]) => channel === 'backend:repository:release')).toBe(true);
+    const response = await capture!({ sender, senderFrame: sender.mainFrame } as never, {
+      root: { workspaceId: 'same', kind: 'primary' },
+    });
+    expect(response).toEqual({
+      ok: false,
+      error: { code: 'REPOSITORY_ROUTE_UNAVAILABLE', message: expect.any(String) },
+    });
+    expect(client.request).not.toHaveBeenCalledWith(
+      'workspace.repositoryContext',
+      expect.anything(),
+    );
+    sender.emit('destroyed');
   });
 });

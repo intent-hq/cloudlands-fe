@@ -16,14 +16,20 @@ export type WebSocketApiState = WebSocketApiStatusSnapshot & {
 
 export type WebSocketApiIntent =
   | { kind: 'load'; connectionId: string }
-  | { kind: 'toggle'; enabled: boolean; connectionId: string }
+  | { kind: 'loadMobile'; connectionId: string; context: string }
+  | { kind: 'toggle'; enabled: boolean; connectionId: string; context?: string }
   | { kind: 'port'; port: number; connectionId: string }
   | { kind: 'listen'; ips: string[]; tunnel: boolean; connectionId: string }
   | { kind: 'tunnel'; connectionId: string }
   | { kind: 'rotate'; connectionId: string }
   | { kind: 'publish'; connectionId: string }
-  | { kind: 'copy'; target: 'token' | 'fingerprint' | 'tc' | 'share'; connectionId: string }
-  | { kind: 'qr'; connectionId: string }
+  | {
+      kind: 'copy';
+      target: 'token' | 'fingerprint' | 'tc' | 'share';
+      connectionId: string;
+      context?: string;
+    }
+  | { kind: 'qr'; connectionId: string; context?: string }
   | { kind: 'closeQr'; connectionId: string };
 
 export type WebSocketApiSnapshot = {

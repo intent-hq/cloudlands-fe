@@ -1,3 +1,5 @@
+import { collaborationMachineNameClient } from '$lib/components/settings/collaboration-machine-name.client';
+import { validCollaborationMachineName } from '$shared/collaboration-machine-name';
 import { all, call, cancelled, put, race, take, type SagaGenerator } from 'typed-redux-saga';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 import { appClient } from '$lib/client';
@@ -27,6 +29,7 @@ import type {
 } from '../settings-events-types';
 
 const paths = {
+  'collaboration-machine-name': ['sharing.machineName'],
   'agent-backend': [
     'agents.maxConcurrent',
     'agents.memoryBudgetMb',
@@ -75,6 +78,8 @@ function catalogEntry(entry: SettingDefinitionWithValue): SettingsFormEntry {
 
 function loadError(kind: SettingsFormKind, error: string) {
   switch (kind) {
+    case 'collaboration-machine-name':
+      return m.settings_machineName_load_error();
     case 'agent-backend':
       return m.settings_agentBackend_loadError();
     case 'git-workspace':
@@ -87,6 +92,7 @@ function loadError(kind: SettingsFormKind, error: string) {
 }
 
 function saveError(kind: SettingsFormKind, resource: string, error: string, rollback: boolean) {
+  if (kind === 'collaboration-machine-name') return m.settings_machineName_save_error();
   if (kind === 'agent-backend') return m.settings_agentBackend_saveError();
   if (kind === 'git-workspace') return m.settings_gitWorkspace_saveError();
   if (kind === 'agent-features')
@@ -133,10 +139,23 @@ function* optionalSetting(path: string): SagaGenerator<SettingDefinitionWithValu
 
 function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
   const form = yield* selectSettingsForm.effect(request);
-  if (!form || !(form.kind in paths)) return;
+  if (!form || !(form.kind in paths) || !(yield* selectSettingsFormRequestCurrent.effect(request)))
+    return;
   const wanted = paths[form.kind as keyof typeof paths];
   try {
     let settings: SettingDefinitionWithValue[];
+    if (form.kind === 'collaboration-machine-name') {
+      const result = yield* call(collaborationMachineNameClient.read);
+      if (!(yield* selectSettingsFormRequestCurrent.effect(request))) return;
+      yield* put(
+        settingsFormRequestSettled(request, {
+          status: 'succeeded',
+          entries: [{ path: 'sharing.machineName', value: result.name }],
+          values: { fallback: result.fallback },
+        }),
+      );
+      return;
+    }
     if (form.kind === 'agent-backend' && typeof appClient.settings.get === 'function') {
       const entries = yield* all(
         wanted.map((path) =>
@@ -211,7 +230,35 @@ function* saveForm(action: SaveAction): SagaGenerator<void> {
     return;
   }
   try {
-    const applied = yield* call([appClient.settings, appClient.settings.update], changes);
+    if (
+      form.kind === 'collaboration-machine-name' &&
+      (changes.length !== 1 ||
+        changes[0].path !== 'sharing.machineName' ||
+        typeof changes[0].value !== 'string' ||
+        !validCollaborationMachineName(changes[0].value))
+    ) {
+      yield* put(
+        settingsFormRequestSettled(request, {
+          status: 'failed',
+          error: m.settings_machineName_invalid_error(),
+        }),
+      );
+      return;
+    }
+    const applied =
+      form.kind === 'collaboration-machine-name'
+        ? [
+            {
+              path: 'sharing.machineName',
+              value: yield* call(collaborationMachineNameClient.save, String(changes[0].value)),
+            },
+          ]
+        : yield* call([appClient.settings, appClient.settings.update], changes);
+    if (
+      form.kind === 'collaboration-machine-name' &&
+      !(yield* selectSettingsFormRequestCurrent.effect(request))
+    )
+      return;
     const entries: SettingsFormEntry[] = [];
     const values: Record<string, SettingsFormValue> = {};
     let rollback = false;

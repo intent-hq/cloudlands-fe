@@ -5,6 +5,7 @@ import {
   collectMessageAuthors,
   getHumanMessageAuthor,
   getMessageAuthorLabel,
+  getMessageAuthorTooltip,
   getQueuedMessageAuthor,
   getQueueSurfaceAuthors,
 } from '$lib/utils/message-authorship';
@@ -169,7 +170,7 @@ describe('getMessageAuthorLabel', () => {
         displayName: 'Guest User',
         avatarUrl: null,
       }),
-    ).toBe('Guest User');
+    ).toBe('Guest User · @guest');
     expect(
       getMessageAuthorLabel({
         principalId: 'p',
@@ -177,7 +178,7 @@ describe('getMessageAuthorLabel', () => {
         displayName: null,
         avatarUrl: null,
       }),
-    ).toBe('guest');
+    ).toBe('@guest');
     expect(
       getMessageAuthorLabel({
         principalId: 'p',
@@ -185,7 +186,7 @@ describe('getMessageAuthorLabel', () => {
         displayName: '  ',
         avatarUrl: null,
       }),
-    ).toBe('guest');
+    ).toBe('@guest');
     expect(
       getMessageAuthorLabel({
         principalId: 'gone',
@@ -410,8 +411,8 @@ describe('portable human author projection and local-only cache', () => {
     const authors = rows.map((row) => getHumanMessageAuthor(row, 'destination-self'));
     expect(authors).toEqual([portable, other]);
     expect(authors.map((author) => getMessageAuthorLabel(author!))).toEqual([
-      expect.stringContaining('gitlab@one.example'),
-      expect.stringContaining('gitlab@two.example'),
+      'Same Person · @same',
+      'Same Person · @same',
     ]);
     expect(collectMessageAuthors(rows).size).toBe(0);
     expect(
@@ -459,20 +460,24 @@ describe('portable human author projection and local-only cache', () => {
     ).toBeNull();
   });
 
-  it('qualifies identical names by provider, canonical host and stable account, without inventing roles', () => {
+  it('keeps forge context in tooltips while names omit stable account numbers', () => {
     const identities = [
       { provider: 'github' as const, host: 'github.com', externalUserId: '42' },
       portable.identity,
       { ...portable.identity, host: 'two.example' },
       { ...portable.identity, externalUserId: '84' },
     ];
-    const labels = identities.map((identity) => getMessageAuthorLabel({ ...portable, identity }));
-    expect(new Set(labels).size).toBe(4);
-    for (const [i, identity] of identities.entries()) {
-      expect(labels[i]).toContain(identity.provider);
-      expect(labels[i]).toContain(identity.host);
-      expect(labels[i]).toContain(identity.externalUserId);
-    }
+    expect(identities.map((identity) => getMessageAuthorLabel({ ...portable, identity }))).toEqual(
+      Array(4).fill('Same Person · @same'),
+    );
+    expect(
+      identities.map((identity) => getMessageAuthorTooltip({ ...portable, identity })),
+    ).toEqual([
+      'Same Person · @same · GitHub',
+      'Same Person · @same · GitLab (one.example)',
+      'Same Person · @same · GitLab (two.example)',
+      'Same Person · @same · GitLab (one.example)',
+    ]);
     for (const identity of [
       null,
       { provider: 'future', host: 'one.example', externalUserId: '42' },
@@ -483,7 +488,7 @@ describe('portable human author projection and local-only cache', () => {
         author: { ...portable, identity },
       });
       expect(author).not.toHaveProperty('identity');
-      expect(getMessageAuthorLabel(author!)).toBe('Same Person');
+      expect(getMessageAuthorLabel(author!)).toBe('Same Person · @same');
     }
   });
 

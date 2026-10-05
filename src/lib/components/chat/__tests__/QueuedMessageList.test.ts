@@ -4,6 +4,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick, type ComponentProps } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { projectPendingSubmissions } from '$store/renderer/slices/pending-submissions/pending-submissions-projection';
 import type { QueuedMessage } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -66,6 +67,70 @@ describe('QueuedMessageList', () => {
       },
     );
   });
+  it('renders the provisional append and withholds all affected controls until confirmation', async () => {
+    const original = queued({ content: 'A' });
+    const pending = projectPendingSubmissions(undefined, [original]).queue;
+    pending[0] = { ...pending[0], content: 'A\n\nB', blocksMutations: true };
+    const onedit = vi.fn().mockResolvedValue({ success: true });
+    const onremove = vi.fn();
+    const onsendnow = vi.fn().mockResolvedValue('queued');
+    const onsendall = vi.fn().mockResolvedValue('queued');
+    const onclearall = vi.fn().mockResolvedValue(undefined);
+    const { component, rerender } = renderQueue({
+      props: {
+        messages: [original],
+        displayRows: pending,
+        onedit,
+        onremove,
+        onsendnow,
+        onsendall,
+        onclearall,
+      },
+    });
+    expect(screen.getByTestId('queued-message-text').textContent).toContain('B');
+    expect(component.editLastMessage()).toBe(false);
+    const content = screen.getByTestId('queued-message-content');
+    await fireEvent.doubleClick(content);
+    await fireEvent.keyDown(content, { key: 'Delete' });
+    for (const button of screen.getAllByRole('button')) await fireEvent.click(button);
+    expect(onedit).not.toHaveBeenCalled();
+    expect(onremove).not.toHaveBeenCalled();
+    expect(onsendnow).not.toHaveBeenCalled();
+    expect(onsendall).not.toHaveBeenCalled();
+    expect(onclearall).not.toHaveBeenCalled();
+    const confirmed = { ...original, content: 'A\n\nB' };
+    await rerender({
+      messages: [confirmed],
+      displayRows: projectPendingSubmissions(undefined, [confirmed]).queue,
+    });
+    expect(component.editLastMessage()).toBe(true);
+    await waitFor(() => expect(onedit).toHaveBeenCalledWith('q-1', 'A\n\nB', true));
+  });
+
+  it('shows an unconfirmed-only queue without granting authority to its local identity', async () => {
+    const onremove = vi.fn();
+    const onsendnow = vi.fn();
+    const displayRows = [
+      {
+        key: 'local-id',
+        content: 'not acknowledged',
+        imageBlocks: [],
+        fileBlocks: [],
+        contextItems: [],
+        contributions: [],
+        blocksMutations: true,
+      },
+    ];
+    const { component } = renderQueue({
+      props: { messages: [], displayRows, onremove, onsendnow, isHostOwner: true },
+    });
+    expect(screen.getByTestId('queued-message-text').textContent).toContain('not acknowledged');
+    expect(component.editLastMessage()).toBe(false);
+    await fireEvent.keyDown(screen.getByTestId('queued-message-content'), { key: 'Delete' });
+    expect(onremove).not.toHaveBeenCalled();
+    expect(onsendnow).not.toHaveBeenCalled();
+  });
+
   it('bulk actions select only messages the admitted principal can mutate', async () => {
     const onsendall = vi.fn().mockResolvedValue('queued');
     const onclearall = vi.fn().mockResolvedValue(undefined);
@@ -1115,8 +1180,8 @@ describe('QueuedMessageList', () => {
     renderQueue({ props: { messages, authors: null, ownPrincipalId: 'self' } });
     const chips = screen.getAllByTestId('queued-message-author');
     expect(chips).toHaveLength(3);
-    expect(chips[0].getAttribute('aria-label')).toContain('gitlab@one.example');
-    expect(chips[1].getAttribute('aria-label')).toContain('gitlab@two.example');
+    expect(chips[0].getAttribute('aria-label')).toContain('Same Person · @same');
+    expect(chips[1].getAttribute('aria-label')).toContain('Same Person · @same');
     expect(chips[2].textContent?.trim()).not.toBe('');
     expect(chips.every((chip) => !chip.hasAttribute('data-principal-id'))).toBe(true);
     expect(JSON.stringify(messages)).toBe(before);

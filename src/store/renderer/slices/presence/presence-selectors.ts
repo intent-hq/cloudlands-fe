@@ -14,12 +14,7 @@ import {
   selectPrincipalSnapshot,
 } from '../principal/principal-selectors';
 import type { StoreState } from '../../types';
-import type {
-  PresenceFocusTarget,
-  PresenceIdentity,
-  PresencePerson,
-  PresenceState,
-} from './presence-types';
+import type { PresenceIdentity, PresencePerson, PresenceState } from './presence-types';
 
 /** One admitted presentation lifetime; no saved profile is an authority fallback. */
 export const selectPresenceContext = store.createSelector((state): string | null =>
@@ -41,7 +36,6 @@ const NO_MEMBERS: PresenceMember[] = [];
 const NO_PEOPLE: PresencePerson[] = [];
 type MentionMember = WorkspaceMember & { login: string };
 const NO_MENTION_MEMBERS: MentionMember[] = [];
-const NO_TARGETS: Record<string, PresenceFocusTarget> = {};
 
 const rosterMembers = (presence: PresenceState, workspaceId: string): PresenceMember[] => {
   const roster = presence.rosters[workspaceId];
@@ -131,32 +125,6 @@ export const selectWorkspacePresencePeople = store.createSelector<
     })
     .sort((a, b) => presenceRowRank(a) - presenceRowRank(b));
   return people.length > 0 ? people : NO_PEOPLE;
-});
-
-/**
- * Where each online member of a workspace looks right now, by principal id:
- * the agent chat their roster focus names (preferred), else the note. People
- * whose focus is only the bare workspace tab have no entry.
- */
-export const selectWorkspacePresenceFocusTargets = store.createSelector<
-  [workspaceId: string],
-  Record<string, PresenceFocusTarget>
->((state, workspaceId) => {
-  if (!sharedWorkspace(state, workspaceId)) return NO_TARGETS;
-  let targets: Record<string, PresenceFocusTarget> | null = null;
-  for (const member of rosterMembers(state.presence, workspaceId)) {
-    const items = member.focus.filter((item) => item.workspaceId === workspaceId);
-    const agentId = items.find((item) => item.agentId)?.agentId;
-    const noteId = items.find((item) => item.noteId)?.noteId;
-    const target: PresenceFocusTarget | null = agentId
-      ? { kind: 'agent', agentId }
-      : noteId
-        ? { kind: 'note', noteId }
-        : null;
-    if (!target) continue;
-    (targets ??= {})[member.principalId] = target;
-  }
-  return targets ?? NO_TARGETS;
 });
 
 /**

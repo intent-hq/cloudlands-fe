@@ -12,6 +12,7 @@ import {
 import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
 import type { HostRole } from '$shared/types/principal';
 
+import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 export function setupPersonalDevicesFixture(role: HostRole) {
   const before = store.state;
@@ -40,24 +41,23 @@ export function setupPersonalDevicesFixture(role: HostRole) {
           principal,
         },
       };
-    if (method === 'client.list')
+    if (method === 'settings.list')
       return {
         ok: true,
         result: {
-          clients: ['Preview phone', 'Preview tablet'].map((name, index) => ({
-            clientId: `preview-${index}`,
-            name,
-            deviceKind: index ? 'tablet' : 'phone',
-            principalId: principal.id,
-            hostRole: role,
-            login: null,
-            displayName: null,
-            avatarUrl: null,
-            capabilities: {},
-            connections: 1,
-            transports: ['wss'],
-            connectedAt: '2026-09-30T12:00:00Z',
-          })),
+          revision: 1,
+          settings: [
+            {
+              path: 'server.wsApi.enabled',
+              value: true,
+              type: 'boolean',
+              defaultValue: false,
+              origin: 'file',
+              category: 'server',
+              label: 'Remote access',
+              description: '',
+            },
+          ],
         },
       };
     throw new Error('Unexpected RPC in personal Devices preview');
@@ -65,7 +65,7 @@ export function setupPersonalDevicesFixture(role: HostRole) {
   const previousApi = window.electronAPI;
   installMockElectronBridge({
     'pairing.getSelfInfo': () => fixture({ method: 'pairing.getSelfInfo' }).result,
-    'client.list': () => fixture({ method: 'client.list' }).result,
+    'settings.list': () => fixture({ method: 'settings.list' }).result,
   });
   store.dispatch(setLabsMultiplayerEnabled(true));
   store.dispatch(
@@ -105,8 +105,10 @@ export function setupPersonalDevicesFixture(role: HostRole) {
     ),
   );
   const stop = store.runSaga(personalDevicesSaga);
+  const stopApi = store.runSaga(websocketApiSaga);
   return () => {
     stop();
+    stopApi();
     window.electronAPI = previousApi;
     store.dispatch(setLabsMultiplayerEnabled(before.userPreferences.labsMultiplayerEnabled));
     store.dispatch(

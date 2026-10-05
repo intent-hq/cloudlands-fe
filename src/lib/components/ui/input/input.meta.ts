@@ -10,6 +10,9 @@ export const inputMetadata = parseUiComponentMetadata({
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/accept-changes/components/NativeReviewAttempt.svelte',
+    'src/features/accept-changes/components/NativeSidebarReview.svelte',
+    'src/features/accept-changes/components/RepositorySelectionEditor.svelte',
     'src/features/collaboration-auth/renderer/CollaborationSignInModal.svelte',
     'src/features/dev-console/TrafficInspector.svelte',
     'src/features/home/HomeSearch.svelte',
@@ -72,6 +75,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/workspace/PullRequestCreator.svelte',
     'src/lib/components/workspace/WorkspaceSidebarHeader.svelte',
     'src/lib/components/workspace/initializer/AddRemoteSetupModal.svelte',
+    'src/lib/components/workspace/initializer/GitLabPickerList.svelte',
     'src/lib/components/workspace/initializer/IssueSuggestions.svelte',
     'src/lib/components/workspace/initializer/RepoSelector.svelte',
     'src/lib/components/workspace/sidebar/BranchDisplay.svelte',

@@ -1049,7 +1049,7 @@ describe('integrations-bridge-seeder', () => {
 
       await expect(
         mockInvoke(FORGE_AUTH_CHANNELS.CANCEL_AUTH, { provider: 'gitlab', host: HOST }),
-      ).resolves.toEqual({ success: true });
+      ).resolves.toEqual({ success: true, cancelled: true });
       await expect(
         mockInvoke(FORGE_AUTH_CHANNELS.REVOKE, { provider: 'gitlab', host: HOST }),
       ).resolves.toEqual({ success: true });
@@ -1064,6 +1064,67 @@ describe('integrations-bridge-seeder', () => {
       ]);
     });
 
+    it.each([true, false])('preserves full-instance cancellation outcome %s', async (cancelled) => {
+      const target = {
+        provider: 'gitlab',
+        host: 'git.example.com:8443',
+        instanceBaseUrl: 'https://git.example.com:8443/Forge',
+      };
+      mockedRequest.mockResolvedValueOnce({ ok: true, cancelled });
+      await expect(mockInvoke(FORGE_AUTH_CHANNELS.CANCEL_AUTH, target)).resolves.toEqual({
+        success: true,
+        cancelled,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith('sourceControl.cancelAuth', target);
+    });
+    it('forwards the full target through status, user, connect and revoke without dropping its prefix', async () => {
+      const target = {
+        provider: 'gitlab',
+        host: 'git.example.com:8443',
+        instanceBaseUrl: 'https://git.example.com:8443/Forge',
+      };
+      mockedRequest
+        .mockResolvedValueOnce({ ...STATUS, ...target })
+        .mockResolvedValueOnce({ user: GITLAB_USER })
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true });
+      await mockInvoke(FORGE_AUTH_CHANNELS.GET_STATUS, target);
+      await mockInvoke(FORGE_AUTH_CHANNELS.GET_USER, target);
+      await mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+        ...target,
+        method: 'pat',
+        token: 'test-token',
+      });
+      await mockInvoke(FORGE_AUTH_CHANNELS.REVOKE, target);
+      expect(mockedRequest.mock.calls).toEqual([
+        ['sourceControl.authStatus', target],
+        ['sourceControl.getUser', target],
+        ['sourceControl.connect', { ...target, method: 'pat', token: 'test-token' }],
+        ['sourceControl.revoke', target],
+      ]);
+    });
+    it.each([
+      { instanceBaseUrl: 17 },
+      { instanceBaseUrl: 'http://gitlab.example.com/Forge' },
+      { instanceBaseUrl: 'https://other.example.com/Forge' },
+    ])('refuses a malformed or mismatching logical target %j', async (bad) => {
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CONNECT, {
+          provider: 'gitlab',
+          host: HOST,
+          method: 'pat',
+          token: 'test-token',
+          ...bad,
+        }),
+      ).resolves.toMatchObject({ success: false });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+    it('does not invent cancellation when an older response omits its outcome', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true });
+      await expect(
+        mockInvoke(FORGE_AUTH_CHANNELS.CANCEL_AUTH, { provider: 'gitlab', host: HOST }),
+      ).resolves.toMatchObject({ success: false });
+    });
     it('connect sends the PAT only with method "pat" and maps { ok, method } to the success envelope', async () => {
       mockedRequest.mockResolvedValueOnce({ ok: true, method: 'pat' });
 

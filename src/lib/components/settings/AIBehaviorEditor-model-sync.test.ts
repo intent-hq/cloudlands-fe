@@ -1,3 +1,4 @@
+import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -55,6 +56,7 @@ function publishWorkspace(def: SpecialistDef) {
 
 async function setup(def = initial, workspaceDef = def) {
   disposers.push(store.init());
+  admitLegacyPrincipal();
   const restore = preview.states.reasoning.setup?.();
   if (restore) disposers.push(restore);
   let saved = def;
@@ -230,14 +232,14 @@ it('keeps a project definition scoped instead of reading the same-id user defini
   };
   const harness = await setup(initial, project);
   const trigger = harness.root.container.querySelector('button[aria-haspopup="listbox"]')!;
-  // No workspace model catalog is loaded: the picker honestly renders the id.
-  expect(trigger.textContent).toContain('codex-preview-deep');
+  // The workspace catalog is cold, but shared learned names are already available.
+  expect(trigger.textContent).toContain('Deep');
   publishWorkspace({
     ...project,
     model: 'codex-preview-fast',
     resolvedModel: 'codex-preview-fast',
   });
-  await waitFor(() => expect(trigger.textContent).toContain('codex-preview-fast'));
+  await waitFor(() => expect(trigger.textContent).toContain('Fast'));
   expect(store.state.specialists.fileSpecialists.map['chief-of-staff'].model).toBe(
     'codex-preview-balanced',
   );

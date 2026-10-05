@@ -5,6 +5,7 @@ import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/da
 import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import type { StoreState } from '$store/renderer/types';
 import { initialState as userPreferences } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { repositoryCheckoutReducer } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
 import {
   principalContextChanged,
   principalReceived,
@@ -22,6 +23,7 @@ export function withLegacyPrincipal(input: object, role: 'owner' | 'guest' = 'ow
     ...state,
     ...createAdmittedLegacyPrincipal({ connections, daemonHealth, workspaceEvents }, role),
     userPreferences: { ...userPreferences, labsMultiplayerEnabled: true, ...state.userPreferences },
+    repositoryCheckout: state.repositoryCheckout ?? repositoryCheckoutReducer.initialState,
   } as StoreState;
 }
 

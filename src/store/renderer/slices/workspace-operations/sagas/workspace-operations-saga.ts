@@ -135,8 +135,25 @@ function hasActiveWork({
 }
 
 // Single-workspace gating: the only path that fetches `workspace.localChanges`.
-function getSingleWorkspaceActiveWork(workspaceId: string): Promise<ActiveWorkNames> {
-  return getActiveWorkNames(workspaceId, { includeLocalChanges: true });
+function* getSingleWorkspaceActiveWork(
+  workspaceId: string,
+  kind: 'archive' | 'delete',
+): SagaGenerator<ActiveWorkNames | null> {
+  const context = yield* selectPrincipalActionContext.effect();
+  if (!context) return null;
+  const result = yield* call(getActiveWorkNames, workspaceId, { includeLocalChanges: true });
+  if ((yield* selectPrincipalActionContext.effect()) !== context) return null;
+  if (!result) {
+    const notify = yield* call(getToast);
+    if ((yield* selectPrincipalActionContext.effect()) === context) {
+      notify.error(
+        kind === 'archive'
+          ? m.workspace_ops_archiveFailed_error()
+          : m.workspace_ops_deleteFailed_error(),
+      );
+    }
+  }
+  return result;
 }
 
 // Bulk flows count agents/hooks/open PRs and guests but never fetch local changes
@@ -158,7 +175,7 @@ function countActiveWork(items: ActiveWorkNames[]): {
   );
 }
 
-function* collectActiveWork(workspaces: Workspace[]): SagaGenerator<ActiveWorkNames[]> {
+function* collectActiveWork(workspaces: Workspace[]): SagaGenerator<(ActiveWorkNames | null)[]> {
   return yield* call(() =>
     Promise.all(workspaces.map((workspace) => getActiveWorkNames(workspace.id))),
   );
@@ -271,8 +288,8 @@ function* requestDelete(action: ReturnType<typeof requestDeleteWorkspace>): Saga
   if (!workspace) return;
   const operation = captureWorkspaceDeletion(workspace);
   if (!operation) return;
-  const activeWork = yield* call(getSingleWorkspaceActiveWork, workspaceId);
-  if (!operation.current()) return;
+  const activeWork = yield* getSingleWorkspaceActiveWork(workspaceId, 'delete');
+  if (!activeWork || !operation.current()) return;
   if (hasActiveWork(activeWork)) {
     yield* put(openDeleteWarning({ workspaceId, ...activeWork }));
     return;
@@ -333,7 +350,8 @@ function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGener
   const [workspaceId] = action.payload;
   const workspace = yield* selectWorkspaceById.effect(workspaceId);
   if (!workspace) return;
-  const activeWork = yield* call(getSingleWorkspaceActiveWork, workspaceId);
+  const activeWork = yield* getSingleWorkspaceActiveWork(workspaceId, 'archive');
+  if (!activeWork) return;
   if (hasActiveWork(activeWork)) {
     yield* put(openArchiveWarning({ workspaceId, ...activeWork }));
     return;
@@ -497,7 +515,23 @@ function* computeBulkActiveWork(
   const token = yield* selectBulkComputeToken.effect();
   const workspaces = yield* selectWorkspaceItems.effect();
   const targets = workspacesForIds(workspaceIds, workspaces);
-  const counts = countActiveWork(yield* collectActiveWork(targets));
+  const context = yield* selectPrincipalActionContext.effect();
+  const items = yield* collectActiveWork(targets);
+  if ((yield* selectBulkComputeToken.effect()) !== token) return;
+  if (!context || (yield* selectPrincipalActionContext.effect()) !== context) return;
+  if (items.some((item) => item === null)) {
+    yield* put(kind === 'archive' ? closeBulkArchiveConfirm() : closeBulkDeleteConfirm());
+    const notify = yield* call(getToast);
+    if ((yield* selectPrincipalActionContext.effect()) === context) {
+      notify.error(
+        kind === 'archive'
+          ? m.workspace_ops_archiveFailed_error()
+          : m.workspace_ops_deleteFailed_error(),
+      );
+    }
+    return;
+  }
+  const counts = countActiveWork(items.filter((item): item is ActiveWorkNames => item !== null));
   yield* put(bulkActiveWorkComputed({ kind, ...counts, token }));
 }
 

@@ -17,6 +17,7 @@
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
+  import MobileSettings from '$features/settings/MobileSettings.svelte';
   import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
@@ -122,6 +123,7 @@
     'providers',
     'connections',
     'devices',
+    'mobile',
     'collaboration',
     'setup',
     'advanced',
@@ -147,8 +149,9 @@
     devices: 'devices',
     machines: 'devices',
     'backend-sync': 'devices',
-    'websocket-api': 'devices',
-    'remote-access': 'devices',
+    mobile: 'mobile',
+    'websocket-api': 'mobile',
+    'remote-access': 'mobile',
     collaboration: 'collaboration',
     'guest-sessions': 'collaboration',
     sharing: 'collaboration',
@@ -213,7 +216,7 @@
     const targetTab = resolveHashTab(targetId);
     if (targetTab) return targetTab;
     if (tabParam && isSettingsTab(tabParam)) return tabParam;
-    return (tabParam && resolveLegacyTab(tabParam)) || 'display';
+    return (tabParam && resolveLegacyTab(tabParam)) || 'agent-behavior';
   }
 
   function getInitialTab(): SettingsTab {
@@ -221,7 +224,6 @@
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
-  let localSettingsRequested = $state(0);
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -421,7 +423,6 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
-    if (resolveHashToTarget(targetId)?.id === 'websocket-api') localSettingsRequested += 1;
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -583,12 +584,10 @@
           <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
-        <!-- Devices -->
+        <!-- Machines -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
-            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
-              <DevicesSettings bind:localSettingsRequested />
-            </div>
+            <DevicesSettings />
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
@@ -600,6 +599,14 @@
               <section data-slot="settings-section-body" class="px-6 py-4">
                 <BackendSyncSettings />
               </section>
+            </div>
+          </div>
+        {/if}
+
+        {#if activeTab === 'mobile'}
+          <div id="mobile" data-highlight-id="mobile" use:highlightTarget class="scroll-mt-20">
+            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+              <MobileSettings />
             </div>
           </div>
         {/if}

@@ -793,53 +793,57 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
 });
 
 describe('ChatMessage portable human authors', () => {
-  it('shows distinct historical identities and unknown human without membership or local-principal inference', () => {
-    const authors = [
-      {
-        principalId: null,
-        login: 'same',
-        displayName: 'Same Person',
-        avatarUrl: null,
-        identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
-      },
-      {
-        principalId: null,
-        login: 'same',
-        displayName: 'Same Person',
-        avatarUrl: null,
-        identity: { provider: 'gitlab' as const, host: 'two.example', externalUserId: '42' },
-      },
-      { principalId: null, login: null, displayName: null, avatarUrl: null },
-    ];
-    for (const [i, author] of authors.entries()) {
-      const message: AgentMessage = {
-        ...userTextMessage(`portable body ${i}`),
-        id: `portable-${i}`,
-        author,
-        metadata: { humanAuthor: { sourcePrincipalId: 'self' } },
-      };
-      const before = JSON.stringify(message);
-      render(ChatMessage, {
-        props: {
-          message,
-          workspace: createMockWorkspace({ memberCount: 1, ownerPrincipalId: 'self' }),
-          ownPrincipalId: 'self',
+  it.each([undefined, null, 'self'])(
+    'shows historical identities without owner inference when owner ID is %s',
+    (ownerPrincipalId) => {
+      const authors = [
+        {
+          principalId: null,
+          login: 'same',
+          displayName: 'Same Person',
+          avatarUrl: null,
+          identity: { provider: 'gitlab' as const, host: 'one.example', externalUserId: '42' },
         },
-      });
-      expect(JSON.stringify(message)).toBe(before);
-    }
-    const chips = screen.getAllByTestId('user-message-author');
-    expect(chips).toHaveLength(3);
-    expect(chips[0].getAttribute('aria-label')).toContain('gitlab@one.example');
-    expect(chips[1].getAttribute('aria-label')).toContain('gitlab@two.example');
-    expect(chips[2].textContent?.trim()).not.toBe('');
-    expect(
-      chips.every(
-        (chip) => !chip.hasAttribute('data-principal-id') && !chip.hasAttribute('data-sender-role'),
-      ),
-    ).toBe(true);
-    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
-  });
+        {
+          principalId: null,
+          login: 'same',
+          displayName: 'Same Person',
+          avatarUrl: null,
+          identity: { provider: 'gitlab' as const, host: 'two.example', externalUserId: '42' },
+        },
+        { principalId: null, login: null, displayName: null, avatarUrl: null },
+      ];
+      for (const [i, author] of authors.entries()) {
+        const message: AgentMessage = {
+          ...userTextMessage(`portable body ${i}`),
+          id: `portable-${i}`,
+          author,
+          metadata: { humanAuthor: { sourcePrincipalId: 'self' } },
+        };
+        const before = JSON.stringify(message);
+        render(ChatMessage, {
+          props: {
+            message,
+            workspace: createMockWorkspace({ memberCount: 1, ownerPrincipalId }),
+            ownPrincipalId: 'self',
+          },
+        });
+        expect(JSON.stringify(message)).toBe(before);
+      }
+      const chips = screen.getAllByTestId('user-message-author');
+      expect(chips).toHaveLength(3);
+      expect(chips[0].getAttribute('aria-label')).toContain('Same Person · @same');
+      expect(chips[1].getAttribute('aria-label')).toContain('Same Person · @same');
+      expect(chips[2].textContent?.trim()).not.toBe('');
+      expect(
+        chips.every(
+          (chip) =>
+            !chip.hasAttribute('data-principal-id') && !chip.hasAttribute('data-sender-role'),
+        ),
+      ).toBe(true);
+      expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+    },
+  );
 });
 
 describe('ChatMessage human author identity (multiplayer)', () => {
@@ -865,7 +869,7 @@ describe('ChatMessage human author identity (multiplayer)', () => {
     const header = screen.getByTestId('user-message-author');
     expect(header.getAttribute('data-principal-id')).toBe(author.principalId);
     expect(header.getAttribute('aria-label')).toContain('Guest User');
-    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Guest User');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Guest User · @guest');
     const avatar = screen.getByTestId('user-message-author-avatar') as HTMLImageElement;
     expect(avatar.getAttribute('src')).toBe(author.avatarUrl);
     expect(screen.getByText('hello from a guest')).toBeTruthy();
@@ -919,7 +923,7 @@ describe('ChatMessage human author identity (multiplayer)', () => {
       },
     });
 
-    expect(screen.getByTestId('user-message-author-name').textContent).toBe('guest');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('@guest');
     expect(screen.queryByTestId('user-message-author-avatar')).toBeNull();
     expect(screen.getByTestId('user-message-author-avatar-fallback').textContent).toBe('G');
     unmount();
@@ -992,9 +996,9 @@ describe('ChatMessage human author identity (multiplayer)', () => {
       owner.principalId,
     ]);
     expect(screen.getAllByTestId('user-message-author-name').map((n) => n.textContent)).toEqual([
-      'Guest User',
-      'Owner Person',
-      'Owner Person',
+      'Guest User · @guest',
+      'Owner Person · @owner',
+      'Owner Person · @owner',
     ]);
     expect(
       screen
@@ -1102,7 +1106,7 @@ describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
     expect(header.getAttribute('data-principal-id')).toBe(guest.principalId);
     expect(header.getAttribute('data-sender-role')).toBe('collaborator');
     expect(screen.getByTestId('user-message-author-name').textContent).toBe(
-      '@octocat (The Octocat)',
+      'The Octocat · @octocat',
     );
     expect(screen.getByTestId('user-message-author-role').textContent?.trim()).not.toBe('');
     expect((screen.getByTestId('user-message-author-avatar') as HTMLImageElement).src).toBe(
@@ -1180,8 +1184,10 @@ describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
 
     const header = screen.getByTestId('user-message-author');
     expect(header.getAttribute('data-sender-role')).toBeNull();
-    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
-    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Owner Person');
+    expect(screen.getByTestId('user-message-author-role').textContent).toBe('Owner');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      'Owner Person · @owner',
+    );
   });
 
   it('keeps a lookalike first line, and no guest role, when it does not match the projection', () => {
@@ -1218,8 +1224,10 @@ describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
     });
 
     expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBeNull();
-    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
-    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Owner Person');
+    expect(screen.getByTestId('user-message-author-role').textContent).toBe('Owner');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      'Owner Person · @owner',
+    );
     expect(screen.getByText(/Message from @owner \(Owner Person\)/)).toBeTruthy();
     expect(screen.getByText(/quoting the daemon/)).toBeTruthy();
   });
@@ -1238,7 +1246,7 @@ describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
       'collaborator',
     );
     expect(screen.getByTestId('user-message-author-name').textContent).toBe(
-      '@a b (Two Words Here)',
+      'Two Words Here · @a b',
     );
     expect(screen.getByText('hi')).toBeTruthy();
   });
@@ -1730,7 +1738,7 @@ describe('ChatMessage PR-monitor wake attribution', () => {
 });
 
 describe('ChatMessage historical host-member sender', () => {
-  it('shows member rather than guest with qualified accessible context and keeps stored bytes', () => {
+  it('keeps member provenance without a role suffix and preserves stored bytes', () => {
     const header =
       'Message from @same (Same Person), a host member (principal person-1; gitlab@gitlab.example:8443 user 42) — not the workspace owner.';
     const message: AgentMessage = {
@@ -1752,10 +1760,10 @@ describe('ChatMessage historical host-member sender', () => {
     });
     const chip = screen.getByTestId('user-message-author');
     expect(chip.getAttribute('data-sender-role')).toBe('member');
-    expect(chip.getAttribute('aria-label')).toContain('Host member');
-    expect(chip.getAttribute('aria-label')).toContain('gitlab@gitlab.example:8443');
-    expect(chip.getAttribute('aria-label')).toContain('42');
-    expect(screen.getByTestId('user-message-author-role').textContent).toBe('Host member');
+    expect(chip.getAttribute('aria-label')).not.toContain('Host member');
+    expect(chip.getAttribute('aria-label')).toContain('Same Person · @same');
+    expect(chip.getAttribute('aria-label')).not.toContain('42');
+    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
     expect(screen.getByText('member body')).toBeTruthy();
     expect(screen.queryByText(header, { exact: false })).toBeNull();
     expect(JSON.stringify(message)).toBe(before);

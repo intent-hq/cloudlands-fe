@@ -5,11 +5,11 @@
   "guest": {
     "390": {
       "probes": {
-        "data-personal-devices-ready=true": {
+        "data-slot=settings-form": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 354,
+          "height": 162,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -21,7 +21,7 @@
         }
       },
       "root": {
-        "height": 452,
+        "height": 260,
         "width": 390
       }
     }
@@ -29,11 +29,11 @@
   "member": {
     "390": {
       "probes": {
-        "data-personal-devices-ready=true": {
+        "data-slot=settings-form": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 354,
+          "height": 162,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -45,7 +45,7 @@
         }
       },
       "root": {
-        "height": 452,
+        "height": 260,
         "width": 390
       }
     }
@@ -53,11 +53,11 @@
   "owner-no-profile": {
     "390": {
       "probes": {
-        "data-personal-devices-ready=true": {
+        "data-slot=settings-form": {
           "fontSize": 15,
           "fontWeight": 400,
           "gap": 0,
-          "height": 318,
+          "height": 323,
           "lineHeight": 22,
           "marginBottom": 0,
           "marginTop": 0,
@@ -69,7 +69,7 @@
         }
       },
       "root": {
-        "height": 416,
+        "height": 421,
         "width": 390
       }
     }

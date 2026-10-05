@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import type { StoreAction, StoreState } from '../../../types';
@@ -50,12 +51,25 @@ it('creates a user specialist through the real client and confirms the wire cata
   });
   let specialists = specialistsReducer(undefined, { type: '@@init' });
   const channel = stdChannel();
-  const state = () => ({ specialists, githubAuth: { isAuthenticated: false } });
+  const state = () => withLegacyPrincipal({ specialists, githubAuth: { isAuthenticated: false } });
   const dispatch = (action: StoreAction<unknown>) => {
     specialists = specialistsReducer(specialists, action);
     channel.put(action);
   };
-  const task = runSaga({ channel, dispatch, getState: state }, specialistsSaga);
+  const task = runSaga(
+    {
+      channel,
+      dispatch,
+      getState: state,
+      context: {
+        reduxStore: { getState: state, subscribe: () => () => {} },
+        reportRuntimeError: (error: unknown) => {
+          throw error;
+        },
+      },
+    },
+    specialistsSaga,
+  );
   try {
     await vi.waitFor(() => expect(specialists.fileSpecialistsLoaded).toBe(true));
     dispatch(

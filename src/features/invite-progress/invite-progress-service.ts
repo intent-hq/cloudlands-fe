@@ -20,6 +20,10 @@
  *
  * Payload contract: `src/shared/ipc/invite-progress.ts`.
  */
+import { store as appStore } from '$store/renderer/store';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { selectLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { safeLocalStorage } from '$lib/utils/safe-storage';
 import { Logger } from '$shared/logger';
 import { electronAPI } from '$lib/client/live/backend-transport';
 import { INVITE_PROGRESS_CHANNELS } from '$shared/ipc/channels';
@@ -42,10 +46,12 @@ export interface InviteProgressHandlers {
   onUpdate: (payload: InviteProgressUpdatePayload) => void;
   /** Close the modal (request finished or superseded by main). */
   onDismiss: () => void;
+  onRecoveryState?: (state: { busy: boolean; failed: boolean }) => void;
 }
 
 let activeRequestId: string | null = null;
 let retryable = false;
+let recovery: { requestId: string; busy: boolean; attempted: boolean } | null = null;
 let handlers: InviteProgressHandlers | null = null;
 
 function isProgressPayload(payload: unknown): payload is InviteProgressShowPayload {
@@ -81,6 +87,10 @@ export function installInviteProgressService(newHandlers: InviteProgressHandlers
       });
       return;
     }
+    if (activeRequestId !== payload.requestId) {
+      recovery = { requestId: payload.requestId, busy: false, attempted: false };
+      handlers?.onRecoveryState?.({ busy: false, failed: false });
+    }
     activeRequestId = payload.requestId;
     retryable = payload.phase === 'admission';
     // Ack immediately: main only waits a short window for it before giving up
@@ -98,6 +108,10 @@ export function installInviteProgressService(newHandlers: InviteProgressHandlers
       phase: payload.phase,
     });
     handlers?.onShow(payload);
+    // No preference mutation here: an already-enabled originating renderer can
+    // acknowledge readiness after initial hydration without another user action.
+    if (retryable && recovery && !recovery.attempted && multiplayerEnabled())
+      void continueInvite(false);
   });
 
   const updateListenerId = api.on(INVITE_PROGRESS_CHANNELS.UPDATE, (payload: unknown) => {
@@ -158,12 +172,48 @@ export function cancelInviteProgress(): void {
   });
 }
 
-/** Retry only after publishing the original renderer's current flags; never enable them here. */
+/** Explicit positive action: persist SET true, then acknowledge this window's readiness. */
 export async function retryInviteProgress(): Promise<void> {
+  await continueInvite(true);
+}
+
+function multiplayerEnabled(): boolean {
+  return selectLabsMultiplayerEnabled.select(appStore.state);
+}
+
+async function continueInvite(enable: boolean): Promise<void> {
   const api = electronAPI();
-  const requestId = activeRequestId;
-  if (!api || !requestId || !retryable) return;
-  if (!(await syncCollaborationPolicy())) return;
-  if (activeRequestId !== requestId || !retryable) return;
-  await api.invoke(INVITE_PROGRESS_CHANNELS.RESPONSE, { requestId, action: 'retry' });
+  const request = recovery;
+  if (!api || !request || activeRequestId !== request.requestId || !retryable || request.busy)
+    return;
+  request.busy = true;
+  request.attempted = true;
+  const current = () => recovery === request && activeRequestId === request.requestId && retryable;
+  handlers?.onRecoveryState?.({ busy: true, failed: false });
+  let failed = false;
+  try {
+    if (enable) {
+      // The canonical preference action and its root-owned saga perform the
+      // synchronous localStorage write. Read back its result: that saga deliberately
+      // swallows storage errors, so dispatch alone is not proof of persistence.
+      appStore.dispatch(setLabsMultiplayerEnabled(true));
+      if (safeLocalStorage.getJSON('labs:multiplayerEnabled') !== true)
+        throw new Error('persistence-failed');
+    }
+    // Let the main show call finish installing its handle before policy can replay it.
+    await Promise.resolve();
+    if (!current()) return;
+    if (!(await syncCollaborationPolicy())) throw new Error('policy-failed');
+    if (!current()) return;
+    if (!multiplayerEnabled()) throw new Error('readiness-changed');
+    await api.invoke(INVITE_PROGRESS_CHANNELS.RESPONSE, {
+      requestId: request.requestId,
+      action: 'retry',
+    });
+  } catch {
+    failed = true;
+  } finally {
+    request.busy = false;
+    if (current()) handlers?.onRecoveryState?.({ busy: false, failed });
+  }
 }

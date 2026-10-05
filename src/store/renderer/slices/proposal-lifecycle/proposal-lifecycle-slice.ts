@@ -28,6 +28,14 @@ export const proposalApplySucceeded = createAction<
   [payload: { proposalId: string; completedAt: number; result?: ProposalApplyResult }]
 >('proposalLifecycle/proposalApplySucceeded');
 
+export const proposalTransferProgress = createAction<
+  [payload: { proposalId: string; phase: 'building' | 'relaying' | 'committing' }]
+>('proposalLifecycle/proposalTransferProgress');
+
+export const proposalTransferCheckpoint = createAction<
+  [payload: { proposalId: string; transfer?: NonNullable<ProposalApplyResult['transfer']> }]
+>('proposalLifecycle/proposalTransferCheckpoint');
+
 export const proposalUndoStarted = createAction<
   [payload: { proposalId: string; startedAt: number }]
 >('proposalLifecycle/proposalUndoStarted');
@@ -87,11 +95,14 @@ export function pruneAppliedProposalLifecycleEntries(
 ): ProposalLifecycleState {
   const cutoff = now - PROPOSAL_LIFECYCLE_RETENTION_MS;
   return Object.fromEntries(
-    Object.entries(entries).filter(
-      ([, entry]) =>
-        (entry.status === 'applied' || entry.status === 'dismissed') &&
-        (entry.completedAt ?? 0) >= cutoff,
-    ),
+    Object.entries(entries).filter(([, entry]) => {
+      if (entry.status === 'applied' || entry.status === 'dismissed') {
+        return (entry.completedAt ?? entry.startedAt ?? 0) >= cutoff;
+      }
+      // Unresolved checkpoints prevent repeated imports. They are recovery
+      // state, not completed history, and must not expire while still needed.
+      return !!entry.result?.transfer && (entry.status === 'applying' || entry.status === 'failed');
+    }),
   );
 }
 
@@ -109,7 +120,13 @@ proposalLifecycleReducer.with(
     }
     return {
       ...state,
-      [proposalId]: { status: 'applying', startedAt, lastAction: 'apply' },
+      [proposalId]: {
+        ...current,
+        status: 'applying',
+        error: undefined,
+        startedAt,
+        lastAction: 'apply',
+      },
     };
   },
 );
@@ -221,5 +238,26 @@ proposalLifecycleReducer.with(
         lastAction: 'dismiss' as const,
       },
     };
+  },
+);
+
+proposalLifecycleReducer.with(
+  proposalTransferCheckpoint,
+  (state, { payload: [{ proposalId, transfer }] }) => ({
+    ...state,
+    [proposalId]: {
+      ...state[proposalId],
+      result: transfer ? { transfer } : undefined,
+      transferProgress: undefined,
+    },
+  }),
+);
+
+proposalLifecycleReducer.with(
+  proposalTransferProgress,
+  (state, { payload: [{ proposalId, phase }] }) => {
+    const entry = state[proposalId];
+    if (entry?.status !== 'applying' || !entry.result?.transfer) return state;
+    return { ...state, [proposalId]: { ...entry, transferProgress: phase } };
   },
 );

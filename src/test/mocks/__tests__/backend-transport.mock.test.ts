@@ -1,3 +1,8 @@
+import nativeFixture from '$shared/types/__fixtures__/native-review-v1.json';
+import {
+  NativeReviewPreparedViewSchema,
+  type NativeReviewSession,
+} from '$shared/types/native-review-operation';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Point the real backend-transport module at the fixture. The `vi.mock`
@@ -10,6 +15,9 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 
 import {
   backendRequest,
+  captureBackendRepositoryRoute,
+  captureBackendRepositorySelection,
+  prepareBackendNativeReview,
   backendSubscribe,
   backendUnsubscribe,
   detectLiveStateCapability,
@@ -323,3 +331,105 @@ describe('MockBackendTransport fixture', () => {
 });
 
 type BackendNotificationSpy = { method: string; params?: unknown };
+
+describe('scripted repository routes use the actual transport mock', () => {
+  afterEach(() => resetMockBackend());
+  it('stays unavailable unless the test explicitly provides a captured route', async () => {
+    installMockBackend();
+    await expect(
+      captureBackendRepositoryRoute({ workspaceId: 'ws', kind: 'primary' }),
+    ).rejects.toMatchObject({ code: 'REPOSITORY_ROUTE_UNAVAILABLE' });
+  });
+  it('captures immutable query input independently of ordinary daemon scripting', async () => {
+    const backend = installMockBackend();
+    let root: unknown;
+    const release = vi.fn(async () => {});
+    const route = { release, onRetired: vi.fn(() => () => {}), request: vi.fn() };
+    backend.onRepositoryCapture(async (captured) => {
+      root = captured;
+      return route;
+    });
+    const query = { workspaceId: 'original', kind: 'primary' as const };
+    expect(await captureBackendRepositoryRoute(query)).toBe(route);
+    query.workspaceId = 'replacement';
+    expect(root).toEqual({ workspaceId: 'original', kind: 'primary' });
+    expect(backend.requests).toEqual([]);
+    resetMockBackend();
+    await expect(captureBackendRepositoryRoute(query)).rejects.toMatchObject({
+      code: 'REPOSITORY_ROUTE_UNAVAILABLE',
+    });
+  });
+});
+
+it('selection fixture is explicit, isolated and reset without ordinary request fallback', async () => {
+  const backend = installMockBackend(),
+    root = { workspaceId: 'same', kind: 'primary' as const };
+  await expect(captureBackendRepositorySelection(root)).rejects.toMatchObject({
+    code: 'REPOSITORY_SELECTION_UNAVAILABLE',
+  });
+  const handler = vi.fn(async () => {
+    throw new BackendError({ code: 'forbidden', message: 'denied', rpcCode: -32003 });
+  });
+  backend.onSelectionCapture(handler);
+  await expect(captureBackendRepositorySelection(root)).rejects.toMatchObject({ rpcCode: -32003 });
+  expect(handler).toHaveBeenCalledWith(root);
+  resetMockBackend();
+  await expect(captureBackendRepositorySelection(root)).rejects.toMatchObject({
+    code: 'REPOSITORY_SELECTION_UNAVAILABLE',
+  });
+});
+
+it('supports the real facade native seam independently of generic requests and resets its handler', async () => {
+  const backend = installMockBackend();
+  const input = {
+    workspaceId: 'ws',
+    action: 'create-pr' as const,
+    review: {
+      root: { workspaceId: 'ws', kind: 'primary' as const },
+      choice: { kind: 'saved' as const },
+    },
+  };
+  await expect(prepareBackendNativeReview(input)).rejects.toThrow('NATIVE_REVIEW_UNAVAILABLE');
+  const handler = vi.fn(async () => {
+    throw new Error('native refused');
+  });
+  backend.onNativeReviewPrepare(handler);
+  await expect(prepareBackendNativeReview(input)).rejects.toThrow('native refused');
+  expect(handler).toHaveBeenCalledWith(input);
+  resetMockBackend();
+  await expect(prepareBackendNativeReview(input)).rejects.toThrow('NATIVE_REVIEW_UNAVAILABLE');
+});
+
+it('keeps a captured mock companion independent of resetting the transport lookup', async () => {
+  const backend = installMockBackend(),
+    root = { workspaceId: 'ws', kind: 'primary' as const };
+  const child: NativeReviewSession = {
+    preview: NativeReviewPreparedViewSchema.parse({
+      ...nativeFixture.prepare,
+      root,
+      expiresAfterMs: 300000,
+    }),
+    onRetired: vi.fn(() => vi.fn()),
+    confirm: vi.fn(),
+    reconcile: vi.fn(),
+    release: vi.fn(async () => {}),
+  };
+  const parent: NativeReviewSession = { ...child, prepareCompanion: vi.fn(async () => child) };
+  const prepare = vi.fn(async () => parent);
+  backend.onNativeReviewPrepare(prepare);
+  const input = {
+    workspaceId: 'ws',
+    action: 'commit' as const,
+    review: {
+      root,
+      choice: { kind: 'saved' as const },
+      targetBranch: 'trunk',
+      companion: { kind: 'create-pr' as const },
+    },
+  };
+  const captured = await prepareBackendNativeReview(input);
+  resetMockBackend();
+  expect(await captured.prepareCompanion!()).toBe(child);
+  expect(prepare).toHaveBeenCalledExactlyOnceWith(input);
+  await expect(prepareBackendNativeReview(input)).rejects.toThrow('NATIVE_REVIEW_UNAVAILABLE');
+});

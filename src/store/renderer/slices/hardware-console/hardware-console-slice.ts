@@ -37,6 +37,7 @@ const closedRadialPrompt: RadialPromptPickerState = { open: false, prompts: [], 
 export const initialState: HardwareConsoleState = {
   enabled: true,
   enabledHydrated: false,
+  enabledHydrationSucceeded: false,
   encoderBehavior: 'agent-effort',
   encoderBehaviorHydrated: false,
   encoderBehaviorSaveFailed: false,
@@ -55,6 +56,7 @@ export const initialState: HardwareConsoleState = {
   voiceTranscribing: false,
   actionMappingByModel: normalizeActionMappingsByModel(undefined),
   actionMappingHydrated: false,
+  actionMappingHydrationSucceeded: false,
   cycleScopeByFamily: normalizeCycleScopeByFamily(undefined),
 };
 
@@ -72,8 +74,12 @@ export const keyPinsReconciled = createAction<[keyPins: (string | null)[]]>(
   'hardwareConsole/keyPinsReconciled',
 );
 /** Boot-time hydration of the integration-enabled flag from the daemon settings bag. */
-export const hydrateHardwareConsoleEnabled = createAction<[enabled: boolean]>(
+export const hydrateHardwareConsoleEnabled = createAction<[enabled: boolean, succeeded?: boolean]>(
   'hardwareConsole/hydrateEnabled',
+);
+/** A new admitted owner lifetime must not publish the preceding lifetime's settings. */
+export const hardwareConsoleSettingsHydrationStarted = createAction(
+  'hardwareConsole/settingsHydrationStarted',
 );
 /** Enable/disable the hardware-console integration (device panel toggle). */
 export const setHardwareConsoleEnabled = createAction<[enabled: boolean]>(
@@ -185,7 +191,10 @@ export const voiceTranscriptionFinished = createAction(
 );
 /** Boot-time hydration of the per-model action-key mappings from the daemon settings bag. */
 export const hydrateHardwareConsoleActionMapping = createAction<
-  [actionMappingByModel: Partial<Record<HardwareDeviceModel, ActionKeyActionId[]>>]
+  [
+    actionMappingByModel: Partial<Record<HardwareDeviceModel, ActionKeyActionId[]>>,
+    succeeded?: boolean,
+  ]
 >('hardwareConsole/hydrateActionMapping');
 /** Assign an action to a model's action-key slot (0-based; `none` = unassigned). */
 export const setActionKeyMapping = createAction<
@@ -221,9 +230,22 @@ hardwareConsoleReducer.with(keyPinsReconciled, (state, { payload: [keyPins] }) =
   if (keyPinsEqual(state.keyPins, normalized)) return state;
   return { ...state, keyPins: normalized };
 });
-hardwareConsoleReducer.with(hydrateHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
-  return { ...state, enabled: enabled !== false, enabledHydrated: true };
-});
+hardwareConsoleReducer.with(hardwareConsoleSettingsHydrationStarted, (state) => ({
+  ...state,
+  enabledHydrationSucceeded: false,
+  actionMappingHydrationSucceeded: false,
+}));
+hardwareConsoleReducer.with(
+  hydrateHardwareConsoleEnabled,
+  (state, { payload: [enabled, succeeded = true] }) => {
+    return {
+      ...state,
+      enabled: enabled !== false,
+      enabledHydrated: true,
+      enabledHydrationSucceeded: succeeded,
+    };
+  },
+);
 hardwareConsoleReducer.with(setHardwareConsoleEnabled, (state, { payload: [enabled] }) => {
   if (state.enabled === enabled) return state;
   return { ...state, enabled };
@@ -350,11 +372,12 @@ hardwareConsoleReducer.with(voiceTranscriptionFinished, (state) => {
 });
 hardwareConsoleReducer.with(
   hydrateHardwareConsoleActionMapping,
-  (state, { payload: [actionMappingByModel] }) => {
+  (state, { payload: [actionMappingByModel, succeeded = true] }) => {
     return {
       ...state,
       actionMappingByModel: normalizeActionMappingsByModel(actionMappingByModel),
       actionMappingHydrated: true,
+      actionMappingHydrationSucceeded: succeeded,
     };
   },
 );

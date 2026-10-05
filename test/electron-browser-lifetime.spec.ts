@@ -546,6 +546,80 @@ for (const { tabId, hidden, context } of [
   });
 }
 
+test('background open waits beyond Electron registration for the daemon acknowledgement', async ({}, testInfo) => {
+  test.setTimeout(120_000);
+  const { app, page, profile } = await launch(true);
+  const observations: any[] = [];
+  try {
+    await readyPanel(app, page, 'A-1');
+    await app.evaluate(({ BrowserWindow }, url) => {
+      const g = globalThis as any;
+      g.registryOpenResult = null;
+      g.registryAcknowledgementRequested = false;
+      g.registryOpen = g
+        .lifetimeExecute(
+          { actions: [{ action: 'openTab', url }] },
+          (url: string) => {
+            BrowserWindow.getAllWindows()[0].webContents.send('browser:open-tab', {
+              workspaceId: 'B',
+              tabId: 'B-new',
+              url,
+              ownerAgentId: 'fixture-agent',
+              allowDuplicate: true,
+              visible: false,
+            });
+            return { success: true, message: 'Opening tab', tabId: 'B-new' };
+          },
+          'fixture-agent',
+          'B',
+          undefined,
+          undefined,
+          Date.now() + 20_000,
+          () => {
+            g.registryAcknowledgementRequested = true;
+            return new Promise<boolean>((resolve) => {
+              g.acknowledgeRegistry = resolve;
+            });
+          },
+        )
+        .then((result: unknown) => {
+          g.registryOpenResult = result;
+          return result;
+        });
+    }, `${guestUrl}/registration?tab=B-new`);
+    await expect
+      .poll(() => app.evaluate(() => (globalThis as any).registryAcknowledgementRequested))
+      .toBe(true);
+    expect(await app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-new'))).toBe(
+      true,
+    );
+    expect(await app.evaluate(() => (globalThis as any).registryOpenResult)).toBeNull();
+    expect(
+      (await page.evaluate(() => (window as any).lifetimeFixture.records())).activeWorkspaceId,
+    ).toBe('A');
+    observations.push(await record(app, page, 'webview mounted, daemon acknowledgement pending'));
+    const result = await app.evaluate(async () => {
+      const g = globalThis as any;
+      g.acknowledgeRegistry(true);
+      return g.registryOpen;
+    });
+    expect(result).toMatchObject({
+      success: true,
+      results: [{ success: true, result: { tabId: 'B-new' } }],
+    });
+    await ready(app, 'B-new');
+    expect(
+      await app.evaluate(() => (globalThis as any).lifetimeCdp.evaluate('B-new', 'location.href')),
+    ).toBe(`${guestUrl}/registration?tab=B-new`);
+    await page.evaluate(() => (window as any).lifetimeFixture.close('B-new', true));
+    await expect
+      .poll(() => app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-new')))
+      .toBe(false);
+  } finally {
+    await teardown(app, page, profile, observations, testInfo);
+  }
+});
+
 test('explicit navigation mounts a cap-evicted background tab without focus changes', async ({}, testInfo) => {
   test.setTimeout(120_000);
   const { app, page, profile } = await launch(false);

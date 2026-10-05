@@ -823,6 +823,20 @@ test('watched reasoning search retains the body until the actual scrollport reve
   await viewport.click({ position: { x: 4, y: 4 } });
   await page.keyboard.press('ControlOrMeta+f');
   const input = host.getByRole('search', { name: 'Find in panel' }).getByRole('textbox');
+  await expect(input).toBeFocused();
+  const focusRetained = await input.evaluate(async (node) => {
+    const samples: boolean[] = [];
+    for (let frame = 0; frame < 60; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      samples.push(document.activeElement === node);
+    }
+    return samples;
+  });
+  await info.attach('watched-search-focus-after-navigation', {
+    body: JSON.stringify(focusRetained),
+    contentType: 'application/json',
+  });
+  expect(focusRetained).toEqual(Array(60).fill(true));
   for (const index of [50, 80]) {
     const query = `needle-watched-${index}.`;
     await input.fill(query);

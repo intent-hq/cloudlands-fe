@@ -32,6 +32,7 @@
  */
 
 import { spawn } from 'child_process';
+import { isIsolatedTestBuild } from '../../../main/isolated-test-profile';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
@@ -444,6 +445,13 @@ export function createHelperKeychainClient(options: HelperClientOptions = {}): K
     subcommand: string[],
     stdinBody?: string,
   ): Promise<KeychainClientResult<object>> {
+    if (isIsolatedTestBuild()) {
+      return {
+        ok: false,
+        code: 'helper-missing',
+        message: m.settings_backendSync_status_unavailable(),
+      };
+    }
     const args = [...serviceArgs, ...subcommand];
     if (platform !== 'darwin') {
       return {

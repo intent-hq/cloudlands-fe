@@ -1,5 +1,9 @@
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
+import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
+import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
+import { repositoryCheckoutReducer } from './slices/repository-checkout/repository-checkout-slice';
+import { invitationAccountSearchReducer } from './slices/invitation-account-search/invitation-account-search-slice';
 import { hostMembershipReducer } from './slices/host-membership/host-membership-slice';
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
@@ -108,6 +112,7 @@ import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice'
 import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
 import { principalReducer } from './slices/principal/principal-slice';
+import { presenceFollowReducer } from './slices/presence-follow/presence-follow-slice';
 import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
@@ -119,6 +124,8 @@ import { workspaceShareReducer } from './slices/workspace-share/workspace-share-
 export const reducers = {
   homeIntegrations: homeIntegrationsReducer,
   homeWorkspaces: homeWorkspacesReducer,
+  repositoryContext: repositoryContextReducer,
+  repositoryCheckout: repositoryCheckoutReducer,
   providerSettings: providerSettingsReducer,
   settingsEvents: settingsEventsReducer,
   antigravitySetup: antigravitySetupReducer,
@@ -207,6 +214,7 @@ export const reducers = {
   pdfPreview: pdfPreviewReducer,
   agentSessions: agentSessionReducer,
   agentQueue: agentQueueReducer,
+  pendingSubmissions: pendingSubmissionsReducer,
   agentSubscriptionUI: agentSubscriptionUIReducer,
   onboarding: onboardingReducer,
   workspaceInitializer: workspaceInitializerReducer,
@@ -225,6 +233,7 @@ export const reducers = {
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
   presence: presenceReducer,
+  presenceFollow: presenceFollowReducer,
   principal: principalReducer,
   hostExecution: hostExecutionReducer,
   hostRequirements: hostRequirementsReducer,
@@ -233,5 +242,6 @@ export const reducers = {
   workspaceTransfer: workspaceTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
+  invitationAccountSearch: invitationAccountSearchReducer,
   hostMembership: hostMembershipReducer,
 } as const;

@@ -15,9 +15,15 @@ import { hostRequirementsSaga } from '../../host-requirements/sagas/host-require
 import { hostRequirementsReset } from '../../host-requirements/host-requirements-slice';
 import { notificationSettingsSaga } from '../../user-preferences/sagas/notification-settings-saga';
 import { voiceSettingsSaga } from '../../voice-settings/sagas/voice-settings-saga';
+import { hardwareConsoleSettingsHydrationStarted } from '../../hardware-console/hardware-console-slice';
+import {
+  publishWindowCyclePreferenceSaga,
+  sharedWindowCycleSaga,
+} from '../../hardware-console/sagas/shared-window-cycle-saga';
 
 /** Owns all hardware-console listeners and side effects under one root lifetime. */
 export function* hardwareConsoleSaga() {
+  yield* put(hardwareConsoleSettingsHydrationStarted());
   yield* all([
     call(hardwareConsoleDeviceSaga),
     call(encoderPreferenceSaga),
@@ -25,11 +31,12 @@ export function* hardwareConsoleSaga() {
     call(keyPinPersistenceSaga),
     call(promptPickerSaga),
     call(voiceTranscriptionSaga),
+    call(publishWindowCyclePreferenceSaga),
   ]);
 }
 
 /** Host account/settings readers start only after this window is admitted as owner. */
-export function* hostOwnerServicesSaga() {
+function* watchHostOwnerServices() {
   yield* takeLatestFromSelector(
     selectHostAdministrationContext,
     function* ({ payload }: SelectorChannelPayload<string | null>) {
@@ -50,4 +57,8 @@ export function* hostOwnerServicesSaga() {
       ]);
     },
   );
+}
+
+export function* hostOwnerServicesSaga() {
+  yield* all([call(watchHostOwnerServices), call(sharedWindowCycleSaga)]);
 }

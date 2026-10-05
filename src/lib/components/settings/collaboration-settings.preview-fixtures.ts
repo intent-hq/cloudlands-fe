@@ -1,3 +1,7 @@
+import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+import { collaborationMachineNameClient } from './collaboration-machine-name.client';
+import { appClient } from '$lib/client';
+import { hostUserPresenceSaga } from '$store/renderer/slices/host-membership/sagas/host-user-presence-saga';
 import { store } from '$store/renderer/store';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -28,9 +32,37 @@ export function setupCollaborationSettingsPreview(
   populated = false,
   enabled = true,
   remote = false,
+  status: 'ready' | 'loading' | 'error' = 'ready',
+  mixed = false,
 ) {
   const before = store.state;
+  const originalNameClient = { ...collaborationMachineNameClient };
+  let machineName = populated ? 'Team studio' : '';
+  collaborationMachineNameClient.read = async () => ({ name: machineName, fallback: 'Studio' });
+  collaborationMachineNameClient.save = async (name) => {
+    machineName = name.trim();
+    return machineName;
+  };
   const originalClient = { ...hostMembershipClient };
+  const originalListClients = appClient.clients.list;
+  appClient.clients.list = async () => {
+    if (status === 'loading') return new Promise(() => {});
+    if (status === 'error') throw new Error('Controlled status failure');
+    return [
+      {
+        clientId: 'preview-device',
+        principalId: 'preview-owner',
+        hostRole: 'owner',
+        login: null,
+        displayName: null,
+        avatarUrl: null,
+        connections: 1,
+        capabilities: {},
+        transports: ['wss'],
+        connectedAt: '2026-10-03T00:00:00Z',
+      },
+    ];
+  };
   const identity = remote
     ? { provider: 'gitlab' as const, host: 'gitlab.example', externalUserId: '84' }
     : { provider: 'github' as const, host: 'github.com', externalUserId: '42' };
@@ -136,6 +168,7 @@ export function setupCollaborationSettingsPreview(
               myRole: 'owner',
               canManage: true,
               memberCount: 2,
+              openInviteCount: 0,
             } as Workspace,
           ]
         : [],
@@ -182,6 +215,7 @@ export function setupCollaborationSettingsPreview(
               fingerprint: 'preview',
               tcAddress: null,
               principalId: 'preview-remote-taylor',
+              hostRole: 'member',
               login: 'taylor-work',
               identity: { provider: 'gitlab', host: 'gitlab.example', externalUserId: '107' },
               tokenEncrypted: true,
@@ -194,9 +228,73 @@ export function setupCollaborationSettingsPreview(
       connectedIds: [],
     }),
   );
+  if (mixed) {
+    const workspaces = getItems(store.state.workspace.workspaces);
+    store.dispatch(
+      replaceWorkspaceList([
+        ...workspaces,
+        {
+          ...workspaces[0],
+          id: 'preview-ordinary',
+          title: 'Ordinary private work',
+          memberCount: 3,
+          openInviteCount: 0,
+        } as Workspace,
+        {
+          ...workspaces[0],
+          id: 'preview-pending',
+          title: 'Pending workspace invitation',
+          memberCount: 1,
+          openInviteCount: 1,
+        } as Workspace,
+      ]),
+    );
+    store.dispatch(
+      hostedRosterReceived(
+        'preview-ordinary',
+        [
+          {
+            principalId: 'preview-member',
+            hostRole: 'member',
+            role: 'collaborator',
+            login: 'sam',
+            displayName: 'Sam Rivera',
+            avatarUrl: null,
+            addedAt: '2026-10-01T00:00:00Z',
+          },
+        ],
+        0,
+        10,
+      ),
+    );
+    store.dispatch(hostedRosterReceived('preview-pending', [], 1, 10));
+    const sessions = getItems(store.state.guestSessions.sessions);
+    store.dispatch(
+      guestSessionsListReceived({
+        sessions: [
+          ...sessions,
+          {
+            ...sessions[0],
+            id: 'preview-workspace-guest',
+            hostname: 'Workspace-only host',
+            hostRole: 'guest',
+            workspaces: [{ id: 'preview-direct', title: 'Direct shared project' }],
+          },
+        ],
+        openIds: ['preview-joined'],
+        connectedIds: ['preview-joined'],
+      }),
+    );
+  }
+  const stopName = store.runSaga(settingsFormSaga);
   const stop = store.runSaga(hostMembershipSaga);
+  const stopPresence = store.runSaga(hostUserPresenceSaga);
   return () => {
+    stopName();
+    Object.assign(collaborationMachineNameClient, originalNameClient);
     stop();
+    stopPresence();
+    appClient.clients.list = originalListClients;
     store.dispatch(
       connectionsListReceived({
         connections: getItems(before.connections.connections),

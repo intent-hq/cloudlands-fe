@@ -10,6 +10,7 @@
 
   interface Props {
     isLoadingModels: boolean;
+    retryInFooter?: boolean;
     blockingLoadError: ProviderLoadError | null;
     hasNoAvailableProvider?: boolean;
     hostManaged?: boolean;
@@ -19,6 +20,7 @@
 
   let {
     isLoadingModels,
+    retryInFooter = false,
     blockingLoadError,
     hasNoAvailableProvider = false,
     hostManaged = false,
@@ -86,24 +88,30 @@
         <span class="type-body font-medium">{m.chat_modelPicker_loadFailed_label()}</span>
         <Fa icon={faExclamationTriangle} class="h-3.5 w-3.5" />
       </div>
-      <div class="type-caption max-w-[280px] text-left leading-tight text-muted-foreground">
+      <div
+        class="type-caption max-w-[280px] whitespace-normal [overflow-wrap:anywhere] text-left leading-tight text-muted-foreground"
+      >
         <div>{blockingLoadError.displayText}</div>
         {#if blockingLoadError.hint}
           <div class="mt-1 text-subtle">{blockingLoadError.hint}</div>
         {/if}
       </div>
-      <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
-        <Fa icon={faArrowsRotate} class="h-3 w-3" />
-        {m.chat_modelPicker_retry_label()}
-      </Button>
+      {#if !retryInFooter}
+        <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
+          <Fa icon={faArrowsRotate} class="h-3 w-3" />
+          {m.chat_modelPicker_retry_label()}
+        </Button>
+      {/if}
     </div>
   {:else}
     <div class="flex flex-col items-start gap-2.5 py-4 px-2 text-left text-muted-foreground">
       <span class="type-body">{m.chat_modelPicker_noModels_label()}</span>
-      <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
-        <Fa icon={faArrowsRotate} class="h-3 w-3" />
-        {m.chat_modelPicker_retry_label()}
-      </Button>
+      {#if !retryInFooter}
+        <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
+          <Fa icon={faArrowsRotate} class="h-3 w-3" />
+          {m.chat_modelPicker_retry_label()}
+        </Button>
+      {/if}
     </div>
   {/if}
 </div>

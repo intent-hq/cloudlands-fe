@@ -1,5 +1,8 @@
+import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { describe, expect, it } from 'vitest';
 import {
+  workspaceInitializerGitCheckRequested,
+  workspaceInitializerGitCheckResolved,
   clearWorkspaceInitializerPendingGitHubPrefill,
   DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
   hydrateWorkspaceInitializer,
@@ -366,4 +369,35 @@ describe('workspaceInitializerReducer', () => {
     // Hydration leaves the transient prefill untouched (it is never part of the persisted bag)
     expect(state.pendingGitHubPrefill).toEqual(prefill);
   });
+});
+
+it('keeps Git probe results transient and clears them for a fresh request', () => {
+  const requested = workspaceInitializerReducer(
+    initialState,
+    workspaceInitializerGitCheckRequested(),
+  );
+  expect(requested.gitCheckRequest).toBe(1);
+  expect(requested.gitCheck).toBeNull();
+  const resolved = workspaceInitializerReducer(
+    requested,
+    workspaceInitializerGitCheckResolved('host-A/member', false),
+  );
+  expect(resolved.gitCheck).toEqual({ context: 'host-A/member', available: false });
+  const next = workspaceInitializerReducer(resolved, workspaceInitializerGitCheckRequested());
+  expect(next.gitCheckRequest).toBe(2);
+  expect(next.gitCheck).toBeNull();
+});
+
+it('renews an already mounted Git check when host execution resets initializer state', () => {
+  const requested = workspaceInitializerReducer(
+    initialState,
+    workspaceInitializerGitCheckRequested(),
+  );
+  const changed = workspaceInitializerReducer(requested, hostExecutionConnectionChanged('host-B'));
+  expect(changed.gitCheckRequest).toBe(2);
+  expect(changed.gitCheck).toBeNull();
+  expect(
+    workspaceInitializerReducer(initialState, hostExecutionConnectionChanged('host-B'))
+      .gitCheckRequest,
+  ).toBe(0);
 });

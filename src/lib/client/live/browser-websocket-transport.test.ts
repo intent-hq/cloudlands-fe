@@ -914,3 +914,76 @@ describe('root file reads on the sending connection', () => {
     },
   );
 });
+
+describe('observational node capabilities', () => {
+  it('uses the initial handshake and invalidates on re-hello, reconnect and disposal', async () => {
+    vi.useFakeTimers();
+    const h = createHarness({ reconnectDelayMs: 1 });
+    const observing = h.transport.observeNodeCapabilities();
+    const socket = h.socket();
+    socket.open();
+    await flush();
+    socket.receive({
+      id: socket.lastFrame().id,
+      result: {
+        clientId: 'A',
+        server: { capabilities: { agentNodes: 1, agentPlatformRouting: 1 } },
+      },
+    });
+    await expect(observing).resolves.toEqual({
+      server: { capabilities: { agentNodes: 1, localNodeIsolation: 0, agentPlatformRouting: 1 } },
+    });
+    await h.transport.observeNodeCapabilities();
+    expect(socket.sent).toHaveLength(1);
+    const rehello = h.transport.request('client.hello', {});
+    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      server: { capabilities: null },
+    });
+    socket.receive({ id: socket.lastFrame().id, error: { code: -32601, message: 'rejected' } });
+    await expect(rehello).rejects.toThrow('rejected');
+    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      server: { capabilities: null },
+    });
+    socket.drop();
+    const reconnecting = h.transport.observeNodeCapabilities();
+    await vi.advanceTimersByTimeAsync(1);
+    const replacement = h.socket();
+    expect(replacement).not.toBe(socket);
+    replacement.open();
+    await flush();
+    replacement.receive({
+      id: replacement.lastFrame().id,
+      result: { clientId: 'B', server: { capabilities: { agentNodes: '1' } } },
+    });
+    await expect(reconnecting).resolves.toEqual({
+      server: { capabilities: { agentNodes: 0, localNodeIsolation: 0, agentPlatformRouting: 0 } },
+    });
+    h.transport.dispose();
+    await expect(h.transport.observeNodeCapabilities()).rejects.toThrow();
+  });
+  it('does not let an older concurrent hello restore obsolete capabilities', async () => {
+    const h = createHarness();
+    const observing = h.transport.observeNodeCapabilities();
+    h.socket().open();
+    await flush();
+    h.socket().receive({ id: h.socket().lastFrame().id, result: helloResult() });
+    await observing;
+    const older = h.transport.request('client.hello', {});
+    const oldId = h.socket().lastFrame().id;
+    const newer = h.transport.request('client.hello', {});
+    h.socket().receive({
+      id: h.socket().lastFrame().id,
+      result: { clientId: 'new', server: { capabilities: {} } },
+    });
+    await newer;
+    h.socket().receive({
+      id: oldId,
+      result: { clientId: 'old', server: { capabilities: { agentNodes: 1 } } },
+    });
+    await older;
+    await expect(h.transport.observeNodeCapabilities()).resolves.toEqual({
+      server: { capabilities: { agentNodes: 0, localNodeIsolation: 0, agentPlatformRouting: 0 } },
+    });
+    h.transport.dispose();
+  });
+});

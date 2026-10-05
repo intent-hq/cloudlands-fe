@@ -5,6 +5,7 @@ import { githubAuthClient } from '$features/github-auth/renderer/github-auth.cli
 import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
 import { sentryAuthClient } from '$features/sentry-auth/renderer/sentry-auth.client';
 import { navigateToSettings } from '$lib/utils/workspace-navigation';
+import { COLLABORATION_AUTH } from '$features/collaboration-auth/types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { CONNECTIONS_CHANGED_EVENT } from '$shared/types/connections';
@@ -37,6 +38,8 @@ import {
 // Keep unrelated startup reads pending at the transport boundary. The full
 // production registry, Store middleware, reducers and workflow sagas still run.
 vi.mock('$lib/client/live/backend-transport', () => ({
+  electronAPI: () => window.electronAPI,
+  observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
   backendRequest: vi.fn(() => new Promise(() => {})),
   backendSubscribe: vi.fn(() => new Promise(() => {})),
   backendUnsubscribe: vi.fn(async () => {}),
@@ -80,6 +83,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetMockIpcRouter();
   hmr = {};
+  registerMockIpcHandler(COLLABORATION_AUTH.POLICY, () => ({ ok: true }));
   registerMockIpcHandler(C.LIST, () => ({
     connections: [],
     activeId: 'local',
@@ -89,7 +93,9 @@ beforeEach(() => {
   registerMockIpcHandler('agent:get-active-streams', () => new Promise(() => {}));
   registerMockIpcHandler('workspace:list', () => new Promise(() => {}));
   invoke = vi.fn((channel: string, ...args: unknown[]) =>
-    channel.startsWith('connections:') || channel.startsWith('guest-sessions:')
+    channel.startsWith('connections:') ||
+    channel.startsWith('guest-sessions:') ||
+    channel === COLLABORATION_AUTH.POLICY
       ? mockInvoke(channel, ...args)
       : new Promise(() => {}),
   );
@@ -198,7 +204,11 @@ describe('authentication workflow production composition', () => {
     appStore.dispatch(request());
     const legacy = openConnectionRequested(guest.id);
     appStore.dispatch(legacy);
-    expect(open).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
+    expect(invoke).toHaveBeenCalledWith(
+      COLLABORATION_AUTH.POLICY,
+      expect.objectContaining({ multiplayer: true }),
+    );
     appStore.dispatch(connectionWorkflowCleared('indicator'));
     opening.resolve({ status: 'secret-unavailable' });
     await expect(legacy.promise).resolves.toEqual({ status: 'secret-unavailable' });

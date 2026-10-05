@@ -480,7 +480,7 @@
 
     // Direct workspace routes open their tab without mirroring route identity into Redux.
     if (workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId));
+      appStore.dispatch(openWorkspaceTab(workspaceId, $page.state?.presenceFollowRequestId));
       appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
     }
     // Register global palette shortcuts (config-driven later)

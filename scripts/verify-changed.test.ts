@@ -3,6 +3,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -26,15 +27,24 @@ import {
   parseArgs,
   printPlan,
   runCli,
-  runVerificationPlan,
+  runVerificationPlan as runPlanWithDiscovery,
   testRunner,
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
 import { lockOwner } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
+import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
 
 const requireFromTest = createRequire(import.meta.url);
+
+// These fixtures isolate orchestration with stubbed child commands. Real runner
+// discovery and no-body budget rejection live in verify-unit-selection.test.ts.
+function runVerificationPlan(
+  ...[plan, root, options = {}]: Parameters<typeof runPlanWithDiscovery>
+) {
+  return runPlanWithDiscovery(plan, root, { resolveUnitSelections: async () => [], ...options });
+}
 
 function vitestList(root: string, filter: string, config = 'vitest.config.ts') {
   const bin = join(requireFromTest.resolve('vitest/package.json'), '..', 'vitest.mjs');
@@ -63,6 +73,12 @@ function fixtureRoot(files: Record<string, string>) {
     mkdirSync(join(path, '..'), { recursive: true });
     writeFileSync(path, content);
   }
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  mkdirSync(join(root, 'src/main'), { recursive: true });
+  copyFileSync(
+    join(process.cwd(), 'scripts/generate-build-config.cjs'),
+    join(root, 'scripts/generate-build-config.cjs'),
+  );
   return root;
 }
 
@@ -1011,7 +1027,7 @@ describe('verification planning', () => {
           },
         }),
       });
-      mkdirSync(join(root, 'scripts'));
+      mkdirSync(join(root, 'scripts'), { recursive: true });
       symlinkSync(
         join(process.cwd(), 'scripts/check-hardcoded-strings.mjs'),
         join(root, 'scripts/check-hardcoded-strings.mjs'),
@@ -1654,7 +1670,7 @@ describe('verification planning', () => {
     expect(ids(['src/lib/example.ts'])).not.toContain('generate-ipc-channels');
   });
 
-  it('prints every planned command as a pnpm invocation', () => {
+  it('prints every planned check as a pnpm invocation', () => {
     const root = fixtureRoot({ 'src/lib/example.ts': '' });
     const plan = createVerificationPlan(['src/lib/example.ts'], { root, ctTests: [] });
     expect(plan.checks.length).toBeGreaterThan(0);
@@ -1662,7 +1678,7 @@ describe('verification planning', () => {
 
     const lines: string[] = [];
     printPlan(plan, true, (line: string) => lines.push(line));
-    const commandLines = lines.filter((line) => /^ {2}- [^:]+: /.test(line));
+    const commandLines = lines.filter((line) => /: pnpm (?:exec|run) /.test(line));
     expect(commandLines).toHaveLength(plan.checks.length);
     for (const line of commandLines) expect(line).toMatch(/: pnpm (?:exec|run) /);
   });
@@ -2579,4 +2595,267 @@ describe('expensive-check coordination', () => {
     gate.resolve();
     await Promise.all(runs);
   });
+});
+
+describe('transfer fixture plan prerequisites', () => {
+  const consumer = 'src/lib/components/chat/input/ModelPicker.transfer-selection-contract.test.ts';
+  const unrelated = 'scripts/unrelated.test.ts';
+  const prerequisiteId = 'transfer-selection-fixtures';
+  const selections = [
+    ['direct', [consumer], 'vitest-direct'],
+    ['declared', [unrelated, 'docs/contract.md'], 'vitest-declared'],
+    ['full', ['vitest.config.ts'], 'vitest-full'],
+    ['broad', ['src/lib/components/chat/input/deleted.test.ts'], 'vitest-direct'],
+    ['related', [unrelated, 'src/lib/source.ts'], 'vitest-related'],
+  ] as const;
+
+  function planFixture(files: readonly string[]) {
+    const root = fixtureRoot({
+      [consumer]: '',
+      [unrelated]: '',
+      'docs/contract.md': '',
+      'src/lib/source.ts': '',
+      'vitest.config.ts': "export default { test: { exclude: ['**/node_modules/**'] } };",
+    });
+    const plan = createVerificationPlan([...files], {
+      root,
+      ctTests: [],
+      declaredSuites: [{ path: consumer, triggers: ['docs/contract.md'] }],
+    });
+    return { root, plan };
+  }
+
+  it.each(selections)(
+    'emits ordered prerequisite relationships for %s selection',
+    (_name, files, lane) => {
+      const { plan } = planFixture(files);
+      expect(plan.prerequisites).toHaveLength(2);
+      expect(plan.prerequisites[1]).toMatchObject({ id: prerequisiteId, lockKind: null });
+      expect(plan.checks.find((check) => check.id === lane)?.dependsOn).toEqual([
+        'generated-build-config',
+        prerequisiteId,
+      ]);
+      const lines: string[] = [];
+      printPlan(plan, true, (line: string) => lines.push(line));
+      expect(lines.find((line) => line.includes('before all selected checks'))).toBeDefined();
+      expect(
+        lines.find((line) => line.includes(`requires: generated-build-config, ${prerequisiteId}`)),
+      ).toBeDefined();
+      const preflightIndex = lines.findIndex((line) =>
+        line.includes('transfer-selection-fixtures.mjs'),
+      );
+      const testIndex = lines.findIndex((line) => line.includes('pnpm exec vitest'));
+      expect(preflightIndex).toBeGreaterThanOrEqual(0);
+      expect(preflightIndex).toBeLessThan(testIndex);
+    },
+  );
+
+  it.each([
+    'scripts/run-unit-tests.test.ts',
+    'scripts/transfer-selection-fixtures.test.ts',
+    'scripts/verify-changed.test.ts',
+  ])('requires fixtures for the focused tooling consumer %s', (file) => {
+    const root = fixtureRoot({ [file]: '' });
+    const plan = createVerificationPlan([file], { root, ctTests: [], declaredSuites: [] });
+    expect(plan.checks.find((check) => check.id === 'vitest-direct')?.dependsOn).toEqual([
+      'generated-build-config',
+      prerequisiteId,
+    ]);
+  });
+
+  it('keeps unrelated focused direct and declared plans independent of shared fixtures', async () => {
+    const { root } = planFixture([]);
+    const plan = createVerificationPlan([unrelated, 'docs/other.md'], {
+      root,
+      ctTests: [],
+      declaredSuites: [{ path: 'scripts/another.test.ts', triggers: ['docs/other.md'] }],
+    });
+    expect(plan.prerequisites.map((entry) => entry.id)).toEqual(['generated-build-config']);
+    expect(plan.checks.every((check) => !check.dependsOn?.includes(prerequisiteId))).toBe(true);
+    vi.stubEnv('TRANSFER_SELECTION_FIXTURE_ROOT', join(root, 'absent'));
+    const ran: string[] = [];
+    await runVerificationPlan(plan, root, {
+      runCheck: async (check: { id: string }) => {
+        ran.push(check.id);
+      },
+    });
+    expect(ran).toEqual(['generated-build-config', ...plan.checks.map((check) => check.id)]);
+  });
+
+  it.each(selections)(
+    'prints %s dry-runs without loading missing shared fixtures',
+    async (_name, files) => {
+      const { root } = planFixture(files);
+      vi.stubEnv('TRANSFER_SELECTION_FIXTURE_ROOT', join(root, 'absent'));
+      const runPlan = vi.fn();
+      await expect(runCli(['--dry-run', ...files], root, { runPlan, log() {} })).resolves.toBe(0);
+      expect(runPlan).not.toHaveBeenCalled();
+    },
+  );
+
+  async function observeChildren(root: string) {
+    const canonical = await loadTransferSelectionFixtures();
+    const shared = join(root, 'shared');
+    const fixtures = join(shared, 'docs/protocol/fixtures/transfer-selection');
+    mkdirSync(fixtures, { recursive: true });
+    mkdirSync(join(shared, 'scripts'), { recursive: true });
+    copyFileSync(join(canonical.paths.root, 'contract.json'), join(fixtures, 'contract.json'));
+    copyFileSync(canonical.paths.generated, join(fixtures, 'public-sessions.json'));
+    copyFileSync(
+      canonical.paths.validator,
+      join(shared, 'scripts/check-transfer-selection-contract.mjs'),
+    );
+    const observer = join(root, 'pnpm-observer.cjs');
+    writeFileSync(
+      observer,
+      "require('node:fs').appendFileSync('children.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n');",
+    );
+    vi.stubEnv('npm_execpath', observer);
+    vi.stubEnv('npm_config_user_agent', 'pnpm/10');
+    vi.stubEnv('TRANSFER_SELECTION_FIXTURE_ROOT', fixtures);
+    vi.stubEnv('TRANSFER_SELECTION_GENERATED', undefined);
+    return {
+      fixtures,
+      children: () =>
+        existsSync(join(root, 'children.jsonl'))
+          ? readFileSync(join(root, 'children.jsonl'), 'utf8')
+              .trim()
+              .split('\n')
+              .map((line) => JSON.parse(line))
+          : [],
+    };
+  }
+
+  for (const damage of ['missing', 'invalid'] as const) {
+    it.each(selections)(
+      `${damage} fixtures stop %s before ANY selected check child`,
+      async (_name, files) => {
+        const { root, plan } = planFixture(files);
+        const { fixtures, children } = await observeChildren(root);
+        const golden = join(fixtures, 'public-sessions.json');
+        if (damage === 'missing') rmSync(golden);
+        else {
+          const data = JSON.parse(readFileSync(golden, 'utf8'));
+          data.provenance.payloadSha256 = '0'.repeat(64);
+          writeFileSync(golden, JSON.stringify(data));
+        }
+        await expect(runVerificationPlan(plan, root)).rejects.toThrow(/failed.*exit code 1/);
+        expect(children()).toEqual([]);
+      },
+    );
+  }
+
+  it.each(selections)(
+    'custom %s lane execution retains preflight and original argv/lock',
+    async (_name, files, lane) => {
+      const { root, plan } = planFixture(files);
+      const selected = { ...plan, checks: plan.checks.filter((check) => check.id === lane) };
+      const { fixtures, children } = await observeChildren(root);
+      const golden = join(fixtures, 'public-sessions.json');
+      const valid = readFileSync(golden);
+      rmSync(golden);
+      const acquireLock = vi.fn(async () => vi.fn());
+      await expect(runVerificationPlan(selected, root, { acquireLock })).rejects.toThrow(
+        /failed.*exit code 1/,
+      );
+      expect(children()).toEqual([]);
+      expect(acquireLock).not.toHaveBeenCalled();
+      writeFileSync(golden, valid);
+      await runVerificationPlan(selected, root, { acquireLock });
+      expect(children()).toEqual(selected.checks.map((check) => check.args));
+      expect(acquireLock).toHaveBeenCalledTimes(lane === 'vitest-full' ? 1 : 0);
+      expect(selected.checks[0].lockKind).toBe(lane === 'vitest-full' ? 'vitest-full' : null);
+    },
+  );
+
+  it('runs a shared prerequisite once before an earlier unrelated test lane', async () => {
+    const { root, plan } = planFixture([unrelated, 'src/lib/source.ts', 'docs/contract.md']);
+    const { children } = await observeChildren(root);
+    expect(plan.checks.filter((check) => check.dependsOn?.includes(prerequisiteId))).toHaveLength(
+      2,
+    );
+    const selected = {
+      ...plan,
+      checks: plan.checks.filter((check) => check.id.startsWith('vitest-')),
+    };
+    await runVerificationPlan(selected, root);
+    expect(children()).toEqual(selected.checks.map((check) => check.args));
+    const ran: string[] = [];
+    await runVerificationPlan(selected, root, {
+      runCheck: async (check: { id: string }) => {
+        ran.push(check.id);
+      },
+    });
+    expect(ran).toEqual([
+      'generated-build-config',
+      prerequisiteId,
+      ...selected.checks.map((check) => check.id),
+    ]);
+  });
+
+  it('does not execute discarded lanes prerequisites but fails closed if required metadata is lost', async () => {
+    const { root, plan } = planFixture([unrelated, 'src/lib/source.ts']);
+    const { fixtures, children } = await observeChildren(root);
+    rmSync(join(fixtures, 'public-sessions.json'));
+    const directOnly = {
+      ...plan,
+      checks: plan.checks.filter((check) => check.id === 'vitest-direct'),
+    };
+    await runVerificationPlan(directOnly, root);
+    expect(children()).toEqual(directOnly.checks.map((check) => check.args));
+    rmSync(join(root, 'children.jsonl'));
+    await expect(
+      runVerificationPlan(
+        {
+          ...plan,
+          prerequisites: plan.prerequisites.filter((entry) => entry.id !== prerequisiteId),
+        },
+        root,
+      ),
+    ).rejects.toThrow(/missing prerequisite.*transfer-selection-fixtures/i);
+    expect(children()).toEqual([]);
+  });
+});
+
+describe.each(['missing', 'obsolete'])('generated build input plan prerequisite (%s)', (state) => {
+  it.each([
+    ['direct', 'scripts/probe.test.ts', 'vitest-direct'],
+    ['related', 'src/main/probe.ts', 'vitest-related'],
+    ['UI-only', 'src/lib/probe.ts', 'vitest-ui-invariants'],
+    ['renderer-deletion', 'src/lib/deleted.ts', 'vitest-ui-invariants'],
+  ])(
+    'prepares output before a selected %s test child and rejects invalid inputs',
+    async (_name, file, lane) => {
+      const root = fixtureRoot({
+        [file]: '',
+        'src/main/build-config.generated.ts':
+          'export const BUILD_CONFIG = { GIT_COMMIT_HASH: "1515d8f61" } as const;',
+        'package.json': '{"type":"module"}',
+        'observe.mjs':
+          "import { BUILD_CONFIG } from './src/main/build-config.generated.ts'; import { writeFileSync } from 'node:fs'; writeFileSync('observed.json', JSON.stringify(BUILD_CONFIG));",
+      });
+      if (state === 'missing') rmSync(join(root, 'src/main/build-config.generated.ts'));
+      if (_name === 'renderer-deletion') rmSync(join(root, file));
+      const plan = createVerificationPlan([file], { root, ctTests: [], declaredSuites: [] });
+      const check = plan.checks.find((entry) => entry.id === lane)!;
+      if (lane === 'vitest-ui-invariants') {
+        expect(check.dependsOn ?? []).not.toContain('transfer-selection-fixtures');
+      }
+      const selected = {
+        ...plan,
+        checks: [{ ...check, executable: process.execPath, args: ['observe.mjs'] }],
+      };
+      vi.stubEnv('INTENT_ISOLATED_TEST_BUILD_ID', 'manual-123-1');
+      vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', 'a'.repeat(40));
+      await runVerificationPlan(selected, root);
+      expect(JSON.parse(readFileSync(join(root, 'observed.json'), 'utf8'))).toMatchObject({
+        ISOLATED_TEST_BUILD_ID: 'manual-123-1',
+        ISOLATED_TEST_BACKEND_SHA: 'a'.repeat(40),
+      });
+      rmSync(join(root, 'observed.json'));
+      vi.stubEnv('INTENT_ISOLATED_TEST_BACKEND_SHA', '');
+      await expect(runVerificationPlan(selected, root)).rejects.toThrow(/failed/);
+      expect(existsSync(join(root, 'observed.json'))).toBe(false);
+    },
+  );
 });

@@ -1,3 +1,4 @@
+import { withLegacyPrincipal } from '../../../test/fixtures/principal-state';
 /**
  * @vitest-environment jsdom
  *
@@ -73,7 +74,7 @@ const mocks = vi.hoisted(() => {
       { path?: string; worktreePath?: string; repositoryPath?: string } | undefined,
     workspaceSelectCalls: [] as string[],
     // Model ids the loaded `availableModels` catalog knows about — drives the
-    // selectModelDisplayName lookup that gates default-effort clearing.
+    // selectModelCatalogEntry lookup that gates default-effort clearing.
     catalogModels: { value: [] as string[] },
     // Raw store state for the unmocked selectors (e.g. the default provider
     // read by selectEffectiveDefaultProviderId).
@@ -102,11 +103,12 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   const { select } = await import('typed-redux-saga');
   const module = createAppStoreMockModule({
-    state: () => ({
-      ...mocks.storeState.value,
-      userPreferences: mocks.rulesState,
-      specialists: mocks.creationState,
-    }),
+    state: () =>
+      withLegacyPrincipal({
+        ...mocks.storeState.value,
+        userPreferences: mocks.rulesState,
+        specialists: mocks.creationState,
+      }),
     dispatch: (action: { type: string; payload: unknown[] }) => {
       mocks.creationState = specialistsReducer(mocks.creationState as never, action as never);
       mocks.dispatched.push(action);
@@ -243,11 +245,17 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
         ? mocks.effortLevels.value[providerId ? `${providerId}:${modelId}` : modelId]
         : undefined,
   },
-  selectModelDisplayName: {
+  selectModelCatalogEntry: {
     select: (_state: unknown, providerId: string, modelId: string) =>
       mocks.catalogModels.value.includes(`${providerId}:${modelId}`) ||
       mocks.catalogModels.value.includes(modelId)
-        ? modelId
+        ? {
+            value: modelId,
+            label: modelId,
+            effortLevels:
+              mocks.effortLevels.value[`${providerId}:${modelId}`] ??
+              mocks.effortLevels.value[modelId],
+          }
         : undefined,
   },
 }));
@@ -293,7 +301,20 @@ beforeEach(() => {
     channel.put(action);
   };
   rulesTask = runSaga(
-    { channel, dispatch: mocks.rulesDispatch, getState: () => ({ userPreferences }) },
+    {
+      channel,
+      dispatch: mocks.rulesDispatch,
+      getState: () => withLegacyPrincipal({ userPreferences }),
+      context: {
+        reduxStore: {
+          getState: () => withLegacyPrincipal({ userPreferences }),
+          subscribe: () => () => {},
+        },
+        reportRuntimeError: (error: unknown) => {
+          throw error;
+        },
+      },
+    },
     agentRulesSaga,
   );
 });

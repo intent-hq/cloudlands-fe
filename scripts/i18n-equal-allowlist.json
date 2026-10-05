@@ -6,6 +6,7 @@
   "home_integrations_branches": ["fr"],
   "home_integrations_team": ["de"],
   "home_integrations_description": ["fr"],
+  "settings_devices_mobile_title": "*",
   "presence_person_roleStatus": "*",
   "settings_sidebar_guestSessions_label": ["fr"],
   "settings_guestSessions_title": ["fr"],

@@ -16,6 +16,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { app, safeStorage } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { normalizeCollaborationMachineName } from '../../../shared/collaboration-machine-name';
 import { isLoopbackHost } from '../../../shared/loopback-host';
 import type { GuestSessionRecord, GuestWorkspaceRef } from '../../../shared/types/guest-sessions';
 import { accountKeyFor, serializeRecord, type KeychainItem } from './keychain-sync';
@@ -791,7 +792,7 @@ export async function setHostname(
   hostname: string,
   guard?: InvitedCommitGuard,
 ): Promise<boolean> {
-  const trimmed = hostname.trim();
+  const trimmed = normalizeCollaborationMachineName(hostname);
   if (trimmed === '') return false;
   const changed = await mutate(async (state) => {
     const session = state.sessions.find((s) => s.id === id);

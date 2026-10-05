@@ -11,6 +11,7 @@ export type ProviderLoadError = {
   providerId: string;
   providerName: string;
   message: string;
+  details: string;
   displayText: string;
   hint?: string;
 };
@@ -72,13 +73,20 @@ export function formatProviderLoadError(providerId: string, error: unknown): Pro
   const normalizedId = selectNormalizedProviderId.select(state, providerId);
   const entry = selectResolvedProviderCatalogEntry.select(state, normalizedId);
   const providerName = entry?.displayName || normalizedId;
-  const message = stripProviderPrefix(getErrorMessage(error), normalizedId, providerName);
+  const details = getErrorMessage(error);
+  const stripped = stripProviderPrefix(details, normalizedId, providerName);
+  // Diagnostics belong in the reading dialog, not in a clipped picker row.
+  const message =
+    stripped.length > 160 || /[\r\n]/.test(stripped)
+      ? m.chat_modelPicker_loadFailed_label()
+      : stripped;
 
   return {
     providerId: normalizedId,
     providerName,
     message,
+    details,
     displayText: `${providerName}: ${message}`,
-    hint: getProviderErrorHint(normalizedId, message),
+    hint: getProviderErrorHint(normalizedId, stripped),
   };
 }
