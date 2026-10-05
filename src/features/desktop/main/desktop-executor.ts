@@ -416,7 +416,7 @@ export class DesktopExecutor {
         result = {
           capturedAt: new Date().toISOString(),
           layoutId: layout.layoutId,
-          displays: [{ ...display, ...asset, mimeType: 'image/png' }],
+          displays: [{ ...display, assetId: asset.assetId, url: asset.url, mimeType: 'image/png' }],
         };
         guard();
         this.overlay.pulse(p.sessionId);
