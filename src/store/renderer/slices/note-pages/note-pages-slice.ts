@@ -822,6 +822,9 @@ notePagesReducer.with(pageSaveSettled, (s, { payload: [ws, id, outcome] }) =>
 );
 notePagesReducer.with(pageMappingAccepted, (s, { payload: [ws, id, operationId, drafts] }) =>
   update(s, ws, id, (n) => {
+    // Draft-only mapping cannot reconcile a document's base, history or replay.
+    // Those require one authoritative document-and-journal publication.
+    if (n.document) return n;
     const receipt = n.receipts.find((r) => r.operationId === operationId);
     if (
       !receipt ||

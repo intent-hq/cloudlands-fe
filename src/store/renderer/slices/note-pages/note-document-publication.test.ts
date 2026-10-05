@@ -22,6 +22,9 @@ import {
   pageDocumentPublished,
   pageDraftChanged,
   pageDraftsUnchanged,
+  pageSaveStarted,
+  pageSaveSettled,
+  pageMappingAccepted,
 } from './note-pages-slice';
 const schema = new Schema({
   nodes: {
@@ -374,6 +377,70 @@ it.each(['revision', 'incarnation'] as const)(
     expect(moveNoteDocumentHistory(before, 'redo')?.state.dirty).toEqual([
       { start: 101, end: 101, text: 'X' },
     ]);
+    expect(f.owner.current()).toBe(false);
+  },
+);
+
+it.each([false, true])(
+  'keeps document reconciliation gated after draft-only mapping (later edit: %s)',
+  (later) => {
+    const f = mounted();
+    f.edit('X');
+    const captured = f.read().document!;
+    const operation = {
+      scope,
+      baseRevision: 'r1',
+      operationId: 'save-exact',
+      payloadDigest: 'captured-digest',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      splices: f.read().drafts[0].splices,
+    };
+    f.dispatch(pageSaveStarted('w', 'n', operation, 1));
+    expect(f.read().pending?.operation).toEqual(operation);
+    if (later) f.edit('Y');
+    const document = f.read().document!;
+    const receipt = {
+      kind: 'noteCommitReceipt' as const,
+      outcome: 'committed' as const,
+      scope,
+      operationId: operation.operationId,
+      payloadDigest: operation.payloadDigest,
+      beforeRevision: 'r1',
+      afterRevision: 'r2',
+      sourceLength: captured.length,
+      mappingRef: 'mapping',
+      effectsRef: 'effects',
+      inverseRef: 'inverse',
+      receiptExpiresAt: '2099-01-08T00:00:00.000Z',
+      invalidation: 'all' as const,
+    };
+    f.dispatch(pageSaveSettled('w', 'n', receipt));
+    f.dispatch(
+      pageStateReceived('w', 'n', f.read().generation, {
+        ...f.read().state!,
+        sourceRevision: 'r2',
+        stateGeneration: '2',
+      }),
+    );
+    const before = f.read();
+    expect(before.needsReconcile).toBe(true);
+    expect(before.document).toBe(document);
+    expect(before.document!.baseRevision).toBe('r1');
+    expect(before.drafts).toHaveLength(later ? 1 : 0);
+    f.dispatch(
+      pageMappingAccepted(
+        'w',
+        'n',
+        operation.operationId,
+        before.drafts.map((d) => ({ ...d, baseRevision: 'r2' })),
+      ),
+    );
+    expect(f.read()).toBe(before);
+    expect(f.read().needsReconcile).toBe(true);
+    expect(f.read().document).toBe(document);
+    expect(f.read().document!.history).toBe(document.history);
+    expect(f.read().drafts).toBe(before.drafts);
+    expect(f.read().receipts).toEqual([receipt]);
     expect(f.owner.current()).toBe(false);
   },
 );

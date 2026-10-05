@@ -175,6 +175,24 @@ it('only a matching authoritative receipt clears its captured sequence prefix', 
   expect(s.byWorkspaceId['ws-a'].notes.spec.drafts.map((d) => d.sequence)).toEqual([2]);
   expect(s.byWorkspaceId['ws-a'].notes.spec.history).toHaveLength(2);
   expect(s.byWorkspaceId['ws-a'].notes.spec.receipts).toEqual([receipt]);
+  const generation = s.byWorkspaceId['ws-a'].notes.spec.generation;
+  s = notePagesReducer(
+    s,
+    pageStateReceived('ws-a', 'spec', generation, {
+      ...tuple,
+      sourceRevision: 'r:8',
+      stateGeneration: '11',
+    }),
+  );
+  const mapped = s.byWorkspaceId['ws-a'].notes.spec.drafts.map((d) => ({
+    ...d,
+    baseRevision: 'r:8',
+  }));
+  expect(s.byWorkspaceId['ws-a'].notes.spec.document).toBeUndefined();
+  s = notePagesReducer(s, pageMappingAccepted('ws-a', 'spec', 'op', mapped));
+  expect(s.byWorkspaceId['ws-a'].notes.spec.needsReconcile).toBe(false);
+  expect(s.byWorkspaceId['ws-a'].notes.spec.drafts).toEqual(mapped);
+  expect(s.byWorkspaceId['ws-a'].notes.spec.receipts).toEqual([receipt]);
 });
 
 import vectors from '$lib/client/mock/fixtures/note-pages-contract.json';
