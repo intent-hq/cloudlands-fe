@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   fromWebContents: vi.fn(),
   backend: vi.fn(),
   invoke: vi.fn(),
-  electron: vi.fn(() => true),
 }));
 vi.mock('electron', () => ({
   app: { getPath: mocks.getPath },
@@ -20,18 +19,27 @@ vi.mock('electron', () => ({
   ipcMain: { handle: mocks.handle },
 }));
 vi.mock('../../backend/main/backend.ipc', () => ({ getBackendClientForIpcEvent: mocks.backend }));
-vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke, isElectron: mocks.electron }));
+// Override the global test setup's bridge stub: exercise the production router.
+vi.unmock('$lib/electron-bridge');
+import { invoke } from '$lib/electron-bridge';
+import { resetMockIpcRouter } from '$shared/ipc-mock-router';
+import { registerSourceClipboardBridge } from '$store/renderer/seeders/source-clipboard-bridge-seeder';
 import { registerSourceClipboardIPC } from './source-clipboard.ipc';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import type { BrowserWindow } from 'electron';
 import { openNoteSourceClipboardSink } from '$lib/utils/source-clipboard';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 const c = IPC_CHANNELS.SYSTEM;
+const originalElectronAPI = window.electronAPI;
+afterEach(() => {
+  window.electronAPI = originalElectronAPI;
+  resetMockIpcRouter();
+});
 const handlers = new Map<string, (event: unknown, params: unknown) => Promise<unknown>>();
 let directory: string;
 let sender: EventEmitter & { mainFrame: object; isDestroyed(): boolean };
 let client: EventEmitter & { getStatus(): string };
-let window: BrowserWindow;
+let mainWindow: BrowserWindow;
 let event: { sender: typeof sender; senderFrame: object };
 beforeAll(async () => {
   directory = await fs.mkdtemp(join(tmpdir(), 'source-clipboard-ipc-'));
@@ -48,14 +56,20 @@ afterAll(async () => {
 beforeEach(() => {
   mocks.publish.mockReset();
   mocks.publish.mockResolvedValue(undefined);
-  mocks.electron.mockReturnValue(true);
+  resetMockIpcRouter();
+  registerSourceClipboardBridge();
+  registerSourceClipboardBridge(); // Reinstallation must not duplicate forwarding.
+  window.electronAPI = {
+    versions: { electron: '42.0.0' },
+    invoke: mocks.invoke,
+  } as unknown as Window['electronAPI'];
   sender = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false });
-  window = Object.assign(new EventEmitter(), {
+  mainWindow = Object.assign(new EventEmitter(), {
     webContents: sender,
     isDestroyed: () => false,
   }) as unknown as BrowserWindow;
-  mocks.fromWebContents.mockReturnValue(window);
-  stampWindowWithBackend(window, 'b');
+  mocks.fromWebContents.mockReturnValue(mainWindow);
+  stampWindowWithBackend(mainWindow, 'b');
   client = Object.assign(new EventEmitter(), { getStatus: () => 'connected' });
   event = { sender, senderFrame: sender.mainFrame };
   mocks.backend.mockReturnValue({ backendId: 'b', client });
@@ -68,6 +82,7 @@ beforeEach(() => {
 });
 const input = (length: number) => ({ id: randomUUID(), length, expiresAt: Date.now() + 50000 });
 it('connects real renderer adapter to registered main handlers and awaits native publication', async () => {
+  expect(vi.isMockFunction(invoke)).toBe(false);
   const sink = await openNoteSourceClipboardSink(input(8));
   await sink.write('abc');
   await sink.write('😀\r\nz');
@@ -102,11 +117,11 @@ it.each(['frame', 'backend', 'disconnect', 'restamp'])(
     await sink.write('a');
     if (kind === 'frame') sender.emit('did-start-navigation', {}, 'other', false, true);
     if (kind === 'restamp') {
-      stampWindowWithBackend(window, 'other');
-      stampWindowWithBackend(window, 'b');
+      stampWindowWithBackend(mainWindow, 'other');
+      stampWindowWithBackend(mainWindow, 'b');
     }
     if (kind === 'backend') {
-      stampWindowWithBackend(window, 'other');
+      stampWindowWithBackend(mainWindow, 'other');
       mocks.backend.mockReturnValue({ backendId: 'other', client });
     }
     if (kind === 'disconnect') {
@@ -145,7 +160,7 @@ it('cleans an allocated operation after a lost begin acknowledgement', async () 
   expect(mocks.publish).not.toHaveBeenCalled();
 });
 it('refuses unavailable platforms without browser clipboard fallback or IPC', async () => {
-  mocks.electron.mockReturnValue(false);
+  window.electronAPI = undefined as unknown as Window['electronAPI'];
   await expect(openNoteSourceClipboardSink(input(1))).rejects.toThrow('UNSUPPORTED');
   expect(mocks.invoke).not.toHaveBeenCalled();
   expect(mocks.publish).not.toHaveBeenCalled();
@@ -243,4 +258,22 @@ it('retains native acknowledgement ownership after renderer cancellation without
   expect(mocks.publish).toHaveBeenCalledExactlyOnceWith('a');
   expect(await fs.readdir(directory)).toEqual([]);
   expect(client.listenerCount('status')).toBe(0);
+});
+
+it.each([
+  c.SOURCE_CLIPBOARD_BEGIN,
+  c.SOURCE_CLIPBOARD_WRITE,
+  c.SOURCE_CLIPBOARD_COMMIT,
+  c.SOURCE_CLIPBOARD_ABORT,
+])('refuses browser mock recursion on %s through the actual generated router', async (channel) => {
+  window.electronAPI = {
+    versions: { electron: '0.0.0-browser' },
+    invoke: mocks.invoke,
+  } as unknown as Window['electronAPI'];
+  await expect(invoke(channel, { id: randomUUID() })).rejects.toThrow(
+    'SOURCE_CLIPBOARD_UNSUPPORTED',
+  );
+  expect(mocks.invoke).not.toHaveBeenCalled();
+  expect(mocks.publish).not.toHaveBeenCalled();
+  expect(await fs.readdir(directory)).toEqual([]);
 });
