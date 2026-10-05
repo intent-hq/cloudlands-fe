@@ -613,3 +613,53 @@ it.each(['root', 'appended'] as const)(
     if (kind === 'appended') expect(f.commit.mock.calls[0][0].after.doc.textContent).toBe('aXbc');
   },
 );
+
+it('refuses callback mutation of retained relay projection despite unchanged native candidate and current owner', () => {
+  let projection: SourceProjection | undefined;
+  let mutated = false;
+  const schema = new Schema({
+    nodes: {
+      doc: { content: 'paragraph+' },
+      paragraph: {
+        content: 'text*',
+        attrs: {
+          probe: {
+            default: null,
+            validate() {
+              if (projection) {
+                projection.content.content![0].content![0].text = 'changed';
+                mutated = true;
+              }
+            },
+          },
+        },
+      },
+      text: {},
+    },
+  });
+  const initial = {
+    doc: schema.node('doc', null, [schema.node('paragraph', null, schema.text('abc'))]),
+    projection: new SourceProjection('abc', 100),
+  };
+  const commit = vi.fn();
+  const owner: NoteTransactionOwner = {
+    initial,
+    current: () => true,
+    commit,
+    prepare(tr) {
+      projection = new SourceProjection(tr.doc.textContent, 100);
+      return { doc: tr.doc, projection };
+    },
+  };
+  const relay = createNoteTransactionRelay(() => owner);
+  const before = EditorState.create({ doc: initial.doc, plugins: [relay.plugin] });
+  const result = before.applyTransaction(before.tr.insertText('X', 2));
+  expect(mutated).toBe(true);
+  expect(owner.current()).toBe(true);
+  expect(result.transactions).toHaveLength(0);
+  expect(result.state).toBe(before);
+  expect(relay.adopt(result.transactions, result.state)).toBeUndefined();
+  expect(commit).not.toHaveBeenCalled();
+  expect(initial.doc.textContent).toBe('abc');
+  expect(initial.projection.content.content![0].content![0].text).toBe('abc');
+});

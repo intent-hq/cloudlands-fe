@@ -252,7 +252,7 @@ it('rejects huge flat data records without constructing an own-key array or read
   expect(calls).toBe(64);
 });
 
-it.each(['text', 'depth', 'graph'] as const)(
+it.each(['text', 'small', 'depth', 'graph'] as const)(
   'isolates later %s input from executable schema validator mutation',
   (kind) => {
     const later = paragraph('original');
@@ -272,6 +272,7 @@ it.each(['text', 'depth', 'graph'] as const)(
               validate(value) {
                 if (!value) return;
                 callbacks++;
+                if (kind === 'small') later.content[0].text = 'changed';
                 if (kind === 'text') later.content[0].text = 'x'.repeat(4 * 1024 * 1024 + 1);
                 if (kind === 'depth') {
                   let nested: unknown = {};
@@ -286,10 +287,10 @@ it.each(['text', 'depth', 'graph'] as const)(
         text: {},
       },
     });
-    const result = validateNoteNativeOutput(schema, input, admission);
+    expect(() => validateNoteNativeOutput(schema, input, admission)).toThrow(
+      'Native output changed during validation',
+    );
     expect(callbacks).toBeGreaterThan(0);
-    expect(result.textContent).toBe('firstoriginal');
-    expect(result.childCount).toBe(2);
   },
 );
 

@@ -191,5 +191,46 @@ export function validateNoteNativeOutput(
   if (result.type !== schema.topNodeType || result.marks.length)
     throw new Error('Invalid native root');
   current();
+  // Consumers retain their projection object, not just this PM node. Refuse a
+  // callback's mutation of that original data, including small valid changes.
+  // Walk against the bounded captured tree without copying or invoking schema
+  // callbacks. Unknown keys and changed array lengths refuse immediately.
+  let compared = 0;
+  const matched = new Set<object>();
+  const unchanged = (original: unknown, saved: unknown, depth: number): boolean => {
+    if (++compared > limits.derivedObjects || depth > limits.depth) return false;
+    if (!saved || typeof saved !== 'object') return Object.is(original, saved);
+    if (!original || typeof original !== 'object' || matched.has(original)) return false;
+    matched.add(original);
+    const array = Array.isArray(saved);
+    if (Array.isArray(original) !== array) return false;
+    if (array && (original as unknown[]).length !== saved.length) return false;
+    if (
+      !array &&
+      Object.getPrototypeOf(original) !== Object.prototype &&
+      Object.getPrototypeOf(original) !== null
+    )
+      return false;
+    let count = 0;
+    for (const key in original) {
+      if (
+        ++count > (array ? limits.derivedObjects : limits.attributes) ||
+        !Object.hasOwn(original, key) ||
+        !Object.hasOwn(saved, key)
+      )
+        return false;
+      const property = Object.getOwnPropertyDescriptor(original, key);
+      if (
+        !property ||
+        !('value' in property) ||
+        !property.enumerable ||
+        !unchanged(property.value, (saved as Record<string, unknown>)[key], depth + 1)
+      )
+        return false;
+    }
+    // saved is our bounded inert snapshot, so enumerating its keys is bounded.
+    return count === Object.keys(saved).length;
+  };
+  if (!unchanged(input, captured, 0)) throw new Error('Native output changed during validation');
   return result;
 }
