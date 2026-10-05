@@ -193,13 +193,14 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   });
 
   const isChiefMessage = workspaceId === CHIEF_WORKSPACE_ID;
+  if (isChiefMessage) {
+    appStore.dispatch(setChiefActiveAgentId(agentId));
+    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
+    appStore.dispatch(openPanel('chief'));
+  }
+  const targetPathname = isChiefMessage ? '/' : `/workspace/${workspaceId}`;
 
-  if (
-    !isChiefMessage &&
-    typeof window !== 'undefined' &&
-    window.location.pathname !== `/workspace/${workspaceId}`
-  ) {
-    const targetPathname = `/workspace/${workspaceId}`;
+  if (typeof window !== 'undefined' && window.location.pathname !== targetPathname) {
     try {
       // navigateToRoute no-ops in the HUD pop-out window (never leaves /hud).
       await navigateToRoute(targetPathname);
@@ -213,11 +214,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     }
   }
 
-  if (isChiefMessage) {
-    appStore.dispatch(setChiefActiveAgentId(agentId));
-    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
-    appStore.dispatch(openPanel('chief'));
-  } else {
+  if (!isChiefMessage) {
     appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
   }
 

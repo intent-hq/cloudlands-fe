@@ -4,7 +4,7 @@ import WorkspaceTabDragRegionHarness from './WorkspaceTabDragRegionHarness.svelt
 
 async function dragRegionGeometry(titlebar: Locator) {
   return titlebar.evaluate(async (root) => {
-    // Mounting precedes font readiness and frame-scheduled tab/sidebar layout.
+    // Mounting precedes font readiness and frame-scheduled tab layout.
     // Use the same capture boundary as geometry goldens before measuring once.
     const geometryWindow = window as typeof window & {
       __INTENT_GEOMETRY_CT__: {
@@ -99,14 +99,6 @@ test('overflowing tabs leave the empty left titlebar gap draggable after scrolli
   await expectClippedRegions();
   await page.setViewportSize({ width: 660, height: 400 });
   await expectClippedRegions();
-  const gapBeforeSidebarResize = (await dragRegionGeometry(titlebar)).gap;
-  await component.update({ props: { sidebarWidth: 340 } });
-  // Store selectors publish on a frame cadence even with reduced motion.
-  // Wait for the rendered resize before checking the resized drag regions.
-  await expect
-    .poll(async () => (await dragRegionGeometry(titlebar)).gap.right)
-    .toBeGreaterThan(gapBeforeSidebarResize.right);
-  await expectClippedRegions();
   await expect(component.locator('[data-titlebar-settings]')).toHaveCSS(
     '-webkit-app-region',
     'no-drag',
@@ -126,7 +118,7 @@ test('non-overflowing tabs keep their controls inside the bounded no-drag region
   await page.setViewportSize({ width: 1200, height: 400 });
   const component = await mount(WorkspaceTabDragRegionHarness);
   const titlebar = component.locator('.window-title-bar');
-  // Sidebar selectors and overflow sizing can settle after the capture frames.
+  // Overflow sizing can settle after the capture frames.
   // Wait for the non-overflow layout, as the narrow-viewport case does above.
   await expect.poll(async () => (await dragRegionGeometry(titlebar)).overflow).toBe(false);
   const geometry = await dragRegionGeometry(titlebar);

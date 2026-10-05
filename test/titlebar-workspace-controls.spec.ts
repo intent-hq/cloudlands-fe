@@ -159,29 +159,42 @@ for (const platform of ['Windows', 'Linux'] as const) {
   });
 }
 
-test('Mac Home navigation preserves sidebar state, drag regions and narrow-window controls', async ({
+test('Mac Home navigation ignores the retired sidebar and keeps narrow-window controls usable', async ({
   page,
-}) => {
+}, testInfo) => {
   await emulatePlatform(page, 'macOS');
   await page.setViewportSize({ width: 640, height: 480 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mountControls(page, 'light', 0.67);
   const toggle = page.locator('[data-titlebar-spaces-control]');
   const tabs = page.locator('[data-titlebar-workspace-controls]');
+  const initialLeft = (await tabs.boundingBox())!.x;
+  await page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    const { sidebarNavSaga } =
+      await import('/src/store/renderer/slices/sidebar-nav/sagas/sidebar-nav-saga.ts');
+    localStorage.setItem('intent:sidebar-panel-item', JSON.stringify('all-workspaces'));
+    localStorage.setItem('intent:sidebar-panel-width', '320');
+    localStorage.setItem('intent:sidebar-card-pinned', 'true');
+    localStorage.setItem('intent:pinned-workspaces', JSON.stringify(['titlebar-test']));
+    store.runSaga(sidebarNavSaga);
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { store } = await import('/src/store/renderer/store.ts');
+        return store.state.sidebarNav.pinnedWorkspaceIds;
+      }),
+    )
+    .toEqual(['titlebar-test']);
+  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
   await page.evaluate(async () => {
     const { store } = await import('/src/store/renderer/store.ts');
     const { openPanel } =
       await import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts');
-    store.dispatch(openPanel('all-workspaces'));
+    store.dispatch(openPanel('chief'));
   });
-  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(296, 0);
-  await page.evaluate(async () => {
-    const { store } = await import('/src/store/renderer/store.ts');
-    const { setPanelWidth } =
-      await import('/src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts');
-    store.dispatch(setPanelWidth(320));
-  });
-  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(328, 0);
+  await expect.poll(async () => (await tabs.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
   await toggle.press('Space');
   await expect(toggle).toHaveAttribute('aria-current', 'page');
   expect(
@@ -189,7 +202,7 @@ test('Mac Home navigation preserves sidebar state, drag regions and narrow-windo
       const { store } = await import('/src/store/renderer/store.ts');
       return store.state.sidebarNav.panelItem;
     }),
-  ).toBe('all-workspaces');
+  ).toBe('chief');
   const toggleBox = (await toggle.boundingBox())!;
   await expect.poll(async () => (await tabs.boundingBox())!.x).toBeLessThan(200);
 
@@ -230,6 +243,82 @@ test('Mac Home navigation preserves sidebar state, drag regions and narrow-windo
       return store.state.sidebarNav.showCreateModal;
     }),
   ).toBe(true);
+  await testInfo.attach('homepage-sidebar-upgrade', {
+    body: await page.screenshot({ animations: 'disabled', caret: 'hide' }),
+    contentType: 'image/png',
+  });
+});
+
+for (const savedPanel of ['home', 'active', 'chief', 'settings', '{invalid-json']) {
+  test(`upgrade ignores saved sidebar destination ${savedPanel}`, async ({ page }, testInfo) => {
+    await mountControls(page, 'light', 1);
+    await page.evaluate(async (savedPanel) => {
+      localStorage.setItem(
+        'intent:sidebar-panel-item',
+        savedPanel.startsWith('{') ? savedPanel : JSON.stringify(savedPanel),
+      );
+      localStorage.setItem('intent:sidebar-card-pinned', 'true');
+      localStorage.setItem('intent:chief-active-agent-id', JSON.stringify('existing-thread'));
+      const [{ store }, { sidebarNavSaga }] = await Promise.all([
+        import('/src/store/renderer/store.ts'),
+        import('/src/store/renderer/slices/sidebar-nav/sagas/sidebar-nav-saga.ts'),
+      ]);
+      store.runSaga(sidebarNavSaga);
+    }, savedPanel);
+    const state = () =>
+      page.evaluate(async () => {
+        const { store } = await import('/src/store/renderer/store.ts');
+        return {
+          panelItem: store.state.sidebarNav.panelItem,
+          chiefActiveAgentId: store.state.sidebarNav.chiefActiveAgentId,
+        };
+      });
+    await expect.poll(state).toEqual({ panelItem: null, chiefActiveAgentId: 'existing-thread' });
+    const home = page.locator('[data-titlebar-spaces-control]');
+    await home.click();
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await page.evaluate(async () => {
+      const { goto } = await import('/test/fixtures/titlebar-navigation.svelte.ts');
+      await goto('/workspace/titlebar-test');
+    });
+    await expect(home).not.toHaveAttribute('aria-current');
+    expect(await state()).toEqual({ panelItem: null, chiefActiveAgentId: 'existing-thread' });
+    await testInfo.attach('upgrade-state', {
+      body: JSON.stringify({ savedPanel, state: await state() }),
+      contentType: 'application/json',
+    });
+  });
+}
+
+test('Assistant notifications open Home and select the existing thread', async ({
+  page,
+}, testInfo) => {
+  await mountControls(page, 'light', 1);
+  await page.evaluate(async () => {
+    const { handleNotificationNavigate } =
+      await import('/src/features/notifications/notification-navigation.ts');
+    await handleNotificationNavigate({
+      workspaceId: '__chief__',
+      chief: true,
+      agentId: 'notification-thread',
+    });
+  });
+  await expect(page.locator('[data-titlebar-spaces-control]')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  const state = await page.evaluate(async () => {
+    const { store } = await import('/src/store/renderer/store.ts');
+    return {
+      panelItem: store.state.sidebarNav.panelItem,
+      chiefActiveAgentId: store.state.sidebarNav.chiefActiveAgentId,
+    };
+  });
+  expect(state).toEqual({ panelItem: 'chief', chiefActiveAgentId: 'notification-thread' });
+  await testInfo.attach('assistant-notification-navigation', {
+    body: JSON.stringify(state),
+    contentType: 'application/json',
+  });
 });
 
 for (const reducedMotion of ['no-preference', 'reduce'] as const) {

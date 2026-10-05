@@ -48,8 +48,6 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/file-explorer/file-explorer-sidebar.svelte',
     'src/lib/components/layout/ConnectBackendModal.svelte',
     'src/lib/components/layout/panel-system/PanelTabBar.svelte',
-    'src/lib/components/layout/sidebar-nav/cards/ActiveWorkspacesCard.svelte',
-    'src/lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte',
     'src/lib/components/modals/FeatureCodeDialog.svelte',
     'src/lib/components/modals/InputDialog.svelte',
     'src/lib/components/modals/ShareWorkspaceDialog.svelte',
