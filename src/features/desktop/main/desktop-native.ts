@@ -51,7 +51,7 @@ export function getDesktopNativeAdapter(): DesktopNativeAdapter {
 
 /** Private stdin/stdout protocol: never accept native operations directly from RPC.
  * One bounded OS step per request lets main invalidate between every down/up. */
-export class DesktopHelperTransport {
+class DesktopHelperTransport {
   private child?: ChildProcessWithoutNullStreams;
   private sequence = 0;
   private readonly pending = new Map<
