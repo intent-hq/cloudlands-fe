@@ -619,13 +619,13 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
   if (!restoredWorkspaceIds.has(wsId)) return;
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
   if (layout.newWorkspaceLifecycle || layout.emptiedByUserClose) return;
+  if (layout.restoreStatus !== 'empty' && hasAnyTab(layout)) return;
   const availableAgents = agents ?? (yield* selectAllWorkspaceAgents.effect(wsId));
   if (layout.restoreStatus === 'empty') {
     if (!agents && !(yield* selectAgentsLoaded.effect(wsId))) return;
     yield* call(reconcileExistingWorkspaceDefaults, wsId, layout, availableAgents);
     return;
   }
-  if (hasAnyTab(layout)) return;
   // Preserve recovery of invalid layouts and previously lost panel trees.
   const agent = resolveEmptyLayoutAgent(availableAgents, wsId, layout.restoreStatus === 'restored');
   if (!agent) return;
