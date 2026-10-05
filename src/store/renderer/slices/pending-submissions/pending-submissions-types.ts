@@ -40,6 +40,8 @@ export interface SubmissionTombstone {
   id: string;
   at: number;
   reason: 'queue' | 'processing' | 'history' | 'rejected';
+  /** Original contribution tag while delivery evidence precedes rendered history. */
+  messageMetadata?: SubmissionInput['messageMetadata'];
 }
 
 export interface SubmissionEvidence extends SubmissionCorrelation, Partial<QueuedMessage> {}

@@ -821,7 +821,9 @@ describe('QuestionWizard draft persistence', () => {
 
   it('keeps answers editable and persisted when local admission declines completion', async () => {
     const onComplete = vi.fn().mockReturnValue(false);
-    const view = render(QuestionWizard, { props: { questions: [LAST], draftKey: KEY, onComplete } });
+    const view = render(QuestionWizard, {
+      props: { questions: [LAST], draftKey: KEY, onComplete },
+    });
     const input = currentOtherInput();
     await fireEvent.input(input, { target: { value: 'Keep this answer' } });
     await fireEvent.keyDown(input, { key: 'Enter' });

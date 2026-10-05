@@ -52,6 +52,8 @@
     queued = false,
     suggestions = false,
     questions = false,
+    newerQuestion = false,
+    staleAnswerTranscript = false,
     transcript = false,
     responseDelivered = false,
     initializeStore = true,
@@ -73,11 +75,13 @@
     queued?: boolean;
     suggestions?: boolean;
     questions?: boolean;
+    newerQuestion?: boolean;
+    staleAnswerTranscript?: boolean;
     transcript?: boolean;
     responseDelivered?: boolean;
     initializeStore?: boolean;
     submissionSupport?: boolean;
-    settleSubmission?: 'history' | 'queue' | 'rejected';
+    settleSubmission?: 'history' | 'queue' | 'rejected' | 'uncertain' | 'evidence';
     submissionStage?: 'started' | 'ack';
     queuePhase?: 'ready' | 'foreign' | 'restored';
     followUp?: 'blocker' | 'discussion';
@@ -356,7 +360,10 @@
       store.dispatch(
         chatLastAttemptedMessageSet(
           agentId,
-          buildRecordedAttempt(pending.content, { messageMetadata: pending.messageMetadata, submission: { scope, id: pending.id } }),
+          buildRecordedAttempt(pending.content, {
+            messageMetadata: pending.messageMetadata,
+            submission: { scope, id: pending.id },
+          }),
         ),
       );
     } else {
@@ -380,15 +387,32 @@
       displayName: null,
       avatarUrl: null,
     };
-    if (settleSubmission === 'rejected') {
+    if (settleSubmission === 'rejected' || settleSubmission === 'uncertain') {
       store.dispatch(
         chatLastAttemptedMessageSet(
           agentId,
-          buildRecordedAttempt(pending.content, { messageMetadata: pending.messageMetadata, submission: { scope, id: pending.id } }),
+          buildRecordedAttempt(pending.content, {
+            messageMetadata: pending.messageMetadata,
+            submission: { scope, id: pending.id },
+          }),
         ),
       );
-      store.dispatch(pendingSubmissionSettled(scope, pending.id, 'rejected', Date.now()));
-      store.dispatch(chatSendFailed(agentId, 'Request rejected'));
+      store.dispatch(pendingSubmissionSettled(scope, pending.id, settleSubmission, Date.now()));
+      store.dispatch(
+        chatSendFailed(
+          agentId,
+          settleSubmission === 'rejected' ? 'Request rejected' : 'Connection lost after write',
+        ),
+      );
+    } else if (settleSubmission === 'evidence') {
+      store.dispatch(
+        pendingEvidenceObserved(
+          scope,
+          'history',
+          [{ submissionIds: [pending.id], author }],
+          Date.now(),
+        ),
+      );
     } else if (settleSubmission === 'queue') {
       store.dispatch(
         pendingSubmissionSettled(scope, pending.id, 'accepted', Date.now(), undefined, true),
@@ -417,6 +441,20 @@
         }),
       );
     }
+  });
+  $effect(() => {
+    if (!staleAnswerTranscript) return;
+    store.dispatch(updateSession(agentId, { messages: session.messages }));
+  });
+  $effect(() => {
+    if (!newerQuestion) return;
+    const next = { ...session.messages[0], id: 'composer-question-new' };
+    store.dispatch(
+      updateSession(agentId, {
+        messages: [...store.state.agentSessions.byAgentId[agentId].messages, next],
+        metadata: { pendingQuestionsMessageId: next.id },
+      }),
+    );
   });
   $effect(() => {
     if (!queuePhase) return;

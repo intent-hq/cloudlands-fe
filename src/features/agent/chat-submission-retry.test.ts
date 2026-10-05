@@ -1,3 +1,6 @@
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { buildAnswerMessageMetadata } from '$lib/components/chat/questions/answer-message';
+import { deriveWizardPendingQuestions } from '$lib/components/chat/questions/wizard-gate';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const wire = vi.hoisted(() => ({ request: vi.fn(), warning: vi.fn() }));
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -1215,4 +1218,139 @@ it('keeps confirmed controls blocked while a drained contribution lacks delivery
   store.dispatch(removeQueuedMessageRequested(agent, confirmed.id));
   await quiet();
   expect(count('agent.removeQueuedMessage')).toBe(0);
+});
+
+describe('Q&A admission through the real send and recovery pipeline', () => {
+  const question = {
+    id: 'question-before-send',
+    role: 'assistant',
+    timestamp: '2026-10-04T00:00:00Z',
+    contentBlocks: [
+      {
+        type: 'resource',
+        resource: {
+          uri: 'intent-question://qa',
+          name: 'Approach',
+          mimeType: QUESTION_RESOURCE_MIME_TYPE,
+          text: JSON.stringify({
+            attachmentId: 'qa',
+            header: 'Approach',
+            question: 'Which approach?',
+            options: [{ label: 'Small' }, { label: 'Large' }],
+          }),
+        },
+      },
+    ],
+  };
+  const text = 'Q: Which approach?\nA: Small';
+  const messageMetadata = buildAnswerMessageMetadata(question.id);
+  const wizard = () =>
+    deriveWizardPendingQuestions(
+      store.state,
+      agent,
+      store.state.agentSessions.byAgentId[agent].messages,
+    );
+  const qaReply = (method: string, params: any) => {
+    if (method === 'agent.get')
+      return Promise.resolve({
+        agent: { ...shell(), metadata: { pendingQuestionsMessageId: question.id } },
+      });
+    if (method === 'agent.getConversation')
+      return Promise.resolve({
+        messages: [previous, question],
+        totalMessages: 2,
+        truncated: false,
+      });
+    return baseReply(method, params);
+  };
+  beforeEach(() => {
+    store.dispatch(
+      updateAgentSessionFields(agent, {
+        messages: [previous, question] as any,
+        metadata: { pendingQuestionsMessageId: question.id },
+      }),
+    );
+    wire.request.mockImplementation(qaReply);
+  });
+
+  it.each(['rejected', 'uncertain'] as const)(
+    'retains answer metadata for %s recovery and only explicitly resends',
+    async (outcome) => {
+      startSending();
+      let count = 0;
+      wire.request.mockImplementation(async (method, params) => {
+        if (method === 'agent.sendMessage' && ++count === 1) {
+          if (outcome === 'uncertain') throw new Error('ACK lost after write');
+          return { success: false, error: 'request rejected' };
+        }
+        return qaReply(method, params);
+      });
+      expect(wizard()?.messageId).toBe(question.id);
+      expect(submitChatMessage(store, agent, { wsId: ws, text, messageMetadata })).toBe(true);
+      expect(wizard()).toBeNull();
+      store.dispatch(setChatDraft(ws, agent, 'newer draft'));
+      await vi.waitFor(() => expect(store.state.chatState.byAgentId[agent]?.error).toBeTruthy());
+      const attempt = store.state.chatState.byAgentId[agent].lastAttemptedMessage!;
+      expect(attempt).toMatchObject({
+        text,
+        options: { messageMetadata },
+        submission: { outcome },
+      });
+      expect(wizard()?.messageId ?? null).toBe(outcome === 'rejected' ? question.id : null);
+      expect(sends()).toHaveLength(1);
+      expect(sends()[0][1]).toMatchObject({
+        agentId: agent,
+        workspaceId: ws,
+        content: text,
+        messageMetadata,
+        messageId: attempt.submission!.reference.id,
+      });
+      await requestChatMessageRetry(agent, ws);
+      if (outcome === 'uncertain') {
+        expect(sends()).toHaveLength(1);
+        warningChoice().action.onClick();
+      } else expect(wire.warning).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(sends()).toHaveLength(2));
+      await vi.waitFor(() => expect(display().conversation.at(-1)?.status).toBe('accepted'));
+      await Promise.all([loadChatTranscript(agent, ws), hydrateAgentQueue(agent, ws)]);
+      expect(sends()[1][1]).toMatchObject({ content: text, messageMetadata });
+      expect(sends()[1][1].messageId).not.toBe(sends()[0][1].messageId);
+      expect(selectChatDraft.select(store.state, ws, agent)).toBe('newer draft');
+      expect(wizard()).toBeNull();
+      expect(wire.request.mock.calls.some(([method]) => method === 'agent.dismissQuestions')).toBe(
+        false,
+      );
+    },
+  );
+
+  it('keeps an answer hidden through correlated stream evidence before a delayed rejection ACK', async () => {
+    startSending();
+    let reply!: (value: unknown) => void;
+    wire.request.mockImplementation((method, params) =>
+      method === 'agent.sendMessage'
+        ? new Promise((resolve) => {
+            reply = resolve;
+          })
+        : qaReply(method, params),
+    );
+    submitChatMessage(store, agent, { wsId: ws, text, messageMetadata });
+    expect(wizard()).toBeNull();
+    await vi.waitFor(() => expect(reply).toBeTypeOf('function'));
+    const entry = store.state.pendingSubmissions.byAgentId[agent];
+    const id = sends()[0][1].messageId;
+    emit('agent:message', {
+      id,
+      role: 'user',
+      content: text,
+      submissionIds: [id],
+      author: { principalId: entry.scope.principalId },
+    });
+    expect(display().conversation[0]).toMatchObject({ id, status: 'accepted' });
+    expect(wizard()).toBeNull();
+    reply({ success: false, error: 'late rejected response' });
+    await vi.waitFor(() => expect(store.state.chatState.byAgentId[agent]?.error).toBeTruthy());
+    await requestChatMessageRetry(agent, ws);
+    expect(sends()).toHaveLength(1);
+    expect(wizard()).toBeNull();
+  });
 });

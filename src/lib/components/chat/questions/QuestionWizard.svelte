@@ -31,7 +31,7 @@
     draftKey?: string;
     collapsed?: boolean;
     onToggleCollapsed?: (collapsed: boolean) => void;
-    onComplete?: (answers: QuestionAnswer[]) => void;
+    onComplete?: (answers: QuestionAnswer[]) => boolean | void;
     onDismiss?: () => Promise<void> | void;
   }
 
@@ -199,9 +199,10 @@
     if (completed) return;
     const completedAnswers = toDraftAnswers(next);
     answers = completedAnswers;
+    // A declined local admission must leave this draft editable and retryable.
+    if (onComplete?.(buildAnswers(completedAnswers)) === false) return;
     completed = true;
     resolveDraft();
-    onComplete?.(buildAnswers(completedAnswers));
   }
 
   function handleBack(currentIndex: number) {
