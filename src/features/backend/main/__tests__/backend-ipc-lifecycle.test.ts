@@ -736,6 +736,30 @@ function mainHelpers(): MainHelpers {
   ) as MainHelpers;
 }
 describe('actual main finalization fence and original pool', () => {
+  it('observes current node capabilities through IPC without a replacement hello', async () => {
+    edge.respond = (_socket, frame) =>
+      frame.method === 'client.hello'
+        ? {
+            clientId: 'acknowledged-original',
+            server: { capabilities: { agentNodes: 1, agentPlatformRouting: 1 } },
+          }
+        : defaultReply(frame);
+    const { pool } = await load();
+    const client = pool.getLocalBackendClient();
+    await connection(client);
+    await settledTurn();
+    const { event } = await localWindow();
+    const original = client.getRepositoryConnection();
+    const hellos = edge.writes.filter((entry) => entry.endsWith(':client.hello')).length;
+    expect(await invoke(IPC_CHANNELS.BACKEND.NODE_CAPABILITIES, event, undefined)).toEqual({
+      ok: true,
+      result: {
+        server: { capabilities: { agentNodes: 1, localNodeIsolation: 0, agentPlatformRouting: 1 } },
+      },
+    });
+    expect(client.getRepositoryConnection()).toBe(original);
+    expect(edge.writes.filter((entry) => entry.endsWith(':client.hello'))).toHaveLength(hellos);
+  });
   for (const roots of [5, 7])
     it(`F1/F2/F3 ${roots} original roots and late release stay usable until final retirement`, async () => {
       const { completionLedger, finalClientPoolJoin } = mainHelpers();

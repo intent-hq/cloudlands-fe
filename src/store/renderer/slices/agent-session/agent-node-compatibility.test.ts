@@ -55,6 +55,20 @@ const upsertSession = (value: AgentSession) =>
 const row = (state: typeof initialState) => state.byAgentId['agent-remote'];
 
 describe('node agent compatibility', () => {
+  it.each(['x86_64', 'aarch64'])(
+    'preserves resolved %s placement and partial projection provenance',
+    (arch) => {
+      const resolved = { ...remote, placement: { ...remote.placement, arch } };
+      expect(AgentSessionSchema.parse(session(resolved))).toMatchObject(resolved);
+      let state = agentSessionReducer(initialState, upsertSession(session()));
+      state = agentSessionReducer(state, event('agent:updated', resolved));
+      expect(row(state)).toMatchObject(resolved);
+      state = agentSessionReducer(state, bulkUpsertSessions([session()]));
+      expect(row(state)).toMatchObject(resolved);
+      state = agentSessionReducer(state, event('hub:checkpoint', { checkpoint: checkpoint('11') }));
+      expect(row(state)).toMatchObject({ ...resolved, checkpoint: checkpoint('11') });
+    },
+  );
   it('round-trips remote and legacy sessions through validation', () => {
     expect(AgentSessionSchema.parse(session({ ...remote, status: 'halted' }))).toMatchObject(
       remote,
@@ -68,6 +82,9 @@ describe('node agent compatibility', () => {
     for (const placement of [
       { target: 'remote', checkout: 'shared' },
       { target: 'local', checkout: 'isolated', exclusive: true },
+      { target: 'remote', checkout: 'isolated', arch: 'invalid' },
+      { target: 'remote', checkout: 'isolated', unknown: true },
+      { arch: 'aarch64' },
       {},
     ]) {
       expect(AgentSessionSchema.safeParse(session({ placement })).success).toBe(false);

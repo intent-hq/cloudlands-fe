@@ -39,6 +39,7 @@ import {
 // boundaries; no live daemon, destructive operation or external auth is used.
 vi.mock('$lib/client/live/backend-transport', async () => ({
   BackendError: (await import('../../test/mocks/backend-transport.mock')).BackendError,
+  observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
   backendRequest: vi.fn(() => new Promise(() => {})),
   backendSubscribe: vi.fn(() => new Promise(() => {})),
   backendUnsubscribe: vi.fn(async () => {}),

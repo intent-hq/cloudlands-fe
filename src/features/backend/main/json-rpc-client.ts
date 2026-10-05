@@ -200,6 +200,7 @@ export class JsonRpcClient extends EventEmitter {
   private repositoryConnection: RepositoryConnection | null = null;
   private readonly repositoryObservers = new Set<(event: RepositoryConnectionEvent) => void>();
   private helloAttempt: object | null = null;
+  private nodeCapabilities: Readonly<Record<string, number>> | null = null;
   // How the current connection's winning candidate reached the daemon
   // (multi-host race only; null for a single-host dial and whenever no socket
   // is connected).
@@ -480,6 +481,11 @@ export class JsonRpcClient extends EventEmitter {
       : null;
   }
 
+  /** Observe only the current acknowledged identity; never send or renew hello. */
+  getNodeCapabilities(): Readonly<Record<string, number>> | null {
+    return this.getRepositoryConnection() ? this.nodeCapabilities : null;
+  }
+
   /** Subscribe before start: no replay can establish a missed physical feed. */
   onRepositoryConnectionEvent(listener: (event: RepositoryConnectionEvent) => void): () => void {
     this.repositoryObservers.add(listener);
@@ -493,6 +499,7 @@ export class JsonRpcClient extends EventEmitter {
   private retireRepositoryIdentity(): void {
     const connection = this.repositoryConnection;
     this.repositoryConnection = null;
+    this.nodeCapabilities = null;
     if (connection) this.emitRepositoryEvent({ type: 'identity-retired', connection });
   }
 
@@ -552,6 +559,13 @@ export class JsonRpcClient extends EventEmitter {
       result.clientId.length === 0
     )
       return;
+    const capabilities = (result as { server?: { capabilities?: Record<string, unknown> } }).server
+      ?.capabilities;
+    this.nodeCapabilities = Object.freeze({
+      agentNodes: capabilities?.agentNodes === 1 ? 1 : 0,
+      localNodeIsolation: capabilities?.localNodeIsolation === 1 ? 1 : 0,
+      agentPlatformRouting: capabilities?.agentPlatformRouting === 1 ? 1 : 0,
+    });
     this.repositoryConnection = Object.freeze({
       incarnation: this.socketIncarnation,
       identity: Object.freeze({}),

@@ -4403,6 +4403,15 @@ export function registerBackendHandlers(): void {
     },
   );
 
+  ipcMain.handle(BACKEND.NODE_CAPABILITIES, (event) => {
+    try {
+      const { client } = getBackendClientForIpcEvent(event);
+      return { ok: true, result: { server: { capabilities: client.getNodeCapabilities() } } };
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
+
   ipcMain.handle(BACKEND.GET_STATUS, async (event) => {
     const { backendId, client } = getBackendClientForIpcEvent(event);
     const transport = formatTransportInfo(

@@ -192,6 +192,14 @@ export function createElectronIpcBackendTransport(): BackendTransport {
 
   return {
     captureRepositorySelection,
+    async observeNodeCapabilities() {
+      const api = electronAPI();
+      if (!api) throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend unavailable' });
+      const response = await api.invoke(BACKEND.NODE_CAPABILITIES);
+      if (electronAPI() !== api)
+        throw new BackendError({ code: 'UNAVAILABLE', message: 'Backend bridge changed' });
+      return unwrap(response);
+    },
     prepareNativeReview,
     captureRepositoryResource: createRepositoryResourceTransport(electronAPI),
     captureRepositoryCheckout: createRepositoryCheckoutTransport(electronAPI),
