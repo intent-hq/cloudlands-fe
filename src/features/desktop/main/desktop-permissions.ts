@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
+import { ReverseRpcHandlerError, type JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { getDesktopNativeAdapter } from './desktop-native';
 import { desktopFailure } from './desktop-validation';
+import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 
 const selection = z
   .object({
@@ -32,17 +33,17 @@ export async function requestDesktopPermissions(
 ) {
   const p = selection.parse(value);
   const stale = () =>
-    desktopFailure(
-      'desktop-permission-stale',
-      'This desktop permission request is no longer available',
-      'not_started',
+    new JsonRpcError(
+      desktopFailure(
+        'desktop-stale-request',
+        'This desktop permission request is no longer available',
+        'not_started',
+      ),
     );
   if (client.getStatus() !== 'connected') throw stale();
   if (busy.has(client))
-    throw desktopFailure(
-      'desktop-busy',
-      'Desktop permission setup is already pending',
-      'not_started',
+    throw new JsonRpcError(
+      desktopFailure('desktop-busy', 'Desktop permission setup is already pending', 'not_started'),
     );
   busy.add(client);
   let changed = false;
@@ -74,6 +75,11 @@ export async function requestDesktopPermissions(
     const result = await native.requestPermissions(identity.computerId);
     if (!current()) throw stale();
     return { platform: 'macos' as const, ...result };
+  } catch (error) {
+    // The existing IPC serializer recognizes JsonRpcError. Preserve native
+    // codes/details instead of misclassifying a local refusal as transport loss.
+    if (error instanceof ReverseRpcHandlerError) throw new JsonRpcError(error);
+    throw error;
   } finally {
     client.removeListener('status', changedConnection);
     busy.delete(client);

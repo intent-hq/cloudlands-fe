@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { DesktopNativeAdapter } from './desktop-native';
+import { desktopFailure } from './desktop-validation';
+import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 import { requestDesktopPermissions } from './desktop-permissions';
 
 const selection = { workspaceId: 'w', agentId: 'a', requestId: 'r', decision: 'allow_once' };
@@ -37,6 +39,23 @@ function setup() {
   };
 }
 describe('local OS onboarding authorization', () => {
+  it('preserves native refusal code/detail/execution through the existing IPC error serializer', async () => {
+    const h = setup();
+    h.native.requestPermissions.mockRejectedValueOnce(
+      desktopFailure('desktop-unsupported-operation', 'The Mac session is locked', 'not_started'),
+    );
+    const error = await h.run().catch((error) => error);
+    expect(error).toBeInstanceOf(JsonRpcError);
+    expect(error.toErrorPayload()).toMatchObject({
+      code: 'desktop-unsupported-operation',
+      data: {
+        code: 'desktop-unsupported-operation',
+        detail: 'The Mac session is locked',
+        execution: 'not_started',
+      },
+    });
+  });
+
   it.each(['allow_once', 'allow_future'])(
     'requests only for the live %s candidate on this computer, without starting control',
     async (decision) => {
