@@ -319,6 +319,61 @@ async function localWindow() {
   };
 }
 
+describe('pooled startup hello recovery', () => {
+  it.each(['existing client', 'replacement after close'] as const)(
+    'serves requests after overlapping startup and renderer hello: %s',
+    async (recovery) => {
+      const f = await load(false);
+      vi.useFakeTimers();
+      const startupReply = deferred<unknown>();
+      let firstHello = true;
+      edge.respond = (_socket, frame) => {
+        if (frame.method === 'client.hello' && firstHello) {
+          firstHello = false;
+          return startupReply.promise;
+        }
+        return defaultReply(frame);
+      };
+      const client = await f.pool.connectBackendClient('remote-A');
+      await vi.advanceTimersByTimeAsync(0);
+      const original = edge.sockets[0];
+      expect(original.frames.map((frame) => frame.method)).toEqual(['client.hello']);
+      const probe = client.request('client.hello', {});
+      void probe.catch(() => {});
+      const work = client.request('workspace.list');
+      void work.catch(() => {});
+      await vi.advanceTimersByTimeAsync(0);
+      startupReply.resolve(defaultReply(original.frames[0]));
+      // Far beyond the hello deadline and ordinary request timeout. A consumed
+      // successful reply must not leave the pool indefinitely "connecting".
+      await vi.advanceTimersByTimeAsync(102_000);
+      expect(await f.pool.connectBackendClient('remote-A')).toBe(client);
+      expect(edge.sockets.filter((socket) => socket.owner === original.owner)).toHaveLength(1);
+
+      let current = client;
+      if (recovery === 'replacement after close') {
+        // main/index.ts wires last-window-close to this eviction. Reopening
+        // allocates a fresh client; this is a pool control, not a native UI test.
+        f.pool.disconnectBackendClient('remote-A');
+        expect(original.destroyed).toBe(true);
+        current = await f.pool.connectBackendClient('remote-A');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(current).not.toBe(client);
+        expect(current.getConfig()).toEqual(client.getConfig());
+        expect(edge.sockets.filter((socket) => socket.owner === original.owner)).toHaveLength(2);
+      }
+      expect(current.getStatus()).toBe('connected');
+      const result = current.request('workspace.list');
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(result).resolves.toEqual({ workspaces: [] });
+      if (recovery === 'existing client') {
+        await expect(probe).resolves.toMatchObject({ clientId: 'acknowledged-original' });
+        await expect(work).resolves.toEqual({ workspaces: [] });
+      }
+    },
+  );
+});
+
 describe('enrolled real pool and original callback ownership', () => {
   it('P3/F1 joins a real native route execute and its late original release acknowledgment', async () => {
     const root = { workspaceId: 'controlled-workspace', kind: 'primary' as const };

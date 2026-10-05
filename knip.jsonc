@@ -47,6 +47,7 @@
     "test/fixtures/browser-lifetime/Harness.svelte",
     // Bundled by Vite's computed SSR entry in repository-route/routing.electron.ts.
     "test/fixtures/repository-route/main.ts",
+    "test/fixtures/repository-checkout/main.ts",
     "test/fixtures/repository-context-native/main.ts",
     "test/fixtures/repository-selection-native/main.ts",
     "test/fixtures/native-review-native/main.ts",
@@ -172,6 +173,7 @@
       "playwright-ct.config.ts",
       "e2e/build-smoke.config.ts",
       "test/fixtures/repository-route/playwright.config.ts",
+      "test/fixtures/repository-checkout/playwright.config.ts",
       "test/fixtures/repository-context-native/playwright.config.ts",
       "test/fixtures/repository-selection-native/playwright.config.ts",
       "test/fixtures/native-review-native/playwright.config.ts",
@@ -186,6 +188,7 @@
       "e2e/**/*.e2e.ts",
       // repository-route/playwright.config.ts: testDir ., testMatch routing.electron.ts
       "test/fixtures/repository-route/routing.electron.ts",
+      "test/fixtures/repository-checkout/checkout.electron.ts",
       "test/fixtures/repository-context-native/context.electron.ts",
       "test/fixtures/repository-selection-native/selection.electron.ts",
       "test/fixtures/native-review-native/review.electron.ts",

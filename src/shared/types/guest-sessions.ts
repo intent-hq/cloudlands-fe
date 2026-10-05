@@ -38,7 +38,7 @@ export interface GuestSessionRecord {
   fingerprint: string;
   /** tc address of the daemon's tailcat tunnel endpoint (PROTOCOL §12.3), or null. */
   tcAddress: string | null;
-  /** The remote machine's hostname (from `host.status`) once captured. */
+  /** The remote machine's pretty name or hostname (from `system.status`) once captured. */
   hostname: string | null;
   /** Principal id the daemon minted the credential for. */
   principalId: string;

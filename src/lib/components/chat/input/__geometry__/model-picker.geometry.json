@@ -1,0 +1,43 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "adapter-error": {
+    "360": {
+      "probes": {
+        "data-dropdown-footer": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 45,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 0,
+          "paddingRight": 0,
+          "width": 294,
+          "x": 57,
+          "y": 371
+        },
+        "data-slot=dropdown-content": {
+          "fontSize": 15,
+          "fontWeight": 400,
+          "gap": 0,
+          "height": 360,
+          "lineHeight": 22,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 48,
+          "paddingRight": 0,
+          "width": 344,
+          "x": 8,
+          "y": 57
+        }
+      },
+      "root": {
+        "height": 470,
+        "width": 360
+      }
+    }
+  }
+}

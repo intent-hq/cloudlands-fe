@@ -1353,6 +1353,66 @@ describe('captured repository socket dispatch', () => {
 });
 
 describe('queued hello repository eligibility', () => {
+  it('finishes startup when a caller hello arrives while the startup reply is pending', async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const onHelloResult = vi.fn();
+    const client = new JsonRpcClient({
+      socketFactory: () => socket as unknown as Duplex,
+      helloParams: () => ({ clientId: 'desktop' }),
+      onHelloResult,
+      heartbeatIntervalMs: 0,
+    });
+    try {
+      client.start();
+      socket.open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(JSON.parse(socket.writes[0])).toEqual({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'client.hello',
+        params: { clientId: 'desktop' },
+      });
+
+      // A renderer capability probe joins AFTER the physical handshake began.
+      // The existing test below covers the opposite ordering (caller first).
+      const probe = client.request('client.hello', {});
+      void probe.catch(() => {});
+      const queued = client.request('workspace.list');
+      void queued.catch(() => {});
+      await vi.advanceTimersByTimeAsync(0);
+      expect(socket.writes).toHaveLength(1);
+      socket.receive('{"jsonrpc":"2.0","id":1,"result":{"clientId":"desktop"}}\n');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(client.getStatus()).toBe('connected');
+      const frames = socket.writes.slice(1).map((line) => JSON.parse(line));
+      const hello = frames.find((frame) => frame.method === 'client.hello');
+      const work = frames.find((frame) => frame.method === 'workspace.list');
+      expect(hello).toEqual({
+        jsonrpc: '2.0',
+        id: expect.any(Number),
+        method: 'client.hello',
+        params: { clientId: 'desktop' },
+      });
+      expect(work).toEqual({ jsonrpc: '2.0', id: expect.any(Number), method: 'workspace.list' });
+      expect(client.getRepositoryConnection()).toBeNull();
+      socket.receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: hello.id, result: { clientId: 'desktop' } })}\n`,
+      );
+      socket.receive(
+        `${JSON.stringify({ jsonrpc: '2.0', id: work.id, result: { workspaces: [] } })}\n`,
+      );
+      await expect(probe).resolves.toEqual({ clientId: 'desktop' });
+      await expect(queued).resolves.toEqual({ workspaces: [] });
+      expect(onHelloResult).toHaveBeenCalled();
+      expect(client.getRepositoryConnection()).not.toBeNull();
+    } finally {
+      client.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it('does not borrow the initial handshake identity while a queued caller hello runs', async () => {
     const socket = new FakeSocket();
     const client = new JsonRpcClient({
@@ -1374,6 +1434,196 @@ describe('queued hello repository eligibility', () => {
       client.dispose();
     }
   });
+});
+
+describe('hello recovery ordering', () => {
+  const clients: JsonRpcClient[] = [];
+  function make(helloParams = () => Promise.resolve({ clientId: 'persisted' })) {
+    vi.useFakeTimers();
+    const sockets: FakeSocket[] = [];
+    const onHelloResult = vi.fn();
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      helloParams,
+      onHelloResult,
+      reconnectDelayMs: 100,
+      heartbeatIntervalMs: 0,
+    });
+    client.on('error', () => {});
+    clients.push(client);
+    client.start();
+    return { client, sockets, onHelloResult };
+  }
+  const tick = () => vi.advanceTimersByTimeAsync(0);
+  function reply(socket: FakeSocket, index: number, clientId = 'persisted') {
+    const frame = JSON.parse(socket.writes[index]);
+    socket.receive(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result: { clientId } }) + '\n');
+  }
+  afterEach(() => {
+    for (const client of clients.splice(0)) client.dispose();
+    vi.useRealTimers();
+  });
+
+  it.each(['initial connection', 'established connection'])(
+    'recovers the same client after a failed %s with an overlapping hello',
+    async (phase) => {
+      const { client, sockets } = make();
+      const reconnected = vi.fn();
+      client.on('reconnected', reconnected);
+      if (phase === 'established connection') {
+        sockets[0].open();
+        await tick();
+        reply(sockets[0], 0);
+        await tick();
+      }
+      const captured = client.getRepositoryConnection();
+      const staleClose = sockets[0].listeners('close')[0];
+      sockets[0].emit('error', new Error('transiently unavailable'));
+      expect(sockets[0].destroyed).toBe(true);
+      expect(client.getStatus()).toBe('disconnected');
+      await vi.advanceTimersByTimeAsync(99);
+      expect(sockets).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sockets).toHaveLength(2);
+      sockets[1].open();
+      await tick();
+      const probe = client.request('client.hello', { name: 'probe', clientId: 'untrusted' });
+      void probe.catch(() => {});
+      await tick();
+      reply(sockets[1], 0);
+      await tick();
+      expect(client.getStatus()).toBe('connected');
+      expect(reconnected).toHaveBeenCalledOnce();
+      expect(JSON.parse(sockets[1].writes[1])).toMatchObject({
+        method: 'client.hello',
+        params: { name: 'probe', clientId: 'persisted' },
+      });
+      expect(client.getRepositoryConnection()).toBeNull();
+      reply(sockets[1], 1);
+      await expect(probe).resolves.toEqual({ clientId: 'persisted' });
+      const current = client.getRepositoryConnection();
+      expect(current).not.toBeNull();
+      if (captured) {
+        await expect(client.requestOnCapturedConnection(captured, 'git.status')).rejects.toThrow();
+        expect(current?.incarnation).not.toBe(captured.incarnation);
+      }
+      staleClose();
+      expect(client.getRepositoryConnection()).toBe(current);
+      const work = client.request('workspace.list');
+      const frame = JSON.parse(sockets[1].writes[2]);
+      expect(frame.method).toBe('workspace.list');
+      sockets[1].receive(JSON.stringify({ id: frame.id, result: { workspaces: [] } }) + '\n');
+      await expect(work).resolves.toEqual({ workspaces: [] });
+      client.dispose();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(sockets).toHaveLength(2);
+      expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+    },
+  );
+
+  it('keeps startup ownership with delayed parameters and concurrent queued hellos', async () => {
+    const params = lifecycleDeferred<{ clientId: string }>();
+    const provider = vi
+      .fn()
+      .mockImplementationOnce(() => params.promise)
+      .mockResolvedValue({ clientId: 'persisted' });
+    const { client, sockets, onHelloResult } = make(provider);
+    sockets[0].open();
+    const first = client.request('client.hello', { name: 'first' });
+    const second = client.request('client.hello', { name: 'second' });
+    void first.catch(() => {});
+    void second.catch(() => {});
+    await tick();
+    expect(sockets[0].writes).toHaveLength(0);
+    params.resolve({ clientId: 'persisted' });
+    await tick();
+    reply(sockets[0], 0, 'startup');
+    await tick();
+    expect(client.getStatus()).toBe('connected');
+    expect(sockets[0].writes.slice(1).map((line) => JSON.parse(line).params)).toEqual([
+      { name: 'first', clientId: 'persisted' },
+      { name: 'second', clientId: 'persisted' },
+    ]);
+    expect(client.getRepositoryConnection()).toBeNull();
+    reply(sockets[0], 2, 'newest');
+    await expect(second).resolves.toEqual({ clientId: 'newest' });
+    const current = client.getRepositoryConnection();
+    expect(current).not.toBeNull();
+    reply(sockets[0], 1, 'older');
+    await expect(first).resolves.toEqual({ clientId: 'older' });
+    expect(client.getRepositoryConnection()).toBe(current);
+    expect(onHelloResult.mock.calls.map(([result]) => result.clientId)).toEqual([
+      'startup',
+      'newest',
+    ]);
+  });
+
+  it('retires connected identity immediately and rejects a delayed caller after disposal', async () => {
+    const params = lifecycleDeferred<{ clientId: string }>();
+    const provider = vi
+      .fn()
+      .mockResolvedValueOnce({ clientId: 'persisted' })
+      .mockImplementationOnce(() => params.promise);
+    const { client, sockets, onHelloResult } = make(provider);
+    sockets[0].open();
+    await tick();
+    reply(sockets[0], 0);
+    await tick();
+    const captured = client.getRepositoryConnection()!;
+    const caller = client.request('client.hello');
+    const outcome = vi.fn();
+    void caller.then(
+      () => outcome('resolved'),
+      (error: Error) => outcome(error.message),
+    );
+    expect(client.getRepositoryConnection()).toBeNull();
+    await expect(client.requestOnCapturedConnection(captured, 'git.status')).rejects.toThrow();
+    expect(sockets[0].writes).toHaveLength(1);
+    client.dispose();
+    params.resolve({ clientId: 'persisted' });
+    await tick();
+    expect(outcome).toHaveBeenCalledWith('JSON-RPC client disposed');
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].writes).toHaveLength(1);
+    expect(sockets[0].destroyed).toBe(true);
+    expect(onHelloResult).toHaveBeenCalledOnce();
+  });
+
+  it.each(['replacement', 'disposal'])(
+    'ignores delayed startup parameters after socket %s',
+    async (ending) => {
+      const params = lifecycleDeferred<{ clientId: string }>();
+      const provider = vi
+        .fn()
+        .mockImplementationOnce(() => params.promise)
+        .mockResolvedValue({ clientId: 'persisted' });
+      const { client, sockets, onHelloResult } = make(provider);
+      sockets[0].open();
+      await tick();
+      if (ending === 'replacement') {
+        sockets[0].emit('close');
+        await vi.advanceTimersByTimeAsync(100);
+        sockets[1].open();
+        await tick();
+        reply(sockets[1], 0);
+        await tick();
+        expect(client.getStatus()).toBe('connected');
+      } else {
+        client.dispose();
+      }
+      const current = client.getRepositoryConnection();
+      params.resolve({ clientId: 'obsolete' });
+      await tick();
+      expect(sockets[0].writes).toHaveLength(0);
+      expect(client.getRepositoryConnection()).toBe(current);
+      expect(onHelloResult).toHaveBeenCalledTimes(ending === 'replacement' ? 1 : 0);
+      if (ending === 'replacement') expect(sockets[1].writes).toHaveLength(1);
+    },
+  );
 });
 
 describe('private repository connection evidence', () => {

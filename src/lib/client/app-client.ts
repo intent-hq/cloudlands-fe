@@ -2371,6 +2371,13 @@ export interface GitHubIssueDetails {
 }
 
 export interface IntegrationsClient {
+  captureRepositoryCheckout(
+    query: import('$shared/types/repository-checkout').CheckoutCaptureQuery,
+  ): Promise<
+    import('$shared/types/repository-checkout').CheckoutResult<
+      import('$shared/types/repository-checkout').RepositoryCheckoutSession
+    >
+  >;
   /** Admitted GitLab details on the original workspace connection; never falls back. */
   captureRepositoryResource(
     workspaceId: string,

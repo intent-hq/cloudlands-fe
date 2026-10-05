@@ -28,6 +28,7 @@
   import {
     chatLastAttemptedMessageSet,
     chatSendFailed,
+    chatSendStarted,
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
@@ -56,6 +57,7 @@
     initializeStore = true,
     submissionSupport = false,
     settleSubmission,
+    submissionStage,
     queuePhase,
     followUp,
     historyNotice,
@@ -76,6 +78,7 @@
     initializeStore?: boolean;
     submissionSupport?: boolean;
     settleSubmission?: 'history' | 'queue' | 'rejected';
+    submissionStage?: 'started' | 'ack';
     queuePhase?: 'ready' | 'foreign' | 'restored';
     followUp?: 'blocker' | 'discussion';
     historyNotice?: 'blocker-report' | 'discussion-request' | 'turn-failure' | 'interruption';
@@ -342,6 +345,30 @@
     );
   });
   $effect(() => {
+    if (!submissionStage) return;
+    const pending = selectAgentSubmissionDisplay.select(store.state, agentId, workspaceId)
+      .conversation[0];
+    const scope = store.state.pendingSubmissions.byAgentId[agentId]?.scope;
+    if (submissionStage === 'started') {
+      if (!pending || !scope) return;
+      // The direct-send saga records ownership before the request can emit stream-start.
+      store.dispatch(chatSendStarted(agentId, workspaceId));
+      store.dispatch(
+        chatLastAttemptedMessageSet(
+          agentId,
+          buildRecordedAttempt(pending.content, { submission: { scope, id: pending.id } }),
+        ),
+      );
+    } else {
+      const reference =
+        store.state.chatState.byAgentId[agentId]?.lastAttemptedMessage?.submission?.reference;
+      if (reference)
+        store.dispatch(
+          pendingSubmissionSettled(reference.scope, reference.id, 'accepted', Date.now()),
+        );
+    }
+  });
+  $effect(() => {
     if (!settleSubmission) return;
     const pending = selectAgentSubmissionDisplay.select(store.state, agentId, workspaceId)
       .conversation[0];
@@ -384,7 +411,11 @@
           Date.now(),
         ),
       );
-      store.dispatch(updateSession(agentId, { messages: [...session.messages, message] }));
+      store.dispatch(
+        updateSession(agentId, {
+          messages: [...store.state.agentSessions.byAgentId[agentId].messages, message],
+        }),
+      );
     }
   });
   $effect(() => {

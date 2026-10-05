@@ -8,6 +8,7 @@ import { AgentNodeFieldsSchema } from './types/agent-node';
  */
 
 import { z } from 'zod';
+import { CheckoutSelectionSchema } from './types/repository-checkout';
 import {
   AgentStatus,
   MESSAGE_ROLES,
@@ -215,6 +216,7 @@ const EnvironmentConfigSchema = z.object({
 });
 
 export const CreateWorkspaceRequestSchema = z.object({
+  repositoryCheckout: CheckoutSelectionSchema.optional(),
   idempotencyKey: z.string().optional(),
   title: z.string().max(100).optional(),
   statusMessage: WorkspaceStatusMessageSchema.optional(),

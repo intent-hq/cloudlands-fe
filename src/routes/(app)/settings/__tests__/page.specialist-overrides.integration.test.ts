@@ -12,6 +12,7 @@ import {
   discardSpecialistDraft,
 } from '$store/renderer/slices/specialists/specialists-slice';
 import { warmImport } from '../../../../test/warm-import';
+import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
   page: { url: new URL('http://localhost/settings?tab=agents&specialist=implementor') },
@@ -64,6 +65,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  admitLegacyPrincipal();
   appStore.dispatch(discardSpecialistDraft('user'));
   window.history.pushState({}, '', '/settings?tab=agents&specialist=implementor');
   mocks.page.url = new URL(window.location.href);

@@ -58,6 +58,8 @@ import {
 import { JsonRpcError } from './json-rpc-errors';
 import { registerRepositoryRouteHandlers } from './repository-route-lifecycle';
 import { createRepositoryResourceFeed } from './repository-resource-feed';
+import { createRepositoryCheckoutFeed } from './repository-checkout-feed';
+import { registerRepositoryCheckoutHandlers } from './repository-checkout-lifecycle';
 import { registerRepositoryResourceHandlers } from './repository-resource-lifecycle';
 import { createRepositoryAuthorityFeed } from './repository-authority-feed';
 import { createRepositorySelectionFeed } from './repository-selection-feed';
@@ -401,6 +403,8 @@ const repositoryFeeds = new WeakMap<
   ReturnType<typeof createRepositoryAuthorityFeed>
 >();
 const resourceFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryResourceFeed>>();
+const checkoutFeeds = new WeakMap<JsonRpcClient, ReturnType<typeof createRepositoryCheckoutFeed>>();
+let checkoutRoutes: ReturnType<typeof registerRepositoryCheckoutHandlers> | undefined;
 let resourceRoutes: ReturnType<typeof registerRepositoryResourceHandlers> | undefined;
 const selectionFeeds = new WeakMap<
   JsonRpcClient,
@@ -806,6 +810,7 @@ function retireOriginalMember(
   try {
     repositoryRoutes?.retireBackend(member.id);
     resourceRoutes?.retireBackend(member.id);
+    checkoutRoutes?.retireBackend(member.id);
     selectionRoutes?.retireBackend(member.id);
     nativeReviewRoutes?.retireBackend(member.id);
     // Original disconnect side effects run once while the transport and admitted releases remain alive.
@@ -836,6 +841,7 @@ function retireOriginalMember(
     app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, client);
     repositoryFeeds.get(client)?.dispose();
     resourceFeeds.get(client)?.dispose();
+    checkoutFeeds.get(client)?.dispose();
     selectionFeeds.get(client)?.dispose();
     nativeReviewFeeds.get(client)?.dispose();
     scope.listeners.add(wake);
@@ -989,11 +995,13 @@ export function enrollBackendClientLifecycle(observer?: (event: PoolObservation)
         if (process.platform === 'darwin') poolAuxiliary('keychain-engine');
         repositoryRoutes?.dispose();
         resourceRoutes?.dispose();
+        checkoutRoutes?.dispose();
         selectionRoutes?.dispose();
         nativeReviewRoutes?.dispose();
         for (const client of scope.members.keys()) {
           repositoryFeeds.get(client)?.dispose();
           resourceFeeds.get(client)?.dispose();
+          checkoutFeeds.get(client)?.dispose();
           selectionFeeds.get(client)?.dispose();
           nativeReviewFeeds.get(client)?.dispose();
         }
@@ -1617,6 +1625,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   repositoryRoutes?.retireBackend(id);
   resourceRoutes?.retireBackend(id);
+  checkoutRoutes?.retireBackend(id);
   selectionRoutes?.retireBackend(id);
   nativeReviewRoutes?.retireBackend(id);
   backendClients.delete(id);
@@ -1638,6 +1647,7 @@ export function disconnectBackendClient(id: string): void {
   app.emit(BACKEND_CLIENT_DISCONNECTED_EVENT, instance);
   repositoryFeeds.get(instance)?.dispose();
   resourceFeeds.get(instance)?.dispose();
+  checkoutFeeds.get(instance)?.dispose();
   selectionFeeds.get(instance)?.dispose();
   nativeReviewFeeds.get(instance)?.dispose();
   instance.dispose();
@@ -1998,6 +2008,7 @@ function createAdditionalBackendClient(
   if (typeof instance.onRepositoryConnectionEvent === 'function') {
     repositoryFeeds.set(instance, createRepositoryAuthorityFeed(instance));
     resourceFeeds.set(instance, createRepositoryResourceFeed(instance));
+    checkoutFeeds.set(instance, createRepositoryCheckoutFeed(instance));
     selectionFeeds.set(instance, createRepositorySelectionFeed(instance));
     nativeReviewFeeds.set(instance, createNativeReviewFeed(instance));
   }
@@ -2192,6 +2203,7 @@ function createAdditionalBackendClient(
     instance.beginRetirement();
     repositoryFeeds.get(instance)?.dispose();
     resourceFeeds.get(instance)?.dispose();
+    checkoutFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
     nativeReviewFeeds.get(instance)?.dispose();
     poolChanged();
@@ -2431,8 +2443,8 @@ function toErrorPayload(error: unknown): {
 // ============================================================================
 
 /**
- * Pull the hostname out of a `host.status` result (PROTOCOL §5.14 — returns
- * `{ hostname, prettyHostname?, os, arch, ... }`). Prefers a trimmed non-empty
+ * Pull the hostname out of a `host.status` or guest-safe `system.status`
+ * result. Both carry `{ hostname, prettyHostname?, ... }`. Prefers a trimmed non-empty
  * `prettyHostname` (the human-friendly machine name, e.g. macOS ComputerName)
  * over the network `hostname`; returns `null` when neither is present so
  * callers keep the `host:port` fallback.
@@ -2454,13 +2466,13 @@ function extractHostname(result: unknown): string | null {
 
 /**
  * Label a freshly-connected remote by its hostname (T14). Reuses the live
- * client's `host.status` capability probe — the same call the heartbeat issues —
- * to read the remote machine's hostname, persists it on the connection record,
- * and re-broadcasts the list so the menu upgrades `host:port` to
+ * client's `host.status` capability probe (guest sessions use the admitted
+ * `system.status` projection instead) to read the remote machine's hostname,
+ * persists it on the connection record, and re-broadcasts the list so the menu upgrades `host:port` to
  * `hostname (host:port)`.
  *
  * Fire-and-forget by design: it must never block or fail an open. The
- * `host.status` request queues until the fresh socket connects, so awaiting it
+ * status request queues until the fresh socket connects, so awaiting it
  * inline would stall the open on a slow/unreachable remote — instead the
  * label upgrades asynchronously once the hostname arrives. Any failure
  * (unreachable, malformed result, store write error) is swallowed with a warn;
@@ -2483,7 +2495,7 @@ async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Pro
     const guest = await guestSessionsStore.findById(id);
     if (guest && !guard?.()) return;
     const result = await observeStatus(client, 'captureRemoteHostname', owner, () =>
-      poolRequest(owner, client, 'host.status'),
+      poolRequest(owner, client, guest ? 'system.status' : 'host.status'),
     );
     const hostname = extractHostname(result);
     const deviceKind = extractDeviceKind(result);
@@ -3365,6 +3377,8 @@ function broadcastGuestSessionsChangedOwned(parent?: PoolOwner): Promise<void> {
 
 async function broadcastGuestSessionsChangedOriginal(owner?: PoolOwner): Promise<void> {
   const payload = await buildGuestSessionsListResult();
+  // Native Window-menu entries use the same guest labels as renderer chrome.
+  app.emit('guest-sessions-changed');
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
@@ -4205,6 +4219,15 @@ export function registerBackendHandlers(): void {
       return feed.capture(connection, root);
     },
   });
+  checkoutRoutes = registerRepositoryCheckoutHandlers(ipcMain, {
+    readBackend: (id) => backendClients.get(id),
+    capture: (client, connection, query) => {
+      const feed = checkoutFeeds.get(client);
+      if (!feed) return Promise.reject(new Error('REPOSITORY_CHECKOUT_UNAVAILABLE'));
+      return feed.capture(connection, query);
+    },
+    errorPayload: toErrorPayload,
+  });
   resourceRoutes = registerRepositoryResourceHandlers(ipcMain, {
     readBackend: (id) => backendClients.get(id),
     capture: (client, connection, workspaceId) => {
@@ -4233,6 +4256,7 @@ export function registerBackendHandlers(): void {
       }
       if (
         method.startsWith('sourceControl.read.') ||
+        method.startsWith('sourceControl.checkout.') ||
         method === 'workspace.repositoryContext' ||
         method === 'workspace.repositoryContext.capture' ||
         method === 'workspace.repositoryContext.release' ||
@@ -4253,6 +4277,22 @@ export function registerBackendHandlers(): void {
           // i18n-ignore (internal route diagnostic; facade emits a typed unavailable state)
           error: { code: 'REPOSITORY_ROUTE_UNAVAILABLE', message: 'Repository route required' },
         };
+      }
+      if (
+        method === 'workspace.create' &&
+        payload.params !== null &&
+        typeof payload.params === 'object' &&
+        Object.prototype.hasOwnProperty.call(payload.params, 'repositoryCheckout')
+      ) {
+        if (payload.localMachine === true || !checkoutRoutes)
+          return {
+            ok: false,
+            error: {
+              code: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+              message: 'REPOSITORY_CHECKOUT_UNAVAILABLE',
+            },
+          };
+        return checkoutRoutes.create(event, payload.params, payload.timeoutMs);
       }
       // `timeoutMs` is an optional per-call override forwarded verbatim to the
       // JSON-RPC client. Long daemon operations (e.g. `git.pull`, whose own
@@ -5249,6 +5289,7 @@ async function getSelfPublishedStateOriginal(owner?: PoolOwner): Promise<SelfPub
 export function disposeAllBackendClients(): void {
   repositoryRoutes?.dispose();
   resourceRoutes?.dispose();
+  checkoutRoutes?.dispose();
   selectionRoutes?.dispose();
   nativeReviewRoutes?.dispose();
   for (const [id, instance] of backendClients) {
@@ -5264,6 +5305,7 @@ export function disposeAllBackendClients(): void {
     disposeTransferConnectionsForBackend(id);
     repositoryFeeds.get(instance)?.dispose();
     resourceFeeds.get(instance)?.dispose();
+    checkoutFeeds.get(instance)?.dispose();
     selectionFeeds.get(instance)?.dispose();
     nativeReviewFeeds.get(instance)?.dispose();
     instance.dispose();

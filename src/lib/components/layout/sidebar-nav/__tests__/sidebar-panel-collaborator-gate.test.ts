@@ -1,5 +1,11 @@
-import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
-import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
+import {
+  admitLegacyPrincipal,
+  withHostPrincipal,
+} from '../../../../../test/fixtures/principal-state';
 /**
  * SidebarPanel withholds the Chief from a collaborator-only client
  * (multiplayer w3): the daemon answers its `__chief__` calls with not-found,
@@ -122,27 +128,35 @@ describe('SidebarPanel collaborator-only gate (multiplayer w3)', () => {
     });
   });
 
-  it('falls back to Workspaces for collaborator-only clients even on direct Intent navigation', async () => {
-    const { container } = render(SidebarPanelHarness, {
-      props: {
-        setup: () => {
-          loadWorkspaces('collaborator', 'collaborator');
-          appStore.dispatch(openPanel('chief'));
+  it.each(['member', 'guest'] as const)(
+    'falls back to Workspaces for %s clients even on direct Assistant navigation',
+    async (hostRole) => {
+      const { container } = render(SidebarPanelHarness, {
+        props: {
+          setup: () => {
+            loadWorkspaces('collaborator', 'collaborator');
+            const { principal } = withHostPrincipal(appStore.state, hostRole);
+            appStore.dispatch(
+              principalReceived(
+                { context: principal.context!, invalidation: 0, presentationVersion: 0 },
+                principal.snapshot!,
+              ),
+            );
+            appStore.dispatch(openPanel('chief'));
+          },
         },
-      },
-    });
+      });
 
-    expect(selectIsCollaboratorOnlyClient.select(appStore.state)).toBe(true);
-    const { card, tab, spaces } = chiefSurfaces(container);
-    expect(card).toBeNull();
-    expect(tab).toBeNull();
-    expect(spaces).not.toBeNull();
-    expect(spaces?.hasAttribute('hidden')).toBe(false);
-    expect(spaces?.hasAttribute('inert')).toBe(false);
-    expect(screen.getByRole('tab', { selected: true }).getAttribute('aria-controls')).toBe(
-      spaces?.id,
-    );
-  });
+      expect(selectIsCollaboratorOnlyClient.select(appStore.state)).toBe(true);
+      const { card, tab, spaces } = chiefSurfaces(container);
+      expect(card).toBeNull();
+      expect(tab).toBeNull();
+      expect(spaces).not.toBeNull();
+      expect(spaces?.hasAttribute('hidden')).toBe(false);
+      expect(spaces?.hasAttribute('inert')).toBe(false);
+      expect(screen.queryByRole('tablist')).toBeNull();
+    },
+  );
 
   it('unmounts the Chief card and releases the Chief workspace when the flag flips true after mount', async () => {
     const { container } = render(SidebarPanelHarness, {
@@ -160,6 +174,7 @@ describe('SidebarPanel collaborator-only gate (multiplayer w3)', () => {
 
     await waitFor(() => expect(chiefSurfaces(container).card).toBeNull());
     expect(chiefSurfaces(container).tab).toBeNull();
+    expect(screen.queryByRole('tablist')).toBeNull();
     expect(chiefSurfaces(container).spaces?.hasAttribute('hidden')).toBe(false);
     expect(chiefSurfaces(container).spaces?.hasAttribute('inert')).toBe(false);
     expect(dispatchSpy).toHaveBeenCalledWith(

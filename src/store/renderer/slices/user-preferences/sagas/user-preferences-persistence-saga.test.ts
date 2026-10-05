@@ -1,4 +1,5 @@
 import { runSaga, stdChannel } from 'redux-saga';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resetOnboarding,
@@ -98,6 +99,20 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+// The preferences root forks admission-aware rules; these tests keep one owner admission.
+function preferenceContext(readState: () => object) {
+  const getState = () => withLegacyPrincipal(readState());
+  return {
+    getState,
+    context: {
+      reduxStore: { getState, subscribe: () => () => {} },
+      reportRuntimeError: (error: unknown) => {
+        throw error;
+      },
+    },
+  };
+}
+
 function startPreferenceStore() {
   const channel = stdChannel();
   let userPreferences = initialState;
@@ -107,7 +122,7 @@ function startPreferenceStore() {
     return action;
   };
   const task = runSaga(
-    { channel, dispatch, getState: () => ({ userPreferences }) },
+    { channel, dispatch, ...preferenceContext(() => ({ userPreferences })) },
     userPreferencesPersistenceSaga,
   );
   return {
@@ -138,7 +153,7 @@ describe('userPreferencesPersistenceSaga', () => {
     vi.mocked(window.electronAPI.invoke).mockResolvedValue({ success: true, data: fonts });
     const dispatch = vi.fn();
     const task = runSaga(
-      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      { dispatch, ...preferenceContext(() => ({ userPreferences: initialState })) },
       userPreferencesPersistenceSaga,
     );
     await settle();
@@ -553,7 +568,7 @@ describe('userPreferencesPersistenceSaga', () => {
       userPreferences: { shortcutOverrides: { 'global.settings': 'mod+shift+,' } },
     };
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state },
+      { channel, dispatch: vi.fn(), ...preferenceContext(() => state) },
       userPreferencesPersistenceSaga,
     );
     await settle();
@@ -589,7 +604,7 @@ describe('userPreferencesPersistenceSaga', () => {
     };
     const channel = stdChannel();
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state },
+      { channel, dispatch: vi.fn(), ...preferenceContext(() => state) },
       userPreferencesPersistenceSaga,
     );
     await settle();
@@ -765,7 +780,7 @@ describe('userPreferencesPersistenceSaga', () => {
       },
     };
     const task = runSaga(
-      { channel, dispatch: vi.fn(), getState: () => state },
+      { channel, dispatch: vi.fn(), ...preferenceContext(() => state) },
       userPreferencesPersistenceSaga,
     );
     await settle();
@@ -788,7 +803,7 @@ describe('userPreferencesPersistenceSaga', () => {
     mocks.getJSON.mockReturnValue(new Promise((done) => (resolve = done)));
     const dispatch = vi.fn();
     const task = runSaga(
-      { dispatch, getState: () => ({ userPreferences: initialState }) },
+      { dispatch, ...preferenceContext(() => ({ userPreferences: initialState })) },
       userPreferencesPersistenceSaga,
     );
     task.cancel();
@@ -818,7 +833,7 @@ describe('userPreferencesPersistenceSaga', () => {
 
       const channel = stdChannel();
       const task = runSaga(
-        { channel, dispatch: vi.fn(), getState: () => stateFor('local') },
+        { channel, dispatch: vi.fn(), ...preferenceContext(() => stateFor('local')) },
         userPreferencesPersistenceSaga,
       );
       await settle();
@@ -846,7 +861,7 @@ describe('userPreferencesPersistenceSaga', () => {
 
       const channel = stdChannel();
       const task = runSaga(
-        { channel, dispatch: vi.fn(), getState: () => stateFor('remote-1') },
+        { channel, dispatch: vi.fn(), ...preferenceContext(() => stateFor('remote-1')) },
         userPreferencesPersistenceSaga,
       );
       await settle();
@@ -880,7 +895,7 @@ describe('userPreferencesPersistenceSaga', () => {
       const channel = stdChannel();
       const dispatch = vi.fn();
       const task = runSaga(
-        { channel, dispatch, getState: () => stateFor(activeId) },
+        { channel, dispatch, ...preferenceContext(() => stateFor(activeId)) },
         userPreferencesPersistenceSaga,
       );
       await settle();

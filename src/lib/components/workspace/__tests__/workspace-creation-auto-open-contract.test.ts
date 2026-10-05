@@ -13,7 +13,7 @@ function expectHydrateOpenNavigateOrder(content: string): void {
   const bootstrapIndex = content.indexOf('bootstrapNewWorkspaceLayout(');
   const hydrateIndex = content.indexOf('hydrateWorkspaceNavigation(workspace.id');
   const openIndex = content.indexOf('appStore.dispatch(openWorkspaceTab(workspace.id))');
-  const navigateIndex = content.indexOf('await goto(`/workspace/${workspace.id}`', openIndex);
+  const navigateIndex = content.indexOf('goto(`/workspace/${workspace.id}`', openIndex);
 
   expect(bootstrapIndex).toBeGreaterThan(-1);
   expect(hydrateIndex).toBeGreaterThan(bootstrapIndex);

@@ -24,6 +24,7 @@
     reasoningOutcome = 'accept',
     settleDelayMs = 0,
     multipleProviders = false,
+    diagnostic,
   }: {
     placement?: 'settings' | 'composer' | 'modal';
     longList?: boolean;
@@ -31,6 +32,7 @@
     reasoningOutcome?: 'accept' | 'reject';
     settleDelayMs?: number;
     multipleProviders?: boolean;
+    diagnostic?: string;
   } = $props();
   let model = $state('reasoning-model');
   let effort = $state<string | null>(null);
@@ -65,7 +67,13 @@
   store.dispatch(setProviderEnabled({ providerId: 'codex', enabled: true }));
   store.dispatch(checkSingleProviderSuccess('codex', { available: true, authenticated: true }));
   store.dispatch(checkAllProvidersComplete());
-  store.dispatch(providerModelsLoaded('codex', { models }, 0));
+  store.dispatch(
+    providerModelsLoaded(
+      'codex',
+      { models, ...(diagnostic ? { warning: diagnostic, stale: true } : {}) },
+      0,
+    ),
+  );
   // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalog, not a domain fetch
   registerMockIpcHandler('codex:get-models', (params) => {
     if (params) refreshRequests = [...refreshRequests, { channel: 'codex:get-models', params }];
