@@ -46,19 +46,17 @@ export async function navigateToRoute(route: string): Promise<void> {
   }
   // Every entry point (native menu, in-app links, and toast actions) shares
   // this boundary. Only entering Settings replaces its return destination.
-  if (typeof window !== 'undefined' && typeof sessionStorage !== 'undefined') {
+  if (
+    isSettingsRoute(route) &&
+    typeof window !== 'undefined' &&
+    typeof sessionStorage !== 'undefined' &&
+    !isSettingsRoute(window.location.pathname)
+  ) {
     const currentUrl = new URL(window.location.href);
-    const targetUrl = new URL(route, currentUrl);
-    if (
-      targetUrl.origin === currentUrl.origin &&
-      isSettingsRoute(targetUrl.pathname) &&
-      !isSettingsRoute(currentUrl.pathname)
-    ) {
-      sessionStorage.setItem(
-        SETTINGS_PREV_PATH_KEY,
-        currentUrl.pathname + currentUrl.search + currentUrl.hash,
-      );
-    }
+    sessionStorage.setItem(
+      SETTINGS_PREV_PATH_KEY,
+      currentUrl.pathname + currentUrl.search + currentUrl.hash,
+    );
   }
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore - $app/navigation is a SvelteKit renderer-only module (not available in main process)
