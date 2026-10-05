@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.208.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.207.0...v2.208.0) (2026-10-05)
+
+
+### 🚀 Features
+
+* add Home workspace hub and pull request review views ([#3124](https://github.com/intent-hq/cloudlands-fe/issues/3124)) ([1052e69](https://github.com/intent-hq/cloudlands-fe/commit/1052e69a0e017fd169c8089f7642b5cd2c8fba88))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.19 ([#3222](https://github.com/intent-hq/cloudlands-fe/issues/3222)) ([f044681](https://github.com/intent-hq/cloudlands-fe/commit/f0446811b3e5e0e702d31900c4097c57c89cab27))
+* keep primary client recovery available for unresolved routes ([#3218](https://github.com/intent-hq/cloudlands-fe/issues/3218)) ([768950b](https://github.com/intent-hq/cloudlands-fe/commit/768950bb3bc7734da11a148ef2db51ab2dbf35ca))
+
 ## [2.207.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.206.0...v2.207.0) (2026-10-05)
 
 
