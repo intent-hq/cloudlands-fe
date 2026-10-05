@@ -17,5 +17,12 @@
     "plain-paragraph-one.json": "ce85e50a0210fe4357ac24567510486342c996f20f9ae81d35eda49344a5d03c"
   },
   "producerTest": "intent-store tests::note_pages::plain_source_capture (direct Store read_note_page responses)",
-  "scope": "Frozen actual RPC closure with original opaque refs and expiry; replay is not a live authenticated lease. No source or descriptor rewriting."
+  "scope": "Frozen actual RPC closure with original opaque refs and expiry; replay is not a live authenticated lease. No source or descriptor rewriting.",
+  "farCapture": {
+    "baseHead": "91551dc161c254d295bfad243e9ca369d64fda6c",
+    "paragraphImplementation": "545d3b056",
+    "test": "intent-store tests::note_pages::plain_far_capture (registered WIP)",
+    "captureSha256": "b6e303d920454c06c28995dbbb0b6fa2b7cb0893552cf54c8068fb190e0bb48d",
+    "scope": "Byte-unchanged actual nonzero Store response closure. Source recipe describes the untouched prefix; no prefix source request or response synthesis."
+  }
 }

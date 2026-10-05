@@ -1,3 +1,4 @@
+import plainFar from './__fixtures__/note-paragraph/plain-paragraph-far.json';
 import plainOne from './__fixtures__/note-paragraph/plain-paragraph-one.json';
 import plainTwo from './__fixtures__/note-paragraph/plain-paragraph-two.json';
 import htmlTail from './__fixtures__/note-paragraph/plain-paragraph-html-tail.json';
@@ -388,7 +389,7 @@ it('rejects a source window changed while its lexical context was loading', () =
   expect(() => iterator.next(f.replies['opaque-directory'])).toThrow('source window changed');
 });
 
-async function realPlain(raw: typeof plainOne | typeof plainTwo) {
+async function realPlain(raw: { at: number; calls: unknown[] }) {
   const f = await capturedWindow(raw);
   const projection = projectNoteWindow(f.window);
   const editor = nativeFixtureEditor(projection.content);
@@ -538,5 +539,82 @@ it('refuses a completed receipt after its resource grant is released', () => {
     ).toThrow('resource grant unavailable');
   } finally {
     editor.destroy();
+  }
+});
+
+it('edits the actual Store far paragraph without fetching its untouched prefix', async () => {
+  const f = await realPlain(plainFar);
+  const original =
+    plainFar.sourceRecipe.prefix.repeat(plainFar.sourceRecipe.prefixRepeatCount) +
+    plainFar.sourceRecipe.suffix;
+  const start = plainFar.at;
+  // Test-only reconstruction walks bounded original windows; production never
+  // hydrates or passes the large prefix to an edit authority.
+  const reconstruct = (state: ReturnType<typeof createNoteDocumentSession>) => {
+    const pieces: string[] = [];
+    for (let at = 0; at < original.length; at += 16384)
+      pieces.push(
+        overlayNoteDocumentSource(
+          state,
+          at,
+          original.slice(at, at + 16384),
+          f.window.sourceRevision,
+        ).text,
+      );
+    return pieces.join('');
+  };
+  try {
+    expect(f.window.range).toEqual({ start, end: original.length });
+    expect(f.window.text).toBe('abc');
+    const session = createNoteDocumentSession(
+      f.window.scope,
+      f.window.sourceRevision,
+      f.window.sourceLength,
+    );
+    session.selection = { anchor: start + 2, head: start + 1, anchorAffinity: -1, headAffinity: 1 };
+    const first = prepareNoteDocumentEdit(
+      session,
+      EditorState.create({ doc: f.authority.doc }).tr.insertText('X', 2),
+      f.authority,
+    );
+    const second = prepareNoteDocumentEdit(
+      first.state,
+      EditorState.create({ doc: first.authority.doc }).tr.insertText('Y', 3),
+      first.authority,
+    );
+    const expected = original.slice(0, start) + 'aXYbc';
+    expect(second.authority.start).toBe(start);
+    expect(second.authority.source).toBe('aXYbc');
+    expect(reconstruct(second.state)).toBe(expected);
+    f.editor.destroy();
+    const fresh = await realPlain(plainFar);
+    try {
+      const mounted = materializeNoteDocumentAuthority(second.state, fresh.authority);
+      expect(mounted.start).toBe(start);
+      expect(mounted.source).toBe('aXYbc');
+      expect(mounted.doc.textContent).toBe('aXYbc');
+      const undoSecond = moveNoteDocumentHistory(second.state, 'undo')!;
+      const undoFirst = moveNoteDocumentHistory(undoSecond.state, 'undo')!;
+      expect(materializeNoteDocumentAuthority(undoFirst.state, fresh.authority).source).toBe('abc');
+      expect(reconstruct(undoFirst.state)).toBe(original);
+      expect(undoFirst.state.selection).toEqual(session.selection);
+      const redoFirst = moveNoteDocumentHistory(undoFirst.state, 'redo')!;
+      const redoSecond = moveNoteDocumentHistory(redoFirst.state, 'redo')!;
+      expect(materializeNoteDocumentAuthority(redoSecond.state, fresh.authority).source).toBe(
+        'aXYbc',
+      );
+      expect(reconstruct(redoSecond.state)).toBe(expected);
+      expect(redoSecond.state.selection).toEqual(second.state.selection);
+      for (const replay of [f, fresh]) {
+        const reads = replay.requests.filter((q) => q.kind === 'source');
+        expect(reads).toHaveLength(1);
+        expect(reads[0]).toMatchObject({ at: 65538, maxSourceBytes: 4096 });
+        expect(replay.requests).toHaveLength(plainFar.calls.length);
+      }
+    } finally {
+      fresh.editor.destroy();
+    }
+  } finally {
+    f.editor.destroy();
   }
 });
