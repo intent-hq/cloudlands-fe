@@ -7013,6 +7013,7 @@
   "devConsole_unknown_label": "Unknown",
   "devConsole_events_label": "Events",
   "files_secondaryRoot_unsupported_error": "This daemon cannot read files from secondary Git roots. Update it and reconnect.",
+  "settings_personalDevices_mobile_description": "Pair your mobile device with this instance. Scan the QR code in Intent Mobile or use the pairing link.",
   "settings_personalDevices_title": "Signed-in devices",
   "settings_personalDevices_identity_description": "{person} on {host} · {role}",
   "settings_personalDevices_pair_label": "Pair another device as me",

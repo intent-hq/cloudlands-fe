@@ -12,6 +12,8 @@ import { admitLegacyPrincipal, withHostPrincipal } from '../../test/fixtures/pri
 import { m } from '$shared/paraglide/messages.js';
 import { tick } from 'svelte';
 import MobileSettings from './MobileSettings.svelte';
+import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 
 const mocks = vi.hoisted(() => ({
   qr: vi.fn(),
@@ -195,6 +197,43 @@ it('copies and encodes the connected device’s exact pairing URI without readin
   await screen.findByRole('dialog');
   expect(mocks.qr).toHaveBeenCalledWith(remoteUri, expect.anything());
   expect(JSON.stringify(store.state.settingsEvents)).not.toContain('synthetic-remote');
+});
+
+it('keeps a single owner pairing flow with collaboration capabilities enabled', async () => {
+  store.dispatch(setLabsMultiplayerEnabled(true));
+  const p = store.state.principal;
+  store.dispatch(
+    principalReceived(
+      {
+        context: p.context!,
+        invalidation: p.invalidation,
+        presentationVersion: p.presentationVersion,
+      },
+      {
+        ...p.snapshot!,
+        capabilities: {
+          ...p.snapshot!.capabilities,
+          personalPairing: true,
+          authenticatedDevices: true,
+        },
+      },
+    ),
+  );
+  const stopPersonal = store.runSaga(personalDevicesSaga);
+  try {
+    render(MobileSettings);
+    await waitFor(() => expect(copyButton().disabled).toBe(false));
+    await fireEvent.click(qrButton());
+    await screen.findByRole('dialog');
+    expect(screen.getAllByRole('button', { name: m.settings_wsApi_showQrCode() })).toHaveLength(1);
+    expect(screen.getByRole('switch')).toBeTruthy();
+    expect(invoke.mock.calls.map(([, payload]) => payload.method)).toEqual([
+      'settings.list',
+      'pairing.getSelfInfo',
+    ]);
+  } finally {
+    stopPersonal();
+  }
 });
 
 it('disables mobile actions when the connected device has remote access off', async () => {

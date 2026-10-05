@@ -7013,6 +7013,7 @@
   "devConsole_unknown_label": "不明",
   "devConsole_events_label": "イベント一覧",
   "files_secondaryRoot_unsupported_error": "このデーモンは追加の Git ルートからファイルを読み取れません。更新して再接続してください。",
+  "settings_personalDevices_mobile_description": "モバイル端末をこのインスタンスとペアリングします。Intent MobileでQRコードをスキャンするか、ペアリングリンクを使用してください。",
   "settings_personalDevices_title": "サインイン中のデバイス",
   "settings_personalDevices_identity_description": "{host} の {person} · {role}",
   "settings_personalDevices_pair_label": "自分として別のデバイスをペアリング",

@@ -11,7 +11,10 @@
 
 {#key $connectionId$}
   <div class="space-y-6">
-    <WebSocketApiSettings mobileOnly={$connectionId$ !== LOCAL_CONNECTION_ID} active={!$denied$} />
-    <PersonalDevices />
+    {#if $denied$}
+      <PersonalDevices />
+    {:else}
+      <WebSocketApiSettings mobileOnly={$connectionId$ !== LOCAL_CONNECTION_ID} />
+    {/if}
   </div>
 {/key}

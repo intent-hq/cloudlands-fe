@@ -7013,6 +7013,7 @@
   "devConsole_unknown_label": "Unbekannt",
   "devConsole_events_label": "Ereignisse",
   "files_secondaryRoot_unsupported_error": "Dieser Daemon kann keine Dateien aus sekundären Git-Verzeichnissen lesen. Aktualisieren Sie ihn und verbinden Sie sich erneut.",
+  "settings_personalDevices_mobile_description": "Verbinde dein Mobilgerät mit dieser Instanz. Scanne den QR-Code in Intent Mobile oder nutze den Kopplungslink.",
   "settings_personalDevices_title": "Angemeldete Geräte",
   "settings_personalDevices_identity_description": "{person} auf {host} · {role}",
   "settings_personalDevices_pair_label": "Weiteres Gerät als ich koppeln",
