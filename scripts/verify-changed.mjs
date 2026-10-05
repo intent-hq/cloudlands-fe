@@ -914,10 +914,11 @@ export function createVerificationPlan(files, options = {}) {
   const prerequisites = [];
   const buildConfig = generatedBuildConfigPrerequisite({ root });
   for (const check of checks) {
-    const selection = unitSelections.get(check.id);
-    if (!selection) continue;
+    // Every unit lane imports generated config, including repo-wide UI invariants.
+    if (!check.id.startsWith('vitest-')) continue;
     check.dependsOn = [buildConfig.id];
-    if (requiresTransferSelectionFixtures(selection, { root })) {
+    const selection = unitSelections.get(check.id);
+    if (selection && requiresTransferSelectionFixtures(selection, { root })) {
       check.dependsOn.push(prerequisiteId);
     }
   }

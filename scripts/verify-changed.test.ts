@@ -2809,12 +2809,14 @@ describe('transfer fixture plan prerequisites', () => {
   });
 });
 
-describe('generated build input plan prerequisite', () => {
+describe.each(['missing', 'obsolete'])('generated build input plan prerequisite (%s)', (state) => {
   it.each([
     ['direct', 'scripts/probe.test.ts', 'vitest-direct'],
     ['related', 'src/main/probe.ts', 'vitest-related'],
+    ['UI-only', 'src/lib/probe.ts', 'vitest-ui-invariants'],
+    ['renderer-deletion', 'src/lib/deleted.ts', 'vitest-ui-invariants'],
   ])(
-    'prepares obsolete output before a selected %s test child and rejects invalid inputs',
+    'prepares output before a selected %s test child and rejects invalid inputs',
     async (_name, file, lane) => {
       const root = fixtureRoot({
         [file]: '',
@@ -2824,9 +2826,13 @@ describe('generated build input plan prerequisite', () => {
         'observe.mjs':
           "import { BUILD_CONFIG } from './src/main/build-config.generated.ts'; import { writeFileSync } from 'node:fs'; writeFileSync('observed.json', JSON.stringify(BUILD_CONFIG));",
       });
+      if (state === 'missing') rmSync(join(root, 'src/main/build-config.generated.ts'));
+      if (_name === 'renderer-deletion') rmSync(join(root, file));
       const plan = createVerificationPlan([file], { root, ctTests: [], declaredSuites: [] });
       const check = plan.checks.find((entry) => entry.id === lane)!;
-      expect(check.dependsOn).toContain('generated-build-config');
+      if (lane === 'vitest-ui-invariants') {
+        expect(check.dependsOn ?? []).not.toContain('transfer-selection-fixtures');
+      }
       const selected = {
         ...plan,
         checks: [{ ...check, executable: process.execPath, args: ['observe.mjs'] }],
