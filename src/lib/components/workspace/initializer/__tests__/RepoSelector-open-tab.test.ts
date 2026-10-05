@@ -374,6 +374,119 @@ describe('RepoSelector authenticated forge selection', () => {
   });
 });
 
+describe('RepoSelector active forge recent search', () => {
+  const recentLabels = () =>
+    Array.from(document.body.querySelectorAll('[data-recent-repo-label]')).map((label) =>
+      label.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+
+  async function switchForge(from: string, to: string) {
+    await fireEvent.pointerDown(screen.getByRole('button', { name: from, exact: true }), {
+      button: 0,
+      pointerType: 'mouse',
+    });
+    await fireEvent.click(await screen.findByRole('menuitemradio', { name: to, exact: true }));
+  }
+
+  beforeEach(() => {
+    mocks.authenticated = true;
+    mocks.state.recentRepos = [
+      {
+        path: 'octo/alpha',
+        type: 'github',
+        githubUrl: 'https://github.com/octo/alpha',
+        name: 'alpha',
+        owner: 'octo',
+      },
+      {
+        path: 'octo/beta',
+        type: 'github',
+        githubUrl: 'https://github.com/octo/beta',
+        name: 'beta',
+        owner: 'octo',
+      },
+      {
+        path: 'group/subgroup/api',
+        type: 'github',
+        githubUrl: 'https://git.example.test:8443/Forge/group/subgroup/api',
+        name: 'api',
+        owner: 'group/subgroup',
+      },
+      {
+        path: 'group/subgroup/docs',
+        type: 'github',
+        githubUrl: 'https://git.example.test:8443/Forge/group/subgroup/docs',
+        name: 'docs',
+        owner: 'group/subgroup',
+      },
+      { path: '/work/local-project', type: 'local', name: 'local-project' },
+    ];
+  });
+
+  afterEach(() => {
+    cleanup();
+    mocks.dispatch.mockReset();
+    mocks.state.recentRepos = [];
+  });
+
+  it('uses the blank GitLab query after switching and preserves the GitHub query on return', async () => {
+    const gitlab = gitlabProps();
+    await openDropdown({ gitlab });
+    await waitFor(() => expect(recentLabels()).toEqual(['octo / alpha', 'octo / beta']));
+    await fireEvent.input(githubInput()!, { target: { value: 'beta' } });
+    await waitFor(() => expect(recentLabels()).toEqual(['octo / beta']));
+
+    await switchForge('github.com/', 'git.example.test:8443/Forge/');
+    await waitFor(() =>
+      expect(recentLabels()).toEqual(['group/subgroup / api', 'group/subgroup / docs']),
+    );
+    expect(gitlab.onSearch).not.toHaveBeenCalled();
+
+    await switchForge('git.example.test:8443/Forge/', 'github.com/');
+    expect(githubInput()?.value).toBe('beta');
+    await waitFor(() => expect(recentLabels()).toEqual(['octo / beta']));
+    await fireEvent.input(githubInput()!, { target: { value: '' } });
+    await waitFor(() => expect(recentLabels()).toEqual(['octo / alpha', 'octo / beta']));
+  });
+
+  it('filters GitLab recents from its typed query without filtering local-copy rows', async () => {
+    const gitlab = gitlabProps();
+    const view = await openDropdown({ gitlab, gitlabSelected: true });
+    const input = screen.getByRole('searchbox', { name: 'Search GitLab projects' });
+    await fireEvent.input(input, { target: { value: 'docs' } });
+    expect(gitlab.onSearch).toHaveBeenLastCalledWith('docs', gitlab.scopeKey);
+    await view.rerender({ gitlab: { ...gitlab, query: 'docs' } });
+    await waitFor(() => expect(recentLabels()).toEqual(['group/subgroup / docs']));
+
+    await fireEvent.click(screen.getByRole('tab', { name: 'Copy local repo' }));
+    await waitFor(() => expect(recentLabels()).toEqual(['local-project']));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Pick a repo' }));
+    await waitFor(() => expect(recentLabels()).toEqual(['group/subgroup / docs']));
+    expect(gitlab.onSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores GitLab recents when its visible search is cleared after a GitHub search', async () => {
+    const gitlab = { ...gitlabProps(), query: 'docs' };
+    const view = await openDropdown({ gitlab });
+    await fireEvent.input(githubInput()!, { target: { value: 'beta' } });
+    await switchForge('github.com/', 'git.example.test:8443/Forge/');
+
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Search GitLab projects' }), {
+      target: { value: '' },
+    });
+    expect(gitlab.onSearch).toHaveBeenLastCalledWith('', gitlab.scopeKey);
+    await view.rerender({ gitlab: { ...gitlab, query: '' } });
+    await waitFor(() =>
+      expect(recentLabels()).toEqual(['group/subgroup / api', 'group/subgroup / docs']),
+    );
+
+    await switchForge('git.example.test:8443/Forge/', 'github.com/');
+    expect(githubInput()?.value).toBe('beta');
+    await waitFor(() => expect(recentLabels()).toEqual(['octo / beta']));
+    expect(gitlab.onSelect).not.toHaveBeenCalled();
+  });
+});
+
 describe('RepoSelector open tab derived from the value prop', () => {
   afterEach(() => {
     cleanup();

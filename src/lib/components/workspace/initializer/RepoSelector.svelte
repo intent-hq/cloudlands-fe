@@ -504,11 +504,12 @@
       return identity?.provider === activeTab || (!identity && activeTab === 'github');
     });
 
-    // Then filter by search term
-    if (searchTerm === '') {
+    // Each forge keeps its own query; local/GitHub retain the existing search behavior.
+    const query = activeTab === 'gitlab' ? (gitlab?.query ?? '') : searchTerm;
+    if (query === '') {
       return typeFiltered;
     }
-    return typeFiltered.filter((repo) => matchesRecentRepoSearch(repo, searchTerm));
+    return typeFiltered.filter((repo) => matchesRecentRepoSearch(repo, query));
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
