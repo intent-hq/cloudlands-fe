@@ -17,6 +17,12 @@ import type { NoteWindow } from './note-window-reader';
 import type { NoteResourceCost } from './note-resource-ledger';
 import { createNoteTransactionRelay, type NoteTransactionOwner } from './note-transaction-relay';
 
+import { NoteEditAuthority } from './editing/note-edit-authority';
+import {
+  captureNoteSelectionMarkdown,
+  type NoteSelectionMarkdownIdentity,
+} from './editing/note-selection-markdown-capture';
+
 import type { NoteSourceSelection } from './note-source-selection';
 export type { NoteSourceSelection } from './note-source-selection';
 
@@ -56,6 +62,10 @@ export interface NoteReadingSurface {
   /** Revoke an outstanding whole-source copy when this surface retires. Physical
    * IO and unpublished sink cleanup keep their resource lease until settled. */
   cancelCopy?(): void;
+  /** Native selection capture and bounded staged output; absent until its
+   * configured-schema, transport and platform sink prerequisites are supplied. */
+  copySelection?(): Promise<'copied' | 'noCopy'>;
+  cancelSelectionCopy?(): void;
   selectionChanged(selection: NoteSourceSelection): void;
   fullOperation: NoteWindowViewOptions['fullOperation'];
   editing?: NoteViewEditing;
@@ -72,10 +82,183 @@ interface WindowLease {
   editing?: NoteViewEditing;
   bind?: NoteViewEditing['bind'];
   borrowed: boolean;
+  retain(): () => void;
   release(): void;
 }
 export class NoteWindowView {
   editor?: Editor;
+  private selectionBorrowEpoch = 0;
+  private selectionBorrowExhausted = false;
+  private restoreSelectionObserver?: () => void;
+  private readonly selectionBorrowListeners = new Set<() => void>();
+  get selectionCaptureGeneration() {
+    return this.selectionBorrowEpoch;
+  }
+  private invalidateSelectionBorrows() {
+    if (this.selectionBorrowEpoch === Number.MAX_SAFE_INTEGER) this.selectionBorrowExhausted = true;
+    else this.selectionBorrowEpoch++;
+    for (const notify of [...this.selectionBorrowListeners]) notify();
+  }
+  /** Caller admits capture/borrow DATA before entry and supplies an irreversible
+   * operation-current predicate. Local native/lifecycle loss notifies subscribers
+   * immediately; external operation changes remain the owner's subscription.
+   * Release only after dependent IO settles, even after current() becomes false. */
+  borrowSelectionMarkdown(
+    identity: NoteSelectionMarkdownIdentity,
+    operationCurrent: () => boolean,
+  ) {
+    const editor = this.editor,
+      window = this.window,
+      authority = this.committedProjection,
+      owner = this.historyOwner,
+      lease = this.currentLease,
+      editing = this.mountedEditing;
+    if (
+      !editor ||
+      !window ||
+      !(authority instanceof NoteEditAuthority) ||
+      !owner ||
+      !lease ||
+      !this.options.retainWindow
+    )
+      throw new Error('Missing current native selection authority');
+    const capturedIdentity = Object.freeze({
+      ...identity,
+      scope: Object.freeze({ ...identity.scope }),
+    });
+    let snapshot:
+      | {
+          editor: Editor;
+          window: NoteWindow;
+          authority: NoteEditAuthority;
+          owner: NoteTransactionOwner;
+          lease: WindowLease;
+          editing: NoteViewEditing | undefined;
+          state: EditorState;
+          epoch: number;
+          windowExpiry: string | undefined;
+        }
+      | undefined = {
+      editor,
+      window,
+      authority,
+      owner,
+      lease,
+      editing,
+      state: editor.state,
+      epoch: this.selectionCaptureGeneration,
+      windowExpiry: window.expiresAt,
+    };
+    let checkOperation: (() => boolean) | undefined = operationCurrent;
+    let retained: (() => void) | undefined;
+    let lost = false,
+      released = false;
+    const listeners = new Set<() => void>();
+    const notify = (changed: () => void) => {
+      try {
+        changed();
+      } catch (error) {
+        logger.error('Failed to notify selection borrow loss', error);
+      }
+    };
+    const lose = () => {
+      if (lost) return;
+      lost = true;
+      // Drop native graph references immediately; the shared context lease stays
+      // charged until the consumer settles its IO and explicitly releases.
+      snapshot = undefined;
+      checkOperation = undefined;
+      for (const changed of [...listeners]) notify(changed);
+    };
+    const same = (s: NonNullable<typeof snapshot>) =>
+      !this.disposed &&
+      !this.selectionBorrowExhausted &&
+      !s.editor.isDestroyed &&
+      !this.historyBusy &&
+      !this.transactionRelay?.busy &&
+      !s.editor.view.composing &&
+      !this.pins.has(this.compositionPin) &&
+      this.selectionCaptureGeneration === s.epoch &&
+      capturedIdentity.liveGeneration === s.epoch &&
+      this.editor === s.editor &&
+      s.editor.state === s.state &&
+      this.window === s.window &&
+      this.committedProjection === s.authority &&
+      this.projection === s.authority &&
+      this.historyOwner === s.owner &&
+      this.currentLease === s.lease &&
+      this.historyLease === s.lease &&
+      this.mountedEditing === s.editing &&
+      this.options.editing === s.editing &&
+      s.authority.doc === s.state.doc &&
+      s.authority.generation === capturedIdentity.documentGeneration &&
+      s.authority.sourceRevision === capturedIdentity.sourceRevision &&
+      s.authority.snapshotId === capturedIdentity.snapshotId &&
+      sameNoteScope(s.authority.scope, capturedIdentity.scope) &&
+      s.window.expiresAt === s.windowExpiry &&
+      s.window.sourceRevision === capturedIdentity.sourceRevision &&
+      s.window.snapshotId === capturedIdentity.snapshotId &&
+      sameNoteScope(s.window.scope, capturedIdentity.scope) &&
+      Date.parse(s.windowExpiry ?? '') >= Date.parse(capturedIdentity.expiresAt) &&
+      Date.parse(capturedIdentity.expiresAt) > Date.now() &&
+      identity.sourceRevision === capturedIdentity.sourceRevision &&
+      identity.snapshotId === capturedIdentity.snapshotId &&
+      identity.documentGeneration === capturedIdentity.documentGeneration &&
+      identity.liveGeneration === capturedIdentity.liveGeneration &&
+      identity.selectionGeneration === capturedIdentity.selectionGeneration &&
+      identity.expiresAt === capturedIdentity.expiresAt &&
+      sameNoteScope(identity.scope, capturedIdentity.scope);
+    const current = () => {
+      if (lost || released || !snapshot) return false;
+      try {
+        const s = snapshot;
+        if (!same(s) || !s.owner.current() || !checkOperation?.() || !s.owner.current() || !same(s))
+          lose();
+      } catch {
+        lose();
+      }
+      return !lost && !released;
+    };
+    if (!current()) throw new Error('Stale native selection borrow');
+    const invalidated = () => lose();
+    this.selectionBorrowListeners.add(invalidated);
+    const release = () => {
+      if (released) return;
+      released = true;
+      this.selectionBorrowListeners.delete(invalidated);
+      snapshot = undefined;
+      checkOperation = undefined;
+      const releaseData = retained;
+      retained = undefined;
+      lose();
+      listeners.clear();
+      releaseData?.();
+    };
+    try {
+      retained = lease.retain();
+      const capture = captureNoteSelectionMarkdown(editor.view, {
+        authority,
+        identity: capturedIdentity,
+        selection: this.getSelection(),
+        current,
+      });
+      if (!current()) throw new Error('Native selection changed during borrow');
+      const subscribe = (changed: () => void) => {
+        if (!current()) {
+          notify(changed);
+          return () => {};
+        }
+        listeners.add(changed);
+        return () => {
+          listeners.delete(changed);
+        };
+      };
+      return Object.freeze({ capture, current, release, subscribe });
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
   private committedProjection?: SourceProjection;
   private committedCoordinates?: NoteViewCoordinates;
   private transactionRelay?: ReturnType<typeof createNoteTransactionRelay>;
@@ -210,6 +393,7 @@ export class NoteWindowView {
     for (const root of measured.shadowRoots) this.observeDom(root);
   }
   updateEditing(editing?: NoteViewEditing) {
+    this.invalidateSelectionBorrows();
     if (this.historyBusy) {
       this.historyCancelled = true;
       this.options.editing = editing;
@@ -230,6 +414,7 @@ export class NoteWindowView {
     }
   }
   private publishSelection() {
+    this.invalidateSelectionBorrows();
     if (this.historyBusy) return;
     const selection = this.getSelection();
     this.mountedEditing?.selectionChanged?.(selection);
@@ -299,6 +484,7 @@ export class NoteWindowView {
     return () => this.release(owner);
   }
   private compositionStart = () => {
+    this.invalidateSelectionBorrows();
     this.pins.add(this.compositionPin);
   };
   private compositionEnd = () => {
@@ -337,6 +523,7 @@ export class NoteWindowView {
     } else this.seekCurrent(Math.max(0, position - 1024));
   }
   setSelection(selection: NoteSourceSelection) {
+    this.invalidateSelectionBorrows();
     if (this.historyBusy) return;
     if (this.transactionRelay?.defer('selection', () => this.setSelection(selection))) return;
     this.selection = { ...selection };
@@ -394,16 +581,35 @@ export class NoteWindowView {
     const editing = this.options.editing;
     try {
       const borrow = editing?.borrow?.(window);
-      let released = false;
+      let released = false,
+        references = 1;
+      const drop = () => {
+        if (--references !== 0) return;
+        try {
+          borrow?.release();
+        } finally {
+          data?.();
+        }
+      };
       return {
         editing,
         bind: borrow?.bind ?? editing?.bind.bind(editing),
         borrowed: !!borrow,
+        retain() {
+          if (released || references === Number.MAX_SAFE_INTEGER)
+            throw new Error('Native window lease unavailable');
+          references++;
+          let done = false;
+          return () => {
+            if (done) return;
+            done = true;
+            drop();
+          };
+        },
         release() {
           if (released) return;
           released = true;
-          borrow?.release();
-          data?.();
+          drop();
         },
       };
     } catch (error) {
@@ -426,6 +632,7 @@ export class NoteWindowView {
     return this.show(window);
   }
   show(window: NoteWindow, history?: { lease: WindowLease }) {
+    this.invalidateSelectionBorrows();
     if (this.historyBusy && !history) return false;
     if (this.disposed) return false;
     if (this.transactionRelay?.busy) {
@@ -619,6 +826,13 @@ export class NoteWindowView {
           },
         },
         onTransaction: ({ transaction, appendedTransactions }) => {
+          if (
+            this.editor === candidate &&
+            [transaction, ...appendedTransactions].some(
+              (step) => step.docChanged || step.selectionSet,
+            )
+          )
+            this.invalidateSelectionBorrows();
           if (!candidate || this.historyBusy || this.applying || this.editor !== candidate) return;
           const chain = [transaction, ...appendedTransactions];
           if (chain.some((step) => step.docChanged)) {
@@ -718,6 +932,21 @@ export class NoteWindowView {
       this.cost.pendingBytes = 0;
       published = true;
       const editor = candidate;
+      // Observe the actual native state boundary as well as TipTap transactions:
+      // direct updateState/rollback must not restore a previously borrowed epoch.
+      const nativeView = editor.view,
+        updateState = nativeView.updateState;
+      const observeState = (state: EditorState) => {
+        if (nativeView.state !== state) this.invalidateSelectionBorrows();
+        updateState.call(nativeView, state);
+      };
+      const nativeDestroyed = () => this.invalidateSelectionBorrows();
+      nativeView.updateState = observeState;
+      editor.on('destroy', nativeDestroyed);
+      this.restoreSelectionObserver = () => {
+        if (nativeView.updateState === observeState) nativeView.updateState = updateState;
+        editor.off('destroy', nativeDestroyed);
+      };
       this.cost.createdViews++;
       this.cost.mountedViews = 1;
       let nodes = 0;
@@ -768,6 +997,7 @@ export class NoteWindowView {
   }
   /** A bounded document command, never the disposable editor's local history. */
   history(direction: 'undo' | 'redo') {
+    this.invalidateSelectionBorrows();
     if (this.disposed || this.historyBusy) return false;
     if (this.transactionRelay?.defer('history', () => this.history(direction))) return false;
     if (this.pins.size || this.editor?.view.composing) {
@@ -913,6 +1143,9 @@ export class NoteWindowView {
     }
   };
   private destroyEditor() {
+    this.invalidateSelectionBorrows();
+    this.restoreSelectionObserver?.();
+    this.restoreSelectionObserver = undefined;
     const editor = this.editor,
       lifetime = this.lifetime,
       lease = this.currentLease;
@@ -945,6 +1178,7 @@ export class NoteWindowView {
     }
   }
   destroy() {
+    this.invalidateSelectionBorrows();
     if (this.historyBusy) {
       this.historyCancelled = true;
       return;

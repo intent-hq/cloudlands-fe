@@ -100,7 +100,10 @@
   const pagedSurface = $derived($notePageSession?.status === 'legacy' ? undefined : readingSurface);
   $effect(() => {
     const surface = pagedSurface;
-    return () => surface?.cancelCopy?.();
+    return () => {
+      surface?.cancelCopy?.();
+      surface?.cancelSelectionCopy?.();
+    };
   });
   // The tab owns negotiation across legacy/paged renderer changes. Keeping this
   // owner alive lets reconnect renegotiate an older daemon without a full reopen.
@@ -233,6 +236,22 @@
 
   function handlePreviewScrollPositionSave(scrollKey: string, scrollTop: number) {
     appStore.dispatch(saveScrollPosition(scrollKey, scrollTop));
+  }
+
+  async function handleFullNoteOperation(
+    kind: 'copy' | 'search' | 'selectAll',
+    selection: Parameters<NoteReadingSurface['fullOperation']>[1],
+  ) {
+    const surface = pagedSurface;
+    if (kind !== 'copy' || !surface?.copySelection) {
+      surface?.fullOperation(kind, selection);
+      return;
+    }
+    try {
+      await surface.copySelection();
+    } catch (error) {
+      logger.error('Failed to copy note selection', error);
+    }
   }
 
   async function handleCopyNote() {
@@ -384,7 +403,7 @@
         editing={pagedSurface.editing}
         prepareEditing={pagedSurface.prepareEditing}
         onSelection={pagedSurface.selectionChanged}
-        onFullOperation={pagedSurface.fullOperation}
+        onFullOperation={handleFullNoteOperation}
         onReady={pagedSurface.ready}
       />
     {:else if noteContentLoadFailed}

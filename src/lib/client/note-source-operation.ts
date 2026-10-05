@@ -20,6 +20,15 @@ export interface NoteSourceOperationInput {
 export type NoteStagedSaveInput = Omit<NoteSourceOperationInput, 'header'> & {
   header: Omit<NoteSourceOperationInput['header'], 'action'> & { action: 'mutate' };
 };
+/** Bounded configured-native selection output. expectedOutput is local validation
+ * state, never a wire field or a source/native authority supplied by the server. */
+export type NoteSelectionOperationInput = Omit<NoteSourceOperationInput, 'header'> & {
+  header: Omit<NoteSourceOperationInput['header'], 'output' | 'selection'> & {
+    output: 'selectionMarkdown';
+    selection: 'ranges';
+  };
+  expectedOutput: string;
+};
 interface NoteStageTextReference {
   textId: string;
   length: number;
@@ -35,6 +44,23 @@ type NoteSourceStageRecord =
       start: number;
       end: number;
       replacement: NoteStageTextReference;
+    };
+type NoteSelectionStageRecord =
+  | {
+      kind: 'range';
+      ordinal: number;
+      start: number;
+      end: number;
+      anchorAffinity: 'before' | 'after';
+      headAffinity: 'before' | 'after';
+      direction: 'forward' | 'backward';
+    }
+  | {
+      kind: 'projection';
+      ordinal: number;
+      sourceRange: { start: number; end: number };
+      role: 'selection-owner' | 'inline-span';
+      detail: NoteStageTextReference;
     };
 const streams = ['text', 'dirty', 'selection', 'mutation', 'live'] as const;
 const encoder = new TextEncoder();
@@ -75,7 +101,16 @@ export function createNoteSourceOperation(
   current: () => boolean,
   now: () => number = Date.now,
 ) {
-  return createSourceStage(send, input, current, now, 'read');
+  return createSourceStage(send, input, current, now, 'read', 'source');
+}
+
+export function createNoteSelectionOperation(
+  send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  input: NoteSelectionOperationInput,
+  current: () => boolean,
+  now: () => number = Date.now,
+) {
+  return createSourceStage(send, input, current, now, 'read', 'selectionMarkdown');
 }
 
 /** Dirty-only save staging. The caller proves native grouping and owns commit.
@@ -86,14 +121,15 @@ export function createNoteStagedSaveOperation(
   current: () => boolean,
   now: () => number = Date.now,
 ) {
-  return createSourceStage(send, input, current, now, 'mutate');
+  return createSourceStage(send, input, current, now, 'mutate', 'source');
 }
 function createSourceStage(
   send: (method: string, params: Record<string, unknown>) => Promise<unknown>,
-  input: NoteSourceOperationInput | NoteStagedSaveInput,
+  input: NoteSourceOperationInput | NoteStagedSaveInput | NoteSelectionOperationInput,
   current: () => boolean,
   now: () => number,
   action: 'read' | 'mutate',
+  output: 'source' | 'selectionMarkdown',
 ) {
   const scope = Object.freeze({
     backendId: input.scope.backendId,
@@ -102,8 +138,23 @@ function createSourceStage(
     noteInstanceId: input.scope.noteInstanceId,
   });
   const h = input.header;
-  if (h.action !== action || h.output !== 'source' || h.selection !== 'all' || 'query' in h)
+  if (
+    h.action !== action ||
+    h.output !== output ||
+    h.selection !== (output === 'source' ? 'all' : 'ranges') ||
+    'query' in h
+  )
     throw new Error('Unsupported staged output');
+  const expectedOutput =
+    output === 'selectionMarkdown' && 'expectedOutput' in input ? input.expectedOutput : undefined;
+  if (
+    output === 'selectionMarkdown' &&
+    (!validStageText(expectedOutput) ||
+      !expectedOutput.length ||
+      expectedOutput.length > 4096 ||
+      size(expectedOutput) > 16384)
+  )
+    throw new Error('Invalid captured selection output');
   const header = Object.freeze({
     baseRevision: h.baseRevision,
     editorSessionId: h.editorSessionId,
@@ -242,24 +293,76 @@ function createSourceStage(
         check();
       });
     },
-    async append(stream: 'text' | 'dirty', original: readonly NoteSourceStageRecord[]) {
+    async append(
+      stream: 'text' | 'dirty' | 'selection' | 'live',
+      original: readonly (NoteSourceStageRecord | NoteSelectionStageRecord)[],
+    ) {
       return exclusive(async () => {
         check();
         if (
           !begun ||
           sealed ||
-          !['text', 'dirty'].includes(stream) ||
+          !(output === 'source' ? ['text', 'dirty'] : ['text', 'selection', 'live']).includes(
+            stream,
+          ) ||
           original.length < 1 ||
           original.length > 128
         )
           throw new Error('Invalid staged append');
         let textBytes = 0;
-        const records = original.map((r) => {
+        const records = original.map((r, index) => {
           if (stream === 'text' && r.kind === 'text') {
             if (!token(r.id) || !uint(r.offset) || !validStageText(r.text) || r.text.length > 16384)
               throw new Error('Invalid staged text');
             textBytes += size(r.text);
             return { kind: r.kind, id: r.id, offset: r.offset, text: r.text };
+          }
+          if (output === 'selectionMarkdown' && stream === 'selection' && r.kind === 'range') {
+            if (
+              r.ordinal !== manifest[2].records + index ||
+              r.ordinal !== 0 ||
+              ![r.start, r.end].every(uint) ||
+              r.end <= r.start ||
+              !['before', 'after'].includes(r.anchorAffinity) ||
+              !['before', 'after'].includes(r.headAffinity) ||
+              !['forward', 'backward'].includes(r.direction)
+            )
+              throw new Error('Invalid captured selection range');
+            return {
+              kind: r.kind,
+              ordinal: r.ordinal,
+              start: r.start,
+              end: r.end,
+              anchorAffinity: r.anchorAffinity,
+              headAffinity: r.headAffinity,
+              direction: r.direction,
+            };
+          }
+          if (output === 'selectionMarkdown' && stream === 'live' && r.kind === 'projection') {
+            if (
+              ![r.ordinal, r.sourceRange.start, r.sourceRange.end].every(uint) ||
+              r.ordinal > 1 ||
+              r.ordinal !== manifest[4].records + index ||
+              r.sourceRange.end <= r.sourceRange.start ||
+              r.role !== (r.ordinal === 0 ? 'selection-owner' : 'inline-span') ||
+              !token(r.detail.textId) ||
+              !uint(r.detail.length) ||
+              !uint(r.detail.utf8Bytes) ||
+              !digest(r.detail.sha256)
+            )
+              throw new Error('Invalid captured selection projection');
+            return {
+              kind: r.kind,
+              ordinal: r.ordinal,
+              role: r.role,
+              sourceRange: { start: r.sourceRange.start, end: r.sourceRange.end },
+              detail: {
+                textId: r.detail.textId,
+                length: r.detail.length,
+                utf8Bytes: r.detail.utf8Bytes,
+                sha256: r.detail.sha256,
+              },
+            };
           }
           if (
             stream !== 'dirty' ||
@@ -288,7 +391,13 @@ function createSourceStage(
           };
         });
         if (textBytes > 16384) throw new Error('Staged text chunk exceeded');
-        const m = manifest[stream === 'text' ? 0 : 1];
+        const m = manifest[streams.indexOf(stream)];
+        if (
+          output === 'selectionMarkdown' &&
+          ((stream === 'selection' && m.records + records.length > 1) ||
+            (stream === 'live' && m.records + records.length > 2))
+        )
+          throw new Error('Captured selection record count exceeded');
         const chunk = { stream, sequence: m.chunks, previousDigest: m.lastDigest, records };
         if (size(canonical(chunk)) > 60000) throw new Error('Staged chunk exceeded');
         const chunkDigest = await hash(chunk);
@@ -312,6 +421,11 @@ function createSourceStage(
       return exclusive(async () => {
         check();
         if (!begun || sealed) throw new Error('Staged seal unavailable');
+        if (
+          output === 'selectionMarkdown' &&
+          (manifest[2].records !== 1 || manifest[4].records !== 2)
+        )
+          throw new Error('Incomplete captured selection manifest');
         payloadDigest = await hash({ headerDigest, manifest });
         const p = await rpc('note.operation.seal', { ...identity(), manifest, payloadDigest });
         state(p, 'sealed');
@@ -326,10 +440,10 @@ function createSourceStage(
         check();
         if (!sealed || done || viewLength === undefined)
           throw new Error('Staged source read unavailable');
-        const extent = viewLength;
+        const extent = expectedOutput?.length ?? viewLength;
         const p = await rpc('note.operation.read', {
           ...identity(),
-          kind: 'source',
+          kind: header.output,
           ...(cursor === undefined ? {} : { cursor }),
           maxItems: 64,
           maxSourceBytes: 4096,
@@ -356,6 +470,11 @@ function createSourceStage(
           const item = record(value);
           if (item.offset !== next || !validStageText(item.text))
             throw new Error('Invalid staged source prefix');
+          if (
+            expectedOutput !== undefined &&
+            item.text !== expectedOutput.slice(next, next + item.text.length)
+          )
+            throw new Error('Selection output differs from native serializer');
           next += item.text.length;
           textBytes += size(item.text);
           if (!uint(next) || next > extent || textBytes > 4096)
@@ -363,7 +482,7 @@ function createSourceStage(
           return item.text;
         });
         if (
-          (p.nextCursor === null && next !== viewLength) ||
+          (p.nextCursor === null && next !== extent) ||
           (p.nextCursor !== null && next === offset)
         )
           throw new Error('Incomplete staged source prefix');

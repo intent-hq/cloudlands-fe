@@ -52,8 +52,7 @@ const mockState = vi.hoisted(() => {
 });
 
 vi.mock('$features/notes/virtualized/NoteReadingView.svelte', async () => ({
-  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
-    .default,
+  default: (await import('./mocks/MockNoteReadingView.svelte')).default,
 }));
 vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
@@ -719,5 +718,68 @@ $$\frac{1}{2}$$
     expect(mockState.dispatch).toHaveBeenCalledWith(
       pagePanelClosed('ws-1', 'note-1', 'tab-legacy-owner'),
     );
+  });
+});
+
+describe('paged selection copy callback', () => {
+  it.each(['copied', 'noCopy', 'failure'] as const)(
+    'routes selection copy without a source fallback (%s)',
+    async (result) => {
+      const surface = {
+        resourceLimits: {
+          payloadBytes: 1,
+          stringUnits: 1,
+          objectNodes: 1,
+          domNodes: 0,
+          physicalReads: 1,
+          assemblies: 1,
+        },
+        copyDocument: vi.fn(async () => {}),
+        copySelection: vi.fn(async () => {
+          if (result === 'failure') throw new Error('Unsupported');
+          return result;
+        }),
+        cancelSelectionCopy: vi.fn(),
+        selectionChanged: vi.fn(),
+        fullOperation: vi.fn(),
+      };
+      const { unmount } = render(NoteTabTypeHeaderHarness, {
+        tab: { id: 'selection-tab', type: 'note', noteId: 'note-1' },
+        readingSurface: surface,
+      });
+      await fireEvent.click(await screen.findByRole('button', { name: 'Copy selected note text' }));
+      await waitFor(() => expect(surface.copySelection).toHaveBeenCalledOnce());
+      expect(surface.copyDocument).not.toHaveBeenCalled();
+      expect(surface.fullOperation).not.toHaveBeenCalled();
+      unmount();
+      expect(surface.cancelSelectionCopy).toHaveBeenCalledOnce();
+    },
+  );
+  it('preserves explicit full-operation handling when selection adapter is absent', async () => {
+    const surface = {
+      resourceLimits: {
+        payloadBytes: 1,
+        stringUnits: 1,
+        objectNodes: 1,
+        domNodes: 0,
+        physicalReads: 1,
+        assemblies: 1,
+      },
+      copyDocument: vi.fn(async () => {}),
+      selectionChanged: vi.fn(),
+      fullOperation: vi.fn(),
+    };
+    render(NoteTabTypeHeaderHarness, {
+      tab: { id: 'selection-unsupported', type: 'note', noteId: 'note-1' },
+      readingSurface: surface,
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy selected note text' }));
+    expect(surface.fullOperation).toHaveBeenCalledWith('copy', {
+      anchor: 1,
+      head: 2,
+      anchorAffinity: 1,
+      headAffinity: -1,
+    });
+    expect(surface.copyDocument).not.toHaveBeenCalled();
   });
 });

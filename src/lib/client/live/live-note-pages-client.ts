@@ -1,6 +1,8 @@
 import { readNoteReceiptPage, type NoteReceiptReadRequest } from '../note-receipt-reader';
 import {
   createNoteSourceOperation,
+  createNoteSelectionOperation,
+  type NoteSelectionOperationInput,
   type NoteSourceOperationInput,
   createNoteStagedSaveOperation,
   type NoteStagedSaveInput,
@@ -156,6 +158,16 @@ export class LiveNotePagesClient extends NotePageReader implements NotePagesClie
     current: () => boolean,
   ): ReturnType<typeof createNoteSourceOperation> {
     return createNoteSourceOperation(
+      (method, params) => backendRequest(method, params),
+      input,
+      current,
+    );
+  }
+  createSelectionOperation(
+    input: NoteSelectionOperationInput,
+    current: () => boolean,
+  ): ReturnType<typeof createNoteSelectionOperation> {
+    return createNoteSelectionOperation(
       (method, params) => backendRequest(method, params),
       input,
       current,
