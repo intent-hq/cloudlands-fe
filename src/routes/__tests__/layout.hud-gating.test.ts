@@ -66,10 +66,6 @@ vi.mock('$lib/client/live/live-app-client', () => ({ LiveAppClient: class {} }))
 
 // Components this suite asserts the presence/absence of get a distinct
 // labeled marker; every other heavy child gets the generic marker.
-vi.mock('$lib/components/layout/sidebar-nav', async () => ({
-  SidebarNav: (await import('./mocks/SidebarNavMarker.svelte')).default,
-  SidebarPanel: (await import('./mocks/SidebarNavMarker.svelte')).default,
-}));
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
   default: (await import('./mocks/WindowTitleBarMarker.svelte')).default,
 }));
@@ -172,7 +168,6 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     render(RootLayout, { props: { children: childrenSnippet } });
 
     expect(screen.queryByTestId('window-title-bar-marker')).toBeNull();
-    expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
     expect(screen.queryByTestId('toast-marker')).toBeNull();
     expect(screen.queryByTestId('radial-prompt-picker-overlay-marker')).toBeNull();
     expect(screen.queryByTestId('encoder-cycle-hud-marker')).toBeNull();
@@ -187,7 +182,6 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     render(RootLayout, { props: { children: childrenSnippet } });
 
     expect(screen.queryByTestId('window-title-bar-marker')).toBeNull();
-    expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
     expect(screen.queryByTestId('toast-marker')).toBeNull();
     expect(screen.queryByTestId('radial-prompt-picker-overlay-marker')).toBeNull();
     expect(screen.queryByTestId('encoder-cycle-hud-marker')).toBeNull();
@@ -200,7 +194,6 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     render(AppLayout, { props: { children: childrenSnippet } });
 
     expect(screen.getAllByTestId('window-title-bar-marker').length).toBeGreaterThan(0);
-    expect(screen.queryByTestId('sidebar-nav-marker')).toBeNull();
     expect(screen.getAllByTestId('toast-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('radial-prompt-picker-overlay-marker').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('encoder-cycle-hud-marker').length).toBeGreaterThan(0);

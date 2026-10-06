@@ -1,7 +1,7 @@
 // @verify-changed-triggers: ../Panel.svelte, ../PanelContainer.svelte, ../PanelLayout.svelte,
 //   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte,
 //   ../../WindowTitleBar.svelte, ../../WorkspaceTabStrip.svelte,
-//   ../../sidebar-nav/SidebarNav.svelte, ../../sidebar-nav/SidebarPanel.svelte,
+//   ../../sidebar-nav/SidebarNav.svelte,
 //   ../../../workspace/WorkspaceLayout.svelte, ../../../workspace/WorkspaceSidebarHeader.svelte,
 //   ../../../workspace/MultiSelectTabbedSidebar.svelte,
 //   ../../../workspace/WorkspaceTerminalDock.svelte, ../../../workspace/multi-select-sidebar-tabs.ts,
@@ -183,7 +183,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
     expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
     expect(titlebar.indexOf('<SidebarNav />')).toBeLessThan(titlebar.indexOf('<WorkspaceTabStrip'));
-    expect(titlebar).toContain('style:margin-left={`${panelOffset}px`}');
     expect(titlebar).toContain('style:left={`${activeTabBounds.left}px`}');
     expect(titlebar).toContain('style:width={`${activeTabBounds.width}px`}');
     expect(titlebar).toContain('.titlebar-drag-handle');
@@ -228,7 +227,6 @@ describe('editorial workspace shell presentation contract', () => {
   it('consolidates Chief and Spaces in the title bar and removes the former workspace notch', () => {
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
     const navigation = source('../../sidebar-nav/SidebarNav.svelte');
-    const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
     expect(appLayout).toContain('workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2');
     expect(appLayout).toContain('workspace-frame relative');
@@ -239,13 +237,6 @@ describe('editorial workspace shell presentation contract', () => {
     expect(navigation).not.toContain('aria-controls');
     expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(appLayout).toContain('class="workspace-main flex');
-    expect(sidebarPanel).toContain('data-panel-item={$panelItem$}');
-    expect(sidebarPanel).not.toContain("$panelItem$ === 'chief' ? 'bg-background' : ''");
-    // The panel stays mounted when closed and animates its width instead of
-    // mounting/unmounting via a slide transition.
-    expect(sidebarPanel).not.toContain("transition:slide={{ axis: 'x', duration: 200 }}");
-    expect(sidebarPanel).toContain('data-panel-shell');
-    expect(sidebarPanel).toContain('inert={!isOpen}');
   });
 
   it('owns shell, page, and sidebar surfaces with resolved app theme tokens', () => {
@@ -253,7 +244,6 @@ describe('editorial workspace shell presentation contract', () => {
     const appHtml = source('../../../../../app.html');
     const appLayout = source('../../../../../routes/(app)/+layout.svelte');
     const appLayoutCss = source('../../../../../routes/(app)/app-layout.css');
-    const sidebarPanel = source('../../sidebar-nav/SidebarPanel.svelte');
 
     expect(appCss).toMatch(/html,\s*body\s*{[^}]*background-color:\s*transparent;/s);
     expect(appCss).toMatch(/#app\s*{[^}]*background-color:\s*transparent;/s);
@@ -277,8 +267,6 @@ describe('editorial workspace shell presentation contract', () => {
       /\.panel-layout-container\[data-shell-opaque\],[\s\S]*background-color:\s*hsl\(var\(--background\)\);/,
     );
     expect(appLayout).toContain('rounded-xl bg-sidebar border border-border shadow-sm');
-    expect(sidebarPanel).toContain('relative text-sidebar-foreground');
-    expect(sidebarPanel).not.toContain('relative bg-sidebar text-sidebar-foreground');
     expect(appLayout).not.toContain('backdrop-filter:');
   });
 

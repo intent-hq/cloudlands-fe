@@ -72,10 +72,6 @@ vi.mock('$lib/components/modals/InterruptedAgentsModal.svelte', async () => ({
   default: (await import('./mocks/InterruptedAgentsModalProbe.svelte')).default,
 }));
 
-vi.mock('$lib/components/layout/sidebar-nav', async () => ({
-  SidebarNav: (await import('./mocks/Marker.svelte')).default,
-  SidebarPanel: (await import('./mocks/Marker.svelte')).default,
-}));
 vi.mock('$lib/components/layout/WindowTitleBar.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));

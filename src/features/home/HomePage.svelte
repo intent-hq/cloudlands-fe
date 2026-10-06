@@ -690,7 +690,7 @@
   <Screen class="home-surface my-3 mr-3 flex min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
     {#if destination === 'assistant' && !$collaborator$}
       <div class="min-h-0 flex-1 overflow-hidden home-panel bg-background">
-        <ChiefCard expanded embedded pageLayout isActive />
+        <ChiefCard isActive />
       </div>
     {:else}
       {#key tab}

@@ -63,6 +63,10 @@ import {
   hydrateHardwareConsoleEncoderBehavior,
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import { agentSessionReducer } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  homeWorkspacesReducer,
+  updateHomeWorkspaceView,
+} from '$features/home/home-workspaces-slice';
 import { sidebarNavReducer } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import {
   initializeLayout,
@@ -185,6 +189,7 @@ function makeState() {
     guestSessions: { sessions: createCollection('id', []), hasReceivedList: true },
     connections: { windowBackendId: 'local', hasReceivedList: true },
     sidebarNav: sidebarNavReducer(undefined, { type: 'init' }),
+    homeWorkspaces: homeWorkspacesReducer(undefined, updateHomeWorkspaceView({ groupBy: 'none' })),
     daemonHealth: { stats: { protocolVersion: '6.1' } },
   });
 }
@@ -334,6 +339,7 @@ export function useEncoderEffortHarness() {
         agentModel: agentModelReducer(state.agentModel, action),
         agentSessions: agentSessionReducer(state.agentSessions, action),
         sidebarNav: sidebarNavReducer(state.sidebarNav, action),
+        homeWorkspaces: homeWorkspacesReducer(state.homeWorkspaces, action),
         panelLayout: panelLayoutReducer(state.panelLayout, action),
       };
       publish();
