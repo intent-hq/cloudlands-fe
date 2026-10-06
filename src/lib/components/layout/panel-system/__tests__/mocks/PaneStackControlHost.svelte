@@ -43,6 +43,7 @@
     terminal: 'Development server',
     settings: 'Settings',
     overview: 'Overview',
+    workspace: 'Workspace',
     browser: 'Preview browser',
     'hook-script': 'Hook script',
     activity: 'Activity',

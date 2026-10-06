@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "Das Setup-Skript des Repositorys konnte nicht gelesen werden. Prüfe das ausgewählte Skript, bevor du den Arbeitsbereich erstellst.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Aktiviere den Fernzugriff auf diesem Gerät, um Intent Mobile zu verbinden.",
   "devConsole_title_label": "Entwicklerkonsole",
@@ -3203,6 +3204,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "Dateimanager",
   "layout_panelTabBar_paneStack_ariaLabel": "Größe des Bereichsstapels: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "Bereichsliste anzeigen. Bereiche insgesamt: {count}.",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}. Bereichsliste anzeigen. Bereiche insgesamt: {count}.",
   "layout_panelTabBar_paneMenu_ariaLabel": "Bereiche in diesem Stapel",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}. Erfordert Aufmerksamkeit.",
   "layout_panelTabBar_openPaneAbove_label": "Panel darüber öffnen",
@@ -7462,5 +7464,8 @@
   "settings_machineName_invalid_error": "Verwenden Sie höchstens 100 Zeichen ohne Steuerzeichen.",
   "settings_machineName_load_error": "Der Computername konnte nicht geladen werden. Versuchen Sie es erneut.",
   "settings_machineName_save_error": "Der Computername konnte nicht gespeichert werden. Versuchen Sie es erneut.",
-  "settings_machineName_saved": "Computername gespeichert"
+  "settings_machineName_saved": "Computername gespeichert",
+  "home_assistantThread_hooks_label": "Aktive Hooks: {count}",
+  "home_assistantThread_monitors_label": "Aktive Überwachungen: {count}",
+  "home_assistantThread_subscriptions_label": "Aktive Abonnements: {count}"
 }

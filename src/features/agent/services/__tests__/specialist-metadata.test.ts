@@ -183,12 +183,12 @@ describe('Specialist Metadata', () => {
       metadata: {
         agentType: 'workspace',
         chiefWorkspace: true,
-        chiefPromptVersion: 3,
+        chiefPromptVersion: CHIEF_PROMPT_VERSION,
         specialist: 'chief-of-staff',
         source: 'chief-card',
       },
     });
-    expect(result.agent?.metadata?.chiefPromptVersion).toBe(3);
+    expect(result.agent?.metadata?.chiefPromptVersion).toBe(CHIEF_PROMPT_VERSION);
   });
 
   it.each([undefined, 2, '3', null])(

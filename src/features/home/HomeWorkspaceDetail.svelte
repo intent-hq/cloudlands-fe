@@ -26,10 +26,12 @@
     workspace,
     onclose,
     preview = false,
+    showBackToList = true,
   }: {
     workspace: Workspace;
     onclose: () => void;
     preview?: boolean;
+    showBackToList?: boolean;
   } = $props();
   // Home keys this panel by workspace ID, matching the chat's subscription lifetime.
   const workspaceId = untrack(() => workspace.id);
@@ -109,13 +111,15 @@
           ></Tooltip.Provider
         >
       {/if}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={m.home_close_preview()}
-        tooltip={m.home_close_preview()}
-        onclick={onclose}><Fa icon={faXmark} /></Button
-      >
+      {#if showBackToList}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={m.home_close_preview()}
+          tooltip={m.home_close_preview()}
+          onclick={onclose}><Fa icon={faXmark} /></Button
+        >
+      {/if}
     </div>
     {#if workspace.statusMessage}
       <Tooltip.Provider

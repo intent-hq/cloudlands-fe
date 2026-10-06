@@ -23,6 +23,16 @@ export interface Subscription {
   delegationGroup?: DelegationGroupInfo;
 }
 
+export interface EventSubscription {
+  id: string;
+  workspaceId: string;
+  subscriberAgentId: string;
+  eventTypes: string[];
+  excludeSelf: boolean;
+  batchWindow: number;
+  createdAt: string;
+}
+
 export interface DelegationGroupStatus {
   groupId: string;
   awaitMode: 'all';
@@ -44,6 +54,7 @@ export type SubscriptionSnapshotStatus = 'loading' | 'ready' | 'failed';
 
 export interface AgentSubscriptionUIEntry {
   subscriptions: Subscription[];
+  eventSubscriptions?: EventSubscription[];
   delegationGroups: DelegationGroupStatus[];
   agentStatuses: Record<string, AgentStatus>;
   waitingState: WaitingState;

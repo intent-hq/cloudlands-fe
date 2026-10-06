@@ -205,7 +205,6 @@ async function mountSession(session: AgentSession, codexEnabled: boolean) {
 }
 
 function assertSelection(trigger: HTMLElement, expectedLabel: string) {
-  expect(trigger.querySelector('[title]')?.getAttribute('title')).toBe(expectedLabel);
   expect(trigger.textContent).toContain(expectedLabel);
   expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
   expect(screen.queryByRole('status')).toBeNull();

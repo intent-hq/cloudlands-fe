@@ -1339,7 +1339,6 @@ describe('ChatMessage hook wake attribution', () => {
     expect(screen.getByText('woke the agent')).toBeTruthy();
     const primaryLabel = screen.getByTestId('automated-wake-primary-label');
     expect(primaryLabel.textContent?.trim()).toBe('ci-watch');
-    expect(primaryLabel.getAttribute('title')).toBe('ci-watch');
     expect(screen.queryByTestId('automated-wake-details')).toBeNull();
     await expandAutomatedWake();
     expect(screen.getByText('CI is red')).toBeTruthy();

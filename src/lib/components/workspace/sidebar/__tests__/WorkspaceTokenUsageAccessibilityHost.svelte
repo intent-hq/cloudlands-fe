@@ -24,6 +24,7 @@
     costAmount?: number;
     surroundingControls?: boolean;
     wrappedMessages?: boolean;
+    manyMessageOnly?: 'mixed' | 'all';
   }
 
   let {
@@ -41,6 +42,7 @@
     costAmount = 2.5,
     surroundingControls = false,
     wrappedMessages = false,
+    manyMessageOnly,
   }: Props = $props();
   // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
   applyLanguagePreference(locale);
@@ -312,14 +314,16 @@
   if (wrappedMessages) {
     const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
     const tokens = { ...zero, inputTokens: 100 };
+    const small = { ...zero, inputTokens: 1 };
+    const total = { ...zero, inputTokens: 103 };
     const messages = ['freezero', 'longname', 'tailzero'];
     store.dispatch(
       tokenUsageReceived(
         workspaceId,
         parseTokenUsage({
-          totals: tokens,
-          byAgentId: { alpha: tokens, ...Object.fromEntries(messages.map((id) => [id, zero])) },
-          byModel: { 'token-model': tokens, 'zero-model': zero },
+          totals: total,
+          byAgentId: { alpha: tokens, ...Object.fromEntries(messages.map((id) => [id, small])) },
+          byModel: { 'token-model': total },
           byAgentModel: [
             {
               agentId: 'alpha',
@@ -330,13 +334,58 @@
             },
             ...messages.map((agentId) => ({
               agentId,
-              model: 'zero-model',
-              totals: zero,
+              model: 'token-model',
+              totals: small,
               humanMessages: 0,
               agentMessages: 1,
             })),
           ],
           lastScanAt: '2026-09-30T00:00:00Z',
+        }),
+      ),
+    );
+  }
+
+  // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+  if (manyMessageOnly) {
+    const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
+    const tokens = {
+      ...zero,
+      inputTokens: 2_000_000,
+      outputTokens: 37_000,
+      cacheReadTokens: 144_000_000,
+      thoughtTokens: 58_000,
+    };
+    const messages = Array.from({ length: 100 }, (_, index) => ({
+      agentId: `chat-${String(index).padStart(3, '0')}`,
+      model: `message-model-${String(index).padStart(3, '0')}`,
+      totals: zero,
+      humanMessages: 1,
+      agentMessages: 1,
+    }));
+    // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+    const rows =
+      manyMessageOnly === 'all'
+        ? messages
+        : [
+            {
+              agentId: 'active',
+              model: 'gpt-6-astra',
+              totals: tokens,
+              humanMessages: 1241,
+              agentMessages: 1697,
+            },
+            ...messages,
+          ];
+    store.dispatch(
+      tokenUsageReceived(
+        workspaceId,
+        parseTokenUsage({
+          totals: rows[0].totals,
+          byAgentId: Object.fromEntries(rows.map((row) => [row.agentId, row.totals])),
+          byModel: Object.fromEntries(rows.map((row) => [row.model, row.totals])),
+          byAgentModel: rows,
+          lastScanAt: '2026-10-03T00:00:00Z',
         }),
       ),
     );

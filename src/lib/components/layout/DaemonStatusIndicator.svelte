@@ -81,6 +81,7 @@
 </script>
 
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /**
    * DaemonStatusIndicator - Colored status dot + dropdown menu for daemon health
    *
@@ -658,8 +659,9 @@
                             >
                               <Fa icon={faTriangleExclamation} />
                             </span>
-                            <span class="text-xs min-w-0 truncate" title={$stats$.version}
-                              >{$stats$.version}</span
+                            <span
+                              class="text-xs min-w-0 truncate"
+                              use:truncatedTitle={$stats$.version}>{$stats$.version}</span
                             >
                           </span>
                         </div>
@@ -669,7 +671,7 @@
                         <span class="text-subtle shrink-0"
                           >{m.layout_daemonStatus_version_label()}</span
                         >
-                        <span class="text-xs min-w-0 truncate" title={$stats$.version}
+                        <span class="text-xs min-w-0 truncate" use:truncatedTitle={$stats$.version}
                           >{$stats$.version}</span
                         >
                       </div>
@@ -794,7 +796,7 @@
                       >
                       <span
                         class="text-xs min-w-0 line-clamp-2 break-words text-right"
-                        title={transportLabel}>{transportLabel}</span
+                        use:truncatedTitle={transportLabel}>{transportLabel}</span
                       >
                     </div>
                   {:else}

@@ -396,6 +396,15 @@ export function createPanelKeyboardShortcuts(
       return handled;
     }
 
+    if (matches('panel.create-column-right')) {
+      const handled = createColumnToRight(getLayoutManager());
+      if (handled) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return handled;
+    }
+
     const target = e.target instanceof Element ? e.target : null;
     if (isFocusInTerminal(target as HTMLElement | null) || isFocusInEditableElement(target)) {
       return false;
@@ -411,12 +420,6 @@ export function createPanelKeyboardShortcuts(
         : null;
     if (movePaneDirection) {
       const handled = moveActivePane(layoutManager, movePaneDirection);
-      if (handled) e.preventDefault();
-      return handled;
-    }
-
-    if (matches('panel.create-column-right')) {
-      const handled = createColumnToRight(layoutManager);
       if (handled) e.preventDefault();
       return handled;
     }

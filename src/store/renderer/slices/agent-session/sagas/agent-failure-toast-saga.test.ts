@@ -309,7 +309,7 @@ describe('agentFailureToastSaga', () => {
     await task.toPromise();
   });
 
-  it('Switch To on a chief-of-staff failure opens the sidebar Assistant panel', async () => {
+  it('Switch To on a chief-of-staff failure opens Home and selects the Assistant thread', async () => {
     const dispatch = vi.fn();
     const task = runSaga({ dispatch, getState: state }, agentFailureToastSaga);
     recordAgentFailure({
@@ -324,7 +324,7 @@ describe('agentFailureToastSaga', () => {
 
     expect(dispatch).toHaveBeenCalledWith(setChiefActiveAgentId('agent-chief'));
     expect(dispatch).toHaveBeenCalledWith(openPanel('chief'));
-    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
+    expect(mocks.navigateToRoute).toHaveBeenCalledWith('/');
     expect(mocks.retry).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();

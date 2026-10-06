@@ -355,7 +355,7 @@ async function measure(component: Locator, page: Page) {
         textOverflow: getComputedStyle(toolText ?? preview).textOverflow,
       },
       cleanText: (toolText ?? preview).textContent?.trim() ?? '',
-      cleanTitle: (toolText?.parentElement ?? preview).getAttribute('title') ?? '',
+      cleanTitle: (toolText ?? preview).getAttribute('title') ?? '',
       interactiveCount: preview.querySelectorAll('a, button, input, [tabindex]').length,
       peekIconCount: preview.querySelectorAll('svg, .agent-preview-tool-icon').length,
       peekAriaLabelCount: preview.querySelectorAll('[aria-label]').length,
@@ -416,7 +416,11 @@ test('cleans Markdown and keeps one true ellipsis region clear of the timestamp'
       }
       const value = await measure(component, page);
       expect(value.cleanText).not.toMatch(/[`*_\[\]]/);
-      expect(value.cleanTitle).toBe(value.cleanText);
+      expect(value.cleanTitle).toBe(
+        value.previewOverflow.scrollWidth > value.previewOverflow.clientWidth
+          ? value.cleanText
+          : '',
+      );
       expect(value.interactiveCount).toBe(0);
       expect(value.previewOverflow.scrollWidth).toBeGreaterThanOrEqual(
         value.previewOverflow.clientWidth,

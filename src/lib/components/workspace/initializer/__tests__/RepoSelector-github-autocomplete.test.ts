@@ -200,7 +200,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
 
     await waitFor(() => {
       expect(mocks.dispatch).toHaveBeenCalledWith({ type: 'githubRepos/load' });
-      expect(suggestions().map(rowText)).toEqual(['octo /alpha', 'octo /beta']);
+      expect(suggestions().map(rowText)).toEqual(['octo / alpha', 'octo / beta']);
     });
   });
 
@@ -214,7 +214,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
       payload: ['alpha'],
     });
     await waitFor(() => {
-      expect(suggestions().map(rowText)).toEqual(['octo /alpha']);
+      expect(suggestions().map(rowText)).toEqual(['octo / alpha']);
     });
   });
 
@@ -240,9 +240,9 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
 
     await waitFor(() => {
       expect(suggestions().map(rowText)).toEqual([
-        'octo /alpha',
-        'facebook /react',
-        'other /alphabet',
+        'octo / alpha',
+        'facebook / react',
+        'other / alphabet',
       ]);
     });
   });
@@ -262,7 +262,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     await fireEvent.input(input, { target: { value: 'octo/alpha' } });
 
     await waitFor(() => {
-      expect(suggestions().map(rowText)).toEqual(['octo /alpha']);
+      expect(suggestions().map(rowText)).toEqual(['octo / alpha']);
     });
   });
 
@@ -354,7 +354,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     await fireEvent.input(input, { target: { value: 'octo/alpha' } });
     await flushDetection();
 
-    expect(suggestions().map(rowText)).toEqual(['octo /alpha']);
+    expect(suggestions().map(rowText)).toEqual(['octo / alpha']);
     expect(detectedSelectRow()).toBeNull();
 
     // Enter without a highlighted suggestion still confirms the typed repo.
@@ -374,7 +374,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     await fireEvent.input(input, { target: { value: 'OCTO/Alpha' } });
     await flushDetection();
 
-    expect(suggestions().map(rowText)).toEqual(['octo /alpha']);
+    expect(suggestions().map(rowText)).toEqual(['octo / alpha']);
     expect(detectedSelectRow()).toBeNull();
   });
 

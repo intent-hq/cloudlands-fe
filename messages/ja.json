@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "リポジトリのセットアップスクリプトを読み取れませんでした。ワークスペースを作成する前に、選択したスクリプトを確認してください。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Intent Mobile を接続するには、このデバイスでリモートアクセスを有効にしてください。",
   "devConsole_title_label": "開発コンソール",
@@ -3203,6 +3204,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "ファイルマネージャー",
   "layout_panelTabBar_paneStack_ariaLabel": "ペインスタックのサイズ: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "ペインリストを表示。ペイン総数: {count}。",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}。ペインリストを表示。ペイン総数: {count}。",
   "layout_panelTabBar_paneMenu_ariaLabel": "このスタックのペイン",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}。確認が必要です。",
   "layout_panelTabBar_openPaneAbove_label": "上のパネルを開く",
@@ -7462,5 +7464,8 @@
   "settings_machineName_invalid_error": "制御文字を含めず、100文字以内で入力してください。",
   "settings_machineName_load_error": "マシン名を読み込めませんでした。もう一度お試しください。",
   "settings_machineName_save_error": "マシン名を保存できませんでした。もう一度お試しください。",
-  "settings_machineName_saved": "マシン名を保存しました"
+  "settings_machineName_saved": "マシン名を保存しました",
+  "home_assistantThread_hooks_label": "有効なフック: {count}",
+  "home_assistantThread_monitors_label": "有効な監視: {count}",
+  "home_assistantThread_subscriptions_label": "有効なサブスクリプション: {count}"
 }

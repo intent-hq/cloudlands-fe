@@ -211,8 +211,7 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
 
     // Remembered action ('vscode') is gone remotely; the primary must be the
     // locality-safe "Copy path" — with no "Open in" prefix (monorepo#890).
-    const primary = container.querySelector('button[title]');
-    expect(primary?.getAttribute('title')).toBe('Copy path');
+    expect(within(container).getByRole('button', { name: 'Copy path' })).toBeTruthy();
   });
 
   it('honors BE-reported hostLocality=remote over a local transport', async () => {
@@ -326,8 +325,7 @@ describe('OpenComboButton workspace-locality gating (monorepo#2171)', () => {
     mockStoreState = makeState({ mode: 'sidecar-uds' });
     const container = await renderAndOpenDropdown({ workspaceId: 'ws-remote' });
 
-    const primary = container.querySelector('button[title]');
-    expect(primary?.getAttribute('title')).toBe('Copy path');
+    expect(within(container).getByRole('button', { name: 'Copy path' })).toBeTruthy();
   });
 
   it('treats an unknown workspace entity as local (optimistic default)', async () => {
@@ -366,7 +364,6 @@ describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
 
     const buttons = container.querySelectorAll('button');
     expect(buttons).toHaveLength(2); // chevron stays to reach "Copy branch name"
-    expect(buttons[0].getAttribute('title')).toBe('Copy path');
     expect(buttons[0].textContent).toContain('Copy path');
     expect(buttons[0].textContent).not.toContain('Open');
   });
@@ -375,8 +372,7 @@ describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
     mockStoreState = makeState({ mode: 'external-ws' }, null, 'copy-branch');
     const container = await renderCombo();
 
-    const primary = container.querySelector('button[title]');
-    expect(primary?.getAttribute('title')).toBe('Copy path');
+    expect(within(container).getByRole('button', { name: 'Copy path' })).toBeTruthy();
   });
 
   it('renders a plain chevron-less button that copies the path when "Copy path" is the only action', async () => {
@@ -389,7 +385,6 @@ describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
 
       const buttons = container.querySelectorAll('button');
       expect(buttons).toHaveLength(1); // no dropdown chevron at all
-      expect(buttons[0].getAttribute('title')).toBe('Copy path');
       expect(buttons[0].textContent).toContain('Copy path');
 
       await fireEvent.click(buttons[0]);
@@ -408,7 +403,7 @@ describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
 
     const buttons = container.querySelectorAll('button');
     expect(buttons).toHaveLength(1);
-    expect(buttons[0].getAttribute('title')).toBe('Copy path');
+    expect(buttons[0]).toBe(within(container).getByRole('button', { name: 'Copy path' }));
   });
 });
 

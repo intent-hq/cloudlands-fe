@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "No se pudo leer el script de configuración del repositorio. Revisa el script seleccionado antes de crear el espacio de trabajo.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Activa el acceso remoto en este dispositivo para conectar Intent Mobile.",
   "devConsole_title_label": "Consola de desarrollo",
@@ -3203,6 +3204,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "Administrador de archivos",
   "layout_panelTabBar_paneStack_ariaLabel": "Tamaño de la pila de paneles: {count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "Mostrar la lista de paneles. Total de paneles: {count}.",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}. Mostrar la lista de paneles. Total de paneles: {count}.",
   "layout_panelTabBar_paneMenu_ariaLabel": "Paneles de esta pila",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}. Requiere atención.",
   "layout_panelTabBar_openPaneAbove_label": "Abrir el panel de arriba",
@@ -7462,5 +7464,8 @@
   "settings_machineName_invalid_error": "Usa hasta 100 caracteres sin caracteres de control.",
   "settings_machineName_load_error": "No se pudo cargar el nombre del equipo. Inténtalo de nuevo.",
   "settings_machineName_save_error": "No se pudo guardar el nombre del equipo. Inténtalo de nuevo.",
-  "settings_machineName_saved": "Nombre del equipo guardado"
+  "settings_machineName_saved": "Nombre del equipo guardado",
+  "home_assistantThread_hooks_label": "Hooks activos: {count}",
+  "home_assistantThread_monitors_label": "Monitores activos: {count}",
+  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}"
 }

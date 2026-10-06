@@ -64,6 +64,12 @@ export interface QueuedMessage extends SubmissionCorrelation {
     mimeType?: string;
     size?: number;
   }>;
+  /** Ordered original text/attachment units in a combined retry; authority belongs to this row. */
+  deliveryGroups?: Array<{
+    content: string;
+    imageBlocks?: QueuedMessage['imageBlocks'];
+    fileBlocks?: QueuedMessage['fileBlocks'];
+  }>;
   /** Position in queue (0 = next to be sent) */
   position: number;
   /**

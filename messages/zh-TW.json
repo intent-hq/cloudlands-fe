@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "無法讀取儲存庫的設定指令碼。請在建立工作區之前檢查所選指令碼。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "在此裝置上啟用遠端存取以連線至 Intent Mobile。",
   "devConsole_title_label": "開發主控台",
@@ -3203,6 +3204,7 @@
   "layout_panelTabBar_fileManagerGeneric_label": "檔案管理器",
   "layout_panelTabBar_paneStack_ariaLabel": "窗格堆疊大小：{count}",
   "layout_panelTabBar_paneSelector_ariaLabel": "顯示窗格清單。窗格總數：{count}。",
+  "layout_panelTabBar_paneSelectorNamed_ariaLabel": "{title}。顯示窗格清單。窗格總數：{count}。",
   "layout_panelTabBar_paneMenu_ariaLabel": "此堆疊中的窗格",
   "layout_panelTabBar_paneMenuAttention_ariaLabel": "{title}。需要注意。",
   "layout_panelTabBar_openPaneAbove_label": "開啟上方窗格",
@@ -7462,5 +7464,8 @@
   "settings_machineName_invalid_error": "最多輸入100個字元，不能包含控制字元。",
   "settings_machineName_load_error": "無法載入電腦名稱，請重試。",
   "settings_machineName_save_error": "無法儲存電腦名稱，請重試。",
-  "settings_machineName_saved": "電腦名稱已儲存"
+  "settings_machineName_saved": "電腦名稱已儲存",
+  "home_assistantThread_hooks_label": "作用中的掛鉤：{count}",
+  "home_assistantThread_monitors_label": "作用中的監控：{count}",
+  "home_assistantThread_subscriptions_label": "作用中的訂閱：{count}"
 }

@@ -1772,7 +1772,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(screen.queryByTestId('agent-card-preview')).toBeNull();
   });
 
-  it('truncates long streaming activity without changing row height', async () => {
+  it('preserves long streaming activity in the preview', async () => {
     const wsId = 'ws-long-activity';
     const longText =
       'This is a very long streaming activity message that should be truncated to prevent horizontal overflow and maintain compact row height across different viewport sizes and zoom levels';
@@ -1796,11 +1796,7 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
 
     const preview = await screen.findByTestId('agent-card-preview');
 
-    // Verify truncation classes are applied
-    expect(preview.className).toContain('truncate');
-    expect(preview.className).toContain('whitespace-nowrap');
-    // Verify the full long text is set as title attribute for accessibility
-    expect(preview.getAttribute('title')).toContain('very long streaming');
+    expect(preview.textContent?.trim()).toBe(longText);
   });
 
   it('handles Unicode and emoji in streaming activity text', async () => {

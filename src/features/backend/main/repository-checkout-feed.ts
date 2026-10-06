@@ -10,6 +10,9 @@ import {
   CheckoutProjectDetailSchema,
   CheckoutBranchesSchema,
   CheckoutWarmSchema,
+  CheckoutRepoConfigQuerySchema,
+  CheckoutRepoConfigSchema,
+  type CheckoutRepoConfigQuery,
   CheckoutBindingSchema,
   checkoutResultSchema,
   parseCheckoutResult,
@@ -134,7 +137,15 @@ export function createRepositoryCheckoutFeed(client: JsonRpcClient) {
     let captureTimer: ReturnType<typeof setTimeout> | undefined;
     const work = (async () => {
       try {
-        const raw = await request(PREFIX + 'capture', query, 15_000);
+        const raw = await request(
+          PREFIX + 'capture',
+          {
+            ...query,
+            // Older daemons reject unknown capture fields. Negotiate on this original socket only.
+            ...(original.gitlabCheckoutOwnerAvatar ? { includeOwnerAvatar: true } : {}),
+          },
+          15_000,
+        );
         // A malformed result can still name an allocated lease. Release that
         // known lease on the original socket even when its other fields fail.
         const reference = z.object({ value: CheckoutBindingSchema.passthrough() }).safeParse(raw);
@@ -205,6 +216,7 @@ export function createRepositoryCheckoutFeed(client: JsonRpcClient) {
         };
         const lifetime = {
           capture: captured,
+          repoConfigSupported: original.gitlabCheckoutRepoConfig === true,
           isCurrent: current,
           onRetired(listener: () => void) {
             if (!current()) {
@@ -227,6 +239,26 @@ export function createRepositoryCheckoutFeed(client: JsonRpcClient) {
             ),
           branches: (params: CheckoutBranchesQuery) =>
             perform('branches', CheckoutBranchesQuerySchema.parse(params), CheckoutBranchesSchema),
+          async repoConfig(value: CheckoutRepoConfigQuery) {
+            const selected = CheckoutRepoConfigQuerySchema.parse(value);
+            if (!current() || original.gitlabCheckoutRepoConfig !== true) return retired();
+            if (
+              selected.checkoutId !== captured.checkoutId ||
+              selected.revision !== captured.revision
+            )
+              throw new Error('REPOSITORY_CHECKOUT_BINDING_MISMATCH');
+            const result = await perform('repoConfig', selected, CheckoutRepoConfigSchema);
+            if (
+              result.status === 'ready' &&
+              (result.value.projectPath !== selected.projectPath ||
+                result.value.branch !== selected.branch ||
+                result.value.commitSha !== selected.commitSha)
+            ) {
+              owner.retire();
+              throw new Error('REPOSITORY_CHECKOUT_RESULT_MISMATCH');
+            }
+            return result;
+          },
           async warm(value: CheckoutSelection) {
             const selected = selection(value);
             const result = await perform('warm', selected, CheckoutWarmSchema);

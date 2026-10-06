@@ -3,7 +3,7 @@
 //   ../WorkspaceSidebarHeader.svelte, ../TaskStatusProgress.svelte, ../SidebarBrowserLauncher.svelte,
 //   ../sidebar/WorkspaceProgressCard.svelte, ../sidebar/FlameGraph.svelte,
 //   ../sidebar/ContextPanel.svelte, ../sidebar/NotesPanel.svelte, ../sidebar/SidebarChangesPanel.svelte,
-//   ../../layout/sidebar-nav/SidebarNav.svelte, ../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte,
+//   ../../layout/sidebar-nav/SidebarNav.svelte,
 //   ../../layout/WindowTitleBar.svelte, ../../../../routes/(app)/+layout.svelte
 
 import { readFileSync } from 'node:fs';
@@ -35,16 +35,6 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     expect(titleBar).toContain('activeWorkspaceId={routedWorkspaceId}');
     expect(titleBar).toContain('data-titlebar-settings');
     expect(appLayout).not.toContain('<SidebarNav />');
-  });
-
-  it('opens a title-bar workspace tab before navigating from the spaces combobox', () => {
-    const card = source('../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte');
-    const openTab = card.indexOf('appStore.dispatch(openWorkspaceTab(workspaceId))');
-    const navigate = card.indexOf('await goto(route)');
-
-    expect(card).toContain("from '$store/renderer/slices/tab-state/tab-state-slice'");
-    expect(openTab).toBeGreaterThanOrEqual(0);
-    expect(openTab).toBeLessThan(navigate);
   });
 
   it('orders the live identity, progress, then current status', () => {

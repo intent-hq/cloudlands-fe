@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => {
     validate: vi.fn(),
     placement: vi.fn(),
     settled: vi.fn(),
+    realSetupScriptProbe: false,
     send: vi.fn(),
     gitCheck: vi.fn(),
     create: vi.fn(),
@@ -134,23 +135,23 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   }),
 }));
 
-vi.mock('$features/setup-scripts', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$features/setup-scripts')>()),
-  SETUP_SCRIPT_TEMPLATES: [],
-  getTemplateContent: vi.fn(() => ''),
-  chooseDefaultSetupScript: vi.fn(() => ({ content: '', name: 'Custom', source: 'custom' })),
-  fetchRepoConfigSetupScript: vi.fn(async () => null),
-  fetchGitHubRepoConfigSetupScript: vi.fn(async () => null),
-  probeRepoConfigSetupScript: vi.fn(),
-  repoIdentityKey: vi.fn((identity: { path: string | null }) => identity.path),
-  createRepoConfigProbeScheduler: vi.fn(() => ({
-    onSelectionChange: vi.fn(),
-    settled: mocks.settled,
-    dispose: vi.fn(),
-  })),
-  resolveSetupScriptParam: vi.fn(() => undefined),
-  REPO_CONFIG_SCRIPT_NAME: 'Repo config',
-}));
+vi.mock('$features/setup-scripts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$features/setup-scripts')>();
+  return {
+    ...actual,
+    SETUP_SCRIPT_TEMPLATES: [],
+    getTemplateContent: vi.fn(() => ''),
+    createRepoConfigProbeScheduler: vi.fn(() =>
+      mocks.realSetupScriptProbe
+        ? actual.createRepoConfigProbeScheduler()
+        : {
+            onSelectionChange: vi.fn(),
+            settled: mocks.settled,
+            dispose: vi.fn(),
+          },
+    ),
+  };
+});
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => mocks.readable(() => []),
@@ -221,7 +222,7 @@ vi.mock('$lib/components/modals/PullConflictDialog.svelte', async () => ({
 }));
 
 vi.mock('$lib/components/modals/SetupScriptModal.svelte', async () => ({
-  default: (await import('../initializer/__tests__/mocks/MockComponent.svelte')).default,
+  default: (await import('./mocks/SetupScriptChoiceMock.svelte')).default,
 }));
 
 vi.mock('$lib/components/workspace/initializer/InitialAgentPicker.svelte', async () => ({
@@ -263,9 +264,16 @@ import type {
   CheckoutSelection,
 } from '$shared/types/repository-checkout';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { gitlabAuthChanged } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+import {
+  gitlabAuthChanged,
+  setGitLabAuthStatus,
+} from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { workspaceInitializerGitSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-git-saga';
-import { urlSubmitted } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
+import {
+  urlSubmitted,
+  branchQueryChanged,
+  branchSelected,
+} from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
 import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 let dispose: () => void;
 let stopGit: () => void;
@@ -273,6 +281,7 @@ let stopCheckout: (() => void) | undefined;
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
+  localStorage.clear();
   mocks.gitCheck.mockResolvedValue({ success: true, data: { available: true } });
   dispose = store.init();
   stopGit = store.runSaga(workspaceInitializerGitSaga);
@@ -297,6 +306,7 @@ beforeEach(() => {
   mocks.branchStatus.mockResolvedValue({ ahead: 0, behind: 1, diverged: false });
   mocks.validate.mockResolvedValue({ valid: true });
   mocks.settled.mockResolvedValue(undefined);
+  mocks.realSetupScriptProbe = false;
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
     value: vi.fn(),
@@ -309,6 +319,7 @@ afterEach(() => {
   stopCheckout = undefined;
   dispose();
   sessionStorage.clear();
+  localStorage.clear();
 });
 async function submit() {
   sessionStorage.setItem('workspace-prefill', JSON.stringify({ prompt: 'Build project' }));
@@ -505,6 +516,50 @@ describe('actual initializer qualified GitLab workspace creation', () => {
     stopCheckout = store.runSaga(repositoryCheckoutSaga);
   });
 
+  it('captures a mixed recent against its verified root, then selects through the existing checkout owner', async () => {
+    store.dispatch(
+      setGitLabAuthStatus({
+        host: 'forge.example:8443',
+        instanceBaseUrl,
+        isConfigured: true,
+        deviceGrantSupported: false,
+        user: null,
+        method: 'pat',
+      }),
+    );
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    expect(mocks.captureCheckout).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByTestId('select-wrong-root-recent'));
+    expect(mocks.captureCheckout).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByTestId('select-gitlab-recent'));
+    await waitFor(() => expect(session.project).toHaveBeenCalledWith({ projectPath }));
+    expect(mocks.captureCheckout).toHaveBeenCalledExactlyOnceWith({
+      provider: 'gitlab',
+      instanceBaseUrl,
+    });
+    const form = getItems(store.state.repositoryCheckout.forms)[0];
+    expect(form.capture?.instanceBaseUrl).toBe(instanceBaseUrl);
+    expect(form.project?.projectPath).toBe(projectPath);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('does not use a recent to bypass revoked GitLab admission', async () => {
+    store.dispatch(
+      setGitLabAuthStatus({
+        host: 'forge.example:8443',
+        instanceBaseUrl,
+        isConfigured: false,
+        deviceGrantSupported: false,
+        user: null,
+        method: null,
+      }),
+    );
+    render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+    await fireEvent.click(screen.getByTestId('select-gitlab-recent'));
+    expect(mocks.captureCheckout).not.toHaveBeenCalled();
+    expect(session.project).not.toHaveBeenCalled();
+  });
+
   async function renderCheckout(
     mode: CheckoutSelection['mode'],
     extra: Record<string, unknown> = {},
@@ -531,6 +586,191 @@ describe('actual initializer qualified GitLab workspace creation', () => {
     );
     return render(CompactWorkspaceInitializer, { props: { isExpanded: true, oncreate } });
   }
+
+  it('drops committed content when the newly selected branch has no config', async () => {
+    mocks.realSetupScriptProbe = true;
+    session.repoConfig = vi.fn().mockImplementation(async (query) => ({
+      status: 'ready',
+      value: {
+        projectPath: query.projectPath,
+        branch: query.branch,
+        commitSha: query.commitSha,
+        config: query.branch === 'release/next' ? { setupScript: 'echo old branch' } : null,
+        exists: query.branch === 'release/next',
+      },
+    }));
+    await renderCheckout('direct');
+    await waitFor(() => expect(screen.getByText('From repo config')).toBeTruthy());
+    const form = getItems(store.state.repositoryCheckout.forms)[0];
+    store.dispatch(branchQueryChanged(form.formId, form.scopeKey!, 'no-config'));
+    await waitFor(() =>
+      expect(
+        getItems(getItems(store.state.repositoryCheckout.forms)[0].branches).some(
+          (b) => b.name === 'no-config',
+        ),
+      ).toBe(true),
+    );
+    store.dispatch(
+      branchSelected(form.formId, form.scopeKey!, { name: 'no-config', commitSha: sha }),
+    );
+    await waitFor(() => expect(session.repoConfig).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText('Custom')).toBeTruthy());
+    await fireEvent.click(
+      document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!,
+    );
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+    expect(mocks.create.mock.calls[0][0].repositoryCheckout).toMatchObject({
+      branch: 'no-config',
+      commitSha: sha,
+    });
+    expect(mocks.create.mock.calls[0][0].setupScript).toBeUndefined();
+  });
+
+  it('restores only the selected full-instance project default when its config is missing', async () => {
+    // Global test setup uses no-op localStorage methods; this case needs persistence.
+    const saved = new Map<string, string>();
+    const get = vi
+      .spyOn(localStorage, 'getItem')
+      .mockImplementation((key) => saved.get(key) ?? null);
+    const set = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      saved.set(key, value);
+    });
+    try {
+      const { recordLastUsedSetupScript } = await import('$features/setup-scripts/last-used');
+      recordLastUsedSetupScript(JSON.stringify(['gitlab', instanceBaseUrl, projectPath]), {
+        name: 'Saved for selected project',
+        content: 'echo selected saved',
+      });
+      recordLastUsedSetupScript(
+        JSON.stringify(['gitlab', 'https://other.example/Forge', projectPath]),
+        { name: 'Wrong instance', content: 'echo wrong instance' },
+      );
+      recordLastUsedSetupScript(JSON.stringify(['gitlab', instanceBaseUrl, 'other/project']), {
+        name: 'Wrong project',
+        content: 'echo wrong project',
+      });
+      mocks.realSetupScriptProbe = true;
+      session.repoConfig = configRead(null);
+      await renderCheckout('direct');
+      await waitFor(() => expect(session.repoConfig).toHaveBeenCalledOnce());
+      await waitFor(() => expect(screen.getByText('Saved for selected project')).toBeTruthy());
+      await fireEvent.click(
+        document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!,
+      );
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+      expect(mocks.create.mock.calls[0][0].setupScript).toBe('echo selected saved');
+    } finally {
+      get.mockRestore();
+      set.mockRestore();
+    }
+  });
+
+  function configRead(script: string | null) {
+    return vi
+      .fn<NonNullable<RepositoryCheckoutSession['repoConfig']>>()
+      .mockImplementation(async (query) => ({
+        status: 'ready',
+        value: {
+          projectPath: query.projectPath,
+          branch: query.branch,
+          commitSha: query.commitSha,
+          config: script === null ? null : { setupScript: script },
+          exists: script !== null,
+        },
+      }));
+  }
+
+  it.each(['direct', 'cached'] as const)(
+    'shows committed config and submits its exact qualified %s selection',
+    async (mode) => {
+      mocks.realSetupScriptProbe = true;
+      session.repoConfig = configRead('echo from selected commit');
+      await renderCheckout(mode);
+      await waitFor(() => expect(screen.getByText('From repo config')).toBeTruthy());
+      expect(session.repoConfig).toHaveBeenCalledExactlyOnceWith({
+        checkoutId: 'original-lease',
+        revision: 'original-account',
+        projectPath,
+        branch: 'release/next',
+        commitSha: sha,
+      });
+      await fireEvent.click(
+        document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!,
+      );
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+      expect(mocks.create.mock.calls[0][0]).toMatchObject({
+        repositoryCheckout: { projectPath, branch: 'release/next', commitSha: sha, mode },
+      });
+      expect(mocks.create.mock.calls[0][0].setupScript).toBeUndefined();
+    },
+  );
+
+  it.each([
+    ['custom', 'echo explicit'],
+    ['empty', 'cd .'],
+  ] as const)(
+    'keeps an explicit %s choice when a late config read arrives and submits it',
+    async (choice, expected) => {
+      mocks.realSetupScriptProbe = true;
+      const pending =
+        Promise.withResolvers<
+          Awaited<ReturnType<NonNullable<RepositoryCheckoutSession['repoConfig']>>>
+        >();
+      session.repoConfig = vi.fn().mockReturnValue(pending.promise);
+      await renderCheckout('direct');
+      await waitFor(() => expect(session.repoConfig).toHaveBeenCalledOnce());
+      await fireEvent.click(screen.getByRole('button', { name: 'Setup script' }));
+      await fireEvent.click(screen.getByTestId('choose-' + choice));
+      pending.resolve({
+        status: 'ready',
+        value: {
+          projectPath,
+          branch: 'release/next',
+          commitSha: sha,
+          config: { setupScript: 'echo late repo' },
+          exists: true,
+        },
+      });
+      await waitFor(() => expect(screen.queryByText(/Detecting setup script/)).toBeNull());
+      expect(screen.getByText('Custom')).toBeTruthy();
+      await fireEvent.click(
+        document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!,
+      );
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+      expect(mocks.create.mock.calls[0][0].setupScript).toBe(expected);
+    },
+  );
+
+  it.each(['missing', 'unavailable', 'unsupported'] as const)(
+    'does not claim repo-config provenance for %s reads',
+    async (kind) => {
+      mocks.realSetupScriptProbe = true;
+      if (kind === 'missing') session.repoConfig = configRead(null);
+      if (kind === 'unavailable')
+        session.repoConfig = vi
+          .fn()
+          .mockResolvedValue({ status: 'unavailable', reason: 'rate-limited' });
+      await renderCheckout('direct');
+      await waitFor(() => expect(screen.getByText('Custom')).toBeTruthy());
+      if (kind !== 'missing')
+        await waitFor(() =>
+          expect(screen.getByRole('status').textContent).toContain('Could not read'),
+        );
+      else {
+        await waitFor(() => expect(session.repoConfig).toHaveBeenCalledOnce());
+        await waitFor(() => expect(screen.queryByText(/Detecting setup script/)).toBeNull());
+        expect(screen.queryByText(/Could not read the repository setup script/)).toBeNull();
+      }
+      expect(screen.queryByText('From repo config')).toBeNull();
+      await fireEvent.click(
+        document.querySelector<HTMLButtonElement>('[data-dialog-primary-action]')!,
+      );
+      await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+      expect(mocks.create.mock.calls[0][0].setupScript).toBe(
+        kind === 'missing' ? undefined : 'cd .',
+      );
+    },
+  );
 
   it.each(['direct', 'cached'] as const)(
     'creates %s with only the freshly qualified branch and SHA',
@@ -564,7 +804,7 @@ describe('actual initializer qualified GitLab workspace creation', () => {
       expect(mocks.validate).not.toHaveBeenCalled();
       expect(mocks.getBranches).not.toHaveBeenCalled();
       expect(mocks.pull).not.toHaveBeenCalled();
-      expect(mocks.settled).not.toHaveBeenCalled();
+      expect(mocks.settled).toHaveBeenCalledOnce();
       expect(session.warm).toHaveBeenCalledTimes(mode === 'cached' ? 1 : 0);
     },
   );

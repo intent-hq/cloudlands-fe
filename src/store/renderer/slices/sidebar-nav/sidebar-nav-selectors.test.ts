@@ -21,10 +21,8 @@ import {
 } from '../agent-session/agent-session-slice';
 import {
   selectCurrentChiefThread,
-  selectChiefThreadPreview,
   selectChiefThreads,
   selectReusableChiefThread,
-  selectShowArchivedWorkspaces,
 } from './sidebar-nav-selectors';
 import { CHIEF_WORKSPACE_ID } from './sidebar-nav-types';
 import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
@@ -114,35 +112,8 @@ describe('sidebar nav Chief selectors', () => {
     expect(result.map((thread) => thread.agentId)).toEqual([newer.id, older.id]);
     expect(result[0]).toMatchObject({
       title: 'Newer task',
-      preview: 'Latest answer',
       isActive: true,
       messageCount: 2,
-    });
-  });
-
-  it('uses the workspace index for the latest Chief preview when present', () => {
-    const latest = session(
-      'agent-chief-indexed',
-      CHIEF_WORKSPACE_ID,
-      [message('m5', 'user', 'Indexed Chief thread', '2026-01-01T13:00:00.000Z')],
-      '2026-01-01T13:00:00.000Z',
-    );
-    const unindexed = session(
-      'agent-chief-unindexed',
-      CHIEF_WORKSPACE_ID,
-      [message('m6', 'user', 'Should not appear', '2026-01-01T14:00:00.000Z')],
-      '2026-01-01T14:00:00.000Z',
-    );
-
-    const result = selectChiefThreadPreview.select(
-      stateWithSessions([latest, unindexed], [String(latest.id)]),
-    );
-
-    expect(result).toMatchObject({
-      agentId: latest.id,
-      title: 'Indexed Chief thread',
-      preview: 'Indexed Chief thread',
-      messageCount: 1,
     });
   });
 
@@ -185,7 +156,6 @@ describe('sidebar nav Chief selectors', () => {
       expect.objectContaining({
         agentId: chief.id,
         title: 'New chat',
-        preview: 'No messages yet.',
         messageCount: 0,
       }),
     ]);
@@ -203,7 +173,6 @@ describe('sidebar nav Chief selectors', () => {
       expect.objectContaining({
         agentId: chief.id,
         title: 'New chat',
-        preview: 'No messages yet.',
         messageCount: 0,
       }),
     ]);
@@ -287,7 +256,7 @@ describe('sidebar nav Chief selectors', () => {
             messageCount,
             metadata: {
               specialist: CHIEF_SPECIALIST_ID,
-              chiefPromptVersion: 3,
+              chiefPromptVersion: CHIEF_PROMPT_VERSION,
             },
           },
         ],
@@ -388,9 +357,21 @@ describe('sidebar nav Chief selectors', () => {
       version: undefined,
       createdAt: '2099-01-01T00:00:00Z',
     },
-    { label: 'old marker on a future chat', version: 2, createdAt: '2099-01-01T00:00:00Z' },
-    { label: 'newer unsupported marker', version: 4, createdAt: '2099-01-01T00:00:00Z' },
-    { label: 'numeric string', version: '3', createdAt: '2099-01-01T00:00:00Z' },
+    {
+      label: 'old marker on a future chat',
+      version: CHIEF_PROMPT_VERSION - 1,
+      createdAt: '2099-01-01T00:00:00Z',
+    },
+    {
+      label: 'newer unsupported marker',
+      version: CHIEF_PROMPT_VERSION + 1,
+      createdAt: '2099-01-01T00:00:00Z',
+    },
+    {
+      label: 'numeric string',
+      version: String(CHIEF_PROMPT_VERSION),
+      createdAt: '2099-01-01T00:00:00Z',
+    },
     { label: 'null marker', version: null, createdAt: '2099-01-01T00:00:00Z' },
     { label: 'boolean marker', version: true, createdAt: '2099-01-01T00:00:00Z' },
   ])('fails closed after reloading $label', async ({ version, createdAt }) => {
@@ -432,7 +413,7 @@ describe('sidebar nav Chief selectors', () => {
       CHIEF_WORKSPACE_ID,
       [],
       '2099-01-01T00:00:00Z',
-      { metadata: { specialist, chiefPromptVersion: 3 } },
+      { metadata: { specialist, chiefPromptVersion: CHIEF_PROMPT_VERSION } },
     );
     expect(selectCurrentChiefThread.select(stateWithSessions([chief]))).toBeNull();
     expect(selectReusableChiefThread.select(stateWithSessions([chief]))).toBeNull();
@@ -454,9 +435,9 @@ describe('sidebar nav Chief selectors', () => {
     try {
       for (const [incoming, expectedId] of [
         [undefined, null],
-        [3, 'chief-wire'],
+        [CHIEF_PROMPT_VERSION, 'chief-wire'],
         [2, null],
-        [3, 'chief-wire'],
+        [CHIEF_PROMPT_VERSION, 'chief-wire'],
         [undefined, null],
       ] as const) {
         version = incoming;
@@ -547,17 +528,7 @@ function wireChief(overrides: Record<string, unknown> = {}) {
     createdAt: '2026-09-24T00:00:00Z',
     updatedAt: '2026-09-24T00:00:00Z',
     messageCount: 0,
-    metadata: { specialist: 'chief-of-staff', chiefPromptVersion: 3 },
+    metadata: { specialist: 'chief-of-staff', chiefPromptVersion: CHIEF_PROMPT_VERSION },
     ...overrides,
   };
 }
-
-describe('sidebar nav list preferences', () => {
-  it('selects archived workspace visibility', () => {
-    const state = {
-      sidebarNav: { showArchivedWorkspaces: true },
-    } as unknown as StoreState;
-
-    expect(selectShowArchivedWorkspaces.select(state)).toBe(true);
-  });
-});

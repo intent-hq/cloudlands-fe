@@ -13563,7 +13563,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appUiNavigateNotification('/settings'));
       await flush();
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings', { assistantContent: true });
     });
 
     it('navigates to route and dispatches highlight after navigation', async () => {
@@ -13576,7 +13576,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
       await flush();
       await new Promise((resolve) => requestAnimationFrame(resolve));
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings?tab=connections#mcp-servers');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings?tab=connections#mcp-servers', {
+        assistantContent: true,
+      });
       // Check that requestUiHighlight was dispatched
       const state = appStore.state as {
         uiHighlight?: {
@@ -13631,7 +13633,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appUiNavigateNotification('/invalid'));
       await flush();
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/invalid');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/invalid', { assistantContent: true });
       // Should not throw
     });
   });
@@ -13727,7 +13729,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appWorkspaceOpenNotification('ws-123', false));
       await flush();
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-123');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-123', {
+        assistantContent: true,
+      });
       expect(invokeSpy).not.toHaveBeenCalled();
     });
 
@@ -13738,7 +13742,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appWorkspaceOpenNotification('ws-456'));
       await flush();
 
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-456');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-456', {
+        assistantContent: true,
+      });
       expect(invokeSpy).not.toHaveBeenCalled();
     });
 
@@ -13768,7 +13774,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
         route: '/workspace/ws-fallback',
         requestId: 'evt-open-ws-fallback',
       });
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-fallback');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-fallback', {
+        assistantContent: true,
+      });
     });
 
     it('ignores blank workspace IDs', async () => {
@@ -13794,7 +13802,9 @@ describe('DaemonEventsBridge — app-UI events', () => {
         route: '/workspace/ws-success-false',
         requestId: 'evt-open-ws-failure',
       });
-      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-success-false');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-success-false', {
+        assistantContent: true,
+      });
     });
   });
 });

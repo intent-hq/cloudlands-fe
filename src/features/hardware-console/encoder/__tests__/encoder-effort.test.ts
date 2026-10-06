@@ -732,9 +732,11 @@ describe('decoded Micro encoder effort and wire behavior', () => {
   it('preserves workspace cycling and pressing without waiting for effort hydration', async () => {
     const device = manager();
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
-    expect(state.sidebarNav.panelItem).toBe('all-workspaces');
+    expect(device.navigate).toHaveBeenLastCalledWith('/');
+    expect(state.sidebarNav.panelItem).toBeNull();
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
-    expect(state.sidebarNav.allSpacesViewMode).toBe('repo');
+    expect(state.homeWorkspaces.tab).toBe('workspaces');
+    device.navigate.mockClear();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });

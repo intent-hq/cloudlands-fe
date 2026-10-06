@@ -565,7 +565,7 @@ describe('theme color contract — rendered surfaces', () => {
         } as unknown as AgentSession,
       ]),
     );
-    const chief = render(ChiefCard, { props: { expanded: true } });
+    const chief = render(ChiefCard, { props: { isActive: true } });
     const chatPanel = await waitFor(() => {
       const mock = chief.container.querySelector('[data-testid="mock-chat-panel"]');
       expect(mock).not.toBeNull();

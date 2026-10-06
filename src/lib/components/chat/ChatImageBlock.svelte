@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
@@ -158,7 +159,8 @@
           class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-2 type-caption"
           data-testid="image-file-metadata"
         >
-          <span class="min-w-0 flex-1 truncate text-foreground" title={alt}>{alt}</span>
+          <span class="min-w-0 flex-1 truncate text-foreground" use:truncatedTitle={alt}>{alt}</span
+          >
           <span class="flex shrink-0 items-center gap-2 text-muted-foreground">
             {#if decodedDimensions}
               <span

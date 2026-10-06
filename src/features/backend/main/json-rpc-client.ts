@@ -41,6 +41,8 @@ export interface RepositoryConnection {
   readonly repositoryContext: boolean;
   readonly repositoryResourceRead?: boolean;
   readonly gitlabCheckout?: boolean;
+  readonly gitlabCheckoutOwnerAvatar?: boolean;
+  readonly gitlabCheckoutRepoConfig?: boolean;
   readonly repositorySelection: boolean;
   readonly nativeReview: boolean;
   readonly nativeReviewCompanion: boolean;
@@ -584,6 +586,12 @@ export class JsonRpcClient extends EventEmitter {
       gitlabCheckout:
         (result as { server?: { capabilities?: { gitlabCheckout?: unknown } } }).server
           ?.capabilities?.gitlabCheckout === 1,
+      gitlabCheckoutRepoConfig:
+        (result as { server?: { capabilities?: { gitlabCheckoutRepoConfig?: unknown } } }).server
+          ?.capabilities?.gitlabCheckoutRepoConfig === 1,
+      gitlabCheckoutOwnerAvatar:
+        (result as { server?: { capabilities?: { gitlabCheckoutOwnerAvatar?: unknown } } }).server
+          ?.capabilities?.gitlabCheckoutOwnerAvatar === 1,
       repositoryContext:
         (result as { server?: { capabilities?: { repositoryContext?: unknown } } }).server
           ?.capabilities?.repositoryContext === 1,
