@@ -25,7 +25,9 @@ for (const note of [
     await page.keyboard.press('Enter');
     await page.keyboard.insertText('Updated by me.');
     await panel.getByRole('button', { name: 'Rendered preview', exact: true }).click();
-    await expect(panel.getByTestId('rendered-note-preview')).toContainText('Updated by me.');
+    await expect(
+      panel.getByTestId('rendered-note-preview').filter({ visible: true }),
+    ).toContainText('Updated by me.');
     await expect
       .poll(() =>
         page.evaluate(
@@ -62,7 +64,9 @@ for (const note of [
     });
     await component.getByRole('link', { name: 'Open the second plan', exact: true }).click();
     await component.getByRole('link', { name: note.link, exact: true }).click();
-    await expect(panel.getByTestId('rendered-note-preview')).toContainText('Updated by me.');
+    await expect(
+      panel.getByTestId('rendered-note-preview').filter({ visible: true }),
+    ).toContainText('Updated by me.');
     await panel.getByRole('button', { name: 'Edit note', exact: true }).click();
     await component.getByRole('link', { name: note.link, exact: true }).click();
     await expect(panel.locator('.tiptap[contenteditable="true"]')).toContainText('Updated by me.');
@@ -147,7 +151,9 @@ test('Assistant note menus fit a narrow panel and unavailable workspaces stay re
   });
   await page.keyboard.press('Escape');
   await component.getByRole('link', { name: 'Open unavailable workspace note' }).click();
-  await expect(panel.getByTestId('rendered-note-preview')).toContainText('Plan for the repository');
+  await expect(panel.getByTestId('rendered-note-preview').filter({ visible: true })).toContainText(
+    'Plan for the repository',
+  );
   await expect(panel.getByRole('button', { name: 'Edit note', exact: true })).toHaveCount(0);
   await panel.getByTestId('panel-actions-trigger').filter({ visible: true }).click();
   await menu.getByRole('menuitem', { name: /^Note view/ }).press('ArrowRight');
