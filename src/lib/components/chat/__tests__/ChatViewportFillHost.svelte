@@ -25,6 +25,7 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { installMockElectronBridge } from '../../../../test/ct-mock-electron-bridge';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import { startChatDraftFixture } from '../../../../test/fixtures/chat-drafts';
 
   let {
     height = 900,
@@ -186,7 +187,10 @@
     },
   });
   const dispose = startRootStoreLifecycle(store, {
-    startSagas: () => [store.runSaga(chatScrollbackSaga)],
+    startSagas: (appStore) => [
+      startChatDraftFixture(appStore),
+      appStore.runSaga(chatScrollbackSaga),
+    ],
   });
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity(workspace));

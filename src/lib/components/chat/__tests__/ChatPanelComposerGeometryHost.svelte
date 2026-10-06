@@ -10,6 +10,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
+  import { startChatDraftFixture } from '../../../../test/fixtures/chat-drafts';
   import {
     principalContextChanged,
     principalReceived,
@@ -117,7 +118,9 @@
   const ownsStore = untrack(() => initializeStore);
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, { startSagas: () => [] })
+    ? startRootStoreLifecycle(store, {
+        startSagas: (appStore) => [startChatDraftFixture(appStore)],
+      })
     : () => {};
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
