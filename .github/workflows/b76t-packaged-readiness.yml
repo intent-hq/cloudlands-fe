@@ -226,7 +226,7 @@ jobs:
         id: upload
         if: ${{ always() }}
         timeout-minutes: 2
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: b76t-readiness-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/b76t-readiness-${{ github.run_id }}-${{ github.run_attempt }}-readiness.*

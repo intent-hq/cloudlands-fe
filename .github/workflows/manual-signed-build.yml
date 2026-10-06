@@ -171,7 +171,7 @@ jobs:
       - name: Upload journey results and process receipts
         timeout-minutes: 4
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: packaged-macos-smoke
           path: e2e-reports/
@@ -508,7 +508,7 @@ jobs:
 
       - name: Upload macOS DMG artifact
         id: upload
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: manual-macos-dmg-${{ matrix.arch }}
           # DMG only — the mac .zip and .blockmap files exist solely for the
@@ -818,7 +818,7 @@ jobs:
           find dist-electron -maxdepth 1 -type f \( -name "*.exe" -o -name "*.blockmap" \) -exec ls -lh {} \;
 
       - name: Upload Windows installer artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: manual-windows-exe
           # Reviewable local artifacts only; no release/feed publication.
@@ -1128,7 +1128,7 @@ jobs:
       # latest-linux*.yml leaves this workflow), so they are dead weight
       # here.
       - name: Upload Linux AppImage artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: manual-linux-appimage-${{ matrix.arch }}
           path: dist-electron/*.AppImage
@@ -1136,7 +1136,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Linux deb artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: manual-linux-deb-${{ matrix.arch }}
           path: dist-electron/*.deb
@@ -1206,7 +1206,7 @@ jobs:
           mapfile_dmg=$(find isolated-package -type f -name '*.dmg')
           test "$(printf '%s\n' "$mapfile_dmg" | wc -l | tr -d ' ')" = 1
           node scripts/verify-isolated-macos-package.mjs "$mapfile_dmg" isolated-package-proof "$BACKEND_SHA" "$FRONTEND_SHA"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
           name: isolated-macos-proof-${{ matrix.arch }}
