@@ -1,6 +1,7 @@
 import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
+import { navigateToSettings } from '$lib/utils/workspace-navigation';
 import { m } from '$shared/paraglide/messages.js';
 import { buffers } from 'redux-saga';
 import {
@@ -15,6 +16,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { selectLinearAuthOperation } from '../linear-auth-selectors';
+import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
 import {
   connectLinear,
@@ -154,7 +156,17 @@ function* mutations(): SagaGenerator<void> {
   }
 }
 
+function* startAuthWorker(): SagaGenerator<void> {
+  try {
+    yield* put(setShowCreateModal(false));
+    yield* call(navigateToSettings, { tab: 'connections' });
+  } catch (error) {
+    logger.error('Failed to open Linear connection settings', error);
+  }
+}
+
 export function* linearAuthSaga(): SagaGenerator<void> {
   yield* fork(mutations);
-  yield* takeLatest([initializeLinearAuth, startLinearAuth], probeWorker);
+  yield* takeLatest(initializeLinearAuth, probeWorker);
+  yield* takeLatest(startLinearAuth, startAuthWorker);
 }

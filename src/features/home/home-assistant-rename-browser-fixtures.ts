@@ -4,7 +4,6 @@ import { store as appStore } from '$store/renderer/store';
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { setupAgentMutationPreview } from '../../test/agent-mutation-preview';
-import { setupChatDraftsPreview } from '../../test/chat-drafts-preview';
 
 interface RenameCall {
   agentId: string;
@@ -74,11 +73,9 @@ export function setupHomeAssistantRenameFixtures() {
     },
   };
   const stopMutations = setupAgentMutationPreview();
-  const stopDrafts = setupChatDraftsPreview();
   return () => {
     release();
     stopMutations();
-    stopDrafts();
     window.electronAPI = previous;
     delete window.__homeAssistantRename;
   };
