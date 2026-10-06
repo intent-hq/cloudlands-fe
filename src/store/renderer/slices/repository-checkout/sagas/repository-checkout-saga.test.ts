@@ -568,3 +568,62 @@ describe('qualified project and branch selection in the real renderer store', ()
     expect(form().project?.projectPath).toBe('private/A');
   });
 });
+
+describe('config denial after a newer selection', () => {
+  it.each(['access-denied', 'branch-changed'] as const)(
+    'handles an older %s response according to its authority scope',
+    async (reason) => {
+      const s = await open();
+      store.dispatch(projectSelected('form', scope(), 'group/target'));
+      await advance();
+      const { mode: _mode, ...query } = selectCheckoutSelection.select(store.state, 'form')!;
+      const held =
+        Promise.withResolvers<
+          Awaited<ReturnType<NonNullable<RepositoryCheckoutSession['repoConfig']>>>
+        >();
+      s.repoConfig = vi.fn().mockReturnValue(held.promise);
+      const action = checkoutRepoConfigRequested('form', scope(), query);
+      store.dispatch(action);
+      expect(s.repoConfig).toHaveBeenCalledExactlyOnceWith(query);
+      store.dispatch(projectSelected('form', scope(), 'group/other'));
+      await advance();
+      expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(true);
+      held.resolve({ status: 'unavailable', reason });
+      await advance();
+      await action.promise;
+      if (reason === 'access-denied') {
+        expect(form().unavailable?.reason).toBe('access-denied');
+        expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(false);
+        expect(s.release).toHaveBeenCalled();
+      } else {
+        expect(form().status).toBe('ready');
+        expect(form().project?.projectPath).toBe('group/other');
+        expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(true);
+      }
+    },
+  );
+});
+
+it('settles an old config denial without retiring a replacement runtime', async () => {
+  const original = await open();
+  store.dispatch(projectSelected('form', scope(), 'group/target'));
+  await advance();
+  const { mode: _mode, ...query } = selectCheckoutSelection.select(store.state, 'form')!;
+  const held =
+    Promise.withResolvers<
+      Awaited<ReturnType<NonNullable<RepositoryCheckoutSession['repoConfig']>>>
+    >();
+  original.repoConfig = vi.fn().mockReturnValue(held.promise);
+  const action = checkoutRepoConfigRequested('form', scope(), query);
+  store.dispatch(action);
+  const replacement = await open();
+  store.dispatch(projectSelected('form', scope(), 'group/other'));
+  await advance();
+  held.resolve({ status: 'unavailable', reason: 'access-denied' });
+  await advance();
+  await expect(action.promise).resolves.toMatchObject({ status: 'unavailable' });
+  expect(form().status).toBe('ready');
+  expect(form().project?.projectPath).toBe('group/other');
+  expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(true);
+  expect(replacement.release).not.toHaveBeenCalled();
+});

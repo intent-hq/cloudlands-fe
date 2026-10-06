@@ -424,12 +424,17 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
           return;
         }
         const value = yield* call([runtime.session, runtime.session.repoConfig], query);
+        // Authority refusals invalidate the original binding even after the
+        // selected project changes; content and branch failures are selection-local.
+        if (yield* authorityFailure(runtime, value)) {
+          yield* put(action.success(value));
+          return;
+        }
         if (!matches(yield* current(runtime))) {
           yield* put(action.success(retired));
           return;
         }
         yield* put(action.success(value));
-        yield* authorityFailure(runtime, value);
       } catch {
         yield* put(action.success(unreachable));
       } finally {
