@@ -24,7 +24,7 @@
 >
   <ToastGlyph variant="error" />
   <div class="min-w-0 flex-1">
-    <p class="toast-title break-words font-medium text-foreground">{message}</p>
+    <p class="toast-title font-medium text-foreground" data-toast-title>{message}</p>
     <details class="mt-2 min-w-0 text-muted-foreground">
       <summary
         class="toast-details-summary type-caption inline-flex cursor-pointer items-center gap-2 text-muted-foreground select-none"
@@ -33,7 +33,7 @@
         {m.chat_toolCall_technicalDetails_label()}
       </summary>
       <pre
-        class="type-caption mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-(--radius-medium) bg-muted p-2 font-mono">{details}</pre>
+        class="type-caption mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-(--radius-medium) bg-muted p-2 font-mono">{details}</pre>
       <div class="mt-2 flex justify-end gap-2">
         <Button variant="ghost" size="compact" class="toast-detail-copy" onclick={copyDetails}>
           {m.ui_errorToast_copy_label()}

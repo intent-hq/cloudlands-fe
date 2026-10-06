@@ -42,8 +42,9 @@
   const isDarkTheme = initialStaticPosition ? staticTheme : selectIsDarkTheme();
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
-  let visibleToastCount = $state(0);
-  let toastCount = $derived(staticToastCount ?? visibleToastCount);
+  let activeToastCount = $state(0);
+  let visibleToastLimit = $state(3);
+  let toastCount = $derived(staticToastCount ?? activeToastCount);
   let showClearAll = $derived(toastCount >= 2);
   let offset = $derived({
     bottom: showClearAll ? 'calc(1rem + var(--control-height-large) + 0.5rem)' : 16,
@@ -62,39 +63,129 @@
       attributes: true,
       attributeFilter: ['class'],
     });
-    const updateVisibleToastCount = () => {
-      const visibleToasts = Array.from(
+    const observedToasts = new Set<HTMLElement>();
+    const resizeObserver = new ResizeObserver(() => updateToasts());
+    const updateToasts = () => {
+      for (const card of regionElement.querySelectorAll<HTMLElement>('[data-sonner-toast]')) {
+        card.inert =
+          card.dataset.removed === 'true' ||
+          card.dataset.visible === 'false' ||
+          (card.dataset.front === 'false' && card.dataset.expanded === 'false');
+      }
+      const activeToasts = Array.from(
         regionElement.querySelectorAll<HTMLElement>(
-          '[data-sonner-toast][data-visible="true"]:not([data-removed="true"])',
+          '[data-sonner-toast]:not([data-removed="true"])',
         ),
       );
-      visibleToastCount = visibleToasts.length;
+      activeToastCount = activeToasts.length;
 
-      for (const toastElement of visibleToasts) {
+      for (const card of observedToasts) {
+        if (!activeToasts.includes(card)) {
+          resizeObserver.unobserve(card);
+          observedToasts.delete(card);
+        }
+      }
+
+      for (const toastElement of activeToasts) {
+        if (!observedToasts.has(toastElement)) {
+          resizeObserver.observe(toastElement);
+          observedToasts.add(toastElement);
+        }
+        toastElement.toggleAttribute(
+          'data-toast-overflow',
+          toastElement.scrollHeight > toastElement.clientHeight + 1,
+        );
         const closeButton = toastElement.querySelector<HTMLElement>(':scope > [data-close-button]');
         if (closeButton && toastElement.lastElementChild !== closeButton) {
           toastElement.append(closeButton);
         }
+        const title = toastElement.querySelector<HTMLElement>('[data-title]');
+        if (title) {
+          const actions = Array.from(
+            toastElement.querySelectorAll<HTMLElement>(
+              ':scope > [data-button], .toast-undo-action',
+            ),
+          );
+          const style = getComputedStyle(toastElement);
+          const controlsWidth = actions.reduce(
+            (width, action) => width + Math.max(action.scrollWidth, action.offsetWidth) + 10,
+            0,
+          );
+          const requiredWidth =
+            controlsWidth +
+            (toastElement.querySelector('[data-icon]') ? 26 : 0) +
+            (closeButton ? 32 : 0) +
+            Number.parseFloat(style.paddingLeft) +
+            Number.parseFloat(style.paddingRight) +
+            Math.min(96, title.scrollWidth);
+          toastElement.toggleAttribute(
+            'data-toast-footer',
+            requiredWidth > toastElement.clientWidth,
+          );
+        }
+        for (const text of toastElement.querySelectorAll<HTMLElement>(
+          '[data-title], [data-description], [data-toast-title], [data-toast-description]',
+        )) {
+          if (text.textContent) text.title = text.textContent.trim();
+        }
       }
+
+      let limit = 3;
+      if (!initialStaticPosition) {
+        for (const toaster of regionElement.querySelectorAll<HTMLElement>(
+          '[data-sonner-toaster]',
+        )) {
+          const style = getComputedStyle(toaster);
+          const edge = toaster.dataset.yPosition === 'top' ? style.top : style.bottom;
+          const availableHeight = window.innerHeight - (Number.parseFloat(edge) || 0) - 16;
+          const cards = activeToasts
+            .filter((card) => card.parentElement === toaster)
+            .sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index));
+          let height = 0;
+          let count = 0;
+          for (const card of cards.slice(0, 3)) {
+            const cardStyle = getComputedStyle(card);
+            const naturalHeight =
+              Number.parseFloat(cardStyle.getPropertyValue('--initial-height')) ||
+              card.offsetHeight;
+            const maxHeight = Number.parseFloat(cardStyle.maxHeight) || naturalHeight;
+            height += Math.min(naturalHeight, maxHeight) + (count ? 8 : 0);
+            if (height > availableHeight && count) break;
+            count += 1;
+          }
+          limit = Math.min(limit, Math.max(1, count));
+        }
+      }
+      visibleToastLimit = limit;
     };
-    const observer = new MutationObserver(updateVisibleToastCount);
-    observer.observe(document.body, {
+    const observer = new MutationObserver(updateToasts);
+    observer.observe(regionElement, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['data-visible', 'data-removed', 'data-front'],
+      attributeFilter: [
+        'data-visible',
+        'data-removed',
+        'data-front',
+        'data-expanded',
+        'style',
+        'open',
+      ],
     });
-    updateVisibleToastCount();
+    window.addEventListener('resize', updateToasts);
+    updateToasts();
     return () => {
       themeObserver?.disconnect();
       observer.disconnect();
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateToasts);
     };
   });
 
   function clearVisibleToasts() {
     if (onClearAll) onClearAll();
     else toast.dismiss();
-    visibleToastCount = 0;
+    activeToastCount = 0;
   }
 </script>
 
@@ -137,6 +228,7 @@
     closeButton
     duration={10000}
     gap={8}
+    visibleToasts={visibleToastLimit}
   >
     {#snippet successIcon()}<ToastGlyph variant="success" />{/snippet}
     {#snippet errorIcon()}<ToastGlyph variant="error" />{/snippet}
@@ -165,6 +257,7 @@
     --toast-radius: var(--radius);
     --toast-padding: 0.75rem 0.875rem;
     --toast-min-height: 2.75rem;
+    --toast-max-height: min(16rem, 50dvh, calc(100dvh - var(--offset-top) - var(--offset-bottom)));
     --toast-title-size: 0.8125rem;
     --toast-description-size: 0.8125rem;
     --toast-action-height: var(--control-height-compact);
@@ -207,10 +300,17 @@
     min-width: 0;
     max-width: 100%;
     min-height: var(--toast-min-height) !important;
+    max-height: var(--toast-max-height) !important;
     padding: var(--toast-padding) !important;
     align-items: center !important;
     gap: 0.625rem !important;
     box-shadow: var(--toast-shadow) !important;
+  }
+
+  :global([data-sonner-toast][data-toast-overflow]) {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   :global([data-sonner-toast][data-swiping='false']) {
@@ -248,6 +348,25 @@
     font-weight: 400 !important;
     line-height: 1.4 !important;
     margin-top: 0.25rem;
+  }
+
+  :global([data-sonner-toast] [data-title]),
+  :global([data-sonner-toast] [data-toast-title]),
+  :global([data-sonner-toast] [data-description]),
+  :global([data-sonner-toast] [data-toast-description]) {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    min-width: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  :global([data-sonner-toast] [data-description]),
+  :global([data-sonner-toast] [data-toast-description]) {
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
   }
 
   /* Standard toasts share one header row, independent of description height.
@@ -303,6 +422,41 @@
     margin-left: var(--space-2);
   }
 
+  :global([data-sonner-toast][data-styled='true'][data-toast-footer]) {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  :global([data-sonner-toast][data-styled='true'][data-toast-footer] [data-title]) {
+    grid-column: 2 / 4;
+  }
+
+  :global([data-sonner-toast][data-styled='true'][data-toast-footer] > [data-close-button]) {
+    grid-column: 4;
+  }
+
+  :global([data-sonner-toast][data-styled='true'][data-toast-footer] > [data-button]),
+  :global([data-sonner-toast][data-styled='true'][data-toast-footer] .toast-undo-action) {
+    grid-area: 3 / 2 / auto / 4;
+    justify-self: start;
+    min-width: 0;
+    max-width: 100%;
+    margin-left: 0 !important;
+    margin-top: var(--space-2);
+  }
+
+  :global(
+    [data-sonner-toast][data-styled='true'][data-toast-footer]:has([data-cancel]) > [data-button]
+  ) {
+    grid-column: 3;
+    margin-left: var(--space-2) !important;
+    max-width: calc(100% - var(--space-2));
+  }
+
+  :global([data-sonner-toast][data-styled='true'][data-toast-footer] > [data-button][data-cancel]) {
+    grid-column: 2;
+    margin-left: 0 !important;
+  }
+
   :global([data-sonner-toast] [data-content]),
   :global([data-sonner-toast] [data-title]),
   :global([data-sonner-toast] [data-description]) {
@@ -312,6 +466,9 @@
 
   /* Sonner owns this button element, so mirror Button's inset surface recipe. */
   :global([data-sonner-toast] button[data-button]) {
+    display: block !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.75rem !important;
     line-height: 0.8125rem !important;
     min-height: var(--toast-action-height) !important;
@@ -328,6 +485,11 @@
     background: transparent !important;
     color: hsl(var(--foreground)) !important;
     outline: none;
+  }
+
+  :global([data-sonner-toast] .toast-actions .toast-action) {
+    min-width: 0;
+    max-width: 100%;
   }
 
   :global([data-sonner-toast] button[data-button]:focus-visible) {
