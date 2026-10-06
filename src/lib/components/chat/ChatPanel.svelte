@@ -1167,7 +1167,9 @@
           idx: 0,
           answers: pending.questions.map(() => ({ sel: [], text: '', skipped: false })),
         },
-        untrack(() => inputValue.trim() !== '' || contextItems.length > 0),
+        // A rejected answer can bring back the same question after the user
+        // starts another draft. Preserve that question's latched display state.
+        untrack(() => questionWizardCollapsed),
       ),
     );
   });

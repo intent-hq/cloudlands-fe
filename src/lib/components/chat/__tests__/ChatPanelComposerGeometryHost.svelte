@@ -12,9 +12,9 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import { clearDraftCacheForTests } from '../chat-draft-cache';
-  import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
     principalContextChanged,
@@ -129,10 +129,6 @@
   const ownsStore = untrack(() => initializeStore);
   // These fixed fixture IDs are reused across same-page preview/test mounts.
   clearDraftCacheForTests({ workspaceId, agentId });
-  const previousPrincipal = store.state.principal;
-  const disposeStore = ownsStore
-    ? startRootStoreLifecycle(store, { startSagas: () => [] })
-    : () => {};
   const drafts = untrack(() =>
     createComposerDraftTransport(
       workspaceId,
@@ -142,9 +138,13 @@
       onDraftRequest,
     ),
   );
-  const stopDrafts = store.runSaga(function* () {
-    yield* chatDraftsSaga(drafts.transport);
-  });
+  const startFixtureSagas = (appStore: typeof store) =>
+    startChatFixtureSagas(appStore, { drafts: drafts.transport });
+  const previousPrincipal = store.state.principal;
+  const disposeStore = ownsStore
+    ? startRootStoreLifecycle(store, { startSagas: startFixtureSagas })
+    : () => {};
+  const stopChatSagas = ownsStore ? [] : startFixtureSagas(store);
   $effect(() => {
     if (!holdDraftRestore) drafts.releaseRestore();
   });
@@ -621,10 +621,10 @@
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
   onDestroy(() => {
-    stopDrafts();
+    stopChatSagas.forEach((stop) => stop());
+    disposeStore();
     drafts.dispose();
     clearDraftCacheForTests({ workspaceId, agentId });
-    disposeStore();
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));
     if (previousPrincipal.context && previousPrincipal.snapshot)

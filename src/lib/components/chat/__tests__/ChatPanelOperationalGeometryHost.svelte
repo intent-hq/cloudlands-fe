@@ -15,6 +15,7 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import {
     bulkUpsertSessions,
@@ -91,13 +92,15 @@
   const timestamp = '2026-08-17T12:00:00.000Z';
   const watchedFixture = untrack(() => watchedAgent);
   const disposeStore = startRootStoreLifecycle(store, {
-    startSagas: (appStore) =>
-      watchedFixture
+    startSagas: (appStore) => [
+      ...startChatFixtureSagas(appStore),
+      ...(watchedFixture
         ? [
             appStore.runSaga(appLayoutNavigationSaga),
             appStore.runSaga(watchRightmostColumnRequests),
           ]
-        : [],
+        : []),
+    ],
   });
 
   const operationalContent = (prefix: string, includeStreamingThinking = false) =>

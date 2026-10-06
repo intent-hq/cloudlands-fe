@@ -2295,6 +2295,35 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(screen.getByTestId('question-wizard-capture').dataset.draftAnswerCount).toBe('0');
   });
 
+  it('keeps a returning question expanded when a newer composer draft was typed after answering', async () => {
+    mocks.pendingQuestions = { messageId: 'question-retry', questions: [] };
+    mocks.agentMessages.set([{ id: 'question-retry' }]);
+    render(ChatPanel, { props: { workspace: workspace('workspace-a'), agentId: 'agent-a' } });
+    await tick();
+    await Promise.resolve();
+    await tick();
+
+    mocks.pendingQuestions = null;
+    mocks.agentMessages.set([]);
+    await tick();
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'Keep this newer draft' },
+    });
+    mocks.dispatch.mockClear();
+
+    mocks.pendingQuestions = { messageId: 'question-retry', questions: [] };
+    mocks.agentMessages.set([{ id: 'question-retry' }]);
+    await tick();
+    const registration = mocks.dispatch.mock.calls.find(
+      ([action]) => action?.type === 'questionUi/wizardConsumed',
+    );
+    expect(registration).toBeDefined();
+    expect(registration![0].payload[5]).toBe(false);
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'Keep this newer draft',
+    );
+  });
+
   it('retains the empty composer as noninteractive while questions are expanded and restores it when cleared', async () => {
     mocks.draftGet.mockResolvedValue(null);
     render(ChatPanel, {
