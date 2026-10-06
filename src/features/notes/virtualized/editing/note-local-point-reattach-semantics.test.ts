@@ -365,12 +365,12 @@ it('keeps copied native factories bound to the original permanently closed lifet
     const replacement = new NoteNativeLifetime();
     expect(replacement.idle).toBe(true);
     // Re-reading extensionManager.nodeViews invokes the retained copied factory;
-    // allocating another tracker cannot rebind track. The factory executes first,
-    // then tracking refuses; this is not a pre-construction admission guarantee.
+    // allocating another tracker cannot rebind track. Closed admission now refuses
+    // BEFORE invoking the actual retained factory; no product needs cleanup.
     const constructedBefore = observed.constructed.length;
     try {
       expect(() => editor.mount(target())).toThrow('Cannot construct a retired note view');
-      expect(observed.constructed.length).toBeGreaterThan(constructedBefore);
+      expect(observed.constructed.length).toBe(constructedBefore);
     } finally {
       await observed.cleanupRejected(constructedBefore);
     }
@@ -420,7 +420,7 @@ it('withholds physical release during controlled native unmount and rejects reat
     const constructedBefore = observed.constructed.length;
     try {
       expect(() => editor.mount(target())).toThrow('Cannot construct a retired note view');
-      expect(observed.constructed.length).toBeGreaterThan(constructedBefore);
+      expect(observed.constructed.length).toBe(constructedBefore);
     } finally {
       finish();
       await observed.cleanupRejected(constructedBefore);
@@ -438,7 +438,7 @@ it('withholds physical release during controlled native unmount and rejects reat
     await f.cleanup();
   }
 });
-it('retains the exact local allocation after rejected cleanup and observes post-construction tracking refusal', async () => {
+it('retains the exact local allocation after rejected cleanup and refuses factory construction', async () => {
   let reject!: (error: Error) => void;
   const pending = new Promise<void>((_resolve, fail) => {
     reject = fail;
@@ -467,7 +467,7 @@ it('retains the exact local allocation after rejected cleanup and observes post-
     const constructedBefore = observed.constructed.length;
     try {
       expect(() => editor.mount(target())).toThrow('Cannot construct a retired note view');
-      expect(observed.constructed.length).toBeGreaterThan(constructedBefore);
+      expect(observed.constructed.length).toBe(constructedBefore);
     } finally {
       await observed.cleanupRejected(constructedBefore);
     }

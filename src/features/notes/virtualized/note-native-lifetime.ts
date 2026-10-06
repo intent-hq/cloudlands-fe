@@ -13,10 +13,11 @@ export class NoteNativeLifetime {
   private failure?: { error: unknown };
   private closed = false;
   private completion?: Promise<void>;
+  private construction?: Promise<void>;
 
   /** A local history command must not accumulate asynchronous retired views. */
   get idle(): boolean {
-    return !this.closed && !this.failure && this.pending.size === 0;
+    return !this.closed && !this.failure && !this.construction && this.pending.size === 0;
   }
 
   private observe(value: unknown) {
@@ -33,30 +34,76 @@ export class NoteNativeLifetime {
     this.pending.add(pending);
   }
   track<T extends NodeView>(view: T): T {
-    if (this.closed) throw new Error('Cannot construct a retired note view');
+    if (this.closed || this.failure) throw new Error('Cannot construct a retired note view');
+    return this.own(view);
+  }
+  /** Internal ownership also accepts a returned product after reentrant retirement. */
+  private own<T extends NodeView>(view: T): T {
     this.views.add(view);
-    const renderer = (view as NodeView & { renderer?: unknown }).renderer;
-    if (renderer instanceof SvelteRenderer) {
-      let unmounted = false;
-      renderer.destroy = () => {
-        if (unmounted) return;
-        unmounted = true;
-        this.observe(unmount(renderer.component));
+    try {
+      const renderer = (view as NodeView & { renderer?: unknown }).renderer;
+      if (renderer instanceof SvelteRenderer) {
+        let unmounted = false;
+        renderer.destroy = () => {
+          if (unmounted) return;
+          unmounted = true;
+          this.observe(unmount(renderer.component));
+        };
+      }
+      const destroy = view.destroy?.bind(view);
+      let destroyed = false;
+      view.destroy = () => {
+        if (destroyed) return;
+        destroyed = true;
+        this.views.delete(view);
+        try {
+          this.observe(destroy?.());
+        } catch (error) {
+          this.failure ??= { error };
+        }
       };
-    }
-    const destroy = view.destroy?.bind(view);
-    let destroyed = false;
-    view.destroy = () => {
-      if (destroyed) return;
-      destroyed = true;
+      return view;
+    } catch (error) {
+      // Wrapper installation is executable ownership work too. A frozen product
+      // may reject it; retain failed debt and observe its original cleanup.
+      this.failure ??= { error };
       this.views.delete(view);
       try {
-        this.observe(destroy?.());
-      } catch (error) {
-        this.failure ??= { error };
+        this.observe(view.destroy?.());
+      } catch (cleanupError) {
+        this.failure ??= { error: cleanupError };
       }
-    };
-    return view;
+      throw error;
+    }
+  }
+
+  private construct<T extends NodeView>(factory: () => T): T {
+    if (this.closed || this.failure || this.construction)
+      throw new Error('Cannot construct a retired note view');
+    let finish!: () => void;
+    // Publish the receipt before factory callbacks can reenter disposal.
+    this.construction = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    try {
+      let product: T;
+      try {
+        product = factory();
+      } catch (error) {
+        // No returned product proves cleanup of a partially constructed factory.
+        this.failure ??= { error };
+        throw error;
+      }
+      const owned = this.own(product);
+      if (this.closed || this.failure) {
+        owned.destroy?.();
+        throw new Error('Cannot construct a retired note view');
+      }
+      return owned;
+    } finally {
+      this.construction = undefined;
+      finish();
+    }
   }
   extensions(extensions: Extensions): Extensions {
     // Flatten once, then suppress each copied extension's re-expansion. Nested
@@ -64,11 +111,11 @@ export class NoteNativeLifetime {
     return flattenExtensions(extensions).map((extension) => {
       const copy = extension.extend({ addExtensions: () => [] });
       if (copy.type !== 'node') return copy;
-      const track = this.track.bind(this);
+      const construct = this.construct.bind(this);
       return (copy as Node).extend({
         addNodeView() {
           const factory = this.parent?.();
-          return factory ? (props) => track(factory(props)) : null;
+          return factory ? (props) => construct(() => factory(props)) : null;
         },
       });
     });
@@ -76,18 +123,28 @@ export class NoteNativeLifetime {
   dispose(destroy: () => void, release: () => void): Promise<void> {
     if (this.completion) return this.completion;
     this.closed = true;
-    this.completion = (async () => {
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    // External destroy/release callbacks must observe this exact cached completion.
+    this.completion = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    void (async () => {
       try {
         destroy();
       } catch (error) {
         this.failure ??= { error };
       }
+      // A factory can retire its lifetime before returning its actual product.
+      // Its receipt must settle before collecting views or pending cleanup.
+      if (this.construction) await this.construction;
       // Also owns successfully constructed factories from a partially failed mount.
       for (const view of this.views) view.destroy?.();
-      await Promise.all(this.pending);
+      while (this.pending.size) await Promise.all(this.pending);
       if (this.failure) throw this.failure.error;
       release();
-    })();
+    })().then(resolve, reject);
     return this.completion;
   }
 }
