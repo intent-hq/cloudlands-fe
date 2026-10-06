@@ -7462,5 +7462,8 @@
   "settings_machineName_invalid_error": "Verwenden Sie höchstens 100 Zeichen ohne Steuerzeichen.",
   "settings_machineName_load_error": "Der Computername konnte nicht geladen werden. Versuchen Sie es erneut.",
   "settings_machineName_save_error": "Der Computername konnte nicht gespeichert werden. Versuchen Sie es erneut.",
-  "settings_machineName_saved": "Computername gespeichert"
+  "settings_machineName_saved": "Computername gespeichert",
+  "home_assistantThread_hooks_label": "Aktive Hooks: {count}",
+  "home_assistantThread_monitors_label": "Aktive Überwachungen: {count}",
+  "home_assistantThread_subscriptions_label": "Aktive Abonnements: {count}"
 }

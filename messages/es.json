@@ -7462,5 +7462,8 @@
   "settings_machineName_invalid_error": "Usa hasta 100 caracteres sin caracteres de control.",
   "settings_machineName_load_error": "No se pudo cargar el nombre del equipo. Inténtalo de nuevo.",
   "settings_machineName_save_error": "No se pudo guardar el nombre del equipo. Inténtalo de nuevo.",
-  "settings_machineName_saved": "Nombre del equipo guardado"
+  "settings_machineName_saved": "Nombre del equipo guardado",
+  "home_assistantThread_hooks_label": "Hooks activos: {count}",
+  "home_assistantThread_monitors_label": "Monitores activos: {count}",
+  "home_assistantThread_subscriptions_label": "Suscripciones activas: {count}"
 }

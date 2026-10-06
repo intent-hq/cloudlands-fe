@@ -17,6 +17,8 @@
       | 'empty'
       | 'assistant'
       | 'assistant-streaming'
+      | 'assistant-activity'
+      | 'assistant-activity-many'
       | 'assistant-many'
       | 'assistant-empty'
       | 'error'
@@ -36,6 +38,8 @@
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
+      'assistant-activity': { props: { scenario: 'assistant-activity' } },
+      'assistant-activity-many': { props: { scenario: 'assistant-activity-many' } },
       'assistant-many': { props: { scenario: 'assistant-many' } },
       'assistant-empty': { props: { scenario: 'assistant-empty' } },
       error: { props: { scenario: 'error' } },
@@ -170,10 +174,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import HomePage from './HomePage.svelte';
-  import { setupHomeIntegrationsFixtures } from './home-integrations-browser-fixtures';
   import { homeIntegrationsFixtures } from './home-integrations-fixtures';
   import { store } from '$store/renderer/store';
-  import { startHomePreview } from './home-preview-lifecycle';
+  import { startHomePreviewFixtures } from './home-preview-lifecycle';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import {
     replaceWorkspaceList,
@@ -202,7 +205,7 @@
   } from '$store/renderer/slices/agent-session/agent-session-slice';
 
   let { scenario = 'populated' }: Props = $props();
-  const dispose = startHomePreview(() => [setupHomeIntegrationsFixtures(store)]);
+  const dispose = startHomePreviewFixtures();
   const showCreateModal$ = selectShowCreateModal();
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
@@ -222,11 +225,13 @@
     store.dispatch(resetHomeWorkspaceView());
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     const threads =
-      scenario === 'assistant-many'
+      scenario === 'assistant-many' || scenario === 'assistant-activity-many'
         ? assistantFixtures
-        : scenario === 'assistant' || scenario === 'assistant-streaming'
-          ? assistantFixtures.slice(0, 3)
-          : [];
+        : scenario === 'assistant-activity'
+          ? assistantFixtures.slice(0, 9)
+          : scenario === 'assistant' || scenario === 'assistant-streaming'
+            ? assistantFixtures.slice(0, 3)
+            : [];
     store.dispatch(setAgents(CHIEF_WORKSPACE_ID, threads));
     store.dispatch(
       bulkUpsertSessions(
@@ -235,9 +240,15 @@
           : threads,
       ),
     );
+    if (scenario === 'assistant-activity' || scenario === 'assistant-activity-many') {
+      window.__homeAssistantActivity?.seed(threads);
+    }
     store.dispatch(setChiefActiveAgentId(threads[0]?.id ?? null));
     store.dispatch(
-      scenario === 'assistant-empty' || scenario === 'assistant-streaming'
+      scenario === 'assistant-empty' ||
+        scenario === 'assistant-streaming' ||
+        scenario === 'assistant-activity' ||
+        scenario === 'assistant-activity-many'
         ? openPanel('chief')
         : closePanel(),
     );

@@ -7462,5 +7462,8 @@
   "settings_machineName_invalid_error": "제어 문자 없이 100자 이내로 입력하세요.",
   "settings_machineName_load_error": "기기 이름을 불러오지 못했습니다. 다시 시도하세요.",
   "settings_machineName_save_error": "기기 이름을 저장하지 못했습니다. 다시 시도하세요.",
-  "settings_machineName_saved": "기기 이름 저장됨"
+  "settings_machineName_saved": "기기 이름 저장됨",
+  "home_assistantThread_hooks_label": "활성 후크: {count}",
+  "home_assistantThread_monitors_label": "활성 모니터: {count}",
+  "home_assistantThread_subscriptions_label": "활성 구독: {count}"
 }

@@ -7462,5 +7462,8 @@
   "settings_machineName_invalid_error": "Use up to 100 characters without control characters.",
   "settings_machineName_load_error": "Could not load the machine name. Try again.",
   "settings_machineName_save_error": "Could not save the machine name. Try again.",
-  "settings_machineName_saved": "Machine name saved"
+  "settings_machineName_saved": "Machine name saved",
+  "home_assistantThread_hooks_label": "Active hooks: {count}",
+  "home_assistantThread_monitors_label": "Active monitors: {count}",
+  "home_assistantThread_subscriptions_label": "Active subscriptions: {count}"
 }

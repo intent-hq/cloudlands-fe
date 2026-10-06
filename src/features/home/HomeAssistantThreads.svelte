@@ -1,23 +1,48 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { ListRow, ListView } from '$lib/components/patterns/collection';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
-  import { store } from '$store/renderer/store';
+  import { store as appStore } from '$store/renderer/store';
   import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectChiefActiveAgentId,
     selectChiefThreads,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    backgroundHooksSubscribeRequested,
+    backgroundHooksUnsubscribeRequested,
+  } from '$store/renderer/slices/background-hooks/background-hooks-slice';
+  import {
+    prMonitorsSubscribeRequested,
+    prMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
+  import {
+    scriptMonitorsSubscribeRequested,
+    scriptMonitorsUnsubscribeRequested,
+  } from '$store/renderer/slices/script-monitor/script-monitor-slice';
+  import HomeAssistantThreadActivity from './HomeAssistantThreadActivity.svelte';
 
   const threads$ = selectChiefThreads();
   const activeAgentId$ = selectChiefActiveAgentId();
   let selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
 
+  onMount(() => {
+    appStore.dispatch(backgroundHooksSubscribeRequested(CHIEF_WORKSPACE_ID));
+    appStore.dispatch(prMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+    appStore.dispatch(scriptMonitorsSubscribeRequested(CHIEF_WORKSPACE_ID));
+    return () => {
+      appStore.dispatch(backgroundHooksUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(prMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+      appStore.dispatch(scriptMonitorsUnsubscribeRequested(CHIEF_WORKSPACE_ID));
+    };
+  });
+
   function chooseThread(agentId: string) {
     selectedKeys = [agentId];
-    store.dispatch(setChiefActiveAgentId(agentId));
-    store.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
+    appStore.dispatch(setChiefActiveAgentId(agentId));
+    appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
   }
 </script>
 
@@ -29,6 +54,7 @@
   bind:selectedKeys
   onActivate={(thread) => chooseThread(thread.agentId)}
   ariaLabel={m.layout_chiefCard_threadPicker_ariaLabel()}
+  virtualize
   rowHeight={36}
   class="min-h-0 flex-1"
 >
@@ -36,6 +62,7 @@
     <ListRow class="min-h-9 px-2 py-2">
       {#snippet title()}<span title={thread.title}>{thread.title}</span>{/snippet}
       {#snippet trailing()}
+        <HomeAssistantThreadActivity agentId={thread.agentId} />
         {#if thread.isActive}
           <span
             class="size-1.5 shrink-0 rounded-full bg-primary"
