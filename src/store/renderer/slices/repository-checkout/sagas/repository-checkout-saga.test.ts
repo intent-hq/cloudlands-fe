@@ -24,7 +24,7 @@ import {
   branchSelected,
   modeChanged,
 } from '../repository-checkout-slice';
-import { selectCheckoutSelection } from '../repository-checkout-selectors';
+import { selectCheckoutSelection, selectCheckoutCanCreate } from '../repository-checkout-selectors';
 import { repositoryCheckoutSaga } from './repository-checkout-saga';
 import type {
   CheckoutCapture,
@@ -146,6 +146,69 @@ async function open() {
 }
 
 describe('qualified project and branch selection in the real renderer store', () => {
+  it('keeps default resolution visibly loading after the branch list arrives, then exposes a missing default', async () => {
+    const s = await open();
+    const automatic =
+      Promise.withResolvers<
+        CheckoutResult<{ items: ReturnType<typeof branch>[]; cached: boolean }>
+      >();
+    s.branches.mockImplementation(async (query) =>
+      query.query === 'trunk'
+        ? automatic.promise
+        : ready({ items: [branch('release/next')], cached: true }),
+    );
+    store.dispatch(projectSelected('form', scope(), 'group/target'));
+    await advance();
+    expect(form().branchesStatus).toBe('ready');
+    expect(form().resolvingBranch).toBe(true);
+    expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(false);
+    automatic.resolve(ready({ items: [], cached: true }));
+    await advance();
+    expect(form().resolvingBranch).toBe(false);
+    expect(form().branch).toBeNull();
+    expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(false);
+  });
+
+  it('enables cached creation only after the real default resolves and warming completes', async () => {
+    const s = await open();
+    let finishWarm!: (value: Awaited<ReturnType<RepositoryCheckoutSession['warm']>>) => void;
+    s.warm.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishWarm = resolve;
+        }),
+    );
+    store.dispatch(projectSelected('form', scope(), 'group/target'));
+    expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(false);
+    await advance();
+    expect(s.branches).toHaveBeenCalledWith({
+      projectPath: 'group/target',
+      query: 'trunk',
+      limit: 50,
+      cached: true,
+    });
+    expect(form().branch).toEqual(branch('trunk'));
+    expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(false);
+    finishWarm(
+      ready({
+        projectPath: 'group/target',
+        branch: 'trunk',
+        commitSha: 'a'.repeat(40),
+        cached: true,
+      }),
+    );
+    await advance();
+    expect(selectCheckoutCanCreate.select(store.state, 'form')).toBe(true);
+    expect(selectCheckoutSelection.select(store.state, 'form')).toEqual({
+      checkoutId: capture.checkoutId,
+      revision: capture.revision,
+      projectPath: 'group/target',
+      branch: 'trunk',
+      commitSha: 'a'.repeat(40),
+      mode: 'cached',
+    });
+  });
+
   it('waits for explicit URL submission and preserves its original context spelling', async () => {
     const s = await open();
     s.projects.mockClear();

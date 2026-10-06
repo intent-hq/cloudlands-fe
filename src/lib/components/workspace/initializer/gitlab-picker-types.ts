@@ -69,6 +69,10 @@ export interface GitLabBranchPickerProps extends GitLabPickerProps<GitLabBranchR
   placeholder: string;
   protectedLabel: string;
   triggerClass?: string;
+  /** Default/saved branch lookup can outlive the first selectable branch page. */
+  isLoading?: boolean;
+  showTriggerChevron?: boolean;
+  triggerChevronClass?: string;
   onSelect: (branch: Pick<GitLabBranchRow, 'name' | 'commitSha'>, scopeKey: string) => void;
   onOpenChange?: (open: boolean, scopeKey: string) => void;
 }

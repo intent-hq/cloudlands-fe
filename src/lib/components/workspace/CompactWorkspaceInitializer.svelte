@@ -133,7 +133,6 @@
     type IssueSelectionData,
   } from './initializer/IssueSuggestions.svelte';
   import RepoAndBranchPicker from './initializer/RepoAndBranchPicker.svelte';
-  import { Select } from '$lib/components/ui/select';
   import type {
     GitLabProjectPickerProps,
     GitLabBranchPickerProps,
@@ -156,7 +155,6 @@
     branchQueryChanged,
     branchesMoreRequested,
     branchSelected,
-    modeChanged,
     recoveryRequested,
   } from '$store/renderer/slices/repository-checkout/repository-checkout-slice';
   import {
@@ -641,6 +639,7 @@
     onRecover: recoverCheckout,
   });
   const gitlabBranchPicker = $derived<GitLabBranchPickerProps>({
+    isLoading: $checkoutForm$?.resolvingBranch,
     scopeKey: checkoutScope,
     instanceBaseUrl: $checkoutForm$?.capture?.instanceBaseUrl,
     projectPath: $checkoutForm$?.project?.projectPath ?? '',
@@ -3672,33 +3671,8 @@
         </div>
       </div>
 
-      {#if isExpanded && repoType === 'gitlab'}
+      {#if isExpanded && repoType === 'gitlab' && ($checkoutForm$?.status === 'unavailable' || $checkoutForm$?.warmStatus === 'warming' || $checkoutForm$?.contextUrl)}
         <div class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm">
-          <div class="w-48 max-w-full">
-            <Select.Root
-              value={$checkoutForm$?.mode ?? 'cached'}
-              disabled={isCreating || $checkoutForm$?.status !== 'ready'}
-              onchange={(value) => {
-                if (value === 'direct' || value === 'cached')
-                  appStore.dispatch(modeChanged(checkoutFormId, checkoutScope, value));
-              }}
-              items={[
-                { value: 'direct', label: m.gitlabCheckout_direct_label() },
-                { value: 'cached', label: m.gitlabCheckout_cached_label() },
-              ]}
-            >
-              <Select.Trigger aria-label={m.gitlabCheckout_mode_label()}
-                ><Select.Value /></Select.Trigger
-              >
-              <Select.Content
-                ><Select.Item value="direct" label={m.gitlabCheckout_direct_label()}
-                  >{m.gitlabCheckout_direct_label()}</Select.Item
-                ><Select.Item value="cached" label={m.gitlabCheckout_cached_label()}
-                  >{m.gitlabCheckout_cached_label()}</Select.Item
-                ></Select.Content
-              >
-            </Select.Root>
-          </div>
           {#if $checkoutForm$?.status === 'unavailable' && $checkoutForm$.unavailable}
             <p class="text-subtle">{checkoutFailureMessage($checkoutForm$.unavailable)}</p>
             <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
@@ -3706,13 +3680,6 @@
             >
           {:else if $checkoutForm$?.warmStatus === 'warming'}
             <p class="text-subtle">{m.gitlabCheckout_warming_description()}</p>
-          {:else if $checkoutForm$?.branch}
-            <p class="text-subtle">
-              {m.gitlabCheckout_exactCommit_description({
-                branch: $checkoutForm$.branch.name,
-                sha: $checkoutForm$.branch.commitSha.slice(0, 12),
-              })}
-            </p>
           {/if}
           {#if $checkoutForm$?.contextUrl}<a
               class="min-w-0 truncate text-primary-ink"

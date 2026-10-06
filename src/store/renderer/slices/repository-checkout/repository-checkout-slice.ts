@@ -92,6 +92,15 @@ export const checkoutBranchesReceived = createAction<
 export const checkoutBranchRestored = createAction<
   [formId: string, scopeKey: string, projectRevision: number, branch: CheckoutBranch]
 >('repositoryCheckout/branchRestored');
+export const checkoutBranchResolutionChanged = createAction<
+  [
+    formId: string,
+    scopeKey: string,
+    projectRevision: number,
+    branchesRevision: number,
+    pending: boolean,
+  ]
+>('repositoryCheckout/branchResolutionChanged');
 export const checkoutWarmChanged = createAction<
   [
     formId: string,
@@ -127,6 +136,7 @@ function emptyForm(formId: string, draft?: RepositoryCheckoutDraft): RepositoryC
     branchesCursor: null,
     branch: null,
     explicitBranch: false,
+    resolvingBranch: false,
     branchByProject: createCollection('projectPath'),
     warmStatus: 'idle',
   };
@@ -290,6 +300,7 @@ repositoryCheckoutReducer.with(branchQueryChanged, (state, { payload: [id, scope
       : {
           ...form,
           branchQuery: query,
+          resolvingBranch: false,
           branches: createCollection('name'),
           branchesCursor: null,
           branchesRevision: form.branchesRevision + 1,
@@ -330,6 +341,7 @@ function chooseBranch(
     ...form,
     branch,
     explicitBranch: explicit,
+    resolvingBranch: false,
     warmStatus: 'idle',
     draft: form.draft ? { ...form.draft, branch: branch.name } : null,
   };
@@ -353,6 +365,7 @@ repositoryCheckoutReducer.with(modeChanged, (state, { payload: [id, scope, mode]
   readyChange(state, id, scope, (form) => ({
     ...form,
     mode,
+    resolvingBranch: false,
     draft: form.draft ? { ...form.draft, mode } : null,
     warmStatus: 'idle',
     branches: createCollection('name'),
@@ -360,6 +373,17 @@ repositoryCheckoutReducer.with(modeChanged, (state, { payload: [id, scope, mode]
     branchesRevision: form.branchesRevision + 1,
     branchesStatus: form.project ? 'loading' : 'idle',
   })),
+);
+repositoryCheckoutReducer.with(
+  checkoutBranchResolutionChanged,
+  (state, { payload: [id, scope, projectRevision, branchesRevision, pending] }) =>
+    readyChange(state, id, scope, (form) =>
+      form.projectRevision === projectRevision &&
+      form.branchesRevision === branchesRevision &&
+      !form.explicitBranch
+        ? { ...form, resolvingBranch: pending }
+        : form,
+    ),
 );
 repositoryCheckoutReducer.with(
   checkoutWarmChanged,

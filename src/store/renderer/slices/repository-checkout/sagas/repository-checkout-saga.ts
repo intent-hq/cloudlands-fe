@@ -33,6 +33,7 @@ import {
   checkoutProjectReceived,
   checkoutBranchesReceived,
   checkoutBranchRestored,
+  checkoutBranchResolutionChanged,
   checkoutWarmChanged,
 } from '../repository-checkout-slice';
 
@@ -229,6 +230,16 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
     if (!form?.projectRequest || !runtime.session) return;
     const revision = form.projectRevision,
       originalDraft = form.draft;
+    let branchRevision = form.branchesRevision;
+    yield* put(
+      checkoutBranchResolutionChanged(
+        runtime.formId,
+        runtime.scopeKey,
+        revision,
+        branchRevision,
+        true,
+      ),
+    );
     try {
       const response = yield* call([runtime.session, runtime.session.project], form.projectRequest);
       if (yield* authorityFailure(runtime, response)) return;
@@ -245,6 +256,16 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
       // The daemon resolves MR/issue URLs to their target project. No PR-head rewrite.
       yield* put(checkoutProjectReceived(runtime.formId, runtime.scopeKey, revision, detail));
       yield* put(branchQueryChanged(runtime.formId, runtime.scopeKey, ''));
+      branchRevision = (yield* current(runtime))?.branchesRevision ?? branchRevision;
+      yield* put(
+        checkoutBranchResolutionChanged(
+          runtime.formId,
+          runtime.scopeKey,
+          revision,
+          branchRevision,
+          true,
+        ),
+      );
       const desired =
         getItem(form.branchByProject, detail.project.projectPath)?.branch ??
         (originalDraft?.instanceBaseUrl === runtime.session.capture.instanceBaseUrl &&
@@ -293,6 +314,16 @@ export function* repositoryCheckoutSaga(): SagaGenerator<void> {
     } catch {
       if ((yield* current(runtime))?.projectRevision === revision)
         yield* fail(runtime, unreachable);
+    } finally {
+      yield* put(
+        checkoutBranchResolutionChanged(
+          runtime.formId,
+          runtime.scopeKey,
+          revision,
+          branchRevision,
+          false,
+        ),
+      );
     }
   }
   function* open(action: ReturnType<typeof opened>): SagaGenerator<void> {
