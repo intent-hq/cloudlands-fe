@@ -36,7 +36,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   onBackendNotification: vi.fn(),
   onBackendReconnected: vi.fn(),
 }));
-vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('../AgentSubscriptions.svelte', async () => ({
   default: (await import('./mocks/MockAgentEventSection.svelte')).default,
 }));
@@ -53,6 +53,7 @@ let reconnect: () => void;
 let monitors: ScriptMonitor[];
 let scripts = [scriptFixture];
 let supported = true;
+const clipboardWriteText = vi.fn();
 const settled: ScriptMonitor = {
   ...active,
   state: 'completed',
@@ -63,6 +64,9 @@ const settled: ScriptMonitor = {
 beforeAll(() => store.init());
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.assign(navigator, {
+    clipboard: { writeText: clipboardWriteText.mockResolvedValue(undefined) },
+  });
   supported = true;
   monitors = [active];
   scripts = [scriptFixture];
@@ -125,6 +129,51 @@ function event(row: ScriptMonitor) {
   });
 }
 describe('script monitor controls', () => {
+  it('discloses and copies the full current command verbatim, then hides it on collapse', async () => {
+    const command = '  pnpm test --filter "chat <footer> & scripts"\n    --reporter=verbose  ';
+    scripts = [{ ...scriptFixture, command }];
+    await mount();
+    expect(screen.queryByTestId('script-monitor-command')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy command' })).toBeNull();
+    const disclosure = screen.getAllByRole('button', { name: active.scriptName })[0];
+    await fireEvent.click(disclosure);
+    expect(screen.getByTestId('script-monitor-command').textContent).toBe(command);
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
+    expect(clipboardWriteText).toHaveBeenCalledWith(command);
+    await screen.findByRole('button', { name: 'Copied' });
+    await fireEvent.click(disclosure);
+    await waitFor(() => expect(screen.queryByTestId('script-monitor-command')).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Copied' })).toBeNull();
+  });
+  it('reports a clipboard failure and lets the user retry without collapsing details', async () => {
+    await mount();
+    await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
+    clipboardWriteText.mockRejectedValueOnce(new Error('Clipboard unavailable'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
+    await waitFor(() => expect(notify.error).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Copied' })).toBeNull();
+    expect(screen.getByTestId('script-monitor-command').textContent).toBe(scriptFixture.command);
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
+    await screen.findByRole('button', { name: 'Copied' });
+    expect(clipboardWriteText).toHaveBeenCalledTimes(2);
+  });
+  it.each(['', '  \n  '])('omits an empty command and copy control (%j)', async (command) => {
+    scripts = [{ ...scriptFixture, command }];
+    await mount();
+    await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
+    expect(screen.queryByTestId('script-monitor-command')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy command' })).toBeNull();
+    expect(screen.getByText(/Monitoring ends at/)).toBeTruthy();
+  });
+  it('omits command details and copying when the script is no longer available', async () => {
+    scripts = [];
+    await mount();
+    await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
+    expect(screen.queryByTestId('script-monitor-command')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy command' })).toBeNull();
+    expect(screen.getByText(/script is no longer available/)).toBeTruthy();
+  });
+
   it('updates collapsed chat counters and retires every terminal kind without remounting the rows', async () => {
     monitors = [active, { ...active, monitorId: 'second', scriptId: 'build' }];
     store.dispatch(
@@ -173,10 +222,20 @@ describe('script monitor controls', () => {
     expect(backendRequest).not.toHaveBeenCalledWith('script.output', expect.anything());
   });
   it('explains replaced output only when the current run differs', async () => {
-    scripts = [{ ...scriptFixture, runtime: { ...scriptFixture.runtime, runId: 'replacement' } }];
+    scripts = [
+      {
+        ...scriptFixture,
+        command: 'pnpm replacement-check',
+        runtime: { ...scriptFixture.runtime, runId: 'replacement' },
+      },
+    ];
     await mount();
     await fireEvent.click(screen.getAllByRole('button', { name: active.scriptName })[0]);
     expect(screen.getByText(/later run/)).toBeTruthy();
+    expect(screen.getByTestId('script-monitor-command').textContent).toBe('pnpm replacement-check');
+    expect(screen.getByTestId('script-monitor-command').getAttribute('aria-label')).toBe(
+      'Current script command',
+    );
     await menu();
     await fireEvent.click(screen.getByText('Cancel run and notify agent'));
     await waitFor(() =>

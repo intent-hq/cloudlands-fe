@@ -3,8 +3,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import {
     selectDefaultReasoningEffort,
-    selectModelDisplayName,
-    selectModelEffortLevels,
+    selectModelCatalogEntry,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
   import { setDefaultReasoningEffort } from '$store/renderer/slices/model/model-slice';
@@ -93,16 +92,17 @@
     }
   }
 
-  function handleModelChange(compoundModelId: string) {
+  function handleModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     if (!compoundModelId) return;
     const split = splitLegacyCompoundId(compoundModelId);
-    const providerId = split.providerId ?? $defaultProviderId$;
-    const modelId = split.modelId;
+    const providerId = pick?.providerId ?? split.providerId ?? $defaultProviderId$;
+    const modelId = pick?.modelId ?? split.modelId;
     const currentEffort = $defaultReasoningEffort$;
-    const isKnownModel =
-      selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;
-    const supportedEfforts = selectModelEffortLevels.select(appStore.state, compoundModelId);
-    if (currentEffort && isKnownModel && !supportedEfforts?.includes(currentEffort)) {
+    const metadata = selectModelCatalogEntry.select(appStore.state, providerId, modelId);
+    if (currentEffort && metadata && !metadata.effortLevels?.includes(currentEffort)) {
       appStore.dispatch(setDefaultReasoningEffort(''));
     }
     // Do NOT dispatch setActiveProvider/reloadModelsForProvider here: the

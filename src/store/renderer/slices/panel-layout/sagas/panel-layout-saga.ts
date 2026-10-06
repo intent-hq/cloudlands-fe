@@ -43,19 +43,20 @@ import {
 import {
   resolveCanonicalInitialAgent,
   resolveEmptyLayoutAgent,
+  resolveExistingWorkspaceDefaultAgent,
   selectAllWorkspaceAgents,
+  selectAgentsLoaded,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import {
   selectIsWorkspaceCollaborator,
   selectWorkspaceManagementDenied,
-  selectWorkspaceById,
-  selectWorkspaceDetailHydrated,
-  selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
 import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
-import { fetchWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
-import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
+import {
+  selectSpec,
+  selectWorkspaceNotesState,
+} from '../../workspace-notes/workspace-notes-selectors';
 import {
   applyNoteCreated,
   applyNoteUpdated,
@@ -496,68 +497,146 @@ function normalizeLayoutForWorkspace(
   return migratePanelLayoutForWorkspace(workspaceId, layout);
 }
 
+// The selected agent's panel while notes load; null means completed or
+// cancelled by a user edit. Automatic column initialization is not an edit.
+const pendingExistingWorkspaceDefaults = new Map<string, string | null>();
+
+const DEFAULT_LAYOUT_USER_ACTION_TYPES: ReadonlySet<string> = new Set(
+  [
+    openTab,
+    openTabInAdjacentOrSplit,
+    openTabInNewRootColumn,
+    openTabInRightmostColumn,
+    revealHiddenTabAvoidingPanel,
+    restoreHiddenTab,
+    closeTab,
+    closeActiveTab,
+    closeFocusedPanelTab,
+    closeAllTabs,
+    closeTabsByType,
+    closeOtherTabs,
+    closeTabsToRight,
+    closeAllOthersEverywhere,
+    closePanel,
+    resetLayout,
+    markPanelTouched,
+    splitPanel,
+    setPanelColumnCount,
+    updateSizes,
+    updateSplitSizes,
+    resizePanelLayoutRightEdge,
+    resizePanelLayoutAtRootDivider,
+    toggleExpandPanel,
+    moveTabToPanel,
+    moveTabToSplit,
+    moveTabToSplitLevel,
+    movePanel,
+    movePanelToRootEdge,
+    reorderTabs,
+    reopenClosedTab,
+    reopenClosedPanelColumn,
+    openBlankWorkingPanel,
+    goBack,
+    goForward,
+    goBackInFocusHistory,
+    goForwardInFocusHistory,
+  ].map((action) => action.type),
+);
+
+function* cancelExistingWorkspaceDefaults(action: {
+  type: string;
+  payload?: unknown;
+}): SagaGenerator<void> {
+  if (!DEFAULT_LAYOUT_USER_ACTION_TYPES.has(action.type)) return;
+  // Registry and agent background reveals preserve focus and are not user edits.
+  if (
+    action.type === restoreHiddenTab.type &&
+    (action.payload as ReturnType<typeof restoreHiddenTab>['payload']).focus === false
+  )
+    return;
+  if (
+    action.type === openTabInAdjacentOrSplit.type &&
+    (action.payload as ReturnType<typeof openTabInAdjacentOrSplit>['payload']).origin ===
+      'layout-restore'
+  )
+    return;
+  const wsId = getWsId(action);
+  if (!wsId) return;
+  const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
+  if (layout.restoreStatus === 'empty' && !layout.newWorkspaceLifecycle) {
+    pendingExistingWorkspaceDefaults.set(wsId, null);
+  }
+}
+
+function* reconcileExistingWorkspaceDefaults(
+  wsId: string,
+  layout: WorkspacePanelLayoutState,
+  agents: AgentSession[],
+): SagaGenerator<void> {
+  const previous = pendingExistingWorkspaceDefaults.get(wsId);
+  if (previous === null) return;
+  if (previous === undefined && hasAnyTab(layout)) {
+    pendingExistingWorkspaceDefaults.set(wsId, null);
+    return;
+  }
+  if (!hasAnyTab(layout)) {
+    const agent = resolveExistingWorkspaceDefaultAgent(agents, wsId);
+    if (!agent) return;
+    yield* put(
+      openTabInAdjacentOrSplit(
+        wsId,
+        {
+          type: 'agent',
+          title: agent.name,
+          agentId: String(agent.id),
+          workspaceId: wsId,
+          closable: true,
+        },
+        layout.focusedPanelId ?? undefined,
+        { force: true, origin: 'layout-restore' },
+      ),
+    );
+    layout = yield* selectPanelLayoutWorkspace.effect(wsId);
+    pendingExistingWorkspaceDefaults.set(wsId, layout.focusedPanelId);
+  }
+  const notes = yield* selectWorkspaceNotesState.effect(wsId);
+  const spec = yield* selectSpec.effect(wsId);
+  if (!spec && !notes.initialized) return;
+  // Mark complete before dispatching: persistence and load notifications may
+  // re-enter reconciliation, and later note creation is not a first open.
+  pendingExistingWorkspaceDefaults.set(wsId, null);
+  if (spec) {
+    yield* put(
+      openTabInAdjacentOrSplit(
+        wsId,
+        {
+          type: 'note',
+          title: m.layout_shared_spec_title(),
+          noteId: String(spec.id),
+          workspaceId: wsId,
+          closable: true,
+        },
+        previous ?? layout.focusedPanelId ?? undefined,
+        { force: true, origin: 'layout-restore' },
+      ),
+    );
+  }
+}
+
 function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): SagaGenerator<void> {
   if (!restoredWorkspaceIds.has(wsId)) return;
   const layout = yield* selectPanelLayoutWorkspace.effect(wsId);
-  if (layout.newWorkspaceLifecycle || hasAnyTab(layout)) return;
-  // Only an explicit user close this session (tracked by the reducers, not
-  // inferred from the stored shape) makes a tabless layout intentional.
-  if (layout.emptiedByUserClose) return;
+  if (layout.newWorkspaceLifecycle || layout.emptiedByUserClose) return;
+  if (layout.restoreStatus !== 'empty' && hasAnyTab(layout)) return;
   const availableAgents = agents ?? (yield* selectAllWorkspaceAgents.effect(wsId));
-  const firstOpen = layout.restoreStatus === 'empty';
-  // A stored layout that came back valid but with no visible or hidden tab is
-  // a panel tree lost mid-teardown (a hang before the tabless write could be
-  // guarded), not a choice: reseed it with the same primary-agent resolver
-  // as a first open instead of rendering a blank content area.
-  const lostPanelTree = layout.restoreStatus === 'restored';
-  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, firstOpen || lostPanelTree);
-  if (!agent) return;
-  // First open on this device of a workspace created elsewhere (iOS,
-  // chief-of-staff proposal, sibling workspace): nothing was ever stored
-  // ('empty', not 'invalid' or a restored-but-tabless layout the user
-  // emptied), so a workspace carrying context links gets the same
-  // agent-left / browser-right seed as a local create. Seeding and the
-  // agent-tab open happen together so a pre-agent-snapshot run leaves the
-  // layout untouched and the setAgents retrigger seeds the whole shape.
-  let focusedPanelId = layout.focusedPanelId;
-  if (firstOpen) {
-    const workspace = yield* selectWorkspaceById.effect(wsId);
-    if (!workspace) {
-      // The workspace record may simply not have landed yet (the mount can
-      // race the workspace-list load). Opening the plain agent tab now would
-      // persist a linkless layout and permanently lose the seed, so defer
-      // until either the entity arrives (setWorkspaceEntity) or the list
-      // load for this backend completes (setWorkspaceHasLoaded) — both
-      // retrigger this reconcile. A missing record AFTER the load is a
-      // workspace that genuinely has no entry (e.g. the chief virtual
-      // workspace) and proceeds with no links.
-      const backendId = yield* selectActiveBackendId();
-      const listLoaded = yield* selectWorkspaceListLoadedForBackend.effect(backendId);
-      if (!listLoaded) return;
-    } else if (workspace.contextLinks === undefined) {
-      // Slim `workspace.list` rows omit `contextLinks` (detail-only, PROTOCOL
-      // §5.1), so an absent field on a row never hydrated from `workspace.get`
-      // does not mean "no links". Pull the detail once (single-flighted with
-      // every other reader) and let the `setWorkspaceEntity` retrigger re-run
-      // this reconcile against the hydrated row — returning here keeps the
-      // seed + agent-tab open to exactly one pass. A failed read falls
-      // through and proceeds with no links, as before.
-      const detailHydrated = yield* selectWorkspaceDetailHydrated.effect(wsId);
-      if (!detailHydrated) {
-        const detail = yield* call(fetchWorkspaceDetail, wsId);
-        if (detail) {
-          yield* put(setWorkspaceEntity(detail, { detailRead: true }));
-          return;
-        }
-      }
-    }
-    const contextLinks = workspace?.contextLinks ?? [];
-    if (contextLinks.length > 0) {
-      yield* put(seedContextLinkEmptyLayout(wsId, contextLinks));
-      const seeded = yield* selectPanelLayoutWorkspace.effect(wsId);
-      focusedPanelId = seeded.focusedPanelId;
-    }
+  if (layout.restoreStatus === 'empty') {
+    if (!agents && !(yield* selectAgentsLoaded.effect(wsId))) return;
+    yield* call(reconcileExistingWorkspaceDefaults, wsId, layout, availableAgents);
+    return;
   }
+  // Preserve recovery of invalid layouts and previously lost panel trees.
+  const agent = resolveEmptyLayoutAgent(availableAgents, wsId, layout.restoreStatus === 'restored');
+  if (!agent) return;
   yield* put(
     openTabInAdjacentOrSplit(
       wsId,
@@ -568,8 +647,8 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
         workspaceId: wsId,
         closable: true,
       },
-      focusedPanelId ?? undefined,
-      { force: true },
+      layout.focusedPanelId ?? undefined,
+      { force: true, origin: 'layout-restore' },
     ),
   );
 }
@@ -711,6 +790,9 @@ function* handleWorkspaceMountedRestore(
     // workspaceDeleted, clearPanelLayout or a full workspaceUnmounted voids
     // the provenance and still restores from storage.
     restoredWorkspaceIds.add(wsId);
+    // Notes or agents can finish loading while the panel scope is parked.
+    // Resume pending defaults without replacing the live layout from storage.
+    yield* call(reconcileEmptyRestoredLayout, wsId);
     return;
   }
   restoredWorkspaceIds.add(wsId);
@@ -838,6 +920,7 @@ function persistablePanels(panels: Record<string, PanelState>): Record<string, P
 
 function* persistPanelLayout(action: { type?: string; payload?: unknown }): SagaGenerator<void> {
   try {
+    if (action.type) yield* call(cancelExistingWorkspaceDefaults, { ...action, type: action.type });
     const wsId = getWsId(action);
     if (!isValidWorkspaceId(wsId)) return;
     const workspace = yield* selectPanelLayoutWorkspace.effect(wsId);
@@ -940,6 +1023,7 @@ function* queueHistorySave(
   mailboxes: Map<string, HistoryMailbox>,
   action: { type: string; payload?: unknown },
 ): SagaGenerator<void> {
+  yield* call(cancelExistingWorkspaceDefaults, action);
   const wsId = getWsId(action);
   if (!isValidWorkspaceId(wsId)) return;
   const backendId = yield* selectActiveBackendId();
@@ -1025,6 +1109,7 @@ function* clearPersistedLayout(
   const [wsId] = action.payload;
   if (!wsId) return;
   restoredUnderBackendIds.delete(wsId);
+  pendingExistingWorkspaceDefaults.delete(wsId);
   yield* call(removeLocalStorageItem, storageKey(wsId, yield* selectActiveBackendId()));
 }
 
@@ -1066,6 +1151,7 @@ function* reconcileSpecFromNoteAction(action: {
 }): SagaGenerator<void> {
   for (const workspaceId of noteActionWorkspaceIds(action)) {
     yield* call(reconcileDeferredSpec, workspaceId);
+    yield* call(reconcileEmptyRestoredLayout, workspaceId);
   }
 }
 
@@ -1088,15 +1174,8 @@ function* reconcileAgentsFromSnapshot(action: ReturnType<typeof setAgents>): Sag
   yield* call(reconcileEmptyRestoredLayout, workspaceId, agents);
 }
 
-// A first-open reconcile that found no workspace record defers rather than
-// opening a linkless agent tab (see reconcileEmptyRestoredLayout). These two
-// actions are how the record can arrive afterwards; each re-runs the cheap,
-// fully-guarded reconcile so the deferred seed eventually resolves.
-//
-// The same race covers the role: a restore that wins against `workspace.list`
-// preserves its persisted terminal / browser tabs while authority is unknown,
-// so the owner-only strip re-runs when the workspace and principal arrive.
-// Both strips are no-ops on a layout with nothing to strip.
+// Authority may arrive after restoration. Strip owner-only tabs once the
+// workspace and principal are known, then retry any pending first-open seed.
 function* reconcileWorkspaceEntityArrived(
   action: ReturnType<typeof setWorkspaceEntity>,
 ): SagaGenerator<void> {
@@ -1203,6 +1282,7 @@ function* handleBackendSwitch(lastBackend: { id: string }): SagaGenerator<void> 
   lastBackend.id = backendId;
   restoredWorkspaceIds.clear();
   restoredUnderBackendIds.clear();
+  pendingExistingWorkspaceDefaults.clear();
   // User-close provenance is session-scoped: the incoming backend's tabless
   // layouts must reseed even where the outgoing session's user emptied them.
   yield* put(resetEmptiedByUserClose());
@@ -1335,6 +1415,7 @@ export function* panelLayoutSaga(options?: {
     }
     restoredWorkspaceIds.clear();
     restoredUnderBackendIds.clear();
+    pendingExistingWorkspaceDefaults.clear();
     tornDownWorkspaceIds.clear();
     mountedWorkspaceIds.clear();
   }

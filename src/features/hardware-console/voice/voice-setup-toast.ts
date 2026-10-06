@@ -30,17 +30,8 @@ function getToast() {
   return toastPromise;
 }
 
-/** Mirrors SETTINGS_PREV_PATH_KEY in $lib/utils/workspace-navigation — that
- *  module is renderer-only ($app/* imports) and this middleware-reachable
- *  file is part of the main-process type-check, so it cannot be imported
- *  here (even dynamically). */
-const SETTINGS_PREV_PATH_KEY = 'settings-previous-path';
-
 /** Open Settings → Connections scrolled to the Voice dictation section. */
 function openVoiceSettings(): void {
-  if (typeof sessionStorage !== 'undefined' && typeof window !== 'undefined') {
-    sessionStorage.setItem(SETTINGS_PREV_PATH_KEY, window.location.pathname);
-  }
   navigateToRoute('/settings?tab=connections#voice').catch((error: unknown) => {
     logger.error('Failed to open voice settings from setup toast', error);
   });

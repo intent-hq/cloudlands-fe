@@ -132,11 +132,7 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
-  import { SidebarPanel } from '$lib/components/layout/sidebar-nav';
-  import {
-    togglePanel,
-    setShowCreateModal,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+  import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -483,7 +479,7 @@
 
     // Direct workspace routes open their tab without mirroring route identity into Redux.
     if (workspaceId) {
-      appStore.dispatch(openWorkspaceTab(workspaceId));
+      appStore.dispatch(openWorkspaceTab(workspaceId, $page.state?.presenceFollowRequestId));
       appStore.dispatch(recordWorkspaceView(workspaceId, Date.now()));
     }
     // Register global palette shortcuts (config-driven later)
@@ -618,9 +614,11 @@
       description: 'Command Palette (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
       action: openCommandPalette,
     });
-    // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
+    // Cmd+O (Mac) / Ctrl+O (Win/Linux) opens Home.
     registerWorkspaceSpacesShortcut(paletteShortcuts, {
-      toggleSpaces: () => appStore.dispatch(togglePanel('all-workspaces')),
+      toggleSpaces: () => {
+        void goto('/');
+      },
       resolveBinding: getEffectiveShortcut,
     });
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
@@ -983,17 +981,9 @@
     <!-- Title bar at top -->
     <WindowTitleBar {workspaceId} />
 
-    <!-- Main Content Area with Sidebar Nav -->
+    <!-- Main Content Area -->
     <ErrorBoundary componentName="MainLayout">
       <div class="workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2">
-        <!-- Sidebar Panel (persistent, pushes content) -->
-        <div
-          class="workspace-sidebar-frame relative z-40 flex min-h-0 shrink-0 bg-transparent"
-          data-sidebar-panel-frame
-        >
-          <SidebarPanel />
-        </div>
-
         <!-- Workspace content area -->
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main

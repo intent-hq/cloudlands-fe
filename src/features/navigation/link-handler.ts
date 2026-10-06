@@ -38,6 +38,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 const logger = new Logger('LinkHandler');
 
@@ -75,6 +76,12 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         logger.debug('Link handled by custom handler', { url });
         return true;
       }
+    }
+
+    if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal) {
+      const { showAssistantContent } = await import('$features/home/assistant-panels');
+      const target = options.rawHref?.startsWith('/workspace/') ? options.rawHref : url;
+      if (await showAssistantContent(target)) return true;
     }
 
     // Handle intent:// links (internal navigation to notes/tasks)
@@ -652,7 +659,8 @@ export function createLinkTooltipHandler(
 
       const workspaceId =
         options.workspaceId ??
-        anchor.closest<HTMLElement>('[data-workspace-id]')?.dataset.workspaceId;
+        anchor.closest<HTMLElement>('[data-workspace-id]')?.dataset.workspaceId ??
+        anchor.closest<HTMLElement>('[data-workspace-surface]')?.dataset.workspaceSurface;
       ensureImported().then(() => {
         // Double-check we're still on the same anchor after async import
         if (currentAnchor === anchor && showFn) {

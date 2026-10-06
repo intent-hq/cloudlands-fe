@@ -3,6 +3,8 @@
   import Fa from 'svelte-fa';
   import { faTerminal, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import { notify } from '$lib/components/patterns/notify';
   import * as Menu from '$lib/components/ui/menu';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -38,6 +40,14 @@
   const monitors$ = selectAgentScriptMonitors(workspaceIdStore, agentIdStore);
   const activeMonitors = $derived($monitors$.filter((row) => row.state === 'active'));
   let expanded = $state<string | null>(null);
+  async function copyCommand(command: string) {
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch (error) {
+      notify.error(m.chat_cliBlock_copyFailed_error());
+      throw error;
+    }
+  }
   function act(monitorId: string, action: 'pane' | 'bottom' | 'cancel' | 'cancelRun') {
     store.dispatch(scriptMonitorActionRequested(workspaceId, monitorId, action));
   }
@@ -64,7 +74,7 @@
       >
       <Button
         variant="plain"
-        class="min-w-0 flex-1 justify-start truncate p-0 text-left font-normal text-muted-foreground"
+        class="min-w-0 flex-1 justify-start truncate p-0 text-left {SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}"
         aria-expanded={expanded === monitor.monitorId}
         aria-controls={detailsId}
         onclick={() => (expanded = expanded === monitor.monitorId ? null : monitor.monitorId)}
@@ -136,6 +146,23 @@
         class="grid min-w-0 gap-1 text-xs text-muted-foreground {SUBSCRIPTION_WAKE_BODY_PADDING_CLASS}"
         transition:safeSubscriptionSlide
       >
+        {#if script?.command?.trim()}
+          <div class="grid min-w-0 gap-1">
+            <div class="flex items-center justify-between gap-2">
+              <span>{m.chat_scriptMonitor_command_label()}</span>
+              <CopyButton
+                copy={() => copyCommand(script.command)}
+                label={m.chat_cliBlock_copy_tooltip()}
+                copiedLabel={m.chat_cliBlock_copied_tooltip()}
+                class="shrink-0"
+              />
+            </div>
+            <pre
+              class="type-code m-0 min-w-0 select-text whitespace-pre-wrap break-all text-foreground"
+              aria-label={m.chat_scriptMonitor_command_label()}
+              data-testid="script-monitor-command"><code>{script.command}</code></pre>
+          </div>
+        {/if}
         <span
           >{m.chat_scriptMonitor_expires_description({
             time: formatDateTime(monitor.expiresAt),

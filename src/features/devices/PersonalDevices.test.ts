@@ -17,18 +17,16 @@ import {
 } from '$store/renderer/slices/principal/principal-slice';
 import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
-import { refreshLiveClientsRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
 import type { HostRole } from '$shared/types/principal';
 import { m } from '$shared/paraglide/messages.js';
 import { personalDevicesSaga } from './personal-devices-saga';
 import PersonalDevices from './PersonalDevices.svelte';
-import { selectPersonalDevices } from './personal-devices-selectors';
 import { principalSaga } from '$store/renderer/slices/principal/sagas/principal-saga';
 import { identitySaga } from '$store/renderer/slices/identity/sagas/identity-saga';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
+import MobileSettings from '$features/settings/MobileSettings.svelte';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { websocketApiSaga } from '$store/renderer/slices/websocket-api/sagas/websocket-api-saga';
-import { browserClientsSaga } from '$store/renderer/slices/browser-clients/sagas/browser-clients-saga';
 
 const qr = vi.hoisted(() => vi.fn(async () => 'data:image/png;base64,c3ludGhldGlj'));
 vi.mock('qrcode', () => ({ default: { toDataURL: qr } }));
@@ -148,20 +146,10 @@ function admit(role: HostRole = 'member', id = 'person-b', host = 'remote-b') {
   );
 }
 async function open() {
-  await fireEvent.click(
-    await screen.findByRole('button', { name: m.settings_personalDevices_pair_label() }),
-  );
+  await fireEvent.click(await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() }));
 }
 async function ready() {
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole('button', {
-          name: m.settings_personalDevices_copy_label(),
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
-  );
+  await screen.findByRole('img', { name: m.settings_wsApi_qrImageAlt() });
 }
 beforeEach(() => {
   qr.mockClear();
@@ -203,7 +191,30 @@ afterEach(() => {
 });
 describe('Devices current-person UI through the actual store and IPC transport', () => {
   it.each(['member', 'guest'] as const)(
-    'ordinary Devices omits personal and local administrator RPCs for a remote %s',
+    'Mobile never mounts local administrator RPCs for a remote %s',
+    async (role) => {
+      admit(role);
+      const stopApi = store.runSaga(websocketApiSaga);
+      try {
+        render(MobileSettings);
+        rpc.mockImplementation(async () => pairing(role));
+        await fireEvent.click(
+          await screen.findByRole('button', { name: m.settings_personalDevices_copy_label() }),
+        );
+        await waitFor(() => expect(clipboard).toHaveBeenCalledWith(uri));
+        await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_showQrCode() }));
+        await ready();
+        expect(qr).toHaveBeenCalledWith(uri, expect.anything());
+        expect(rpc.mock.calls.map(([method]) => method)).toEqual(['pairing.getSelfInfo']);
+        expect(invoke.mock.calls.filter(([, payload]) => payload?.localMachine)).toEqual([]);
+        expect(rpc.mock.calls.map(([method]) => method)).not.toContain('settings.list');
+      } finally {
+        stopApi();
+      }
+    },
+  );
+  it.each(['member', 'guest'] as const)(
+    'Machines omits personal and local administrator RPCs for a remote %s',
     async (role) => {
       admit(role);
       const stopApi = store.runSaga(websocketApiSaga);
@@ -214,9 +225,7 @@ describe('Devices current-person UI through the actual store and IPC transport',
         expect(
           screen.queryByRole('region', { name: m.settings_personalDevices_title() }),
         ).toBeNull();
-        expect(
-          screen.queryByRole('button', { name: m.settings_personalDevices_pair_label() }),
-        ).toBeNull();
+        expect(screen.queryByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeNull();
         expect(rpc.mock.calls.map(([method]) => method)).not.toContain('client.list');
         expect(rpc.mock.calls.map(([method]) => method)).not.toContain('pairing.getSelfInfo');
         expect(invoke.mock.calls.filter(([, payload]) => payload?.localMachine)).toEqual([]);
@@ -251,29 +260,6 @@ describe('Devices current-person UI through the actual store and IPC transport',
     ).toBe(true);
     expect(rpc.mock.calls.map(([method]) => method)).not.toContain('server.pairingInfo');
   });
-  it.each(['owner', 'member', 'guest'] as const)(
-    'shows %s server access without a forge profile and respects roster privacy',
-    async (role) => {
-      admit(role);
-      rpc.mockImplementation(async (method) =>
-        method === 'client.list'
-          ? {
-              clients: [
-                device('my-phone', 'person-b', role),
-                device('other-phone', 'person-a', 'owner'),
-              ],
-            }
-          : pairing(role),
-      );
-      render(PersonalDevices);
-      await open();
-      await ready();
-      await screen.findByText('my-phone');
-      if (role === 'guest') expect(screen.queryByText('other-phone')).toBeNull();
-      else await screen.findByText('other-phone');
-      expect(screen.getAllByText(/person-b/).length).toBeGreaterThan(0);
-    },
-  );
   it.each(['disable', 'host', 'person', 'disconnect', 'admission', 'revocation'] as const)(
     'clears the dialog and refuses a late pairing response after %s',
     async (change) => {
@@ -307,18 +293,107 @@ describe('Devices current-person UI through the actual store and IPC transport',
       expect(clipboard).not.toHaveBeenCalled();
     },
   );
+  it.each(['member', 'guest'] as const)(
+    'requires personal pairing capability for %s even when device listing is supported',
+    async (role) => {
+      admit(role);
+      const p = store.state.principal;
+      store.dispatch(
+        principalReceived(
+          {
+            context: p.context!,
+            invalidation: p.invalidation,
+            presentationVersion: p.presentationVersion,
+          },
+          {
+            ...p.snapshot!,
+            capabilities: { ...p.snapshot!.capabilities, personalPairing: false },
+          },
+        ),
+      );
+      render(MobileSettings);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(screen.queryByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeNull();
+      expect(screen.queryByRole('switch')).toBeNull();
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['host', 'person', 'capability'] as const)(
+    'does not copy a delayed response after %s changes',
+    async (change) => {
+      const pending = deferred<unknown>();
+      rpc.mockImplementation(() => pending.promise);
+      admit();
+      render(MobileSettings);
+      const oldCopy = await screen.findByRole('button', {
+        name: m.settings_personalDevices_copy_label(),
+      });
+      await fireEvent.click(oldCopy);
+      await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+      if (change === 'host') admit('guest', 'person-c', 'remote-c');
+      if (change === 'person') store.dispatch(principalIdentityChanged('person-b'));
+      if (change === 'capability') {
+        const p = store.state.principal;
+        store.dispatch(
+          principalReceived(
+            {
+              context: p.context!,
+              invalidation: p.invalidation,
+              presentationVersion: p.presentationVersion,
+            },
+            {
+              ...p.snapshot!,
+              capabilities: { ...p.snapshot!.capabilities, personalPairing: false },
+            },
+          ),
+        );
+      }
+      pending.resolve(pairing());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await fireEvent.click(oldCopy);
+      expect(clipboard).not.toHaveBeenCalled();
+      expect(qr).not.toHaveBeenCalled();
+    },
+  );
+  it('discards a QR image completed after current-person invalidation', async () => {
+    const pending = deferred<string>();
+    qr.mockImplementationOnce(() => pending.promise);
+    admit();
+    render(MobileSettings);
+    await open();
+    await waitFor(() => expect(qr).toHaveBeenCalledTimes(1));
+    store.dispatch(principalIdentityChanged('person-b'));
+    pending.resolve('data:image/png;base64,c3RhbGU=');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(clipboard).not.toHaveBeenCalled();
+  });
+  it('can retry copy after a refused pairing read without displaying transport secrets', async () => {
+    admit();
+    rpc.mockRejectedValueOnce(new Error('secret-transport-response'));
+    render(MobileSettings);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_personalDevices_copy_label() }),
+    );
+    await screen.findByRole('alert');
+    expect(screen.queryByText(/secret-transport-response/)).toBeNull();
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_personalDevices_copy_label() }),
+    );
+    await waitFor(() => expect(clipboard).toHaveBeenCalledWith(uri));
+    expect(rpc.mock.calls.map(([method]) => method)).toEqual([
+      'pairing.getSelfInfo',
+      'pairing.getSelfInfo',
+    ]);
+  });
   it('default-off and missing authority issue no personal RPCs', async () => {
     store.dispatch(setLabsMultiplayerEnabled(false));
     admit();
     render(PersonalDevices);
-    expect(
-      screen.queryByRole('button', { name: m.settings_personalDevices_pair_label() }),
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeNull();
     expect(rpc).not.toHaveBeenCalled();
     store.dispatch(setLabsMultiplayerEnabled(true));
-    expect(
-      screen.queryByRole('button', { name: m.settings_personalDevices_pair_label() }),
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeNull();
   });
   it('retries a refused read without using an administrator fallback', async () => {
     let refused = true;
@@ -339,35 +414,19 @@ describe('Devices current-person UI through the actual store and IPC transport',
     expect(rpc.mock.calls.filter(([method]) => method === 'pairing.getSelfInfo')).toHaveLength(2);
     expect(screen.queryByText(/revoked token/)).toBeNull();
   });
-  it('clears loaded pairing and roster when Multiplayer is disabled, then fetches fresh material after readmission', async () => {
+  it('clears loaded pairing when Multiplayer is disabled, then fetches fresh material after readmission', async () => {
     admit();
     render(PersonalDevices);
     await open();
     await ready();
-    await screen.findByText('phone');
     store.dispatch(setLabsMultiplayerEnabled(false));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(screen.queryByText('phone')).toBeNull();
     store.dispatch(setLabsMultiplayerEnabled(true));
     admit();
     await open();
     await ready();
     expect(rpc.mock.calls.filter(([method]) => method === 'pairing.getSelfInfo')).toHaveLength(2);
     expect(screen.queryByText('untrusted-cached-login')).toBeNull();
-    expect(screen.getAllByText(/Invited team host/).length).toBeGreaterThan(0);
-  });
-  it('rejects a previous host roster arriving after a different host has loaded', async () => {
-    const pending = deferred<unknown>();
-    rpc.mockImplementationOnce(() => pending.promise);
-    admit();
-    render(PersonalDevices);
-    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
-    rpc.mockResolvedValue({ clients: [device('new-phone', 'person-c')] });
-    admit('member', 'person-c', 'remote-c');
-    await screen.findByText('new-phone');
-    pending.resolve({ clients: [device('old-secret-device')] });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.queryByText('old-secret-device')).toBeNull();
   });
   it('store replacement cannot deliver old credentials into an identical new connection', async () => {
     const pending = deferred<unknown>();
@@ -400,94 +459,9 @@ describe('Devices current-person UI through the actual store and IPC transport',
     stop = store.runSaga(personalDevicesSaga);
     admit();
     render(PersonalDevices);
-    expect(
-      screen.queryByRole('button', { name: m.settings_personalDevices_pair_label() }),
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeNull();
     expect(rpc).not.toHaveBeenCalled();
   });
-  it('coalesces roster events and replaces rows after a disconnect', async () => {
-    admit();
-    render(PersonalDevices);
-    await screen.findByText('phone');
-    const pending = deferred<unknown>();
-    rpc.mockImplementationOnce(() => pending.promise);
-    store.dispatch(refreshLiveClientsRequested());
-    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
-    for (let i = 0; i < 5; i++) store.dispatch(refreshLiveClientsRequested());
-    rpc.mockResolvedValue({ clients: [device('tablet')] });
-    pending.resolve({ clients: [device('phone'), device('tablet')] });
-    await waitFor(() => expect(screen.queryByText('phone')).toBeNull());
-    expect(rpc).toHaveBeenCalledTimes(3);
-  });
-  it('does not promote a legacy device row without server identity into the authenticated roster', async () => {
-    admit();
-    rpc.mockResolvedValue({
-      clients: [{ ...device('unverified-device'), principalId: undefined }],
-    });
-    render(PersonalDevices);
-    await screen.findByRole('alert');
-    expect(screen.queryByText('unverified-device')).toBeNull();
-  });
-  it('an earlier global browser-client read cannot overwrite the current personal roster', async () => {
-    admit();
-    const pending = deferred<unknown>();
-    rpc.mockImplementationOnce(() => pending.promise);
-    const stopBrowser = store.runSaga(browserClientsSaga);
-    try {
-      store.dispatch(refreshLiveClientsRequested());
-      await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
-      render(PersonalDevices);
-      await screen.findByText('phone');
-      pending.resolve({ clients: [device('stale-global-device')] });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(screen.queryByText('stale-global-device')).toBeNull();
-      expect(screen.getByText('phone')).toBeTruthy();
-      store.dispatch(refreshLiveClientsRequested());
-      await waitFor(() => expect(rpc).toHaveBeenCalledTimes(3));
-    } finally {
-      stopBrowser();
-    }
-  });
-  it.each(['owner', 'member', 'guest'] as const)(
-    'preserves tuple-distinct devices, grouped sockets, updates and removals for %s',
-    async (role) => {
-      admit(role);
-      const own = { ...device('same', 'person-b', role), name: 'My phone', connections: 2 };
-      const other = { ...device('same', 'person-a', 'owner'), name: 'Another phone' };
-      rpc.mockResolvedValue({ clients: [own, other] });
-      render(PersonalDevices);
-      await screen.findByText('My phone');
-      if (role === 'guest') expect(screen.queryByText('Another phone')).toBeNull();
-      else await screen.findByText('Another phone');
-      expect(
-        selectPersonalDevices
-          .select(store.state)
-          .map(({ principalId, clientId, connections }) => [principalId, clientId, connections]),
-      ).toEqual(
-        role === 'guest'
-          ? [['person-b', 'same', 2]]
-          : [
-              ['person-b', 'same', 2],
-              ['person-a', 'same', 1],
-            ],
-      );
-      rpc.mockResolvedValue({ clients: [{ ...other, name: 'Renamed other phone' }, own] });
-      store.dispatch(refreshLiveClientsRequested());
-      await waitFor(() =>
-        expect(
-          selectPersonalDevices.select(store.state).find((c) => c.principalId === 'person-a')?.name,
-        ).toBe(role === 'guest' ? undefined : 'Renamed other phone'),
-      );
-      await screen.findByText('My phone');
-      rpc.mockResolvedValue({ clients: [own] });
-      store.dispatch(refreshLiveClientsRequested());
-      await waitFor(() => expect(screen.queryByText('Renamed other phone')).toBeNull());
-      expect(selectPersonalDevices.select(store.state)).toMatchObject([
-        { principalId: 'person-b', clientId: 'same', connections: 2 },
-      ]);
-    },
-  );
-
   it.each([
     ['rekey', false],
     ['unlink', false],
@@ -548,7 +522,6 @@ describe('Devices current-person UI through the actual store and IPC transport',
       const stopIdentity = store.runSaga(identitySaga);
       try {
         render(PersonalDevices);
-        await screen.findByText(/old-person-label/);
         await open();
         if (!held) await ready();
         await waitFor(() =>

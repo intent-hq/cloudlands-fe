@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   /* eslint-disable max-lines */
   import {
     faFile,
@@ -57,6 +58,7 @@
     resolveFinishReasonNotice,
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import { Tooltip } from '$lib/components/ui/tooltip';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
@@ -65,11 +67,12 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
+  import { getCollaboratorSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
   import {
-    getCollaboratorSenderAttribution,
-    singleLineName,
-  } from '$lib/utils/collaborator-sender-attribution';
-  import { getHumanMessageAuthor, getMessageAuthorLabel } from '$lib/utils/message-authorship';
+    getHumanMessageAuthor,
+    getMessageAuthorLabel,
+    getMessageAuthorTooltip,
+  } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -438,9 +441,8 @@
   //
   // A row whose content starts with the daemon's collaborator sender preamble
   // (exact match against the text rebuilt from the same projection) always
-  // shows the sender chip with its matched historical member or guest role — the preamble itself is
-  // display-stripped by the presentation boundary, so the chip is the only
-  // place the sender and their role remain visible, for owner and guest alike.
+  // shows the sender chip with its matched historical provenance. The preamble is
+  // display-stripped; guest roles remain visible while member chips show identity only.
   // The workspace owner's own rows never qualify (the daemon prepends the
   // preamble for collaborators only), so an owner-typed lookalike line stays.
   let collaboratorSender = $derived(
@@ -459,24 +461,16 @@
         ? projectedHumanAuthor
         : null,
   );
-  let humanAuthorLabel = $derived.by(() => {
-    if (!humanAuthor) return null;
-    if (!collaboratorSender) return getMessageAuthorLabel(humanAuthor);
-    // Same shape and sanitizer as the stripped preamble: `@login (Display
-    // Name)`, then `@login`, then the display name alone — control characters
-    // and whitespace runs collapse exactly as the daemon's `single_line_name`.
-    const cleanLogin = singleLineName(humanAuthor.login);
-    const login = cleanLogin ? `@${cleanLogin}` : null;
-    const name = singleLineName(humanAuthor.displayName);
-    // i18n-ignore (handle + name composition, mirrors the daemon preamble)
-    const who = login && name ? `${login} (${name})` : (login ?? name);
-    if (collaboratorSender.role === 'member') {
-      // i18n-ignore (principal fallback mirrors the accepted daemon preamble)
-      const label = who ?? `principal ${singleLineName(humanAuthor.principalId) ?? ''}`;
-      return getMessageAuthorLabel({ ...humanAuthor, login: null, displayName: label });
-    }
-    return who;
-  });
+  let humanAuthorLabel = $derived(humanAuthor ? getMessageAuthorLabel(humanAuthor) : null);
+  const humanAuthorRoleLabel = $derived(
+    humanAuthor?.principalId &&
+      workspace?.ownerPrincipalId &&
+      humanAuthor.principalId === workspace.ownerPrincipalId
+      ? m.workspace_share_role_owner_label()
+      : collaboratorSender?.role === 'guest'
+        ? m.chat_chatMessage_collaboratorRole_label()
+        : null,
+  );
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -1577,36 +1571,41 @@
                 : collaboratorSender
                   ? 'collaborator'
                   : undefined}
-              aria-label={collaboratorSender?.role === 'member'
-                ? m.workspace_share_member_identityRole_label({
-                    handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
-                    role: m.collaboration_host_member_label(),
+              aria-label={collaboratorSender?.role === 'guest'
+                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
                   })
-                : collaboratorSender
-                  ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
-                      name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                : humanAuthorRoleLabel
+                  ? m.workspace_share_member_identityRole_label({
+                      handle: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                      role: humanAuthorRoleLabel,
                     })
                   : m.chat_chatMessage_author_ariaLabel({
                       name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
                     })}
             >
-              <PrincipalAvatar
-                avatarUrl={humanAuthor.avatarUrl}
-                label={humanAuthorLabel ?? ''}
-                size={16}
-                class="font-medium leading-none text-muted-foreground"
-                referrerpolicy="no-referrer"
-                testid="user-message-author-avatar"
-              />
+              <Tooltip content={getMessageAuthorTooltip(humanAuthor)} class="shrink-0">
+                <span
+                  role="img"
+                  aria-label={humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}
+                >
+                  <PrincipalAvatar
+                    avatarUrl={humanAuthor.avatarUrl}
+                    label={humanAuthor.displayName?.trim() || humanAuthor.login?.trim() || ''}
+                    size={16}
+                    class="font-medium leading-none text-muted-foreground"
+                    referrerpolicy="no-referrer"
+                    testid="user-message-author-avatar"
+                  />
+                </span>
+              </Tooltip>
               <span class="truncate" data-testid="user-message-author-name"
                 >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
               >
-              {#if collaboratorSender}
+              {#if humanAuthorRoleLabel}
                 <span aria-hidden="true" class="shrink-0">·</span>
                 <span class="shrink-0" data-testid="user-message-author-role"
-                  >{collaboratorSender.role === 'member'
-                    ? m.collaboration_host_member_label()
-                    : m.chat_chatMessage_collaboratorRole_label()}</span
+                  >{humanAuthorRoleLabel}</span
                 >
               {/if}
             </div>
@@ -1684,7 +1683,7 @@
                       type="button"
                       variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                      title={pill.content || pill.path || pill.noteId || pill.label}
+                      title={pill.content || pill.path || pill.noteId || undefined}
                       onclick={(e) => {
                         e.stopPropagation();
                         handlePillClick(pill, e);
@@ -1695,7 +1694,7 @@
                       <span
                         class="truncate font-medium"
                         style="max-width: 180px;"
-                        title={pill.label}>{pill.label}</span
+                        use:truncatedTitle={pill.label}>{pill.label}</span
                       >
                     </Button>
                   {/each}
@@ -1706,7 +1705,6 @@
                         >{#each splitTextByUrls(segment.content) as part, j (j)}{#if part.type === 'link'}<a
                               href={part.url}
                               class="cursor-pointer break-all underline underline-offset-2 hover:opacity-80"
-                              title={part.url}
                               onclick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -1735,12 +1733,7 @@
                         type="button"
                         variant="plain"
                         class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
-                        title={segment.description ||
-                          segment.path ||
-                          segment.noteId ||
-                          (segment.identifier
-                            ? `${segment.identifier}: ${segment.label}`
-                            : segment.label)}
+                        title={segment.description || segment.path || segment.noteId || undefined}
                         onclick={(e) => {
                           e.stopPropagation();
                           if (segment.url) {
@@ -1775,8 +1768,10 @@
                         {#if segment.identifier}
                           <span class="text-subtle shrink-0">{segment.identifier}</span>
                         {/if}
-                        <span class="truncate" style="max-width: 180px;" title={segment.label}
-                          >{segment.label}</span
+                        <span
+                          class="truncate"
+                          style="max-width: 180px;"
+                          use:truncatedTitle={segment.label}>{segment.label}</span
                         >
                       </Button>
                     {/if}

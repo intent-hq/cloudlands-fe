@@ -8,13 +8,13 @@ defineGeometrySnapshotSuite({
   component: Preview,
   states: ['member', 'guest', 'owner-no-profile'],
   widths: [390],
-  selector: '[data-personal-devices-ready=true]',
+  selector: '[data-slot="settings-form"]',
   snapshotPath: fileURLToPath(
     new URL('./__geometry__/personal-devices.geometry.json', import.meta.url),
   ),
 });
 
-test('personal pairing stays usable at narrow width and Escape returns to the roster', async ({
+test('personal pairing stays usable at narrow width and Escape returns focus to the pairing control', async ({
   mount,
   page,
 }) => {
@@ -22,15 +22,16 @@ test('personal pairing stays usable at narrow width and Escape returns to the ro
   await mount(Preview, {
     hooksConfig: { geometrySnapshot: { scene: 'personal-devices', state: 'member' } },
   });
-  await expect(page.getByText('Preview phone', { exact: true })).toBeVisible();
-  await page.screenshot({ path: '.demo-artifacts/personal-devices-roster.png' });
-  await page.getByRole('button', { name: 'Pair another device as me' }).click();
+  const trigger = page.getByRole('button', { name: 'Show QR Code' });
+  await expect(trigger).toBeEnabled();
+  await page.screenshot({ path: '.demo-artifacts/mobile-pairing-controls.png' });
+  await trigger.click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('img')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Copy pairing link' })).toBeEnabled();
   expect(await dialog.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(false);
   await page.screenshot({ path: '.demo-artifacts/personal-devices-pairing.png' });
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByText('Preview tablet', { exact: true })).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Copy pairing link' })).toBeEnabled();
 });

@@ -3,7 +3,7 @@
 //   ../WorkspaceSidebarHeader.svelte, ../TaskStatusProgress.svelte, ../SidebarBrowserLauncher.svelte,
 //   ../sidebar/WorkspaceProgressCard.svelte, ../sidebar/FlameGraph.svelte,
 //   ../sidebar/ContextPanel.svelte, ../sidebar/NotesPanel.svelte, ../sidebar/SidebarChangesPanel.svelte,
-//   ../../layout/sidebar-nav/SidebarNav.svelte, ../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte,
+//   ../../layout/sidebar-nav/SidebarNav.svelte,
 //   ../../layout/WindowTitleBar.svelte, ../../../../routes/(app)/+layout.svelte
 
 import { readFileSync } from 'node:fs';
@@ -24,31 +24,17 @@ describe('workspace sidebar hierarchy presentation contract', () => {
     const appLayout = source('../../../../routes/(app)/+layout.svelte');
 
     expect(navigation).toContain('data-top-navigation');
-    expect(navigation).toContain('variant="ghost-light"');
     expect(navigation).toContain('size="icon"');
-    expect(navigation).toContain('TITLEBAR_NAVIGATION_CONTROL_CLASS');
-    expect(navigation).toContain('data-nav-item={item.id}');
     expect(navigation).not.toContain('SidebarNavHoverCard');
     expect(titleBar).toContain('<SidebarNav />');
     expect(titleBar.indexOf('<SidebarNav />')).toBeLessThan(titleBar.indexOf('<WorkspaceTabStrip'));
     expect(titleBar).not.toContain('ChiefTrigger');
     expect(titleBar).toContain('titlebar-left-drag-surface');
     expect(titleBar).toContain('data-titlebar-left-drag-handle');
-    expect(titleBar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
     expect(titleBar).toContain('<WorkspaceTabStrip');
     expect(titleBar).toContain('activeWorkspaceId={routedWorkspaceId}');
     expect(titleBar).toContain('data-titlebar-settings');
     expect(appLayout).not.toContain('<SidebarNav />');
-  });
-
-  it('opens a title-bar workspace tab before navigating from the spaces combobox', () => {
-    const card = source('../../layout/sidebar-nav/cards/AllWorkspacesCard.svelte');
-    const openTab = card.indexOf('appStore.dispatch(openWorkspaceTab(workspaceId))');
-    const navigate = card.indexOf('await goto(route)');
-
-    expect(card).toContain("from '$store/renderer/slices/tab-state/tab-state-slice'");
-    expect(openTab).toBeGreaterThanOrEqual(0);
-    expect(openTab).toBeLessThan(navigate);
   });
 
   it('orders the live identity, progress, then current status', () => {

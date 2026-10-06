@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   /* eslint-disable max-lines -- sibling mode remains in the single shared proposal renderer */
   import { tick, untrack } from 'svelte';
@@ -1051,7 +1052,7 @@
                     <span
                       class="type-body min-w-0 truncate font-normal text-foreground"
                       data-testid="proposal-repo-locked"
-                      title={createdRepoLabel}
+                      use:truncatedTitle={createdRepoLabel}
                     >
                       {createdRepoLabel}
                     </span>

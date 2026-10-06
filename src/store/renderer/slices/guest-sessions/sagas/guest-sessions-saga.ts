@@ -114,7 +114,7 @@ import {
   selectGuestSessionLifetime,
   selectGuestSessionsLoaded,
   selectHostedRemovingPrincipalIds,
-  selectHostedRosterMemberCounts,
+  selectHostedRosterVersions,
   selectHostedRoster,
   selectHostedSweepReport,
   selectIsHostedWorkspaceListed,
@@ -372,6 +372,7 @@ function* readHostedRosterOnce(
     return;
   }
   const context = yield* selectPrincipalActionContext.effect();
+  const invalidation = (yield* selectHostedRoster.effect(workspaceId)).invalidation ?? 0;
   yield* put(hostedRosterLoading(workspaceId));
   let outcome: RosterOutcome;
   try {
@@ -380,7 +381,10 @@ function* readHostedRosterOnce(
       'workspace.members.list',
       { workspaceId },
     );
-    if ((yield* selectPrincipalActionContext.effect()) !== context) {
+    if (
+      (yield* selectPrincipalActionContext.effect()) !== context ||
+      ((yield* selectHostedRoster.effect(workspaceId)).invalidation ?? 0) !== invalidation
+    ) {
       outcome = { failure: new HostedRosterOperationError('cancelled') };
     } else if (yield* select(selectCanManageHostedWorkspace.select, workspaceId)) {
       yield* put(
@@ -394,7 +398,8 @@ function* readHostedRosterOnce(
     }
   } catch (error) {
     const failure =
-      context === (yield* selectPrincipalActionContext.effect())
+      context === (yield* selectPrincipalActionContext.effect()) &&
+      ((yield* selectHostedRoster.effect(workspaceId)).invalidation ?? 0) === invalidation
         ? toHostedRosterFailure(error)
         : new HostedRosterOperationError('cancelled');
     if (failure.code === 'forbidden') yield* call(withholdRoster, workspaceId);
@@ -772,13 +777,12 @@ function* removeAllHostedGuests(
 
 /**
  * Refetch a loaded roster when the daemon's `memberCount` for its workspace
- * moves (membership deltas arrive through the workspace list, not a
- * roster-specific event). Only a workspace already tracked with a different
- * count refetches: a roster's first read adds its entry and must not fetch
+ * moves or a canonical membership/invitation event invalidates its roster.
+ * Only a workspace already tracked with a different version refetches: a roster's first read adds its entry and must not fetch
  * twice. `seen` (the saga's own last-handled entries) is advanced before any
  * `put`, so a re-entrant emission during the dispatch cannot double-fetch.
  */
-function* refetchRostersOnMemberCountChange(
+function* refetchRostersOnChange(
   seen: Map<string, string>,
   change: SelectorChannelPayload<string[]>,
 ): SagaGenerator<void> {
@@ -945,12 +949,9 @@ export function* guestSessionsSaga(): SagaGenerator<void> {
   const eventTask = yield* fork(consumeChangedEvents, events);
   const actionsTask = yield* fork(watchActions);
   const seen = new Map<string, string>();
-  const rosterTask = yield* takeEveryFromSelector(
-    selectHostedRosterMemberCounts,
-    function* (change) {
-      yield* refetchRostersOnMemberCountChange(seen, change);
-    },
-  );
+  const rosterTask = yield* takeEveryFromSelector(selectHostedRosterVersions, function* (change) {
+    yield* refetchRostersOnChange(seen, change);
+  });
   const initial = loadGuestSessionsRequested();
   // A failed boot hydration is surfaced through `guestSessionsListUnavailable`.
   try {

@@ -704,7 +704,7 @@ describe('daemonHealthReducer', () => {
       // typed literal lives in a check-covered module so a re-required wire
       // field fails `pnpm run check`, not only this runtime test.
       const payload = collaboratorSystemStatusProjection;
-      // COLLABORATOR_STATUS_FIELDS / COLLABORATOR_STATUS_HOST_FIELDS @ 60de0618.
+      // COLLABORATOR_STATUS_FIELDS / COLLABORATOR_STATUS_HOST_FIELDS, including intent#6788.
       expect(Object.keys(payload).sort()).toEqual(
         [
           'running',
@@ -718,6 +718,7 @@ describe('daemonHealthReducer', () => {
           'tcAddress',
           'hostname',
           'prettyHostname',
+          'collaborationName',
           'host',
         ].sort(),
       );

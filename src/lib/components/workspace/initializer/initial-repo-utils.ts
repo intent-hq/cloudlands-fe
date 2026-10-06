@@ -4,8 +4,11 @@
  */
 
 import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+import type { RepositoryCheckoutDraft } from '$store/renderer/slices/repository-checkout/repository-checkout-types';
+import { readRepositoryCheckoutDraft } from '$store/renderer/slices/repository-checkout/repository-checkout-draft';
 
 export interface InitialRepoInfo {
+  repositoryCheckoutDraft?: RepositoryCheckoutDraft;
   repoPath?: string;
   isGithub?: boolean;
   owner?: string;
@@ -17,8 +20,10 @@ export interface InitialRepoInfo {
 }
 
 export interface InitialRepoFormState {
+  invalidCheckoutDraft?: boolean;
+  repositoryCheckoutDraft?: RepositoryCheckoutDraft;
   repoPath?: string;
-  repoType?: 'local' | 'github' | 'remote';
+  repoType?: 'local' | 'github' | 'gitlab' | 'remote';
   isValidPath?: boolean;
   isNewRepo?: boolean;
   scope?: string;
@@ -48,7 +53,17 @@ export interface LastSelectedRepoHydrationInput {
  */
 export function getInitialRepoKey(repo: InitialRepoInfo | undefined | null): string {
   if (!repo) return '';
-  return [repo.repoPath, repo.owner, repo.name, repo.environmentType, repo.previousWorkspaceId]
+  return [
+    repo.repoPath,
+    repo.owner,
+    repo.name,
+    repo.environmentType,
+    repo.previousWorkspaceId,
+    repo.repositoryCheckoutDraft !== undefined
+      ? (JSON.stringify(readRepositoryCheckoutDraft(repo.repositoryCheckoutDraft)) ??
+        'invalid-checkout')
+      : undefined,
+  ]
     .filter(Boolean)
     .join(':');
 }
@@ -59,6 +74,21 @@ export function getInitialRepoKey(repo: InitialRepoInfo | undefined | null): str
  */
 export function mapInitialRepoToFormState(repo: InitialRepoInfo): InitialRepoFormState {
   const state: InitialRepoFormState = {};
+
+  if (repo.repositoryCheckoutDraft !== undefined) {
+    const draft = readRepositoryCheckoutDraft(repo.repositoryCheckoutDraft);
+    return {
+      repositoryCheckoutDraft: draft,
+      ...(!draft ? { invalidCheckoutDraft: true } : {}),
+      repoType: 'gitlab',
+      repoPath: '',
+      branch: '',
+      githubUrl: '',
+      isNewRepo: false,
+      isValidPath: false,
+      remoteSetup: null,
+    };
+  }
 
   if (repo.repoPath) {
     state.repoPath = repo.repoPath;

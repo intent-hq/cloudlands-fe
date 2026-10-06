@@ -2,8 +2,11 @@ import { initialState as workspaceShareInitialState } from '../../workspace-shar
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { withLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
+import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 
 const mocks = vi.hoisted(() => ({
+  backendRequest: vi.fn(),
   workspaces: {
     list: vi.fn(),
     get: vi.fn(),
@@ -33,6 +36,10 @@ const mocks = vi.hoisted(() => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+}));
+
 vi.mock('$lib/client', () => ({
   appClient: {
     workspaces: mocks.workspaces,
@@ -59,6 +66,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 }));
 
 import { AgentStatus, GitFileStatus, type AgentSession } from '$shared/types';
+import { LiveGitClient } from '$lib/client/live/live-git-client';
 import {
   loadOlderCommitsRequested,
   loadWorkspaceDataRequested,
@@ -131,7 +139,7 @@ import { lifecycleReadSaga } from './lifecycle-read-saga';
 import { MAX_CONCURRENT_WORKSPACE_READS } from './workspace-read-scheduler';
 
 const runningTasks: ReturnType<typeof runSaga>[] = [];
-const WS = 'ws-lifecycle';
+const WS = 'ws-lifecycle' as import('$shared/types/branded-ids').WorkspaceId;
 /** Default hydration read: the parentless-foreground bin (§5.5 row scope). */
 const TOP_LEVEL = { scope: 'topLevel' } as const;
 const NOW = new Date('2026-07-31T00:00:00.000Z');
@@ -143,27 +151,66 @@ const settle = async () => {
   await Promise.resolve();
 };
 
-function state(currentTabId: string | null = null, eventsNextToken: string | null = null) {
-  return {
+function state(
+  currentTabId: string | null = null,
+  eventsNextToken: string | null = null,
+  admittedReads = true,
+) {
+  const original = {
     tabState: { currentTabId },
     workspaceShare: workspaceShareInitialState,
-    workspaceTasks: { byWorkspaceId: {} },
-    changes: { agentStats: {}, agentLineStatsRequests: {} },
-    workspace: { workspaces: createCollection('id', []) },
-    agentSessions: { byAgentId: {} },
+    workspaceTasks: {
+      byWorkspaceId: {} as Record<string, { loading: boolean; initialized: boolean }>,
+    },
+    changes: {
+      agentStats: {} as Record<string, { additions: number; deletions: number; timestamp: string }>,
+      agentLineStatsRequests: {},
+    },
+    workspace: {
+      workspaces: createCollection('id', [{ id: WS }, { id: 'ws-other' }] as Array<{
+        id: string;
+        branch?: string;
+        repositoryOwner?: string;
+        repositoryName?: string;
+      }>),
+    },
+    agentSessions: { byAgentId: {} as Record<string, AgentSession> },
     workspaceAgents: { byWorkspaceId: {} },
     workspaceEvents: {
       byWorkspaceId: eventsNextToken ? { [WS]: { nextToken: eventsNextToken } } : {},
     },
-    prStatus: { byWorkspaceId: {} },
+    prStatus: {
+      byWorkspaceId: {} as Record<
+        string,
+        { lastRefreshTime: number; isRefreshing: boolean; lastError: string | null }
+      >,
+    },
     terminals: terminalsReducer(undefined, { type: '@@init' } as never),
     scripts: scriptsReducer(undefined, { type: '@@init' } as never),
+  };
+  const admitted = withLegacyPrincipal(original);
+  return {
+    ...original,
+    connections: { ...admitted.connections, hasReceivedList: admittedReads },
+    daemonHealth: admitted.daemonHealth,
+    principal: admitted.principal,
+    userPreferences: admitted.userPreferences,
+    workspaceEvents: {
+      ...original.workspaceEvents,
+      subscriptionGeneration: admitted.workspaceEvents.subscriptionGeneration,
+    },
+    workspace: {
+      ...original.workspace,
+      hasLoaded: true,
+      loadedBackendId: admitted.connections.windowBackendId,
+      capabilityContext: selectPrincipalActionContext.select(admitted),
+    },
   };
 }
 
 function start(current = state()) {
   const channel = stdChannel();
-  const actions: unknown[] = [];
+  const actions: Array<{ type: string; payload?: unknown }> = [];
   const task = runSaga(
     {
       channel,
@@ -204,12 +251,12 @@ function startWithLoopback() {
   const actions: { type: string }[] = [];
   let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
   const dispatch = (action: { type: string }) => {
-    actions.push(action);
+    actions.push(action as { type: string; payload?: unknown });
     workspaceState = workspaceReducer(workspaceState, action);
     channel.put(action);
     return action;
   };
-  const current = state();
+  const current = state(null, null, false);
   const task = runSaga(
     {
       channel,
@@ -294,7 +341,7 @@ describe('lifecycleReadSaga', () => {
     const workspace = { id: WS, branch: 'main', wire_only: 'drop' };
     mocks.workspaceServiceList.mockResolvedValue({ ok: true, data: [workspace] });
     mocks.workspaces.recentViews.mockResolvedValue({ [WS]: 42 });
-    const run = start();
+    const run = start(state(null, null, false));
     run.channel.put(loadWorkspacesRequested());
     await settle();
 
@@ -898,7 +945,7 @@ describe('lifecycleReadSaga', () => {
         scripts: scriptsReducer(state().scripts, setScriptsData(WS, [script] as never)),
       };
       const channel = stdChannel();
-      const actions: unknown[] = [];
+      const actions: Array<{ type: string; payload?: unknown }> = [];
       const task = runSaga(
         {
           channel,
@@ -1534,7 +1581,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(refreshPRStatusRequested(WS, true, true));
     await settle();
 
-    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
+    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS, { automatic: false }]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
       {
@@ -1555,6 +1602,10 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(refreshPRStatusRequested(WS, false, false));
     await settle();
 
+    expect(mocks.git.prRefresh.mock.calls).toEqual([
+      [WS, { automatic: true }],
+      [WS, { automatic: true }],
+    ]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
       {
@@ -1568,6 +1619,49 @@ describe('lifecycleReadSaga', () => {
       },
     ]);
     await stop(run.task);
+  });
+
+  it('preserves automatic provenance across windows, reconnect, failure retry, and cached replies', async () => {
+    const client = new LiveGitClient();
+    mocks.git.prRefresh.mockImplementation((...args: Parameters<LiveGitClient['prRefresh']>) =>
+      client.prRefresh(...args),
+    );
+    mocks.backendRequest.mockRejectedValueOnce(new Error('temporarily unavailable'));
+    mocks.backendRequest.mockResolvedValue({
+      outcome: 'skipped',
+      prNumber: 42,
+      prUrl: 'https://github.com/acme/repo/pull/42',
+      prStatus: 'Open',
+      pullRequests: [{ number: 42, status: 'Open' }],
+    });
+    const firstWindow = start();
+    const secondWindow = start();
+    firstWindow.channel.put(refreshPRStatusRequested(WS, true, false));
+    await settle();
+    firstWindow.channel.put(backendReconnected());
+    firstWindow.channel.put(refreshPRStatusRequested(WS, true, false));
+    secondWindow.channel.put(refreshPRStatusRequested(WS, true, false));
+    secondWindow.channel.put(refreshPRStatusRequested('ws-other', true, false));
+    await settle();
+    expect(mocks.backendRequest.mock.calls).toEqual([
+      ['pr.refresh', { workspaceId: WS, automatic: true }],
+      ['pr.refresh', { workspaceId: WS, automatic: true }],
+      ['pr.refresh', { workspaceId: WS, automatic: true }],
+      ['pr.refresh', { workspaceId: 'ws-other', automatic: true }],
+    ]);
+    expect(
+      firstWindow.actions
+        .filter((a) => a.type === 'prStatus/refreshCompleted')
+        .map((a) => (a.payload as { success: boolean }).success),
+    ).toEqual([false, true]);
+    secondWindow.channel.put(refreshPRStatusRequested(WS, true, true));
+    await settle();
+    expect(mocks.backendRequest).toHaveBeenLastCalledWith('pr.refresh', {
+      workspaceId: WS,
+      automatic: false,
+    });
+    await stop(firstWindow.task);
+    await stop(secondWindow.task);
   });
 
   it('skips a non-forced PR refresh within the freshness TTL', async () => {
@@ -1597,7 +1691,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(refreshPRStatusRequested(WS, false, false));
     await settle();
 
-    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
+    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS, { automatic: true }]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
       {
@@ -1608,7 +1702,7 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
-  it('runs a forced PR refresh even within the freshness TTL', async () => {
+  it('keeps forced hydration automatic even within the freshness TTL', async () => {
     const current = state();
     current.prStatus.byWorkspaceId[WS] = {
       lastRefreshTime: NOW.getTime() - 1_000,
@@ -1619,7 +1713,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(refreshPRStatusRequested(WS, true, false));
     await settle();
 
-    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS]]);
+    expect(mocks.git.prRefresh.mock.calls).toEqual([[WS, { automatic: true }]]);
     expect(run.actions).toEqual([
       { type: 'prStatus/refreshStarted', payload: [WS] },
       {
@@ -1712,7 +1806,10 @@ describe('lifecycleReadSaga', () => {
   it('feeds both owners from a combined refresh while the live client coalesces their status read', async () => {
     const run = start();
     const gitTask = runSaga(
-      { channel: run.channel, dispatch: (action) => run.actions.push(action) },
+      {
+        channel: run.channel,
+        dispatch: (action) => run.actions.push(action as { type: string; payload?: unknown }),
+      },
       gitReadSaga,
     );
 
@@ -3400,7 +3497,7 @@ describe('lifecycleReadSaga', () => {
       const actions: { type: string }[] = [];
       let agentsState = workspaceAgentsReducer(undefined, { type: '@@INIT' } as never);
       const dispatch = (action: { type: string }) => {
-        actions.push(action);
+        actions.push(action as { type: string; payload?: unknown });
         agentsState = workspaceAgentsReducer(agentsState, action as never);
         return action;
       };
@@ -4033,7 +4130,6 @@ describe('lifecycleReadSaga', () => {
   });
 });
 
-vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: vi.fn() }));
 import { backendRequest as lifecycleRequest } from '$lib/client/live/backend-transport';
 import { LiveScriptsClient } from '$lib/client/live/live-scripts-client';
 
@@ -4169,4 +4265,99 @@ describe('script lifecycle capability coherence', () => {
       }
     },
   );
+});
+
+describe('M current workspace read admission', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.git.status.mockResolvedValue({ files: [] });
+    mocks.git.trackedChanges.mockResolvedValue([]);
+    mocks.git.commitsWithBoundary.mockResolvedValue({ commits: [], boundarySha: null });
+  });
+  function current(role: 'owner' | 'member' | 'guest') {
+    const value = state();
+    const snapshot = value.principal.snapshot!;
+    value.principal.snapshot = {
+      ...snapshot,
+      capabilities: { ...snapshot.capabilities, hostMembership: true },
+      principal: { ...snapshot.principal, hostRole: role, isAdministrator: role === 'owner' },
+    };
+    value.userPreferences.labsMultiplayerEnabled = false;
+    value.workspace.capabilityContext = selectPrincipalActionContext.select(value);
+    return value;
+  }
+  it.each(['owner', 'member'] as const)(
+    'M20 permits %s reads without management/Labs',
+    async (role) => {
+      const value = current(role),
+        run = start(value);
+      run.channel.put(refreshRequested(WS));
+      await settle();
+      expect(mocks.git.trackedChanges).toHaveBeenCalledTimes(1);
+      expect(mocks.git.commitsWithBoundary).toHaveBeenCalledTimes(1);
+      await stop(run.task);
+    },
+  );
+  it.each(['guest', 'revoked', 'missing', 'stale'] as const)(
+    'M21 refuses %s before Changes and older requests',
+    async (kind) => {
+      const value = current(kind === 'guest' ? 'guest' : 'member');
+      if (kind === 'revoked') value.principal.status = 'revoked';
+      if (kind === 'missing') value.workspace.workspaces = createCollection('id', []);
+      if (kind === 'stale') value.workspace.capabilityContext = 'old';
+      const run = start(value);
+      run.channel.put(refreshRequested(WS));
+      run.channel.put(loadOlderCommitsRequested(WS, 'boundary', 25));
+      await settle();
+      expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+      expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+      expect(run.actions).toEqual([]);
+      await stop(run.task);
+    },
+  );
+  it.each([false, true])(
+    'M22 no stale older publication or loading fallback after rejected=%s original',
+    async (rejected) => {
+      const value = current('member');
+      let resolve!: (value: unknown) => void, reject!: (value: unknown) => void;
+      mocks.git.commitsWithBoundary.mockReturnValue(
+        new Promise((yes, no) => {
+          resolve = yes;
+          reject = no;
+        }),
+      );
+      const run = start(value);
+      run.channel.put(loadOlderCommitsRequested(WS, 'boundary', 25));
+      await settle();
+      value.principal.invalidation++;
+      if (rejected) reject(new Error('original refusal'));
+      else resolve({ commits: [], boundarySha: null });
+      await settle();
+      expect(run.actions).toEqual([
+        { type: 'changes/setLoadingOlderCommits', payload: [WS, true] },
+      ]);
+      await stop(run.task);
+    },
+  );
+  it('M23 queued work rechecks admission after the original scheduler slot is available', async () => {
+    const value = current('member');
+    const release: Array<() => void> = [];
+    mocks.tasks.list.mockImplementation(
+      () =>
+        new Promise((resolve) => release.push(() => resolve({ tasks: [], stats: { total: 0 } }))),
+    );
+    const run = start(value);
+    for (let i = 0; i < MAX_CONCURRENT_WORKSPACE_READS; i++)
+      run.channel.put(acquireWorkspaceTasksDemand('held-' + i, 'visible-consumer'));
+    await settle();
+    expect(release).toHaveLength(MAX_CONCURRENT_WORKSPACE_READS);
+    run.channel.put(refreshRequested(WS));
+    await settle();
+    value.principal.status = 'revoked';
+    for (const done of release) done();
+    await settle();
+    expect(mocks.git.trackedChanges).not.toHaveBeenCalled();
+    expect(mocks.git.commitsWithBoundary).not.toHaveBeenCalled();
+    await stop(run.task);
+  });
 });

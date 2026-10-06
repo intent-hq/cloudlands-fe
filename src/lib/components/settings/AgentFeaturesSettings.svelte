@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
   /**
    * Agent Features Settings Component
    *
@@ -68,12 +69,13 @@
     return typeof value === 'boolean' ? value : FEATURE_DEFAULTS[path];
   }
 
+  const canEdit$ = selectCanAdministerHost();
   const identity = { formId: crypto.randomUUID(), sessionId: crypto.randomUUID() };
   const form$ = selectSettingsForm(identity);
   const entries$ = selectSettingsFormEntries(identity);
   const debounceOperation$ = selectSettingsFormOperation(identity, DEBOUNCE_PATH);
   const maxAgentsOperation$ = selectSettingsFormOperation(identity, MAX_AGENTS_PATH);
-  const loading = $derived(!$form$?.loaded);
+  const loading = $derived(!$canEdit$ || !$form$?.loaded);
   const values = $derived(
     Object.fromEntries(
       FEATURE_PATHS.map((path) => [
@@ -114,7 +116,12 @@
   function handleToggle(path: FeaturePath, checked: boolean) {
     const form = selectSettingsForm.select(appStore.state, identity);
     const entries = selectSettingsFormEntries.select(appStore.state, identity);
-    if (!form?.loaded || (path === 'agentFeatures.peerAgents' && !entries[path])) return;
+    if (
+      !selectCanAdministerHost.select(appStore.state) ||
+      !form?.loaded ||
+      (path === 'agentFeatures.peerAgents' && !entries[path])
+    )
+      return;
     appStore.dispatch(settingsFormDraftChanged(identity, path, checked));
     appStore.dispatch(
       settingsFormSaveRequested({ ...identity, resource: path, requestId: crypto.randomUUID() }, [
@@ -125,7 +132,7 @@
 
   function handleDebounceSave() {
     const form = selectSettingsForm.select(appStore.state, identity);
-    if (!form?.loaded) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !form?.loaded) return;
     const entries = selectSettingsFormEntries.select(appStore.state, identity);
     const newValue = Number(form.drafts[DEBOUNCE_PATH] ?? entries[DEBOUNCE_PATH]?.value);
     if (
@@ -157,6 +164,7 @@
     const form = selectSettingsForm.select(appStore.state, identity);
     const entries = selectSettingsFormEntries.select(appStore.state, identity);
     if (
+      !selectCanAdministerHost.select(appStore.state) ||
       !form?.loaded ||
       !entries['agentFeatures.peerAgents'] ||
       !coerceValue(
@@ -250,7 +258,7 @@
           variant="secondary"
           size="xs"
           onclick={handleDebounceSave}
-          disabled={debounceSaving || !valid || !values['agentFeatures.prMonitor']}
+          disabled={loading || debounceSaving || !valid || !values['agentFeatures.prMonitor']}
         >
           {debounceSaving
             ? m.settings_agentFeatures_prMonitorDebounce_saving()
@@ -288,7 +296,7 @@
           variant="secondary"
           size="xs"
           onclick={handleMaxAgentsSave}
-          disabled={maxAgentsSaving || !valid || !peerAgentsEnabled}
+          disabled={loading || maxAgentsSaving || !valid || !peerAgentsEnabled}
         >
           {maxAgentsSaving
             ? m.settings_agentFeatures_maxTopLevelAgents_saving()

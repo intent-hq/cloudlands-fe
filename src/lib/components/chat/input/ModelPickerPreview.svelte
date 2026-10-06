@@ -4,9 +4,11 @@
 
   let {
     initialOpen = false,
+    captureMenu = false,
     ...props
   }: ComponentProps<typeof ModelPicker> & {
     initialOpen?: boolean;
+    captureMenu?: boolean;
   } = $props();
   let picker: ModelPicker;
 
@@ -15,4 +17,6 @@
   });
 </script>
 
-<ModelPicker bind:this={picker} {...props} />
+<div class={captureMenu ? 'min-h-[420px]' : undefined}>
+  <ModelPicker bind:this={picker} {...props} />
+</div>

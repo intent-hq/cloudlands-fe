@@ -1,7 +1,6 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
 
-type Fixture =
-  'SidebarLauncherHost' | 'SidebarShellBackgroundHost' | 'TitlebarWorkspaceControlsHarness';
+type Fixture = 'SidebarLauncherHost' | 'TitlebarWorkspaceControlsHarness';
 
 export async function checkFixturePrincipalLifecycle(
   page: Page,
@@ -83,8 +82,7 @@ export async function checkFixturePrincipalLifecycle(
         return { before, mounted, after, unmountError, stateError, dispatchError };
       } finally {
         disposeBorrowed?.();
-        // The legacy shell comparison does not own a root lifecycle disposer.
-        // Close its store as well as any store left live by a failing unmount.
+        // Close any store left live by a failing unmount.
         store.dispose();
       }
     },
@@ -97,7 +95,7 @@ export async function checkFixturePrincipalLifecycle(
   expect(result.mounted.snapshot?.principal.isAdministrator).toBe(true);
   expect(result.unmountError).toBeNull();
   expect(pageErrors).toEqual([]);
-  if (borrowed || fixture === 'SidebarShellBackgroundHost') {
+  if (borrowed) {
     expect(result.stateError).toBeNull();
     expect(result.dispatchError).toBeNull();
     expect(result.after).toEqual(result.before);

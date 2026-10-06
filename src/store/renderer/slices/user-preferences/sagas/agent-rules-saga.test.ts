@@ -1,4 +1,5 @@
-import { runSaga, stdChannel, type Task } from 'redux-saga';
+import { store } from '$store/renderer/store';
+import { admitLegacyPrincipal } from '../../../../../test/fixtures/principal-state';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
@@ -14,12 +15,11 @@ import {
   agentRulesEditorOpened,
   saveAgentRules,
   undoAgentRulesChanges,
-  userPreferencesReducer,
 } from '../user-preferences-slice';
 import { agentRulesSaga } from './agent-rules-saga';
 
 const rule = { enabled: true, content: 'Original instructions', updatedAt: 1750000000000 };
-const tasks: Task[] = [];
+const stops: Array<() => void> = [];
 const settle = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
 };
@@ -34,18 +34,15 @@ const deferred = <T>() => {
 };
 
 function start() {
-  let userPreferences = userPreferencesReducer(undefined, { type: '@@init' } as never);
-  const channel = stdChannel();
-  const send = (action: { type: string }) => {
-    userPreferences = userPreferencesReducer(userPreferences, action as never);
-    channel.put(action);
+  stops.push(store.init());
+  admitLegacyPrincipal();
+  const stop = store.runSaga(agentRulesSaga);
+  stops.push(stop);
+  return {
+    send: store.dispatch.bind(store),
+    task: { cancel: stop, toPromise: async () => {} },
+    editor: () => store.state.userPreferences.agentRulesEditor,
   };
-  const task = runSaga(
-    { channel, dispatch: send, getState: () => ({ userPreferences }) },
-    agentRulesSaga,
-  );
-  tasks.push(task);
-  return { send, task, editor: () => userPreferences.agentRulesEditor };
 }
 
 beforeEach(() => {
@@ -57,10 +54,10 @@ beforeEach(() => {
     );
 });
 afterEach(async () => {
-  for (const task of tasks.splice(0)) {
-    task.cancel();
-    await task.toPromise();
-  }
+  stops
+    .reverse()
+    .splice(0)
+    .forEach((stop) => stop());
   vi.useRealTimers();
 });
 

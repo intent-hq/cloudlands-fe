@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    selectCanAdministerHost,
+    selectPrincipalActionContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import {
@@ -37,6 +41,8 @@
   const MAX_RULES_LENGTH = 50000; // 50k characters
   const WARNING_THRESHOLD = 40000; // 80% of max
 
+  const admission$ = selectPrincipalActionContext();
+  const canEdit$ = selectCanAdministerHost();
   const editor$ = selectAgentRulesEditor();
   const hasChanges$ = selectAgentRulesHaveChanges();
   let rulesContent = $derived($editor$.content);
@@ -63,7 +69,7 @@
     // Save immediately on Cmd/Ctrl + S
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
-      appStore.dispatch(saveAgentRules());
+      if ($canEdit$) appStore.dispatch(saveAgentRules());
     }
   }
 </script>
@@ -71,7 +77,7 @@
 <svelte:window onkeydown={handleKeyDown} />
 
 <div class="h-full flex flex-col gap-2 {className}">
-  {#if hasChanges}
+  {#if $canEdit$ && hasChanges}
     <div
       data-testid="agent-rules-header"
       class="flex min-w-0 shrink-0 flex-wrap items-center gap-2"
@@ -86,6 +92,12 @@
         {m.settings_agentRules_undoChanges()}
       </Button>
     </div>
+  {/if}
+
+  {#if !$canEdit$}
+    <p class="type-body text-muted-foreground">
+      {m.settings_agentSettings_ownerOnly_description()}
+    </p>
   {/if}
 
   {#if errorMessage}
@@ -134,13 +146,18 @@
     </div>
   {:else}
     <div class="relative agent-rules-textarea grow flex flex-col min-h-0">
-      <Textarea
-        value={rulesContent}
-        oninput={(event) => appStore.dispatch(agentRulesContentChanged(event.currentTarget.value))}
-        noFocusStyle
-        placeholder={m.settings_agentRules_placeholder()}
-        class="type-body leading-relaxed grow {isOverLimit ? 'border-danger' : ''}"
-      />
+      {#key $admission$}
+        <Textarea
+          value={rulesContent}
+          readonly={!$canEdit$}
+          oninput={(event) => {
+            if ($canEdit$) appStore.dispatch(agentRulesContentChanged(event.currentTarget.value));
+          }}
+          noFocusStyle
+          placeholder={m.settings_agentRules_placeholder()}
+          class="type-body leading-relaxed grow {isOverLimit ? 'border-danger' : ''}"
+        />
+      {/key}
       <!-- Saved indicator -->
       <div
         data-testid="agent-rules-saved-indicator"

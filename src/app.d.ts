@@ -10,7 +10,12 @@ declare module 'svelte/elements' {
 }
 
 declare global {
-  namespace App {}
+  namespace App {
+    interface PageState {
+      /** Correlates a presence follow with its route-derived tab projection only. */
+      presenceFollowRequestId?: string;
+    }
+  }
 
   const __DEV_GIT_BRANCH__: string;
 

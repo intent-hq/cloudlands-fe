@@ -30,6 +30,89 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     resetMockBackend();
   });
 
+  it.each([
+    new Error('connection lost after enqueue'),
+    new BackendError(
+      buildErrorPayload('INTERNAL_ERROR', 'unclassified server failure', { rpcCode: -32603 }),
+    ),
+  ])('keeps correlated queue ambiguity throwable for reconciliation: %s', async (failure) => {
+    backend.onRequest('agent.queueMessage', () => {
+      throw failure;
+    });
+    await expect(
+      new LiveAgentsClient().queue('agent-1', 'later', { messageId: 'submission' }),
+    ).rejects.toThrow(failure.message);
+  });
+
+  it.each([-32600, -32601, -32602, -32003])(
+    'retains proven queue rejection %s for correlated callers',
+    async (code) => {
+      backend.onRequest('agent.queueMessage', () => {
+        throw new BackendError(
+          buildErrorPayload('REJECTED', 'request rejected', { rpcCode: code }),
+        );
+      });
+      expect(
+        await new LiveAgentsClient().queue('agent-1', 'later', { messageId: 'submission' }),
+      ).toEqual({ success: false, error: 'request rejected' });
+    },
+  );
+
+  it('honors an explicit queue rejection response', async () => {
+    backend.onRequest('agent.queueMessage', () => ({ success: false, error: 'queue rejected' }));
+    expect(
+      await new LiveAgentsClient().queue('agent-1', 'later', { messageId: 'submission' }),
+    ).toEqual({ success: false, error: 'queue rejected' });
+  });
+
+  it('retains legacy queue transport failure results without a correlated ID', async () => {
+    backend.onRequest('agent.queueMessage', () => {
+      throw new Error('legacy transport failure');
+    });
+    expect(await new LiveAgentsClient().queue('agent-1', 'later')).toEqual({
+      success: false,
+      error: 'legacy transport failure',
+    });
+  });
+
+  it('queue forwards canonical submission identity and retains recovery correlation', async () => {
+    const recoverySources = [
+      {
+        messageId: 'source',
+        submissionIds: ['submission'],
+        author: { principalId: 'alice', login: null, displayName: null, avatarUrl: null },
+        origin: 'user',
+      },
+    ];
+    const queuedMessage = {
+      id: 'retry',
+      content: 'combined',
+      queuedAt: '2026-10-03T00:00:00Z',
+      position: 0,
+      author: null,
+      recoverySources,
+    };
+    backend.onRequest('agent.queueMessage', () => ({
+      success: true,
+      queuedMessage,
+      turnId: 'turn',
+    }));
+    const result = await new LiveAgentsClient().queue('agent-1', 'text', {
+      workspaceId: 'workspace',
+      messageId: 'submission',
+    });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.queueMessage',
+      params: {
+        agentId: 'agent-1',
+        workspaceId: 'workspace',
+        content: 'text',
+        messageId: 'submission',
+      },
+    });
+    expect(result).toEqual({ success: true, queuedMessage, turnId: 'turn' });
+  });
+
   it('create forwards agent.create with the widened P2-12a params and returns the normalized session', async () => {
     // Daemon returns the full `AgentLite` projection (P2-12a widened §5.5).
     // Unique id so the module-level agentWorkspaceIndex cache does not bleed

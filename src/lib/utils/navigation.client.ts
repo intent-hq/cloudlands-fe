@@ -9,6 +9,13 @@ import { createLogger } from './client-logger';
 
 const logger = createLogger('Navigation');
 
+export const SETTINGS_PREV_PATH_KEY = 'settings-previous-path';
+
+/** Matches Settings itself and its query/hash or nested routes. */
+export function isSettingsRoute(route: string): boolean {
+  return /^\/settings(?:[/?#]|$)/.test(route);
+}
+
 /**
  * Whether this renderer is the chrome-less HUD pop-out window.
  *
@@ -32,10 +39,38 @@ export function isHudWindowRenderer(): boolean {
  * @param route - The route to navigate to (e.g., '/settings', '/workspace/ws-123')
  * @returns Promise that resolves when navigation completes
  */
-export async function navigateToRoute(route: string): Promise<void> {
+export async function navigateToRoute(
+  route: string,
+  options: { assistantContent?: boolean } = {},
+): Promise<void> {
   if (isHudWindowRenderer()) {
     logger.debug('Ignoring navigation in HUD window', { route });
     return;
+  }
+  if (options.assistantContent || route.startsWith('intent://') || /^https?:\/\//.test(route)) {
+    const { showAssistantContent } = await import('$features/home/assistant-panels');
+    if (await showAssistantContent(route, true)) {
+      const { openPanel } = await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
+      const { store } = await import('$store/renderer/store');
+      store.dispatch(openPanel('chief'));
+      const { goto } = await import('$app/navigation');
+      if (window.location.pathname !== '/') await goto('/');
+      return;
+    }
+  }
+  // Every entry point (native menu, in-app links, and toast actions) shares
+  // this boundary. Only entering Settings replaces its return destination.
+  if (
+    isSettingsRoute(route) &&
+    typeof window !== 'undefined' &&
+    typeof sessionStorage !== 'undefined' &&
+    !isSettingsRoute(window.location.pathname)
+  ) {
+    const currentUrl = new URL(window.location.href);
+    sessionStorage.setItem(
+      SETTINGS_PREV_PATH_KEY,
+      currentUrl.pathname + currentUrl.search + currentUrl.hash,
+    );
   }
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore - $app/navigation is a SvelteKit renderer-only module (not available in main process)

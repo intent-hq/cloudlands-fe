@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { selectCanAdministerHost } from '$store/renderer/slices/principal/principal-selectors';
   import SpecialistImportDiagnostics from './SpecialistImportDiagnostics.svelte';
   import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -31,6 +32,7 @@
   let { activeView, onSelect, isActive = true, workspaceId }: Props = $props();
 
   const specialists = $derived(selectSpecialists(workspaceId));
+  const canEdit$ = selectCanAdministerHost();
   const fileSpecialists$ = selectFileSpecialists();
   const isGitHubAuth$ = selectGitHubAuthIsAuthenticated();
   const visibleSpecialists = $derived.by(() =>
@@ -135,33 +137,35 @@
 {/each}
 
 <!-- Create button - flows after specialists -->
-<Button
-  bind:ref={createSpecialistButtonRef}
-  variant="plain"
-  id="create-specialist"
-  type="button"
-  onclick={() => onSelect({ type: 'create-specialist' })}
-  data-highlight-id="create-specialist"
-  data-settings-agent-row
-  active={isSelected({ type: 'create-specialist' })}
-  aria-current={isSelected({ type: 'create-specialist' }) ? 'page' : undefined}
-  class="h-auto w-full min-w-0 justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active
+{#if $canEdit$}
+  <Button
+    bind:ref={createSpecialistButtonRef}
+    variant="plain"
+    id="create-specialist"
+    type="button"
+    onclick={() => onSelect({ type: 'create-specialist' })}
+    data-highlight-id="create-specialist"
+    data-settings-agent-row
+    active={isSelected({ type: 'create-specialist' })}
+    aria-current={isSelected({ type: 'create-specialist' }) ? 'page' : undefined}
+    class="h-auto w-full min-w-0 justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active
     {isSelected({ type: 'create-specialist' })
-    ? 'bg-foreground/5 text-foreground'
-    : 'text-muted-foreground'}"
->
-  <ListRow
-    class="min-h-8 w-full items-center gap-2 px-3 py-0 [&>[data-slot=list-row-leading]]:self-center"
+      ? 'bg-foreground/5 text-foreground'
+      : 'text-muted-foreground'}"
   >
-    {#snippet leading()}
-      <span class="flex size-4 shrink-0 items-center justify-center">
-        <PlusIcon size={16} weight="regular" />
-      </span>
-    {/snippet}
-    {#snippet title()}
-      <span data-settings-sidebar-label class="block truncate type-body font-normal">
-        {m.settings_aiBehavior_sidebar_createSpecialist()}
-      </span>
-    {/snippet}
-  </ListRow>
-</Button>
+    <ListRow
+      class="min-h-8 w-full items-center gap-2 px-3 py-0 [&>[data-slot=list-row-leading]]:self-center"
+    >
+      {#snippet leading()}
+        <span class="flex size-4 shrink-0 items-center justify-center">
+          <PlusIcon size={16} weight="regular" />
+        </span>
+      {/snippet}
+      {#snippet title()}
+        <span data-settings-sidebar-label class="block truncate type-body font-normal">
+          {m.settings_aiBehavior_sidebar_createSpecialist()}
+        </span>
+      {/snippet}
+    </ListRow>
+  </Button>
+{/if}

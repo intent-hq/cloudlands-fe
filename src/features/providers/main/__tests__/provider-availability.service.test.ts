@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   findBinary: vi.fn(),
   findBinaryStrict: vi.fn(),
   backendRequest: vi.fn(),
+  clientForEvent: vi.fn(),
   findAuggiePathStrict: vi.fn(),
   hostExec: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock('../../../../shared/main/find-binary', () => ({
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mocks.backendRequest }),
+  getBackendClientForIpcEvent: mocks.clientForEvent,
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
 }));
@@ -987,5 +989,47 @@ describe('provider availability service', () => {
       expect(result.data.paths.codex).toBe('/usr/local/bin/codex');
       expect(result.data.secondaryPaths).toEqual({});
     });
+  });
+});
+
+describe('onboarding adapter preparation IPC', () => {
+  it('captures the sender backend before discovery and never follows a later host switch', async () => {
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    let resolveDiscovery!: (value: {
+      providers: Array<{ id: string; installed: boolean }>;
+    }) => void;
+    const discovery = new Promise<{ providers: Array<{ id: string; installed: boolean }> }>(
+      (resolve) => {
+        resolveDiscovery = resolve;
+      },
+    );
+    const requestA = vi.fn(async (method) =>
+      method === 'host.providerDiscovery' ? discovery : { accepted: true },
+    );
+    const requestB = vi.fn();
+    mocks.clientForEvent.mockReturnValue({ client: { request: requestA } });
+    const event = { sender: { id: 42 } };
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.PREPARE_ADAPTERS)!;
+    const result = handler(event, 'a:1');
+    mocks.clientForEvent.mockReturnValue({ client: { request: requestB } });
+    resolveDiscovery({ providers: [{ id: 'codex', installed: true }] });
+    await result;
+    expect(mocks.clientForEvent).toHaveBeenCalledWith(event);
+    expect(requestA.mock.calls).toEqual([
+      ['host.providerDiscovery', {}],
+      ['host.prepareProviderAdapters', { providerIds: ['codex'] }],
+    ]);
+    expect(requestB).not.toHaveBeenCalled();
+  });
+
+  it('does not perform discovery for a malformed IPC request', async () => {
+    const { setupProviderAvailabilityIPC } = await import('../provider-availability.service');
+    setupProviderAvailabilityIPC();
+    mocks.clientForEvent.mockClear();
+    const handler = mocks.handlers.get(PROVIDERS_CHANNELS.PREPARE_ADAPTERS)!;
+    await handler({}, undefined);
+    await handler({}, { providerIds: ['pi'] });
+    expect(mocks.clientForEvent).not.toHaveBeenCalled();
   });
 });

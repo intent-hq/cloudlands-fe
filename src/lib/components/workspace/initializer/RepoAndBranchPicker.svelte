@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Button } from '$lib/components/ui/button';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
@@ -8,6 +9,8 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import BranchSelector, { type BranchListInfo, type BranchStatus } from './BranchSelector.svelte';
   import RepoSelector from './RepoSelector.svelte';
+  import GitLabBranchPicker from './GitLabBranchPicker.svelte';
+  import type { GitLabProjectPickerProps, GitLabBranchPickerProps } from './gitlab-picker-types';
   import { m } from '$shared/paraglide/messages.js';
 
   type RepoSelectorHandle = {
@@ -48,7 +51,9 @@
   interface Props {
     repoPath?: string;
     branch?: string;
-    repoType?: 'local' | 'github' | 'remote';
+    repoType?: 'local' | 'github' | 'gitlab' | 'remote';
+    gitlab?: GitLabProjectPickerProps;
+    gitlabBranch?: GitLabBranchPickerProps;
     githubUrl?: string;
     skipIsolation?: boolean;
     isNewRepo?: boolean;
@@ -82,6 +87,8 @@
     repoPath = '',
     branch = '',
     repoType = 'local',
+    gitlab,
+    gitlabBranch,
     githubUrl = '',
     skipIsolation = false,
     isNewRepo = false,
@@ -251,8 +258,26 @@
 </script>
 
 <div class={pickerClass}>
-  {#if field === 'repo'}
+  {#if repoType === 'gitlab'}
+    {#if field !== 'branch'}
+      <RepoSelector
+        bind:this={repoSelector}
+        {gitlab}
+        gitlabSelected
+        variant="ghost"
+        onchange={handleRepoChange}
+        triggerClass={repoTriggerClass}
+        triggerValueClass={isMetadataPresentation ? metadataValueClass : defaultValueClass}
+        showTriggerChevron={isMetadataPresentation}
+        triggerChevronClass={metadataChevronClass}
+      />
+    {/if}
+    {#if field !== 'repo' && gitlabBranch}
+      <GitLabBranchPicker {...gitlabBranch} triggerClass={branchTriggerClass} />
+    {/if}
+  {:else if field === 'repo'}
     <RepoSelector
+      {gitlab}
       bind:this={repoSelector}
       variant="ghost"
       value={repoOnlyValue}
@@ -302,6 +327,7 @@
       <span class="text-sm text-subtle whitespace-nowrap shrink-0">{workOnRepoParts[0]}</span>
     {/if}
     <RepoSelector
+      {gitlab}
       bind:this={repoSelector}
       variant="ghost"
       value=""
@@ -324,6 +350,7 @@
       >
     {/if}
     <RepoSelector
+      {gitlab}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -336,6 +363,7 @@
     />
   {:else if repoType === 'github' && githubUrl && isMetadataPresentation}
     <RepoSelector
+      {gitlab}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -355,6 +383,7 @@
       {/if}
     {/if}
     <RepoSelector
+      {gitlab}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -397,6 +426,7 @@
     {/if}
   {:else if repoType === 'remote' && remoteSetup && isMetadataPresentation}
     <RepoSelector
+      {gitlab}
       variant="ghost"
       value={remoteSetup.name}
       onchange={handleRepoChange}
@@ -416,6 +446,7 @@
       {/if}
     {/if}
     <RepoSelector
+      {gitlab}
       variant="ghost"
       value={remoteSetup.name}
       onchange={handleRepoChange}
@@ -433,7 +464,7 @@
     {/if}
     <span
       class="text-xs text-subtle whitespace-nowrap min-w-0 font-mono truncate max-w-60"
-      title={remoteDisplayPath}
+      use:truncatedTitle={remoteDisplayPath}
     >
       {remoteDisplayPath}
     </span>
@@ -470,6 +501,7 @@
     {/if}
   {:else if isMetadataPresentation}
     <RepoSelector
+      {gitlab}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}
@@ -491,6 +523,7 @@
       {/if}
     {/if}
     <RepoSelector
+      {gitlab}
       variant="ghost"
       value={repoPath}
       onchange={handleRepoChange}

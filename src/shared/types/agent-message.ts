@@ -64,10 +64,24 @@ export interface MessageAuthor {
   identity?: PrincipalIdentity;
 }
 
+/** Daemon-owned original source of a combined queue retry; never an ACL. */
+interface RecoverySource {
+  messageId: string;
+  submissionIds?: string[];
+  author: MessageAuthor | null;
+  origin: 'user' | 'automatic';
+}
+
+/** Additive submission-correlation v1 fields; recovery leaves replace flat aliases. */
+export interface SubmissionCorrelation {
+  submissionIds?: string[];
+  recoverySources?: RecoverySource[];
+}
+
 /**
  * Message metadata containing operational information
  */
-export interface MessageMetadata {
+export interface MessageMetadata extends SubmissionCorrelation {
   // Model information
   model?: string;
   usage?: {

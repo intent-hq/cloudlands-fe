@@ -4,7 +4,7 @@ import WorkspaceTabDragRegionHarness from './WorkspaceTabDragRegionHarness.svelt
 
 async function dragRegionGeometry(titlebar: Locator) {
   return titlebar.evaluate(async (root) => {
-    // Mounting precedes font readiness and frame-scheduled tab/sidebar layout.
+    // Mounting precedes font readiness and frame-scheduled tab layout.
     // Use the same capture boundary as geometry goldens before measuring once.
     const geometryWindow = window as typeof window & {
       __INTENT_GEOMETRY_CT__: {
@@ -13,9 +13,7 @@ async function dragRegionGeometry(titlebar: Locator) {
     };
     await geometryWindow.__INTENT_GEOMETRY_CT__.waitForCaptureStability(root as HTMLElement);
     const strip = root.querySelector<HTMLElement>('[data-workspace-tab-strip]')!;
-    const fixed = root.querySelector('[data-titlebar-fixed-controls]')!;
     const bounds = strip.getBoundingClientRect();
-    const gap = { left: fixed.getBoundingClientRect().right, right: bounds.left };
     const descendants = Array.from(strip.querySelectorAll('*')).map((element) => {
       const rect = element.getBoundingClientRect();
       return {
@@ -26,32 +24,31 @@ async function dragRegionGeometry(titlebar: Locator) {
         region: getComputedStyle(element).getPropertyValue('-webkit-app-region'),
         left: rect.left,
         right: rect.right,
-        overlapsGap:
-          rect.width > 0 && rect.height > 0 && rect.left < gap.right && rect.right > gap.left,
+        clippedOnLeft: rect.width > 0 && rect.height > 0 && rect.left < bounds.left,
       };
     });
     return {
-      gap,
+      scrollerLeft: bounds.left,
       scrollerRegion: getComputedStyle(strip).getPropertyValue('-webkit-app-region'),
       overflow: strip.scrollWidth > strip.clientWidth,
       scrollLeft: strip.scrollLeft,
-      hiddenOverGap: descendants.filter((element) => element.overlapsGap),
+      clippedOnLeft: descendants.filter((element) => element.clippedOnLeft),
       // Electron uses unclipped rectangles; browser pointer hit testing alone
       // would miss inherited no-drag on the invisible motion/visual wrappers.
       leakingNoDrag: descendants.filter(
-        (element) => element.overlapsGap && element.region === 'no-drag',
+        (element) => element.clippedOnLeft && element.region === 'no-drag',
       ),
       descendantRegions: [...new Set(descendants.map((element) => element.region))],
     };
   });
 }
 
-test('overflowing tabs leave the empty left titlebar gap draggable after scrolling and resizing', async ({
+test('overflowing tabs keep hidden tab wrappers outside the no-drag region after scrolling and resizing', async ({
   mount,
   page,
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.setViewportSize({ width: 720, height: 400 });
+  await page.setViewportSize({ width: 640, height: 400 });
   const component = await mount(WorkspaceTabDragRegionHarness);
   const titlebar = component.locator('.window-title-bar');
   const strip = component.locator('[data-workspace-tab-strip]');
@@ -67,28 +64,19 @@ test('overflowing tabs leave the empty left titlebar gap draggable after scrolli
       contentType: 'application/json',
     });
     expect(geometry.scrollLeft).toBeGreaterThan(0);
-    expect(geometry.gap.right).toBeGreaterThan(geometry.gap.left);
     expect(
-      geometry.hiddenOverGap.length,
-      'Scrolled-out tabs actually extend across the drag gap',
+      geometry.clippedOnLeft.length,
+      'Scrolled-out tabs actually extend beyond the scroller',
     ).toBeGreaterThan(0);
     expect(geometry.scrollerRegion, 'Visible tabs stay inside a no-drag container').toBe('no-drag');
     expect(
       geometry.leakingNoDrag,
-      'Hidden tab wrappers must not subtract from the drag gap',
+      'Hidden tab wrappers must not extend the no-drag region',
     ).toEqual([]);
     expect(
       geometry.descendantRegions,
       'Only the scroller contributes a tab no-drag rectangle',
     ).toEqual(['none']);
-    const gapRegion = await titlebar.evaluate((root) => {
-      const fixed = root.querySelector('[data-titlebar-fixed-controls]')!.getBoundingClientRect();
-      const strip = root.querySelector('[data-workspace-tab-strip]')!.getBoundingClientRect();
-      return getComputedStyle(
-        document.elementFromPoint((fixed.right + strip.left) / 2, (strip.top + strip.bottom) / 2)!,
-      ).getPropertyValue('-webkit-app-region');
-    });
-    expect(gapRegion).toBe('drag');
   }
 
   await expectClippedRegions();
@@ -97,15 +85,7 @@ test('overflowing tabs leave the empty left titlebar gap draggable after scrolli
   });
   await expect.poll(async () => (await dragRegionGeometry(titlebar)).scrollLeft).toBe(0);
   await expectClippedRegions();
-  await page.setViewportSize({ width: 660, height: 400 });
-  await expectClippedRegions();
-  const gapBeforeSidebarResize = (await dragRegionGeometry(titlebar)).gap;
-  await component.update({ props: { sidebarWidth: 340 } });
-  // Store selectors publish on a frame cadence even with reduced motion.
-  // Wait for the rendered resize before checking the resized drag regions.
-  await expect
-    .poll(async () => (await dragRegionGeometry(titlebar)).gap.right)
-    .toBeGreaterThan(gapBeforeSidebarResize.right);
+  await page.setViewportSize({ width: 580, height: 400 });
   await expectClippedRegions();
   await expect(component.locator('[data-titlebar-settings]')).toHaveCSS(
     '-webkit-app-region',
@@ -126,7 +106,7 @@ test('non-overflowing tabs keep their controls inside the bounded no-drag region
   await page.setViewportSize({ width: 1200, height: 400 });
   const component = await mount(WorkspaceTabDragRegionHarness);
   const titlebar = component.locator('.window-title-bar');
-  // Sidebar selectors and overflow sizing can settle after the capture frames.
+  // Overflow sizing can settle after the capture frames.
   // Wait for the non-overflow layout, as the narrow-viewport case does above.
   await expect.poll(async () => (await dragRegionGeometry(titlebar)).overflow).toBe(false);
   const geometry = await dragRegionGeometry(titlebar);

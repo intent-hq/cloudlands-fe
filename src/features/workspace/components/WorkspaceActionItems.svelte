@@ -9,6 +9,7 @@
   import { faChevronDown, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { ShortcutChip } from '$lib/components/ui/kbd';
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import * as Menu from '$lib/components/ui/menu';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import type { MenuAction } from './WorkspaceActionsMenu.svelte';
@@ -54,7 +55,9 @@
 {/snippet}
 
 {#snippet label(action: MenuAction)}
-  <span class="min-w-0 flex-1 truncate text-left" title={action.label}>{action.label}</span>
+  <span class="min-w-0 flex-1 truncate text-left" use:truncatedTitle={action.label}
+    >{action.label}</span
+  >
   {#if action.shortcut}<span
       class={menu ? 'ml-4 flex h-lh shrink-0 items-center' : 'ml-4'}
       aria-hidden="true"><ShortcutChip>{formatShortcut(action.shortcut)}</ShortcutChip></span

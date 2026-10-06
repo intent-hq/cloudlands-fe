@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    selectCanAdministerHost,
+    selectPrincipalActionContext,
+  } from '$store/renderer/slices/principal/principal-selectors';
   import { onDestroy } from 'svelte';
   import { SettingsDisclosure } from '$lib/components/patterns/settings';
   import { Button, Input, Textarea } from '$lib/components/patterns/settings/custom-controls';
@@ -63,6 +67,8 @@
   let { activeView, workspaceId, onSpecialistCreated, onSpecialistDeleted, onDiscard }: Props =
     $props();
 
+  const canEdit$ = selectCanAdministerHost();
+  const admission$ = selectPrincipalActionContext();
   const fileSpecialists$ = selectFileSpecialists();
   const selectedModel = selectSelectedModel();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
@@ -104,6 +110,7 @@
   });
 
   function updateDraft(patch: Partial<SpecialistDraft>) {
+    if (!selectCanAdministerHost.select(appStore.state)) return;
     appStore.dispatch(updateSpecialistDraft(draftContext, patch));
   }
 
@@ -141,11 +148,7 @@
       : false,
   );
 
-  /**
-   * A built-in specialist is "modified" only when its user override file
-   * actually differs from the bundled defaults — a lingering identical file
-   * never shows "Modified" (diff-based, monorepo#1450).
-   */
+  // An identical override file does not mark a built-in as modified.
   const hasOverrides = $derived.by(() => {
     void $fileSpecialists$; // track file specialist changes for reactivity
     if (!currentSpecialist) return false;
@@ -236,13 +239,7 @@
     }
   });
 
-  /**
-   * Drop an effort level the given model does not advertise, so switching to
-   * a model without that level resets the dropdown to Default instead of
-   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`). The
-   * lookup is provider-scoped: a cross-provider pick consults the resolved
-   * provider's cached catalog, not the active one.
-   */
+  // Drop unsupported effort levels using the selected provider’s catalog.
   function effortForModel(
     providerId: string | undefined,
     modelId: string | undefined,
@@ -262,7 +259,7 @@
     compoundModelId: string,
     pick?: { providerId: string; modelId: string },
   ) {
-    if (!currentSpecialist || isImported) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
 
     // Empty string = the inherit ("use global default") option was picked:
     // clear the explicit pin so the saved file has no `model:` key. On a
@@ -396,16 +393,9 @@
     }
   }
 
-  /**
-   * Persist the specialist's reasoning-effort level. Default (undefined)
-   * omits the key on the wire so the model default is inherited; on a
-   * built-in with no override file, picking Default is a no-op and picking a
-   * level exports a user file (mirroring the model-pin export path). Clearing
-   * the level on a user override that then matches the bundled defaults
-   * deletes the file (monorepo#1450).
-   */
+  // Clearing effort on a redundant built-in override removes the override file.
   function handleSpecialistEffortChange(effort: string | undefined) {
-    if (!currentSpecialist || isImported) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     specialistEffortValue = effort;
 
     if (isFileBased) {
@@ -512,7 +502,7 @@
   }
 
   function handlePromptSave(prompt: string) {
-    if (!currentSpecialist || isImported) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     if (isFileBased) {
       const fileSpec = selectGetFileSpecialist.select(
         appStore.state,
@@ -567,16 +557,9 @@
     }
   }
 
-  /**
-   * Persist the committed model-option rows. Empty list ⇒ the key is omitted
-   * on save (inherit is maintained — coordinator constraint; the mutation
-   * service drops empty lists before the wire call). A built-in with no
-   * override file gets one only when a non-empty list is committed, mirroring
-   * the model-pin export path; clearing the last option on a user override
-   * that then matches the bundled defaults deletes the file (monorepo#1450).
-   */
+  // Empty options inherit; remove an override that becomes identical to its built-in.
   function handleModelOptionsCommit(options: SpecialistModelOption[]) {
-    if (!currentSpecialist || isImported) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     const next = options.length > 0 ? options : undefined;
 
     if (isFileBased) {
@@ -656,7 +639,7 @@
   }
 
   function handleNameSave(newNameValue: string) {
-    if (!currentSpecialist || isImported) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     const trimmed = newNameValue.trim();
     if (!trimmed || trimmed === currentSpecialist.name) return;
 
@@ -694,7 +677,7 @@
   }
 
   function handleDescriptionSave(newDescValue: string) {
-    if (!currentSpecialist || isImported) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     const trimmed = newDescValue.trim();
     if (trimmed === currentSpecialist.description) return;
 
@@ -732,7 +715,7 @@
   }
 
   function resetToDefault() {
-    if (!currentSpecialist || isImported) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     // Delete the user override file so the specialist reverts to bundled defaults
     appStore.dispatch(
       deleteFileSpecialistAction({
@@ -743,7 +726,7 @@
   }
 
   function deleteSpecialist() {
-    if (!currentSpecialist || isImported) return;
+    if (!selectCanAdministerHost.select(appStore.state) || !currentSpecialist || isImported) return;
     // Capture values before deletion since currentSpecialist is a $derived
     // that will become null once the specialist is removed from the store
     const specialistId = currentSpecialist.id;
@@ -764,6 +747,8 @@
   }
 
   async function createSpecialist() {
+    if (!selectCanAdministerHost.select(appStore.state)) return;
+    const submittedAdmission = selectPrincipalActionContext.select(appStore.state);
     const current = selectSpecialistCreation.select(appStore.state, draftContext);
     if (
       current.status === 'saving' ||
@@ -778,7 +763,12 @@
     appStore.dispatch(action);
     try {
       const id = await action.promise;
-      if (mounted && activeView === submittedView && draftContext === submittedContext) {
+      if (
+        mounted &&
+        selectPrincipalActionContext.select(appStore.state) === submittedAdmission &&
+        activeView === submittedView &&
+        draftContext === submittedContext
+      ) {
         onSpecialistCreated?.(id);
       }
     } catch {
@@ -799,7 +789,11 @@
     ? 'specialist-editor-container'
     : ''}"
 >
-  <!-- System Prompt View -->
+  {#if !$canEdit$ && activeView.type !== 'system-prompt'}
+    <p class="type-body mb-4 text-muted-foreground">
+      {m.settings_agentSettings_ownerOnly_description()}
+    </p>
+  {/if}
   {#if activeView.type === 'system-prompt'}
     <div
       data-testid="all-agents-editor-layout"
@@ -815,8 +809,6 @@
         <AgentRulesEditor class="xl:min-h-0 xl:flex-1" />
       </div>
     </div>
-
-    <!-- Specialist Editor View -->
   {:else if activeView.type === 'specialist' && currentSpecialist}
     <div
       data-testid="specialist-editor-layout"
@@ -831,7 +823,7 @@
           data-testid="specialist-prompt-header"
           class="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2"
         >
-          {#if !isImported && !isBuiltIn && !hasOverrides}
+          {#if $canEdit$ && !isImported && !isBuiltIn && !hasOverrides}
             <Input
               type="text"
               value={currentSpecialist.name}
@@ -857,7 +849,7 @@
               </span>
             {/if}
           {/if}
-          {#if !isImported && isBuiltIn && hasOverrides}
+          {#if $canEdit$ && !isImported && isBuiltIn && hasOverrides}
             <Button
               variant="plain"
               size="sm"
@@ -869,7 +861,7 @@
               {m.settings_aiBehavior_reset()}
             </Button>
           {/if}
-          {#if specialistFilePath}
+          {#if $canEdit$ && specialistFilePath}
             <div class="ml-auto shrink-0">
               <OpenComboButton
                 filePath={specialistFilePath}
@@ -879,7 +871,7 @@
             </div>
           {/if}
         </div>
-        {#if isImported}
+        {#if isImported || !$canEdit$}
           <Textarea
             value={effectiveBehaviorPrompt}
             readonly
@@ -888,22 +880,23 @@
             class="xl:min-h-0 xl:flex-1"
           />
         {:else}
-          <AutoSaveTextarea
-            value={effectiveBehaviorPrompt}
-            originalValue={currentSpecialist.defaultBehaviorPrompt}
-            placeholder={m.settings_aiBehavior_systemPrompt_placeholder()}
-            minRows={12}
-            maxLength={50000}
-            onSave={handlePromptSave}
-            class="xl:min-h-0 xl:flex-1"
-          />
+          {#key $admission$}
+            <AutoSaveTextarea
+              value={effectiveBehaviorPrompt}
+              originalValue={currentSpecialist.defaultBehaviorPrompt}
+              placeholder={m.settings_aiBehavior_systemPrompt_placeholder()}
+              minRows={12}
+              maxLength={50000}
+              onSave={handlePromptSave}
+              class="xl:min-h-0 xl:flex-1"
+            />
+          {/key}
         {/if}
       </div>
 
       <div data-testid="specialist-details-column" class="flex min-w-0 flex-col gap-6 xl:pt-8">
-        <!-- Specialist identity and source context. -->
         <div class="min-w-0">
-          {#if !isImported && !isBuiltIn && !hasOverrides}
+          {#if $canEdit$ && !isImported && !isBuiltIn && !hasOverrides}
             <Input
               type="text"
               value={currentSpecialist.description}
@@ -965,23 +958,25 @@
               {/if}
             </p>
           {/if}
-          {#if !isImported}
+          {#if $canEdit$ && !isImported}
             <p class="type-body mt-2 text-muted-foreground">
               {m.settings_aiBehavior_usageHint()}
             </p>
           {/if}
         </div>
 
-        <!-- Preserve the specialist model, reasoning, and delegation controls. -->
         <div class="min-w-0">
           <div class="flex min-w-0 flex-wrap items-center gap-3">
             <span class="type-body shrink-0 font-medium text-foreground">
               {m.settings_aiBehavior_model_label()}
             </span>
-            {#if isImported}
+            {#if isImported || !$canEdit$}
               <span class="type-body text-muted-foreground"
                 >{currentSpecialist.defaultModel ||
-                  m.settings_aiBehavior_inheritModel_label()}</span
+                  currentSpecialist.resolvedModel ||
+                  m.settings_aiBehavior_inheritModel_label()}{specialistEffortValue
+                  ? ` · ${specialistEffortValue}`
+                  : ''}</span
               >
             {:else}
               <ModelPicker
@@ -1016,11 +1011,12 @@
               flush
               muted
             >
-              {#key currentSpecialist.id}
+              {#key JSON.stringify([$admission$, currentSpecialist.id])}
                 <SpecialistModelOptions
                   workspaceId={currentSpecialist.source === 'project'
                     ? (routeWorkspaceId ?? undefined)
                     : undefined}
+                  readonly={!$canEdit$}
                   savedOptions={savedModelOptions}
                   onCommit={handleModelOptionsCommit}
                 />
@@ -1029,7 +1025,7 @@
           {/if}
         </div>
 
-        {#if !isImported && !isBuiltIn}
+        {#if $canEdit$ && !isImported && !isBuiltIn}
           <div class="pt-4 border-border">
             <Button
               variant="ghost"
@@ -1046,7 +1042,7 @@
     </div>
 
     <!-- Create Specialist View -->
-  {:else if activeView.type === 'create-specialist'}
+  {:else if activeView.type === 'create-specialist' && $canEdit$}
     <div
       data-testid="create-specialist-editor-layout"
       class="grid min-w-0 grid-cols-1 gap-8 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:items-stretch"

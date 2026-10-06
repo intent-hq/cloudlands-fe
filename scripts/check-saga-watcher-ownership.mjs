@@ -26,13 +26,24 @@ export const WATCHERS = new Set([
   'debounce',
   ...CONTEXT_WATCHERS,
 ]);
-export const WILDCARD_EFFECTS = new Set([...WATCHERS, 'take', 'takeMaybe', 'actionChannel']);
+export const WILDCARD_EFFECTS = new Set([
+  ...WATCHERS,
+  'take',
+  'takeMaybe',
+  'actionChannel',
+  'ownedActionChannel',
+]);
 const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'cancel']);
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
     pattern: /daemon-health-slice\.ts#connectionStatusChanged$/,
     rationale: 'browser registry synchronization and desktop consent cleanup are independent',
+  },
+  {
+    pattern: /workspace-lifecycle-slice\.ts#backendReconnected$/,
+    rationale:
+      'accept-changes status and Home integration data independently refresh after backend reconnect',
   },
   {
     pattern: /workspace-lifecycle-slice\.ts#workspace(?:Deleted|Unmounted|Mounted)$/,
@@ -53,10 +64,6 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
     pattern: /connections-slice\.ts#connectionsListReceived$/,
     rationale: 'backend layout restore and sidebar reconciliation are independent',
-  },
-  {
-    pattern: /sidebar-nav-slice\.ts#(?:openPanel|closePanel|togglePanel|closeAll|closeHoverCards)$/,
-    rationale: 'sidebar ownership and unread-boundary snapshots are independent',
   },
   {
     pattern:
@@ -275,6 +282,11 @@ export function createProvenanceResolvers(sources, { contextWatchers = CONTEXT_W
     externalOrigin: (specifier, imported) => {
       const native = specifier === 'typed-redux-saga' || specifier === 'redux-saga/effects';
       const contextual = /(?:^|\/)context-saga-effects$/.test(specifier);
+      if (
+        specifier === '$store/renderer/utils/owned-action-channel' &&
+        imported === 'ownedActionChannel'
+      )
+        return { origin: `${specifier}#${imported}`, name: imported };
       if ((native && EFFECTS.has(imported)) || (contextual && contextWatchers.has(imported)))
         return { origin: `${specifier}#${imported}`, name: imported };
       return undefined;

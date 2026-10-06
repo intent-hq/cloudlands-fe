@@ -28,6 +28,7 @@ import { selectHostRole } from './slices/principal/principal-selectors';
 // compatibility facades and every participating saga execute unchanged.
 vi.mock('$lib/client/live/backend-transport', () => ({
   electronAPI: () => window.electronAPI,
+  observeBackendNodeCapabilities: vi.fn(async () => ({ server: { capabilities: null } })),
   backendRequest: vi.fn(),
   backendSubscribe: vi.fn(async () => ({ subscriptionId: 'composition-events' })),
   backendUnsubscribe: vi.fn(async () => {}),

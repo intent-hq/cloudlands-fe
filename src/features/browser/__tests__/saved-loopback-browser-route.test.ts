@@ -60,6 +60,10 @@ vi.mock('../main/embedded-browser-cdp-service', () => ({
     findModelTabByExactUrl: vi.fn().mockResolvedValue(undefined),
     findModelTabByRequestedUrl: vi.fn().mockResolvedValue(undefined),
     setTabOwner: vi.fn(),
+    listAllTabs: vi.fn(async () => {
+      const tab = fixture.send.mock.calls.at(-1)?.[2];
+      return { tabs: tab ? [{ ...tab, mounted: true }] : [], stale: false };
+    }),
   },
 }));
 vi.mock('../main/browser-capture-service', () => ({ browserCapture: {} }));
@@ -126,7 +130,32 @@ describe('saved-loopback browser.exec forwarding', () => {
         callback = undefined;
       };
     });
-    const client = { getConfig, registerMethod } as unknown as JsonRpcClient;
+    const connection = {};
+    const client = {
+      getConfig,
+      registerMethod,
+      getRepositoryConnection: () => connection,
+      requestOnCapturedConnection: async (captured: object, method: string, params: unknown) => {
+        expect(captured).toBe(connection);
+        expect(method).toBe('browser.listTabs');
+        expect(params).toEqual({ workspaceId: 'fixture-workspace' });
+        const tab = fixture.send.mock.calls.at(-1)?.[2];
+        return {
+          tabs: tab
+            ? [
+                {
+                  ...tab,
+                  hostClientId: 'fixture-client',
+                  hostConnected: true,
+                  visibility: 'hidden',
+                  createdAt: '2026-10-05T06:00:00Z',
+                  updatedAt: '2026-10-05T06:00:00Z',
+                },
+              ]
+            : [],
+        };
+      },
+    } as unknown as JsonRpcClient;
     disposers.push(
       registerBrowserExecReverseHandler(client, {
         backendId: 'saved-loopback-fixture',

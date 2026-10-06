@@ -33,7 +33,6 @@
     stampMarkdownImageDimensions,
   } from '$lib/utils/markdown-image-dimensions';
   import type { TextBlockMedia } from '$shared/types/content-block';
-
   import {
     openWorkspaceFile,
     openWorkspaceNote,
@@ -41,9 +40,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
-
   type MediaUnavailableReason = 'missing' | 'unsupported' | 'load-failed';
-
   interface Props {
     content: string;
     isStreaming?: boolean;
@@ -65,16 +62,16 @@
     forceExternalLinks?: boolean;
     /** Show rich fenced blocks as source when no TipTap node views are mounted. */
     renderRichFencesAsCode?: boolean;
+    /** GitHub-style embedded HTML, still sanitized before rendering. */
+    allowSanitizedHtml?: boolean;
     /** PROTOCOL §7.1 dimensions keyed by Markdown src; reserve image space while loading. */
     media?: TextBlockMedia;
   }
-
   let {
     content,
     isStreaming = false,
     className = '',
     workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined,
-
     onCodeBlockAction: _onCodeBlockAction,
     onFileClick,
     canOpenFile,
@@ -83,6 +80,7 @@
     chatImageThumbnails = false,
     forceExternalLinks = false,
     renderRichFencesAsCode = false,
+    allowSanitizedHtml = false,
     media,
   }: Props = $props();
 
@@ -173,6 +171,7 @@
       taskBlockRenderMode,
       workspaceId,
       renderRichFencesAsCode,
+      allowSanitizedHtml,
       renderMath: !isStreaming,
       workspaceFileVersion,
     };
@@ -544,6 +543,7 @@
           {chatImageThumbnails}
           {forceExternalLinks}
           {renderRichFencesAsCode}
+          {allowSanitizedHtml}
           {media}
         />
       {/if}
@@ -567,7 +567,7 @@
     {@html renderedContent}
     {@render imageActionsOverlay()}
   </div>
-{:else if contentComplexity === 'simple'}
+{:else if contentComplexity === 'simple' && !allowSanitizedHtml}
   <div class="markdown-viewer simple-content {className}">
     <p class="whitespace-pre-wrap">{markdownContent}</p>
   </div>

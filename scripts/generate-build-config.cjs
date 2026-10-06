@@ -29,6 +29,7 @@
  * ------
  *   node scripts/generate-build-config.cjs
  *   node scripts/generate-build-config.cjs --if-missing
+ *   node scripts/generate-build-config.cjs --if-stale
  *
  * This is automatically run by:
  *   - pnpm run build (production builds)
@@ -36,11 +37,13 @@
  *   - pnpm run verify:changed, with --if-missing, before the main-process
  *     type check: the generated module is the only input tsc needs, so a
  *     cold checkout gets a file and an existing one is left untouched
- *     (every run embeds a fresh timestamp, so there is no content hash to gate on).
+ *   - unit launchers and verification plans, with --if-stale, validate current
+ *     inputs and repair missing or obsolete output before starting test children.
  */
 
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('crypto');
 const { execSync } = require('child_process');
 
 const outputPath = path.join(__dirname, '..', 'src', 'main', 'build-config.generated.ts');
@@ -86,7 +89,21 @@ try {
 const CONFIG = {
   // Git commit hash for version identification
   GIT_COMMIT_HASH: gitCommitHash,
+  ISOLATED_TEST_BUILD_ID: process.env.INTENT_ISOLATED_TEST_BUILD_ID || '',
+  ISOLATED_TEST_BACKEND_SHA: process.env.INTENT_ISOLATED_TEST_BACKEND_SHA || '',
 };
+
+if (
+  (CONFIG.ISOLATED_TEST_BUILD_ID !== '' || CONFIG.ISOLATED_TEST_BACKEND_SHA !== '') &&
+  (!/^manual-[1-9][0-9]{0,19}-[1-9][0-9]{0,2}$/.test(CONFIG.ISOLATED_TEST_BUILD_ID) ||
+    !/^[a-f0-9]{40}$/.test(CONFIG.ISOLATED_TEST_BACKEND_SHA))
+) {
+  throw new Error('Isolated test builds require an exact manual build ID and backend commit');
+}
+
+// Include generator identity so a schema/template change invalidates old output,
+// even when all current input values happen to be unchanged.
+const generatorHash = createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
 
 // Generate the TypeScript file
 const content = `/**
@@ -104,6 +121,7 @@ const content = `/**
  *
  * This file is gitignored because it may contain secrets.
  *
+ * Generator SHA256: ${generatorHash}
  * Generated at: ${new Date().toISOString()}
  */
 
@@ -113,10 +131,21 @@ export const BUILD_CONFIG = {
    * Used for version identification in About dialog
    */
   GIT_COMMIT_HASH: ${JSON.stringify(CONFIG.GIT_COMMIT_HASH)},
+  ISOLATED_TEST_BUILD_ID: ${JSON.stringify(CONFIG.ISOLATED_TEST_BUILD_ID)},
+  ISOLATED_TEST_BACKEND_SHA: ${JSON.stringify(CONFIG.ISOLATED_TEST_BACKEND_SHA)},
 } as const;
 
 export type BuildConfig = typeof BUILD_CONFIG;
 `;
+
+// Compare the complete owned output, not only a marker that could survive a
+// truncated/obsolete module. The timestamp is the only volatile output field.
+if (process.argv.includes('--if-stale') && fs.existsSync(outputPath)) {
+  const withoutTimestamp = (text) => text.replace(/^ \* Generated at: .*$/m, '');
+  if (withoutTimestamp(fs.readFileSync(outputPath, 'utf8')) === withoutTimestamp(content)) {
+    process.exit(0);
+  }
+}
 
 fs.writeFileSync(outputPath, content);
 

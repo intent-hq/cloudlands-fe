@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, cleanup, within } from '@testing-library/svelte';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { gitReducer, initialState } from '$store/renderer/slices/git/git-slice';
 import { gitConsumerReadSaga } from '$store/renderer/slices/git/sagas/git-consumer-read-saga';
@@ -538,8 +538,7 @@ describe('CommitsTimeline', () => {
   // Double-click the rendered message into edit mode, type a new message, and
   // commit with Enter (saveCommitEdit).
   async function editCommitMessage(container: HTMLElement, from: string, to: string) {
-    const message = container.querySelector(`[title="${from}"]`) as HTMLElement;
-    expect(message).toBeTruthy();
+    const message = within(container).getByRole('button', { name: from });
     await fireEvent.dblClick(message);
     const input = await waitFor(() => {
       const el = container.querySelector('input[type="text"]') as HTMLInputElement;

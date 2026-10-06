@@ -1,3 +1,8 @@
+import {
+  observeSubmissionEvidence,
+  observeSubmissionLifecycle,
+  announceSubmissionDelivery,
+} from '$features/agent/submission-evidence';
 import { scriptChangeSnapshot, scriptRuntimeSnapshot } from '$features/scripts/utils/script-change';
 import { desktopEventReceived } from '$store/renderer/slices/desktop-control/desktop-control-slice';
 import { parseDesktopEvent } from '$features/desktop/renderer/desktop-client';
@@ -1668,6 +1673,7 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
   const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
   if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
   if (!isAgentReadWorkspaceCurrent(agentId, event.workspaceId)) return;
+  observeSubmissionEvidence(agentId, event.workspaceId, 'queue', queue as QueuedMessage[]);
   appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[], event.workspaceId));
   // Mark the snapshot so an in-flight hydrate fetch that started before this
   // event discards its (now stale) response instead of overwriting it.
@@ -1708,6 +1714,7 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
       new Set(rows.map((row) => row.id)).size !== rows.length
     )
       return;
+    observeSubmissionEvidence(agentId, event.workspaceId, 'processing', rows as QueuedMessage[]);
     appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
   } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
 }
@@ -3530,7 +3537,7 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       : undefined;
 
   import('$lib/utils/navigation.client')
-    .then(({ navigateToRoute }) => navigateToRoute(route))
+    .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
     .then(() => {
       if (highlightId) {
         // Defer the highlight dispatch slightly so the target element has time
@@ -3602,7 +3609,7 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
             error: 'error' in result ? result.error : undefined,
           });
           const { navigateToRoute } = await import('$lib/utils/navigation.client');
-          return navigateToRoute(route);
+          return navigateToRoute(route, { assistantContent: true });
         }
       })
       .catch(async (error: unknown) => {
@@ -3611,14 +3618,14 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
           error,
         });
         const { navigateToRoute } = await import('$lib/utils/navigation.client');
-        return navigateToRoute(route);
+        return navigateToRoute(route, { assistantContent: true });
       })
       .catch(() => {
         // Ignore final goto failure - already logged
       });
   } else {
     import('$lib/utils/navigation.client')
-      .then(({ navigateToRoute }) => navigateToRoute(route))
+      .then(({ navigateToRoute }) => navigateToRoute(route, { assistantContent: true }))
       .catch((error: unknown) => {
         logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
       });
@@ -4139,6 +4146,17 @@ export function routeDaemonEventsNotification(
   // message. `agent:failed` flows through both paths: it finalizes any
   // in-flight stream AND forwards the lifecycle to `eventReceived` so the
   // session status transitions to "failed".
+  const submissionAgentId = event.data?.agentId;
+  if (typeof submissionAgentId === 'string') {
+    if (type === 'agent:message' && event.data?.role === 'user')
+      announceSubmissionDelivery(submissionAgentId, workspaceId, [
+        event.data as import('$store/renderer/slices/pending-submissions/pending-submissions-types').SubmissionEvidence,
+      ]);
+    if (type === 'agent:idle' || type === 'agent:failed' || type === 'agent:stream:end')
+      observeSubmissionLifecycle(submissionAgentId, workspaceId, false);
+    if (type === 'agent:stream:start')
+      observeSubmissionLifecycle(submissionAgentId, workspaceId, true);
+  }
   if (type === 'agent:stream:start') {
     handleStreamStartEvent(event, workspaceId);
     return;

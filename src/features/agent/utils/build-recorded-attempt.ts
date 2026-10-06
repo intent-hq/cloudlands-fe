@@ -56,11 +56,14 @@ export function buildProcessedRecordedAttempt(
  * pending question set unanswered and the sticky wizard visible).
  *
  * Single construction site shared by chat-send-service (direct/queue-on-send
- * recording) and agent-send (auto-queue park, #1011). The retry payload contains no authorization or attempt identity; those are tracked separately.
+ * recording) and agent-send (auto-queue park, #1011). Delivery provenance is
+ * separate from payload options and never grants authority. Queue/processing
+ * rebuilds intentionally omit local submission provenance.
  */
 export function buildRecordedAttempt(
   text: string,
   options: {
+    submission?: import('$store/renderer/slices/pending-submissions/pending-submissions-types').SubmissionReference;
     noteIds?: string[];
     model?: string;
     imageBlocks?: Array<{
@@ -87,6 +90,9 @@ export function buildRecordedAttempt(
     ...(options.messageMetadata !== undefined ? { messageMetadata: options.messageMetadata } : {}),
   };
   return {
+    ...(options.submission
+      ? { submission: { reference: options.submission, outcome: 'uncertain' as const } }
+      : {}),
     text,
     ...(Object.keys(recordedOptions).length > 0 ? { options: recordedOptions } : {}),
   };

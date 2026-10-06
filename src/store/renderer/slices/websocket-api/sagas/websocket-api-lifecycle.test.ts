@@ -359,17 +359,31 @@ describe('API production-owner lifecycle', () => {
             : screen.getByRole('button', { name: m.settings_wsApi_showQrCode() }),
         );
       await effect();
-      await vi.waitFor(() =>
-        expect(kind === 'copy' ? mocks.clipboard : mocks.notify).toHaveBeenCalledTimes(1),
-      );
+      if (kind === 'copy') {
+        await vi.waitFor(() => expect(mocks.clipboard).toHaveBeenCalledTimes(1));
+      } else {
+        expect(
+          screen
+            .getByRole('button', { name: m.settings_wsApi_showQrCode() })
+            .hasAttribute('disabled'),
+        ).toBe(true);
+        expect(mocks.qr).not.toHaveBeenCalled();
+      }
       paired.resolve(pairing);
       await vi.waitFor(() =>
         expect(mocks.ipc).toHaveBeenCalledWith('connections:self-published-state'),
       );
       await effect();
-      await vi.waitFor(() =>
-        expect(kind === 'copy' ? mocks.clipboard : mocks.notify).toHaveBeenCalledTimes(2),
-      );
+      if (kind === 'copy') {
+        await vi.waitFor(() => expect(mocks.clipboard).toHaveBeenCalledTimes(2));
+      } else {
+        expect(
+          screen
+            .getByRole('button', { name: m.settings_wsApi_showQrCode() })
+            .hasAttribute('disabled'),
+        ).toBe(true);
+        expect(mocks.qr).not.toHaveBeenCalled();
+      }
       published.resolve(selfState);
       const share = screen.getByRole('button', { name: m.settings_wsApi_shareLink_label() });
       await waitFor(() => expect((share as HTMLButtonElement).disabled).toBe(false));

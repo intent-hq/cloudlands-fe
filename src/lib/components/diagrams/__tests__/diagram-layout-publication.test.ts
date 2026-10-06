@@ -27,11 +27,11 @@ beforeEach(() => {
   originalFonts = Object.getOwnPropertyDescriptor(document, 'fonts');
   Object.defineProperty(document, 'fonts', {
     configurable: true,
-    value: {
+    value: Object.assign(new EventTarget(), {
       ready: new Promise<void>((resolve) => {
         resolveFonts = resolve;
       }),
-    },
+    }),
   });
   glyphWidth = 5;
   vi.stubGlobal('CanvasRenderingContext2D', class {});

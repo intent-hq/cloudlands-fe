@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getGitHubPickOwner,
   getRecentRepoLabel,
+  getRecentRepoIdentity,
   getRecentRepoTooltip,
   getRepoFolderName,
   getWorkspaceOwnedCheckoutPaths,
@@ -269,5 +270,56 @@ describe('getWorkspaceOwnedCheckoutPaths', () => {
 
   it('returns an empty set for no workspaces', () => {
     expect(getWorkspaceOwnedCheckoutPaths([])).toEqual(new Set());
+  });
+});
+
+describe('recent repository forge identity', () => {
+  const entry = (githubUrl?: string): RecentRepoEntry => ({
+    path: 'team/app',
+    type: 'github',
+    name: 'app',
+    owner: 'team',
+    githubUrl,
+  });
+
+  it('uses a saved canonical GitHub URL instead of the currently configured forge', () => {
+    expect(
+      getRecentRepoIdentity(entry('https://github.com/team/app.git'), 'https://gitlab.com'),
+    ).toEqual({
+      provider: 'github',
+      instanceBaseUrl: 'https://github.com',
+      projectPath: 'team/app',
+    });
+  });
+
+  it('preserves a configured GitLab port, prefix and subgroup', () => {
+    expect(
+      getRecentRepoIdentity(
+        entry('https://git.example.test:8443/Forge/Team/Sub/App'),
+        'https://git.example.test:8443/Forge',
+      ),
+    ).toEqual({
+      provider: 'gitlab',
+      instanceBaseUrl: 'https://git.example.test:8443/Forge',
+      projectPath: 'Team/Sub/App',
+    });
+  });
+
+  it.each([
+    undefined,
+    'https://unconfigured.test/team/app',
+    'https://git.example.test:8443/forge/team/app',
+    'https://git.example.test:8443/Other/team/app',
+    'https://github.com/team/../app',
+    'https://github.com@unconfigured.test/team/app',
+  ])('does not invent a forge from owner/name or an unqualified URL: %s', (url) => {
+    expect(getRecentRepoIdentity(entry(url), 'https://git.example.test:8443/Forge')).toBeNull();
+  });
+
+  it('withholds a badge for the legacy synthetic GitHub projection after persistence', () => {
+    const legacy = JSON.parse(
+      JSON.stringify({ ...entry('https://github.com/team/app'), repositoryIdentity: null }),
+    );
+    expect(getRecentRepoIdentity(legacy)).toBeNull();
   });
 });

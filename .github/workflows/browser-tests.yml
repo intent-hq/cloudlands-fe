@@ -443,6 +443,17 @@ jobs:
           PLAYWRIGHT_HTML_OPEN: never
           PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
         run: xvfb-run -a pnpm run test:playwright:manual:browser-lifetime --workers=1 --reporter=list,html,json
+      - name: Electron repository checkout tests
+        # Exercise the real main/preload/renderer seam with the finite wire fixture.
+        # This does not replace native checkout or live-provider acceptance.
+        env:
+          CHECKOUT_ELECTRON_RESULTS: ${{ github.workspace }}/test-results/checkout-electron/results.json
+          CHECKOUT_ELECTRON_OUTPUT: ${{ github.workspace }}/test-results/checkout-electron/attachments
+          CHECKOUT_ELECTRON_EVIDENCE_DIR: ${{ github.workspace }}/test-results/checkout-electron/compiled
+        run: |
+          pnpm run generate:build-config
+          pnpm run generate:ipc-channels
+          xvfb-run -a pnpm exec playwright test --config test/fixtures/repository-checkout/playwright.config.ts
       - name: Record browser outcome
         if: always()
         env:

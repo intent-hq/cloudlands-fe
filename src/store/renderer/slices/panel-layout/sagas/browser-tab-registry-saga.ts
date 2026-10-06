@@ -712,6 +712,10 @@ function* loadUnder(
 function* reconcileOnSettle(action: ReturnType<typeof setRestoreStatus>): SagaGenerator<void> {
   const [wsId, status] = action.payload;
   if (status !== 'restored' && status !== 'empty' && status !== 'invalid') return;
+  yield* call(reconcileWorkspace, wsId);
+}
+
+function* reconcileWorkspace(wsId: string): SagaGenerator<void> {
   if ((yield* selectDaemonHealth.effect()) === 'down') return;
   const ownClientId = yield* waitForOwnClientId();
   yield* call(loadWorkspace, wsId, ownClientId);
@@ -752,9 +756,25 @@ function changedWorkspaces(layouts: Record<string, WorkspacePanelLayoutState>): 
  * A mutation the reducer answered with the same state changes no workspace
  * and reports nothing.
  */
-function* onLayoutMutation(reports: Channel<string>): SagaGenerator<void> {
-  const changed = changedWorkspaces(yield* selectPanelLayoutWorkspaces.effect());
-  for (const wsId of changed) yield* call(requestReport, reports, wsId);
+function* onLayoutMutation(
+  reports: Channel<string>,
+  action: { type: string },
+): SagaGenerator<void> {
+  const previous = seenLayouts;
+  const layouts = yield* selectPanelLayoutWorkspaces.effect();
+  const changed = changedWorkspaces(layouts);
+  for (const wsId of changed) {
+    // Bootstrap settles a new workspace directly in the reducer. Observe
+    // that transition here too; setRestoreStatus already has its own loader.
+    if (
+      action.type !== setRestoreStatus.type &&
+      layouts[wsId] &&
+      isSettled(layouts[wsId]) &&
+      (!previous[wsId] || !isSettled(previous[wsId]))
+    )
+      yield* fork(reconcileWorkspace, wsId);
+    yield* call(requestReport, reports, wsId);
+  }
 }
 
 /**

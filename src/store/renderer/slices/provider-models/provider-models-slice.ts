@@ -1,3 +1,5 @@
+import { setAvailableModels } from '../model/model-slice';
+import { learnModelNames, type LearnedModelNames } from './model-name-cache';
 import {
   hostExecutionConnectionChanged,
   hostExecutionInvalidated,
@@ -31,6 +33,7 @@ import type {
 } from './provider-models-types';
 
 export const initialState: ProviderModelsState = {
+  learnedNames: {},
   byProviderId: {},
   byWorkspaceId: {},
   requestsByWorkspaceId: {},
@@ -83,12 +86,17 @@ export const providerModelsLoaded = createAction<
  */
 export const providerModelsCacheCleared = createAction('providerModels/providerModelsCacheCleared');
 
+export const learnedModelNamesHydrated = createAction<[names: LearnedModelNames]>(
+  'providerModels/learnedModelNamesHydrated',
+);
+
 export const providerModelsReducer = createReducer<ProviderModelsState>(initialState);
 
 providerModelsReducer.with(
   providerModelsLoaded,
   (state, { payload: [providerId, entry, epoch, workspaceId] }) => {
     if (epoch !== state.clearEpoch) return state;
+    const learnedNames = learnModelNames(state.learnedNames, providerId, entry.models);
     const requests = workspaceId ? state.requestsByWorkspaceId?.[workspaceId] : state.requests;
     const request = requests && getItem(requests, providerId);
     const recovered = request?.error
@@ -97,6 +105,7 @@ providerModelsReducer.with(
     if (workspaceId)
       return {
         ...state,
+        learnedNames,
         byWorkspaceId: {
           ...state.byWorkspaceId,
           [workspaceId]: { ...state.byWorkspaceId?.[workspaceId], [providerId]: entry },
@@ -107,6 +116,7 @@ providerModelsReducer.with(
       };
     return {
       ...state,
+      learnedNames,
       byProviderId: {
         ...state.byProviderId,
         [providerId]: entry,
@@ -192,4 +202,23 @@ providerModelsReducer.with(providerModelsRequestSettled, (state, { payload: [req
       ? { requestsByWorkspaceId: { ...state.requestsByWorkspaceId, [workspaceId]: next } }
       : { requests: next }),
   };
+});
+
+// This action is published only after active-catalog request ownership checks.
+providerModelsReducer.with(setAvailableModels, (state, { payload: [models, providerId] }) => {
+  const learnedNames = learnModelNames(state.learnedNames, providerId, models);
+  return learnedNames === state.learnedNames ? state : { ...state, learnedNames };
+});
+
+providerModelsReducer.with(learnedModelNamesHydrated, (state, { payload: [names] }) => {
+  // If discovery already ran, its current labels win over persisted labels.
+  let learnedNames = names;
+  for (const [providerId, labels] of Object.entries(state.learnedNames)) {
+    learnedNames = learnModelNames(
+      learnedNames,
+      providerId,
+      Object.entries(labels).map(([value, label]) => ({ value, label })),
+    );
+  }
+  return { ...state, learnedNames };
 });

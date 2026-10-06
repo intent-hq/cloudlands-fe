@@ -493,7 +493,9 @@
           <div
             role="listitem"
             data-note-id={note.id}
-            title={getNoteTooltip(getNoteTitle(note), note.metadata?.task?.status)}
+            title={note.metadata?.task?.status
+              ? getNoteTooltip(getNoteTitle(note), note.metadata.task.status)
+              : undefined}
             draggable={isDraggable}
             ondragstart={(e) => handleDragStart(e, note)}
             ondragover={(e) => handleDragOver(e, note)}

@@ -1,3 +1,9 @@
+import { store } from '../../../store';
+import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
+import {
+  selectCanAdministerHost,
+  selectPrincipalActionContext,
+} from '../../principal/principal-selectors';
 import { END, buffers, channel, eventChannel, type Channel, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
@@ -53,6 +59,7 @@ import {
   selectGetFileSpecialist,
 } from '../specialists-selectors';
 import {
+  specialistSessionEnded,
   createSpecialistFromDraft,
   setSpecialistCreation,
   deleteFileSpecialist,
@@ -69,6 +76,10 @@ import {
 } from '../specialists-slice';
 
 const logger = createLogger('SpecialistsSaga');
+// An object emits the initial unknown admission too, so direct actions always settle.
+const selectSession = store.createSelector((state) => ({
+  admission: selectPrincipalActionContext.select(state),
+}));
 
 type CatalogReadOutcome = 'accepted' | 'failed';
 
@@ -231,16 +242,26 @@ function* applySpecialistList(defs: SpecialistDef[], authoritative = false) {
 }
 
 function* refetchSpecialists(context: ListContext) {
+  const admission = yield* selectPrincipalActionContext.effect();
+  if (!admission) return;
   const generation = ++context.generation;
   try {
     let accepted: boolean;
     if (appClient.specialists.listCatalog) {
       const catalog = yield* call([appClient.specialists, appClient.specialists.listCatalog]);
-      if (generation !== context.generation) return;
+      if (
+        generation !== context.generation ||
+        admission !== (yield* selectPrincipalActionContext.effect())
+      )
+        return;
       accepted = yield* call(applySpecialistCatalog, catalog);
     } else {
       const defs = yield* call([appClient.specialists, appClient.specialists.list]);
-      if (generation !== context.generation) return;
+      if (
+        generation !== context.generation ||
+        admission !== (yield* selectPrincipalActionContext.effect())
+      )
+        return;
       accepted = yield* call(applySpecialistList, defs);
     }
     yield* call(
@@ -250,7 +271,11 @@ function* refetchSpecialists(context: ListContext) {
     );
   } catch (error) {
     // An obsolete failure cannot invalidate a newer catalog or fail its waiters.
-    if (generation !== context.generation) return;
+    if (
+      generation !== context.generation ||
+      admission !== (yield* selectPrincipalActionContext.effect())
+    )
+      return;
     logger.error('Failed to refetch specialist list', error);
     const hasConfirmations = context.confirmations.size > 0;
     yield* call(publishCatalogRead, context, 'failed' as const);
@@ -284,10 +309,22 @@ function* rejectAction(
   yield* put(action.failure(error));
 }
 
+function* requireOwner(admission: string | null) {
+  if (
+    !admission ||
+    admission !== (yield* selectPrincipalActionContext.effect()) ||
+    !(yield* selectCanAdministerHost.effect())
+  ) {
+    throw new Error(m.settings_agentSettings_ownerOnly_description());
+  }
+}
+
 function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpecialist>) {
   const [payload] = action.payload;
+  const admission = yield* selectPrincipalActionContext.effect();
   let settled = false;
   try {
+    yield* call(requireOwner, admission);
     const existing = yield* selectGetFileSpecialist.effect(payload.id, payload.workspaceId);
     if (existing?.importedFrom) {
       throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
@@ -334,6 +371,7 @@ function* handleSave(context: ListContext, action: ReturnType<typeof saveFileSpe
     }
     // The daemon write succeeded: settle the promise before the list refetch
     // (which handles its own failures) so awaiting callers aren't blocked on it.
+    yield* call(requireOwner, admission);
     yield* put(action.success(undefined as never));
     settled = true;
     if (scope === 'project' && payload.workspaceId)
@@ -362,15 +400,23 @@ function* isInSettingsSidebar(id: string, workspaceId?: string) {
 }
 
 /** Follow accepted global reads even if another creation or subscription supersedes ours. */
-function* confirmGlobalSpecialist(context: ListContext, id: string): SagaGenerator<FileSpecialist> {
+function* confirmGlobalSpecialist(
+  context: ListContext,
+  id: string,
+  admission: string,
+): SagaGenerator<FileSpecialist> {
+  yield* call(requireOwner, admission);
   const updates = channel<CatalogReadOutcome>(buffers.expanding());
   context.confirmations.add(updates);
   const refresh = yield* fork(refetchSpecialists, context);
   try {
+    yield* call(requireOwner, admission);
     const { available } = yield* race({
       available: call(function* () {
         while (true) {
+          yield* call(requireOwner, admission);
           const outcome = yield* take(updates);
+          yield* call(requireOwner, admission);
           if (outcome === 'failed') return undefined;
           const specialist = yield* selectGetFileSpecialist.effect(id);
           if (specialist && (yield* call(isInSettingsSidebar, id))) return specialist;
@@ -390,7 +436,7 @@ function* confirmGlobalSpecialist(context: ListContext, id: string): SagaGenerat
 }
 
 /** Wait on the existing workspace catalog owner rather than starting another catalog reader. */
-function* confirmWorkspaceSpecialist(workspaceId: string, id: string) {
+function* confirmWorkspaceSpecialist(workspaceId: string, id: string, admission: string) {
   const updates = yield* actionChannel(
     (action: { type: string; payload?: unknown[] }) =>
       (action.type === workspaceCatalogReceived.type ||
@@ -399,11 +445,14 @@ function* confirmWorkspaceSpecialist(workspaceId: string, id: string) {
     buffers.expanding(),
   );
   try {
+    yield* call(requireOwner, admission);
     yield* put(workspaceCatalogRequested(workspaceId));
     const { available } = yield* race({
       available: call(function* () {
         while (true) {
+          yield* call(requireOwner, admission);
           const action = yield* take(updates);
+          yield* call(requireOwner, admission);
           const specialist = yield* selectGetFileSpecialist.effect(id, workspaceId);
           if (specialist && (yield* call(isInSettingsSidebar, id, workspaceId))) return specialist;
           if (action.type === workspaceCatalogReadFailed.type) return undefined;
@@ -425,6 +474,11 @@ function* handleCreateFromDraft(
   action: ReturnType<typeof createSpecialistFromDraft>,
 ) {
   const [draftContext, workspaceId] = action.payload;
+  const admission = yield* selectPrincipalActionContext.effect();
+  if (!admission || !(yield* selectCanAdministerHost.effect())) {
+    yield* put(action.failure(new Error(m.settings_agentSettings_ownerOnly_description())));
+    return;
+  }
   const creation = yield* selectSpecialistCreation.effect(draftContext);
   const { draft } = creation;
   if (
@@ -479,13 +533,15 @@ function* handleCreateFromDraft(
         'user' as const,
         undefined,
       );
+      yield* call(requireOwner, admission);
       written = true;
       yield* put(
         setSpecialistCreation(draftContext, { draft, specialistId: id, status: 'refreshing' }),
       );
     }
-    const available = yield* call(confirmGlobalSpecialist, context, id);
-    if (workspaceId) yield* call(confirmWorkspaceSpecialist, workspaceId, id);
+    const available = yield* call(confirmGlobalSpecialist, context, id, admission);
+    if (workspaceId) yield* call(confirmWorkspaceSpecialist, workspaceId, id, admission);
+    yield* call(requireOwner, admission);
     yield* put(setSpecialistCreation(draftContext, emptySpecialistCreation));
     const folder = yield* selectSpecialistsFolderPath.effect();
     const path =
@@ -501,6 +557,14 @@ function* handleCreateFromDraft(
     yield* put(action.success(id));
     settled = true;
   } catch (error) {
+    if (admission !== (yield* selectPrincipalActionContext.effect())) {
+      yield* put(setSpecialistCreation(draftContext, emptySpecialistCreation));
+      yield* put(
+        action.failure(mutationError(error, m.settings_agentSettings_ownerOnly_description())),
+      );
+      settled = true;
+      return;
+    }
     const fallback = written
       ? m.specialists_mutation_refreshFailed_error()
       : m.specialists_mutation_saveFailed_error();
@@ -535,8 +599,10 @@ function* handleCreateFromDraft(
 
 function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFileSpecialist>) {
   const [ref] = action.payload;
+  const admission = yield* selectPrincipalActionContext.effect();
   let settled = false;
   try {
+    yield* call(requireOwner, admission);
     const existing = yield* selectGetFileSpecialist.effect(ref.id, ref.workspaceId);
     if (existing?.importedFrom) {
       throw new Error(m.settings_aiBehavior_importedClaude_readOnly());
@@ -548,6 +614,7 @@ function* handleDelete(context: ListContext, action: ReturnType<typeof deleteFil
       ref.workspacePath,
       ...(ref.workspaceId ? [ref.workspaceId] : []),
     );
+    yield* call(requireOwner, admission);
     yield* put(action.success(undefined as never));
     settled = true;
     if (ref.scope === 'project' && ref.workspaceId)
@@ -619,13 +686,26 @@ function* watchSpecialistsSubscription(context: ListContext) {
   }
 }
 
-export function* specialistsSaga() {
+function* specialistsSession(admission: string | null) {
   const context: ListContext = { generation: 0, confirmations: new Set() };
-  yield* fork(watchSpecialistsSubscription, context);
+  if (admission) yield* fork(watchSpecialistsSubscription, context);
   yield* all([
     takeEvery(createSpecialistFromDraft, handleCreateFromDraft, context),
     takeEvery(saveFileSpecialist, handleSave, context),
     takeEvery(deleteFileSpecialist, handleDelete, context),
     fork(watchSpecialistRefetches, context),
   ]);
+}
+
+export function* specialistsSaga() {
+  yield* takeLatestFromSelector(
+    selectSession,
+    function* ({ payload }: SelectorChannelPayload<{ admission: string | null }>) {
+      try {
+        yield* call(specialistsSession, payload.admission);
+      } finally {
+        yield* put(specialistSessionEnded());
+      }
+    },
+  );
 }

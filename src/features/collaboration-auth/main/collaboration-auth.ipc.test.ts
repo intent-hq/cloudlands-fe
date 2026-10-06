@@ -34,6 +34,7 @@ vi.mock('../../backend/main/backend.ipc', () => ({
 }));
 import {
   prepareCollaborationIdentity,
+  captureCollaborationPolicy,
   registerCollaborationAuthHandlers,
 } from './collaboration-auth.ipc';
 
@@ -79,6 +80,18 @@ afterEach(() => {
 });
 
 describe('collaboration main IPC local routing', () => {
+  it('requires fresh policy after in-page navigation while old captured opens remain cancelled', async () => {
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+    const originalOpen = captureCollaborationPolicy(41);
+    expect(originalOpen()).toBe(true);
+    state.parent.webContents.emit('did-navigate-in-page');
+    expect(originalOpen()).toBe(false);
+    expect(captureCollaborationPolicy(41)()).toBe(false);
+    await invoke(COLLABORATION_AUTH.POLICY, { multiplayer: true, gitlab: false });
+    expect(captureCollaborationPolicy(41)()).toBe(true);
+    expect(originalOpen()).toBe(false);
+  });
+
   it.each(['destroyed', 'render-process-gone', 'did-navigate', 'did-navigate-in-page', 'flag'])(
     'ends the real captured attempt on %s and never revives it',
     async (event) => {

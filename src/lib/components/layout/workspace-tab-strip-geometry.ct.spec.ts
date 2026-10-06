@@ -1016,13 +1016,13 @@ test('removes tab lifecycle motion when reduced motion is preferred', async ({ m
   ).toBe(true);
 });
 
-test('matches the closed-sidebar logo gap to the tab gap while the flare stays visible', async ({
+test('matches the logo gap to the tab gap while the flare stays visible', async ({
   mount,
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const component = await mount(WorkspaceTabStripGeometryPreview, {
-    props: { activeWorkspaceId: 'geometry-alpha', sidebarPanelOpen: false },
+    props: { activeWorkspaceId: 'geometry-alpha' },
   });
 
   const [closedGap, interTabGap] = await Promise.all([
@@ -1040,18 +1040,6 @@ test('matches the closed-sidebar logo gap to the tab gap while the flare stays v
     component.locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-leading-flare]'),
   );
 
-  await component.update({
-    props: { activeWorkspaceId: 'geometry-alpha', sidebarPanelOpen: true },
-  });
-  await expect.poll(() => getLogoToLeadingFlareGap(component)).toBeCloseTo(22, 0);
-  await expect
-    .poll(() => getLeadingEdgeGeometry(component))
-    .toEqual({
-      curveEnd: 26,
-      clipStart: 60,
-      fadeEnd: 84,
-      firstTab: 54,
-    });
   await expectMaskAttachedToActiveTab(component);
 });
 

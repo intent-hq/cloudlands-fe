@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
@@ -26,7 +27,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
   import { uniqueAgentIds } from './delegation-ordering';
@@ -640,6 +641,17 @@
     watchedAgentFocusOwner = null;
   }
 
+  onMount(() => {
+    // A later user action supersedes the focus requested when opening a watch.
+    // Capture runs before a new watch's handler schedules its own requests.
+    window.addEventListener('pointerdown', clearWatchedAgentFocusTimers, true);
+    window.addEventListener('keydown', clearWatchedAgentFocusTimers, true);
+    return () => {
+      window.removeEventListener('pointerdown', clearWatchedAgentFocusTimers, true);
+      window.removeEventListener('keydown', clearWatchedAgentFocusTimers, true);
+    };
+  });
+
   function focusWatchedAgentPanel(watchedAgentId: string) {
     clearWatchedAgentFocusTimers();
     const owner = { workspaceId, parentAgentId: agentId, watchedAgentId };
@@ -653,6 +665,17 @@
           agentId !== owner.parentAgentId ||
           selectCurrentWorkspaceTabId.select(appStore.state) !== owner.workspaceId
         ) {
+          return;
+        }
+        // These are automatic reveal retries, not a new user focus request.
+        // Preserve a Find field, composer, or other editable control the user
+        // has focused since opening the watched agent (intent-hq/intent#6395).
+        const activeElement = document.activeElement;
+        if (
+          activeElement instanceof HTMLElement &&
+          activeElement.closest('input, textarea, select, [contenteditable="true"]')
+        ) {
+          clearWatchedAgentFocusTimers();
           return;
         }
         dispatchWindowEvent('panel:focus-content', {
@@ -687,6 +710,7 @@
   function openWatchedAgent(event: MouseEvent | KeyboardEvent, watchedAgentId: string) {
     if (isolatedPreview) return;
     if (!workspaceId) return;
+    if (openAssistantAgentFromEvent(event, workspaceId, watchedAgentId)) return;
     if (selectCurrentWorkspaceTabId.select(appStore.state) !== workspaceId) {
       appStore.dispatch(openWorkspaceTab(workspaceId));
       void navigateToRoute(`/workspace/${workspaceId}`).catch((error) => {

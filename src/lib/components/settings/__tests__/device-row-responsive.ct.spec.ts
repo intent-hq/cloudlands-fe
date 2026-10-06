@@ -1,4 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
+import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import DeviceRow from '../DeviceRow.svelte';
 import Preview from '../devices-settings.preview.svelte';
@@ -46,29 +47,37 @@ test('keeps edit fields and controls contained at narrow width', async ({ mount,
 });
 
 for (const width of [360, 1024]) {
-  test(`local configuration stays contained at the ${width < 768 ? 'stacked' : 'two-column'} settings breakpoint`, async ({
+  test(`Mobile configuration stays contained at the ${width < 768 ? 'stacked' : 'two-column'} settings breakpoint`, async ({
     mount,
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await mount(Preview, {
-      props: { expanded: true },
-      hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'local-expanded' } },
+    const component = await mount(Preview, {
+      props: { mobilePage: true },
+      hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'mobile' } },
     });
-    const local = page.getByRole('article', { name: 'This machine (local)' });
-    await expect(local.getByRole('button', { name: 'Show QR Code' })).toBeVisible();
-    const advanced = local.getByRole('button', { name: 'Advanced', exact: true });
+    await expect(page.getByRole('button', { name: m.settings_wsApi_showQrCode() })).toBeEnabled();
+    const advanced = component.getByRole('button', {
+      name: m.settings_devices_advanced_label(),
+      exact: true,
+    });
     await expect(advanced).toHaveAttribute('aria-expanded', 'false');
-    await expect(local.getByRole('spinbutton', { name: 'Port' })).toBeHidden();
+    await expect(
+      component.getByRole('spinbutton', { name: m.settings_wsApi_port_label() }),
+    ).toBeHidden();
     await advanced.focus();
     await page.keyboard.press('Enter');
     await expect(advanced).toHaveAttribute('aria-expanded', 'true');
-    await expect(local.getByRole('spinbutton', { name: 'Port' })).toBeVisible();
+    await expect(
+      component.getByRole('spinbutton', { name: m.settings_wsApi_port_label() }),
+    ).toBeVisible();
     await page.keyboard.press('Space');
-    await expect(local.getByRole('spinbutton', { name: 'Port' })).toBeHidden();
+    await expect(
+      component.getByRole('spinbutton', { name: m.settings_wsApi_port_label() }),
+    ).toBeHidden();
     await page.keyboard.press('Enter');
-    const networks = local.getByRole('combobox', { name: 'Available Networks' });
+    const networks = component.getByRole('combobox', { name: m.settings_listenTargets_label() });
     await networks.focus();
     await expect(page.getByRole('listbox')).toHaveAttribute('aria-multiselectable', 'true');
     await page.keyboard.press('Home');
@@ -82,9 +91,9 @@ for (const width of [360, 1024]) {
     await page.keyboard.press('Escape');
     await expect(networks).toHaveValue('127.0.0.1 (localhost), 192.0.2.10');
     await page.evaluate(() => document.fonts.ready);
-    const overflowing = await local.evaluate((row) => {
-      const bounds = row.getBoundingClientRect();
-      return [...row.querySelectorAll('button, input, code')]
+    const overflowing = await component.evaluate((root) => {
+      const bounds = root.getBoundingClientRect();
+      return [...root.querySelectorAll('button, input, code')]
         .filter((node) => node.getClientRects().length > 0)
         .filter((node) => {
           const rect = node.getBoundingClientRect();
@@ -93,13 +102,37 @@ for (const width of [360, 1024]) {
         .map((node) => node.getAttribute('aria-label') ?? node.textContent);
     });
     expect(overflowing).toEqual([]);
-    await page.getByRole('button', { name: 'Actions for Studio Mac' }).click();
-    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-    await expect(local.getByRole('spinbutton', { name: 'Port' })).toHaveCount(0);
-    await local.getByRole('button', { name: 'Actions for This machine (local)' }).click();
-    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-    await local.getByRole('button', { name: 'Advanced', exact: true }).click();
-    await expect(local.getByTestId('device-icon-picker-trigger')).toBeVisible();
-    await expect(local.getByRole('spinbutton', { name: 'Port' })).toHaveValue('5181');
   });
 }
+
+test('Machines replaces the local icon editor when another machine is edited', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(Preview, {
+    props: { expanded: true },
+    hooksConfig: { geometrySnapshot: { scene: 'devices-settings', state: 'local-expanded' } },
+  });
+  const localName = m.layout_daemonStatus_localConnection_label();
+  const local = page.getByRole('article', { name: localName });
+  const picker = local.getByTestId('device-icon-picker-trigger');
+  await expect(picker).toBeVisible();
+  await page
+    .getByRole('button', { name: m.settings_devices_actionsFor_ariaLabel({ name: 'Studio Mac' }) })
+    .click();
+  await page.getByRole('menuitem', { name: m.settings_devices_edit_label(), exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await local
+    .getByRole('button', { name: m.settings_devices_actionsFor_ariaLabel({ name: localName }) })
+    .click();
+  await page.getByRole('menuitem', { name: m.settings_devices_edit_label(), exact: true }).click();
+  await expect(picker).toBeVisible();
+  await picker.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('listbox')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  await expect(picker).toBeFocused();
+});
