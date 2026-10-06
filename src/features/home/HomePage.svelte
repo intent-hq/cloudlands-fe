@@ -799,38 +799,18 @@
                       aria-label={m.home_views()}
                     >
                       <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>
-                      <Tooltip.Provider
-                        ><Tooltip.Root
-                          ><Tooltip.Trigger
-                            >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
-                                {...homeTooltipProps}
-                                value="prs"
-                                aria-label={m.home_tab_prs()}
-                              >
-                                <span class="home-tab-label">{m.home_tab_prs()}</span>
-                                <span class="home-tab-logo" aria-hidden="true"
-                                  ><GitHubIcon size={18} /></span
-                                >
-                              </Tabs.Trigger>{/snippet}</Tooltip.Trigger
-                          ><Tooltip.Content>{m.home_tab_prs()}</Tooltip.Content></Tooltip.Root
-                        ></Tooltip.Provider
-                      >
-                      <Tooltip.Provider
-                        ><Tooltip.Root
-                          ><Tooltip.Trigger
-                            >{#snippet child({ props: homeTooltipProps })}<Tabs.Trigger
-                                {...homeTooltipProps}
-                                value="linear"
-                                aria-label={m.home_tab_linear()}
-                              >
-                                <span class="home-tab-label">{m.home_tab_linear()}</span>
-                                <span class="home-tab-logo" aria-hidden="true"
-                                  ><LinearIcon size={18} /></span
-                                >
-                              </Tabs.Trigger>{/snippet}</Tooltip.Trigger
-                          ><Tooltip.Content>{m.home_tab_linear()}</Tooltip.Content></Tooltip.Root
-                        ></Tooltip.Provider
-                      >
+                      <Tabs.Trigger value="prs" aria-label={m.home_tab_prs()}>
+                        <span class="home-tab-label">{m.home_tab_prs()}</span>
+                        <span class="home-tab-logo" aria-hidden="true"
+                          ><GitHubIcon size={18} /></span
+                        >
+                      </Tabs.Trigger>
+                      <Tabs.Trigger value="linear" aria-label={m.home_tab_linear()}>
+                        <span class="home-tab-label">{m.home_tab_linear()}</span>
+                        <span class="home-tab-logo" aria-hidden="true"
+                          ><LinearIcon size={18} /></span
+                        >
+                      </Tabs.Trigger>
                     </Tabs.List>
                     <div class="home-header-actions ml-auto flex items-center gap-2 py-2">
                       {#if selectedRepositoryGithubUrl}
