@@ -13,6 +13,9 @@
   declare global {
     interface Window {
       __homeAssistantPreview?: { removeSelectedThread: () => void };
+      __homeWorkspacePreview?: {
+        navigation: () => { currentTabId: string | null; tabOrder: string[] };
+      };
     }
   }
 
@@ -222,6 +225,12 @@
   const assistant = $derived(scenario === 'assistant-long');
   const dispose = startHomePreviewFixtures();
   const showCreateModal$ = selectShowCreateModal();
+  window.__homeWorkspacePreview = {
+    navigation: () => ({
+      currentTabId: store.state.tabState.currentTabId,
+      tabOrder: store.state.tabState.workspaceStacks.flat(),
+    }),
+  };
   store.dispatch(guestSessionsListUnavailable());
   store.dispatch(hydrateDefaultProvider(''));
   store.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
@@ -376,6 +385,7 @@
   onDestroy(() => {
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
     delete window.__homeAssistantPreview;
+    delete window.__homeWorkspacePreview;
     dispose();
   });
 </script>

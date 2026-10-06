@@ -20,6 +20,8 @@
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { formatShortcut } from '$lib/utils/shortcuts';
   import {
     faThumbtack,
     faBoxArchive,
@@ -108,6 +110,24 @@
   } = $props();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
+  function openWorkspace(id: string) {
+    contextMenu = null;
+    store.dispatch(openWorkspaceTab(id));
+    void goto(`/workspace/${encodeURIComponent(id)}`);
+  }
+  function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
+    if (!isCmdClickModifier({ event })) return;
+    if (event instanceof MouseEvent && event.button !== 0) return;
+    if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
+    if (
+      event.target instanceof Element &&
+      event.target.closest('button, a, input, select, textarea, [role="button"], [role="menuitem"]')
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    openWorkspace(id);
+  }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
     const position = getSidebarContextPosition(event);
     if (!position) return;
@@ -124,11 +144,8 @@
         id: 'open',
         label: m.home_open_workspace(),
         icon: faArrowUpRightFromSquare,
-        onClick: () => {
-          contextMenu = null;
-          store.dispatch(openWorkspaceTab(workspace.id));
-          void goto(`/workspace/${encodeURIComponent(workspace.id)}`);
-        },
+        shortcut: formatShortcut(`Mod+${m.chat_toolClassifier_click_label()}`),
+        onClick: () => openWorkspace(workspace.id),
       },
       {
         id: 'pin',
@@ -913,6 +930,7 @@
                             {selectedId}
                             onselect={(id) =>
                               updateView({ selectedId: selectedId === id ? null : id })}
+                            onopen={openWorkspace}
                             archived={filter === 'archived'}
                           />
                         {:else}
@@ -920,6 +938,7 @@
                             <ListRow
                               class="home-list-row h-12 items-center border-b border-border px-3 py-1"
                               data-home-workspace={item.id}
+                              onclick={(event) => openModifiedWorkspace(event, item.id)}
                               oncontextmenu={(event) => showWorkspaceMenu(event, item)}
                             >
                               {#snippet leading()}
@@ -1035,6 +1054,16 @@
                             scroll: boolean,
                           )}
                             <ListView
+                              onkeydowncapture={(event) => {
+                                const option =
+                                  event.target instanceof HTMLElement
+                                    ? event.target.closest<HTMLElement>('[role="option"]')
+                                    : null;
+                                const id =
+                                  option?.querySelector<HTMLElement>('[data-home-workspace]')
+                                    ?.dataset.homeWorkspace;
+                                if (id) openModifiedWorkspace(event, id);
+                              }}
                               onkeydown={(event) => {
                                 const option =
                                   event.target instanceof HTMLElement

@@ -15,7 +15,12 @@
   import { Button } from '$lib/components/ui/button';
   import { Select } from '$lib/components/ui/select';
   import Fa from 'svelte-fa';
-  import { faXmark, faChevronDown, faFolder } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faXmark,
+    faChevronDown,
+    faFolder,
+    faArrowUpRightFromSquare,
+  } from '@fortawesome/free-solid-svg-icons';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { store } from '$store/renderer/store';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
@@ -77,13 +82,14 @@
       <h2 class="-ml-2 min-w-0 flex-1">
         <Button
           variant="ghost"
-          class="type-title h-auto max-w-full justify-start px-2 py-1 text-left font-medium leading-snug"
+          class="type-title h-auto max-w-full shrink gap-2 justify-start px-2 py-1 text-left font-medium leading-snug"
           wrapContent={false}
           aria-label={m.home_open_workspace()}
-          tooltip={workspace.title}
+          tooltip={m.home_open_workspace()}
           onclick={openWorkspace}
         >
           <span class="min-w-0 line-clamp-2 break-words">{workspace.title}</span>
+          <Fa icon={faArrowUpRightFromSquare} class="shrink-0 text-muted-foreground" size="sm" />
         </Button>
       </h2>
       {#if repositoryLabel}
@@ -135,49 +141,48 @@
         ></Tooltip.Provider
       >
     {/if}
-    {#if agents.length}
-      <div class="-ml-3 mt-2 min-w-0" data-home-agent-switcher>
-        <Select.Root
-          value={activeAgent?.id ?? ''}
-          onchange={(value) => {
-            const agent = agents.find((candidate) => candidate.id === value);
-            if (agent) store.dispatch(setActiveAgentId(workspaceId, agent.id));
-          }}
-        >
-          <Select.Trigger
-            variant="ghost"
-            class="h-8 w-fit max-w-full justify-start"
-            aria-label={m.home_agents()}
-          >
-            {#if activeAgent}
-              <AgentAvatar
-                agentId={activeAgent.id}
-                specialist={activeAgent.metadata?.specialist ??
-                  activeAgent.agentMetadata?.specialist}
-                variant="emphasized"
-              />
-            {/if}
-            <span class="min-w-0 truncate text-left">{activeAgent?.name}</span>
-            <Fa icon={faChevronDown} class="shrink-0 text-muted-foreground" />
-          </Select.Trigger>
-          <Select.Content portal>
-            {#each agents as agent (agent.id)}
-              <Select.Item value={agent.id} label={agent.name}>
-                <span class="flex min-w-0 items-center gap-2">
-                  <AgentAvatar
-                    agentId={agent.id}
-                    specialist={agent.metadata?.specialist ?? agent.agentMetadata?.specialist}
-                    variant="emphasized"
-                  />
-                  <span class="truncate">{agent.name}</span>
-                </span>
-              </Select.Item>
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      </div>
-    {/if}
   </header>
+  {#if agents.length}
+    <div class="shrink-0 min-w-0 px-1 py-2" data-home-agent-switcher>
+      <Select.Root
+        value={activeAgent?.id ?? ''}
+        onchange={(value) => {
+          const agent = agents.find((candidate) => candidate.id === value);
+          if (agent) store.dispatch(setActiveAgentId(workspaceId, agent.id));
+        }}
+      >
+        <Select.Trigger
+          variant="ghost"
+          class="h-8 w-fit max-w-full justify-start"
+          aria-label={m.home_agents()}
+        >
+          {#if activeAgent}
+            <AgentAvatar
+              agentId={activeAgent.id}
+              specialist={activeAgent.metadata?.specialist ?? activeAgent.agentMetadata?.specialist}
+              variant="emphasized"
+            />
+          {/if}
+          <span class="min-w-0 truncate text-left">{activeAgent?.name}</span>
+          <Fa icon={faChevronDown} class="shrink-0 text-muted-foreground" />
+        </Select.Trigger>
+        <Select.Content portal>
+          {#each agents as agent (agent.id)}
+            <Select.Item value={agent.id} label={agent.name}>
+              <span class="flex min-w-0 items-center gap-2">
+                <AgentAvatar
+                  agentId={agent.id}
+                  specialist={agent.metadata?.specialist ?? agent.agentMetadata?.specialist}
+                  variant="emphasized"
+                />
+                <span class="truncate">{agent.name}</span>
+              </span>
+            </Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    </div>
+  {/if}
   {#if detailFailed}
     <div class="flex items-center gap-2 px-4 py-2 type-caption text-muted-foreground" role="status">
       <p>{m.home_detail_unavailable()}</p>
