@@ -19,6 +19,7 @@ export const principalAvatarMetadata = parseUiComponentMetadata({
     'src/lib/components/modals/ShareWorkspaceDialog.svelte',
     'src/lib/components/patterns/settings/custom-controls.ts',
     'src/lib/components/settings/HostedWorkspaceRoster.svelte',
+    'src/lib/components/workspace/initializer/RepoSelector.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/__tests__/PrincipalAvatar.test.ts',

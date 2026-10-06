@@ -8,6 +8,7 @@ import {
   CheckoutProjectQuerySchema,
   CheckoutBranchesQuerySchema,
   CheckoutSelectionSchema,
+  CheckoutRepoConfigQuerySchema,
   type CheckoutCaptureQuery,
   type CheckoutResult,
 } from '$shared/types/repository-checkout';
@@ -24,6 +25,7 @@ const requestSchema = z.discriminatedUnion('kind', [
   bound.extend({ kind: z.literal('projects'), params: CheckoutPageQuerySchema }).strict(),
   bound.extend({ kind: z.literal('project'), params: CheckoutProjectQuerySchema }).strict(),
   bound.extend({ kind: z.literal('branches'), params: CheckoutBranchesQuerySchema }).strict(),
+  bound.extend({ kind: z.literal('repoConfig'), params: CheckoutRepoConfigQuerySchema }).strict(),
   bound.extend({ kind: z.literal('warm'), params: CheckoutSelectionSchema }).strict(),
 ]);
 const unavailable = () => ({
@@ -158,7 +160,14 @@ export function registerRepositoryCheckoutHandlers(
       published = true;
       return {
         ok: true as const,
-        result: { status: 'ready' as const, value: { id, capture: lifetime.capture } },
+        result: {
+          status: 'ready' as const,
+          value: {
+            id,
+            capture: lifetime.capture,
+            ...(lifetime.repoConfigSupported ? { repoConfigSupported: true } : {}),
+          },
+        },
       };
     } catch {
       return unavailable();
@@ -185,6 +194,9 @@ export function registerRepositoryCheckoutHandlers(
           break;
         case 'branches':
           result = await entry.lifetime.branches(input.params);
+          break;
+        case 'repoConfig':
+          result = await entry.lifetime.repoConfig(input.params);
           break;
         case 'warm':
           result = await entry.lifetime.warm(input.params);

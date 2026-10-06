@@ -15,6 +15,7 @@
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import * as Popover from '$lib/components/ui/popover';
@@ -1645,13 +1646,22 @@
 
   const triggerDisplayValue = $derived(
     gitlabSelected
-      ? (gitlab?.selectedProjectPath ?? displayValue ?? '')
+      ? (displayValue ?? gitlab?.selectedProjectPath ?? '')
       : (displayValue ?? formatDisplayValue()),
   );
   const hasTriggerValue = $derived(gitlabSelected ? !!triggerDisplayValue : !!selectedValue);
   const pickerId = $props.id();
   const suggestionsId = `${pickerId}-github-suggestions`;
-  // Owner avatar next to the trigger label; GitHub picks only, never local repos
+  // Owner avatars use the selected provider identity, never a guessed GitLab image URL.
+  const selectedGitLabProject = $derived(
+    gitlabSelected &&
+      gitlab?.authenticated &&
+      gitlab.scopeKey &&
+      gitlab.page.status !== 'unavailable' &&
+      gitlab.selectedProject?.projectPath === gitlab.selectedProjectPath
+      ? gitlab.selectedProject
+      : undefined,
+  );
   const triggerAvatarOwner = $derived(
     gitlabSelected
       ? null
@@ -1723,9 +1733,21 @@
             {:else if showEmptyIcon && !hasTriggerValue}
               <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
             {/if}
-            {#if !triggerIcon && triggerAvatarOwner}
+            {#if !triggerIcon && gitlabSelected && hasTriggerValue}
+              <PrincipalAvatar
+                avatarUrl={selectedGitLabProject?.ownerAvatarUrl}
+                label={selectedGitLabProject?.namespace || triggerDisplayValue}
+                size={16}
+                referrerpolicy="no-referrer"
+              />
+            {:else if !triggerIcon && triggerAvatarOwner}
               <!-- Decorative: the adjacent label already names the owner. -->
-              <GitHubAvatar identity={triggerAvatarOwner} class="w-4 h-4 rounded-full shrink-0" />
+              <GitHubAvatar identity={triggerAvatarOwner} class="w-4 h-4 rounded-full shrink-0">
+                {#snippet fallback()}<PrincipalAvatar
+                    label={triggerAvatarOwner}
+                    size={16}
+                  />{/snippet}
+              </GitHubAvatar>
             {/if}
             {#if !triggerIcon && (hasTriggerValue || emptyLabel)}
               <span class="flex-1 text-left truncate">

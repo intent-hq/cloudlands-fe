@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "Impossible de lire le script de configuration du dépôt. Vérifiez le script sélectionné avant de créer l’espace de travail.",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Activez l’accès à distance sur cet appareil pour connecter Intent Mobile.",
   "devConsole_title_label": "Console de développement",

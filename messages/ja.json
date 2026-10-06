@@ -1,4 +1,5 @@
 {
+  "workspace_setupScript_configUnavailable_description": "リポジトリのセットアップスクリプトを読み取れませんでした。ワークスペースを作成する前に、選択したスクリプトを確認してください。",
   "settings_devices_mobile_title": "Intent Mobile",
   "settings_devices_mobileDisabled_description": "Intent Mobile を接続するには、このデバイスでリモートアクセスを有効にしてください。",
   "devConsole_title_label": "開発コンソール",
