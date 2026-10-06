@@ -9,6 +9,7 @@ import { applyNoteUpdated } from '$store/renderer/slices/workspace-notes/workspa
 import {
   selectPanelLayoutWorkspace,
   selectHiddenTabs,
+  selectPanelLayoutWorkspaces,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import {
   initializeLayout,
@@ -19,6 +20,7 @@ import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { upsertSession } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
 /** The Assistant owns one content stack, using the normal persisted workspace layout. */
 export const ASSISTANT_CONTENT_PANEL_ID = 'assistant-content';
@@ -201,7 +203,12 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
   if (info.type !== 'note' && info.type !== 'task') return false;
   const request = nextOpenRequest(layoutId);
   const workspaceId = info.workspaceId ?? CHIEF_WORKSPACE_ID;
-  const note = await appClient.notes.get(info.resourceId, workspaceId);
+  const [note, workspace] = await Promise.all([
+    appClient.notes.get(info.resourceId, workspaceId),
+    Promise.resolve(
+      selectWorkspaceById.select(store.state, workspaceId) ?? appClient.workspaces.get(workspaceId),
+    ).catch(() => null),
+  ]);
   if (request !== latestOpenRequests.get(layoutId)) return true;
   if (!note || String(note.workspaceId) !== workspaceId) {
     notify.error(m.ui_linkHandler_notFound_title(), {
@@ -209,8 +216,22 @@ async function openAssistantContent(url: string, preserveFocus: boolean): Promis
     });
     return true;
   }
+  if (workspace && String(workspace.id) === workspaceId)
+    store.dispatch(setWorkspaceEntity(workspace));
+  const alreadyOpen = Object.entries(selectPanelLayoutWorkspaces.select(store.state)).some(
+    ([ownerLayoutId, layout]) => {
+      const matchesNote = (tab: PanelTab) =>
+        tab.type === 'note' &&
+        tab.noteId === String(note.id) &&
+        (tab.workspaceId ?? ownerLayoutId) === workspaceId;
+      return (
+        Object.values(layout.panels).some((panel) => panel.tabs.some(matchesNote)) ||
+        selectHiddenTabs.select(store.state, ownerLayoutId).some(matchesNote)
+      );
+    },
+  );
   store.dispatch(applyNoteUpdated(workspaceId, String(note.id), note));
-  store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'preview'));
+  if (!alreadyOpen) store.dispatch(setNoteViewMode(workspaceId, String(note.id), 'preview'));
   showContent(
     { type: 'note', title: note.title, noteId: String(note.id), workspaceId, closable: true },
     preserveFocus,

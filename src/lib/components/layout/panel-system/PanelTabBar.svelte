@@ -1316,32 +1316,34 @@
         </Menu.Group>
         <Menu.Separator />
       {/if}
-      <Menu.Group data-panel-actions-section="move">
-        <Menu.Label>{m.layout_panelTabBar_movePanel_label()}</Menu.Label>
-        <div class="panel-move-pad">
-          {#each paneMoveDirections as direction (direction.direction)}
-            <Menu.Item
-              class="panel-move-direction panel-move-{direction.direction}"
-              aria-label={direction.label}
-              disabled={!direction.enabled}
-              onSelect={() => {
-                pendingPaneMoves[location] = direction.move;
-                close();
-              }}
-            >
-              <svg viewBox="0 0 16 16" fill="none" class="size-4!" aria-hidden="true">
-                <g transform="rotate(-90 8 8)" stroke="currentColor" stroke-width="1.33">
-                  <path d="M3 8H12" stroke-linecap="square" />
-                  <path
-                    d="M8.518 3 12.634 7.116C13.122 7.604 13.122 8.396 12.634 8.884L8.518 13"
-                    stroke-linejoin="round"
-                  />
-                </g>
-              </svg>
-            </Menu.Item>
-          {/each}
-        </div>
-      </Menu.Group>
+      {#if paneMoveDirections.some((direction) => direction.enabled)}
+        <Menu.Group data-panel-actions-section="move">
+          <Menu.Label>{m.layout_panelTabBar_movePanel_label()}</Menu.Label>
+          <div class="panel-move-pad">
+            {#each paneMoveDirections as direction (direction.direction)}
+              <Menu.Item
+                class="panel-move-direction panel-move-{direction.direction}"
+                aria-label={direction.label}
+                disabled={!direction.enabled}
+                onSelect={() => {
+                  pendingPaneMoves[location] = direction.move;
+                  close();
+                }}
+              >
+                <svg viewBox="0 0 16 16" fill="none" class="size-4!" aria-hidden="true">
+                  <g transform="rotate(-90 8 8)" stroke="currentColor" stroke-width="1.33">
+                    <path d="M3 8H12" stroke-linecap="square" />
+                    <path
+                      d="M8.518 3 12.634 7.116C13.122 7.604 13.122 8.396 12.634 8.884L8.518 13"
+                      stroke-linejoin="round"
+                    />
+                  </g>
+                </svg>
+              </Menu.Item>
+            {/each}
+          </div>
+        </Menu.Group>
+      {/if}
       {#if ($isWorkspaceHostLocal$ && canOpenExternalEditors) || activeTab?.type === 'browser'}
         {#if activeTab}
           {@const externalTarget = getPanelExternalOpenTarget(

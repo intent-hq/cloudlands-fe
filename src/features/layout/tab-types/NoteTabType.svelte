@@ -49,11 +49,19 @@
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
-  import { faCheck, faCopy, faNoteSticky, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCheck,
+    faCopy,
+    faEye,
+    faNoteSticky,
+    faPen,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import NoteContentSurface, { type NoteContentState } from './NoteContentSurface.svelte';
   import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { setNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 
   const logger = createLogger('NoteTabType');
 
@@ -180,6 +188,23 @@
   const showRenderedPreview = $derived(
     (noteViewMode === 'preview' || !$workspace) && !showSpecOnboarding,
   );
+  const canChangeNoteView = $derived(
+    !!tab.noteId &&
+      !!$note &&
+      !!$workspace &&
+      noteEditable &&
+      !noteContentStale &&
+      !noteContentLoadFailed &&
+      !showSpecOnboarding &&
+      !showVersionHistory,
+  );
+
+  function toggleNoteEditing() {
+    if (!canChangeNoteView || !tab.noteId) return;
+    appStore.dispatch(
+      setNoteViewMode(workspaceId, tab.noteId, showRenderedPreview ? 'editor' : 'preview'),
+    );
+  }
 
   const noteContentState = $derived.by<NoteContentState>(() => {
     if (!tab.noteId) return 'missing';
@@ -292,7 +317,7 @@
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
-    headerContext.registerActions({
+    return headerContext.registerActions({
       display: noteDisplayActions,
       actions: noteActions,
       destructive: tab.noteId && !isSpecNote(tab.noteId) ? noteDestructiveActions : undefined,
@@ -302,11 +327,23 @@
 
 {#snippet noteDisplayActions()}
   {#if tab.noteId}
-    <NoteViewSettingsDropdown {workspaceId} noteId={tab.noteId} embedded />
+    <NoteViewSettingsDropdown
+      {workspaceId}
+      noteId={tab.noteId}
+      canEdit={!!$workspace && noteEditable}
+      embedded
+    />
   {/if}
 {/snippet}
 
 {#snippet noteActions()}
+  {#if canChangeNoteView && showRenderedPreview}
+    <Menu.CommandItem
+      icon={faPen}
+      label={m.chat_toolClassifier_editNote_label()}
+      onclick={toggleNoteEditing}
+    />
+  {/if}
   {#if showPresenceStack && tab.noteId}
     <NotePresenceAvatarStack viewers={presenceViewers} embedded />
   {/if}
@@ -332,59 +369,73 @@
   {/if}
 {/snippet}
 
-<NoteContentSurface state={noteContentState}>
-  {#if tab.noteId}
-    {#if noteContentLoadFailed}
-      <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
-        <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
-        <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
-          {m.ui_errorToast_retry_label()}
-        </Button>
-      </div>
-    {:else if !$note}
-      <div class="flex flex-col h-full">
-        <div class="flex-1 p-4 space-y-4">
-          <Skeleton class="h-8 w-3/4" />
-          <Skeleton class="h-4 w-full" />
-          <Skeleton class="h-4 w-5/6" />
-          <Skeleton class="h-4 w-4/5" />
-          <Skeleton class="h-4 w-full" />
-        </div>
-      </div>
-    {:else if showVersionHistory && $workspace}
-      <NoteVersionHistory
-        workspace={$workspace}
-        noteId={tab.noteId}
-        currentContent={$note?.content || ''}
-        onRestore={() => (showVersionHistory = false)}
-      />
-    {:else if showSpecOnboarding}
-      <!-- Show onboarding when coordinator is writing initial spec -->
-      <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
-    {:else if showRenderedPreview}
-      <RenderedNotePreview
-        content={$note.content || ''}
-        {workspaceId}
-        noteId={tab.noteId}
-        scrollKey={tab.id}
-        initialScrollPosition={scrollPosition}
-        onScrollPositionSave={handlePreviewScrollPositionSave}
-      />
-    {:else if $workspace}
-      <NoteWithComments
-        workspace={$workspace}
-        noteId={tab.noteId}
-        editable={noteEditable}
-        {isPanelFocused}
-        initialScrollPosition={scrollPosition}
-        onScrollPositionSave={(scrollTop: number) =>
-          appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
-      />
-    {/if}
-  {:else}
-    <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-      <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
-      <p>{m.layout_noteTab_noNoteSelected_label()}</p>
+<div class="flex h-full min-h-0 flex-col">
+  {#if canChangeNoteView}
+    <div class="flex shrink-0 items-center justify-end border-b border-border px-4 py-2">
+      <Button variant="ghost-light" size="sm" onclick={toggleNoteEditing}>
+        <Fa icon={showRenderedPreview ? faPen : faEye} size="sm" />
+        {showRenderedPreview
+          ? m.chat_toolClassifier_editNote_label()
+          : m.ui_viewSettings_renderedPreview_label()}
+      </Button>
     </div>
   {/if}
-</NoteContentSurface>
+  <div class="min-h-0 flex-1">
+    <NoteContentSurface state={noteContentState}>
+      {#if tab.noteId}
+        {#if noteContentLoadFailed}
+          <div class="flex flex-col items-center justify-center h-full text-subtle gap-3">
+            <p>{m.layout_noteTab_contentLoadFailed_error()}</p>
+            <Button variant="outline" size="sm" onclick={retryNoteContentLoad}>
+              {m.ui_errorToast_retry_label()}
+            </Button>
+          </div>
+        {:else if !$note}
+          <div class="flex flex-col h-full">
+            <div class="flex-1 p-4 space-y-4">
+              <Skeleton class="h-8 w-3/4" />
+              <Skeleton class="h-4 w-full" />
+              <Skeleton class="h-4 w-5/6" />
+              <Skeleton class="h-4 w-4/5" />
+              <Skeleton class="h-4 w-full" />
+            </div>
+          </div>
+        {:else if showVersionHistory && $workspace}
+          <NoteVersionHistory
+            workspace={$workspace}
+            noteId={tab.noteId}
+            currentContent={$note?.content || ''}
+            onRestore={() => (showVersionHistory = false)}
+          />
+        {:else if showSpecOnboarding}
+          <!-- Show onboarding when coordinator is writing initial spec -->
+          <SpecWritingOnboarding agentId={initialSpecWriterAgentId} {workspaceId} />
+        {:else if showRenderedPreview}
+          <RenderedNotePreview
+            content={$note.content || ''}
+            {workspaceId}
+            noteId={tab.noteId}
+            scrollKey={tab.id}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={handlePreviewScrollPositionSave}
+          />
+        {:else if $workspace}
+          <NoteWithComments
+            workspace={$workspace}
+            noteId={tab.noteId}
+            editable={noteEditable}
+            {isPanelFocused}
+            initialScrollPosition={scrollPosition}
+            onScrollPositionSave={(scrollTop: number) =>
+              appStore.dispatch(saveScrollPosition(tab.id, scrollTop))}
+          />
+        {/if}
+      {:else}
+        <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
+          <Fa icon={faNoteSticky} class="text-4xl opacity-50" />
+          <p>{m.layout_noteTab_noNoteSelected_label()}</p>
+        </div>
+      {/if}
+    </NoteContentSurface>
+  </div>
+</div>

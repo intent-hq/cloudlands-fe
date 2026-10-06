@@ -1,10 +1,17 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  export const preview = definePreview({
+  interface Props {
+    workspaceView?: 'editor' | 'raw';
+  }
+  export const preview = definePreview<Props>({
     id: 'assistant-panels',
     title: 'Assistant content panels',
     defaultState: 'default',
-    states: { default: { props: {} } },
+    states: {
+      default: { props: {} },
+      workspaceEditor: { props: { workspaceView: 'editor' } },
+      workspaceMarkdown: { props: { workspaceView: 'raw' } },
+    },
   });
 </script>
 
@@ -22,11 +29,12 @@
   } from './assistant-panels-browser-fixtures';
   import './home.css';
 
-  const stop = startHomePreview(() => [setupAssistantPanelsFixture()]);
+  let { workspaceView }: Props = $props();
+  const stop = startHomePreview(() => [setupAssistantPanelsFixture(workspaceView)]);
   onDestroy(stop);
 
   const links =
-    '[Open the plan](intent://local/note/plan) · [Open the second plan](intent://local/note/second)\n\n[Open repository](https://github.com/acme/studio) · [Open missing note](intent://local/note/missing) · [Open workspace plan](intent://local/example-workspace/note/plan)';
+    '[Open the plan](intent://local/note/plan) · [Open the second plan](intent://local/note/second)\n\n[Open repository](https://github.com/acme/studio) · [Open missing note](intent://local/note/missing) · [Open workspace plan](intent://local/example-workspace/note/plan)\n\n[Open empty note](intent://local/note/empty) · [Open long note](intent://local/note/long)\n\n[Open unavailable workspace note](intent://local/unavailable-workspace/note/plan) · [Open workspace lookup failure note](intent://local/failing-workspace/note/plan)';
 </script>
 
 <div class="assistant-panels-preview h-[780px] w-full bg-sidebar p-3 text-foreground">
