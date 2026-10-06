@@ -1,5 +1,5 @@
 import { mount, unmount } from 'svelte';
-import MarkdownDiagram from './MarkdownDiagram.svelte';
+import { logger } from '$lib/utils/client-logger';
 
 interface DiagramOptions {
   enabled: boolean;
@@ -9,6 +9,9 @@ interface DiagramOptions {
 
 export function markdownDiagrams(node: HTMLElement, initialOptions: DiagramOptions) {
   let options = initialOptions;
+  let renderer: typeof import('./MarkdownDiagram.svelte').default | undefined;
+  let loading = false;
+  let disposed = false;
   const mounted = new Map<
     HTMLElement,
     { component: ReturnType<typeof mount>; source: HTMLElement }
@@ -23,6 +26,7 @@ export function markdownDiagrams(node: HTMLElement, initialOptions: DiagramOptio
   }
 
   function reconcile() {
+    if (disposed) return;
     for (const [host, { component }] of mounted) {
       if (!node.contains(host)) {
         void unmount(component);
@@ -48,10 +52,26 @@ export function markdownDiagrams(node: HTMLElement, initialOptions: DiagramOptio
 
       const source = code.parentElement;
       if (!source) continue;
+      if (!renderer) {
+        if (!loading) {
+          loading = true;
+          void import('./MarkdownDiagram.svelte')
+            .then((module) => {
+              renderer = module.default;
+              loading = false;
+              reconcile();
+            })
+            .catch((error) => {
+              loading = false;
+              logger.error('Failed to load the Markdown diagram renderer', { error });
+            });
+        }
+        return;
+      }
       const host = document.createElement('div');
       host.dataset.markdownDiagram = kind;
       source.replaceWith(host);
-      const component = mount(MarkdownDiagram, {
+      const component = mount(renderer, {
         target: host,
         context: options.context,
         props: { kind, source: code.textContent ?? '', workspaceId: options.workspaceId },
@@ -75,6 +95,7 @@ export function markdownDiagrams(node: HTMLElement, initialOptions: DiagramOptio
       reconcile();
     },
     destroy() {
+      disposed = true;
       observer.disconnect();
       clear();
     },
