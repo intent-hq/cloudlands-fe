@@ -75,9 +75,10 @@ test.afterEach(async ({ page }, info) => {
   const image = await page.screenshot({ path: resolve(folder, 'screenshot.png'), fullPage: true });
   await info.attach('workspace-preview.png', { body: image, contentType: 'image/png' });
   const headerImage = await readFile(resolve(folder, 'header-before-close.png')).catch(() => null);
+  const headerLayout = await readFile(resolve(folder, 'header-layout.json')).catch(() => null);
   await writeFile(
     resolve(folder, 'review.html'),
-    `<!doctype html><meta charset="utf-8"><title>Workspace chat review</title><style>body{font:16px system-ui;max-width:1200px;margin:32px auto}img{max-width:100%}pre{white-space:pre-wrap}</style><h1>${info.title}</h1><p>${info.status}</p><img src="${headerImage ? 'header-before-close.png' : 'screenshot.png'}" alt="Workspace preview"><p><a href="routing.json">Routing evidence</a></p><pre>${json.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</pre>`,
+    `<!doctype html><meta charset="utf-8"><title>Workspace chat review</title><style>body{font:16px system-ui;max-width:1200px;margin:32px auto}img{max-width:100%}pre{white-space:pre-wrap}</style><h1>${info.title}</h1><p>${info.status}</p><img src="${headerImage ? 'header-before-close.png' : 'screenshot.png'}" alt="Workspace preview"><p><a href="routing.json">Routing evidence</a></p>${headerLayout ? '<p><a href="header-layout.json">Title layout evidence</a></p>' : ''}<pre>${json.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</pre>`,
   );
 });
 
@@ -353,6 +354,13 @@ for (const entry of headerCases) {
     await expect(close).toBeVisible();
     const titleBox = (await title.boundingBox())!;
     const closeBox = (await close.boundingBox())!;
+    const titleLayout = await title.locator('span').evaluate((element) => ({
+      height: element.clientHeight,
+      lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+    }));
+    expect(titleLayout.height).toBeGreaterThan(0);
+    expect(titleLayout.lineHeight).toBeGreaterThan(0);
+    expect(titleLayout.height).toBeLessThanOrEqual(titleLayout.lineHeight * 2 + 1);
     expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(closeBox.x + 1);
     if (entry.repository) {
       const repoBox = (await header.locator('[data-home-detail-repository]').boundingBox())!;
@@ -364,6 +372,14 @@ for (const entry of headerCases) {
     );
     const folder = artifactFolder(info);
     await mkdir(folder, { recursive: true });
+    await writeFile(
+      resolve(folder, 'header-layout.json'),
+      JSON.stringify(
+        { title: entry.title, lineLimit: 2, ...titleLayout, titleBox, closeBox },
+        null,
+        2,
+      ),
+    );
     await page
       .locator('[data-workspace-chat-review]')
       .screenshot({ path: resolve(folder, 'header-before-close.png') });
