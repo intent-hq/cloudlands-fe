@@ -174,8 +174,12 @@ test('Sidebar handles rapid reversals, keyboard switching, and reduced motion wh
   await expect(workspaces).toBeFocused();
   await expect(workspaces).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('ArrowRight');
-  await expect(assistant).toBeFocused();
   await expect(assistant).toHaveAttribute('aria-selected', 'true');
+  await expect(component.locator('.home-surface .tiptap-editor').first()).toHaveAttribute(
+    'contenteditable',
+    'true',
+  );
+  await expect(assistant).toBeFocused();
   await page.evaluate(async () => {
     document
       .querySelector<HTMLElement>('.home-sidebar [role="tab"][data-value="workspaces"]')!
