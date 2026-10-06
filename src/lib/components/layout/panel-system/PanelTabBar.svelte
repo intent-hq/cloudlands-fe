@@ -1314,7 +1314,9 @@
           {@render contentActions.actions?.()}
           {@render contentActions.destructive?.()}
         </Menu.Group>
-        <Menu.Separator />
+        {#if paneMoveDirections.some((direction) => direction.enabled)}
+          <Menu.Separator />
+        {/if}
       {/if}
       {#if paneMoveDirections.some((direction) => direction.enabled)}
         <Menu.Group data-panel-actions-section="move">
