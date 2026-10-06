@@ -337,7 +337,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="flex shrink-0 items-center justify-between gap-1 {pageLayout
-        ? 'border-b border-border px-6 py-3'
+        ? 'home-assistant-header border-b border-border px-6'
         : 'px-2 pb-1.5 pt-2'} {collapsed ? 'cursor-pointer' : ''}"
       data-chief-header-row
       onclick={handleHeaderRowClick}
@@ -469,7 +469,7 @@
     <div
       id={ontoggle ? 'combined-panel-chief-content' : undefined}
       class="min-h-0 flex-1 overflow-clip {pageLayout
-        ? 'px-6 py-5'
+        ? 'px-6 pt-4 pb-5'
         : 'px-2 pt-0'} [overflow-clip-margin:0.5rem]"
       hidden={Boolean(ontoggle && collapsed)}
     >

@@ -604,17 +604,19 @@
         class="flex min-h-0 flex-1 flex-col"
       >
         {#if !$collaborator$}
-          <Tabs.List
-            aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
-            class="mb-2 grid w-full shrink-0 grid-cols-2 rounded-lg bg-muted/60 p-1"
-          >
-            <Tabs.Trigger value="workspaces" class="min-w-0 px-1 font-medium">
-              {m.home_tab_workspaces()}
-            </Tabs.Trigger>
-            <Tabs.Trigger value="assistant" class="min-w-0 px-1 font-medium">
-              {m.home_assistant()}
-            </Tabs.Trigger>
-          </Tabs.List>
+          <div class="home-sidebar-header flex shrink-0 items-center">
+            <Tabs.List
+              aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
+              class="home-sidebar-tabs grid h-9 w-full shrink-0 grid-cols-2 items-center rounded-lg bg-background p-1"
+            >
+              <Tabs.Trigger value="workspaces" class="min-w-0 px-1 font-medium">
+                {m.home_tab_workspaces()}
+              </Tabs.Trigger>
+              <Tabs.Trigger value="assistant" class="min-w-0 px-1 font-medium">
+                {m.home_assistant()}
+              </Tabs.Trigger>
+            </Tabs.List>
+          </div>
         {/if}
         <Tabs.Content value="workspaces" class="mt-0 min-h-0 flex-1 overflow-y-auto">
           <Button
@@ -749,7 +751,7 @@
             {#snippet homeHeader()}
               <header
                 use:restoreTabFocus
-                class="home-header flex shrink-0 flex-wrap items-center gap-x-6 border-b border-border px-5"
+                class="home-header flex shrink-0 items-center gap-x-6 border-b border-border px-6"
               >
                 <Tabs.List class="home-tabs shrink-0 gap-5 px-0" aria-label={m.home_views()}>
                   <Tabs.Trigger value="workspaces">{m.home_tab_workspaces()}</Tabs.Trigger>

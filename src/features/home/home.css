@@ -111,10 +111,23 @@
 }
 
 .home-layout {
+  --home-header-height: 3rem;
+  --home-content-gap: 1rem;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   container: home-layout / inline-size;
+}
+
+.home-header,
+.home-assistant-header {
+  height: var(--home-header-height);
+  min-height: var(--home-header-height);
+}
+
+.home-sidebar-header {
+  height: var(--home-header-height);
+  margin-bottom: var(--home-content-gap);
 }
 
 .home-tab-logo {
@@ -127,9 +140,7 @@
 
 .dark .home-sidebar [data-tabs-indicator] {
   background: hsl(var(--surface-5));
-  box-shadow:
-    inset 0 0 0 1px hsl(var(--foreground) / 0.4),
-    var(--elevation-raised);
+  box-shadow: var(--elevation-raised);
 }
 
 .home-sidebar [data-slot='button'] {
