@@ -15,7 +15,7 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
-import { clearDraftCacheForTests, getCachedDraft } from '../chat-draft-cache';
+import { clearDraftCacheForTests, getCachedDraft, setCachedDraft } from '../chat-draft-cache';
 import ChatDraftHarness from './mocks/ChatDraftHarness.svelte';
 
 type Draft = { text: string; attachments?: DraftAttachment[]; updatedAt: string };
@@ -66,6 +66,22 @@ describe('ChatPanel draft cache (mounted)', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('resets only the requested fixture pair without touching unrelated cached drafts', () => {
+    const fixture = { text: 'fixture', attachments: [] };
+    const otherAgent = { text: 'other agent', attachments: [] };
+    const otherWorkspace = { text: 'other workspace', attachments: [] };
+    setCachedDraft(WS, AGENT_1, fixture);
+    setCachedDraft(WS, AGENT_2, otherAgent);
+    setCachedDraft('ws-2', AGENT_1, otherWorkspace);
+    clearDraftCacheForTests({ workspaceId: WS, agentId: AGENT_1 });
+    expect(getCachedDraft(WS, AGENT_1)).toBeUndefined();
+    expect(getCachedDraft(WS, AGENT_2)).toEqual(otherAgent);
+    expect(getCachedDraft('ws-2', AGENT_1)).toEqual(otherWorkspace);
+    clearDraftCacheForTests();
+    expect(getCachedDraft(WS, AGENT_2)).toBeUndefined();
+    expect(getCachedDraft('ws-2', AGENT_1)).toBeUndefined();
   });
 
   it('hydrates instantly with no gate on switch-back to a previously visited pair', async () => {

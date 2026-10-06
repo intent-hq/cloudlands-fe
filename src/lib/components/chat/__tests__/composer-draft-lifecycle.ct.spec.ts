@@ -60,3 +60,26 @@ test('cancels a pending restoration when the fixture unmounts', async ({ mount }
     });
   expect(oldRequests).toEqual([{ method: 'drafts.get', params: scope }]);
 });
+
+test('preserves a new fixture draft after a completed restore in the previous mount', async ({
+  mount,
+}) => {
+  const first = await mount(ChatPanelComposerGeometryHost, {
+    props: { restoredDraft: 'Saved first fixture draft' },
+  });
+  await expect(first.getByTestId('message-input').locator('.tiptap-editor')).toHaveText(
+    'Saved first fixture draft',
+  );
+  await first.unmount();
+  const requests: ComposerDraftRequest[] = [];
+  const second = await mount(ChatPanelComposerGeometryHost, {
+    props: {
+      draft: 'Distinct second fixture draft',
+      onDraftRequest: (request: ComposerDraftRequest) => requests.push(request),
+    },
+  });
+  const editor = second.getByTestId('message-input').locator('.tiptap-editor');
+  await expect.poll(() => requests).toContainEqual({ method: 'drafts.get', params: scope });
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await expect(editor).toHaveText('Distinct second fixture draft');
+});

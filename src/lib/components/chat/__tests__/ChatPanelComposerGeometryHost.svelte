@@ -13,6 +13,7 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { clearDraftCacheForTests } from '../chat-draft-cache';
   import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
@@ -126,6 +127,8 @@
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
   const timestamp = '2026-08-23T12:00:00.000Z';
   const ownsStore = untrack(() => initializeStore);
+  // These fixed fixture IDs are reused across same-page preview/test mounts.
+  clearDraftCacheForTests({ workspaceId, agentId });
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
@@ -620,6 +623,7 @@
   onDestroy(() => {
     stopDrafts();
     drafts.dispose();
+    clearDraftCacheForTests({ workspaceId, agentId });
     disposeStore();
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));
