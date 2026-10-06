@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import {
+    createComposerDraftTransport,
+    type ComposerDraftRequest,
+  } from './mocks/composer-draft-transport';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import { AgentStatus, type AgentSession } from '$shared/types';
   import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
@@ -9,6 +13,7 @@
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
+  import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
     principalContextChanged,
@@ -48,6 +53,9 @@
     chief = false,
     streaming = false,
     draft = '',
+    restoredDraft = '',
+    holdDraftRestore = false,
+    onDraftRequest,
     attention = null,
     queued = false,
     suggestions = false,
@@ -71,6 +79,9 @@
     chief?: boolean;
     streaming?: boolean;
     draft?: string;
+    restoredDraft?: string;
+    holdDraftRestore?: boolean;
+    onDraftRequest?: (request: ComposerDraftRequest) => void;
     attention?: 'blocker' | 'discussion' | null;
     queued?: boolean;
     suggestions?: boolean;
@@ -119,6 +130,21 @@
   const disposeStore = ownsStore
     ? startRootStoreLifecycle(store, { startSagas: () => [] })
     : () => {};
+  const drafts = untrack(() =>
+    createComposerDraftTransport(
+      workspaceId,
+      agentId,
+      restoredDraft,
+      holdDraftRestore,
+      onDraftRequest,
+    ),
+  );
+  const stopDrafts = store.runSaga(function* () {
+    yield* chatDraftsSaga(drafts.transport);
+  });
+  $effect(() => {
+    if (!holdDraftRestore) drafts.releaseRestore();
+  });
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;
@@ -592,6 +618,8 @@
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
   onDestroy(() => {
+    stopDrafts();
+    drafts.dispose();
     disposeStore();
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));
