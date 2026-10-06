@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Buffer } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import { createConnection, createServer, type Socket } from 'node:net';
-import { mkdtemp, open, rm, type FileHandle } from 'node:fs/promises';
+import { mkdtemp, open, readFile, rm, type FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -16,13 +16,16 @@ import { MockNotePagesClient } from '$lib/client/mock/mock-note-pages-client';
 import { NotePageReader } from '$lib/client/note-page-reader';
 import type { NotePageRequest, NoteReadPage } from '$lib/client/note-pages';
 import recordedAb from './__fixtures__/note-local-point/plain-paragraph-ab.json';
+import recordedBootstrap from './__fixtures__/note-local-point/bootstrap-attempt2.json';
 import { LiveNotePagesClient } from '$lib/client/live/live-note-pages-client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { NoteCommitReceipt, NotePageState, NoteScope } from '$lib/client/note-pages';
 import type { Workspace } from '$shared/types';
 import * as a from '$store/renderer/slices/note-pages/note-pages-slice';
 import { noteAssemblyResources } from '../note-assembly-reservation';
-import { readNoteWindow } from '../note-window-reader';
+import { readNoteWindow, NOTE_WINDOW_LIMITS } from '../note-window-reader';
+import type { NoteResourceCost } from '../note-resource-ledger';
+import { noteLocalPointLimits } from './note-local-point-history';
 import { NoteWindowView } from '../note-window-view';
 import { prepareNoteLocalPointViewEditing } from './note-local-point-view-editing';
 import { stageNoteDocumentSave } from './note-staged-save';
@@ -41,6 +44,88 @@ const originalPages = appClient.notes.pages;
 const pointId = '00000000-0000-4000-8000-000000000001';
 const literal = `<!--anchor:${pointId}:point-->`;
 const contractHash = '943ac9cd2086865fb4df7446eb079c3bf833d3374f6576f176072dda0e68eeb4';
+const linkedScratch = 'linked-test-scratch';
+const linkedSeed = {
+  owner: 'linked-seed',
+  data: 'linked-seed-data',
+  control: 'linked-seed-control',
+};
+const linkedScratchCost: NoteResourceCost = {
+  payloadBytes: 1671168,
+  stringUnits: 1671168,
+  objectNodes: 8192,
+  domNodes: 0,
+  physicalReads: 1,
+  assemblies: 1,
+};
+// Separate logical units, not a transitive heap measurement. Keep both source
+// assemblies while native dependents and the non-adopting receipt observer live.
+const assemblyAllowance = 8 * NOTE_WINDOW_LIMITS.requests * NOTE_WINDOW_LIMITS.wireBytes;
+const nativeNodeAllowance =
+  8 * (noteLocalPointLimits.mappingEntries + noteLocalPointLimits.nativeNodes);
+const receiptResident = 8 * (8192 + 4096 + 2 * 256);
+const linkedPhaseCosts: Record<string, NoteResourceCost> = {
+  scratch: linkedScratchCost,
+  sourceAndContext: {
+    payloadBytes: 2 * assemblyAllowance,
+    stringUnits: 2 * assemblyAllowance,
+    objectNodes: 2 * assemblyAllowance,
+    domNodes: 0,
+    physicalReads: 2,
+    assemblies: 2,
+  },
+  initialNative: {
+    payloadBytes: 8 * noteLocalPointLimits.recipeBytes,
+    stringUnits: 8 * noteLocalPointLimits.recipeBytes,
+    objectNodes: nativeNodeAllowance,
+    domNodes: 0,
+    physicalReads: 0,
+    assemblies: 1,
+  },
+  pointNative: {
+    payloadBytes: 16 * noteLocalPointLimits.recipeBytes,
+    stringUnits: 16 * noteLocalPointLimits.recipeBytes,
+    objectNodes: nativeNodeAllowance,
+    domNodes: 0,
+    physicalReads: 0,
+    assemblies: 1,
+  },
+  receipt: {
+    payloadBytes: receiptResident + 8 * 262144,
+    stringUnits: receiptResident + 8 * 262144,
+    objectNodes: receiptResident + 8192,
+    domNodes: 0,
+    physicalReads: 1,
+    assemblies: 1,
+  },
+};
+const linkedResourceLimits: NoteResourceCost = {
+  payloadBytes: 0,
+  stringUnits: 0,
+  objectNodes: 0,
+  domNodes: 10000,
+  physicalReads: 0,
+  assemblies: 0,
+};
+for (const cost of Object.values(linkedPhaseCosts)) {
+  for (const key of Object.keys(linkedResourceLimits) as Array<keyof NoteResourceCost>)
+    linkedResourceLimits[key] += cost[key];
+}
+type LinkedPort = {
+  read(): ReturnType<typeof a.notePagesReducer>;
+  dispatch(action: Parameters<typeof a.notePagesReducer>[1]): void;
+};
+function reserveLinkedBootstrap(port: LinkedPort) {
+  port.dispatch(
+    a.pageResourcesRequested(linkedScratch, [{ id: linkedScratch, cost: linkedScratchCost }], 12),
+  );
+  port.dispatch(a.pageResourcesRequested(linkedSeed.owner, noteAssemblyResources(linkedSeed), 12));
+  if (
+    !port.read().resourceLedger.owners[linkedScratch] ||
+    !port.read().resourceLedger.owners[linkedSeed.owner]
+  )
+    throw new Error('Linked bootstrap admission denied before source IO');
+}
 const dataPrefix = '{"jsonrpc":"2.0",';
 const controlPrefix = '{"control":';
 const allowed = new Set([
@@ -244,6 +329,8 @@ class Peer {
   private ioStop = Infinity;
   private chain = '0'.repeat(64);
   private closed: Promise<void>;
+  private closing = false;
+  private closePromise: Promise<void> | undefined;
   private constructor(
     path: string,
     private spool: FileHandle,
@@ -259,6 +346,13 @@ class Peer {
       }),
     );
     this.socket.on('data', (chunk: Buffer) => {
+      if (this.closing) {
+        // Unexpected terminal/partial data is not a settlement receipt. Drain
+        // ownership by destroying the actual local socket, retaining remote debt.
+        this.remoteUnsettled = true;
+        this.socket.destroy();
+        return;
+      }
       try {
         if (!this.frame || !this.waiter) throw new Error('Unsolicited response');
         const result = this.frame.push(chunk);
@@ -280,6 +374,7 @@ class Peer {
   }
   private fail(error: Error) {
     this.lost = true;
+    if (this.closing) this.remoteUnsettled = true;
     const waiter = this.waiter;
     this.waiter = undefined;
     this.frame = undefined;
@@ -472,24 +567,86 @@ class Peer {
       this.busy = false;
     }
   }
-  async close() {
+  close(): Promise<void> {
     this.lost = true;
-    if (this.busy) throw new Error('Cannot release an outstanding read');
-    const stop = performance.now() + this.timeout;
-    let expired = false;
-    const timer = setTimeout(() => {
-      expired = true;
-    }, this.timeout);
+    if (this.busy) return Promise.reject(new Error('Cannot release an outstanding read'));
+    if (this.closePromise) return this.closePromise;
+    this.closing = true;
+    let complete!: () => void;
+    let reject!: (error: unknown) => void;
+    // Publish identity before end/resume/destroy or any other executable callback.
+    this.closePromise = new Promise<void>((resolve, fail) => {
+      complete = resolve;
+      reject = fail;
+    });
+    void (async () => {
+      const errors: unknown[] = [];
+      const destroy = () => {
+        this.remoteUnsettled = true;
+        try {
+          this.socket.destroy();
+        } catch (error) {
+          errors.push(error);
+        }
+      };
+      const stop = performance.now() + this.timeout;
+      const timer = setTimeout(destroy, this.timeout);
+      try {
+        try {
+          this.socket.end();
+          this.socket.resume(); // Paused terminal bytes/EOF must reach the local close handler.
+        } catch (error) {
+          errors.push(error);
+          destroy();
+        }
+        // No request/write is busy. Attempt both independent physical resources,
+        // including spool close when synchronous socket initiation failed.
+        const settled = await Promise.allSettled([
+          this.closed,
+          Promise.resolve().then(() => this.spool.close()),
+        ]);
+        for (const result of settled) if (result.status === 'rejected') errors.push(result.reason);
+        if (performance.now() >= stop || errors.length) this.remoteUnsettled = true;
+        if (this.remoteUnsettled)
+          throw new AggregateError(errors, 'Remote or physical settlement unproven');
+      } finally {
+        clearTimeout(timer);
+      }
+    })().then(complete, reject);
+    return this.closePromise;
+  }
+}
+
+/** Capture only bounded own-data diagnostics; never stringify arbitrary errors. */
+function startPrimaryRecord(error: unknown, directory: string, quota: Quota) {
+  let message = 'Unclassified primary failure';
+  if (error && typeof error === 'object') {
     try {
-      this.socket.end();
-      await this.closed;
-      await this.spool.close();
-      if (expired || performance.now() >= stop || this.remoteUnsettled)
-        throw new Error('Remote or physical settlement unproven');
-    } finally {
-      clearTimeout(timer);
+      const field = Object.getOwnPropertyDescriptor(error, 'message');
+      if (field && 'value' in field && typeof field.value === 'string')
+        message = field.value.slice(0, 512);
+    } catch {
+      /* An uninspectable error still gets a bounded fallback record. */
     }
   }
+  const bytes = encode({ kind: 'linked-primary-failure', message }, 4096);
+  const pending = (async () => {
+    quota.disk(bytes.length, true);
+    const handle = await open(join(directory, 'frontend-primary.json'), 'wx');
+    try {
+      await handle.writeFile(bytes);
+    } finally {
+      await handle.close();
+    }
+  })();
+  void pending.catch(() => undefined); // Observed again by the cleanup settlement join.
+  return { error, pending };
+}
+function cleanupFailure(primary: { error: unknown } | undefined, failures: unknown[]) {
+  return new AggregateError(
+    primary ? [primary.error, ...failures] : failures,
+    'Physical cleanup unproven',
+  );
 }
 
 const temporary: string[] = [];
@@ -896,17 +1053,7 @@ it.skipIf(!captureEnabled)(
     const socket = process.env.NOTE_LINKED_SOCKET;
     const directory = process.env.NOTE_LINKED_FE_DIR;
     if (!socket || !directory) throw new Error('Missing isolated capture paths');
-    let pages = a.notePagesReducer(
-      undefined,
-      a.pageResourceLimitsConfigured({
-        payloadBytes: 16 * 1024 * 1024,
-        stringUnits: 16 * 1024 * 1024,
-        objectNodes: 1024 * 1024,
-        domNodes: 10000,
-        physicalReads: 16,
-        assemblies: 16,
-      }),
-    );
+    let pages = a.notePagesReducer(undefined, a.pageResourceLimitsConfigured(linkedResourceLimits));
     const listeners = new Set<() => void>();
     const channel = stdChannel();
     const dispatch = (action: Parameters<typeof a.notePagesReducer>[1]) => {
@@ -929,28 +1076,11 @@ it.skipIf(!captureEnabled)(
     let view: NoteWindowView | undefined;
     let releaseNative: (() => void) | undefined;
     let transcriptOffer: ReturnType<typeof reserveNoteReceiptTranscript> | undefined;
-    const scratch = 'linked-test-scratch';
+    const scratch = linkedScratch;
+    const seed = linkedSeed;
+    let primary: { error: unknown; pending: Promise<void> } | undefined;
     try {
-      dispatch(
-        a.pageResourcesRequested(
-          scratch,
-          [
-            {
-              id: scratch,
-              cost: {
-                payloadBytes: 1671168,
-                stringUnits: 1671168,
-                objectNodes: 8192,
-                domNodes: 0,
-                physicalReads: 1,
-                assemblies: 1,
-              },
-            },
-          ],
-          12,
-        ),
-      );
-      expect(pages.resourceLedger.owners[scratch]).toBeDefined();
+      reserveLinkedBootstrap(port);
       const { peer, ready } = await Peer.connect(
         socket,
         await open(join(directory, 'frontend-transcript.jsonl'), 'wx'),
@@ -981,12 +1111,7 @@ it.skipIf(!captureEnabled)(
       expect(first.sourceRevision).toBe(initial.sourceRevision);
       const note = () => pages.byWorkspaceId[ws].notes[id];
       dispatch(a.pageWindowRequested(ws, id, 'panel', 0));
-      const seed = {
-        owner: 'linked-seed',
-        data: 'linked-seed-data',
-        control: 'linked-seed-control',
-      };
-      dispatch(a.pageResourcesRequested(seed.owner, noteAssemblyResources(seed), 12));
+      expect(pages.resourceLedger.owners[seed.owner]).toBeDefined();
       dispatch(
         a.pageWindowSettled(
           ws,
@@ -1235,49 +1360,63 @@ it.skipIf(!captureEnabled)(
       // Retain genuine domain G unchanged; canonical native/domain adoption is Unsupported.
       expect(view.history('undo')).toBe(false);
       expect(note().document?.history).toEqual(accepted.history);
+    } catch (error) {
+      // Start bounded evidence before cleanup, but never await its IO before
+      // attempting every known cleanup. Its settlement still holds scratch DATA.
+      primary = startPrimaryRecord(error, directory, connected?.quota ?? new Quota());
+      throw error;
     } finally {
       live = false;
       // Every known borrower gets its cleanup attempt. Failed cleanup keeps DATA charged.
+      const peerClosed = connected?.close();
       const cleanup = await Promise.allSettled([
+        primary?.pending,
         transcriptOffer?.release(),
         (async () => {
           offer?.retire();
           view?.destroy();
+          await peerClosed;
           if (connected && !connected.settlementKnown)
             throw new Error('Native borrower held for unknown remote settlement');
           releaseNative?.();
           releaseNative = undefined;
           await offer?.release();
         })(),
-        connected?.close(), // BE owns cancellation/unknown commit/Store settlement after EOF.
+        peerClosed, // Local close is not a BE cancellation/Store settlement receipt.
       ]);
       saga?.cancel();
-      await saga?.toPromise();
+      cleanup.push(...(await Promise.allSettled([saga?.toPromise()])));
       const failures = cleanup.filter((result) => result.status === 'rejected');
-      if (connected) {
-        const terminal = encode(
-          {
-            contractHash,
-            cleanupKnown: !failures.length,
-            remoteSettlementKnown: connected.settlementKnown,
-            artifactBytesBeforeTerminal: connected.quota.bytes,
-            dataCalls: connected.quota.total,
-          },
-          4096,
-        );
-        connected.quota.disk(terminal.length, true);
-        const handle = await open(join(directory, 'frontend-terminal.json'), 'wx');
-        try {
-          await handle.writeFile(terminal);
-        } finally {
-          await handle.close();
+      try {
+        if (connected) {
+          const terminal = encode(
+            {
+              contractHash,
+              primaryRecorded: primary ? cleanup[0].status === 'fulfilled' : false,
+              cleanupKnown: !failures.length,
+              remoteSettlementKnown: connected.settlementKnown,
+              artifactBytesBeforeTerminal: connected.quota.bytes,
+              dataCalls: connected.quota.total,
+            },
+            4096,
+          );
+          connected.quota.disk(terminal.length, true);
+          const handle = await open(join(directory, 'frontend-terminal.json'), 'wx');
+          try {
+            await handle.writeFile(terminal);
+          } finally {
+            await handle.close();
+          }
         }
+      } catch (error) {
+        failures.push({ status: 'rejected', reason: error });
       }
       if (failures.length)
-        throw new AggregateError(
+        throw cleanupFailure(
+          primary,
           failures.map((result) => result.reason),
-          'Physical cleanup unproven',
         );
+      dispatch(a.pageResourcesReleased(seed.owner));
       dispatch(a.pageResourcesReleased(scratch));
     }
   },
@@ -1648,10 +1787,6 @@ it.each([false, true])(
     });
     const readPage = (q: NotePageRequest) =>
       reader.read(identity.scope.workspaceId, identity.scope.noteId, q);
-    const { window, first } = await readInitialWindow(readPage, identity);
-    expect(first).toBe(identity);
-    expect(window.snapshotId).toBe(identity.snapshotId);
-    expect(window.expiresAt).toBe(identity.expiresAt);
     const ws = identity.scope.workspaceId,
       id = identity.scope.noteId;
     let pages = a.notePagesReducer(undefined, a.pagePanelOpened(ws, id, 'panel'));
@@ -1662,16 +1797,12 @@ it.each([false, true])(
       for (const fn of listeners) fn();
       channel.put(action);
     };
-    dispatch(
-      a.pageResourceLimitsConfigured({
-        payloadBytes: 100000000,
-        stringUnits: 100000000,
-        objectNodes: 100000000,
-        domNodes: 10000,
-        physicalReads: 16,
-        assemblies: 16,
-      }),
-    );
+    dispatch(a.pageResourceLimitsConfigured(linkedResourceLimits));
+    reserveLinkedBootstrap({ read: () => pages, dispatch });
+    const { window, first } = await readInitialWindow(readPage, identity);
+    expect(first).toBe(identity);
+    expect(window.snapshotId).toBe(identity.snapshotId);
+    expect(window.expiresAt).toBe(identity.expiresAt);
     // Synthetic client-state initialization for this isolated borrower guard only.
     dispatch(
       a.pageStateReceived(ws, id, 0, {
@@ -1688,8 +1819,8 @@ it.each([false, true])(
     );
     dispatch(a.pageWindowRequested(ws, id, 'panel', 0));
     const note = () => pages.byWorkspaceId[ws].notes[id];
-    const seed = { owner: 'hold-seed', data: 'hold-data', control: 'hold-control' };
-    dispatch(a.pageResourcesRequested(seed.owner, noteAssemblyResources(seed), 12));
+    const seed = linkedSeed;
+    expect(pages.resourceLedger.owners[seed.owner]).toBeDefined();
     dispatch(
       a.pageWindowSettled(
         ws,
@@ -1923,4 +2054,399 @@ it.each([
     maxWireBytes: 8192,
     maxItems: 64,
   });
+});
+
+it('admits linked bootstrap before any recorded source IO under the shared live limits', async () => {
+  vi.spyOn(Date, 'now').mockReturnValue(recordedBootstrap.capturedAtMs);
+  let chain = '0'.repeat(64);
+  const frames = recordedBootstrap.frames.map((row) => {
+    expect(sha(row.frame)).toBe(row.digest);
+    chain = sha(`${chain}:${row.direction}:${row.digest}`);
+    expect(chain).toBe(row.chain);
+    return object(JSON.parse(row.frame));
+  });
+  const initial = state(frames[0].initialState);
+  let pages = a.notePagesReducer(undefined, a.pageResourceLimitsConfigured(linkedResourceLimits));
+  const port: LinkedPort = {
+    read: () => pages,
+    dispatch(action) {
+      pages = a.notePagesReducer(pages, action);
+    },
+  };
+  const reads = vi.fn(async (_method: string, params: Record<string, unknown>) => {
+    const q = object(params.page);
+    const index = frames.findIndex(
+      (frame) =>
+        frame.method === 'note.get' &&
+        JSON.stringify(object(frame.params).page) === JSON.stringify(q),
+    );
+    if (index < 0) throw new Error('Missing actual recorded request');
+    return frames[index + 1].result;
+  });
+  reserveLinkedBootstrap(port);
+  expect(reads).not.toHaveBeenCalled();
+  expect(pages.resourceLedger.owners[linkedSeed.owner]).toBeDefined();
+  const reader = new NotePageReader(reads);
+  const { window, first } = await readInitialWindow(
+    (q) => reader.read(initial.scope.workspaceId, initial.scope.noteId, q),
+    initial,
+  );
+  expect(reads).toHaveBeenCalledTimes(3);
+  expect(window.text).toBe('ab');
+  expect(window.scope).toEqual(initial.scope);
+  expect(window.snapshotId).toBe(first.snapshotId);
+  expect(window.expiresAt).toBe('2026-10-06T03:33:58.253671922Z');
+  port.dispatch(a.pageResourcesReleased(linkedSeed.owner));
+  port.dispatch(a.pageResourcesReleased(linkedScratch));
+  expect(pages.resourceLedger.used.objectNodes).toBe(0);
+});
+
+it('closes a real paused UDS after the peer receives EOF', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'linked-paused-close-'));
+  temporary.push(directory);
+  const path = join(directory, 'guard.sock');
+  let remote: Socket | undefined;
+  const server = createServer((socket) => {
+    remote = socket;
+    socket.write(JSON.stringify({ control: 'ready', contractHash, principal: 'daemon' }) + '\n');
+    socket.on('end', () => socket.end());
+  });
+  await new Promise<void>((resolve) => server.listen(path, resolve));
+  const spool = await open(join(directory, 'guard.jsonl'), 'wx');
+  const { peer } = await Peer.connect(path, spool, () => true, 1000);
+  let finished = false;
+  const close = peer.close().then(() => {
+    finished = true;
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(finished).toBe(true);
+    await close;
+    expect(spool.fd).toBe(-1);
+    expect(peer.settlementKnown).toBe(true);
+  } finally {
+    // Test-owned emergency teardown also settles the intentionally failing predecessor.
+    (Reflect.get(peer, 'socket') as Socket).destroy();
+    remote?.destroy();
+    await Promise.allSettled([close]);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it.each(['failure-data', 'partial-data', 'half-open'])(
+  'settles local paused close and retains unknown remote debt: %s',
+  async (mode) => {
+    const directory = await mkdtemp(join(tmpdir(), 'linked-close-debt-'));
+    temporary.push(directory);
+    const path = join(directory, 'guard.sock');
+    let remote: Socket | undefined;
+    const server = createServer({ allowHalfOpen: true }, (socket) => {
+      remote = socket;
+      socket.write(JSON.stringify({ control: 'ready', contractHash, principal: 'daemon' }) + '\n');
+      socket.on('end', () => {
+        if (mode === 'failure-data') socket.end('{"control":"failure","message":"no stage"}\n');
+        if (mode === 'partial-data') socket.end('{"control":');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(path, resolve));
+    const spool = await open(join(directory, 'guard.jsonl'), 'wx');
+    const { peer } = await Peer.connect(path, spool, () => true, 30);
+    let finished = false;
+    const close = peer.close();
+    const outcome = close
+      .then(
+        () => 'unexpected success',
+        () => 'unknown',
+      )
+      .finally(() => {
+        finished = true;
+      });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(finished).toBe(true);
+      expect(await outcome).toBe('unknown');
+      expect(spool.fd).toBe(-1);
+      expect(peer.settlementKnown).toBe(false);
+      await expect(peer.request('note.operationStatus', {})).rejects.toThrow('admission');
+    } finally {
+      (Reflect.get(peer, 'socket') as Socket).destroy();
+      remote?.destroy();
+      await outcome;
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  },
+);
+
+it('derives simultaneous logical reservations and refuses the predecessor budget before IO', () => {
+  expect(linkedResourceLimits).toEqual({
+    payloadBytes: 18026496,
+    stringUnits: 18026496,
+    objectNodes: 13357056,
+    domNodes: 10000,
+    physicalReads: 4,
+    assemblies: 6,
+  });
+  let pages = a.notePagesReducer(
+    undefined,
+    a.pageResourceLimitsConfigured({
+      ...linkedResourceLimits,
+      objectNodes: 1048576,
+    }),
+  );
+  const port = {
+    read: () => pages,
+    dispatch(action: Parameters<typeof a.notePagesReducer>[1]) {
+      pages = a.notePagesReducer(pages, action);
+    },
+  };
+  expect(() => reserveLinkedBootstrap(port)).toThrow('before source IO');
+  expect(pages.resourceLedger.owners[linkedSeed.owner]).toBeUndefined();
+  // An unadmitted seed is never published as a window. No IO or fresh grant exists.
+  port.dispatch(a.pageResourcesReleased(linkedScratch));
+  pages = a.notePagesReducer(undefined, a.pageResourceLimitsConfigured(linkedResourceLimits));
+  for (const [id, cost] of Object.entries(linkedPhaseCosts)) {
+    port.dispatch(a.pageResourcesRequested(id, [{ id, cost }], 12));
+    expect(pages.resourceLedger.owners[id]).toBeDefined();
+    for (const key of Object.keys(cost) as Array<keyof NoteResourceCost>)
+      expect(pages.resourceLedger.used[key]).toBeLessThanOrEqual(linkedResourceLimits[key]);
+  }
+  expect(pages.resourceLedger.used.objectNodes).toBe(13357056);
+  // This tests accounting coexistence only, not a receipt or native authority.
+  for (const id of Object.keys(linkedPhaseCosts)) port.dispatch(a.pageResourcesReleased(id));
+  expect(pages.resourceLedger.used.objectNodes).toBe(0);
+});
+
+it('records primary failure before held cleanup and preserves it when cleanup also fails', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'linked-primary-'));
+  temporary.push(directory);
+  const error = new Error('seed admission failed');
+  const primary = startPrimaryRecord(error, directory, new Quota());
+  let release!: () => void;
+  let started = false;
+  const cleanup = (async () => {
+    started = true;
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    throw new Error('cleanup still unknown');
+  })();
+  const joined = Promise.allSettled([primary.pending, cleanup]);
+  expect(started).toBe(true);
+  await primary.pending;
+  expect(JSON.parse(await readFile(join(directory, 'frontend-primary.json'), 'utf8'))).toEqual({
+    kind: 'linked-primary-failure',
+    message: 'seed admission failed',
+  });
+  release();
+  const results = await joined;
+  const failures = results.filter((r) => r.status === 'rejected').map((r) => r.reason);
+  const combined = cleanupFailure(primary, failures);
+  expect(combined.errors[0]).toBe(error);
+  expect(combined.errors[1].message).toBe('cleanup still unknown');
+});
+
+it('keeps diagnostic write failure separate and never invokes a primary message getter', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'linked-primary-failure-'));
+  temporary.push(directory);
+  const error = new Error('unused');
+  const getter = vi.fn(() => {
+    throw new Error('must not run');
+  });
+  Object.defineProperty(error, 'message', { get: getter });
+  const primary = startPrimaryRecord(error, directory, new Quota());
+  await primary.pending;
+  expect(getter).not.toHaveBeenCalled();
+  expect(JSON.parse(await readFile(join(directory, 'frontend-primary.json'), 'utf8')).message).toBe(
+    'Unclassified primary failure',
+  );
+  const duplicate = startPrimaryRecord(error, directory, new Quota());
+  const [result] = await Promise.allSettled([duplicate.pending]);
+  expect(result.status).toBe('rejected');
+  if (result.status !== 'rejected') throw new Error('Missing exclusive-write failure');
+  const combined = cleanupFailure(duplicate, [result.reason]);
+  expect(combined.errors[0]).toBe(error);
+  expect(combined.errors[1].code).toBe('EEXIST');
+});
+
+it('keeps an actual held spool write charged and refuses close until it settles', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'linked-write-debt-'));
+  temporary.push(directory);
+  const path = join(directory, 'guard.sock');
+  let remote: Socket | undefined;
+  const server = createServer((socket) => {
+    remote = socket;
+    socket.write(JSON.stringify({ control: 'ready', contractHash, principal: 'daemon' }) + '\n');
+    socket.on('end', () => socket.end());
+  });
+  await new Promise<void>((resolve) => server.listen(path, resolve));
+  const spool = await open(join(directory, 'guard.jsonl'), 'wx');
+  const { peer } = await Peer.connect(path, spool, () => true, 20);
+  const original = spool.writeFile.bind(spool);
+  let release!: () => void;
+  let started!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const observed = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  vi.spyOn(spool, 'writeFile').mockImplementation(async (...args) => {
+    started();
+    await held;
+    return original(...args);
+  });
+  const work = peer.evidence({ kind: 'controlled-write' });
+  const refused = expect(work).rejects.toThrow('admission');
+  try {
+    await observed;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await expect(peer.close()).rejects.toThrow('outstanding');
+    expect(spool.fd).not.toBe(-1);
+    release();
+    await refused;
+    const close = peer.close();
+    expect(peer.close()).toBe(close);
+    await close;
+    expect(spool.fd).toBe(-1);
+  } finally {
+    release();
+    await Promise.allSettled([work]);
+    remote?.destroy();
+    await Promise.allSettled([peer.close()]);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it('publishes one close completion before reentrant socket callbacks', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'linked-close-reentrant-'));
+  temporary.push(directory);
+  const path = join(directory, 'guard.sock');
+  let remote: Socket | undefined;
+  const server = createServer((socket) => {
+    remote = socket;
+    socket.write(JSON.stringify({ control: 'ready', contractHash, principal: 'daemon' }) + '\n');
+    socket.on('end', () => socket.end());
+  });
+  await new Promise<void>((resolve) => server.listen(path, resolve));
+  const spool = await open(join(directory, 'guard.jsonl'), 'wx');
+  const { peer } = await Peer.connect(path, spool, () => true, 1000);
+  const socket = Reflect.get(peer, 'socket') as Socket;
+  const end = socket.end.bind(socket);
+  let nested: Promise<void> | undefined;
+  let reentered = false;
+  const endSpy = vi.spyOn(socket, 'end').mockImplementation(() => {
+    if (!reentered) {
+      reentered = true;
+      nested = peer.close();
+      void nested.catch(() => undefined);
+    }
+    return end();
+  });
+  const closeSpy = vi.spyOn(spool, 'close');
+  const completion = peer.close();
+  try {
+    await Promise.allSettled([completion, nested]);
+    expect(nested).toBe(completion);
+    expect(endSpy).toHaveBeenCalledTimes(1);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(spool.fd).toBe(-1);
+  } finally {
+    socket.destroy();
+    remote?.destroy();
+    await spool.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it.each(['end', 'resume'] as const)(
+  'attempts actual socket and spool settlement after %s throws',
+  async (method) => {
+    const directory = await mkdtemp(join(tmpdir(), 'linked-close-throw-'));
+    temporary.push(directory);
+    const path = join(directory, 'guard.sock');
+    let remote: Socket | undefined;
+    const server = createServer((socket) => {
+      remote = socket;
+      socket.write(JSON.stringify({ control: 'ready', contractHash, principal: 'daemon' }) + '\n');
+      socket.on('end', () => socket.end());
+    });
+    await new Promise<void>((resolve) => server.listen(path, resolve));
+    const spool = await open(join(directory, 'guard.jsonl'), 'wx');
+    const { peer } = await Peer.connect(path, spool, () => true, 1000);
+    const socket = Reflect.get(peer, 'socket') as Socket;
+    vi.spyOn(socket, method).mockImplementationOnce(() => {
+      throw new Error('controlled initiation failure');
+    });
+    const cleanup = peer.close();
+    try {
+      await expect(cleanup).rejects.toThrow();
+      expect(spool.fd).toBe(-1);
+      expect(socket.closed).toBe(true);
+      expect(peer.settlementKnown).toBe(false);
+    } finally {
+      socket.destroy();
+      remote?.destroy();
+      await spool.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  },
+);
+
+it('starts actual socket cleanup while a slow diagnostic write remains unsettled', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'linked-primary-slow-'));
+  temporary.push(directory);
+  const path = join(directory, 'guard.sock');
+  let remote: Socket | undefined;
+  const server = createServer((socket) => {
+    remote = socket;
+    socket.write(JSON.stringify({ control: 'ready', contractHash, principal: 'daemon' }) + '\n');
+    socket.on('end', () => socket.end());
+  });
+  await new Promise<void>((resolve) => server.listen(path, resolve));
+  const spool = await open(join(directory, 'guard.jsonl'), 'wx');
+  const { peer } = await Peer.connect(path, spool, () => true, 1000);
+  // Control real FileHandle write completion, without replacing open/close or
+  // inventing a completed disk write. Only the diagnostic writes after this point.
+  const prototype: FileHandle = Object.getPrototypeOf(spool);
+  const write = prototype.writeFile;
+  let release!: () => void;
+  let observed!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    observed = resolve;
+  });
+  const spy = vi.spyOn(prototype, 'writeFile').mockImplementation(async function (
+    this: FileHandle,
+    ...args
+  ) {
+    observed();
+    await held;
+    return write.apply(this, args);
+  });
+  const error = new Error('original admission failure');
+  const primary = startPrimaryRecord(error, directory, peer.quota);
+  let finished = false;
+  const recording = primary.pending.finally(() => {
+    finished = true;
+  });
+  const local = peer.close();
+  try {
+    await started;
+    await local;
+    expect(spool.fd).toBe(-1);
+    expect(finished).toBe(false);
+    release();
+    await recording;
+    expect(
+      JSON.parse(await readFile(join(directory, 'frontend-primary.json'), 'utf8')).message,
+    ).toBe('original admission failure');
+  } finally {
+    release();
+    await Promise.allSettled([recording, local]);
+    spy.mockRestore();
+    remote?.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
