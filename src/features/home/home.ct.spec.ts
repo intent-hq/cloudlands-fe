@@ -332,7 +332,9 @@ test('Home sidebar keeps an empty Assistant usable', async ({ mount, page }, tes
     contentType: 'image/png',
   });
   await sidebar.getByRole('tab', { name: 'Workspaces', exact: true }).click();
-  await expect(component.getByRole('button', { name: 'New workspace', exact: true })).toBeVisible();
+  await expect(
+    component.locator('.home-header').getByRole('button', { name: 'New workspace', exact: true }),
+  ).toBeVisible();
 });
 
 test('Home sidebar scrolls long thread history and keeps narrow tabs usable', async ({
