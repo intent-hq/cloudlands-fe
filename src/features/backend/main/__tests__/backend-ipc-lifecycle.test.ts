@@ -243,7 +243,11 @@ function fence(initial = true) {
 }
 type Pool = typeof import('../backend.ipc');
 let pool: Pool | undefined;
+const hostPlatform = process.platform;
 beforeEach(() => {
+  // This fixture joins main-pool owners only. The macOS keychain engine is
+  // auxiliary and cannot produce a clean retirement receipt (intent#6837).
+  Object.defineProperty(process, 'platform', { value: 'linux' });
   vi.resetModules();
   vi.stubEnv('INTENTD_SOCKET', '/controlled-lifecycle.sock');
   edge.sockets = [];
@@ -274,6 +278,7 @@ afterEach(() => {
   edge.frames.removeAllListeners();
   vi.unstubAllEnvs();
   vi.useRealTimers();
+  Object.defineProperty(process, 'platform', { value: hostPlatform });
 });
 async function load(enrolled = true) {
   pool = await import('../backend.ipc');
@@ -986,6 +991,35 @@ describe('actual main finalization concurrency', () => {
 
 /** Late auxiliary admission uses the real registered handler and original facade close. */
 describe('pool auxiliary admission at retirement', () => {
+  it.each(['pool', 'member'] as const)(
+    'refuses %s retirement when the macOS keychain owner is unjoined',
+    async (scope) => {
+      const { pool, lifecycle } = await load();
+      const client = pool.getLocalBackendClient();
+      await connection(client);
+      await settledTurn();
+      const original = edge.sockets[0];
+      // Enter the macOS branch only at retirement: no native keychain work
+      // runs, but the real production exclusion and rejection must survive.
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      const memberFence = fence(false);
+      const member = scope === 'member' ? lifecycle.retireMember(client, memberFence) : undefined;
+      const boundary = fence();
+      const retirement = lifecycle.retire(boundary);
+      const globalFailure = expect(retirement).rejects.toThrow(
+        'Unjoined auxiliary pool owners: keychain-engine',
+      );
+      const memberFailure = member
+        ? expect(member).rejects.toThrow('Original member has unjoined auxiliary owners')
+        : Promise.resolve();
+      memberFence.set(true);
+      await Promise.all([globalFailure, memberFailure]);
+      expect(lifecycle.retire(boundary)).toBe(retirement);
+      expect(lifecycle.admissionOpen()).toBe(false);
+      expect(original.destroyed).toBe(false);
+    },
+  );
+
   it('retains late auxiliary admission while the original facade close is pending', async () => {
     const connectionModule = await import('../backend-connection');
     const held = deferred<Awaited<ReturnType<typeof connectionModule.captureFingerprint>>>();
