@@ -309,6 +309,27 @@ test('Home sidebar switches threads with the keyboard and keeps workspace filter
     'Review open pull requests',
   );
   await expect(draft).toHaveText('Keep this draft while I check workspaces');
+  await expect
+    .poll(() => page.evaluate(() => window.__homeIntegrationBrowser!.calls))
+    .toContainEqual({
+      method: 'drafts.set',
+      params: {
+        workspaceId: '__chief__',
+        agentId: 'home-assistant-1',
+        text: 'Keep this draft while I check workspaces',
+      },
+    });
+  const draftCalls = await page.evaluate(() =>
+    window.__homeIntegrationBrowser!.calls.filter(({ method }) => method.startsWith('drafts.')),
+  );
+  expect(draftCalls).toContainEqual({
+    method: 'drafts.get',
+    params: { workspaceId: '__chief__', agentId: 'home-assistant-1' },
+  });
+  await testInfo.attach('home-sidebar-draft-wire', {
+    body: JSON.stringify(draftCalls, null, 2),
+    contentType: 'application/json',
+  });
   await page.evaluate(() => window.__homeAssistantPreview!.removeSelectedThread());
   await expect(threads.getByRole('option')).toHaveCount(2);
   await expect(threads.getByRole('option', { selected: true })).toHaveText('Plan the next release');
