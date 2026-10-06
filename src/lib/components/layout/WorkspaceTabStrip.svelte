@@ -9,8 +9,6 @@
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
-  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
-  import { formatShortcut } from '$lib/utils/shortcuts';
   import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
   import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
@@ -92,13 +90,6 @@
     leadingInsetPx = 28,
     scrollerMarginLeftPx = WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
   }: Props = $props();
-  const tabShortcut$ = effectiveShortcutReadable('navigation.go-to-tab');
-  function shortcutForWorkspace(workspaceId: string): string | undefined {
-    const index = visibleTabIds.indexOf(workspaceId);
-    const digit =
-      index >= 0 && index < 7 ? index + 2 : index === visibleTabIds.length - 1 ? 9 : null;
-    return digit === null ? undefined : $tabShortcut$.replace(/([1-8])-9$/, String(digit));
-  }
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceItems$ = selectWorkspaceItems();
@@ -1023,17 +1014,7 @@
               >
                 {#snippet content()}
                   <div data-workspace-tab-hover-content={workspaceId}>
-                    <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds}>
-                      {#snippet footer()}
-                        {#if shortcutForWorkspace(workspaceId)}
-                          <kbd
-                            class="block px-5 pb-3 text-right type-caption text-muted-foreground"
-                            data-workspace-tab-shortcut
-                            >{formatShortcut(shortcutForWorkspace(workspaceId)!)}</kbd
-                          >
-                        {/if}
-                      {/snippet}
-                    </WorkspaceHoverCard>
+                    <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
                   </div>
                 {/snippet}
                 <Button
