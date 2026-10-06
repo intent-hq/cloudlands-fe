@@ -55,12 +55,14 @@ export function createHomeWorkspaceMenu(
         onClose();
         store.dispatch(togglePinWorkspace(workspace.id));
         if (!pinned) expandPinned();
-        void tick().then(() =>
-          getHomeElement()
-            ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-            ?.closest<HTMLElement>('[role="option"], button')
-            ?.focus(),
-        );
+        void tick().then(() => {
+          requestAnimationFrame(() =>
+            getHomeElement()
+              ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
+              ?.closest<HTMLElement>('[role="option"], button')
+              ?.focus(),
+          );
+        });
       },
     },
   ];
