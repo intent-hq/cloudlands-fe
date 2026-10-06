@@ -69,6 +69,11 @@ const logger = new Logger('LinkHandler');
 export async function handleLink(url: string, options: LinkHandlerOptions): Promise<boolean> {
   try {
     const sourcePanelId = getSourcePanelId(options);
+    const sourceTarget = options.event?.target;
+    const assistantLayoutId =
+      sourceTarget instanceof Element
+        ? sourceTarget.closest<HTMLElement>('[data-assistant-layout-id]')?.dataset.assistantLayoutId
+        : undefined;
     // Try custom handler first
     if (options.customHandler) {
       const handled = await options.customHandler(url);
@@ -81,7 +86,7 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
     if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal) {
       const { showAssistantContent } = await import('$features/home/assistant-panels');
       const target = options.rawHref?.startsWith('/workspace/') ? options.rawHref : url;
-      if (await showAssistantContent(target)) return true;
+      if (await showAssistantContent(target, { layoutId: assistantLayoutId })) return true;
     }
 
     // Handle intent:// links (internal navigation to notes/tasks)
