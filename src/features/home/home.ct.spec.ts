@@ -302,6 +302,10 @@ test('Home board menu dismissal keeps an existing preview open', async ({
   await card.focus();
   await page.keyboard.press('Shift+F10');
   await expect(page.getByRole('menuitem', { name: 'Pin', exact: true })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
+  await expect(card).toBeFocused();
+  await expect(detail).toBeVisible();
+  await page.keyboard.press('Shift+F10');
   await page.keyboard.press('Escape');
   await expect(detail).toBeVisible();
   await expect(card).toBeFocused();

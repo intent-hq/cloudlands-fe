@@ -140,12 +140,14 @@
           contextMenu = null;
           store.dispatch(togglePinWorkspace(workspace.id));
           if (!pinned) updateView({ expandedGroups: { ...$view$.expandedGroups, pinned: true } });
-          void tick().then(() =>
-            homeElement
-              ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
-              ?.closest<HTMLElement>('[role="option"], button')
-              ?.focus(),
-          );
+          void tick().then(() => {
+            requestAnimationFrame(() =>
+              homeElement
+                ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(workspace.id)}"]`)
+                ?.closest<HTMLElement>('[role="option"], button')
+                ?.focus(),
+            );
+          });
         },
       },
     ];
