@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.210.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.1...v2.210.2) (2026-10-06)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.10.23 ([#3246](https://github.com/intent-hq/cloudlands-fe/issues/3246)) ([c175452](https://github.com/intent-hq/cloudlands-fe/commit/c175452703a4e1d26fe270d293741c8636dab8fd))
+* make backend lifecycle fixture ownership platform explicit ([#3241](https://github.com/intent-hq/cloudlands-fe/issues/3241)) ([4c5a70a](https://github.com/intent-hq/cloudlands-fe/commit/4c5a70aafd61c7382abcb50b05b40f737cc0e294))
+
 ## [2.210.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.210.0...v2.210.1) (2026-10-06)
 
 
