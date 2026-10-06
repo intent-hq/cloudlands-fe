@@ -8,7 +8,6 @@ import { isNoteContentStale } from '$shared/utils/note-content';
 import { replaceNoteCommentsAction } from '../../comments/comments-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  takeEveryByContextFIFO,
   takeLatestByContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
@@ -24,6 +23,7 @@ import {
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
   readNoteRequested,
+  refreshNoteFromEventRequested,
   searchNotesRequested,
   selectNote,
   workspaceNotesHydrationRequested,
@@ -34,83 +34,12 @@ import { toRuntimeNote } from './note-payload-mappers';
 const logger = createLogger('NotesReadSaga');
 
 type ObservedAction = { type: string; payload?: unknown };
-type NoteReadResult = Awaited<ReturnType<typeof appClient.notes.get>>;
-type NoteReadSlot = {
-  dirty: boolean;
-  cancelled: boolean;
-  settled: Promise<NoteReadResult[]>;
-};
+const latestNoteReadSeq = new Map<string, number>();
 
-const noteReads = new Map<string, NoteReadSlot>();
-const noteReadGenerations = new Map<string, number>();
-
-function fetchNoteSingleFlight(workspaceId: string, noteId: string, invalidate = false) {
-  const key = `${workspaceId}:${noteId}`;
-  const pending = noteReads.get(key);
-  if (pending) {
-    pending.dirty ||= invalidate;
-    return pending.settled.then((results) => ({
-      found: pending.cancelled ? null : (results.at(-1) ?? null),
-      // eslint-disable-next-line themis/collection-state-shape -- saga-local in-flight results, not Redux state
-      ownedResults: [] as NoteReadResult[],
-    }));
-  }
-
-  const generation = noteReadGenerations.get(key) ?? 0;
-  const slot: NoteReadSlot = { dirty: false, cancelled: false, settled: Promise.resolve([]) };
-  noteReads.set(key, slot);
-  slot.settled = (async () => {
-    try {
-      const results: NoteReadResult[] = [];
-      const failures: unknown[] = [];
-      let failure: unknown;
-      do {
-        slot.dirty = false;
-        try {
-          results.push(await appClient.notes.get(noteId, workspaceId));
-          failure = undefined;
-        } catch (error) {
-          failure = error;
-          failures.push(error);
-        }
-      } while (slot.dirty && !slot.cancelled);
-      if (failure !== undefined && results.length === 0) throw failure;
-      if (failures.length > 0) {
-        logger.error(`Notes refresh partially failed for ${key}`, failures.at(-1));
-      }
-      return results;
-    } finally {
-      if (noteReads.get(key) === slot) noteReads.delete(key);
-    }
-  })();
-  return slot.settled.then((results) => ({
-    found:
-      slot.cancelled || (noteReadGenerations.get(key) ?? 0) !== generation
-        ? null
-        : (results.at(-1) ?? null),
-    ownedResults:
-      slot.cancelled || (noteReadGenerations.get(key) ?? 0) !== generation ? [] : results,
-  }));
-}
-
-function cancelNoteRead(workspaceId: string, noteId: string) {
-  const key = `${workspaceId}:${noteId}`;
-  noteReadGenerations.set(key, (noteReadGenerations.get(key) ?? 0) + 1);
-  const slot = noteReads.get(key);
-  if (slot) slot.cancelled = true;
-  if (noteReads.get(key) === slot) noteReads.delete(key);
-}
-
-function clearWorkspaceNoteReads(action: ReturnType<typeof workspaceUnmounted>) {
+function clearWorkspaceNoteReadSeq(action: ReturnType<typeof workspaceUnmounted>) {
   const [workspaceId] = action.payload;
-  for (const [key, slot] of noteReads) {
-    if (key.startsWith(`${workspaceId}:`)) {
-      slot.cancelled = true;
-      noteReads.delete(key);
-    }
-  }
-  for (const key of noteReadGenerations.keys()) {
-    if (key.startsWith(`${workspaceId}:`)) noteReadGenerations.delete(key);
+  for (const key of latestNoteReadSeq.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) latestNoteReadSeq.delete(key);
   }
 }
 
@@ -159,18 +88,27 @@ function* hydrateWorkspaceNotes(workspaceId: string, force = false) {
 }
 
 function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEventType) {
-  if (eventType === 'note:deleted') {
-    cancelNoteRead(workspaceId, noteId);
-    yield* put(applyNoteDeleted(workspaceId, noteId));
-    return;
-  }
   try {
-    // Targeted refetch (§5.2): one note changed, so fetch that note instead of
-    // re-listing the whole workspace with full bodies.
-    const { ownedResults } = yield* call(fetchNoteSingleFlight, workspaceId, noteId, true);
-    for (const found of ownedResults) {
-      if (!found || String(found.workspaceId) !== workspaceId) continue;
-      const note = toRuntimeNote(found);
+    const request = readNoteRequested(workspaceId, noteId, eventType);
+    yield* put(request);
+    yield* call(() => request.promise);
+  } catch (error) {
+    logger.error('Failed to apply note event', error);
+  }
+}
+
+function* readNoteWorker(action: ReturnType<typeof readNoteRequested>) {
+  const [workspaceId, noteId, eventType] = action.payload;
+  const key = `${workspaceId}:${noteId}`;
+  latestNoteReadSeq.set(key, Math.max(latestNoteReadSeq.get(key) ?? 0, action.seq));
+  try {
+    const { found, cleanup } = yield* race({
+      found: call([appClient.notes, appClient.notes.get], noteId, workspaceId),
+      cleanup: take((candidate: ObservedAction) => isWorkspaceCleanup(candidate, workspaceId)),
+    });
+    const note =
+      !cleanup && found && String(found.workspaceId) === workspaceId ? toRuntimeNote(found) : null;
+    if (note && latestNoteReadSeq.get(key) === action.seq) {
       const existing = yield* selectNoteById.effect(workspaceId, noteId);
       if (eventType === 'note:created' && !existing) {
         yield* put(applyNoteCreated(workspaceId, note));
@@ -178,26 +116,6 @@ function* applyNoteEvent(workspaceId: string, noteId: string, eventType: NoteEve
         yield* put(applyNoteUpdated(workspaceId, noteId, note));
       }
     }
-  } catch (error) {
-    logger.error('Failed to apply note event', error);
-  }
-}
-
-function* readNote(workspaceId: string, noteId: string) {
-  const { found, ownedResults } = yield* call(fetchNoteSingleFlight, workspaceId, noteId);
-  for (const result of ownedResults) {
-    if (result && String(result.workspaceId) === workspaceId) {
-      yield* put(applyNoteUpdated(workspaceId, noteId, toRuntimeNote(result)));
-    }
-  }
-  if (!found || String(found.workspaceId) !== workspaceId) return null;
-  return toRuntimeNote(found);
-}
-
-function* readNoteWorker(action: ReturnType<typeof readNoteRequested>) {
-  const [workspaceId, noteId] = action.payload;
-  try {
-    const note = yield* call(readNote, workspaceId, noteId);
     yield* put(action.success(note));
   } catch (error) {
     yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
@@ -216,7 +134,9 @@ function* ensureNoteContentWorker(action: ReturnType<typeof ensureNoteContentLoa
       yield* put(action.success(true));
       return;
     }
-    const note = yield* call(readNote, workspaceId, noteId);
+    const request = readNoteRequested(workspaceId, noteId);
+    yield* put(request);
+    const note = yield* call(() => request.promise);
     yield* put(action.success(note !== null && !isNoteContentStale(note)));
   } catch (error) {
     logger.error('Failed to load full note content', error);
@@ -278,28 +198,29 @@ function* hydrateWorkspaceNotesWorker(action: ReturnType<typeof workspaceNotesHy
   });
 }
 
-function* applyNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
+function* applyNoteEventWorker(action: ReturnType<typeof refreshNoteFromEventRequested>) {
   const [workspaceId, noteId, eventType] = action.payload;
-  if (!workspaceId || !noteId) return;
+  if (!workspaceId || !noteId || eventType === 'note:deleted') return;
   yield* race({
     apply: call(applyNoteEvent, workspaceId, noteId, eventType),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, workspaceId)),
   });
 }
 
+function* routeNoteEventWorker(action: ReturnType<typeof noteEventReceived>) {
+  const [workspaceId, noteId, eventType] = action.payload;
+  if (!workspaceId || !noteId) return;
+  if (eventType === 'note:deleted') {
+    latestNoteReadSeq.delete(`${workspaceId}:${noteId}`);
+    yield* put(applyNoteDeleted(workspaceId, noteId));
+  }
+  yield* put(refreshNoteFromEventRequested(workspaceId, noteId, eventType));
+}
+
 export function* notesReadSaga() {
-  yield* takeEvery(workspaceUnmounted, clearWorkspaceNoteReads);
+  yield* takeEvery(workspaceUnmounted, clearWorkspaceNoteReadSeq);
   yield* takeEvery(readNoteRequested, readNoteWorker);
-  // Concurrent consumers of the same slim note share the first full-content
-  // read. Every correlated request remains queued so each caller settles; once
-  // the first read updates the cache, later requests resolve without another
-  // note.get request.
-  yield* takeEveryByContextFIFO(
-    ensureNoteContentLoadedRequested,
-    (action) => `${action.payload[0]}:${action.payload[1]}`,
-    ensureNoteContentWorker,
-    {},
-  );
+  yield* takeEvery(ensureNoteContentLoadedRequested, ensureNoteContentWorker);
   yield* takeEvery(searchNotesRequested, searchNotesWorker);
   yield* takeEvery(loadNoteCommentsRequested, loadNoteCommentsWorker);
   yield* takeLatestByContext(
@@ -307,10 +228,15 @@ export function* notesReadSaga() {
     (action) => ({ context: action.payload[0], generation: action.payload[1] }),
     hydrateWorkspaceNotesWorker,
   );
-  // The shared per-note coordinator owns single-flight and trailing coalescing
-  // across both event refreshes and editor hydration. Every event reaches it so
-  // a burst overlapping hydration still produces at most one trailing read.
-  yield* takeEvery(noteEventReceived, applyNoteEventWorker);
+  yield* takeEvery(noteEventReceived, routeNoteEventWorker);
+  yield* takeSingleFlightInContext(
+    refreshNoteFromEventRequested,
+    (action) => {
+      const context = `${action.payload[0]}:${action.payload[1]}`;
+      return action.payload[2] === 'note:deleted' ? { context, cancel: true } : context;
+    },
+    applyNoteEventWorker,
+  );
   yield* takeSingleFlightInContext(
     commentEventReceived,
     (action) => `${action.payload[0]}:${action.payload[1]}`,

@@ -75,6 +75,9 @@ export const applyNoteUpdated = createAction<[workspaceId: string, noteId: strin
 export const noteEventReceived = createAction<
   [workspaceId: string, noteId: string, eventType: NoteEventType]
 >('workspaceNotes/noteEventReceived');
+export const refreshNoteFromEventRequested = createAction<
+  [workspaceId: string, noteId: string, eventType: NoteEventType]
+>('workspaceNotes/refreshNoteFromEventRequested');
 
 // ---- New actions from notes.store.svelte.ts migration ----
 
@@ -156,7 +159,7 @@ export const ensureNoteContentLoadedRequested = createAsyncAction<
   'workspaceNotes/ensureNoteContentLoadedSettled',
 );
 export const readNoteRequested = createAsyncAction<
-  [workspaceId: string, noteId: string],
+  [workspaceId: string, noteId: string, eventType?: NoteEventType],
   Note | null
 >('workspaceNotes/readNoteRequested', 'workspaceNotes/readNoteSettled');
 export const searchNotesRequested = createAsyncAction<

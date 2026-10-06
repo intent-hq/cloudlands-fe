@@ -16,6 +16,8 @@ import {
   loadWorkspaceNotesFailed,
   loadWorkspaceNotesSucceeded,
   noteEventReceived,
+  readNoteRequested,
+  refreshNoteFromEventRequested,
   searchNotesRequested,
   selectNote,
   workspaceNotesReducer,
@@ -72,7 +74,15 @@ function harness(seed: Note[] = []) {
   );
   const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
-    actions.push(action);
+    channel.put(action);
+    if (
+      action.type !== readNoteRequested.type &&
+      action.type !== readNoteRequested.success.type &&
+      action.type !== readNoteRequested.failure.type &&
+      action.type !== refreshNoteFromEventRequested.type
+    ) {
+      actions.push(action);
+    }
     return action;
   };
   const task = runSaga({ channel, dispatch, getState: () => ({ workspaceNotes }) }, notesReadSaga);
@@ -199,7 +209,7 @@ describe('notesReadSaga', () => {
     await run.task.toPromise();
   });
 
-  it('settles every concurrent full-content request while sharing one note read', async () => {
+  it('settles every concurrent full-content request while only the latest seq applies', async () => {
     const pending = deferred<Note>();
     const get = vi.spyOn(appClient.notes, 'get').mockReturnValue(pending.promise);
     const run = harness([note('note-1', { content: '', contentLength: 4 })]);
@@ -211,7 +221,11 @@ describe('notesReadSaga', () => {
     run.channel.put(second);
     run.channel.put(third);
     await settle();
-    expect(get.mock.calls).toEqual([['note-1', WS]]);
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-1', WS],
+      ['note-1', WS],
+    ]);
 
     pending.resolve(note('note-1', { content: 'body', contentLength: 4 }));
     await expect(Promise.all([first.promise, second.promise, third.promise])).resolves.toEqual([
@@ -219,17 +233,44 @@ describe('notesReadSaga', () => {
       true,
       true,
     ]);
-    expect(get.mock.calls).toEqual([['note-1', WS]]);
+    expect(run.actions.filter((action) => action.type === applyNoteUpdated.type)).toEqual([
+      applyNoteUpdated(WS, 'note-1', note('note-1', { content: 'body', contentLength: 4 })),
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('shares a note read between hydration and event refresh, then applies one trailing fetch', async () => {
+  it('settles stale reads without applying an older seq result', async () => {
+    const older = deferred<Note>();
+    const newer = deferred<Note>();
+    vi.spyOn(appClient.notes, 'get')
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+    const run = harness([note('note-1')]);
+    const first = readNoteRequested(WS, 'note-1');
+    const second = readNoteRequested(WS, 'note-1');
+
+    run.channel.put(first);
+    run.channel.put(second);
+    await settle();
+    newer.resolve(note('note-1', { title: 'Newest' }));
+    await expect(second.promise).resolves.toEqual(note('note-1', { title: 'Newest' }));
+    older.resolve(note('note-1', { title: 'Stale' }));
+    await expect(first.promise).resolves.toEqual(note('note-1', { title: 'Stale' }));
+
+    expect(run.actions).toEqual([
+      applyNoteUpdated(WS, 'note-1', note('note-1', { title: 'Newest' })),
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('uses seq to keep event refreshes newer than an overlapping content read', async () => {
     const first = deferred<Note>();
     const get = vi
       .spyOn(appClient.notes, 'get')
       .mockReturnValueOnce(first.promise)
-      .mockResolvedValueOnce(note('note-1', { content: 'final', contentLength: 5, rev: 6 }));
+      .mockResolvedValue(note('note-1', { content: 'final', contentLength: 5, rev: 6 }));
     const run = harness([note('note-1', { content: '', contentLength: 4, rev: 4 })]);
     const ensure = ensureNoteContentLoadedRequested(WS, 'note-1');
 
@@ -239,15 +280,16 @@ describe('notesReadSaga', () => {
     run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     run.channel.put(noteEventReceived(WS, 'note-1', 'note:updated'));
     await settle();
-    expect(get.mock.calls).toEqual([['note-1', WS]]);
+    expect(get.mock.calls).toEqual([
+      ['note-1', WS],
+      ['note-1', WS],
+      ['note-1', WS],
+    ]);
 
     first.resolve(note('note-1', { content: 'intermediate', contentLength: 12, rev: 5 }));
     await expect(ensure.promise).resolves.toBe(true);
     await settle();
-    expect(get.mock.calls).toEqual([
-      ['note-1', WS],
-      ['note-1', WS],
-    ]);
+    expect(get.mock.calls).toHaveLength(3);
     expect(run.actions.filter((action) => action.type === applyNoteUpdated.type).at(-1)).toEqual(
       applyNoteUpdated(
         WS,
