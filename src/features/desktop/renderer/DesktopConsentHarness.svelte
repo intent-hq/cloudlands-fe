@@ -8,14 +8,17 @@
   interface Props {
     claimsPrimary?: boolean;
     missingPermissions?: boolean;
+    settingUp?: boolean;
   }
-  let { claimsPrimary = false, missingPermissions = false }: Props = $props();
+  let { claimsPrimary = false, missingPermissions = false, settingUp = false }: Props = $props();
   let decision = $state('');
   onMount(() => {
     const id = notify.custom(DesktopConsentCard, {
       duration: Infinity,
       dismissible: false,
       componentProps: {
+        pending: settingUp,
+        settingUp,
         request: {
           ...request,
           computerName: missingPermissions ? 'MacBook' : request.computerName,

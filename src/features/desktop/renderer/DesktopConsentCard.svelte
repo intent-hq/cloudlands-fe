@@ -17,23 +17,34 @@
   } = $props();
 </script>
 
-<div class="flex min-w-0 flex-col gap-3" role="group" aria-label={m.desktop_consent_title()}>
-  <p class="font-medium break-words">
-    {m.desktop_consent_request({ agent: request.agentName, computer: request.computerName })}
-  </p>
-  <p class="text-sm text-muted-foreground">{m.desktop_consent_description()}</p>
-  {#if request.claimsPrimary}
-    <p class="text-sm text-muted-foreground">
-      {m.desktop_consent_claimPrimary({ computer: request.computerName })}
+<div
+  class="flex max-h-[calc(100dvh-8rem)] min-w-0 flex-col gap-3"
+  role="group"
+  aria-label={m.desktop_consent_title()}
+>
+  <div
+    class="min-h-0 space-y-3 overflow-y-auto break-words"
+    role="region"
+    aria-label={m.desktop_consent_title()}
+    tabindex="0"
+  >
+    <p class="font-medium break-words">
+      {m.desktop_consent_request({ agent: request.agentName, computer: request.computerName })}
     </p>
-  {/if}
-  {#if guidance}
-    <p role="status" class="text-sm">{guidance}</p>
-  {/if}
-  {#if pending && !settingUp}
-    <p role="status" class="text-sm">{m.desktop_consent_pending()}</p>
-  {/if}
-  <div class="flex flex-wrap gap-2">
+    <p class="text-sm text-muted-foreground">{m.desktop_consent_description()}</p>
+    {#if request.claimsPrimary}
+      <p class="text-sm text-muted-foreground">
+        {m.desktop_consent_claimPrimary({ computer: request.computerName })}
+      </p>
+    {/if}
+    {#if guidance}
+      <p role="status" class="text-sm">{guidance}</p>
+    {/if}
+    {#if pending && !settingUp}
+      <p role="status" class="text-sm">{m.desktop_consent_pending()}</p>
+    {/if}
+  </div>
+  <div class="flex shrink-0 flex-wrap gap-2">
     <Button
       size="compact"
       variant="primary"
