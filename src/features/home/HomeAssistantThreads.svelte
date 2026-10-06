@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { ListRow, ListView } from '$lib/components/patterns/collection';
+  import { Button } from '$lib/components/ui/button';
+  import { faPen } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
+  import AssistantThreadRenameDialog from '$lib/components/chat/AssistantThreadRenameDialog.svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
@@ -10,6 +14,8 @@
     selectChiefThreads,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import type { ChiefThreadSummary } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import {
     backgroundHooksSubscribeRequested,
     backgroundHooksUnsubscribeRequested,
@@ -26,6 +32,10 @@
 
   const threads$ = selectChiefThreads();
   const activeAgentId$ = selectChiefActiveAgentId();
+  const hidesActions$ = selectHidesAgentLifecycleActions(CHIEF_WORKSPACE_ID);
+  let renaming = $state<{ thread: ChiefThreadSummary; returnFocus: HTMLButtonElement } | null>(
+    null,
+  );
   let selectedKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
 
   onMount(() => {
@@ -59,7 +69,7 @@
   class="min-h-0 flex-1"
 >
   {#snippet row({ item: thread })}
-    <ListRow class="min-h-9 px-2 py-2">
+    <ListRow class="min-h-9 px-2 py-2" role="group" aria-label={thread.title}>
       {#snippet title()}<span title={thread.title}>{thread.title}</span>{/snippet}
       {#snippet trailing()}
         <HomeAssistantThreadActivity agentId={thread.agentId} />
@@ -70,6 +80,20 @@
             aria-label={m.layout_chiefCard_activeThread_ariaLabel()}
           ></span>
         {/if}
+        {#if !$hidesActions$}
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            aria-label={m.layout_chiefCard_renameThread_ariaLabel({ title: thread.title })}
+            title={m.layout_chiefCard_renameThread_title()}
+            onclick={(event) => {
+              if (event.currentTarget instanceof HTMLButtonElement)
+                renaming = { thread, returnFocus: event.currentTarget };
+            }}
+          >
+            <Fa icon={faPen} size="xs" />
+          </Button>
+        {/if}
       {/snippet}
     </ListRow>
   {/snippet}
@@ -79,3 +103,7 @@
     </p>
   {/snippet}
 </ListView>
+
+{#if renaming}
+  <AssistantThreadRenameDialog {...renaming} onClose={() => (renaming = null)} />
+{/if}

@@ -5,12 +5,14 @@
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { faChevronDown, faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faPen, faPlus, faTrash } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { m } from '$shared/paraglide/messages.js';
   import { v4 as uuidv4 } from 'uuid';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
+  import AssistantThreadRenameDialog from '$lib/components/chat/AssistantThreadRenameDialog.svelte';
+  import type { ChiefThreadSummary } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
   import { Select } from '$lib/components/ui/select';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -91,6 +93,9 @@
   };
 
   let selectedAgentId = $state<string | null>(null);
+  let renaming = $state<{ thread: ChiefThreadSummary; returnFocus: HTMLButtonElement } | null>(
+    null,
+  );
   const isCreatingThread = $derived($creationOutcome$?.status === 'pending');
   let hasAutoStartedRef = $state(false);
   let isWorkspaceRegistered = $state(false);
@@ -328,6 +333,18 @@
     {#if activeThread && !$hidesAgentLifecycleActions$}
       <Button
         variant="ghost"
+        size="icon-compact"
+        aria-label={m.layout_chiefCard_renameThread_ariaLabel({ title: activeThread.title })}
+        title={m.layout_chiefCard_renameThread_title()}
+        onclick={(event) => {
+          if (activeThread && event.currentTarget instanceof HTMLButtonElement)
+            renaming = { thread: activeThread, returnFocus: event.currentTarget };
+        }}
+      >
+        <Fa icon={faPen} size="xs" />
+      </Button>
+      <Button
+        variant="ghost"
         size="icon-xs"
         aria-label={m.layout_chiefCard_deleteThread_ariaLabel({ title: activeThread.title })}
         title={m.layout_chiefCard_deleteThread_tooltip()}
@@ -377,3 +394,7 @@
     </section>
   </div>
 </div>
+
+{#if renaming}
+  <AssistantThreadRenameDialog {...renaming} onClose={() => (renaming = null)} />
+{/if}
