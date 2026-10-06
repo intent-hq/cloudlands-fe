@@ -841,9 +841,11 @@ export class LiveAgentsClient implements AgentsClient {
     specialist: string | null;
     rememberSpecialist?: boolean;
     model?: string | null;
+    provider?: string;
     systemPrompt?: string | null;
   }): Promise<MutationResult> {
     const changes: Record<string, unknown> = { specialist: params.specialist };
+    if (params.provider !== undefined) changes.provider = params.provider;
     if (params.rememberSpecialist !== undefined)
       changes.rememberSpecialist = params.rememberSpecialist;
     if (params.model !== undefined) changes.model = params.model;
