@@ -1015,6 +1015,7 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
       await newer;
       const current = client.getRepositoryConnection();
       expect(current).not.toBeNull();
+      expect(await client.readHelloSnapshot()).toEqual(helloResult('current:cli-7f3a'));
       sockets[0].receive(
         `${JSON.stringify({ id: olderFrame.id, result: helloResult('stale:cli-7f3a') })}\n`,
       );
@@ -1024,6 +1025,39 @@ describe('JsonRpcClient client.hello identity handshake (§5.17)', () => {
         'current:cli-7f3a',
       ]);
       expect(client.getRepositoryConnection()).toBe(current);
+      expect(await client.readHelloSnapshot()).toEqual(helloResult('current:cli-7f3a'));
+    } finally {
+      client.dispose();
+    }
+  });
+
+  it('does not restore an older identity when the newest concurrent hello is refused', async () => {
+    const { client, sockets, onHelloResult } = makeHelloClient();
+    try {
+      client.start();
+      sockets[0].open();
+      await flush();
+      sockets[0].receive(`${JSON.stringify({ id: 1, result: helloResult('first') })}\n`);
+      await flush();
+      const older = client.request('client.hello', { name: 'Older' });
+      const newer = client.request('client.hello', { name: 'Newer' });
+      const rejected = expect(newer).rejects.toThrow('identity refused');
+      await flush();
+      const olderFrame = JSON.parse(sockets[0].writes[1]);
+      const newerFrame = JSON.parse(sockets[0].writes[2]);
+      expect(client.getStatus()).toBe('connecting');
+      expect(client.getRepositoryConnection()).toBeNull();
+      sockets[0].receive(
+        `${JSON.stringify({ id: newerFrame.id, error: { code: -32603, message: 'identity refused' } })}\n`,
+      );
+      await rejected;
+      sockets[0].receive(
+        `${JSON.stringify({ id: olderFrame.id, result: helloResult('stale') })}\n`,
+      );
+      await older;
+      expect(client.getRepositoryConnection()).toBeNull();
+      await expect(client.readHelloSnapshot()).rejects.toThrow('handshake');
+      expect(onHelloResult.mock.calls.map(([result]) => result.clientId)).toEqual(['first']);
     } finally {
       client.dispose();
     }
@@ -1553,7 +1587,8 @@ describe('queued hello repository eligibility', () => {
       socket.receive('{"jsonrpc":"2.0","id":1,"result":{"clientId":"desktop"}}\n');
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(client.getStatus()).toBe('connected');
+      // A queued explicit hello retires desktop authority until its own reply.
+      expect(client.getStatus()).toBe('connecting');
       const frames = socket.writes.slice(1).map((line) => JSON.parse(line));
       const hello = frames.find((frame) => frame.method === 'client.hello');
       const work = frames.find((frame) => frame.method === 'workspace.list');
@@ -1664,7 +1699,7 @@ describe('hello recovery ordering', () => {
       await tick();
       reply(sockets[1], 0);
       await tick();
-      expect(client.getStatus()).toBe('connected');
+      expect(client.getStatus()).toBe('connecting');
       expect(reconnected).toHaveBeenCalledOnce();
       expect(JSON.parse(sockets[1].writes[1])).toMatchObject({
         method: 'client.hello',
@@ -1673,6 +1708,8 @@ describe('hello recovery ordering', () => {
       expect(client.getRepositoryConnection()).toBeNull();
       reply(sockets[1], 1);
       await expect(probe).resolves.toEqual({ clientId: 'persisted' });
+      expect(client.getStatus()).toBe('connected');
+      expect(reconnected).toHaveBeenCalledTimes(2);
       const current = client.getRepositoryConnection();
       expect(current).not.toBeNull();
       if (captured) {
@@ -1711,7 +1748,7 @@ describe('hello recovery ordering', () => {
     await tick();
     reply(sockets[0], 0, 'startup');
     await tick();
-    expect(client.getStatus()).toBe('connected');
+    expect(client.getStatus()).toBe('connecting');
     expect(sockets[0].writes.slice(1).map((line) => JSON.parse(line).params)).toEqual([
       { name: 'first', clientId: 'persisted' },
       { name: 'second', clientId: 'persisted' },
@@ -1719,6 +1756,7 @@ describe('hello recovery ordering', () => {
     expect(client.getRepositoryConnection()).toBeNull();
     reply(sockets[0], 2, 'newest');
     await expect(second).resolves.toEqual({ clientId: 'newest' });
+    expect(client.getStatus()).toBe('connected');
     const current = client.getRepositoryConnection();
     expect(current).not.toBeNull();
     reply(sockets[0], 1, 'older');
@@ -2074,6 +2112,25 @@ describe('JsonRpcClient opt-in original lifecycle', () => {
   afterEach(() => {
     for (const client of clients.splice(0)) client.dispose();
     vi.useRealTimers();
+  });
+
+  it('joins an admitted hello snapshot and refuses new reads after member retirement', async () => {
+    const { client, socket } = make({
+      helloParams: () => ({ clientId: 'desktop' }),
+      heartbeatIntervalMs: 0,
+    });
+    const helloFrame = socket.next('client.hello');
+    const snapshot = client.readHelloSnapshot();
+    socket.emit('connect');
+    const hello = await helloFrame;
+    const ticket = client.beginMemberRetirement();
+    expect(ticket.isDrained()).toBe(false);
+    await expect(client.readHelloSnapshot()).rejects.toThrow('producer');
+    socket.reply(hello.id, { clientId: 'desktop' });
+    await expect(snapshot).resolves.toEqual({ clientId: 'desktop' });
+    await lifecycleDrained(ticket);
+    expect(socket.frames.map((frame) => frame.method)).toEqual(['client.hello']);
+    await ticket.seal().finish();
   });
 
   it('C3/C5 owns the actual asynchronous hello-result callback through its original rejection', async () => {

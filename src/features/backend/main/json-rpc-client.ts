@@ -941,13 +941,20 @@ export class JsonRpcClient extends EventEmitter {
         return result;
       this.own('hello-result', () =>
         this.originalCallback(parent, (parent) =>
-          parent === undefined ? this.onHelloResult?.(result) : this.onHelloResult?.(result, parent),
+          parent === undefined
+            ? this.onHelloResult?.(result)
+            : this.onHelloResult?.(result, parent),
         ),
       );
       this.confirmHello(attempt!, result);
       return result;
     } finally {
-      if (attempt && this.socketIncarnation === incarnation && this.helloAttempt === attempt && !this.disposed) {
+      if (
+        attempt &&
+        this.socketIncarnation === incarnation &&
+        this.helloAttempt === attempt &&
+        !this.disposed
+      ) {
         this.renegotiatingHello = false;
         this.finishConnect();
       }
