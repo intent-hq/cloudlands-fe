@@ -54,13 +54,12 @@
   });
 
   function handleValueChange(next: string) {
-    value = next;
     onValueChange?.(next);
   }
 </script>
 
 <TabsPrimitive.Root
-  {value}
+  bind:value
   onValueChange={handleValueChange}
   {orientation}
   {activationMode}

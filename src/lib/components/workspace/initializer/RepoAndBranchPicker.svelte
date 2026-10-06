@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { Button } from '$lib/components/ui/button';
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
@@ -463,7 +464,7 @@
     {/if}
     <span
       class="text-xs text-subtle whitespace-nowrap min-w-0 font-mono truncate max-w-60"
-      title={remoteDisplayPath}
+      use:truncatedTitle={remoteDisplayPath}
     >
       {remoteDisplayPath}
     </span>

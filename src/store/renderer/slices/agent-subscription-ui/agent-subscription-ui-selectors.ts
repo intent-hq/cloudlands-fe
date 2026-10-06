@@ -13,6 +13,7 @@ import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/age
 import type {
   AgentSubscriptionUIEntry,
   Subscription,
+  EventSubscription,
   DelegationGroupStatus,
   AgentStatus,
   WaitingState,
@@ -43,6 +44,14 @@ export const selectAgentSubscriptions = store.createSelector<
 >((state, workspaceId, agentId) => {
   return selectEntry.select(state, workspaceId, agentId).subscriptions;
 });
+
+export const selectAgentEventSubscriptions = store.createSelector<
+  [workspaceId: string, agentId: string],
+  EventSubscription[]
+>(
+  (state, workspaceId, agentId) =>
+    selectEntry.select(state, workspaceId, agentId).eventSubscriptions ?? [],
+);
 
 /** Delegation groups for a given agent */
 export const selectDelegationGroups = store.createSelector<

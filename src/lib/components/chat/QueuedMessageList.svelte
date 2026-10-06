@@ -34,7 +34,7 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
+  import { observeAttachmentImageUrl } from './attachment-image-url';
   import { store as appStore } from '$store/renderer/store';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import { m } from '$shared/paraglide/messages.js';
@@ -485,45 +485,40 @@
   let lightboxImageName = $state('');
   let lightboxOpenerElement: HTMLButtonElement | null = $state(null);
 
-  // Resolved workspace-file:// URLs for queued attachment-reference image
-  // blocks (monorepo#3338), keyed by attachmentId.
-  let referenceImageUrls = $state<Record<string, string>>({});
-  // Attachment ids whose resolved <img> failed to load in this instance: they
-  // keep the placeholder here (no resolve/fail loop), while the evicted
-  // module cache lets the next render elsewhere retry.
-  let failedReferenceImages = $state<Record<string, true>>({});
+  let referenceImageUrls = $state<Record<string, string | null>>({});
+  const referenceImageObservers = new Map<string, ReturnType<typeof observeAttachmentImageUrl>>();
   $effect(() => {
     if (!workspaceId) return;
     for (const message of displayMessages) {
-      for (const block of message.imageBlocks ?? []) {
+      for (const block of [
+        ...(message.imageBlocks ?? []),
+        ...(message.deliveryGroups?.flatMap((group) => group.imageBlocks ?? []) ?? []),
+      ]) {
         const attachmentId = block.attachmentId;
-        if (
-          !attachmentId ||
-          referenceImageUrls[attachmentId] !== undefined ||
-          failedReferenceImages[attachmentId]
-        ) {
-          continue;
-        }
-        void resolveAttachmentImageUrl(workspaceId, attachmentId).then((url) => {
-          if (url) referenceImageUrls = { ...referenceImageUrls, [attachmentId]: url };
-        });
+        if (!attachmentId || referenceImageObservers.has(attachmentId)) continue;
+        referenceImageObservers.set(
+          attachmentId,
+          observeAttachmentImageUrl(workspaceId, attachmentId, (url) => {
+            referenceImageUrls[attachmentId] = url;
+          }),
+        );
       }
     }
+    return () => {
+      for (const observer of referenceImageObservers.values()) observer.dispose();
+      referenceImageObservers.clear();
+    };
   });
 
-  /** Renderable src for a queued image block: inline data URL or resolved reference URL. */
   function queuedImageSrc(block: NonNullable<QueuedMessage['imageBlocks']>[number]): string | null {
     if (block.attachmentId) {
-      if (failedReferenceImages[block.attachmentId]) return null;
       return referenceImageUrls[block.attachmentId] ?? null;
     }
     if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
     return null;
   }
 
-  // A resolved reference thumbnail failed to load (the protocol handler
-  // refused the read, e.g. its backend is disconnected): fall back to the
-  // placeholder tile and evict the URL so the next render re-resolves.
+  // Retry failed reference images when the connection returns.
   function handleReferenceImageError(
     block: NonNullable<QueuedMessage['imageBlocks']>[number],
     src: string,
@@ -531,13 +526,9 @@
     const attachmentId = block.attachmentId;
     if (!attachmentId) return;
     console.warn('Attachment thumbnail failed to load', { attachmentId, url: src });
-    if (workspaceId) evictAttachmentImageUrl(workspaceId, attachmentId);
-    const { [attachmentId]: _dropped, ...rest } = referenceImageUrls;
-    referenceImageUrls = rest;
-    failedReferenceImages = { ...failedReferenceImages, [attachmentId]: true };
+    referenceImageObservers.get(attachmentId)?.imageFailed();
   }
 
-  // Open a queued image attachment in the lightbox
   function openImageLightbox(
     block: NonNullable<QueuedMessage['imageBlocks']>[number],
     openerElement: HTMLButtonElement,
@@ -551,10 +542,6 @@
     lightboxOpen = true;
   }
 
-  // Click on a queued attachment-reference file chip: the workspace-navigation
-  // tab saga resolves the registry row by attachmentId (file.getAttachmentInfo,
-  // PROTOCOL §5.9) and opens the stored path in a file tab; missing file →
-  // toast. The workspace id is captured from immutable route context at init.
   function openQueuedFileAttachment(block: NonNullable<QueuedMessage['fileBlocks']>[number]) {
     if (!workspaceId) return;
     appStore.dispatch(openWorkspaceAttachment(workspaceId, block.attachmentId, block.fileName));
@@ -1043,32 +1030,45 @@
                         </Tooltip>
                       {/if}
                       <div class="queued-message-body min-w-0 flex-1">
-                        <QueuedMessageAttachments
-                          {message}
-                          {queuedImageSrc}
-                          {openImageLightbox}
-                          {handleReferenceImageError}
-                          {openQueuedFileAttachment}
-                        />
-                        <Button
-                          variant="plain"
-                          size="compact"
-                          class="type-body h-auto min-h-0 w-full min-w-0 cursor-default justify-start whitespace-normal p-0 text-left font-normal!"
-                          truncateLabel={false}
-                          labelClass="block!"
-                          data-testid="queued-message-content"
-                          data-mode="display"
-                          aria-label={memberMentionsToText(message.content)}
-                          ondblclick={() => startEdit(message)}
-                          onkeydown={(event) => handleDisplayKeydown(event, message)}
-                        >
-                          <span
-                            class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
-                            data-testid="queued-message-text"
+                        {#each message.deliveryGroups?.length ? message.deliveryGroups : [message] as group, index (index)}
+                          <div
+                            class={message.deliveryGroups?.length
+                              ? 'mb-2 border-b border-border pb-2 last:mb-0 last:border-b-0 last:pb-0'
+                              : 'contents'}
+                            data-testid={message.deliveryGroups?.length
+                              ? 'queued-message-delivery-group'
+                              : undefined}
                           >
-                            {memberMentionsToText(message.content)}
-                          </span>
-                        </Button>
+                            <QueuedMessageAttachments
+                              message={group}
+                              {queuedImageSrc}
+                              {openImageLightbox}
+                              {handleReferenceImageError}
+                              {openQueuedFileAttachment}
+                            />
+                            {#if group.content.trim()}
+                              <Button
+                                variant="plain"
+                                size="compact"
+                                class="type-body h-auto min-h-0 w-full min-w-0 cursor-default justify-start whitespace-normal p-0 text-left font-normal!"
+                                truncateLabel={false}
+                                labelClass="block!"
+                                data-testid="queued-message-content"
+                                data-mode="display"
+                                aria-label={memberMentionsToText(group.content)}
+                                ondblclick={() => startEdit(message)}
+                                onkeydown={(event) => handleDisplayKeydown(event, message)}
+                              >
+                                <span
+                                  class="block whitespace-pre-wrap wrap-anywhere {USER_MESSAGE_TEXT_CLASS}"
+                                  data-testid="queued-message-text"
+                                >
+                                  {memberMentionsToText(group.content)}
+                                </span>
+                              </Button>
+                            {/if}
+                          </div>
+                        {/each}
                         {#if message.requeuedAfterFailure && !isSending(message.id)}
                           <div
                             class="type-caption mt-0.5 flex items-start gap-1 text-warning-ink"

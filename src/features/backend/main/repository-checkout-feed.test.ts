@@ -56,7 +56,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function harness(capability: unknown = 1) {
+async function harness(capability: unknown = 1, avatarCapability?: unknown) {
   const socket = new Socket();
   const client = new JsonRpcClient({
     socketFactory: () => socket as unknown as Duplex,
@@ -73,7 +73,9 @@ async function harness(capability: unknown = 1) {
   await vi.waitFor(() => expect(socket.frames).toHaveLength(1));
   socket.result(1, {
     clientId: 'original',
-    server: { capabilities: { gitlabCheckout: capability } },
+    server: {
+      capabilities: { gitlabCheckout: capability, gitlabCheckoutOwnerAvatar: avatarCapability },
+    },
   });
   await vi.waitFor(() => expect(client.getRepositoryConnection()).not.toBeNull());
   const connection = client.getRepositoryConnection()!;
@@ -94,6 +96,91 @@ async function harness(capability: unknown = 1) {
 }
 
 describe('qualified checkout on the original JSON-RPC socket', () => {
+  it.each([undefined, null, false, '1', 2, 1])(
+    'negotiates owner avatars only on the original exact capability %j',
+    async (avatarCapability) => {
+      const h = await harness(1, avatarCapability);
+      await h.lease();
+      expect(h.socket.frames[1].params).toEqual({
+        provider: 'gitlab',
+        instanceBaseUrl: capture.instanceBaseUrl,
+        ...(avatarCapability === 1 ? { includeOwnerAvatar: true } : {}),
+      });
+      expect(h.socket.frames).toHaveLength(2);
+    },
+  );
+
+  it('does not adopt avatar capability from a replacement connection for an old capture', async () => {
+    const h = await harness(1);
+    const session = await h.lease();
+    const pending = session.projects({});
+    const page = h.socket.last();
+    const hello = h.client.request('client.hello', { clientId: 'original' });
+    await vi.waitFor(() => expect(h.socket.last().method).toBe('client.hello'));
+    h.socket.result(h.socket.last().id, {
+      clientId: 'original',
+      server: { capabilities: { gitlabCheckout: 1, gitlabCheckoutOwnerAvatar: 1 } },
+    });
+    await hello;
+    h.socket.result(
+      page.id,
+      ready({ items: [{ ...project, ownerAvatarUrl: 'https://images.example/old.png' }] }),
+    );
+    await expect(pending).resolves.toMatchObject({ status: 'unavailable', reason: 'retired' });
+    const frameCount = h.socket.frames.length;
+    await expect(h.feed.capture(h.connection, { provider: 'gitlab' })).resolves.toMatchObject({
+      reason: 'retired',
+    });
+    expect(h.socket.frames).toHaveLength(frameCount);
+    const fresh = h.feed.capture(h.client.getRepositoryConnection()!, { provider: 'gitlab' });
+    expect(h.socket.last().params).toEqual({ provider: 'gitlab', includeOwnerAvatar: true });
+    h.socket.result(h.socket.last().id, ready(capture));
+    expect((await fresh).status).toBe('ready');
+  });
+
+  it('retains authoritative owner avatars in project pages and detail without extra requests', async () => {
+    const h = await harness(1, 1);
+    const session = await h.lease();
+    const illustrated = {
+      ...project,
+      ownerAvatarUrl: 'https://images.example:8443/Forge/owner.png',
+    };
+    const page = session.projects({});
+    h.socket.result(h.socket.last().id, ready({ items: [illustrated] }));
+    await expect(page).resolves.toEqual(ready({ items: [illustrated] }));
+    const detail = session.project({ projectPath: project.projectPath });
+    h.socket.result(h.socket.last().id, ready({ project: illustrated }));
+    await expect(detail).resolves.toEqual(ready({ project: illustrated }));
+    expect(h.socket.frames.map((frame) => frame.method)).toEqual([
+      'client.hello',
+      'sourceControl.checkout.capture',
+      'sourceControl.checkout.projects',
+      'sourceControl.checkout.project',
+    ]);
+  });
+
+  it.each([
+    null,
+    '',
+    '/uploads/owner.png',
+    'http://images.example/a.png',
+    'https://user:secret@images.example/a.png',
+    'data:image/png,avatar',
+  ])(
+    'falls back for unusable owner avatar metadata %j without discarding the project',
+    async (ownerAvatarUrl) => {
+      const h = await harness(1, 1);
+      const session = await h.lease();
+      const page = session.projects({});
+      h.socket.result(h.socket.last().id, ready({ items: [{ ...project, ownerAvatarUrl }] }));
+      await expect(page).resolves.toEqual(
+        ready({ items: [{ ...project, ownerAvatarUrl: undefined }] }),
+      );
+      expect(session.isCurrent()).toBe(true);
+      expect(h.socket.frames).toHaveLength(3);
+    },
+  );
+
   it('preserves full instance, project, query and opaque page operands without a workspace', async () => {
     const h = await harness();
     const session = await h.lease();

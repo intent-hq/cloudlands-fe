@@ -373,6 +373,10 @@ export interface Workspace {
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
+  /** Latest recorded user/assistant message or note timestamp. Excludes workspace
+   *  metadata and usage maintenance; retained after content deletion. Absent on
+   *  older daemons or when no valid content timestamp is known. */
+  lastContentActivity?: string;
   tags?: string[];
   path?: string;
   repositoryPath?: string;

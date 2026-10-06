@@ -42,13 +42,17 @@ interface GitLabProjectRow {
   projectPath: string;
   name: string;
   namespace: string;
+  ownerAvatarUrl?: string;
 }
 
 export interface GitLabProjectPickerProps extends GitLabPickerProps<GitLabProjectRow> {
   /** Current configured-root authentication, independent of a pending checkout capture. */
   authenticated?: boolean;
   selectedProjectPath?: string;
+  selectedProject?: GitLabProjectRow;
   onSelect: (projectPath: string, scopeKey: string) => void;
+  /** Explicit recent selection may begin a capture for this verified configured root. */
+  onSelectRecent?: (projectPath: string, instanceBaseUrl: string) => void;
   onOpenChange?: (open: boolean, scopeKey: string) => void;
 }
 

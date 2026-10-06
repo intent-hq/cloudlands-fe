@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { selectPrincipalConnectionContext } from '$store/renderer/slices/principal/principal-selectors';
   /* eslint-disable max-lines */
   import { selectIsHostMember } from '$store/renderer/slices/host-execution/host-execution-selectors';
@@ -1777,15 +1778,16 @@
     return null;
   });
 
-  // Native tooltip on the trigger: the warning reason while one is shown
-  // ("<model> is no longer available — <provider> is disabled"), else the label.
+  // Keep warnings, icon-only labels, and reasoning details available on hover.
   const triggerTitle = $derived(
     showModelWarning && warningMessage
       ? m.chat_modelPicker_warning_tooltip({
           title: warningMessage.title,
           description: warningMessage.description,
         })
-      : triggerAccessibleLabel,
+      : isCompact || showReasoningFooter
+        ? triggerAccessibleLabel
+        : undefined,
   );
 
   // Re-home announcement (see `disabledProviderSnapshot`).
@@ -2311,7 +2313,9 @@
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
-          <span class="truncate">{triggerLabel}</span>
+          <span class="truncate" use:truncatedTitle={triggerTitle ? undefined : triggerLabel}
+            >{triggerLabel}</span
+          >
           {#if showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
@@ -2465,7 +2469,10 @@
               {option.label}
             </span>
             {#if option.description}
-              <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
+              <div
+                class="text-xs text-subtle truncate mt-0.5"
+                use:truncatedTitle={option.description}
+              >
                 {option.description}
               </div>
             {/if}

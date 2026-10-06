@@ -37,6 +37,11 @@ const EFFECTS = new Set([...WILDCARD_EFFECTS, 'fork', 'spawn', 'call', 'put', 'c
 const ACTION_FACTORIES = new Set(['createAction', 'createAsyncAction']);
 const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
+    pattern: /workspace-lifecycle-slice\.ts#backendReconnected$/,
+    rationale:
+      'accept-changes status and Home integration data independently refresh after backend reconnect',
+  },
+  {
     pattern: /workspace-lifecycle-slice\.ts#workspace(?:Deleted|Unmounted|Mounted)$/,
     rationale: 'lifecycle cleanup and restore fan out across independent domains',
   },
@@ -55,10 +60,6 @@ const DUPLICATE_WATCHER_EXCEPTIONS = [
   {
     pattern: /connections-slice\.ts#connectionsListReceived$/,
     rationale: 'backend layout restore and sidebar reconciliation are independent',
-  },
-  {
-    pattern: /sidebar-nav-slice\.ts#(?:openPanel|closePanel|togglePanel|closeAll|closeHoverCards)$/,
-    rationale: 'sidebar ownership and unread-boundary snapshots are independent',
   },
   {
     pattern:

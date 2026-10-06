@@ -49,11 +49,7 @@
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
-  import {
-    selectOnboardingActive,
-    selectPanelItem,
-    selectPanelWidth,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
   interface Props {
     workspaceId?: string;
@@ -68,24 +64,15 @@
       ? (page.params.id ?? null)
       : null,
   );
-  const panelItem$ = selectPanelItem();
-  const panelWidth$ = selectPanelWidth();
   const onboardingActive$ = selectOnboardingActive();
 
-  // Where the workspace controls naturally start (left edge, titlebar coords).
-  // Measured from the fixed controls (SidebarNav) so the margin below can align
-  // the tabs with the sidebar panel's right edge rather than a fixed offset.
-  const SIDEBAR_PANEL_LEFT_INSET = 8; // pl-2 on .workspace-frame-row
-  const CONTROLS_GAP = 4; // gap-1 between titlebar control groups
   let fixedControlsEl = $state<HTMLDivElement | null>(null);
-  let controlsBaseLeft = $state(0);
   let fixedControlsTrailingInset = $state(0);
 
   $effect(() => {
     const el = fixedControlsEl;
     if (!el) return;
     const measure = () => {
-      controlsBaseLeft = el.offsetLeft + el.offsetWidth + CONTROLS_GAP;
       fixedControlsTrailingInset = Number.parseFloat(getComputedStyle(el).paddingRight) || 0;
     };
     measure();
@@ -94,20 +81,9 @@
     return () => observer.disconnect();
   });
 
-  // Align the workspace controls (tabs) with the left panel's right edge
-  // when a sidebar panel is open; tracks the panel width live.
-  const sidebarPanelOpen = $derived(Boolean($panelItem$));
-  const workspaceTabLeadingInsetPx = $derived(getWorkspaceTabLeadingInsetPx(sidebarPanelOpen));
-  const workspaceTabScrollerMarginLeftPx = $derived(
-    getWorkspaceTabScrollerMarginLeftPx(
-      workspaceTabLeadingInsetPx === getWorkspaceTabLeadingInsetPx(true),
-    ),
-  );
-  const panelOffset = $derived(
-    sidebarPanelOpen
-      ? Math.max(0, $panelWidth$ + SIDEBAR_PANEL_LEFT_INSET - controlsBaseLeft)
-      : -fixedControlsTrailingInset,
-  );
+  const workspaceTabLeadingInsetPx = getWorkspaceTabLeadingInsetPx();
+  const workspaceTabScrollerMarginLeftPx = getWorkspaceTabScrollerMarginLeftPx();
+  const workspaceControlsOffset = $derived(-fixedControlsTrailingInset);
 
   function handleActiveTabBoundsChange(bounds: WorkspaceTabBorderMaskBounds | null) {
     activeTabBounds = bounds;
@@ -155,6 +131,7 @@
   onMount(() => reducedMotion.cleanup);
   // Build display text for the search bar - show focused tab title and workspace
   const displayText = $derived.by(() => {
+    if (page.url.pathname === '/') return m.home_page_title();
     if (focusedTab?.title && workspace?.title) {
       return `${focusedTab.title} — ${workspace.title}`;
     }
@@ -236,7 +213,7 @@
         aria-hidden="true"
       ></div>
       <div
-        class="titlebar-fixed-controls flex min-w-0 items-center gap-1"
+        class="titlebar-fixed-controls flex min-w-0 self-end items-end gap-1"
         bind:this={fixedControlsEl}
         data-titlebar-fixed-controls
       >
@@ -244,7 +221,7 @@
       </div>
       <div
         class="flex min-w-0 self-end items-center gap-1 transition-[margin-left] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-        style:margin-left={`${panelOffset}px`}
+        style:margin-left={`${workspaceControlsOffset}px`}
         data-titlebar-workspace-controls
       >
         <WorkspaceTabStrip
@@ -253,7 +230,7 @@
           activeWorkspaceId={routedWorkspaceId}
           leadingInsetPx={workspaceTabLeadingInsetPx}
           scrollerMarginLeftPx={workspaceTabScrollerMarginLeftPx}
-          horizontalPositionTrackingKey={panelOffset +
+          horizontalPositionTrackingKey={workspaceControlsOffset +
             workspaceTabLeadingInsetPx +
             workspaceTabScrollerMarginLeftPx}
         />
@@ -305,7 +282,6 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    /* border-bottom: 1px solid hsl(var(--border) / 0.5); */
     position: relative;
     z-index: var(--layer-chrome);
     padding-top: 2px;
@@ -337,24 +313,5 @@
 
   .titlebar-fixed-controls {
     padding-right: var(--titlebar-control-shift);
-  }
-
-  /* Track the panel width directly (no easing) while it is being resized */
-  :global(body.panel-resizing) [data-titlebar-workspace-controls] {
-    transition: none;
-  }
-
-  /* Current workspace tab - connects to sidebar below */
-  .current-workspace-tab {
-    background: hsl(var(--background));
-    border-top-left-radius: 0.375rem;
-    border-top-right-radius: 0.375rem;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    padding: 0.375rem 0.5rem;
-    /* Extend to the bottom of the title bar - use negative margin to compensate for title bar padding */
-    align-self: stretch;
-    margin-bottom: -2px;
-    padding-bottom: calc(0.375rem + 2px);
   }
 </style>

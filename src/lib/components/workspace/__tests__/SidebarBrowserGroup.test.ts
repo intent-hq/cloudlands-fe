@@ -6,7 +6,7 @@
  * on the row calls onRestoreTab, and the row is a focusable button with an
  * aria-label.
  */
-import { render, fireEvent, cleanup, screen } from '@testing-library/svelte';
+import { render, fireEvent, cleanup, screen, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import SidebarBrowserGroup from '../SidebarBrowserGroup.svelte';
@@ -59,7 +59,7 @@ describe('SidebarBrowserGroup hidden rows', () => {
     const row = document.querySelector(
       '[data-sidebar-browser-hidden-tab="hidden-1"]',
     ) as HTMLElement;
-    const title = row.querySelector('[title="Preview"]') as HTMLElement;
+    const title = within(row).getByText('Preview');
     await fireEvent.click(title);
 
     expect(onRestoreTab).toHaveBeenCalledExactlyOnceWith('hidden-1');

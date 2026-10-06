@@ -1,3 +1,5 @@
+import { homeWorkspacesSaga } from '$features/home/home-workspaces-saga';
+import { homeIntegrationsSaga } from '$features/home/home-integrations-saga';
 import { modelNameCacheSaga } from './slices/provider-models/sagas/model-name-cache-saga';
 import { providerAdapterPreparationSaga } from './slices/agent-availability/sagas/provider-adapter-preparation-saga';
 import { pendingRetentionSaga } from './slices/pending-submissions/sagas/pending-retention-saga';
@@ -138,6 +140,8 @@ export type AppSagaCancel = ReturnType<Store<any, any>['runSaga']>;
 export const sagas = [
   modelNameCacheSaga,
   pendingRetentionSaga,
+  homeIntegrationsSaga,
+  homeWorkspacesSaga,
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,

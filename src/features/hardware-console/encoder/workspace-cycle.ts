@@ -7,22 +7,10 @@
  */
 
 import type { EncoderDirection } from '../input/types';
-import type { AllSpacesViewMode } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
 import {
   compareWorkspaceActivityDisplayTimeDesc,
   type WorkspaceActivityTimeFields,
 } from '$shared/utils/workspace-activity-time';
-
-const ALL_SPACES_VIEW_MODE_CYCLE: readonly AllSpacesViewMode[] = ['recent', 'repo', 'status'];
-
-/**
- * The All-workspaces sidebar view mode an encoder click advances to:
- * Recent → Repo → Status → Recent.
- */
-export function nextAllSpacesViewMode(mode: AllSpacesViewMode): AllSpacesViewMode {
-  const index = ALL_SPACES_VIEW_MODE_CYCLE.indexOf(mode);
-  return ALL_SPACES_VIEW_MODE_CYCLE[(index + 1) % ALL_SPACES_VIEW_MODE_CYCLE.length];
-}
 
 /** The minimal workspace shape the encoder ordering needs. */
 export interface EncoderCycleWorkspace extends WorkspaceActivityTimeFields {
