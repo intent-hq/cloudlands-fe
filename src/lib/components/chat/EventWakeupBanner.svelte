@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { openAssistantAgentFromEvent } from '$lib/utils/assistant-agent-link';
   import { truncatedTitle } from '$lib/actions/observe-overflow';
   import { CHAT_OPERATIONAL_ICON_CLASS } from './operational-disclosure-row';
   /**
@@ -422,6 +423,7 @@
       return;
     }
     if (!workspace?.id) return;
+    if (openAssistantAgentFromEvent(event, String(workspace.id), agentId)) return;
     appStore.dispatch(
       openAgentTabRequested(String(workspace.id), {
         agentId,

@@ -7463,5 +7463,8 @@
   "settings_machineName_invalid_error": "最多输入100个字符，不能包含控制字符。",
   "settings_machineName_load_error": "无法加载计算机名称，请重试。",
   "settings_machineName_save_error": "无法保存计算机名称，请重试。",
-  "settings_machineName_saved": "计算机名称已保存"
+  "settings_machineName_saved": "计算机名称已保存",
+  "home_assistantThread_hooks_label": "活动钩子：{count}",
+  "home_assistantThread_monitors_label": "活动监控：{count}",
+  "home_assistantThread_subscriptions_label": "活动订阅：{count}"
 }

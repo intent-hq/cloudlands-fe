@@ -31,7 +31,7 @@ for (const scenario of [
         horizontalOverflow: element.scrollWidth - element.clientWidth,
         navigators: [...element.querySelectorAll('.navigator-row')].map((group) => {
           const label = group
-            .querySelector('.navigator-selection > [title]')!
+            .querySelector('.navigator-selection > span:first-child')!
             .getBoundingClientRect();
           const bar = group.querySelector('.breakdown-stack')!.getBoundingClientRect();
           return {

@@ -7463,5 +7463,8 @@
   "settings_machineName_invalid_error": "最多輸入100個字元，不能包含控制字元。",
   "settings_machineName_load_error": "無法載入電腦名稱，請重試。",
   "settings_machineName_save_error": "無法儲存電腦名稱，請重試。",
-  "settings_machineName_saved": "電腦名稱已儲存"
+  "settings_machineName_saved": "電腦名稱已儲存",
+  "home_assistantThread_hooks_label": "作用中的掛鉤：{count}",
+  "home_assistantThread_monitors_label": "作用中的監控：{count}",
+  "home_assistantThread_subscriptions_label": "作用中的訂閱：{count}"
 }

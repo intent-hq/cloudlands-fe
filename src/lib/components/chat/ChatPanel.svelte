@@ -7513,7 +7513,7 @@
     {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && isChiefWorkspace}
       <div
         class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
-        style="height: calc(100% + 10rem);"
+        style="height: calc(100% + 10rem); left: var(--chief-aurora-left, -1rem); right: var(--chief-aurora-right, -0.5rem); bottom: var(--chief-aurora-bottom, -1rem); border-bottom-left-radius: var(--chief-aurora-radius, 0); border-bottom-right-radius: var(--chief-aurora-radius, 0);"
         data-testid="composer-aurora-host"
         in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
         out:crispOut={{ tier: 'moderate' }}

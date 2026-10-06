@@ -10,7 +10,7 @@ type Locator = ReturnType<Awaited<ReturnType<ComponentFixtures['mount']>>['locat
 async function measure(host: Locator) {
   return host.evaluate((element) => {
     const home = element.querySelector<HTMLElement>('[data-home-page]')!;
-    const sidebar = home.querySelector<HTMLElement>('.home-sidebar')!;
+    const sidebar = home.querySelector<HTMLElement>('.home-sidebar [data-slot="list-view"]')!;
     const header = home.querySelector<HTMLElement>('[data-chief-header-row]')!;
     const composer = home.querySelector<HTMLElement>('[data-testid="chat-composer-shell"]')!;
     const transcript = home.querySelector<HTMLElement>(
@@ -37,10 +37,10 @@ async function measure(host: Locator) {
 }
 
 const cases = [
-  { name: 'long repository list', width: 1440, height: 720, scenario: 'assistant' },
-  { name: 'short window', width: 900, height: 360, scenario: 'assistant' },
-  { name: 'stacked sidebar', width: 420, height: 540, scenario: 'assistant' },
-  { name: 'short stacked layout', width: 420, height: 360, scenario: 'assistant' },
+  { name: 'long thread list', width: 1440, height: 720, scenario: 'assistant-many' },
+  { name: 'short window', width: 900, height: 360, scenario: 'assistant-many' },
+  { name: 'stacked sidebar', width: 420, height: 540, scenario: 'assistant-many' },
+  { name: 'short stacked layout', width: 420, height: 360, scenario: 'assistant-many' },
   { name: 'long conversation', width: 1440, height: 720, scenario: 'assistant-long' },
   { name: 'narrow conversation', width: 420, height: 540, scenario: 'assistant-long' },
 ] as const;
@@ -54,6 +54,7 @@ for (const { name, width, height, scenario } of cases) {
     const composer = component.getByTestId('chat-composer-shell');
     const transcript = component.getByTestId('chat-transcript-scroll-viewport');
     const sidebar = component.getByRole('navigation', { name: 'Home', exact: true });
+    await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
     await expect(composer).toBeVisible();
     await expect(component.getByTestId('chat-transcript-skeleton')).toHaveCount(0);
     if (scenario === 'assistant-long') {
@@ -68,15 +69,16 @@ for (const { name, width, height, scenario } of cases) {
     expect(before.composer.bottom).toBeLessThanOrEqual(before.host.bottom);
     expect(before.transcript.height).toBeGreaterThan(0);
     expect(before.transcript.bottom).toBeLessThanOrEqual(before.composer.top + 1);
-    expect(before.sidebarRange).toBeGreaterThan(0);
-
-    await sidebar.hover();
-    await page.mouse.wheel(0, 1600);
-    await expect.poll(async () => (await measure(host)).sidebarScroll).toBeGreaterThan(0);
-    const sidebarScrolled = await measure(host);
-    expect(sidebarScrolled.header).toEqual(before.header);
-    expect(sidebarScrolled.composer).toEqual(before.composer);
-    expect(sidebarScrolled.windowScroll).toBe(0);
+    if (scenario === 'assistant-many') {
+      expect(before.sidebarRange).toBeGreaterThan(0);
+      await sidebar.getByRole('listbox').hover();
+      await page.mouse.wheel(0, 1600);
+      await expect.poll(async () => (await measure(host)).sidebarScroll).toBeGreaterThan(0);
+      const sidebarScrolled = await measure(host);
+      expect(sidebarScrolled.header).toEqual(before.header);
+      expect(sidebarScrolled.composer).toEqual(before.composer);
+      expect(sidebarScrolled.windowScroll).toBe(0);
+    }
 
     if (scenario === 'assistant-long') {
       await expect.poll(async () => (await measure(host)).transcriptScroll).toBeGreaterThan(0);
@@ -100,37 +102,15 @@ for (const { name, width, height, scenario } of cases) {
       contentType: 'application/json',
     });
 
-    await sidebar.evaluate((element) => {
-      element.scrollTop = 0;
-    });
-    await sidebar.getByRole('button', { name: /^All repos/ }).click();
-    await expect(component.getByRole('tab', { name: 'Workspaces', exact: true })).toBeVisible();
-    await sidebar.getByRole('button', { name: 'Assistant', exact: true }).click();
+    await sidebar.getByRole('tab', { name: 'Workspaces', exact: true }).click();
+    await expect(
+      component.locator('.home-header').getByRole('tab', { name: 'Workspaces', exact: true }),
+    ).toBeVisible();
+    await sidebar.getByRole('tab', { name: 'Assistant', exact: true }).click();
     await expect(composer).toBeVisible();
     await expect.poll(async () => (await measure(host)).pageOverflow).toBeLessThanOrEqual(1);
     expect((await measure(host)).composer.bottom).toBeLessThanOrEqual(before.host.bottom);
 
-    if (name === 'long repository list') {
-      const oldLayout = await page.addStyleTag({
-        content: `
-        .home-layout { grid-template-rows: none !important; }
-        .home-sidebar-resizable { min-height: auto !important; display: block !important; }
-      `,
-      });
-      const original = await measure(host);
-      expect(original.pageOverflow).toBeGreaterThan(1);
-      expect(original.composer.bottom).toBeGreaterThan(original.host.bottom);
-      await composer.evaluate((element) => element.scrollIntoView({ block: 'end' }));
-      await testInfo.attach('home-assistant-before-fix', {
-        body: await page.screenshot(),
-        contentType: 'image/png',
-      });
-      await testInfo.attach('original-scroll-boundaries.json', {
-        body: JSON.stringify(original, null, 2),
-        contentType: 'application/json',
-      });
-      await oldLayout.evaluate((element) => element.remove());
-    }
     expect(await page.pageErrors()).toEqual([]);
   });
 }

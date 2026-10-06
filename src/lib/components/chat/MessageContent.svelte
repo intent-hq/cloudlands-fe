@@ -456,7 +456,10 @@
   {:else if parsedBlock.type === 'detected_scripts' && parsedBlock.metadata?.detectedScriptsData}
     <DetectedScriptsCard scripts={parsedBlock.metadata.detectedScriptsData} />
   {:else if parsedBlock.type === 'workspace_card' && parsedBlock.metadata?.workspaceCardData}
-    <ChatWorkspaceCard workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds} />
+    <ChatWorkspaceCard
+      {workspaceId}
+      workspaceIds={parsedBlock.metadata.workspaceCardData.workspaceIds}
+    />
   {:else if parsedBlock.type === 'nav_link' && parsedBlock.metadata?.navLinkData}
     <NavLink
       canOpenFile={() => canOpenAgentPath(appStore.state, agentId)}

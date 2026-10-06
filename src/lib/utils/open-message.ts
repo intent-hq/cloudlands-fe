@@ -58,6 +58,8 @@ export interface OpenMessageOptions {
   messageId: string;
   /** Search query whose matched terms get highlighted inside the message. */
   query?: string;
+  /** The caller already opened a conversation viewer in another layout. */
+  contentAlreadyOpen?: boolean;
 }
 
 /** Detail payload of the 'chat:open-message' window event ChatPanel consumes. */
@@ -193,14 +195,18 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
   });
 
   const isChiefMessage = workspaceId === CHIEF_WORKSPACE_ID;
-  if (isChiefMessage) {
+  if (isChiefMessage && !options.contentAlreadyOpen) {
     appStore.dispatch(setChiefActiveAgentId(agentId));
     appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
     appStore.dispatch(openPanel('chief'));
   }
   const targetPathname = isChiefMessage ? '/' : `/workspace/${workspaceId}`;
 
-  if (typeof window !== 'undefined' && window.location.pathname !== targetPathname) {
+  if (
+    !options.contentAlreadyOpen &&
+    typeof window !== 'undefined' &&
+    window.location.pathname !== targetPathname
+  ) {
     try {
       // navigateToRoute no-ops in the HUD pop-out window (never leaves /hud).
       await navigateToRoute(targetPathname);
@@ -214,7 +220,7 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     }
   }
 
-  if (!isChiefMessage) {
+  if (!options.contentAlreadyOpen && !isChiefMessage) {
     appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
   }
 
