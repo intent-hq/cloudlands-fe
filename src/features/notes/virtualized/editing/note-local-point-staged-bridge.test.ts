@@ -832,6 +832,61 @@ async function receiptOracle(
   };
 }
 
+/** Test-only direct bootstrap: the actual reader owns the sole source acquisition. */
+async function readInitialWindow(
+  read: (request: NotePageRequest) => Promise<NoteReadPage>,
+  initial: Pick<NotePageState, 'scope' | 'sourceRevision'>,
+  current: () => boolean = () => true,
+) {
+  const captured: { first?: Extract<NoteReadPage, { kind: 'noteSourcePage' }> } = {};
+  let sourceIssued = false;
+  const window = await readNoteWindow(
+    async (request) => {
+      if (!current()) throw new Error('Bootstrap ownership lost');
+      if (request.kind === 'source') {
+        if (
+          sourceIssued ||
+          request.at !== 0 ||
+          request.cursor !== undefined ||
+          request.snapshotId !== undefined ||
+          request.sourceRevision !== initial.sourceRevision ||
+          request.noteInstanceId !== initial.scope.noteInstanceId ||
+          request.maxSourceBytes !== 4096 ||
+          request.maxWireBytes !== 8192 ||
+          request.maxItems !== 64
+        )
+          throw new Error('Exactly one original source acquisition');
+        sourceIssued = true; // Consume before any executable transport/await.
+      }
+      if (captured.first && Date.now() >= Date.parse(captured.first.expiresAt))
+        throw new Error('Original bootstrap deadline expired');
+      const page = await read(request);
+      if (!current()) throw new Error('Bootstrap ownership lost');
+      if (captured.first && Date.now() >= Date.parse(captured.first.expiresAt))
+        throw new Error('Original bootstrap deadline expired');
+      if (page.kind === 'noteSourcePage') {
+        if (captured.first || request.kind !== 'source') throw new Error('Foreign source response');
+        if (
+          !Number.isFinite(Date.parse(page.expiresAt)) ||
+          Date.now() >= Date.parse(page.expiresAt)
+        )
+          throw new Error('Original bootstrap deadline expired');
+        captured.first = page; // Exact validated object; no cache, cloning, or re-encoding.
+      }
+      return page;
+    },
+    { at: 0, scope: initial.scope, sourceRevision: initial.sourceRevision },
+    current,
+  );
+  const first = captured.first;
+  if (!current()) throw new Error('Bootstrap ownership lost');
+  if (first && Date.now() >= Date.parse(first.expiresAt))
+    throw new Error('Original bootstrap deadline expired');
+  if (!first || window.snapshotId !== first.snapshotId || window.expiresAt !== first.expiresAt)
+    throw new Error('Missing original bootstrap association');
+  return { first, window };
+}
+
 const captureEnabled = process.env.NOTE_LINKED_CAPTURE_ENABLE === 'coordinated-live-capture';
 it.skipIf(!captureEnabled)(
   'links an actual admitted native group to same-Services canonical receipt without adopting it',
@@ -915,19 +970,15 @@ it.skipIf(!captureEnabled)(
       appClient.notes.pages = client;
       dispatch(a.pagePanelOpened(ws, id, 'panel'));
       dispatch(a.pageStateReceived(ws, id, 0, initial));
-      const first = await client.read(ws, id, {
-        kind: 'source',
-        at: 0,
-        maxSourceBytes: 4096,
-        maxWireBytes: 8192,
-        maxItems: 64,
-      });
-      if (first.kind !== 'noteSourcePage') throw new Error('No genuine source');
+      const { first, window } = await readInitialWindow(
+        (q) => client.read(ws, id, q),
+        initial,
+        () => live && !!pages.resourceLedger.owners[scratch],
+      );
       expect(first.text).toBe('ab');
       expect(first.sourceLength).toBe(2);
       expect(first.scope).toEqual(initial.scope);
       expect(first.sourceRevision).toBe(initial.sourceRevision);
-      const window = await readNoteWindow((q) => client.read(ws, id, q), { ...first, at: 0 });
       const note = () => pages.byWorkspaceId[ws].notes[id];
       dispatch(a.pageWindowRequested(ws, id, 'panel', 0));
       const seed = {
@@ -1597,7 +1648,10 @@ it.each([false, true])(
     });
     const readPage = (q: NotePageRequest) =>
       reader.read(identity.scope.workspaceId, identity.scope.noteId, q);
-    const window = await readNoteWindow(readPage, { ...identity, at: 0 });
+    const { window, first } = await readInitialWindow(readPage, identity);
+    expect(first).toBe(identity);
+    expect(window.snapshotId).toBe(identity.snapshotId);
+    expect(window.expiresAt).toBe(identity.expiresAt);
     const ws = identity.scope.workspaceId,
       id = identity.scope.noteId;
     let pages = a.notePagesReducer(undefined, a.pagePanelOpened(ws, id, 'panel'));
@@ -1736,3 +1790,137 @@ it.each([false, true])(
     }
   },
 );
+
+it.each([
+  'valid',
+  'scope',
+  'revision',
+  'snapshot',
+  'expiry',
+  'expired',
+  'continuation',
+  'late-context',
+  'late-current',
+  'late-owner',
+] as const)('direct bootstrap composes actual reader with one source RPC: %s', async (mode) => {
+  let clock = recordedAb.capturedAtMs;
+  vi.spyOn(Date, 'now').mockImplementation(() => clock);
+  const calls = recordedAb.calls as unknown as Array<{
+    request: NotePageRequest;
+    response: NoteReadPage;
+  }>;
+  const original = calls[0].response;
+  if (original.kind !== 'noteSourcePage') throw new Error('Missing original source');
+  const requests: NotePageRequest[] = [];
+  const reader = new NotePageReader(async (_method, params) => {
+    const q = params.page as NotePageRequest;
+    requests.push(q);
+    const found = calls.find(
+      ({ request: r }) =>
+        r.kind === q.kind &&
+        r.cursor === q.cursor &&
+        r.maxItems === q.maxItems &&
+        r.maxWireBytes === q.maxWireBytes &&
+        ('contextRef' in q
+          ? 'contextRef' in r && r.contextRef === q.contextRef
+          : 'ref' in q
+            ? 'ref' in r && r.ref === q.ref
+            : q.kind === 'source' &&
+              r.kind === 'source' &&
+              r.at === q.at &&
+              r.maxSourceBytes === q.maxSourceBytes),
+    );
+    if (!found) throw new Error('Uncaptured request');
+    // This assembler reads source, root context, then the span's parent context.
+    // Paragraph detail frames belong to later edit-context acquisition.
+    if (mode === 'late-context' && found === calls[2]) clock = Date.parse(original.expiresAt);
+    // Mutated negative envelopes are refusal probes, never claimed authentic grants.
+    if (q.kind === 'source' && mode === 'expired')
+      return {
+        ...found.response,
+        expiresAt: new Date(recordedAb.capturedAtMs - 1).toISOString(),
+      };
+    if (q.kind === 'source' && mode === 'continuation')
+      return { ...found.response, sourceLength: 3, nextCursor: 'guard-next-source' };
+    if (
+      q.kind !== 'source' &&
+      mode !== 'valid' &&
+      mode !== 'expired' &&
+      mode !== 'continuation' &&
+      mode !== 'late-context' &&
+      mode !== 'late-current' &&
+      mode !== 'late-owner'
+    ) {
+      const page = found.response;
+      return mode === 'scope'
+        ? { ...page, scope: { ...page.scope, noteInstanceId: 'foreign' } }
+        : mode === 'revision'
+          ? { ...page, sourceRevision: 'foreign-revision' }
+          : mode === 'snapshot'
+            ? { ...page, snapshotId: 'foreign-snapshot' }
+            : {
+                ...page,
+                expiresAt: new Date(Date.parse(original.expiresAt) + 1000).toISOString(),
+              };
+    }
+    return found.response;
+  });
+  let ownerCurrent = true;
+  let finalResponseChecks = 0;
+  const pending = readInitialWindow(
+    (q) => reader.read(original.scope.workspaceId, original.scope.noteId, q),
+    original,
+    () => {
+      if (requests.length === 3 && ++finalResponseChecks === 2) {
+        // The actual generator rechecks currentness after the adapter's post-await check.
+        if (mode === 'late-current') clock = Date.parse(original.expiresAt);
+        if (mode === 'late-owner') {
+          ownerCurrent = false;
+          return true;
+        }
+      }
+      return ownerCurrent;
+    },
+  );
+  if (mode === 'valid') {
+    const result = await pending;
+    expect(result.first).toBe(original);
+    expect(result.window.text).toBe('ab');
+    expect(result.window.sourceLength).toBe(2);
+    expect(result.window.scope).toEqual(original.scope);
+    expect(result.window.snapshotId).toBe(original.snapshotId);
+    expect(result.window.expiresAt).toBe(original.expiresAt);
+    expect(requests.length).toBeGreaterThan(1);
+    expect(requests.filter((q) => q.kind !== 'source').every((q) => !('maxSourceBytes' in q))).toBe(
+      true,
+    );
+  } else if (mode === 'late-context' || mode === 'late-current' || mode === 'late-owner') {
+    const outcome = await pending.then(
+      () => 'resolved',
+      (error: Error) => error.message,
+    );
+    if (mode === 'late-owner') expect(ownerCurrent).toBe(false);
+    else expect(clock).toBe(Date.parse(original.expiresAt));
+    if (mode !== 'late-context') expect(finalResponseChecks).toBeGreaterThanOrEqual(2);
+    expect(requests).toHaveLength(3);
+    expect(requests.at(-1)).toMatchObject(calls[2].request);
+    expect(outcome).toContain(mode === 'late-owner' ? 'ownership lost' : 'deadline expired');
+  } else
+    await expect(pending).rejects.toThrow(
+      mode === 'continuation'
+        ? 'Exactly one original'
+        : mode === 'expired'
+          ? 'deadline expired'
+          : /snapshot|scope/i,
+    );
+  expect(requests.filter((q) => q.kind === 'source')).toHaveLength(1);
+  expect(requests[0]).toEqual({
+    kind: 'source',
+    at: 0,
+    sourceRevision: original.sourceRevision,
+    noteInstanceId: original.scope.noteInstanceId,
+    maxSourceBytes: 4096,
+    maxWireBytes: 8192,
+    maxItems: 64,
+  });
+});
