@@ -8,6 +8,7 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
   import {
@@ -130,9 +131,10 @@
   const previousPrincipal = store.state.principal;
   const disposeStore = ownsStore
     ? startRootStoreLifecycle(store, {
-        startSagas: (appStore) => [appStore.runSaga(draftFixture.saga)],
+        startSagas: (appStore) => startChatFixtureSagas(appStore, draftFixture.client),
       })
     : () => {};
+  const stopChatSagas = ownsStore ? [] : startChatFixtureSagas(store, draftFixture.client);
   if (ownsStore) admitLegacyPrincipal();
   if (submissionSupport) {
     const current = store.state.principal;
@@ -606,6 +608,7 @@
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
   onDestroy(() => {
+    stopChatSagas.forEach((stop) => stop());
     disposeStore();
     if (!ownsStore) return;
     store.dispatch(principalContextChanged(previousPrincipal.context));

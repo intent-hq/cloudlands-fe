@@ -7,6 +7,7 @@
   import { WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import {
     bulkUpsertSessions,
@@ -25,7 +26,6 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { installMockElectronBridge } from '../../../../test/ct-mock-electron-bridge';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
-  import { createChatDraftFixture } from '../../../../test/fixtures/chat-drafts';
 
   let {
     height = 900,
@@ -186,9 +186,8 @@
       };
     },
   });
-  const draftFixture = createChatDraftFixture();
   const dispose = startRootStoreLifecycle(store, {
-    startSagas: () => [store.runSaga(chatScrollbackSaga), store.runSaga(draftFixture.saga)],
+    startSagas: () => [...startChatFixtureSagas(store), store.runSaga(chatScrollbackSaga)],
   });
   admitLegacyPrincipal();
   store.dispatch(setWorkspaceEntity(workspace));

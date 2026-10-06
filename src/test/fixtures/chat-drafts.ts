@@ -1,5 +1,4 @@
 import type { DraftAttachment, DraftsClient } from '$lib/client/app-client';
-import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
 
 export type DraftFixtureRequest = {
   method: 'drafts.get' | 'drafts.set' | 'drafts.clear';
@@ -28,11 +27,9 @@ export function createChatDraftFixture(onRequest?: (request: DraftFixtureRequest
     },
   };
   return {
+    client,
     seed(workspaceId: string, agentId: string, text: string) {
       drafts.set(key(workspaceId, agentId), { text, attachments: [], updatedAt });
-    },
-    *saga() {
-      yield* chatDraftsSaga(client);
     },
   };
 }

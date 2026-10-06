@@ -15,7 +15,7 @@
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
-  import { createChatDraftFixture } from '../../../../test/fixtures/chat-drafts';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import { store } from '$store/renderer/store';
   import {
     bulkUpsertSessions,
@@ -91,10 +91,9 @@
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
   const watchedFixture = untrack(() => watchedAgent);
-  const draftFixture = createChatDraftFixture();
   const disposeStore = startRootStoreLifecycle(store, {
     startSagas: (appStore) => [
-      appStore.runSaga(draftFixture.saga),
+      ...startChatFixtureSagas(appStore),
       ...(watchedFixture
         ? [
             appStore.runSaga(appLayoutNavigationSaga),

@@ -4,16 +4,44 @@ import type { Locator } from '@playwright/test';
 
 test.setTimeout(120_000);
 
-async function toggleWithMotion(button: Locator, reduced: boolean) {
-  const motion = await button.evaluate(async (node: HTMLButtonElement, reducedMotion) => {
-    const root = node.closest('[data-question-wizard]')!;
-    node.click();
-    const deadline = performance.now() + 5_000;
-    let frames;
-    do {
-      await new Promise(requestAnimationFrame);
-      const states = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]'));
-      frames = states.map((state) => ({
+async function captureToggle(button: Locator, reduced: boolean, finish: boolean) {
+  return button.evaluate(
+    async (node: HTMLButtonElement, { reduced, finish }) => {
+      const root = node.closest('[data-question-wizard]')!;
+      const current = node.closest<HTMLElement>('[data-question-state]')!.dataset.questionState;
+      const next = current === 'expanded' ? 'collapsed' : 'expanded';
+      // Collapse now travels through the store selector cadence. A single frame
+      // after click can still contain the old branch. Observe the actual branch
+      // and transitions before sampling or pausing them for rapid reversals.
+      const states = await new Promise<HTMLElement[]>((resolve, reject) => {
+        let frame = 0;
+        const timeout = setTimeout(() => {
+          cancelAnimationFrame(frame);
+          reject(new Error('Question toggle did not render its state and transitions'));
+        }, 5_000);
+        const sample = () => {
+          const states = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]'));
+          const active = states.some(
+            (state) => state.dataset.questionState === next && !state.inert,
+          );
+          const moving = states.filter((state) =>
+            state
+              .getAnimations()
+              .some(
+                (animation) =>
+                  animation.playState === 'running' &&
+                  Number(animation.effect?.getTiming().duration) > 1,
+              ),
+          );
+          if (active && (reduced || moving.length === 2)) {
+            clearTimeout(timeout);
+            resolve(states);
+          } else frame = requestAnimationFrame(sample);
+        };
+        node.click();
+        frame = requestAnimationFrame(sample);
+      });
+      const frames = states.map((state) => ({
         state: state.dataset.questionState,
         exiting: state.inert,
         animations: state.getAnimations().filter(
@@ -22,14 +50,18 @@ async function toggleWithMotion(button: Locator, reduced: boolean) {
             animation.playState === 'running' && Number(animation.effect?.getTiming().duration) > 1,
         ).length,
       }));
-    } while (
-      !reducedMotion &&
-      frames.filter((state) => state.animations > 0).length !== 2 &&
-      performance.now() < deadline
-    );
-    root.getAnimations({ subtree: true }).forEach((animation) => animation.finish());
-    return frames;
-  }, reduced);
+      root.getAnimations({ subtree: true }).forEach((animation) => {
+        if (finish) animation.finish();
+        else animation.pause();
+      });
+      return frames;
+    },
+    { reduced, finish },
+  );
+}
+
+async function toggleWithMotion(button: Locator, reduced: boolean) {
+  const motion = await captureToggle(button, reduced, true);
   if (reduced) expect(motion.every((state) => state.animations === 0)).toBe(true);
   else {
     expect(motion.filter((state) => state.animations > 0)).toHaveLength(2);
@@ -38,13 +70,8 @@ async function toggleWithMotion(button: Locator, reduced: boolean) {
 }
 
 async function toggleBeforeSettling(button: Locator) {
-  await button.evaluate(async (node: HTMLButtonElement) => {
-    const root = node.closest('[data-question-wizard]')!;
-    node.click();
-    await new Promise(requestAnimationFrame);
-    // Hold both branches so the next click must reuse an unfinished outgoing surface.
-    root.getAnimations({ subtree: true }).forEach((animation) => animation.pause());
-  });
+  // Hold both branches so the next click must reuse an unfinished outgoing surface.
+  await captureToggle(button, false, false);
 }
 
 for (const { width, height, reducedMotion, theme = 'light' } of [

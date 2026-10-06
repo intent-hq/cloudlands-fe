@@ -1,5 +1,6 @@
 <script lang="ts">
   import { openDevConsole } from '$features/dev-console/dev-console-client';
+  import { getSettingsPaletteCommands } from '$features/settings/settings-palette-commands';
   import { selectWorkspaceCreationVisible } from '$store/renderer/slices/principal/principal-selectors';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -45,6 +46,7 @@
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentLifecycleActions,
+    selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -134,6 +136,7 @@
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const canCreate$ = selectWorkspaceCreationVisible();
   // Agent create is likewise refused (-32003) for a collaborator connection.
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
@@ -142,7 +145,13 @@
     'open-url',
   ]);
   const commands = $derived(
-    COMMAND_PALETTE_COMMANDS.filter(
+    [
+      ...COMMAND_PALETTE_COMMANDS,
+      ...getSettingsPaletteCommands({
+        isCollaboratorOnlyClient: $isCollaboratorOnlyClient$,
+        multiplayerEnabled: $labsMultiplayerEnabled$,
+      }),
+    ].filter(
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
         !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
@@ -825,6 +834,12 @@
     if (shouldClose) onClose?.();
   }
   function handleCommand(commandId: string): boolean {
+    const settingsCommand = commands.find((command) => command.id === commandId);
+    if (settingsCommand && 'settingsTab' in settingsCommand) {
+      appStore.dispatch(setShowCreateModal(false));
+      navigateToSettings({ tab: settingsCommand.settingsTab });
+      return true;
+    }
     switch (commandId) {
       case 'new-workspace':
         if (selectWorkspaceCreationVisible.select(appStore.state)) {
@@ -832,6 +847,7 @@
         }
         return true;
       case 'settings':
+        appStore.dispatch(setShowCreateModal(false));
         navigateToSettings();
         return true;
       case 'enable-experimental-multiplayer':
