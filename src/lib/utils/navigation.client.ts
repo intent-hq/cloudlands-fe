@@ -44,6 +44,17 @@ export async function navigateToRoute(route: string): Promise<void> {
     logger.debug('Ignoring navigation in HUD window', { route });
     return;
   }
+  if (route.startsWith('intent://') || /^https?:\/\//.test(route)) {
+    const { showAssistantContent } = await import('$features/home/assistant-panels');
+    if (await showAssistantContent(route, true)) {
+      const { openPanel } = await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
+      const { store } = await import('$store/renderer/store');
+      store.dispatch(openPanel('chief'));
+      const { goto } = await import('$app/navigation');
+      if (window.location.pathname !== '/') await goto('/');
+      return;
+    }
+  }
   // Every entry point (native menu, in-app links, and toast actions) shares
   // this boundary. Only entering Settings replaces its return destination.
   if (

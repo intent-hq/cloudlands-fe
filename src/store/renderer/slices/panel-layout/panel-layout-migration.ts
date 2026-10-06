@@ -1,6 +1,6 @@
 import { getFixedColumnPanelIds } from './panel-layout-tabless';
 import { migratePanelCanvasWidth } from './panel-layout-width-provenance';
-import { panelTabsAreEquivalent } from './panel-tab-identity';
+import { panelTabsAreEquivalent, panelTabBelongsToLayout } from './panel-tab-identity';
 import {
   MIN_PANEL_CANVAS_WIDTH,
   MIN_PANEL_SIZE_PERCENT,
@@ -91,7 +91,7 @@ function cleanPanel(
       !!tab &&
       typeof tab === 'object' &&
       typeof tab.id === 'string' &&
-      (!tab.workspaceId || tab.workspaceId === workspaceId),
+      panelTabBelongsToLayout(workspaceId, tab),
   );
   if (panel.tabs.length > 0 && validTabs.length === 0) return null;
   const tabs: PanelTab[] = [];

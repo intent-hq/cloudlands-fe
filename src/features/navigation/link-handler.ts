@@ -38,6 +38,7 @@ import {
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 const logger = new Logger('LinkHandler');
 
@@ -75,6 +76,11 @@ export async function handleLink(url: string, options: LinkHandlerOptions): Prom
         logger.debug('Link handled by custom handler', { url });
         return true;
       }
+    }
+
+    if (options.workspaceId === CHIEF_WORKSPACE_ID && !options.forceExternal) {
+      const { showAssistantContent } = await import('$features/home/assistant-panels');
+      if (await showAssistantContent(url)) return true;
     }
 
     // Handle intent:// links (internal navigation to notes/tasks)
