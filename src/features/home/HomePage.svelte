@@ -1113,17 +1113,19 @@
                                     <Button
                                       variant="plain"
                                       size="sm"
-                                      class="w-full justify-start px-2"
+                                      class="w-full justify-start gap-1.5 px-2"
+                                      labelClass="flex-initial"
                                       aria-expanded={group.expanded}
                                       aria-label={group.label}
                                       onclick={() =>
                                         setGroupExpanded(group.id, !group.expanded, group.items)}
                                     >
-                                      <span class="flex-1 text-left font-medium text-foreground"
+                                      <span class="text-left font-medium text-foreground"
                                         >{group.label}</span
                                       >
                                       {#snippet trailingIcon()}<Fa
                                           icon={group.expanded ? faChevronDown : faChevronRight}
+                                          class="size-3 text-muted-foreground"
                                         />{/snippet}
                                     </Button>
                                   </h3>
